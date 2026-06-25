@@ -1,6 +1,6 @@
 // Plan gap scanner (#528/#534 → #897). `findPlanGaps` flags empty files / unresolved
-// placeholders in a stage's section content. Originally the lint-plan pipeline's check; the
-// pipeline engine + its dispatch wrapper were removed in #897 (Phase 4c/cleanup), and the
+// placeholders in a stage's section content. Originally the lint-plan stage module's check; the
+// stage engine + its dispatch wrapper were removed in #897 (Phase 4c/cleanup), and the
 // placeholder check now lives in the declarative stage gate (Phase 4b — Planning computes a
 // `hasPlanGaps` signal from this). Pure; no React/Tauri.
 

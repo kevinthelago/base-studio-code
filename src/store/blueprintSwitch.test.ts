@@ -11,7 +11,7 @@ describe("blueprint-per-project + reset (#647)", () => {
       uiApproved: { p: ["Home"] },
       planStageConfig: {},
       stagePreview: {},
-      stagePipelineRuns: {},
+      stageRuns: {},
       // section state + fleet/automations also drive completion — must reset too (#664)
       planSections: { p: { goal: "# Goal" } },
       planConfirmedSections: { p: ["goal"] },

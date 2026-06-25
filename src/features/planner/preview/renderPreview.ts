@@ -4,14 +4,14 @@
 //
 // 2D and 3D share one transport: a 3D skeleton just renders an r3f <Canvas>
 // (react-three-fiber is externalized + resolved via esm.sh), so `mode` only tunes the
-// pane chrome. The dispatch glue runs the pipeline through the engine (#529) and
+// pane chrome. The dispatch glue runs the stage module through the engine (#529) and
 // writes the result to the store; #533 wires the triggers (tag / watch / manual).
 
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
-import { type StageContext, type PipelineRunResult } from "../grading/pipelineRuntime";
-import { registerPipeline } from "../grading/pipelineCommands";
+import { type StageContext, type StageRunResult } from "../grading/stageRun";
+import { registerStageModule } from "../grading/stageCommands";
 
 export type PreviewMode = "2d" | "3d";
 export interface PreviewOutput { srcDoc: string; mode: PreviewMode; screen?: string }
@@ -27,7 +27,7 @@ export function resolveEntry(artifacts: Record<string, string>, entry?: string):
 
 /** The render-preview stage helper: bundle the UI skeleton into an iframe srcDoc. Runs by
  *  direct dispatch (#897 Phase 4c removed the generic engine); never throws. */
-export async function renderPreviewHandler(ctx: StageContext): Promise<PipelineRunResult> {
+export async function renderPreviewHandler(ctx: StageContext): Promise<StageRunResult> {
   const artifacts = ctx.artifacts as Record<string, string>;
   const entry = resolveEntry(artifacts, ctx.entry);
   if (!entry) return { status: "fail", message: "render-preview: no screen file in the skeleton" };
@@ -43,21 +43,21 @@ export async function renderPreviewHandler(ctx: StageContext): Promise<PipelineR
  */
 export async function dispatchRenderPreview(args: {
   projectKey: string; stageId?: string; artifacts: Record<string, string>; entry?: string; mode?: PreviewMode; screen?: string;
-}): Promise<PipelineRunResult> {
+}): Promise<StageRunResult> {
   const store = useAppStore.getState();
-  store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: "running", lastRun: null });
+  store.setStageRun(args.projectKey, RENDER_PREVIEW_ID, { status: "running", lastRun: null });
   const ctx: StageContext = {
     projectKey: args.projectKey, stageId: args.stageId ?? "ui", artifacts: args.artifacts,
     entry: args.entry, mode: args.mode,
   };
-  let result: PipelineRunResult;
+  let result: StageRunResult;
   try { result = await renderPreviewHandler(ctx); }
   catch (e) { result = { status: "fail", message: String(e) }; }
   if (result.status === "ok" && result.output) {
     // Tag the stored preview with the screen so the pane's approve button targets it (#546).
     store.setStagePreview(args.projectKey, { ...(result.output as PreviewOutput), screen: args.screen ?? args.entry });
   }
-  store.setStagePipelineRun(args.projectKey, RENDER_PREVIEW_ID, { status: result.status, lastRun: Date.now(), message: result.message });
+  store.setStageRun(args.projectKey, RENDER_PREVIEW_ID, { status: result.status, lastRun: Date.now(), message: result.message });
   return result;
 }
 
@@ -65,10 +65,10 @@ export async function dispatchRenderPreview(args: {
 // .ui-skeleton and dispatches a render for the requested screen/mode — the behavior the
 // <ui_preview> tag triggers today. Richer commands (save/confirm/persist, navigation)
 // are render-preview's OWN later behavior; the bus stays generic. Idempotent on import.
-registerPipeline({
+registerStageModule({
   id: RENDER_PREVIEW_ID,
   async command(cmd, ctx) {
-    if (cmd !== "run") return; // other commands are this pipeline's future behavior
+    if (cmd !== "run") return; // other commands are this stage module's future behavior
     const screen = ctx.args.screen || undefined;
     const mode: PreviewMode = ctx.args.mode === "3d" ? "3d" : "2d";
     const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey: ctx.projectKey });

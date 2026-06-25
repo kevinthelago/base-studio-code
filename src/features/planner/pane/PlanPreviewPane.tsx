@@ -8,7 +8,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { PreviewFrame, type PreviewStatus } from "../preview/PreviewFrame";
-import { PipelineScreenFrame } from "../grading/PipelineScreenFrame";
+import { StageScreenFrame } from "../grading/StageScreenFrame";
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from "../preview/renderPreview";
 import { buildClaudeDesignBrief } from "../preview/claudeDesignBrief";
 
@@ -33,7 +33,7 @@ const DEMO_FILES: Record<string, string> = {
 
 export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; onClose?: () => void }) {
   const preview = useAppStore((s) => s.stagePreview[projectKey] ?? null);
-  const run = useAppStore((s) => s.stagePipelineRuns[projectKey]?.[RENDER_PREVIEW_ID]);
+  const run = useAppStore((s) => s.stageRuns[projectKey]?.[RENDER_PREVIEW_ID]);
   const declared = useAppStore((s) => s.uiScreens[projectKey]) ?? EMPTY;
   const approvedList = useAppStore((s) => s.uiApproved[projectKey]) ?? EMPTY;
   const setUiScreenApproved = useAppStore((s) => s.setUiScreenApproved);
@@ -61,7 +61,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   const statusColor = frameError || status === "fail" ? "var(--danger)" : status === "ok" ? "var(--success)" : "var(--fg-dim)";
 
   return (
-    <PipelineScreenFrame
+    <StageScreenFrame
       label="preview"
       badge={preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
       statusLabel={statusLabel}
@@ -143,6 +143,6 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
           </div>
         )}
       </div>
-    </PipelineScreenFrame>
+    </StageScreenFrame>
   );
 }
