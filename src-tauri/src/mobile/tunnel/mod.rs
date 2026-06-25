@@ -1029,6 +1029,10 @@ mod tests {
     /// shared by these Rust tests, the TS tests, and mobile-studio-code. The frontend reorg (#1309)
     /// relocates them within `src/`, so we find them by name instead of a brittle fixed path — a
     /// move no longer reds the Rust CI. Test-only, so the recursive walk's cost is irrelevant.
+    ///
+    /// INTERIM: the walk returns the first name match (ambiguous if a fixture name is ever
+    /// duplicated under `src/`). #1335 tracks settling a canonical home for cross-repo contract
+    /// fixtures (e.g. a stable `contracts/` dir) so this can become a direct, unambiguous path.
     fn find_fixture(name: &str) -> std::path::PathBuf {
         fn walk(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
             for entry in std::fs::read_dir(dir).ok()?.flatten() {
