@@ -61,4 +61,16 @@ describe("reconcileSessions (#1266)", () => {
     expect(out[0].kind).toBe("unknown");
     expect(out[0].reapOnly).toBe(false);
   });
+
+  it("flags an orphaned (deleted-project) shell reap-only, but not a restorable one (#1279)", () => {
+    const out = reconcileSessions(
+      [sess("gone:auth", "orphaned"), sess("proj:auth", "dormant")],
+      [],
+    );
+    const byId = Object.fromEntries(out.map((s) => [s.paneId, s]));
+    // The deleted project's live shell is reaped, never restored — nothing to rehydrate.
+    expect(byId["gone:auth"].reapOnly).toBe(true);
+    // A genuinely restorable worker is unaffected.
+    expect(byId["proj:auth"].reapOnly).toBe(false);
+  });
 });
