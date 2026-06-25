@@ -159,6 +159,9 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
               disabled={busy}
               onClick={() => {
                 requestPlannerPrompt(projectKey, ROUTE_PROMPT);
+                // Promote the dropped components into .ui-skeleton/ so the preview shows the REAL
+                // design, not the demo (#1373) — deterministic, alongside the planner's routing.
+                void invoke("sync_design_to_skeleton", { projectKey }).catch(() => {});
                 // Routing the design to the project completes the UI stage (#837).
                 confirmPlanSection(projectKey, "ui");
                 setRouted(true);
