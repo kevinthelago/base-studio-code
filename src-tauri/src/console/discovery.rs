@@ -5,7 +5,7 @@
 //! Two sources, with different lifetimes:
 //!   * the **pty ledger** (`pty_ledger`) — every *running* session's exact identity pane id + pid.
 //!     Cleared on a clean quit, so it reflects live/orphaned processes (the crash case).
-//!   * the **project hubs + worktrees** — each `projects/<key>/fleet.json` (the planned director +
+//!   * the **project hubs + worktrees** — each project's **plan.db fleet** (the planned director +
 //!     workers) cross-referenced with `worktrees/<key>/<repo>--<slug>/` existence. Durable across
 //!     clean exits → *dormant* fleet sessions that aren't currently running.
 //!
@@ -27,7 +27,7 @@ pub struct DiscoveredSession {
     pub sources: Vec<String>,
     /// The live shell pid, when a running process currently owns this pane.
     pub live_pid: Option<u32>,
-    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in fleet.json, never launched).
+    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in the plan.db fleet, never launched).
     pub status: String,
     /// The owning project key, when derivable from a hub. (The frontend re-parses `pane_id` authoritatively.)
     pub project_key: Option<String>,
@@ -55,6 +55,7 @@ pub fn discover_sessions_impl(
     base_dir: &Path,
     ledger: &[(String, u32)],
     alive: &dyn Fn(u32) -> bool,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
 ) -> Vec<DiscoveredSession> {
     let mut map: BTreeMap<String, DiscoveredSession> = BTreeMap::new();
 
@@ -70,12 +71,12 @@ pub fn discover_sessions_impl(
         d.status = RUNNING.into();
     }
 
-    // 2) Hub pass — dormant/planned director + workers from each project's fleet.json + worktrees.
+    // 2) Hub pass — dormant/planned director + workers from each project's plan.db fleet + worktrees.
     if let Ok(rd) = std::fs::read_dir(base_dir.join("projects")) {
         for entry in rd.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let key = entry.file_name().to_string_lossy().to_string();
-                discover_hub(base_dir, &key, &mut map);
+                discover_hub(base_dir, &key, &mut map, fleet_for);
             }
         }
     }
@@ -95,14 +96,15 @@ fn blank(pane_id: &str) -> DiscoveredSession {
     }
 }
 
-fn discover_hub(base_dir: &Path, key: &str, map: &mut BTreeMap<String, DiscoveredSession>) {
-    let raw = match std::fs::read_to_string(base_dir.join("projects").join(key).join("fleet.json")) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let v: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return,
+fn discover_hub(
+    base_dir: &Path,
+    key: &str,
+    map: &mut BTreeMap<String, DiscoveredSession>,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
+) {
+    let v = match fleet_for(key) {
+        Some(v) => v,
+        None => return,
     };
     let hub = base_dir.join("projects").join(key);
     let wts = base_dir.join("worktrees").join(key);
@@ -130,7 +132,7 @@ fn discover_hub(base_dir: &Path, key: &str, map: &mut BTreeMap<String, Discovere
 }
 
 /// Merge a hub-discovered session into the map without clobbering a running (ledger) hit. Always
-/// records `fleet` as a source (it came from fleet.json); adds `worktree` when its checkout exists.
+/// records `fleet` as a source (it came from the plan.db fleet); adds `worktree` when its checkout exists.
 fn upsert(
     map: &mut BTreeMap<String, DiscoveredSession>,
     pane_id: &str,
@@ -168,7 +170,12 @@ pub fn discover_sessions() -> Vec<DiscoveredSession> {
         .into_iter()
         .map(|e| (e.pane_id, e.pid))
         .collect();
-    discover_sessions_impl(&crate::bsc_base_dir(), &ledger, &|pid| crate::pty_ledger::is_pid_alive(pid))
+    discover_sessions_impl(
+        &crate::bsc_base_dir(),
+        &ledger,
+        &|pid| crate::pty_ledger::is_pid_alive(pid),
+        &|key| crate::project::plan_db::fleet_for(key),
+    )
 }
 
 #[cfg(test)]
@@ -191,29 +198,33 @@ mod tests {
     }
 
     /// A hub with director + two workers; one worker launched (worktree exists), one only planned.
-    fn write_fixture(base: &Path) {
-        let hub = base.join("projects").join("proj");
-        fs::create_dir_all(&hub).unwrap();
-        fs::write(
-            hub.join("fleet.json"),
-            r#"{
-                "recommended": 2, "reasoning": "",
-                "director": { "enabled": true, "role": "integrator" },
-                "streams": [
-                    { "id": "auth-ui", "name": "Auth UI", "repo": "own/web", "owns": [], "issues": [], "dependsOn": [] },
-                    { "id": "api", "name": "API", "repo": "own/api", "owns": [], "issues": [], "dependsOn": [] }
-                ]
-            }"#,
-        )
-        .unwrap();
-        // auth-ui has a worktree (launched); api does not (planned).
+    /// The fleet itself is served via the `fleet_for` closure (plan.db), not a file on disk.
+    fn fleet_json() -> serde_json::Value {
+        serde_json::json!({
+            "recommended": 2, "reasoning": "",
+            "director": { "enabled": true, "role": "integrator" },
+            "streams": [
+                { "id": "auth-ui", "name": "Auth UI", "repo": "own/web", "owns": [], "issues": [], "dependsOn": [] },
+                { "id": "api", "name": "API", "repo": "own/api", "owns": [], "issues": [], "dependsOn": [] }
+            ]
+        })
+    }
+
+    /// The hub dir must exist so the hub-pass enumerates "proj"; auth-ui has a worktree (launched),
+    /// api does not (planned). No `fleet.json` — the fleet comes from the closure.
+    fn prepare_disk(base: &Path) {
+        fs::create_dir_all(base.join("projects").join("proj")).unwrap();
         fs::create_dir_all(base.join("worktrees").join("proj").join("web--auth-ui")).unwrap();
     }
 
     #[test]
     fn discovers_running_dormant_and_planned_with_sources() {
         let base = tmp_base();
-        write_fixture(&base);
+        prepare_disk(&base);
+        // The fleet lives in plan.db, modelled here as a key→FleetPlan closure (no fleet.json).
+        let mut fleets = std::collections::HashMap::new();
+        fleets.insert("proj".to_string(), fleet_json());
+        let fleet_for = |k: &str| fleets.get(k).cloned();
 
         // Ledger: the director is running (pid 100); a manual scratch is running (pid 200);
         // a stale api entry (pid 999) is dead and must be skipped.
@@ -224,9 +235,9 @@ mod tests {
         ];
         let alive = |pid: u32| pid == 100 || pid == 200;
 
-        let out = discover_sessions_impl(&base, &ledger, &alive);
+        let out = discover_sessions_impl(&base, &ledger, &alive, &fleet_for);
 
-        // Director: running (ledger wins), enriched with the hub cwd + project key from fleet.json.
+        // Director: running (ledger wins), enriched with the hub cwd + project key from the plan.db fleet.
         let dir = find(&out, "proj:director").expect("director discovered");
         assert_eq!(dir.status, "running");
         assert_eq!(dir.live_pid, Some(100));
@@ -241,7 +252,7 @@ mod tests {
         assert_eq!(auth.sources, vec!["fleet".to_string(), "worktree".to_string()]);
         assert!(auth.cwd.as_deref().unwrap().ends_with("web--auth-ui"));
 
-        // api: planned — in fleet.json, no worktree, dead ledger entry skipped.
+        // api: planned — in the plan.db fleet, no worktree, dead ledger entry skipped.
         let api = find(&out, "proj:api").expect("api discovered");
         assert_eq!(api.status, "planned");
         assert_eq!(api.sources, vec!["fleet".to_string()]);
@@ -261,7 +272,7 @@ mod tests {
     fn empty_when_nothing_on_disk_or_alive() {
         let base = tmp_base();
         fs::create_dir_all(base.join("projects")).unwrap();
-        let out = discover_sessions_impl(&base, &[("proj:director".into(), 1)], &|_| false);
+        let out = discover_sessions_impl(&base, &[("proj:director".into(), 1)], &|_| false, &|_| None);
         assert!(out.is_empty(), "no live ledger entries + no hubs ⇒ nothing discovered");
         let _ = fs::remove_dir_all(&base);
     }
