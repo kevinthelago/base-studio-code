@@ -9,13 +9,13 @@
 //! Read-only (#782): behavior is captured and reproduced in the new app — never
 //! written back into the system of record.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A read-only capture of a source platform's behavioral layer.
 ///
 /// Sibling to the inferred Data Model: the data scan answers "what rows exist",
 /// this answers "what the system *does*".
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformScan {
     pub automations: Vec<Automation>,
@@ -33,7 +33,7 @@ impl PlatformScan {
 }
 
 /// What kind of automation this is, across vendors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AutomationKind {
     /// A reject-on-write rule (Salesforce validation rule, Quickbase form rule, a CHECK constraint).
@@ -53,7 +53,7 @@ pub enum AutomationKind {
 
 /// A trigger- or schedule-driven automation.
 /// Maps to a generated rule or job in the new app.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Automation {
     /// The connector the behavior came from (recorded as lineage).
@@ -73,7 +73,7 @@ pub struct Automation {
 
 /// A multi-step business process gating a record's state (an approval process, a stage workflow).
 /// Maps to a generated approval/stage workflow.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BusinessProcess {
     pub source: String,
@@ -85,7 +85,7 @@ pub struct BusinessProcess {
 }
 
 /// Whether derived logic is declarative or imperative.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DerivedKind {
     /// A declarative formula (Salesforce formula field, a Quickbase formula).
@@ -96,7 +96,7 @@ pub enum DerivedKind {
 
 /// Derived logic that computes a value or runs imperatively.
 /// Maps to a computed field or a service function; summarized for re-implementation, not auto-ported.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DerivedLogic {
     pub source: String,
