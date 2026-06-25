@@ -16,6 +16,11 @@
         "signal": "profilesComplete",
         "target": true,
         "label": "set a profile for every stream"
+      },
+      {
+        "signal": "sharedDepsLocked",
+        "target": true,
+        "label": "lock shared deps for any repo 2+ streams build"
       }
     ]
   },

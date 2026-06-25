@@ -1,7 +1,7 @@
 {
   "name": "Deploy",
   "glyph": "⎈",
-  "gate": "shipping + dependencies defined",
+  "gate": "shipping defined",
   "deps": [
     "repos"
   ],
@@ -11,11 +11,6 @@
         "signal": "deploymentDefined",
         "target": true,
         "label": "define target, environments, pipeline, secrets & release"
-      },
-      {
-        "signal": "dependenciesDefined",
-        "target": 1,
-        "label": "lock at least one dependency in the manifest"
       }
     ]
   },
