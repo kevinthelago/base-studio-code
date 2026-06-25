@@ -57,7 +57,7 @@ import { McpDownloadModal, type McpDownloadItem } from "../shared/McpDownloadMod
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { buildProjectPaneData } from "../pane/projectPaneData";
-import { defaultDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
+import { normalizeDeployConfig, deploymentDefined, parseDeployConfigTag } from "../shared/deployConfig";
 import { allSourcesConnected, migrationActive, datamodelSignals } from "../shared/sourceConfig";
 import { destinationDefined, syncDefined } from "../shared/integrationConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
@@ -527,8 +527,11 @@ export function Planning({ visible }: { visible: boolean }) {
   const cancelMcpDownloads = useCallback(() => setMcpDownloads([]), []);
   // Deploy stage (#919): the project's deployment config — persisted per project, seeded from the
   // linked repos (one proposed service each) until the user/planner fills it in the Deploy pane.
+  // normalizeDeployConfig migrates a persisted PRE-rework config (top-level envs/pipeline/config/
+  // release/health) into the per-repo shape so the per-service readers never hit `undefined.secrets`
+  // (#1425); a missing config falls back to the seeded default.
   const deployCfg = useMemo(
-    () => planDeployConfig[effectiveProjectId] ?? defaultDeployConfig(publishRepos),
+    () => normalizeDeployConfig(planDeployConfig[effectiveProjectId], publishRepos),
     [planDeployConfig, effectiveProjectId, publishRepos],
   );
   // Source stage (#source-pane): the project's migration-source config — declared + connected

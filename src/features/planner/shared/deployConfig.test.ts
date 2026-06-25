@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  defaultDeployConfig, serviceChecks, serviceReady, deploymentDefined, readyServiceCount,
+  defaultDeployConfig, normalizeDeployConfig, serviceChecks, serviceReady, deploymentDefined, readyServiceCount,
   coerceDeployConfig, parseDeployConfigTag, deployIssues,
   serviceMode, serviceTargetDefined, localTargetDefined, finalStageName,
-  type DeployService,
+  type DeployService, type DeployConfig,
 } from "./deployConfig";
 import { makeBlueprints } from "../stages/blueprints";
 
@@ -165,6 +165,50 @@ describe("coerceDeployConfig — the planner deploy channel (per-repo, #1421)", 
     expect(cfg).not.toBeNull();
     expect(cfg!.services[0].platform).toBe("fly");
     expect(deploymentDefined(cfg!)).toBe(true);
+  });
+});
+
+describe("normalizeDeployConfig — migrating a pre-rework persisted config (#1425)", () => {
+  // A config persisted BEFORE the per-repo rework: envs/pipeline/config/release/health lived at the
+  // TOP level and the services had none of them. The per-service readers would crash on `s.config`.
+  const legacy = {
+    selService: "web",
+    services: [{ id: "web", repo: "acme/web", path: ".", stack: "TS", platform: "vercel", workload: "static", proposed: false, region: "—", build: "—", output: "dist", runtime: "—" }],
+    envs: [{ id: "dev", name: "dev", branch: "develop", url: "", auto: true }, { id: "prod", name: "prod", branch: "main", url: "", auto: false }],
+    pipeline: { provider: "GitHub Actions", stages: [{ id: "build", name: "build", trigger: "push", gate: false, cmd: "" }, { id: "deploy", name: "deploy", trigger: "on-green", gate: false, cmd: "" }] },
+    config: { config: [], secrets: [{ key: "DATABASE_URL", dev: true, prod: true }], vault: "host vault" },
+    release: { strategy: "rolling", autoRollback: true, keep: 3, migrateWithDeploy: false },
+    health: { probe: "/healthz", probeOn: false, slo: "", sloOn: false, alerts: "", alertsOn: false },
+  } as unknown as DeployConfig;
+
+  it("backfills each service from the legacy top-level so the per-service readers don't throw", () => {
+    const d = normalizeDeployConfig(legacy);
+    const s = d.services[0];
+    expect(s.config.secrets).toEqual([{ key: "DATABASE_URL", dev: true, prod: true }]); // pulled from top-level
+    expect(s.envs.map((e) => e.name)).toEqual(["dev", "prod"]);
+    expect(s.pipeline.stages.length).toBe(2);
+    expect(s.release.strategy).toBe("rolling");
+    // the readers that used to crash now run, and the gate evaluates
+    expect(() => serviceChecks(s)).not.toThrow();
+    expect(deploymentDefined(d)).toBe(true);
+  });
+
+  it("backfills services that have NO sub-configs at all (defaults) without crashing", () => {
+    const bare = { services: [{ id: "web", repo: "acme/web", platform: "", workload: "static", proposed: true, path: ".", stack: "—", region: "—", build: "—", output: "dist", runtime: "—" }] } as unknown as DeployConfig;
+    const d = normalizeDeployConfig(bare);
+    expect(d.services[0].envs.length).toBe(3);            // seeded ladder
+    expect(d.services[0].config.secrets).toEqual([]);
+    expect(() => deploymentDefined(d)).not.toThrow();
+  });
+
+  it("falls back to a fresh default config for an undefined/empty config", () => {
+    expect(normalizeDeployConfig(undefined, ["acme/web"]).services[0].id).toBe("web");
+    expect(normalizeDeployConfig({ services: [] }, ["acme/api"]).services[0].id).toBe("api");
+  });
+
+  it("leaves an already-per-repo config untouched", () => {
+    const fresh = defaultDeployConfig(["acme/web"]);
+    expect(normalizeDeployConfig(fresh)).toEqual(fresh);
   });
 });
 
