@@ -133,9 +133,10 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   `src-tauri/src/mobile/tunnel/mod.rs`), so moving a feature slice does **not** break Rust CI — but
   **renaming a fixture file** means updating the Rust `find_fixture("…")` call (and mobile-studio-code)
   in lockstep. (This is the one place Rust reaches into the frontend tree; everything else it reads is
-  backend-owned — `src-tauri/templates/`, `src-tauri/tests/`.) The filename walk is **interim** —
-  #1335 tracks giving these contracts a canonical home (e.g. a stable `contracts/` dir) so resolution
-  becomes a direct, unambiguous path once the reorg settles.
+  backend-owned — `src-tauri/templates/`, `src-tauri/tests/`.) Colocating the fixture with its feature
+  is **deliberate** (the feature owns its contract; #1335 weighed a shared `contracts/` dir and chose
+  not to, since that fights feature-ownership) — so `find_fixture` requires **exactly one** name match
+  under `src/` (it panics on zero or a name collision) rather than silently taking the first.
 
 ## Architecture
 
