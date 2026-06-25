@@ -241,6 +241,17 @@ fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The absolute path of the `bsc-skill` CLI — the sidecar beside the running app exe (cargo target
+/// dir in dev; bundled sidecar in a release), or None if absent (#1338). Exposed as `$BSC_SKILL_BIN`
+/// for the `bsc-skill` shell helper to exec when invoked WITH a subcommand (`list`/`add`/`group`/
+/// `resolve`); the helper falls back to the #406 telemetry log when fired as a no-arg hook. No PATH
+/// change — same pattern as `$BSC_PLAN_BIN` / `$BSC_AGENT_BIN`.
+fn bsc_skill_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-skill.exe" } else { "bsc-skill" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
 /// The absolute path of the bundled `bsc-research-mcp` server — the sidecar beside the running app
 /// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1196). Used to
 /// rewrite the Research server's `.mcp.json` command to the real binary path, since Claude Code
@@ -488,6 +499,15 @@ pub(crate) async fn pty_create(
     }
     if let Some(bin) = bsc_plan_bin_path() {
         cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group
+    // authored anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB
+    // is the shared store the `bsc-skill` helper reads/writes; $BSC_SKILL_BIN the CLI it execs when
+    // invoked with a subcommand (a no-arg fire stays the #406 telemetry hook). Unlike BSC_PLAN_DB
+    // (per-project, cwd-derived), this is global — set unconditionally for every pane.
+    cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
+    if let Some(bin) = bsc_skill_bin_path() {
+        cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
     if let Some(bin) = bsc_agent_bin_path() {

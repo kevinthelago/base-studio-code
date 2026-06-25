@@ -77,6 +77,11 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }
 
+# Global skills + task-groups store (#1338, instance of #1325) — shared with the `bsc-skill`
+# session CLI. The `skill_store_*` Tauri commands are a thin wrapper over this crate's `Store`,
+# so the desktop Skills library and every live console session read/write ONE global skills.db.
+skilldb = { path = "../crates/skilldb" }
+
 # Model-agnostic LLM provider layer (#1097) — shared with the future lean `bsc-agent`
 # binary so neither has to depend on the other. `kb_chat` dispatches through it.
 llm = { path = "../crates/llm", package = "bsc-llm" }

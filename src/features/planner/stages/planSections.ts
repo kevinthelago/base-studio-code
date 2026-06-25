@@ -163,6 +163,11 @@ export interface AgentStream {
    *  the worker gets these (case-insensitive) on top of any global servers; the planner + director
    *  always see every installed server. Unset/empty ⇒ the worker gets only global servers. */
   mcp?: string[];
+  /** Skill task-group ids the planner assigned to THIS stream (#1338, parallel to {@link mcp}).
+   *  At fleet launch the group ids are expanded (via the global skills.db) into this worker's
+   *  skill set, on top of the project-resolved skills and any groups toggled onto the session.
+   *  Unset/empty ⇒ the worker gets only its project-resolved skills. */
+  groupIds?: string[];
 }
 
 /** Optional async-integrator session that coordinates the fleet from the project root. */
