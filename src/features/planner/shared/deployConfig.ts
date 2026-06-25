@@ -488,8 +488,17 @@ export function coerceDeployConfig(raw: unknown, repos: string[] = []): DeployCo
   const o = (raw && typeof raw === "object" ? raw : {}) as Raw;
   const base = defaultDeployConfig(repos);
   const rawServices = asArr(o.services);
+  // A config saved before the per-repo rework (#1421) carries environments/pipeline/config/secrets/
+  // release/health at the TOP LEVEL, shared across services; the per-repo model wants them ON each
+  // service. Fold the top-level set into a service that lacks its own, so a migrated legacy config
+  // stays deploy-ready (its `release.strategy` etc. reach each service) instead of resetting to empty
+  // defaults and silently blocking the gate (#1438). A service's own fields always win.
+  const legacyTop: Raw = {
+    environments: o.environments ?? o.envs, pipeline: o.pipeline,
+    config: o.config, secrets: o.secrets, release: o.release, health: o.health,
+  };
   const services: DeployService[] = (rawServices.length ? rawServices : base.services as unknown as Raw[]).map((s, i) =>
-    coerceService(s as Raw, base.services[i] ?? defaultService(asStr((s as Raw).repo)), i),
+    coerceService({ ...legacyTop, ...(s as Raw) }, base.services[i] ?? defaultService(asStr((s as Raw).repo)), i),
   );
   return { services };
 }
