@@ -22,10 +22,10 @@ import {
 import { parseCommandsFile } from "@/shared/lib/session/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, SKILLS_KEY, titleForKey, groupSections,
+  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
-import { parseSkillsFile, resolveSkills, skillSlug } from "@/features/skills/lib/skills";
+import { resolveSkills } from "@/features/skills/lib/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
@@ -140,24 +140,19 @@ export function Planning({ visible }: { visible: boolean }) {
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
-  // Skill name-slugs authored by THIS planning session, per project (#1056). Transient (component
-  // state, not persisted): the upsert effect below records every slug the planner writes to
-  // skills.json this session, so the focused Skills body can render them first + highlighted.
-  const [sessionAuthoredSkills, setSessionAuthoredSkills] = useState<Record<string, Set<string>>>({});
-
   // The skills that apply to THIS project (#1056) — the global library filtered to enabled global +
-  // project-scoped, mapped to the focused Skills body's shape. This is how a planner-authored
-  // skills.json (ingested into the library) becomes visible in the planner pane's Skills stage.
-  // Skills this session authored are flagged `isNew` (rendered first + highlighted by the body).
-  const paneSkills = useMemo(() => {
-    const authored = sessionAuthoredSkills[effectiveProjectId];
-    return resolveSkills(skillDefs, effectiveProjectId).map(s => ({
+  // project-scoped, mapped to the focused Skills body's shape. The planner authors skills with
+  // `bsc-skill add` (straight into the global skills.db, #1412), so they show up here via the
+  // library; there is no longer a per-session "authored this session" highlight (the old skills.json
+  // file-poll that fed `isNew` was retired with the file channel — #1417).
+  const paneSkills = useMemo(
+    () => resolveSkills(skillDefs, effectiveProjectId).map(s => ({
       name: s.name,
       kind: "skill" as const,
       desc: s.desc,
-      isNew: authored?.has(skillSlug(s.name)) ?? false,
-    }));
-  }, [skillDefs, effectiveProjectId, sessionAuthoredSkills]);
+    })),
+    [skillDefs, effectiveProjectId],
+  );
   // A project is bound to the blueprint it was CREATED with (#647/#923): `projectBlueprintId`
   // records it, set at creation (handleStartPlanning) — NOT here on open. Opening a project must
   // never adopt the transient global `activeBlueprintId` (the library selection the user changes
@@ -311,30 +306,9 @@ export function Planning({ visible }: { visible: boolean }) {
       for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
   }, [savedSections, effectiveProjectId]);
 
-  // Sync the planner's skills.json (the reliable file-poll channel, like commands.json) into the
-  // GLOBAL skills library (#404/#1086). The planner proposes new reusable skills and writes the
-  // file; this upserts them (by id/name-slug, so a re-emitted skill refines in place) so they
-  // become real, reusable, and delivered to the fleet as `.claude/skills/<slug>/SKILL.md` at launch.
-  // Without this wire the planner's authored skills were written and discarded. Runs only when the
-  // file changes; defaults follow parseSkillsFile (enabled + pinned; global unless the planner
-  // scopes `projects`).
-  const skillsSyncedRef = useRef("");
-  useEffect(() => {
-    const raw = savedSections[SKILLS_KEY] ?? "";
-    if (raw === skillsSyncedRef.current) return;
-    skillsSyncedRef.current = raw;
-    const defs = parseSkillsFile(raw);
-    if (!defs.length) return;
-    useAppStore.getState().upsertSkills(defs);
-    // Remember which skills THIS session authored, so the focused Skills body renders them first +
-    // highlighted (#1056). Accumulate (the planner re-emits the whole array as it refines).
-    const slugs = defs.map(d => skillSlug(d.name)).filter(Boolean);
-    setSessionAuthoredSkills(prev => {
-      const next = new Set(prev[effectiveProjectId] ?? []);
-      slugs.forEach(s => next.add(s));
-      return { ...prev, [effectiveProjectId]: next };
-    });
-  }, [savedSections, effectiveProjectId]);
+  // (#1412/#1417) The planner now authors skills with `bsc-skill add` (straight into the global
+  // skills.db), so there is no skills.json file-poll → library sync here anymore. The Skills-page
+  // import (parseSkillsFile + upsertSkills) remains for user-uploaded skill files.
 
   // Sync fleet.json (the reliable channel — surfaced by the poll as the `fleet`
   // section) into the fleet store. Wholesale-replace, but only when the file's
