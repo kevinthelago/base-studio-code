@@ -2,9 +2,10 @@ use crate::*;
 
 /// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
 /// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each
-/// `projects/<key>/` dir (goal.md, issues.json, phases.json, fleet.json, the
-/// context docs, …) and leaves all SUBDIRECTORIES — the cloned repos and
-/// `prompts/` — intact. Best-effort; returns how many files were
+/// `projects/<key>/` dir (goal.md, issues.json, phases.json, the context docs, …;
+/// the fleet lives in plan.db now, cleared separately — a stray legacy `fleet.json`
+/// is still swept by the `.json` rule) and leaves all SUBDIRECTORIES — the cloned
+/// repos and `prompts/` — intact. Best-effort; returns how many files were
 /// removed. Without this, the planning poll re-reads the files and a store-only
 /// clear is undone within a tick.
 #[tauri::command]
