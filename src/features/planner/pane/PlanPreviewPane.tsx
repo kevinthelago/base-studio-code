@@ -50,6 +50,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   // Manual trigger: read the project's real .ui-skeleton from disk and render it.
   const loadSkeleton = async () => {
     try {
+      await invoke("sync_design_to_skeleton", { projectKey }).catch(() => {}); // #1373: pull dropped design into the skeleton first
       const files = await invoke<[string, string][]>("read_ui_skeleton", { projectKey });
       if (files.length > 0) await dispatchRenderPreview({ projectKey, artifacts: Object.fromEntries(files), mode: "2d" });
     } catch (e) { setFrameError(String(e)); }
