@@ -15,31 +15,32 @@ function Harness({ repos, initial }: { repos?: Repo[]; initial?: DeployConfig })
   return (
     <FocusedReposDeployBody
       repos={repos} deploy={cfg} onDeployChange={setCfg} dependencies={[]}
-      onLinkRepo={() => {}} reposPublic={false} onSetReposPublic={() => {}}
+      onLinkRepo={() => {}} reposPublic={false}
       repoOverrides={{}} onSetRepoPublic={() => {}}
     />
   );
 }
 
-describe("FocusedReposDeployBody — header + gate", () => {
-  it("flags the gate as blocked with no repos and shows the empty state", () => {
-    render(<Harness repos={[]} />);
+describe("FocusedReposDeployBody — header (cleaned up, #1403)", () => {
+  it("shows just the icon + title — no gate pill, no ship toggle", () => {
+    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
     expect(screen.getByText("Repositories & Deployment")).toBeInTheDocument();
-    expect(screen.getByText(/gate blocked/)).toBeInTheDocument();
+    // the two header pills are gone
+    expect(screen.queryByText(/gate blocked/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/repos? linked/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ships" })).not.toBeInTheDocument();
+  });
+
+  it("renders the empty state with no repos (no gate pill)", () => {
+    render(<Harness repos={[]} />);
     expect(screen.getByText("No repositories linked yet")).toBeInTheDocument();
-    // deploy flow is locked until a repo is linked
     expect(screen.getByText(/Deployment unlocks once/)).toBeInTheDocument();
     expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
   });
-
-  it("shows the linked count once repos are present", () => {
-    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
-    expect(screen.getByText("✓ 2 repos linked")).toBeInTheDocument();
-  });
 });
 
-describe("FocusedReposDeployBody — ship flow (phase.ship)", () => {
-  it("ships by default — renders card 01 + the reused deploy tail (pipeline · dividers)", () => {
+describe("FocusedReposDeployBody — ship flow", () => {
+  it("renders card 01 + the reused deploy tail, with no readiness banner or global visibility toggle", () => {
     render(<Harness repos={[repo("acme/web", { primary: true })]} />);
     // card 01 repositories with its repo row
     expect(screen.getByText("Repositories")).toBeInTheDocument();
@@ -49,25 +50,34 @@ describe("FocusedReposDeployBody — ship flow (phase.ship)", () => {
     expect(screen.getByText("A · HOW IT SHIPS")).toBeInTheDocument();
     expect(screen.getByText("CI / CD pipeline")).toBeInTheDocument();
     expect(screen.getByText("D · READINESS")).toBeInTheDocument();
+    // the "N/X defined" readiness banner is gone (#1403)
+    expect(screen.queryByText(/\d+\/\d+ defined/)).not.toBeInTheDocument();
+    // the global default Private/Public toggle is gone (#1403); per-repo toggles remain
+    expect(screen.queryByRole("button", { name: /Private/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Make acme/web public" })).toBeInTheDocument();
   });
 
-  it("expands the selected repo's target editor inline, and switches on click", () => {
+  it("starts with every repo collapsed, and a click toggles its target editor open then closed", () => {
     render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
-    // first service is selected by default → its target editor (meta chip + platform dropdown) shows
+    // nothing expanded initially — no target editor anywhere
+    expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
+    expect(screen.queryByText((_, el) => el?.textContent === "⎇ acme/web/.")).not.toBeInTheDocument();
+    // click the repo → its editor expands
+    fireEvent.click(screen.getByText("acme/web"));
     expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/web/.")).toBeTruthy();
     expect(screen.getByText("Select a platform…")).toBeInTheDocument();
-    // click the second repo row → selection (and the inline editor) moves to it
-    fireEvent.click(screen.getByText("acme/api"));
-    expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/api/.")).toBeTruthy();
+    // click it again → collapses (toggleable off)
+    fireEvent.click(screen.getByText("acme/web"));
+    expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
   });
 
-  it("turning ship off collapses the deploy half to repos-only", () => {
-    render(<Harness repos={[repo("acme/web")]} />);
-    expect(screen.getByText("CI / CD pipeline")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "ships" }));
-    expect(screen.getByText("Shipping is off for this project.")).toBeInTheDocument();
-    expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument();
-    // the repo is still listed
-    expect(screen.getByText("acme/web")).toBeInTheDocument();
+  it("opening a different repo moves the expanded editor to it", () => {
+    render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
+    fireEvent.click(screen.getByText("acme/web"));
+    expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/web/.")).toBeTruthy();
+    // opening api collapses web and expands api (only one open at a time)
+    fireEvent.click(screen.getByText("acme/api"));
+    expect(screen.getByText((_, el) => el?.textContent === "⎇ acme/api/.")).toBeTruthy();
+    expect(screen.queryByText((_, el) => el?.textContent === "⎇ acme/web/.")).not.toBeInTheDocument();
   });
 });
