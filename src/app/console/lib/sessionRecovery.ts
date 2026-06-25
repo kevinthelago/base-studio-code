@@ -13,8 +13,12 @@ export interface DiscoveredSession {
   sources: string[];
   /** The live shell pid, when a running process currently owns this pane. */
   livePid?: number | null;
-  /** "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in fleet.json, never launched). */
-  status: "running" | "dormant" | "planned" | string;
+  /**
+   * "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in the plan.db fleet,
+   * never launched) · "orphaned" (a live pid whose project was deleted — unrestorable; recovery
+   * reaps it, #1279).
+   */
+  status: "running" | "dormant" | "planned" | "orphaned" | string;
   projectKey?: string | null;
   repo?: string | null;
   /** A cwd to reopen the session at — worktree for a worker, hub for the director. */
@@ -25,7 +29,10 @@ export interface DiscoveredSession {
 export interface RecoverableSession extends DiscoveredSession {
   /** Parsed from the id grammar (`director` / `worker` / `triage` / `manual` / `positional`). */
   kind: PaneIdentityKind | "unknown";
-  /** Manual scratch shells are reap-only — never restored (#1176). */
+  /**
+   * The session is reap-only — killed, never restored. True for manual scratch shells (#1176) and
+   * for `orphaned` shells of a deleted project (no plan to rehydrate, no project to attribute, #1279).
+   */
   reapOnly: boolean;
 }
 
@@ -62,8 +69,9 @@ export function openPaneIds(tabs: ReconcileTab[]): Set<string> {
 /**
  * Reconcile the backend's discovered sessions against the open tabs (#1266 S3): keep only the
  * sessions NOT currently represented by an open pane, each enriched with its parsed `kind` and a
- * `reapOnly` flag (manual scratch shells are never restored). This is the gap the recovery UI
- * presents for the user to decide on.
+ * `reapOnly` flag. Reap-only sessions are killed, never restored: manual scratch shells (#1176)
+ * and `orphaned` shells of a deleted project (unrestorable — no plan, no project, #1279). This is
+ * the gap the recovery UI presents for the user to decide on.
  */
 export function reconcileSessions(discovered: DiscoveredSession[], tabs: ReconcileTab[]): RecoverableSession[] {
   const open = openPaneIds(tabs);
@@ -71,6 +79,6 @@ export function reconcileSessions(discovered: DiscoveredSession[], tabs: Reconci
     .filter((d) => !open.has(d.paneId))
     .map((d) => {
       const kind = parsePaneIdentity(d.paneId)?.kind ?? "unknown";
-      return { ...d, kind, reapOnly: kind === "manual" };
+      return { ...d, kind, reapOnly: kind === "manual" || d.status === "orphaned" };
     });
 }
