@@ -1110,7 +1110,7 @@ mod tests {
     #[test]
     fn shared_fixture_matches_serde() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/lib/tunnel/tunnelProtocol.fixtures.json");
+            .join("../src/features/tunnel/lib/tunnelProtocol.fixtures.json");
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
         let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
