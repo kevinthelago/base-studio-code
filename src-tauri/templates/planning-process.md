@@ -543,16 +543,16 @@ not a one-off prose sketch it has to re-derive:
    version, the algorithm/architecture, the data structures, the known pitfalls, and
    the perf/accuracy constraints.
 2. **Break the problem into one or more Skills.** Instead of leaving the grounded
-   approach as prose, emit a **Skill** — a reusable capability bundle (prompt +
-   bundled tools + profile guardrails) — into `skills.json` (see "Manage the Skills
+   approach as prose, author a **Skill** — a reusable capability bundle (prompt +
+   bundled tools + profile guardrails) — with `bsc-skill add` (see "Manage the Skills
    library"). The skill encodes the procedure you and the user worked out: the ordered
    steps, the named tools, the guardrails, and the success checks. The agent that
    builds the unit **invokes the skill** rather than re-deriving the approach.
    - **Scope it to this project** so the fleet picks it up: set the skill's
      `projects` to this project's key and leave it `pinned` (the default) — pinned,
      project-scoped skills are auto-available to every worker on the project. (There
-     is no per-stream assignment tag; the `skills.json` entry + `projects`/`pinned`
-     scoping IS the assignment.)
+     is no per-stream assignment tag; the skill's `projects`/`pinned` scoping IS the
+     assignment.)
    - Planner-generated skills are carried into each worker's worktree at fleet launch
      (`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is.
 3. **Fold the grounded approach into the issues.** The sourced approach becomes each
@@ -733,13 +733,13 @@ or `push=none` for a pure reviewer/explorer.
 <agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
 ```
 
-**Manage the Skills library** (reusable procedures the fleet can invoke). Write
-`skills.json` in this directory — the authoritative channel the app polls (the file
-is the channel of record). It is a JSON array of skill objects; overwrite the whole
-file to update the set. This is where the feature workshop's **"dissect hard problems
+**Manage the Skills library** (reusable procedures the fleet can invoke). Author each
+skill with `bsc-skill add` — pipe a skill object as JSON on stdin (one object, or an
+array to add several at once); it upserts into the global Skills library and prints
+the assigned id(s). This is where the feature workshop's **"dissect hard problems
 → Skills"** step deposits each capability it distils (see "Hard topics"):
 ```
-[{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}]
+echo '{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}' | bsc-skill add
 ```
 - `kind` — one of `workflow|scaffold|codemod|review|docs` (defaults to `workflow`).
 - `description` — one line summarizing what the skill does (the parser also accepts `desc`).
@@ -752,12 +752,12 @@ file to update the set. This is where the feature workshop's **"dissect hard pro
   **auto-available to every worker on the project**.
 
 **Assignment is by scoping, not a tag.** There is no per-stream assignment and no
-inline tag — a skill's `projects` + `pinned` fields ARE its assignment. The app
-upserts each `skills.json` entry into the global Skills library and, at fleet launch,
-copies every pinned skill scoped to this project into each worker's worktree
+inline tag — a skill's `projects` + `pinned` fields ARE its assignment. Each skill you
+add lands in the global Skills library and, at fleet launch, every pinned skill scoped
+to this project is copied into each worker's worktree
 (`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is. So to "hand the
-agent the means to solve a hard unit," write the skill into `skills.json` with this
-project's key in `projects` and leave it pinned.
+agent the means to solve a hard unit," `bsc-skill add` the skill with this project's
+key in `projects` and leave it pinned.
 
 ## GitHub tools — read-only orientation
 
