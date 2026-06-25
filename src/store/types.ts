@@ -13,7 +13,7 @@ import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "../lib/conso
 import type { SessionRole } from "../lib/session/sessionRoles";
 import type { AgentFlow } from "../screens/planner/fleet/agentFlow";
 import type { WorkflowRun } from "../lib/fleet/conductor";
-import type { AgentProfile } from "../screens/agents/agentProfiles";
+import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import type { FleetPlan, AgentStream } from "../screens/planner/stages/planSections";
 import type { Topology } from "../screens/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "../screens/planner/stages/planStages";

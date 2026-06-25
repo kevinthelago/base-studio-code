@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProfileSelect, appSessionTag, appSessionOpenLabel, appReachNote } from "./";
-import { APP_ROLES, findProfile, type AgentProfile } from "./agentProfiles";
+import { ProfileSelect, appSessionTag, appSessionOpenLabel, appReachNote } from "./AgentsScreen";
+import { APP_ROLES, findProfile, type AgentProfile } from "./lib/agentProfiles";
 
 describe("app-session role labels (#740)", () => {
   it("each app role gets a distinct type chip — no non-librarian collapses to 'librarian'", () => {

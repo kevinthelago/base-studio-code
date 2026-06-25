@@ -37,7 +37,7 @@ const McpScreen         = lazy(() => import("@/features/extensions").then((m) =>
 const SettingsScreen    = lazy(() => import("./screens/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("./screens/planner").then((m) => ({ default: m.ProjectsScreen })));
 const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));
-const AgentsScreen      = lazy(() => import("./screens/agents").then((m) => ({ default: m.AgentsScreen })));
+const AgentsScreen      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsScreen })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 function ScreenFallback() {
