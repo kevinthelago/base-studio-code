@@ -8,7 +8,7 @@ import { FocusedSourceBody } from "./FocusedSourceBody";
 // The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so
 // each starts from an empty config.
 beforeEach(() => {
-  useAppStore.setState({ planSourceConfig: {} });
+  useAppStore.setState({ planSourceConfig: {}, planningPitch: "" });
 });
 
 describe("FocusedSourceBody — catalog → declare", () => {
@@ -81,6 +81,26 @@ describe("FocusedSourceBody — planner-proposed", () => {
     const cfg = useAppStore.getState().planSourceConfig.p2;
     expect(cfg.sources.map((s) => s.connectorId).sort()).toEqual(["quickbase", "quickbooks"]);
     expect(cfg.proposed).toEqual([]); // cleared once acted on
+  });
+
+  it("seeds the Confirm-N-sources banner from the planner pitch on first open (#1349)", async () => {
+    // A fresh project (no stored source config) with a pitch that names two legacy systems.
+    useAppStore.setState({ planningPitch: "Migrate off QuickBooks and Salesforce into one app." });
+    render(<FocusedSourceBody projectId="pitch1" />);
+    // The proposed-from-pitch ids land in the config → the banner surfaces with the right count …
+    await waitFor(() => expect(screen.getByTestId("proposed-confirm").textContent).toMatch(/Confirm 2 sources/));
+    expect(useAppStore.getState().planSourceConfig.pitch1.proposed.sort()).toEqual(["quickbooks", "salesforce"]);
+    // … and confirming declares exactly those sources.
+    fireEvent.click(screen.getByTestId("proposed-confirm"));
+    expect(useAppStore.getState().planSourceConfig.pitch1.sources.map((s) => s.connectorId).sort()).toEqual(["quickbooks", "salesforce"]);
+  });
+
+  it("does not seed when the pitch names no known system", async () => {
+    useAppStore.setState({ planningPitch: "A brand-new greenfield app with no legacy systems." });
+    render(<FocusedSourceBody projectId="pitch2" />);
+    // Nothing proposed → no banner, the catalog shows instead.
+    await waitFor(() => expect(screen.getByTestId("connector-catalog")).toBeTruthy());
+    expect(screen.queryByTestId("proposed-confirm")).toBeNull();
   });
 });
 
