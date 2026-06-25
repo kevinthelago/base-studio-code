@@ -235,6 +235,19 @@ pub(crate) const BSC_PLAN_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
+/// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
+/// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
+/// tags the lesson with the session's provenance ($BSC_AUDIT_PANE + $BSC_REPO_ROOT) and delegates to
+/// `bsc-plan lesson add`, which stores + de-dupes it in THIS project's plan.db (so it's queued for the
+/// user to confirm/discard). A thin wrapper over the existing `bsc-plan` helper — no new env, no PATH
+/// changes. Only meaningful in a project/fleet session (one with a $BSC_PLAN_DB); elsewhere bsc-plan
+/// reports no plan store. A raw string keeps the embedded quotes readable.
+pub(crate) const BSC_LEARNED_RC: &str = concat!(
+    r#"bsc-learned() { m="$1"; shift 2>/dev/null; r=""; c=""; while [ "$#" -gt 0 ]; do case "$1" in --rule) r="${2:-}"; shift 2 2>/dev/null || shift ;; --cause) c="${2:-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; if [ -z "$m" ] && [ -z "$r" ]; then echo 'bsc-learned: usage: bsc-learned "<mistake>" --rule "<rule>" [--cause "<why>"]' >&2; return 2; fi; p="pane ${BSC_AUDIT_PANE:-?}"; [ -n "${BSC_REPO_ROOT:-}" ] && p="$p, repo ${BSC_REPO_ROOT}"; bsc-plan lesson add "$m" --rule "$r" --cause "$c" --from "$p"; }"#,
+    "\n",
+);
+
 #[cfg(test)]
 mod tests {
 
@@ -443,7 +456,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -459,6 +472,7 @@ mod tests {
             super::BSC_DEFER_RC,
             super::BSC_FLEET_RC,
             super::BSC_PLAN_RC,
+            super::BSC_LEARNED_RC,
         );
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -624,6 +638,62 @@ mod tests {
         let got = std::fs::read_to_string(&argsfile).unwrap_or_default();
         assert_eq!(got.trim(), "list myskill", "the CLI stub should receive the subcommand args");
         assert!(!log.exists(), "the telemetry log must NOT be written when bsc-skill runs with args");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_learned_delegates_to_bsc_plan_lesson_add() {
+        // #1362: `bsc-learned "<mistake>" --rule "<rule>"` must capture the lesson by delegating to
+        // `bsc-plan lesson add …` — the plan-store CLI ($BSC_PLAN_BIN). We stub that binary to record
+        // its args and assert the verb + mistake + rule + provenance came through. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_learned test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-learned-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        // bsc-learned delegates to the `bsc-plan` helper, so install BOTH rc fragments.
+        std::fs::write(&rc, format!("{}{}", super::BSC_PLAN_RC, super::BSC_LEARNED_RC)).unwrap();
+
+        // Stub `bsc-plan` ($BSC_PLAN_BIN): write its args, one per line, to args.txt.
+        let stub = dir.join("bsc-plan-stub.sh");
+        let argsfile = dir.join("args.txt");
+        let argsfile_bash = crate::to_bash_path(&argsfile.to_string_lossy());
+        std::fs::write(&stub, format!("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{argsfile_bash}'\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let stub_bash = crate::to_bash_path(&stub.to_string_lossy());
+
+        let status = Command::new(&shell)
+            .arg("-c").arg(r#"bsc-learned "broke the build" --rule "verify after the merge""#)
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_PLAN_BIN", &stub_bash)
+            .env("BSC_AUDIT_PANE", "t0p2")
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status().unwrap();
+        assert!(status.success(), "bsc-learned should delegate successfully");
+
+        // Args land one-per-line; the value-bearing flags keep their argument as the NEXT line.
+        let got = std::fs::read_to_string(&argsfile).unwrap_or_default();
+        let lines: Vec<&str> = got.lines().collect();
+        assert_eq!(&lines[0..3], &["lesson", "add", "broke the build"], "verb + mistake passed through: {lines:?}");
+        let rule_i = lines.iter().position(|l| *l == "--rule").expect("--rule present");
+        assert_eq!(lines[rule_i + 1], "verify after the merge", "the rule value passed through");
+        let from_i = lines.iter().position(|l| *l == "--from").expect("--from present");
+        assert!(lines[from_i + 1].contains("t0p2"), "provenance carries the pane id: {:?}", lines[from_i + 1]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

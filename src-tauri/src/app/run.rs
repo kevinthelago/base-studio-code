@@ -266,6 +266,11 @@ pub fn run() {
             plan_db::plan_triage_record_run,
             plan_db::plan_triage_last_run,
             plan_db::plan_issues_changed_since,
+            plan_db::plan_lesson_list,
+            plan_db::plan_lesson_confirm,
+            plan_db::plan_lesson_discard,
+            plan_db::plan_lesson_remove,
+            plan_db::plan_lesson_expire,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
