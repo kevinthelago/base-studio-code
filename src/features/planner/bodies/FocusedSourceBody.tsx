@@ -564,12 +564,6 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
         <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only · credentials never leave this device"}</span>
       </div>
 
-      {/* reassurance row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <InfoChip color="var(--success)">READ-ONLY · never writes back</InfoChip>
-        <InfoChip>🛡 Credentials stay on this device</InfoChip>
-      </div>
-
       {/* planner-proposed sources */}
       {proposedPending.length > 0 && (
         <div style={{ background: "color-mix(in oklch, var(--accent), transparent 93%)", border: "1px solid color-mix(in oklch, var(--accent), transparent 78%)", borderRadius: "var(--r-md)", padding: "11px 12px", display: "flex", flexDirection: "column", gap: 9 }}>

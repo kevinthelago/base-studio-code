@@ -16,7 +16,7 @@ describe("FocusedSourceBody — catalog → declare", () => {
     render(<FocusedSourceBody projectId="p1" />);
     expect(screen.getByTestId("connector-catalog")).toBeTruthy();
     expect(screen.getByTestId("connector-tile-quickbase")).toBeTruthy();
-    expect(screen.getByText(/Credentials stay on this device/i)).toBeTruthy();
+    expect(screen.getByText(/credentials never leave this device/i)).toBeTruthy();
   });
 
   it("declaring a connector adds its card and collapses the catalog into a chip-bar", () => {
