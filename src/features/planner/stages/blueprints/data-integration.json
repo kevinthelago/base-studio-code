@@ -20,8 +20,7 @@
     { "key": "sync" },
     { "key": "dataClean" },
     { "key": "integrations" },
-    { "key": "structure" },
-    { "key": "permissions" },
+    { "key": "structure", "fleet": true },
     { "key": "deploy" }
   ]
 }
