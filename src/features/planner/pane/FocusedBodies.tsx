@@ -1356,8 +1356,8 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "integrations":
       return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
-      // #1383: one "Repositories & Deployment" pane. The link section always shows; the deploy
-      // ("ship") section folds in below it when the blueprint opted into ship (phase.ship). A
+      // #1383: one "Deployment" pane (repos linking + deploy). The link section always shows; the
+      // deploy ("ship") section folds in below it when the blueprint opted into ship (phase.ship). A
       // blueprint that still lists Deploy as its own stage uses `case "deploy"` below (unchanged).
       return (
         <>

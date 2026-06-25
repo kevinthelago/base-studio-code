@@ -67,7 +67,7 @@ import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BAS
 import { findPlanGaps } from "../grading/lintPlan";
 import { findPlanInjections, injectionGate } from "../grading/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
@@ -1092,7 +1092,7 @@ export function Planning({ visible }: { visible: boolean }) {
     // stage set across version / active-blueprint changes instead of adopting the library selection.
     const bpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
     const bp = st.blueprints.find(b => b.id === bpId);
-    if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
+    if (bp) return bp.sections.filter(s => s.enabled).map(stageDirectiveId);
     return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
   };
 

@@ -4,7 +4,7 @@ import {
   sectionStatus, incompleteSections, planSectionsComplete, currentSection, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, sectionDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
-  SECTION_DEFS, type BlueprintSection, type Blueprint,
+  stageDirectiveId, SECTION_DEFS, type BlueprintSection, type Blueprint,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
@@ -320,10 +320,10 @@ describe("Deploy folds in dependencies (#1127)", () => {
   });
 
   it("folds Deploy into the Repos stage as a ship substep when a blueprint opts in (#1383)", () => {
-    // ship:true → one "Repositories & Deployment" stage with link+ship substeps, and the gate is the
-    // UNION (repos linked AND shipping+deps). Non-ship → plain Repos, repos-only gate, no substeps.
+    // ship:true → one "Deployment" stage with link+ship substeps, and the gate is the UNION (repos
+    // linked AND shipping+deps). Non-ship → plain Repos, repos-only gate, no substeps.
     const merged = mkSection("repos", { ship: true });
-    expect(merged.name).toBe("Repositories & Deployment");
+    expect(merged.name).toBe("Deployment");
     expect(merged.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
     const sig = merged.gateRule!.require.map((r) => r.signal);
     expect(sig).toEqual(expect.arrayContaining(["repoCount", "deploymentDefined", "dependenciesDefined"]));
@@ -379,6 +379,33 @@ describe("Deploy folds in dependencies (#1127)", () => {
     const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
     expect(refactor.sections.map((s) => s.key)).toContain("permissions");
     expect(refactor.sections.find((s) => s.key === "structure")).toBeUndefined();
+  });
+});
+
+describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#1392)", () => {
+  it("maps a merged stage to its combined directive id, leaving plain stages alone", () => {
+    expect(stageDirectiveId(mkSection("repos", { ship: true }))).toBe("repos_deploy");
+    expect(stageDirectiveId(mkSection("repos"))).toBe("repos");          // transform: link-only, no deploy
+    expect(stageDirectiveId(mkSection("structure", { fleet: true }))).toBe("streams");
+    expect(stageDirectiveId(mkSection("structure"))).toBe("structure");  // plan-only
+    expect(stageDirectiveId(mkSection("context"))).toBe("context");
+  });
+
+  it("the complete blueprint's planner-overview stages read as the merged structure", () => {
+    const complete = makeBlueprints().find((b) => b.id === "complete")!;
+    const overview = complete.sections.filter((s) => s.enabled).map(stageDirectiveId);
+    expect(overview).toEqual(
+      ["context", "repos_deploy", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
+    );
+  });
+
+  it("a transform blueprint keeps repos link-only but still merges structure→streams (#1383/#1392)", () => {
+    // harden has repos WITHOUT deploy, structure WITH fleet → repos stays `repos`, structure → streams.
+    const harden = makeBlueprints().find((b) => b.id === "harden")!;
+    const ids = harden.sections.filter((s) => s.enabled).map(stageDirectiveId);
+    expect(ids).toContain("repos");        // not repos_deploy
+    expect(ids).not.toContain("repos_deploy");
+    expect(ids).toContain("streams");
   });
 });
 
