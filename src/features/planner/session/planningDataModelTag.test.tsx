@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDataModelTag, stripDataModelTags } from "./Planning";
+import { parseDataModelTag, stripDataModelTags } from "./planningParse";
 
 // Minimal valid DataModel payload
 const MODEL_JSON = JSON.stringify({
