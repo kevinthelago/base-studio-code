@@ -1366,7 +1366,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
         <FocusedReposDeployBody
           repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
           dependencies={data?.dependencies} registries={data?.registries}
-          onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic}
+          onLinkRepo={onLinkRepo} reposPublic={reposPublic}
           repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic}
         />
       ) : (
