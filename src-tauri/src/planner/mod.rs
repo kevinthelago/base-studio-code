@@ -60,7 +60,8 @@ mod tests {
     fn stage_directive_skills_grounds_in_research() {
         let d = stage_directive("skills");
         assert!(d.contains("Research"), "skills directive must point at the Research MCP");
-        assert!(d.contains("`skills.json`"), "skills are still recorded in skills.json");
+        assert!(d.contains("bsc-skill add"), "skills are authored via the bsc-skill CLI");
+        assert!(!d.contains("skills.json"), "the planner must no longer be told to write skills.json (#1412)");
         // Names the concrete grounding tools and the cite-don't-fabricate rule.
         assert!(d.contains("search") && d.contains("semantic_search"), "must name the Research tools");
         assert!(d.to_lowercase().contains("cite") || d.to_lowercase().contains("cited"), "must require citing sources");
