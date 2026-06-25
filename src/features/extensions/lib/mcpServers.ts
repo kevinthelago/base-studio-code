@@ -29,6 +29,7 @@ export interface McpServer {
  */
 export const BUILTIN_MCP_SERVERS: McpServer[] = [
   { id: "builtin-research", name: "Research", enabled: true, projects: [], transport: "stdio", command: "bsc-research-mcp", args: "" },
+  { id: "builtin-compliance", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "bsc-compliance-mcp", args: "" },
 ];
 
 /** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive). */
@@ -140,7 +141,11 @@ const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> = {
   // when the entry is added (addFromCatalog); the user downloads + builds via the card.
   // `python -m uv` (not a bare `uv`): uv is installed as a Python module and its console-script
   // shim often isn't on PATH on a fresh machine — `python -m uv` runs without any PATH setup (#887).
-  "Compliance":          { transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" },
+  // Built-in native server (#1005): no download/build/Docker. `bsc-compliance-mcp` is a marker the
+  // Rust side rewrites to the bundled binary's absolute path when writing .mcp.json — same model as
+  // Research. Kept here so the planner's `<mcp_assign name="Compliance" />` path also resolves to
+  // the native binary.
+  "Compliance":          { transport: "stdio", command: "bsc-compliance-mcp", args: "" },
   "Complexity Analyzer": { transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
   "Dependency Graph":    { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
   // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).

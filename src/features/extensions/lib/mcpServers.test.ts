@@ -7,8 +7,10 @@ const mk = (over: Partial<McpServer>): McpServer => ({
   id: "e", name: over.id ?? "e", enabled: true, projects: [], transport: "stdio", ...over,
 });
 
-// Drop the always-present built-in servers (#1196) so the user-server assertions stay focused.
-const noBuiltins = (servers: McpServer[]) => servers.map(e => e.id).filter(id => id !== "builtin-research");
+// Drop the always-present built-in servers (#1196 Research, #1005 Compliance) so the user-server
+// assertions stay focused.
+const noBuiltins = (servers: McpServer[]) =>
+  servers.map(e => e.id).filter(id => id !== "builtin-research" && id !== "builtin-compliance");
 
 describe("resolveMcpServers", () => {
   it("includes enabled globals + this-project matches; drops disabled and other projects", () => {
@@ -24,8 +26,10 @@ describe("resolveMcpServers", () => {
     expect(noBuiltins(resolveMcpServers(all, ""))).toEqual(["g"]);
   });
 
-  it("always includes the built-in Research server (#1196)", () => {
-    expect(resolveMcpServers([], "").map(e => e.name)).toContain("Research");
+  it("always includes the built-in Research + Compliance servers (#1196 / #1005)", () => {
+    const names = resolveMcpServers([], "").map(e => e.name);
+    expect(names).toContain("Research");
+    expect(names).toContain("Compliance");
   });
 });
 
@@ -41,8 +45,10 @@ describe("resolveAllInstalledMcp", () => {
     expect(noBuiltins(resolveAllInstalledMcp(all))).toEqual(["g", "off", "scoped", "http"]);
   });
 
-  it("exposes the built-in Research server to the planner by default (#1196)", () => {
-    expect(resolveAllInstalledMcp([]).map(e => e.name)).toContain("Research");
+  it("exposes the built-in Research + Compliance servers to the planner by default (#1196 / #1005)", () => {
+    const names = resolveAllInstalledMcp([]).map(e => e.name);
+    expect(names).toContain("Research");
+    expect(names).toContain("Compliance");
   });
 });
 
@@ -62,8 +68,10 @@ describe("resolveStreamMcp", () => {
     expect(noBuiltins(resolveStreamMcp(all, ["g"], "P1"))).toEqual(["g", "p"]);
   });
 
-  it("rides the worker baseline with the built-in Research server (#1196)", () => {
-    expect(resolveStreamMcp(all, [], "P1").map(e => e.name)).toContain("Research");
+  it("rides the worker baseline with the built-in Research + Compliance servers (#1196 / #1005)", () => {
+    const names = resolveStreamMcp(all, [], "P1").map(e => e.name);
+    expect(names).toContain("Research");
+    expect(names).toContain("Compliance");
   });
 });
 
@@ -93,7 +101,7 @@ describe("catalog templates + blank", () => {
   });
 
   it("includes the first-party downloadable MCP servers with download links + run configs (#858)", () => {
-    const firstParty = ["Compliance", "Complexity Analyzer", "Dependency Graph", "Plan Grader"];
+    const firstParty = ["Complexity Analyzer", "Dependency Graph", "Plan Grader"];
     for (const name of firstParty) {
       const item = MCP_CATALOG.find((c) => c.name === name);
       expect(item, `${name} in catalog`).toBeDefined();
@@ -102,20 +110,22 @@ describe("catalog templates + blank", () => {
     }
     // "add" produces a stdio config whose args carry the {dir} placeholder, substituted with the
     // on-disk download path (~/.base-studio-code/mcp/<repo>) when added.
-    expect(mcpFromCatalog("Compliance")).toMatchObject({ transport: "stdio", command: "python", args: "-m uv run --directory {dir} compliance-mcp" });
     expect(mcpFromCatalog("Complexity Analyzer")).toMatchObject({ command: "node", args: "{dir}/dist/mcp/index.js" });
     expect(mcpFromCatalog("Dependency Graph")).toMatchObject({ command: "node", args: "{dir}/dist/index.js" });
     expect(mcpFromCatalog("Plan Grader")).toMatchObject({ transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" });
   });
 
-  it("presents Research as a built-in server — no download/build, native binary (#1196)", () => {
-    const item = MCP_CATALOG.find((c) => c.name === "Research");
-    expect(item?.builtIn).toBe(true);
-    expect(item?.link).toBeUndefined();
-    expect(item?.install).toBeUndefined();
-    // Its template points at the bundled native binary marker (the Rust side rewrites it to the
-    // absolute path when writing .mcp.json), not a downloaded Node entrypoint.
+  it("presents Research + Compliance as built-in servers — no download/build, native binary (#1196 / #1005)", () => {
+    for (const name of ["Research", "Compliance"]) {
+      const item = MCP_CATALOG.find((c) => c.name === name);
+      expect(item?.builtIn, `${name} built-in`).toBe(true);
+      expect(item?.link).toBeUndefined();
+      expect(item?.install).toBeUndefined();
+    }
+    // Each template points at its bundled native binary marker (the Rust side rewrites it to the
+    // absolute path when writing .mcp.json), not a downloaded Node/Python entrypoint.
     expect(mcpFromCatalog("Research")).toMatchObject({ transport: "stdio", command: "bsc-research-mcp", args: "" });
+    expect(mcpFromCatalog("Compliance")).toMatchObject({ transport: "stdio", command: "bsc-compliance-mcp", args: "" });
   });
 
   it("blankMcpServer produces an empty stdio shape", () => {
