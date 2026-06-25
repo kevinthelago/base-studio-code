@@ -12,7 +12,7 @@
 // shared with the standalone Deploy stage), so there's no header gate/ship pill (#1403).
 
 import { useState } from "react";
-import { readyServiceCount, type DeployConfig, type DeployService } from "../shared/deployConfig";
+import { type DeployConfig, type DeployService } from "../shared/deployConfig";
 import { RepoDeployCard } from "./DeployView";
 import type { Repo } from "../pane/projectPane.types";
 
@@ -135,27 +135,9 @@ export function FocusedReposDeployBody({
     </>
   );
 
-  // ── header — title + the design's "N of M repos deploy-ready" counter (#1421) ──
+  // The focused pane's phase header already titles this stage (+ gate pill), so the body renders no
+  // header of its own (#1430 follow-up) — just the per-repo cards.
   const total = list.length;
-  const ready = readyServiceCount(d);
-  const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{
-        width: 19, height: 19, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
-        color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 84%)", border: "1px solid var(--accent-dim)",
-      }}>⎇</span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Repositories &amp; Deployment</span>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)" }}>how each repository ships — defined per repo</span>
-      </div>
-      <span style={{ flex: 1 }} />
-      {total > 0 && (
-        <span style={{ fontFamily: MONO, fontSize: 10.5, color: ready === total ? "var(--success)" : "var(--fg-muted)" }}>
-          <span style={{ color: "var(--fg)" }}>{ready}</span> of {total} repos deploy-ready
-        </span>
-      )}
-    </div>
-  );
 
   // ── body — one per-repo card (RepoDeployCard) with the repo's git identity folded into its row;
   //    each repo is a self-contained deployable unit (#1421). Project-wide locked deps as a tail. ──
@@ -212,7 +194,6 @@ export function FocusedReposDeployBody({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {header}
       {body}
     </div>
   );

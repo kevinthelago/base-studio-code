@@ -17,15 +17,15 @@ function expandRepo(fullName: string) {
 }
 
 describe("FocusedDeployBody — per-repo cards (#1421)", () => {
-  it("renders the Deployment header, one card per repo, and the ready counter — no deps tail (#1429)", () => {
+  it("renders one card per repo — no in-body header (#1430), no deps tail (#1429)", () => {
     render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web", "acme/api"])} />);
-    expect(screen.getByText("Deployment")).toBeInTheDocument();
-    expect(screen.getByText("how each repository ships — defined per repo")).toBeInTheDocument();
     expect(screen.getByText("acme/web")).toBeInTheDocument();
     expect(screen.getByText("acme/api")).toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.textContent === "0 of 2 repos deploy-ready")).toBeTruthy();
     // both start untargeted
     expect(screen.getAllByText("set target →").length).toBe(2);
+    // the in-body header was removed — the pane chrome titles the stage (#1430)
+    expect(screen.queryByText("Deployment")).not.toBeInTheDocument();
+    expect(screen.queryByText(/repos deploy-ready/)).not.toBeInTheDocument();
     // dependencies were removed from the deploy pane (#1429)
     expect(screen.queryByText("DEPENDENCIES")).not.toBeInTheDocument();
     expect(screen.queryByText("Dependencies")).not.toBeInTheDocument();
