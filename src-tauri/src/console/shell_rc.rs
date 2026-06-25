@@ -575,6 +575,59 @@ mod tests {
     }
 
     #[test]
+    fn bsc_skill_with_args_execs_the_cli_not_the_hook() {
+        // #1338: `bsc-skill <subcommand …>` (ANY args) must run the $BSC_SKILL_BIN library CLI, NOT
+        // the #406 telemetry hook. Point BSC_SKILL_BIN at a stub that records its args, run
+        // `bsc-skill list myskill`, and assert the stub saw `list myskill` while the telemetry log was
+        // never written. Skips where bash isn't on PATH (same gating as the other helper-run tests).
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_skill dispatch test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-skill-cli-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_SKILL_RC).unwrap();
+
+        // The stub "CLI": write its args to args.txt. A shebang lets bash exec it by path.
+        let stub = dir.join("bsc-skill-stub.sh");
+        let argsfile = dir.join("args.txt");
+        let argsfile_bash = crate::to_bash_path(&argsfile.to_string_lossy());
+        std::fs::write(&stub, format!("#!/bin/sh\nprintf '%s' \"$*\" > '{argsfile_bash}'\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let log = dir.join("skills.log");
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        let stub_bash = crate::to_bash_path(&stub.to_string_lossy());
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+        let status = Command::new(&shell)
+            .arg("-c").arg("bsc-skill list myskill")
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_SKILL_BIN", &stub_bash)
+            .env("BSC_SKILL_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t0p1")
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status().unwrap();
+        assert!(status.success(), "bsc-skill list should exec the CLI stub successfully");
+
+        let got = std::fs::read_to_string(&argsfile).unwrap_or_default();
+        assert_eq!(got.trim(), "list myskill", "the CLI stub should receive the subcommand args");
+        assert!(!log.exists(), "the telemetry log must NOT be written when bsc-skill runs with args");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn bsc_activity_appends_run_and_idle_lines_and_drains_stdin() {
         // bsc-activity (#1184) must run from the agent's own `bash -c` subshells (rc + BASH_ENV)
         // and append ONE TSV line — `ts(epoch-ms) \t pane \t state` — to $BSC_ACTIVITY_LOG per call.

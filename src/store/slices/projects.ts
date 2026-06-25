@@ -584,10 +584,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 newPaneHooks[key] = fleetHooks;
                 // Per-session skills (#1056): project-resolved set + this session's override + any
                 // task groups toggled onto it (#skills-groups), keyed by the worker/director's
-                // stable identity id.
+                // stable identity id. The stream's planner-assigned groups (#1338, `sess.groupIds`)
+                // are unioned with the session's manually-toggled groups before expansion, so a
+                // worker inherits the skill groups the planner picked for its stream.
                 newPaneSkills[key] = effectiveSessionSkills(
                   s.skills, projectKey, s.sessionSkillOverrides[key],
-                  new Set(expandGroups(s.sessionSkillGroups[key] ?? [], s.skillGroups)),
+                  new Set(expandGroups(
+                    [...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups,
+                  )),
                 );
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 newPaneProviders[key] = fleetHarness;

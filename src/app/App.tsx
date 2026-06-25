@@ -241,6 +241,10 @@ export default function App() {
     invoke<boolean>("was_unclean_shutdown")
       .then((v) => useAppStore.getState().setUncleanShutdown(v))
       .catch(() => { /* command absent (e.g. tests) — leave false */ });
+    // Skills library (#1338 ph2): hydrate from the global skills.db so the desktop UI, the planner,
+    // and every live `bsc-skill` session share ONE library. Reconciles the code-owned packaged set
+    // and seeds the db on first run; a no-op when the bridge is absent (keeps the seeded set).
+    void useAppStore.getState().hydrateSkills();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
