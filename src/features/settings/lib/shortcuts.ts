@@ -7,7 +7,7 @@
 //
 // Pure data (no React / DOM) so it's unit-testable and importable anywhere.
 
-import type { Screen } from "../../components/chrome/Rail";
+import type { Screen } from "@/components/chrome/Rail";
 
 /** A function-key → screen binding, shown in the catalog and used by useHotkeys. */
 export interface ScreenHotkey {

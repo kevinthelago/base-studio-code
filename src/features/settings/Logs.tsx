@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import type { LogConfig } from "../../store";
+import { useAppStore } from "@/store";
+import type { LogConfig } from "@/store";
 
 // ── Reusable atoms (mirrors Performance.tsx) ─────────────────────────────────────
 

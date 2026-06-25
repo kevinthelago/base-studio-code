@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
-import type { PerfConfig } from "../../store";
+import { useAppStore } from "@/store";
+import type { PerfConfig } from "@/store";
 
 // ── Reusable atoms ─────────────────────────────────────────────────────────────
 

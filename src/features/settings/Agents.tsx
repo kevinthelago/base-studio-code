@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 const PRESETS: { label: string; commands: string[] }[] = [
   { label: "Rust",   commands: ["cargo", "rustc", "rustfmt"] },

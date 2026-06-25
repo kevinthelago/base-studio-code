@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GeneralSettings } from "./General";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 describe("GeneralSettings", () => {
   beforeEach(() => {

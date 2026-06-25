@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { GitHubSettings } from "./GitHub";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 // Behavioral coverage for the device-flow card (#594): clicking Connect surfaces the
 // user code. The original #594 regression (the device code never rendered) only

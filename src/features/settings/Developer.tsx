@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../../store";
+import { useAppStore } from "@/store";
 
 // A two-step confirm button: the first click arms it (turns red), the second
 // click within the same focus fires. Blur disarms, so a stray click is safe.
