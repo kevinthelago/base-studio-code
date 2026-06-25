@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseAuditLog, toRow, decideAudit, type AuditRecord } from "./auditLog";
 import { resolveProfileSettings } from "./profileEnforcement";
 import { findProfile } from "./agentProfiles";
-import { roleCapability } from "../../lib/session/sessionRoles";
+import { roleCapability } from "@/lib/session/sessionRoles";
 
 const rec = (toolName: string, target: string): AuditRecord => ({
   ts: "2026-05-30T12:00:00.000Z",
