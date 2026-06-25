@@ -146,6 +146,24 @@ describe("task groups (#skills-groups)", () => {
     expect(g.find((x) => x.name === "Release day")!.skillIds).toEqual(["a"]);
   });
 
+  it("ensureSessionGroup creates the per-project session group with a fixed id + name (#1419)", () => {
+    useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme CRM");
+    const g = useAppStore.getState().skillGroups;
+    expect(g).toHaveLength(1);
+    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme CRM", skillIds: [] });
+  });
+
+  it("ensureSessionGroup renames in place on a title change WITHOUT clobbering members (#1419)", () => {
+    useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme CRM");
+    // The planner paired a skill into it (as `bsc-skill add --group` would).
+    useAppStore.getState().toggleSkillGroupMember("grp-session-acme", "sk1");
+    // Re-ensure with a new title (the project was renamed) — must keep the member, just rename.
+    useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme Platform");
+    const g = useAppStore.getState().skillGroups;
+    expect(g).toHaveLength(1); // not duplicated
+    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme Platform", skillIds: ["sk1"] });
+  });
+
   it("setSessionSkillGroup toggles a group on/off per session and prunes an emptied entry", () => {
     useAppStore.getState().setSessionSkillGroup("sessA", "g1", true);
     useAppStore.getState().setSessionSkillGroup("sessA", "g2", true);
