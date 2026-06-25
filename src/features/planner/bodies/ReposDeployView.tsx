@@ -80,10 +80,9 @@ export function FocusedReposDeployBody({
     )
   );
 
-  // ── per-repo git identity shown in the collapsed card row (branch · ahead/behind · language · agents) ──
+  // ── per-repo git identity shown in the collapsed card row (ahead/behind · language · agents) ──
   const repoMeta = (r: Repo) => (
     <>
-      <span style={{ fontFamily: MONO, fontSize: 8.5, padding: "1px 7px", borderRadius: 99, color: "var(--info)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>⎇ {r.branch}</span>
       {(r.ahead > 0 || r.behind > 0) && (
         <span style={{ fontFamily: MONO, fontSize: 8.5 }}>
           {r.ahead > 0 && <span style={{ color: "var(--success)" }}>↑{r.ahead} </span>}
@@ -130,7 +129,6 @@ export function FocusedReposDeployBody({
                 <div key={r.id} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
                   <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
-                  {r.primary && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--accent)", border: "1px solid var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 86%)" }}>primary</span>}
                   {repoMeta(r)}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>deploy seeds on save</span>
@@ -144,7 +142,6 @@ export function FocusedReposDeployBody({
                 setSvc={(patch) => setSvcFor(svc.id, patch)}
                 open={openRepo === r.id}
                 onToggle={() => setOpenRepo(openRepo === r.id ? null : r.id)}
-                primary={r.primary}
                 meta={repoMeta(r)}
               />
             );
