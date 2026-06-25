@@ -77,6 +77,7 @@ import { publishGist } from "@/features/planner/lib/gist/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, shouldAutoCompleteGate } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
+import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -1186,6 +1187,11 @@ export function Planning({ visible }: { visible: boolean }) {
       invoke("pty_write", { paneId, data: line + "\r" }).catch(console.error);
     }
   }, [paneId]);
+
+  // Drain a queued ad-hoc prompt into the live planner (#1371) — e.g. the file-intake "Route to
+  // project" ROUTE_PROMPT. Without this the prompt was set in the store but never delivered, so
+  // dropped design files were never routed into the repo.
+  usePlannerPromptDelivery(effectiveProjectId, sendPrompt);
 
 
   // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
