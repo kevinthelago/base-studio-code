@@ -57,14 +57,15 @@ describe("blueprints — seed library", () => {
   it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
-    // Default is the simplest greenfield path — no source/mcp/automations/skills.
-    expect(keysOf("default")).toEqual(["context", "repos", "deploy", "features", "ui", "structure", "permissions"]);
-    for (const k of ["source", "mcp", "automations", "skills"]) {
+    // Default is the simplest greenfield path — no source/mcp/automations/skills. Deploy is folded
+    // into the `repos` stage as a ship substep (#1383), so it's no longer a separate section key.
+    expect(keysOf("default")).toEqual(["context", "repos", "features", "ui", "structure", "permissions"]);
+    for (const k of ["source", "mcp", "automations", "skills", "deploy"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["context", "repos", "deploy", "source", "features", "ui", "structure", "permissions", "mcp", "automations", "skills"],
+      ["context", "repos", "source", "features", "ui", "structure", "permissions", "mcp", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
@@ -314,6 +315,37 @@ describe("Deploy folds in dependencies (#1127)", () => {
     expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 0 }).done).toBe(false); // deps missing
     expect(evalGate(gate, { deploymentDefined: false, dependenciesDefined: 2 }).done).toBe(false); // shipping missing
     expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);  // both ⇒ pass
+  });
+
+  it("folds Deploy into the Repos stage as a ship substep when a blueprint opts in (#1383)", () => {
+    // ship:true → one "Repositories & Deployment" stage with link+ship substeps, and the gate is the
+    // UNION (repos linked AND shipping+deps). Non-ship → plain Repos, repos-only gate, no substeps.
+    const merged = mkSection("repos", { ship: true });
+    expect(merged.name).toBe("Repositories & Deployment");
+    expect(merged.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
+    const sig = merged.gateRule!.require.map((r) => r.signal);
+    expect(sig).toEqual(expect.arrayContaining(["repoCount", "deploymentDefined", "dependenciesDefined"]));
+    // The merged gate needs repos AND shipping AND a dependency.
+    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: false, dependenciesDefined: 0 }).done).toBe(false);
+    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);
+
+    const plain = mkSection("repos");
+    expect(plain.name).toBe("Repos");
+    expect(plain.substeps).toBeUndefined();
+    expect(plain.gateRule!.require.map((r) => r.signal)).toEqual(["repoCount"]); // repos-only, unchanged
+  });
+
+  it("the greenfield blueprints opt repos into ship; data-integration keeps Deploy standalone (#1383)", () => {
+    const reposRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "repos");
+    // default + complete: repos carries the ship substep, no separate deploy section.
+    for (const id of ["default", "complete"]) {
+      expect(reposRef(id)?.substeps?.some((s) => s.key === "ship"), `${id} ships via repos`).toBe(true);
+      expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("deploy");
+    }
+    // data-integration deploys without a repos stage → keeps Deploy as its own section (unchanged).
+    const di = makeBlueprints().find((b) => b.id === "data-integration")!;
+    expect(di.sections.map((s) => s.key)).toContain("deploy");
+    expect(di.sections.find((s) => s.key === "repos")).toBeUndefined();
   });
 });
 

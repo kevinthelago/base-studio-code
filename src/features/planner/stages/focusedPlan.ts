@@ -32,6 +32,8 @@ export interface Phase {
   fraction: number;
   /** An optional stage — shown but never required (#676). */
   optional?: boolean;
+  /** The Repos stage folds Deploy in as a "ship" substep (#1383) — drives the combined body. */
+  ship?: boolean;
   /** The still-unmet gate requirements (label + progress detail) — drives the "why is this
    *  blocked" feedback on the gate pill (#805). Empty once the gate passes. */
   unmet?: { label: string; detail?: string }[];
@@ -63,6 +65,9 @@ export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): 
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,
       index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional, unmet,
+      // #1383: the Repos stage folds Deploy in as a "ship" substep when a blueprint opts in — the
+      // combined body renders the deploy block only then.
+      ship: s.substeps?.some((ss) => ss.key === "ship"),
     };
   });
 }

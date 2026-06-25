@@ -12,10 +12,8 @@
       "key": "context"
     },
     {
-      "key": "repos"
-    },
-    {
-      "key": "deploy"
+      "key": "repos",
+      "ship": true
     },
     {
       "key": "source",
