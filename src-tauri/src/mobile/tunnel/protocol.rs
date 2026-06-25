@@ -1,14 +1,15 @@
 //! Tunnel wire protocol (#1300) — the serde DTOs the desktop mirrors to mobile-studio-code.
 //! Conforms to the shipped mobile client (`mobile-studio-code/src/lib/types.ts`); the shared
-//! fixture (`../src/lib/tunnelProtocol.fixtures.json`) pins the exact byte shape (drift fails CI).
+//! `tunnelProtocol.fixtures.json` (resolved by name under `src/` via the test's `find_fixture`,
+//! so the frontend reorg can move it freely) pins the exact byte shape (drift fails CI).
 
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // ── Wire protocol ───────────────────────────────────────────────────────────────
 // Conforms to the shipped mobile client (mobile-studio-code/src/lib/types.ts). The
-// shared fixture (../src/lib/tunnelProtocol.fixtures.json) pins the exact byte shape;
-// `shared_fixture_matches_serde` (below) fails CI on any drift (#46).
+// shared tunnelProtocol.fixtures.json (resolved by name via find_fixture) pins the exact
+// byte shape; `shared_fixture_matches_serde` (below) fails CI on any drift (#46).
 
 /// One mirrored pane as the mobile client lists it. Mirrors mobile `PaneDescriptor`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
