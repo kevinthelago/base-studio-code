@@ -390,6 +390,13 @@ export function ProjectsList() {
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Published-delete is a two-step Keep-vs-Delete flow (#1216): the modal first offers Keep (default,
+  // safe) vs "delete everything"; choosing the destructive path arms a deliberate second confirm
+  // before it runs the GitHub project DELETE_MUTATION.
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  // Draft-delete now requires a confirmation (#1216) — an accidental ✕ click must not destroy the
+  // draft + its folder. Holds the draft pending confirmation.
+  const [draftDeleteTarget, setDraftDeleteTarget] = useState<DraftRow | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
@@ -507,13 +514,50 @@ export function ProjectsList() {
     setProjectsView("planning");
   }
 
-  async function handleDeleteConfirm() {
+  function closeDeleteModal() {
+    setDeleteTarget(null);
+    setDeleteError(null);
+    setConfirmDeleteAll(false);
+  }
+
+  // Remove ONLY the local footprint of a published project (#1216 "Keep the app"): the on-disk hub +
+  // per-project store state + a persisted dismissal so the next GitHub sync doesn't re-list it. The
+  // GitHub board / milestones / issues / repos are left completely untouched (no DELETE_MUTATION).
+  // Shared by Keep and by "delete everything" (which layers the GitHub teardown on top).
+  async function removeLocalFootprint(p: GhProject) {
+    // delete_project_dir clears Windows read-only files first (#793) and handles relocated worktrees
+    // without following a node_modules junction into the shared main node_modules.
+    await invoke("delete_project_dir", { projectKey: p.title })
+      .catch((e) => console.warn(`delete_project_dir failed: ${e}`));
+    // Pass BOTH the title and the GitHub node id: deleteLocalProject resolves the node id through the
+    // alias to the slug-keyed maps (#997) and guards undefined slices (#874/#791), and clears the
+    // active/planning session if this was the open project.
+    deleteLocalProject([p.title, p.id]);
+    // Persist the removal so the next GitHub sync (which still returns closed / not-yet-purged
+    // boards) doesn't re-add the card (#85).
+    dismissProject(p.id);
+    setProjects(prev => prev.filter(x => x.id !== p.id));
+  }
+
+  // "Keep the app — stop tracking it here" (#1216, the default / safe path): local cleanup only.
+  async function handleDeleteKeep() {
     if (!deleteTarget) return;
     setDeleting(true);
     setDeleteError(null);
-    // Best-effort GitHub delete: a project already deleted on the web returns a
-    // GraphQL "could not resolve to a node" error, which must NOT block removing
-    // it locally — that was the bug where stale projects couldn't be cleared.
+    await removeLocalFootprint(deleteTarget);
+    setDeleting(false);
+    closeDeleteModal();
+  }
+
+  // "Delete everything" (#1216, the explicitly destructive path): the local cleanup PLUS the GitHub
+  // Project DELETE_MUTATION (tears down the project BOARD — not the repos / their code).
+  async function handleDeleteEverything() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    // Best-effort GitHub delete: a project already deleted on the web returns a GraphQL "could not
+    // resolve to a node" error, which must NOT block removing it locally — that was the bug where
+    // stale projects couldn't be cleared (#85).
     if (githubToken) {
       try {
         await invoke("github_graphql", {
@@ -525,17 +569,9 @@ export function ProjectsList() {
         console.warn(`github project delete failed (removing locally anyway): ${e}`);
       }
     }
-    // Always remove the local footprint: the on-disk hub + per-project store state,
-    // keyed by the planning session key (title) and the GitHub id.
-    await invoke("delete_project_dir", { projectKey: deleteTarget.title })
-      .catch((e) => console.warn(`delete_project_dir failed: ${e}`));
-    deleteLocalProject([deleteTarget.title, deleteTarget.id]);
-    // Persist the removal so the next GitHub sync doesn't re-add it (the list is
-    // re-fetched from GitHub, which still returns closed / not-yet-purged projects).
-    dismissProject(deleteTarget.id);
-    setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
+    await removeLocalFootprint(deleteTarget);
     setDeleting(false);
-    setDeleteTarget(null);
+    closeDeleteModal();
   }
 
   // The GitHub list is re-fetched on every sync, so a project removed in-app is
@@ -611,6 +647,16 @@ export function ProjectsList() {
     } catch (e) {
       setDraftError(`Removed the folder for "${key}" but couldn't update the project list: ${e}.`);
     }
+  }
+
+  // Confirmed draft delete (#1216): run the destructive delete, then dismiss the confirmation modal.
+  // On a folder-locked failure deleteDraft surfaces the inline draftError and leaves the card; close
+  // the modal regardless so the error (rendered in the list) is visible.
+  async function confirmDeleteDraft() {
+    if (!draftDeleteTarget) return;
+    const key = draftDeleteTarget.key;
+    setDraftDeleteTarget(null);
+    await deleteDraft(key);
   }
 
   const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
@@ -751,8 +797,11 @@ export function ProjectsList() {
     setProjectsView("planning");
   }
   function deleteBlueprint(b: BpItem) {
-    if (b.kind === "draft" && b.draftKey) void deleteDraft(b.draftKey);
-    else removeBlueprint(b.id);
+    // An in-progress authoring draft is a folder on disk — confirm before destroying it (#1216),
+    // same as a normal draft chip. A saved library blueprint is store-only, no confirm needed.
+    if (b.kind === "draft" && b.draftKey) {
+      setDraftDeleteTarget({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "", sort: b.sort });
+    } else removeBlueprint(b.id);
   }
 
   // The rail "+" authors a NEW blueprint: bind a fresh key to the authoring lifecycle and open the
@@ -956,7 +1005,7 @@ export function ProjectsList() {
                   {d.title}
                   <span style={{ color: "var(--fg-dim)" }}>{timeAgoMs(d.sort)}</span>
                   <span
-                    onClick={e => { e.stopPropagation(); void deleteDraft(d.key); }}
+                    onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
                     title="delete draft"
                     style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
                   >✕</span>
@@ -1083,50 +1132,142 @@ export function ProjectsList() {
         <ImportModal onClose={() => setImportOpen(false)} onResolve={resolveBlueprintImport} onImport={importBlueprintPreview} />
       )}
 
-      {/* Delete confirmation dialog */}
+      {/* Published-project delete — Keep vs Delete (#1216). A published project is a real shipped app
+          on GitHub (board + milestones + issues + repos), so removing it from base-studio-code must
+          NOT silently tear down that structure. Keep (default/safe) = local cleanup only; Delete
+          everything (deliberate, secondary) layers the GitHub project DELETE_MUTATION on top, behind
+          an explicit second confirm. */}
       {deleteTarget && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 200,
           background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
+        }} onClick={e => { if (e.target === e.currentTarget && !deleting) closeDeleteModal(); }}>
+          <div style={{
+            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+            borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
+          }}>
+            {!confirmDeleteAll ? (
+              <>
+                <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)" }}>
+                  Remove “{deleteTarget.title}”?
+                </h3>
+                <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                  This project is published to GitHub. Choose whether to keep the shipped app on GitHub
+                  or delete everything.
+                </p>
+                {deleteError && (
+                  <div style={{
+                    padding: "8px 12px", borderRadius: 4, marginBottom: 14,
+                    background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                    border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+                    fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+                  }}>
+                    {deleteError}
+                  </div>
+                )}
+                {/* Keep — the default / safe primary action. */}
+                <button
+                  className="btn primary"
+                  onClick={handleDeleteKeep}
+                  disabled={deleting}
+                  autoFocus
+                  style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", marginBottom: 10 }}
+                >
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</span>
+                  <span style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5, fontFamily: "var(--mono)" }}>
+                    Removes the local copy only. Your GitHub project board, milestones, issues, and repos stay intact.
+                  </span>
+                </button>
+                {/* Delete everything — secondary; arms the explicit destructive confirm (NOT the default). */}
+                <button
+                  className="btn ghost"
+                  onClick={() => { setConfirmDeleteAll(true); setDeleteError(null); }}
+                  disabled={deleting}
+                  style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                    <Trash2 size={12} /> Delete everything
+                  </span>
+                  <span style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5, fontFamily: "var(--mono)" }}>
+                    Removes the local copy AND deletes the GitHub project board. (Your repos and their code are not deleted.)
+                  </span>
+                </button>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="btn ghost" onClick={closeDeleteModal} disabled={deleting}>cancel</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--danger)" }}>
+                  Delete everything?
+                </h3>
+                <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                  This permanently deletes the <b style={{ color: "var(--fg)" }}>GitHub project board</b> for{" "}
+                  <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b> (its milestones and issue cards) and
+                  removes the local copy. <b style={{ color: "var(--fg)" }}>Your repositories and their code are not deleted</b> —
+                  only the project board is.
+                </p>
+                {deleteError && (
+                  <div style={{
+                    padding: "8px 12px", borderRadius: 4, marginBottom: 14,
+                    background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                    border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+                    fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+                  }}>
+                    {deleteError}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    className="btn ghost"
+                    onClick={() => { setConfirmDeleteAll(false); setDeleteError(null); }}
+                    disabled={deleting}
+                  >back</button>
+                  <button
+                    className="btn danger"
+                    onClick={handleDeleteEverything}
+                    disabled={deleting}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <Trash2 size={12} />
+                    {deleting ? "deleting…" : "delete everything"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕
+          must not delete instantly. */}
+      {draftDeleteTarget && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={e => { if (e.target === e.currentTarget) setDraftDeleteTarget(null); }}>
           <div style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
           }}>
             <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)" }}>
-              Delete project?
+              Delete draft?
             </h3>
             <p style={{ margin: "0 0 20px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
-              <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b> will be deleted from GitHub (if it still exists)
-              and its local planning data removed. Linked issues and milestones are not deleted.
+              <b style={{ color: "var(--fg)" }}>{draftDeleteTarget.title}</b> and its local planning folder
+              will be permanently deleted. This draft was never published to GitHub, so there's nothing on
+              GitHub to remove.
             </p>
-            {deleteError && (
-              <div style={{
-                padding: "8px 12px", borderRadius: 4, marginBottom: 14,
-                background: "color-mix(in oklch, var(--danger), transparent 88%)",
-                border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-              }}>
-                {deleteError}
-              </div>
-            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button
-                className="btn ghost"
-                onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
-                disabled={deleting}
-              >
-                cancel
-              </button>
+              <button className="btn ghost" onClick={() => setDraftDeleteTarget(null)}>cancel</button>
               <button
                 className="btn danger"
-                onClick={handleDeleteConfirm}
-                disabled={deleting}
+                onClick={confirmDeleteDraft}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
               >
-                <Trash2 size={12} />
-                {deleting ? "deleting…" : "delete"}
+                <Trash2 size={12} /> delete draft
               </button>
             </div>
           </div>

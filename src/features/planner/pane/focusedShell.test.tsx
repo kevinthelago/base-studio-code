@@ -27,6 +27,15 @@ describe("Stepper (#652)", () => {
     expect(container.querySelector(".seqrail-seg.locked.sel")).toBeTruthy();
   });
 
+  // #1074: after #1072's column rework the per-node .seqrail-label stopped rendering.
+  // Guard that every seg still carries its stage-title label.
+  it("renders a stage-title label under every rail node (#1074)", () => {
+    const { container } = render(<Stepper phases={phases} selectedIdx={1} onSelect={vi.fn()} />);
+    const labels = Array.from(container.querySelectorAll(".seqrail-seg .seqrail-label"));
+    expect(labels).toHaveLength(phases.length);
+    expect(labels.map((l) => l.textContent)).toEqual(["A", "B", "C"]);
+  });
+
   it("pulses highlighted (incomplete) nodes via the attn class", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={0} onSelect={vi.fn()} highlight={new Set(["c"])} />);
     expect(container.querySelector(".seqrail-seg.locked.attn")).toBeTruthy();

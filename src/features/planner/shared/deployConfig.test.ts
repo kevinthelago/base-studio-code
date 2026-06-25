@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag, deployIssues } from "./deployConfig";
+import {
+  defaultDeployConfig, deployChecks, deploymentDefined, coerceDeployConfig, parseDeployConfigTag, deployIssues,
+  serviceMode, serviceTargetDefined, localTargetDefined, finalStageName,
+} from "./deployConfig";
 import { makeBlueprints } from "../stages/blueprints";
 
 describe("deployIssues (#1167 — Deploy pane)", () => {
@@ -154,6 +157,95 @@ describe("coerceDeployConfig — the planner <deploy_config> channel (#919)", ()
     expect(cfg).not.toBeNull();
     expect(cfg!.services[0].platform).toBe("fly");
     expect(deploymentDefined(cfg!)).toBe(true);
+  });
+});
+
+describe("local vs cloud deploy modes (#1192)", () => {
+  it("seeds services in cloud mode by default", () => {
+    const d = defaultDeployConfig(["acme/web"]);
+    expect(d.services[0].mode).toBe("cloud");
+    expect(serviceMode(d.services[0])).toBe("cloud");
+  });
+
+  it("treats a service with no `mode` (legacy config) as cloud", () => {
+    const d = defaultDeployConfig(["acme/web"]);
+    const legacy = { ...d.services[0] };
+    delete (legacy as { mode?: string }).mode;
+    expect(serviceMode(legacy)).toBe("cloud");
+    // a legacy cloud service still satisfies `target` via its platform
+    legacy.platform = "vercel";
+    expect(serviceTargetDefined(legacy)).toBe(true);
+  });
+
+  it("a local LIBRARY satisfies `target` via publish registry + package name, not a cloud platform", () => {
+    const base = defaultDeployConfig(["acme/sdk"]);
+    const lib = { ...base.services[0], mode: "local" as const, localKind: "library" as const, platform: "" };
+    expect(localTargetDefined(lib)).toBe(false);          // nothing set yet
+    expect(serviceTargetDefined(lib)).toBe(false);
+    const ready = { ...lib, publishRegistry: "npm" as const, packageName: "@acme/sdk" };
+    expect(localTargetDefined(ready)).toBe(true);
+    expect(serviceTargetDefined(ready)).toBe(true);
+    // and the whole gate clears with a release strategy, no cloud platform needed
+    const d = { ...base, services: [ready], release: { ...base.release, strategy: "rolling" as const } };
+    expect(deployChecks(d).find((c) => c.id === "target")!.ok).toBe(true);
+    expect(deploymentDefined(d)).toBe(true);
+  });
+
+  it("a local APPLICATION satisfies `target` via build targets + artifact", () => {
+    const base = defaultDeployConfig(["acme/cli"]);
+    const app = { ...base.services[0], mode: "local" as const, localKind: "application" as const, platform: "" };
+    expect(serviceTargetDefined(app)).toBe(false);
+    const ready = { ...app, buildTargets: "linux/amd64, darwin/arm64", artifact: "acme-cli" };
+    expect(serviceTargetDefined(ready)).toBe(true);
+  });
+
+  it("finalStageName adapts to the service mode: deploy · publish · package", () => {
+    const base = defaultDeployConfig(["acme/web"]).services[0];
+    expect(finalStageName(base)).toBe("deploy");                                  // cloud
+    expect(finalStageName({ ...base, mode: "local", localKind: "library" })).toBe("publish");
+    expect(finalStageName({ ...base, mode: "local", localKind: "application" })).toBe("package");
+    expect(finalStageName(undefined)).toBe("deploy");
+  });
+
+  it("coerceDeployConfig accepts a local library service + port forwarding", () => {
+    const d = coerceDeployConfig({
+      services: [
+        { id: "sdk", repo: "o/sdk", mode: "local", localKind: "library", publishRegistry: "npm", packageName: "@o/sdk", publishTrigger: "on-tag" },
+        { id: "cli", repo: "o/cli", mode: "local", localKind: "application", buildTargets: "linux/amd64", artifact: "cli", runCmd: "./cli",
+          portForward: { enabled: true, port: "8080", method: "cloudflared" } },
+      ],
+      release: { strategy: "rolling" },
+    });
+    expect(d.services[0].mode).toBe("local");
+    expect(d.services[0].localKind).toBe("library");
+    expect(d.services[0].publishRegistry).toBe("npm");
+    expect(d.services[0].packageName).toBe("@o/sdk");
+    expect(d.services[1].localKind).toBe("application");
+    expect(d.services[1].portForward).toEqual({ enabled: true, port: "8080", method: "cloudflared" });
+    // both targets defined ⇒ gate clears with a release strategy and no cloud platform
+    expect(deploymentDefined(d)).toBe(true);
+  });
+
+  it("coerce falls back to cloudflared for an unknown port-forward method", () => {
+    const d = coerceDeployConfig({
+      services: [{ id: "cli", repo: "o/cli", mode: "local", localKind: "application", buildTargets: "x", artifact: "y",
+        portForward: { enabled: true, port: "9000", method: "bogus" } }],
+      release: { strategy: "rolling" },
+    });
+    expect(d.services[0].portForward!.method).toBe("cloudflared");
+  });
+
+  it("deployIssues emits a publish workflow for a library and a package workflow for a local app", () => {
+    const base = defaultDeployConfig(["o/sdk"]);
+    const lib = deployIssues({ ...base, services: [{ ...base.services[0], mode: "local", localKind: "library", publishRegistry: "crates.io", packageName: "acme" }] });
+    expect(lib.some((i) => i.text.includes("crates.io publish workflow"))).toBe(true);
+    expect(lib.some((i) => i.text.includes("deploy workflow"))).toBe(false);
+    // a library does NOT get a prod health check
+    expect(lib.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(false);
+
+    const app = deployIssues({ ...base, services: [{ ...base.services[0], mode: "local", localKind: "application", buildTargets: "linux/amd64", artifact: "cli" }] });
+    expect(app.some((i) => i.text.includes("package + build workflow"))).toBe(true);
+    expect(app.some((i) => i.text === "Add prod health check + auto-rollback")).toBe(true);
   });
 });
 
