@@ -18,6 +18,7 @@ import { PurposeView, StagesView, CapabilitiesView, PublishView } from "../bluep
 import type { BlueprintSkillItem } from "../blueprints/blueprintSkills";
 import type { McpLibraryItem } from "../blueprints/blueprintMcp";
 import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
+import { SharedDependenciesSection } from "../bodies/SharedDependencies";
 import { FocusedTargetsBody } from "../bodies/FocusedTargetsBody";
 import { FocusedLegitimacyBody } from "../bodies/FocusedLegitimacyBody";
 import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
@@ -1091,45 +1092,49 @@ function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {relGraph && (
         <div>
-          {/* header: gate pill + topology + edge-kind legend */}
-          <div className="ulabel" style={{ paddingBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            agent relationships
+          {/* STREAMS — gate pill on the right (#1429 reskin) */}
+          <div className="ulabel" style={{ paddingBottom: 9, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span>streams</span>
             <span data-testid="relationship-gate" style={{
-              display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9, padding: "2px 9px", borderRadius: 99, textTransform: "none",
+              display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
               color: gatePass ? "var(--success)" : "var(--danger)",
-              background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 86%)`,
-              border: `1px solid color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 58%)`,
+              background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`,
+              border: `1px solid color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 67%)`,
+              animation: gatePass ? undefined : "pulse 1.8s ease-in-out infinite",
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: gatePass ? "var(--success)" : "var(--danger)", animation: gatePass ? undefined : "pulse 1.1s ease-in-out infinite" }} />
-              {gatePass ? "no dependency cycles" : `gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
+              {gatePass ? "✓ no dependency cycles" : `⨯ gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
             </span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "none" }}>topology · {topology}</span>
-            <span style={{ flex: 1 }} />
-            {kindsUsed.map((k) => (
-              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)", textTransform: "none" }}>
-                <span style={{ width: 12, height: 2.5, borderRadius: 2, background: EDGE_KIND_META[k].color, display: "inline-block" }} />{EDGE_KIND_META[k].label}
+          </div>
+          {/* graph card + legend */}
+          <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 8px 4px" }}>
+            <RelationshipGraphView
+              graph={relGraph}
+              focus={focus}
+              hover={hover}
+              onHover={setHover}
+              onFocusAgent={(id) => setFocus((f) => (f && f.type === "agent" && f.id === id ? null : { type: "agent", id }))}
+              onInspectEdge={(id) => setFocus({ type: "edge", id })}
+              onInspectArtifact={(id) => setFocus({ type: "art", id })}
+            />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
+              {kindsUsed.map((k) => (
+                <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+                  <span style={{ width: 11, height: 0, borderTop: `1.6px solid ${EDGE_KIND_META[k].color}` }} />{EDGE_KIND_META[k].label}
+                </span>
+              ))}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+                <span style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
               </span>
-            ))}
+            </div>
           </div>
-          {/* focus bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 2px 8px" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)" }}>
-              {focus ? `◆ focused: ${focusName} — its relationships are spotlit; others dimmed` : "hover a stream to spotlight its relationships · click to pin"}
-            </span>
-            <span style={{ flex: 1 }} />
-            {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear focus ✕</button>}
+          <div style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
+            <span>{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</span>
+            {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
           </div>
-          <RelationshipGraphView
-            graph={relGraph}
-            focus={focus}
-            hover={hover}
-            onHover={setHover}
-            onFocusAgent={(id) => setFocus((f) => (f && f.type === "agent" && f.id === id ? null : { type: "agent", id }))}
-            onInspectEdge={(id) => setFocus({ type: "edge", id })}
-            onInspectArtifact={(id) => setFocus({ type: "art", id })}
-          />
-          {/* relationship inspector */}
-          <div style={{ marginTop: 10, padding: "12px 13px", borderRadius: 8, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
+
+          {/* INSPECTOR */}
+          <div className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</div>
+          <div style={{ padding: "12px 13px", borderRadius: 9, background: "var(--bg-elev)", border: "1px solid var(--border)" }}>
             <RelationshipInspector
               graph={relGraph}
               focus={focus}
@@ -1143,18 +1148,32 @@ function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
       {phases.length > 0 && (
         <div>
           <div className="ulabel" style={{ paddingBottom: 6 }}>phases</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {phases.map((p) => (
-              <div key={p.id} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 10px", borderRadius: 6,
-                background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-              }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{p.name}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>{p.total} issue{p.total === 1 ? "" : "s"}</span>
-              </div>
-            ))}
+          {/* Numbered roadmap (#1429 reskin): a circle per phase + its done-when, foundations first. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {phases.map((p, i) => {
+              const first = i === 0;
+              return (
+                <div key={p.id}>
+                  <div style={{ display: "flex", gap: 11, padding: "8px 4px" }}>
+                    <span style={{
+                      flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600,
+                      color: first ? "var(--accent)" : "var(--fg-muted)",
+                      background: first ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev2)",
+                      border: "1px solid " + (first ? "color-mix(in oklch, var(--accent), transparent 65%)" : "var(--border)"),
+                    }}>{i + 1}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{p.name}</div>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
+                        {p.doneWhen ? `done when · ${p.doneWhen}` : `${p.total} issue${p.total === 1 ? "" : "s"}`}
+                      </div>
+                    </div>
+                  </div>
+                  {i < phases.length - 1 && <div style={{ height: 1, background: "var(--border-soft)", marginLeft: 31 }} />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1202,24 +1221,26 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
         padding: "9px 11px", marginBottom: 8, borderRadius: 8,
         background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--fg-dim)" }}>coordination</span>
-          <div style={{ display: "flex", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
-            {TOPOLOGY_OPTS.map((t) => (
+        <span style={{ display: "block", fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".14em", color: "var(--fg-dim)", marginBottom: 9 }}>coordination</span>
+        {/* full-width topology segmented (#1429 reskin) */}
+        <div style={{ display: "flex", background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden", marginBottom: 1 }}>
+          {TOPOLOGY_OPTS.map((t, i) => {
+            const on = topology === t.id;
+            return (
               <button
                 key={t.id}
                 onClick={() => onTopology?.(t.id)}
                 disabled={!onTopology}
                 title={t.hint}
                 style={{
-                  height: 26, padding: "0 11px", border: 0, cursor: onTopology ? "pointer" : "default",
-                  fontFamily: "var(--mono)", fontSize: 10.5,
-                  background: topology === t.id ? "var(--bg-elev2)" : "transparent",
-                  color: topology === t.id ? "var(--fg)" : "var(--fg-dim)",
+                  flex: 1, padding: "7px 0", border: 0, borderLeft: i ? "1px solid var(--border)" : 0, cursor: onTopology ? "pointer" : "default",
+                  fontFamily: "var(--mono)", fontWeight: 600, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase",
+                  background: on ? "var(--bg-elev2)" : "transparent",
+                  color: on ? "var(--accent)" : "var(--fg-dim)",
                 }}
               >{t.label}</button>
-            ))}
-          </div>
+            );
+          })}
         </div>
         <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
           {TOPOLOGY_OPTS.find((t) => t.id === topology)?.hint} · configure individual relationships on the Structure graph.
@@ -1262,6 +1283,10 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
           </button>
         </div>
       )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0 9px" }}>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--fg-dim)" }}>permissions</span>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>least-privilege · per stream</span>
+      </div>
       <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
     </div>
   );
@@ -1295,6 +1320,12 @@ function StreamsBody({ data, fleet, onPerm, onPreset, onFlow, onModel, onGenerat
             focusedStream={focusedStream}
             onSelectStream={(id) => setFocus(id ? { type: "agent", id } : null)}
           />
+        </div>
+      )}
+      {/* Shared dependencies (#1429): per-repo → per-stream lock for repos 2+ streams build. */}
+      {fleet && (
+        <div style={{ marginTop: 18 }}>
+          <SharedDependenciesSection agents={data?.agents} dependencies={data?.dependencies} registries={data?.registries} />
         </div>
       )}
     </>
