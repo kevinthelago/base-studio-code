@@ -40,16 +40,18 @@ describe("FocusedReposDeployBody — header (cleaned up, #1403)", () => {
 });
 
 describe("FocusedReposDeployBody — ship flow", () => {
-  it("renders card 01 + the reused deploy tail, with no readiness banner or global visibility toggle", () => {
+  it("renders card 01 + the project-wide dependency tail, with no readiness banner or global visibility toggle", () => {
     render(<Harness repos={[repo("acme/web", { primary: true })]} />);
     // card 01 repositories with its repo row
     expect(screen.getByText("Repositories")).toBeInTheDocument();
     expect(screen.getByText("acme/web")).toBeInTheDocument();
     expect(screen.getByText("primary")).toBeInTheDocument();
-    // the tail reused from FocusedDeployBody
+    // the per-repo deploy sections (CI/CD pipeline etc.) live INSIDE each card now (#1421) — not a
+    // shared tail — so they're absent until a card is expanded with a target set.
     expect(screen.getByText("A · HOW IT SHIPS")).toBeInTheDocument();
-    expect(screen.getByText("CI / CD pipeline")).toBeInTheDocument();
-    expect(screen.getByText("D · READINESS")).toBeInTheDocument();
+    expect(screen.getByText("B · WHAT IT DEPENDS ON")).toBeInTheDocument();
+    expect(screen.getByText("Dependencies")).toBeInTheDocument();
+    expect(screen.queryByText("CI / CD pipeline")).not.toBeInTheDocument(); // collapsed → no per-repo sections
     // the "N/X defined" readiness banner is gone (#1403)
     expect(screen.queryByText(/\d+\/\d+ defined/)).not.toBeInTheDocument();
     // the global default Private/Public toggle is gone (#1403); per-repo toggles remain

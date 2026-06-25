@@ -13,10 +13,10 @@
 
 import { useState } from "react";
 import {
-  platform, serviceMode, serviceTargetDefined, deployChecks,
+  platform, serviceMode, serviceTargetDefined, deploymentDefined,
   type DeployConfig, type DeployService,
 } from "../shared/deployConfig";
-import { Card, Divider, ServiceTargetEditor, FocusedDeployBody } from "./DeployView";
+import { Card, Divider, ServiceTargetEditor, ServiceDeploySections, DependenciesCard } from "./DeployView";
 import type { Repo } from "../pane/projectPane.types";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 
@@ -177,7 +177,7 @@ export function FocusedReposDeployBody({
         background: "var(--bg-canvas)",
       }}>
         <div
-          onClick={svc ? () => { const opening = openRepo !== r.id; setOpenRepo(opening ? r.id : null); if (opening) set({ selService: svc.id }); } : undefined}
+          onClick={svc ? () => setOpenRepo(openRepo === r.id ? null : r.id) : undefined}
           style={{ padding: "11px 12px", cursor: svc ? "pointer" : "default" }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -211,8 +211,11 @@ export function FocusedReposDeployBody({
           )}
         </div>
         {sel && svc && (
-          <div style={{ padding: "0 12px 12px" }}>
+          <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
             <ServiceTargetEditor svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)} />
+            {/* Every repo is a self-contained deployable unit (#1421): its own pipeline / envs /
+                config & secrets / rollout, shown once a target is set. */}
+            {serviceTargetDefined(svc) && <ServiceDeploySections svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)} />}
           </div>
         )}
       </div>
@@ -268,14 +271,15 @@ export function FocusedReposDeployBody({
       </>
     );
   } else {
-    // Repos + their deploy targets in card 01, then the rest of the deploy flow (tail). No readiness
-    // banner — the D · READINESS checklist below carries that signal (#1403).
-    const ck = (id: string) => (d ? deployChecks(d).find((c) => c.id === id)?.ok ?? false : false);
+    // Each repo carries its OWN full deploy plan inside its card (#1421) — pipeline / envs / config /
+    // rollout expand inline per repo. The project-wide locked dependency manifest follows as a tail
+    // (it gates separately, #1127).
     body = (
       <>
         <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
-        {reposCard(ck("target"))}
-        <FocusedDeployBody deploy={d} onChange={onDeployChange} dependencies={dependencies} registries={registries} view="tail" />
+        {reposCard(deploymentDefined(d))}
+        <Divider label="B · WHAT IT DEPENDS ON" color="var(--violet)" />
+        <DependenciesCard deps={dependencies} registries={registries} done={dependencies.length > 0} />
       </>
     );
   }
