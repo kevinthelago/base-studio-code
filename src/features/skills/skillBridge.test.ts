@@ -82,6 +82,22 @@ describe("skills store ↔ skills.db (#1338)", () => {
     expect(skillGroups).toEqual([{ id: "g1", name: "G", hue: "h", skillIds: [] }]);
   });
 
+  it("refreshSkills re-reads the library WITHOUT pushing the set back (cheap poll, #1419)", async () => {
+    const calls: string[] = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === "skill_store_list") return [{ id: "authored-now", name: "Authored", enabled: true }];
+      if (cmd === "skill_group_list") return [{ id: "grp-session-acme", name: "Acme", hue: "h", skillIds: ["authored-now"] }];
+      return undefined;
+    });
+    await useAppStore.getState().refreshSkills();
+    const { skills, skillGroups } = useAppStore.getState();
+    expect(skills.some((s) => s.id === "authored-now")).toBe(true); // freshly-authored skill surfaces
+    expect(skillGroups).toEqual([{ id: "grp-session-acme", name: "Acme", hue: "h", skillIds: ["authored-now"] }]);
+    // The whole point vs hydrateSkills: NO write-back, so it's safe to poll on a timer.
+    expect(calls).not.toContain("skill_store_upsert");
+  });
+
   it("hydrateSkills is a no-op (keeps the seeded set) when the bridge is unreachable", async () => {
     useAppStore.setState({ skills: [sk({ id: "keep", name: "Keep" })] });
     vi.mocked(invoke).mockRejectedValue(new Error("no host"));

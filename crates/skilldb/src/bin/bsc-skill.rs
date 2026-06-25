@@ -38,16 +38,19 @@ fn main() -> ExitCode {
 struct Args {
     db: Option<String>,
     off: bool,
+    /// `add --group <id>`: also add each upserted skill to this group (created if missing).
+    group: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, off: false, positional: Vec::new() };
+    let mut a = Args { db: None, off: false, group: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--off" => a.off = true,
+            "--group" => a.group = Some(it.next().ok_or("--group needs a group id")?),
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -81,7 +84,7 @@ fn run() -> Result<(), String> {
         }
         "add" => {
             let s = store()?;
-            let ids = cmd_add(&s)?;
+            let ids = cmd_add(&s, args.group.as_deref())?;
             println!("{}", serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
             Ok(())
         }
@@ -171,8 +174,11 @@ fn home_dir() -> Option<PathBuf> {
         .filter(|p| !p.as_os_str().is_empty())
 }
 
-/// Read JSON from stdin (one skill object or an array), upsert each, return the ids.
-fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
+/// Read JSON from stdin (one skill object or an array), upsert each, return the ids. When `group`
+/// is set, also add every upserted skill to that group — creating the group (named after its id, a
+/// placeholder the app overwrites with the project name) if it doesn't exist yet. This is how the
+/// planner pairs the skills it authors into its per-project session group in one command (#1419).
+fn cmd_add(s: &Store, group: Option<&str>) -> Result<Vec<String>, String> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
     let buf = buf.trim();
@@ -192,7 +198,23 @@ fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
         s.upsert(skill).map_err(|e| e.to_string())?;
         ids.push(skill.id.clone());
     }
+    if let Some(gid) = group.map(str::trim).filter(|g| !g.is_empty()) {
+        pair_into_group(s, gid, &ids).map_err(|e| e.to_string())?;
+    }
     Ok(ids)
+}
+
+/// Add `skill_ids` to group `gid`, creating the group (named after its id — a placeholder the app
+/// overwrites with the project name) if it doesn't exist yet, so membership never fails on a fresh
+/// planning session (#1419). Idempotent: re-adding an existing member is a no-op.
+fn pair_into_group(s: &Store, gid: &str, skill_ids: &[String]) -> rusqlite::Result<()> {
+    if s.group_get(gid)?.is_none() {
+        s.group_add(&SkillGroup { id: gid.to_string(), name: gid.to_string(), ..Default::default() })?;
+    }
+    for id in skill_ids {
+        s.group_toggle_member(gid, id, true)?;
+    }
+    Ok(())
 }
 
 const USAGE: &str = "\
@@ -203,7 +225,8 @@ USAGE:
 
 SKILLS (the global library):
   list                      print every skill (JSON)
-  add                       upsert from a skill object/array JSON on stdin; prints id(s)
+  add [--group <id>]        upsert from a skill object/array JSON on stdin; prints id(s).
+                            --group also adds each skill to that group (created if missing).
 
 GROUPS (task groups — named, reusable bundles of skills, toggled as one):
   group add                 upsert a group from a SkillGroup JSON on stdin; prints the id
@@ -219,3 +242,39 @@ RESOLVE:
 The skills.db is found via --db <path>, the BSC_SKILL_DB env var, or the default global store at
 ~/.base-studio-code/skills.db.
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mem_store() -> Store {
+        Store::open_in_memory().expect("open in-memory skills.db")
+    }
+
+    #[test]
+    fn pair_into_group_creates_the_group_when_missing_then_adds_members() {
+        let s = mem_store();
+        // The group does not exist yet — pairing must create it (named after the id) and add the skill.
+        pair_into_group(&s, "grp-session-acme", &["sk1".to_string(), "sk2".to_string()]).unwrap();
+        let g = s.group_get("grp-session-acme").unwrap().expect("group was created");
+        assert_eq!(g.name, "grp-session-acme", "placeholder name = the id until the app renames it");
+        assert_eq!(g.skill_ids, vec!["sk1".to_string(), "sk2".to_string()]);
+    }
+
+    #[test]
+    fn pair_into_group_is_idempotent_and_preserves_existing_members() {
+        let s = mem_store();
+        // Seed a group named like the app would (project title) with one member already.
+        s.group_add(&SkillGroup {
+            id: "grp-session-acme".into(),
+            name: "Acme".into(),
+            skill_ids: vec!["sk1".into()],
+            ..Default::default()
+        })
+        .unwrap();
+        pair_into_group(&s, "grp-session-acme", &["sk1".to_string(), "sk2".to_string()]).unwrap();
+        let g = s.group_get("grp-session-acme").unwrap().unwrap();
+        assert_eq!(g.name, "Acme", "an existing group keeps its (app-set) name");
+        assert_eq!(g.skill_ids, vec!["sk1".to_string(), "sk2".to_string()], "sk1 not duplicated, sk2 added");
+    }
+}

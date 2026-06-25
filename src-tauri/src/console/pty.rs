@@ -222,6 +222,14 @@ pub(crate) fn project_session_ids(pane_ids: &[String], key: &str) -> Vec<String>
     pane_ids.iter().filter(|id| id.starts_with(&prefix) || id.as_str() == planner).cloned().collect()
 }
 
+/// The per-project session skill group id for a pane, or None for non-planner panes (#1419). Only
+/// the planner pane (`planning_<key>`) authors session skills, so only it gets `BSC_SESSION_SKILL_GROUP`
+/// — workers/director/manual panes don't. The id is deterministic from the (already-sanitized) key so
+/// the Planning pane and the `bsc-skill` CLI resolve the same group. Pure for testing.
+pub(crate) fn session_skill_group_for_pane(pane_id: &str) -> Option<String> {
+    pane_id.strip_prefix("planning_").map(|key| format!("grp-session-{key}"))
+}
+
 /// Tear down one project's LIVE PTY sessions before its hub is deleted (#1387): drain the sessions
 /// whose pane id is `<key>:…` and kill each (the shell + its whole tree, via the Job Object /
 /// process group that drops with the session), forgetting their ledger entries. This RELEASES the
@@ -552,6 +560,14 @@ pub(crate) async fn pty_create(
     cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
     if let Some(bin) = bsc_skill_bin_path() {
         cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
+    // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
+    // this group, which the Planning pane resolves + highlights as "authored this session". The id is
+    // deterministic from the (already-sanitized) key so the pane and the CLI agree; the app names the
+    // group after the project. Persistent — reopening the planner keeps collecting into it.
+    if let Some(group) = session_skill_group_for_pane(&pane_id) {
+        cmd.env("BSC_SESSION_SKILL_GROUP", group);
     }
     // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
     if let Some(bin) = bsc_agent_bin_path() {
@@ -951,6 +967,20 @@ mod tests {
         // never match.
         for miss in ["other:api", "planning_other", "man:t0:p1", "proj"] {
             assert!(!got.contains(&miss.to_string()), "{miss} must not match");
+        }
+    }
+
+    #[test]
+    fn session_skill_group_only_for_the_planner_pane() {
+        // #1419: only the planner pane carries the per-project session skill group; the id is
+        // deterministic from the key so the pane + the bsc-skill CLI agree.
+        assert_eq!(
+            super::session_skill_group_for_pane("planning_acme-crm"),
+            Some("grp-session-acme-crm".to_string()),
+        );
+        // Workers/director/triage/manual panes get nothing.
+        for miss in ["acme-crm:director", "acme-crm:auth-ui", "acme-crm:own/web:triage", "man:t0:p1", "acme-crm"] {
+            assert_eq!(super::session_skill_group_for_pane(miss), None, "{miss} must not get a session group");
         }
     }
 

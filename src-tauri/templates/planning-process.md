@@ -734,13 +734,19 @@ or `push=none` for a pure reviewer/explorer.
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Author each
-skill with `bsc-skill add` — pipe a skill object as JSON on stdin (one object, or an
-array to add several at once); it upserts into the global Skills library and prints
-the assigned id(s). This is where the feature workshop's **"dissect hard problems
-→ Skills"** step deposits each capability it distils (see "Hard topics"):
+skill with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` — pipe a skill object as
+JSON on stdin (one object, or an array to add several at once); it upserts into the
+global Skills library, prints the assigned id(s), and pairs each one into THIS planning
+session's group. That group (named after the project, persistent across reopens) is how
+the Skills pane highlights what you authored this session. This is where the feature
+workshop's **"dissect hard problems → Skills"** step deposits each capability it distils
+(see "Hard topics"):
 ```
-echo '{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}' | bsc-skill add
+echo '{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}' | bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"
 ```
+Curate the session group anytime: `bsc-skill group member "$BSC_SESSION_SKILL_GROUP" <skill-id>`
+adds a skill, the same with `--off` removes it (`bsc-skill group get "$BSC_SESSION_SKILL_GROUP"`
+shows the current members).
 - `kind` — one of `workflow|scaffold|codemod|review|docs` (defaults to `workflow`).
 - `description` — one line summarizing what the skill does (the parser also accepts `desc`).
 - `prompt` — the reusable procedure body the agent follows when it invokes the skill.

@@ -27,6 +27,11 @@ export interface SkillsSlice {
    *  set, then seed/refresh the db with the reconciled set. No-op (keeps the seeded set) when the
    *  bridge is unreachable — tests, the web shell, or an old binary. */
   hydrateSkills: () => Promise<void>;
+  /** Lightweight re-read of the global skills.db into the cache (#1419): like {@link hydrateSkills}
+   *  but WITHOUT the boot-time push-back of the whole set — cheap enough to poll while the planner
+   *  runs, so skills the planner authors via `bsc-skill add` (and their session-group membership)
+   *  appear live. No-op when the bridge is unreachable. */
+  refreshSkills: () => Promise<void>;
   /** Reconstitute a shared blueprint's embedded skills/KB into the libraries (#897 Phase 5b). */
   installBundledSkills: (payloads: SkillPayload[]) => void;
   addSkill: (def: Omit<SkillDef, "id">) => string;
@@ -52,6 +57,10 @@ export interface SkillsSlice {
   removeSkillGroup: (id: string) => void;
   toggleSkillGroupMember: (groupId: string, skillId: string) => void;
   upsertSkillGroups: (groups: Array<Omit<SkillGroup, "id"> & { id?: string }>) => void;
+  /** Ensure the per-project planning session group exists with a fixed `id` and the given `name`
+   *  (#1419): creates it (empty) if absent, else just renames it when the project title changed —
+   *  never clobbering the members the planner has paired into it. */
+  ensureSessionGroup: (id: string, name: string, hue?: string) => void;
   // Per-session enabled groups, keyed by the session's stable identity id; persisted.
   sessionSkillGroups: Record<string, string[]>;
   setSessionSkillGroup: (sessionKey: string, groupId: string, on: boolean) => void;
@@ -69,6 +78,13 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
     // Seed/refresh the db with the reconciled set so first-run packaged skills + any code updates
     // persist (and a freshly-installed app populates its global library).
     for (const s of skills) void pushSkill(s);
+  },
+  refreshSkills: async () => {
+    const lib = await loadLibrary();
+    if (!lib) return; // bridge unreachable — keep the current cache
+    // Re-read only; no push-back (that's hydrate's job). The db is the source of truth, and every
+    // local edit already wrote through, so overwriting the cache from it can't lose anything.
+    set({ skills: refreshPackagedSkills(lib.skills), skillGroups: lib.groups });
   },
   addSkill: (def) => {
     const id = `skill_${Math.random().toString(36).slice(2, 8)}`;
@@ -195,6 +211,16 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
       return { skillGroups: s.skillGroups.filter((g) => g.id !== id), sessionSkillGroups };
     });
     void dropGroup(id);
+  },
+  ensureSessionGroup: (id, name, hue) => {
+    const existing = get().skillGroups.find((g) => g.id === id);
+    if (existing) {
+      if (name && existing.name !== name) get().updateSkillGroup(id, { name });
+      return;
+    }
+    const group: SkillGroup = { id, name, hue: hue ?? "var(--violet)", skillIds: [] };
+    set((s) => ({ skillGroups: [...s.skillGroups, group] }));
+    void pushGroup(group);
   },
   toggleSkillGroupMember: (groupId, skillId) => {
     set((s) => ({
