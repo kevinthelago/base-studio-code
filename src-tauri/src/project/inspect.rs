@@ -73,8 +73,8 @@ pub(crate) fn read_skeleton_dir(root: &std::path::Path) -> Vec<(String, String)>
     out
 }
 /// Read a project's `.ui-skeleton/` folder (relpath → contents) for the render-preview
-/// pipeline (#533): the lightweight, functionless UI the planner generates. Empty when
-/// the folder doesn't exist yet.
+/// pipeline (#533): the lightweight, functionless UI promoted from the user's dropped Claude
+/// Design files (#1404 — the planner no longer generates it). Empty when the folder doesn't exist yet.
 #[tauri::command]
 pub(crate) fn read_ui_skeleton(project_key: String) -> Vec<(String, String)> {
     read_skeleton_dir(&project_dir(&project_key).join(".ui-skeleton"))

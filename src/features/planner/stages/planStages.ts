@@ -164,11 +164,11 @@ export const PLAN_STAGES: Stage[] = [
   {
     id: "ui",
     label: "UI",
-    description: "Screen skeletons and live preview via <ui_preview> tags",
+    description: "Author the Claude Design kickoff + route the user's design files (#1404)",
     optional: true,
     hasOutputFile: false,
-    // Features come FIRST so the UI stage designs screens for the defined capabilities
-    // (and can author a Claude Design kickoff from them) (#825).
+    // Features come FIRST so the UI stage can author a Claude Design kickoff from the defined
+    // capabilities (the planner plans the UI — it does not design/generate the screens) (#825/#1404).
     dependsOn: ["context", "features"],
     defaultEnabled: true,
     applies: (s) => s.requiresUi,
@@ -412,7 +412,7 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
   {
     id: "ui-first",
     name: "UI first",
-    description: "Context → screen skeletons → structure → fleet",
+    description: "Context → UI design brief → structure → fleet",
     enabledStages: ["context", "repos", "ui", "features", "structure", "permissions"],
     custom: false,
   },
