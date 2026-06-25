@@ -1146,10 +1146,11 @@ describe("agent fleet store", () => {
     expect(st.paneCwds[fleetPaneId("proj-key", "api")]).toBe("/base/worktrees/proj-key/api--api");
     expect(st.paneStartupPromptText[fleetPaneId("proj-key", "api")]).toContain("API");
 
-    // worker write boundary (#354): the stream's owned globs feed the role gate so
-    // edits in its lane auto-approve; the director (code:none) gets none.
+    // worker write boundary (#354): the stream's owned globs feed the role gate so edits in
+    // its lane auto-approve. The director (code:none) now OWNS the repo-root commons via the
+    // #851 scoped carve-out — with no stack.md it gets the universal commons set, not no globs.
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["src/auth/**"]);
-    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toBeUndefined();
+    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toContain(".gitignore");
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "api")]).toBeUndefined();
 
     // repo-scoped session credentials (#158): each worker pane is bound to its repo
