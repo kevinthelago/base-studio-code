@@ -5,7 +5,7 @@
 // + the planner channel). Reads/mutates the store `skills` + `skillGroups` slices; every enabled,
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
-import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import {
@@ -13,7 +13,7 @@ import {
   type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
 import {
-  blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, skillSlug,
+  blankSkill, defFromCatalog, deriveSkillKpis, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
@@ -76,7 +76,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const toggleSkill = useAppStore((s) => s.toggleSkill);
   const toggleSkillPin = useAppStore((s) => s.toggleSkillPin);
   const setSkillProjects = useAppStore((s) => s.setSkillProjects);
-  const upsertSkills = useAppStore((s) => s.upsertSkills);
   const githubToken = useAppStore((s) => s.githubToken);
   const skillGroups = useAppStore((s) => s.skillGroups);
   const addSkillGroup = useAppStore((s) => s.addSkillGroup);
@@ -100,7 +99,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const [catalogQuery, setCatalogQuery] = useState("");
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [projects, setProjects] = useState<GhProject[]>([]);
   useEffect(() => {
@@ -230,17 +228,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   function newSkill() { setSelectedId(null); setDraft({ ...blankSkill(), id: DRAFT_ID }); }
   function commitDraft() { if (!draft) return; const { id: _id, ...def } = draft; setSelectedId(addSkill(def)); setDraft(null); }
   function closeDrawer() { setSelectedId(null); setDraft(null); }
-  function importSkills(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      let normalized = text;
-      try { const parsed = JSON.parse(text); if (parsed && !Array.isArray(parsed)) normalized = JSON.stringify([parsed]); } catch { /* parseSkillsFile handles */ }
-      const defs = parseSkillsFile(normalized);
-      if (defs.length) upsertSkills(defs);
-    };
-    reader.readAsText(file);
-  }
 
   // ── shared row renderer (List + Grouped) ────────────────────────────────────────
   const colTemplate = (sel: boolean) => (sel ? "26px " : "") + "24px minmax(190px,1fr) 90px minmax(120px,170px) 96px 150px 26px 40px";
@@ -370,9 +357,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
               ))}
             </div>
             <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
-            <button className="btn" onClick={() => fileRef.current?.click()}>import</button>
-            <button className="btn primary" onClick={newSkill}>+ skill</button>
-            <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importSkills(f); e.target.value = ""; }} />
           </div>
 
           {/* Task-group quick-filter bar */}
@@ -445,7 +429,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", textAlign: "center" }}>
                   <div style={{ width: 52, height: 52, borderRadius: "var(--r-lg)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 22 }}>⌕</div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)", marginTop: 16 }}>No skills match</div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>Nothing matches the active search + filters. Create a skill, import one, or clear the filters.</div>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>Nothing matches the active search + filters. Create a skill or clear the filters.</div>
                   <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
                     <button className="btn" onClick={clearFilters}>Clear filters</button>
                     <button className="btn primary" onClick={newSkill}>+ new skill</button>
