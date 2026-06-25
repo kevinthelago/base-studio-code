@@ -219,9 +219,9 @@ export const PLAN_STAGES: Stage[] = [
   {
     id: "skills",
     label: "Skills",
-    description: "Reusable skill procedures for the fleet (skills.json)",
+    description: "Reusable skill procedures for the fleet (authored via bsc-skill)",
     optional: true,
-    hasOutputFile: true,  // skills.json
+    hasOutputFile: false,  // authored straight into the global skills.db via `bsc-skill add` — no file
     dependsOn: [],
     defaultEnabled: true,
     gate: (s) => ({ done: s.skillsAck, fraction: s.skillsAck ? 1 : 0 }),
