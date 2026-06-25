@@ -29,7 +29,7 @@ import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
 import { SessionFailure } from "@/app/SessionFailure";
 import { tokenForRepo } from "@/features/github/lib/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
-import { type PaneActivity, isTurnOpen, paneActivityFor } from "@/app/console/lib/paneActivity";
+import { type PaneActivity, isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
 
 // Background-pane buffer cap. While a pane is hidden we skip xterm.write
 // entirely and accumulate the PTY bytes here; on becoming visible we flush
@@ -764,12 +764,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // we read off our own. Empty/missing (a non-bash session, or a pane that hasn't taken a turn)
   // leaves the ref false — the silence timer stays authoritative, so there's no regression. Polled
   // every 1s (faster than the 4s token poll) so the gate re-arms promptly when a new turn opens.
+  // Debounced (#1184): a worker's blocked Stop records `idle` for the gap before its next turn's
+  // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
+  // dot doesn't blink idle→run.
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       const rows = await invoke<PaneActivity[]>("read_pane_activity").catch(() => [] as PaneActivity[]);
       if (cancelled) return;
-      turnOpenRef.current = isTurnOpen(paneActivityFor(rows, paneId));
+      turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
     };
     poll();
     const id = setInterval(poll, 1000);

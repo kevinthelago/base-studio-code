@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isTurnOpen, paneActivityFor, type PaneActivity } from "./paneActivity";
+import { isTurnOpen, isTurnOpenDebounced, ACTIVITY_IDLE_GRACE_MS, paneActivityFor, type PaneActivity } from "./paneActivity";
 
 // The status-dot gate (#1184): the silence timer must NOT idle a pane whose turn is still open
 // (a UserPromptSubmit with no following Stop). These tests pin the pure decision the poller feeds
@@ -21,6 +21,30 @@ describe("isTurnOpen — silence-timer gate", () => {
     // A PowerShell/cmd session or a pane that hasn't taken a turn emits no activity at all; the gate
     // stays false so the silence timer behaves exactly as before.
     expect(isTurnOpen(undefined)).toBe(false);
+  });
+});
+
+describe("isTurnOpenDebounced — worker flicker debounce", () => {
+  const NOW = 100_000;
+
+  it("keeps run open regardless of time", () => {
+    expect(isTurnOpenDebounced({ pane: "p1", state: "run", at: 0 }, NOW)).toBe(true);
+  });
+
+  it("keeps a freshly-idle turn open within the grace window (no blink)", () => {
+    // A worker's blocked Stop just recorded idle; its next prompt is about to reopen run. The dot
+    // must NOT blink idle in this gap.
+    expect(isTurnOpenDebounced({ pane: "p1", state: "idle", at: NOW - 1000 }, NOW)).toBe(true);
+    expect(isTurnOpenDebounced({ pane: "p1", state: "idle", at: NOW - (ACTIVITY_IDLE_GRACE_MS - 1) }, NOW)).toBe(true);
+  });
+
+  it("releases the gate once idle is older than the grace (genuinely done)", () => {
+    expect(isTurnOpenDebounced({ pane: "p1", state: "idle", at: NOW - ACTIVITY_IDLE_GRACE_MS }, NOW)).toBe(false);
+    expect(isTurnOpenDebounced({ pane: "p1", state: "idle", at: NOW - 10_000 }, NOW)).toBe(false);
+  });
+
+  it("treats no activity as not open (non-bash fallback unchanged)", () => {
+    expect(isTurnOpenDebounced(undefined, NOW)).toBe(false);
   });
 });
 

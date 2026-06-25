@@ -42,3 +42,25 @@ export function isTurnOpen(activity: PaneActivity | undefined): boolean {
 export function paneActivityFor(rows: PaneActivity[] | undefined, paneId: string): PaneActivity | undefined {
   return rows?.find((r) => r.pane === paneId);
 }
+
+/** Grace window after an `idle` event during which the turn is still treated as open (#1184). A
+ *  fleet WORKER runs under the `bsc-defer` Stop hook: each turn records `idle`, bsc-defer blocks the
+ *  stop, and the next turn's UserPromptSubmit reopens `run` a moment later. Without a debounce that
+ *  momentary idle un-gates the silence timer and blinks the dot idle→run; the grace covers the gap. */
+export const ACTIVITY_IDLE_GRACE_MS = 2500;
+
+/**
+ * Debounced turn-open check for the poller. Like {@link isTurnOpen}, but a freshly-`idle` pane is
+ * still treated as open for `graceMs` after the idle event — smoothing the worker flicker above.
+ * A genuinely done pane (its `idle` older than the grace) releases the gate, so the silence timer
+ * idles it as normal. `run` is always open; no activity is never open (non-bash fallback unchanged).
+ */
+export function isTurnOpenDebounced(
+  activity: PaneActivity | undefined,
+  now: number,
+  graceMs: number = ACTIVITY_IDLE_GRACE_MS,
+): boolean {
+  if (!activity) return false;
+  if (activity.state === "run") return true;
+  return now - activity.at < graceMs;
+}
