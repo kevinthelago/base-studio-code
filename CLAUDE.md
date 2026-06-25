@@ -310,6 +310,58 @@ move it to **Complete** and promote **v1.0.5** to **Current**.
 3. Implement the minimum changes to close the issue.
 4. Push and open a PR targeting `develop`. Reference the issue with `Closes #N`.
 
+### Parallel worktree agents
+
+Independent issues are worked **concurrently**, each by an agent in its own **git worktree** so
+parallel file edits never collide. Every worktree agent runs the same lifecycle — the commands below
+are the full set it needs end to end.
+
+**1 · Set up the worktree** (branch off the latest `develop`):
+```bash
+git fetch origin develop
+git checkout -b {issue}-{short-description} origin/develop
+npm install            # only if node_modules is absent — a fresh worktree needs a REAL install.
+                       # NEVER reuse a junctioned node_modules: the junction breaks esbuild (wasm
+                       # fs-deny) and `git worktree remove` will follow it and wipe the main install.
+```
+
+**2 · Implement** the minimum change to close the issue, **with its tests in the same branch** (never after).
+
+**3 · Verify — the gate (every command must pass; mirrors CI exactly):**
+```bash
+# Frontend (run when src/ changed)
+npm run typecheck                                   # tsc --noEmit, must be clean
+npm run lint                                        # eslint, 0 errors (react-compiler rules tsc/test miss)
+npm test                                            # vitest run — all green
+npx vite build                                      # optional: production bundle still builds
+
+# Rust (run when src-tauri/ or crates/ changed)
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings   # --all-targets — --lib misses test-target lints
+cargo test --workspace                                  # or `-p <crate>` to scope a slow build
+```
+
+**4 · Commit** on the branch (do **not** push until approved); end the message with the agreed
+`Co-Authored-By:` trailer.
+
+**5 · Push + PR** (after approval): push the branch, then
+`gh pr create --base develop --title "…" --body "… Closes #N"`.
+
+**6 · Merge + clean up** once the PR's CI gate is green
+(`gh pr merge <n> --merge --admin` — the PR run IS the integration test, so don't wait past green):
+```bash
+git push origin --delete {branch}
+git worktree remove --force <worktree-path>          # real node_modules → safe; a junction is NOT
+git branch -D {branch}                               # fails while the branch is checked out in a worktree
+```
+
+Gotchas:
+- **Base drift:** a branch cut from an older `develop` can fail an *unrelated* test that broke on the
+  current `develop` (the fleet pushes straight to `develop`, bypassing CI). Refresh with
+  `git merge origin/develop` and re-push rather than chasing a phantom failure.
+- The merge's `--delete-branch` aborts if the branch is checked out in a worktree — delete the **remote**
+  branch, `git worktree remove --force` the worktree, then delete the **local** branch (order matters).
+
 ### Dependency order for UI issues
 
 ```
