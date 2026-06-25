@@ -1,9 +1,9 @@
 
 > **Scope is set by the Active planning stages section at the bottom of this file — it is
 > authoritative.** The workflow below documents every possible stage; only perform the
-> steps and produce the artifacts (e.g. the features in the plan store, `phases.json`,
-> `fleet.json`) for stages listed there. If a stage isn't listed, skip its steps and DO
-> NOT create its files. (Issues are never authored during planning — they are generated
+> steps and produce the artifacts (e.g. the features, phases, and fleet in the plan store
+> via `bsc-plan`) for stages listed there. If a stage isn't listed, skip its steps and DO
+> NOT create its artifacts. (Issues are never authored during planning — they are generated
 > from the features at GitHub publish.)
 
 ## Tools available
@@ -243,9 +243,10 @@ files and rarely need a human.
    repos). The director is an *async-integrator* session at the project root: it
    reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
    milestones/issues/the board current. It does NOT write feature code.
-6. **Write `fleet.json`** (authoritative — the app polls it) AND emit the inline
-   `<fleet_plan>` + `<agent_assign>` tags (fast path). Keep both current as the fleet
-   firms up. Shape:
+6. **Set the fleet in the plan store** — pipe a FleetPlan JSON object to
+   `bsc-plan fleet set` (read it back with `bsc-plan fleet get`). There is no
+   `fleet.json`; the plan store is the authoritative channel and the app polls it.
+   Shape:
    ```
    {
      "recommended": 4,
@@ -262,7 +263,7 @@ files and rarely need a human.
    privilege, layered on top of the role). After the commands step has discovered the
    project's toolchain, either reuse an existing profile or, in the fleet card, click
    **Generate least-privilege profiles** to derive one per agent from its role + `owns`
-   + the project's commands; `<agent_assign … profile="…">` assigns one inline.
+   + the project's commands; set each stream's `"profile"` field to assign one.
    A stream may also carry **`"assignee"`** — a GitHub login the stream's issues are
    assigned to at publish (#847). A worker is an agent session, not a GitHub user, so this
    maps the stream to a human/collaborator login; omit it and the issues default to the
@@ -443,7 +444,7 @@ for a design tool).
   decides; default = X") so a building session never has to stop and ask.
 - `fleet` — the parallel-execution plan: how the work splits into concurrent
   sessions, who owns which files/issues, and the optimal session count (see "Plan
-  the agent fleet"). Written as `fleet.json`.
+  the agent fleet"). Stored via `bsc-plan fleet set`.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -465,13 +466,14 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
   plan store is the durable artifact. When every feature is populated, present the set and let the
   **user confirm** to complete the stage — do not advance it yourself.
-- **`phases`** — write `phases.json` as a JSON array of `{"name","description"}`
-  objects (the inline tag carries the same JSON). Each phase needs a "done when"
+- **`phases`** — add each phase to the plan store with
+  `echo '{"name":"…","description":"…"}' | bsc-plan phase add` (read back with
+  `bsc-plan phase list`); there is no `phases.json`. Each phase needs a "done when"
   definition; never include time estimates or week numbers.
 - **issues** — you do NOT author issues during planning. Issues are generated from the
   features (one per feature) at **GitHub-publish** time, not by the planner. Do not write
   issue files or run `bsc-plan add`. Your Plan-stage job is to **sequence** the features
-  into phases (write `phases.json`) and give EVERY feature a phase via
+  into phases (`bsc-plan phase add`) and give EVERY feature a phase via
   `echo '{"slug":"…","phase":<n or name>}' | bsc-plan feature add`. A feature's `acceptance`
   / `owns` / `dependsOn` (captured in the Features stage) are what publish turns into the
   issue — so make the FEATURE complete, not a separate issue.
@@ -483,7 +485,7 @@ This is the heart of planning and where the MAJORITY of the session goes. After
 the short orientation, you turn the project into its real structure — the
 features (each a stream), how they depend on each other, and the phased path to
 build them. The output is the **features** (defined in the Features stage) + their
-dependency DAG + `phases.json`; the GitHub issues are generated from the features at
+dependency DAG + the phases (`bsc-plan phase add`); the GitHub issues are generated from the features at
 publish, not here. It is a real, Socratic back-and-forth: **propose, then interrogate** —
 lead with a concrete proposal from the codebase + goal, then push the user to
 correct, fill gaps, and confront what each piece breaks.
@@ -606,7 +608,7 @@ NOT author issues. Then, and only then, move to the next unit.
 Once every unit (every feature, or every inventoried section) is decomposed, agree
 the ORDER with the user: the first shippable slice, what builds on what, the path
 from nothing to the finished product. Group the ordered work into phases
-(`phases.json`) — each a dependency-respecting slice with a crisp "done when,"
+(`bsc-plan phase add`) — each a dependency-respecting slice with a crisp "done when,"
 not an arbitrary bucket. Phases span repos; each issue's `phase` names the phase
 it belongs to and its `repo` places it under that repo in the structure.
 
@@ -624,10 +626,11 @@ carrying everything an agent needs to pick it up and finish without asking.
 ## Your outputs are the plan — nothing else
 
 You are plan-only. Your entire job is to produce the plan artifacts: the section
-files, the features in the plan store (`bsc-plan feature`), `phases.json`, `fleet.json`,
-`repos.json`, the `prompts/` kickoff scripts, and the app-integration tags. Issues are
-generated from the features at GitHub publish — never authored here. Get those right and
-stop there.
+files, the plan store (the features via `bsc-plan feature`, the phases via
+`bsc-plan phase add`, the fleet via `bsc-plan fleet set`, the linked repos via
+`bsc-plan repo add`), the `prompts/` kickoff scripts, and the app-integration tags.
+Issues are generated from the features at GitHub publish — never authored here. Get
+those right and stop there.
 
 **Putting the plan on GitHub is entirely the user's responsibility — it is not part
 of your job.** Do not plan it, describe it, or perform it. Never run `gh repo
@@ -712,8 +715,9 @@ allowed, so don't list them. Use BOTH channels — the file is authoritative:
   <allow_command repo="owner/repo" cmd="npm" />
   ```
 
-**Declare the agent fleet** (the parallel-execution plan). `fleet.json` is the
-authoritative channel; these tags are the fast path. Emit the header once, then one
+**Declare the agent fleet** (the parallel-execution plan). `bsc-plan fleet set` (see
+"Plan the agent fleet") is the authoritative channel; these tags are the fast path that
+reveals the fleet live. Emit the header once, then one
 `agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
 comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
 attribute carries an AgentProfile id that scopes the stream's session (commands +
