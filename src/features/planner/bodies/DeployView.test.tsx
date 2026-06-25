@@ -1,8 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { FocusedDeployBody } from "./DeployView";
-import { defaultDeployConfig } from "../shared/deployConfig";
+import { defaultDeployConfig, type DeployConfig } from "../shared/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
+
+/** A controlled host so toggling the mode/kind actually re-renders with the new config. */
+function Harness({ initial }: { initial: DeployConfig }) {
+  const [cfg, setCfg] = useState(initial);
+  return <FocusedDeployBody deploy={cfg} onChange={setCfg} dependencies={[]} />;
+}
 
 describe("FocusedDeployBody — dependencies, grouped by source (#1167 redesign)", () => {
   const deploy = defaultDeployConfig(["acme/web"]);
@@ -46,5 +53,72 @@ describe("FocusedDeployBody — structure", () => {
     expect(screen.getByText("B · WHAT IT DEPENDS ON")).toBeInTheDocument();
     expect(screen.getByText("C · RELEASE & HEALTH")).toBeInTheDocument();
     expect(screen.getByText("D · READINESS")).toBeInTheDocument();
+  });
+});
+
+describe("FocusedDeployBody — Target & hosting Cloud · Local modes (#1192)", () => {
+  it("defaults to cloud mode — the platform dropdown is shown, no Kind toggle", () => {
+    render(<FocusedDeployBody deploy={defaultDeployConfig(["acme/web"])} dependencies={[]} />);
+    expect(screen.getByText("Select a platform…")).toBeInTheDocument();
+    // mode toggle present
+    expect(screen.getByRole("button", { name: "cloud" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "local" })).toBeInTheDocument();
+    // local-only controls absent in cloud mode
+    expect(screen.queryByRole("button", { name: "library" })).not.toBeInTheDocument();
+  });
+
+  it("switching to Local swaps the body — Kind toggle replaces the platform dropdown", () => {
+    render(<Harness initial={defaultDeployConfig(["acme/web"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "local" }));
+    // cloud platform dropdown gone; local Kind toggle present
+    expect(screen.queryByText("Select a platform…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "library" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "application" })).toBeInTheDocument();
+  });
+
+  it("Local → Library shows the publish registry + package name fields (no host/runtime)", () => {
+    render(<Harness initial={defaultDeployConfig(["acme/web"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "local" }));
+    fireEvent.click(screen.getByRole("button", { name: "library" }));
+    expect(screen.getByText("publish registry")).toBeInTheDocument();
+    expect(screen.getByText("package name")).toBeInTheDocument();
+    expect(screen.getByText("publish trigger")).toBeInTheDocument();
+    // no region / output-dir fields from the cloud body
+    expect(screen.queryByText("region")).not.toBeInTheDocument();
+    // and no port-forwarding (library only, that's app-only)
+    expect(screen.queryByText("Port forwarding")).not.toBeInTheDocument();
+  });
+
+  it("Local → Application shows build targets/artifact/run + an optional port forward (cloudflared default)", () => {
+    render(<Harness initial={defaultDeployConfig(["acme/web"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "local" }));
+    // application is the default kind in local mode
+    expect(screen.getByText("build target(s)")).toBeInTheDocument();
+    expect(screen.getByText("output artifact")).toBeInTheDocument();
+    expect(screen.getByText("run command")).toBeInTheDocument();
+    // port forwarding toggle present, collapsed by default
+    expect(screen.getByText("Port forwarding")).toBeInTheDocument();
+    expect(screen.getByText("expose this app remotely")).toBeInTheDocument();
+    expect(screen.queryByText("method")).not.toBeInTheDocument();
+    // expand it → port + method fields, defaulting to cloudflared. The switch is the first child
+    // of the toggle row (the "Port forwarding" label's previous sibling carries the onClick).
+    fireEvent.click(screen.getByText("Port forwarding").parentElement!.firstChild as Element);
+    expect(screen.getByText("port")).toBeInTheDocument();
+    expect(screen.getByText("method")).toBeInTheDocument();
+    expect((screen.getByText("method").parentElement!.querySelector("select") as HTMLSelectElement).value).toBe("cloudflared");
+  });
+
+  it("a local library satisfies the `target` readiness check without a cloud platform", () => {
+    render(<Harness initial={defaultDeployConfig(["acme/sdk"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "local" }));
+    fireEvent.click(screen.getByRole("button", { name: "library" }));
+    // pick npm + a package name
+    const regSel = screen.getByText("publish registry").parentElement!.querySelector("select") as HTMLSelectElement;
+    fireEvent.change(regSel, { target: { value: "npm" } });
+    const pkg = screen.getByText("package name").parentElement!.querySelector("input") as HTMLInputElement;
+    fireEvent.change(pkg, { target: { value: "@acme/sdk" } });
+    // the target readiness row flips to satisfied
+    const row = screen.getByText("Deploy target per service").closest("div")!;
+    expect(row.textContent).toContain("1/1 services");
   });
 });
