@@ -25,7 +25,7 @@ describe("SessionRecoveryBanner (#1266)", () => {
     fleetStart = vi.fn();
     triageStart = vi.fn();
     // Empty tabs ⇒ everything discovered is unrepresented; stub the heavy launch actions.
-    useAppStore.setState({ tabs: [], fleetStartProject: fleetStart, triageStartProject: triageStart });
+    useAppStore.setState({ tabs: [], fleetStartProject: fleetStart as never, triageStartProject: triageStart as never });
   });
 
   it("surfaces the unrepresented sessions and groups them on Review", async () => {
