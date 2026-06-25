@@ -8,15 +8,29 @@ use roxmltree::{Document, Node};
 
 const API: &str = "http://export.arxiv.org/api/query";
 
-/// Search arXiv, newest first; `year_from` is applied client-side (the Atom API has no clean year
+/// Build the arXiv query URL for a keyword search (#1196). Pure + unit-tested so the query SHAPE is
+/// covered without network. Two things make keyword search actually useful — and getting them wrong
+/// was the bug where every query returned the same recent dump:
+///  • **relevance sort**, NOT `submittedDate` — date-sort returns the newest submissions regardless
+///    of the query, so seminal/landmark papers (which are older) never surface and unrelated queries
+///    look identical. arXiv's relevance ranking is what makes the query matter.
+///  • **field-prefixed, AND-joined terms** — `all:a+AND+all:b` genuinely constrains; a bare
+///    `all:a b` (space) matches loosely and lets the date-sorted recent set dominate.
+fn arxiv_search_url(query: &SearchQuery) -> String {
+    let terms: Vec<String> =
+        query.query.split_whitespace().map(|t| format!("all:{}", encode(t))).collect();
+    // Blank query is degenerate (caller's problem); fall back to a single empty field term.
+    let search_query = if terms.is_empty() { format!("all:{}", encode(&query.query)) } else { terms.join("+AND+") };
+    format!(
+        "{API}?search_query={search_query}&start=0&max_results={}&sortBy=relevance&sortOrder=descending",
+        query.limit.max(1),
+    )
+}
+
+/// Search arXiv by RELEVANCE; `year_from` is applied client-side (the Atom API has no clean year
 /// filter), and the result is capped to `limit`.
 pub fn search(http: &Http, query: &SearchQuery) -> Result<Vec<Paper>, String> {
-    let url = format!(
-        "{API}?search_query=all:{}&start=0&max_results={}&sortBy=submittedDate&sortOrder=descending",
-        encode(&query.query),
-        query.limit.max(1),
-    );
-    let body = http.get_text(&url, &[])?;
+    let body = http.get_text(&arxiv_search_url(query), &[])?;
     let mut papers = parse_search(&body)?;
     if let Some(yf) = query.year_from {
         papers.retain(|p| p.year.is_none_or(|y| y >= yf));
@@ -163,6 +177,24 @@ mod tests {
         // No pdf link in the fixture → derived from the id.
         assert_eq!(b.pdf_url.as_deref(), Some("https://arxiv.org/pdf/2312.09999"));
         assert_eq!(b.authors, vec![Author::new("Grace Hopper")]);
+    }
+
+    #[test]
+    fn search_url_sorts_by_relevance_and_ands_field_prefixed_terms() {
+        let q = SearchQuery { query: "3D gaussian splatting".into(), limit: 5, year_from: None, sources: vec![] };
+        let url = arxiv_search_url(&q);
+        // The bug was forcing a date sort, which returned the newest dump regardless of the query.
+        assert!(url.contains("sortBy=relevance"), "must sort by relevance: {url}");
+        assert!(!url.contains("submittedDate"), "must NOT force date sort (the bug): {url}");
+        // Each term is field-prefixed and AND-joined so the query actually constrains.
+        assert!(url.contains("search_query=all:3D+AND+all:gaussian+AND+all:splatting"), "terms must be AND-joined: {url}");
+        assert!(url.contains("max_results=5"), "honors the per-source limit: {url}");
+    }
+
+    #[test]
+    fn search_url_handles_a_single_term() {
+        let q = SearchQuery { query: "splatting".into(), limit: 1, year_from: None, sources: vec![] };
+        assert!(arxiv_search_url(&q).contains("search_query=all:splatting&"), "single term needs no AND join");
     }
 
     #[test]
