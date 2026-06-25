@@ -29,7 +29,7 @@ const chip: React.CSSProperties = {
 };
 
 /** A card with a numbered (or ✓-when-done) tile, title, optional accent + right slot. */
-function Card({ n, title, hint, right, accent, done, children }: {
+export function Card({ n, title, hint, right, accent, done, children }: {
   n: string; title: string; hint?: string; right?: React.ReactNode; accent?: string; done?: boolean;
   children: React.ReactNode;
 }) {
@@ -58,7 +58,7 @@ function Card({ n, title, hint, right, accent, done, children }: {
 }
 
 /** Group divider — "A · HOW IT SHIPS", colored rule. */
-function Divider({ label, color }: { label: string; color: string }) {
+export function Divider({ label, color }: { label: string; color: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
       <span style={{ fontFamily: MONO, fontSize: 9.5, color, letterSpacing: ".1em", fontWeight: 600 }}>{label}</span>
@@ -329,7 +329,6 @@ function TargetCard({ d, svc, set, setSvc, done }: {
   set: (patch: Partial<DeployConfig>) => void; setSvc: (patch: Partial<DeployService>) => void; done: boolean;
 }) {
   const right = <span style={monoSm}>{d.services.length} service{d.services.length !== 1 ? "s" : ""}</span>;
-  const mode: DeployMode = svc ? serviceMode(svc) : "cloud";
   return (
     <Card n="01" title="Target & hosting" hint="per service" right={right} done={done}>
       {/* service tabs */}
@@ -365,39 +364,49 @@ function TargetCard({ d, svc, set, setSvc, done }: {
         })}
       </div>
 
-      {svc && (
-        <>
-          {/* selected service meta */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
-            {(() => { const h = hostMeta(svc.host); return (
-              <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
-                <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
-              </span>
-            ); })()}
-            {hostMeta(svc.host).kind !== "cloud" && (
-              <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</span>
-            )}
-            <span style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</span>
-            <span style={chip}>{svc.stack}</span>
-            <span style={{ flex: 1 }} />
-            {svc.proposed && <span style={prop}>✦ proposed</span>}
-          </div>
-
-          {/* Cloud · Local mode toggle (#1192) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-            <span style={grpLabel}>mode</span>
-            <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
-              onChange={(v) => setSvc({ mode: v, proposed: false })} />
-            <span style={{ flex: 1 }} />
-            <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
-              {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
-            </span>
-          </div>
-
-          {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
-        </>
-      )}
+      {svc && <ServiceTargetEditor svc={svc} setSvc={setSvc} />}
     </Card>
+  );
+}
+
+/** The selected service's target editor (#1192): host/stack meta + the cloud·local mode toggle +
+ *  the Cloud or Local body. Extracted (#1399) so the merged Repositories & Deployment pane can
+ *  expand it inline under each repo, while the standalone Deploy stage keeps its service tabs. */
+export function ServiceTargetEditor({ svc, setSvc }: {
+  svc: DeployService; setSvc: (patch: Partial<DeployService>) => void;
+}) {
+  const mode: DeployMode = serviceMode(svc);
+  return (
+    <>
+      {/* selected service meta */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
+        {(() => { const h = hostMeta(svc.host); return (
+          <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
+            <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
+          </span>
+        ); })()}
+        {hostMeta(svc.host).kind !== "cloud" && (
+          <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</span>
+        )}
+        <span style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</span>
+        <span style={chip}>{svc.stack}</span>
+        <span style={{ flex: 1 }} />
+        {svc.proposed && <span style={prop}>✦ proposed</span>}
+      </div>
+
+      {/* Cloud · Local mode toggle (#1192) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+        <span style={grpLabel}>mode</span>
+        <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
+          onChange={(v) => setSvc({ mode: v, proposed: false })} />
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
+          {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
+        </span>
+      </div>
+
+      {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
+    </>
   );
 }
 
@@ -468,11 +477,16 @@ function DependenciesCard({ deps, registries, done }: {
   );
 }
 
-export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {} }: {
+export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {}, view = "full" }: {
   deploy?: DeployConfig;
   onChange?: (next: DeployConfig) => void;
   dependencies?: PlanDependency[];
   registries?: Record<string, DependencyRegistry>;
+  /** "full" — the standalone Deploy stage (banner + Target & hosting card + the rest). "tail" —
+   *  the merged Repositories & Deployment pane (#1399) renders the header + repo-target card itself,
+   *  so this skips the readiness banner, the "HOW IT SHIPS" divider, and the Target card, picking up
+   *  at the CI/CD pipeline. The shared `deploy.selService` keeps both halves in sync. */
+  view?: "full" | "tail";
 }) {
   if (!deploy) {
     return <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg-dim)", padding: "8px 2px" }}>Deployment config loads once the repos are linked.</div>;
@@ -493,22 +507,26 @@ export function FocusedDeployBody({ deploy, onChange, dependencies = [], registr
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* readiness banner */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
-        background: `color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
-        border: `1px solid color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
-      }}>
-        <span style={{ width: 7, height: 7, borderRadius: 99, background: allReady ? "var(--success)" : "var(--accent)" }} />
-        <span style={{ fontFamily: MONO, fontSize: 11, color: allReady ? "var(--success)" : "var(--accent)" }}>{allReady ? "Ready to ship" : `${ready}/${checks.length} defined`}</span>
-        <span style={{ flex: 1 }} />
-        <span style={monoSm}>{allReady ? "deployment issues ready to generate" : "missing: " + missing.join(", ")}</span>
-      </div>
+      {view === "full" && (
+        <>
+          {/* readiness banner */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
+            background: `color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
+            border: `1px solid color-mix(in oklch, ${allReady ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: allReady ? "var(--success)" : "var(--accent)" }} />
+            <span style={{ fontFamily: MONO, fontSize: 11, color: allReady ? "var(--success)" : "var(--accent)" }}>{allReady ? "Ready to ship" : `${ready}/${checks.length} defined`}</span>
+            <span style={{ flex: 1 }} />
+            <span style={monoSm}>{allReady ? "deployment issues ready to generate" : "missing: " + missing.join(", ")}</span>
+          </div>
 
-      {/* ───────── A · HOW IT SHIPS ───────── */}
-      <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
+          {/* ───────── A · HOW IT SHIPS ───────── */}
+          <Divider label="A · HOW IT SHIPS" color="var(--accent)" />
 
-      <TargetCard d={d} svc={svc} set={set} setSvc={setSvc} done={ck("target")} />
+          <TargetCard d={d} svc={svc} set={set} setSvc={setSvc} done={ck("target")} />
+        </>
+      )}
 
       {/* CI/CD pipeline */}
       <Card n="02" title="CI / CD pipeline" accent="var(--accent)" done={ck("pipeline")}

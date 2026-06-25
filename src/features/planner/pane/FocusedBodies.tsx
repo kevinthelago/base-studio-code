@@ -12,6 +12,7 @@ import { featureDefined, type PlanFeature } from "../issues/featureList";
 import type { Phase } from "../stages/focusedPlan";
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FocusedDeployBody } from "../bodies/DeployView";
+import { FocusedReposDeployBody } from "../bodies/ReposDeployView";
 import type { DeployConfig } from "../shared/deployConfig";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "../blueprints/BlueprintAuthorViews";
 import type { BlueprintSkillItem } from "../blueprints/blueprintSkills";
@@ -1356,18 +1357,20 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "integrations":
       return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
-      // #1383: one "Deployment" pane (repos linking + deploy). The link section always shows; the
-      // deploy ("ship") section folds in below it when the blueprint opted into ship (phase.ship). A
-      // blueprint that still lists Deploy as its own stage uses `case "deploy"` below (unchanged).
-      return (
-        <>
-          <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />
-          {phase.ship && (
-            <div style={{ marginTop: 18 }}>
-              <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />
-            </div>
-          )}
-        </>
+      // #1383/#1399: when the blueprint folds deploy in (phase.ship), the merged "Deployment" stage
+      // renders as one cohesive Repositories & Deployment pane — each repo's git identity merged with
+      // its deploy target (click a repo to expand its target editor inline). A non-ship blueprint
+      // (transform: harden/migrate) keeps the plain repo linker; a blueprint that still lists Deploy
+      // as its own stage uses `case "deploy"` below (unchanged).
+      return phase.ship ? (
+        <FocusedReposDeployBody
+          repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
+          dependencies={data?.dependencies} registries={data?.registries}
+          onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic}
+          repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic}
+        />
+      ) : (
+        <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />
       );
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} dependencies={data?.dependencies} registries={data?.registries} />;
