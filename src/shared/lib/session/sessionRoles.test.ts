@@ -15,6 +15,7 @@ import {
   roleDeniedTools,
   bscAgentPerms,
   scopeWriteGlobs,
+  hasScopedWriteCarveOut,
 } from "./sessionRoles";
 
 describe("scopeWriteGlobs (#1297)", () => {
@@ -328,5 +329,71 @@ describe("issuer + juror roles (#376 / #394)", () => {
     expect(checkCommand(juror, "git merge develop").allowed).toBe(false);
     expect(checkCommand(juror, "git log").allowed).toBe(true);
     expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+  });
+});
+
+// #851 — the director's scoped commons write carve-out: it keeps code:"none" (no feature-code
+// writes) yet may write EXACTLY the commons globs assigned to it, and nothing else.
+describe("director commons carve-out (#851)", () => {
+  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  // A representative commons set (what fleetStartProject assigns to the director from the stack).
+  const COMMONS = [".gitignore", "package.json", "tsconfig.json", ".github/workflows/**", ".env.example"];
+
+  it("a director WITHOUT assigned globs keeps the full code:none deny (no accidental carve-out)", () => {
+    expect(hasScopedWriteCarveOut(ROLE_DEFAULTS.director)).toBe(false);
+    expect(roleWriteRules(ROLE_DEFAULTS.director).deny).toEqual(WRITE_TOOLS);
+    expect(roleWriteRules(ROLE_DEFAULTS.director).allow).toEqual([]);
+    expect(canWritePath(ROLE_DEFAULTS.director, ".gitignore")).toBe(false);
+    expect(scopeWriteGlobs("director", [])).toEqual([]);
+  });
+
+  it("a director WITH commons globs gets a carve-out scoped to exactly the commons", () => {
+    const dir = roleCapability("director", { writeGlobs: COMMONS });
+    expect(dir.code).toBe("none"); // code stays none — feature code is still off-limits
+    expect(hasScopedWriteCarveOut(dir)).toBe(true);
+  });
+
+  it("director writeGlobs INCLUDE the commons set (can write each commons path)", () => {
+    const dir = roleCapability("director", { writeGlobs: COMMONS });
+    for (const p of [".gitignore", "package.json", "tsconfig.json", ".github/workflows/ci.yml", ".env.example"]) {
+      expect(canWritePath(dir, p)).toBe(true);
+    }
+  });
+
+  it("director is DENIED all other code writes (feature code outside the commons)", () => {
+    const dir = roleCapability("director", { writeGlobs: COMMONS });
+    for (const p of ["src/App.tsx", "src/auth/login.ts", "crates/kb/src/lib.rs", "README.md"]) {
+      expect(canWritePath(dir, p)).toBe(false);
+    }
+  });
+
+  it("roleWriteRules auto-approves the commons (allow, no whole-tool deny) so writes don't prompt", () => {
+    const rules = roleWriteRules(roleCapability("director", { writeGlobs: COMMONS }));
+    // The whole-tool deny is lifted (deny>allow would otherwise mask the per-glob allows).
+    expect(rules.deny).toEqual([]);
+    for (const g of COMMONS) {
+      expect(rules.allow).toContain(`Edit(${g})`);
+      expect(rules.allow).toContain(`Write(${g})`);
+    }
+    expect(rules.allow).toHaveLength(COMMONS.length * WRITE_TOOLS.length);
+  });
+
+  it("scopeWriteGlobs hard-limits the director's writes to the commons (bsc-scope hook)", () => {
+    expect(scopeWriteGlobs("director", COMMONS)).toEqual(COMMONS);
+  });
+
+  it("bscAgentPerms gives a commons-assigned director its write tools scoped to the commons", () => {
+    const p = bscAgentPerms(roleCapability("director", { writeGlobs: COMMONS }));
+    expect(p.deny_tools).toEqual([]); // write_file/edit_file NOT denied — carve-out active
+    expect(p.write_globs).toEqual(COMMONS);
+  });
+
+  it("the carve-out is director-only — a code:none triage/tester handed globs stays write-denied", () => {
+    for (const role of ["triage", "tester", "reviewer"] as const) {
+      const cap = roleCapability(role, { writeGlobs: COMMONS });
+      expect(hasScopedWriteCarveOut(cap)).toBe(false);
+      expect(roleWriteRules(cap).deny).toEqual(WRITE_TOOLS);
+      expect(canWritePath(cap, ".gitignore")).toBe(false);
+    }
   });
 });
