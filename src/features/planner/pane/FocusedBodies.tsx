@@ -303,14 +303,25 @@ function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
   );
 }
 
-function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel }: {
+function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel, focusedStream, onSelect }: {
   agents?: Agent[];
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  /** #1392 streams-link: the stream the Streams graph has focused — expand its editor here. */
+  focusedStream?: string;
+  /** Notify the parent which stream's editor opened/closed, so the graph spotlights it too. */
+  onSelect?: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
+  // When the graph focuses a stream, expand its editor here. Adjusted DURING render (React's
+  // recommended alternative to a sync effect) so it's instant + avoids set-state-in-effect.
+  const [lastFocused, setLastFocused] = useState(focusedStream);
+  if (focusedStream !== lastFocused) {
+    setLastFocused(focusedStream);
+    if (focusedStream) setOpen(focusedStream);
+  }
   const running = agents.filter((a) => a.status === "run").length;
   return (
     <div style={{ padding: "4px 0" }}>
@@ -331,7 +342,7 @@ function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel }: {
               background: "var(--bg-canvas)",
               border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
-              <div onClick={() => setOpen(on ? null : a.id)} style={{
+              <div onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }} style={{
                 display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
                 alignItems: "center", padding: "7px 8px", cursor: "pointer",
               }}>
@@ -1029,10 +1040,20 @@ function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
 
 // The Plan review (#…): the Plan stage's autonomous output — the feature seam/dependency graph
 // and the phases — shown for the user to APPROVE (the catch-point for a wrong inferred seam).
-function FocusedPlanBody({ data }: {
+function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
   data?: ProjectPaneData;
+  /** Controlled graph focus (#1392 streams-link): in the merged "Streams" stage the parent lifts
+   *  focus so the permissions roster expands whichever stream the graph spotlights (and vice-versa).
+   *  Omitted ⇒ FocusedPlanBody owns its own focus (the standalone Plan stage). */
+  focus?: RelFocus;
+  onFocus?: (f: RelFocus) => void;
 }) {
-  const [focus, setFocus] = useState<RelFocus>(null);
+  const [focusState, setFocusState] = useState<RelFocus>(null);
+  const focus = focusProp !== undefined ? focusProp : focusState;
+  const setFocus = (f: RelFocus | ((prev: RelFocus) => RelFocus)) => {
+    const next = typeof f === "function" ? (f as (p: RelFocus) => RelFocus)(focus) : f;
+    if (onFocus) onFocus(next); else setFocusState(next);
+  };
   const [hover, setHover] = useState<string | null>(null);
   const phases = data?.phaseStructure ?? [];
 
@@ -1144,7 +1165,7 @@ function FocusedPlanBody({ data }: {
 // (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
 // profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
 // stub that never rendered the fleet — so the stage looked empty even with streams planned.
-function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive }: {
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, focusedStream, onSelectStream }: {
   data?: ProjectPaneData;
   onPerm?: (streamId: string, perm: Perm) => void;
   onPreset?: (streamId: string, preset: string, perm: Perm) => void;
@@ -1155,6 +1176,9 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
   onTopology?: (t: Topology) => void;
   /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */
   onDirectorDrive?: (d: DirectorDrive) => void;
+  /** #1392 streams-link: the graph-focused stream → expand its editor; report row open/close back. */
+  focusedStream?: string;
+  onSelectStream?: (id: string | null) => void;
 }) {
   const agents = data?.agents ?? [];
   const topology = (data?.topology ?? "hybrid") as Topology;
@@ -1237,8 +1261,42 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
           </button>
         </div>
       )}
-      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
+      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
     </div>
+  );
+}
+
+// The merged "Streams" stage (#1392) — the plan/relationship graph + (when the blueprint folded the
+// fleet in) the coordination + per-stream permissions, sharing ONE focus: spotlight a stream in the
+// graph and its permissions editor expands below (and clicking a permissions row spotlights it in the
+// graph). Owns the shared `focus` so the two halves stay in sync.
+function StreamsBody({ data, fleet, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive }: {
+  data?: ProjectPaneData;
+  fleet?: boolean;
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onGenerateProfiles?: () => void;
+  onTopology?: (t: Topology) => void;
+  onDirectorDrive?: (d: DirectorDrive) => void;
+}) {
+  const [focus, setFocus] = useState<RelFocus>(null);
+  const focusedStream = focus?.type === "agent" ? focus.id : undefined;
+  return (
+    <>
+      <FocusedPlanBody data={data} focus={focus} onFocus={setFocus} />
+      {fleet && (
+        <div style={{ marginTop: 18 }}>
+          <FocusedPermissionsBody
+            data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel}
+            onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            focusedStream={focusedStream}
+            onSelectStream={(id) => setFocus(id ? { type: "agent", id } : null)}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1327,16 +1385,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
       // (coordination + per-stream permissions) folds in below it when the blueprint opted into fleet
       // (phase.fleet). A blueprint that still lists Permissions as its own stage uses `case
       // "permissions"` below (refactor — permissions without a structure stage to fold into).
-      return (
-        <>
-          <FocusedPlanBody data={data} />
-          {phase.fleet && (
-            <div style={{ marginTop: 18 }}>
-              <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />
-            </div>
-          )}
-        </>
-      );
+      return <StreamsBody data={data} fleet={phase.fleet} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "permissions":
       return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
     case "mcp":
