@@ -54,31 +54,40 @@ mod tests {
         assert!(d.contains("ONE feature"), "must mandate one-feature-at-a-time pacing");
     }
 
-    /// Skills directive must steer the planner to GROUND authored skills in the built-in
-    /// Research MCP and cite real sources (#1056/#1196), not just pick from the library.
+    /// Skills directive authors via the bsc-skill CLI + the per-session group, and points skill
+    /// grounding at the planning guide's Research workflow (the how-to moved there, #1433).
     #[test]
-    fn stage_directive_skills_grounds_in_research() {
+    fn stage_directive_skills_authors_via_bsc_skill() {
         let d = stage_directive("skills");
-        assert!(d.contains("Research"), "skills directive must point at the Research MCP");
         assert!(d.contains("bsc-skill add"), "skills are authored via the bsc-skill CLI");
         assert!(!d.contains("skills.json"), "the planner must no longer be told to write skills.json (#1412)");
         // #1419: authored skills pair into the per-session group and the planner can curate it.
         assert!(d.contains("$BSC_SESSION_SKILL_GROUP"), "must author into the session skill group");
         assert!(d.contains("group member"), "must tell the planner it can add/remove group members");
-        // Names the concrete grounding tools and the cite-don't-fabricate rule.
-        assert!(d.contains("search") && d.contains("semantic_search"), "must name the Research tools");
-        assert!(d.to_lowercase().contains("cite") || d.to_lowercase().contains("cited"), "must require citing sources");
-        assert!(d.to_lowercase().contains("never fabricate"), "must forbid fabricated references");
-        // Seed-then-refine loop (#1298): Wikipedia seeds, scientific sources refine.
-        assert!(d.contains("Wikipedia") && d.to_lowercase().contains("seed"), "must steer Wikipedia-first skill seeding");
-        assert!(d.to_lowercase().contains("refine"), "must steer refining the seed with the scientific sources");
+        // #1433: the Research how-to lives in the planning guide now; the directive only points at it.
+        assert!(d.to_lowercase().contains("research"), "must point skill grounding at the Research workflow");
+        assert!(!d.contains("semantic_search"), "the Research tool how-to belongs in the planning guide, not the directive (#1433)");
     }
 
-    /// Context directive must also nudge grounding stack/architecture in Research (#1056/#1196).
+    /// Context directive points technique grounding at the planning guide's Research workflow (#1433).
     #[test]
-    fn stage_directive_context_grounds_techniques_in_research() {
+    fn stage_directive_context_points_to_research_workflow() {
         let d = stage_directive("context");
-        assert!(d.contains("Research"), "context directive must mention the Research MCP for technique grounding");
+        assert!(d.to_lowercase().contains("research workflow"), "context directive must point technique grounding at the planning guide's Research workflow");
+        assert!(!d.contains("semantic_search"), "the Research tool how-to belongs in the planning guide, not the directive (#1433)");
+    }
+
+    /// #1433: the Research how-to (Wikipedia-first → compile Skills → refine with research papers)
+    /// lives in the planning guide, not the per-stage directives.
+    #[test]
+    fn planning_process_describes_the_research_workflow() {
+        let md = PLANNING_PROCESS_MD;
+        assert!(md.contains("Research"), "planning guide must describe the Research MCP");
+        assert!(md.contains("Wikipedia") && md.contains("sources:[\"wikipedia\"]"), "must steer Wikipedia-first research");
+        assert!(md.contains("get_fulltext") && md.contains("semantic_search"), "must name the Research tools");
+        assert!(md.contains("arXiv"), "must steer refining with the scientific sources (research papers)");
+        assert!(md.contains("bsc-skill add"), "must compile the findings into Skills");
+        assert!(md.to_lowercase().contains("never fabricate"), "must forbid fabricated references");
     }
 
     /// Context directive surfaces SEO as a web-conditional production-readiness dimension (#1293).

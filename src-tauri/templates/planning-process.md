@@ -534,20 +534,24 @@ single highest-leverage moment in planning**: the user's understanding of the ha
 problem should leave as a durable, reusable **Skill** the building agent can invoke,
 not a one-off prose sketch it has to re-derive:
 
-1. **Research + source.** Name the established approach from what you know (the
-   standard technique, the canonical library/framework, the reference architecture).
-   Source it: ask the user for papers / docs / a reference implementation they trust,
-   and `WebFetch` any concrete URL you or they name (a library API page, a spec, a
-   GitHub raw file) to verify it — you can fetch a known URL but not search, so ask
-   for the link rather than guessing. **Pin the specifics**: the exact library +
-   version, the algorithm/architecture, the data structures, the known pitfalls, and
-   the perf/accuracy constraints.
-2. **Break the problem into one or more Skills.** Instead of leaving the grounded
-   approach as prose, author a **Skill** — a reusable capability bundle (prompt +
-   bundled tools + profile guardrails) — with `bsc-skill add` (see "Manage the Skills
-   library"). The skill encodes the procedure you and the user worked out: the ordered
-   steps, the named tools, the guardrails, and the success checks. The agent that
-   builds the unit **invokes the skill** rather than re-deriving the approach.
+1. **Research the topic — Wikipedia first.** Whenever the work hinges on a topic or
+   technique you or the user want to learn or incorporate, ground it with the built-in
+   **Research** MCP (always available, no setup) — never guess. START on **Wikipedia**:
+   `search` with `sources:["wikipedia"]`, then `get_fulltext` on the article, to lay
+   down the broad skeleton — definitions, sub-topics, key terms, and the canonical
+   approach / library / reference architecture. **Pin the specifics**: the exact
+   library + version, the algorithm/architecture, the data structures, the known
+   pitfalls, and the perf/accuracy constraints.
+2. **Compile Skills from the findings, then refine them with research papers.** Turn
+   what you found into reusable **Skills** — author each with `bsc-skill add` (see
+   "Manage the Skills library"); a Skill is a capability bundle (prompt + bundled tools
+   + profile guardrails) the building agent **invokes** rather than re-deriving. Then
+   REFINE each skill against the scientific sources: `search` arXiv / Semantic Scholar /
+   PubMed/PMC / Crossref for the sub-topics and use `get_fulltext` / `semantic_search`
+   to pull the exact passages, folding that cited, current depth back into the skill.
+   Prefer recent, well-cited work; **cite what you adopt and never fabricate references**.
+   `WebFetch` a specific URL the search surfaces (a library API page, a spec, a GitHub
+   raw file) to verify a detail.
    - **Scope it to this project** so the fleet picks it up: set the skill's
      `projects` to this project's key and leave it `pinned` (the default) — pinned,
      project-scoped skills are auto-available to every worker on the project. (There
