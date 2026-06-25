@@ -10,7 +10,7 @@ import {
   waitingWakePrompt,
   type CoordState,
   type Waiter,
-} from "@/lib/fleet/coordination";
+} from "@/shared/lib/fleet/coordination";
 
 export type CoordControlKind = "wake" | "approve";
 

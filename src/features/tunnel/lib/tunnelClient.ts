@@ -9,7 +9,7 @@ import type {
   PaneDescriptor, SessionMeta, TunnelStatus,
   PlanMessage, PlanPipelineRun, PlanEventKind,
 } from "./tunnel";
-import type { CanonicalFile } from "@/lib/planner/plannerCore";
+import type { CanonicalFile } from "@/features/planner/lib/plannerCore";
 
 /** Structured result from `tunnelCheckRelay` (T3b). All error cases are in the `error`
  *  field — the command never throws so the Settings card can render a result either way. */

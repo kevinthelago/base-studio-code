@@ -6,7 +6,7 @@
 // The GraphQL executor is injected so the adopt-vs-create decision is unit-testable
 // without a live GitHub. Triage is gated until the project is actually published.
 
-import { findByTitle } from "@/lib/core/projectPaths";
+import { findByTitle } from "@/shared/lib/core/projectPaths";
 
 /** A GitHub Projects v2 board, as the owner lookup returns it. */
 export interface GithubProjectRef {

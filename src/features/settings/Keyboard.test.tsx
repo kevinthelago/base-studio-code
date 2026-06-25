@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { KeyboardSettings } from "./Keyboard";
 import { useAppStore } from "@/store";
 import { SHORTCUT_GROUPS } from "./lib/shortcuts";
-import { SHORTCUT_REGISTRY } from "@/hooks/useHotkeys";
+import { SHORTCUT_REGISTRY } from "@/shared/hooks/useHotkeys";
 
 beforeEach(() => {
   useAppStore.setState({ keybindings: {} });

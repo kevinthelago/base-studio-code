@@ -2,8 +2,8 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { repoPromptKey } from "../../lib/session/startupPrompt";
-import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
+import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
+import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
 // to the Extensions feature slice (@/features/extensions/store) (#1309). This slice keeps the

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyCoordState, parseRef, type CoordState, type Waiter, type WaitingSession } from "@/lib/fleet/coordination";
+import { emptyCoordState, parseRef, type CoordState, type Waiter, type WaitingSession } from "@/shared/lib/fleet/coordination";
 import { planMobileResume } from "./coordControl";
 
 const dep = parseRef("42")!; // an issue ref

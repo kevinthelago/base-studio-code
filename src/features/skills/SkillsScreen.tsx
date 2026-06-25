@@ -11,15 +11,15 @@ import { useAppStore } from "@/store";
 import {
   KIND, PROFILE_COLOR, SOURCE_TAG, skillCatalog, fmtCount,
   type SkillKind, type SkillSource, type SkillProfile,
-} from "@/data/skills";
+} from "@/shared/data/skills";
 import {
   blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
 import { Spark } from "./SkillsCharts";
-import { TabBar, type TabItem } from "@/components/chrome/TabBar";
-import { usePageTabs } from "@/hooks/usePageTabs";
+import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import "./skills.css";
 
 type Mode = "library" | "runs" | "catalog";

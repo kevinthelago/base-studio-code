@@ -2,28 +2,28 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import type { Tab } from "../../components/chrome/Tabstrip";
-import type { Screen } from "../../components/chrome/Rail";
-import type { AgentStream } from "../../screens/planner/stages/planSections";
-import { WORKFLOW_PRESETS } from "../../lib/fleet/workflow";
-import { startRun } from "../../lib/fleet/conductor";
+import type { Tab } from "@/app/chrome/Tabstrip";
+import type { Screen } from "@/app/chrome/Rail";
+import type { AgentStream } from "@/features/planner/stages/planSections";
+import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
+import { startRun } from "@/shared/lib/fleet/conductor";
 import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
-import type { PlanIssue } from "../../screens/planner/issues/planIssues";
-import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../../lib/session/checkpoint";
-import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "../../lib/core/projectPaths";
-import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "../../lib/console/paneIdentity";
-import { clearTabStatuses as clearTabStatusesPure } from "../../lib/console/paneStatus";
-import { repoPromptKey } from "../../lib/session/startupPrompt";
-import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
-import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
+import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
+import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
+import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
+import { resolveAllowedCommands } from "@/shared/lib/session/allowedCommands";
+import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
 import { resolveHooks } from "@/features/extensions/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/extensions/lib/mcpServers";
-import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
+import { resolveReferenceContext, resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
-import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";
-import { scriptDocRelpath } from "../../screens/planner/session/planningSession";
+import { resolveStrategy, strategySettings } from "@/features/planner/shared/integrationStrategy";
+import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 
 type ProjectsSlice = Pick<AppStore,
   "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"

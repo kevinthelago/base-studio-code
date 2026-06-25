@@ -8,7 +8,7 @@ import { useEffect } from "react";
 import { useAppStore } from "@/store";
 import { buildPanePayload } from "./lib/tunnel";
 import { tunnelSetPanes, tunnelSetSessions } from "./lib/tunnelClient";
-import { log } from "@/lib/core/log";
+import { log } from "@/shared/lib/core/log";
 
 const paneId = (tabIdx: number, paneIdx: number): string => `t${tabIdx}p${paneIdx}`;
 
