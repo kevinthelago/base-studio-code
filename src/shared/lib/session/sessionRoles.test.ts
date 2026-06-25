@@ -14,7 +14,24 @@ import {
   roleWriteRules,
   roleDeniedTools,
   bscAgentPerms,
+  scopeWriteGlobs,
 } from "./sessionRoles";
+
+describe("scopeWriteGlobs (#1297)", () => {
+  it("falls back to the role default when the pane has no owned globs (planner ⇒ plan files)", () => {
+    expect(scopeWriteGlobs("planner", [])).toEqual(PLANNER_WRITE_GLOBS);
+  });
+  it("uses the pane's owned globs when assigned (a worker's lane)", () => {
+    expect(scopeWriteGlobs("worker", ["src/auth/**", "src/y.ts"])).toEqual(["src/auth/**", "src/y.ts"]);
+  });
+  it("is empty for a code:none role (director/triage) ⇒ no scope hook", () => {
+    expect(scopeWriteGlobs("director", [])).toEqual([]);
+    expect(scopeWriteGlobs("triage", ["whatever"])).toEqual([]);
+  });
+  it("is empty for a worker with no lane yet (no write boundary)", () => {
+    expect(scopeWriteGlobs("worker", [])).toEqual([]);
+  });
+});
 
 describe("bscAgentPerms", () => {
   it("a code:none role denies the write/edit tools", () => {

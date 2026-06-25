@@ -110,6 +110,22 @@ pub(crate) const BSC_CONFINE_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-scope` helper (#1297): a PreToolUse hook for the file-WRITE tools on a bounded-glob
+/// pane. It reads Claude Code's tool JSON, extracts the target `file_path` / `notebook_path`, makes
+/// it relative to the session root (`$BSC_REPO_ROOT`), and BLOCKS (return 2 + stderr) when the path
+/// matches NONE of the pane's write globs (`$BSC_SCOPE_GLOBS`, space-separated). This is the hard
+/// deny the role gate's allow-only `roleWriteRules` lacks: the planner (writeGlobs = plan files
+/// only) can no longer be coaxed into writing `src/App.tsx` — that write is denied outright rather
+/// than falling through to a prompt. Self-gating: an empty `$BSC_SCOPE_GLOBS` is a no-op, so it's
+/// harmless to install on every gated pane. Mirrors `canWritePath` / `matchGlob` in
+/// `src/lib/session/sessionRoles.ts`. `set -f` keeps `for g in $globs` from glob-expanding the
+/// patterns against the cwd; `return 2` (not `exit`) so it never kills a shell that sources it.
+/// Covers the AI's WRITE tools only (Read is unrestricted — the planner must read for context).
+pub(crate) const BSC_SCOPE_RC: &str = concat!(
+    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
+    "\n",
+);
+
 /// The `bsc-taint` helper (#1167 — containment / active enforcement): a PreToolUse hook on a
 /// gated pane that implements a *tainted-turn gate*. It marks the session "tainted" right after
 /// it ingests untrusted input (a `WebFetch`, or a Bash `curl`/`wget`/`gh issue|pr view`), and then
@@ -400,7 +416,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -409,6 +425,7 @@ mod tests {
             super::BSC_MCP_RC,
             super::BSC_TOKENS_RC,
             super::BSC_CONFINE_RC,
+            super::BSC_SCOPE_RC,
             super::BSC_TAINT_RC,
             super::BSC_COORD_EMIT_RC,
             super::BSC_DEFER_RC,
@@ -583,6 +600,60 @@ mod tests {
         assert_eq!((lines[0][1], lines[0][2], lines[0][3]), ("PreToolUse", "Block PII", "block"));
         assert_eq!(lines[1][3], "allow");
         assert_eq!(lines[2][3], "ok");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bsc_scope_blocks_out_of_scope_writes() {
+        // The write-scope gate (#1297): a file write is allowed only when its path matches one of
+        // the pane's write globs ($BSC_SCOPE_GLOBS); anything else is blocked (return 2). An empty
+        // glob set is a no-op. Skips where bash isn't on PATH.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let shell = crate::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_scope subshell test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        std::fs::write(&rc, super::BSC_SCOPE_RC).unwrap();
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+
+        // Fire bsc-scope as a PreToolUse hook would, with a given glob set + tool JSON on stdin.
+        let fire = |globs: &str, path: &str| -> std::process::ExitStatus {
+            let json = format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{path}"}}}}"#);
+            let mut child = Command::new(&shell)
+                .arg("-c").arg("bsc-scope")
+                .env("BASH_ENV", &rc_bash)
+                .env("BSC_SCOPE_GLOBS", globs)
+                .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+                .spawn().unwrap();
+            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            child.wait().unwrap()
+        };
+
+        let planner = "*.md *.json prompts/* context/*";
+        // Planner plan files are in scope; code files are blocked.
+        assert!(fire(planner, "goal.md").success(), "plan markdown is in scope");
+        assert!(fire(planner, "context/stack.md").success(), "context/* is in scope");
+        assert!(fire(planner, "fleet.json").success(), "plan json is in scope");
+        assert_eq!(fire(planner, "src/App.tsx").code(), Some(2), "UI/code write must be blocked");
+        assert_eq!(fire(planner, "crates/data/src/lib.rs").code(), Some(2), "rust write must be blocked");
+
+        // Worker-style lane glob.
+        let worker = "src/auth/**";
+        assert!(fire(worker, "src/auth/login.tsx").success(), "in-lane write is allowed");
+        assert_eq!(fire(worker, "src/other.ts").code(), Some(2), "out-of-lane write is blocked");
+
+        // Empty scope ⇒ no-op (everything passes), so it's safe on ungated panes.
+        assert!(fire("", "anything/at/all.rs").success(), "empty scope is a no-op");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
