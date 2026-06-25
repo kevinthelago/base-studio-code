@@ -218,6 +218,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // unchanged config) and the set of `<projId>::<mcp-name>` already resolved into the MCP store (so we
   // don't re-apply/re-clone every 2s tick). Keyed by project, so a project switch doesn't reset them.
   const deployAppliedRef = useRef<Record<string, string>>({});
+  // The locked dependency manifest is DB-owned (#1191) — the poll reflects `plan_get_deps` into the
+  // DEPENDENCIES section. `depsAppliedRef` skips an unchanged DB blob each tick; `depsImportedRef`
+  // guards the one-time legacy `dependencies.json` → plan.db import so it runs at most once per project.
+  const depsAppliedRef = useRef<Record<string, string>>({});
+  const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
   // Context manifest (#1019): the dynamic required-set + confirm state, polled from plan.db. The gate
   // (`requiredContextConfirmed`) reads it; the change-guard avoids churning state every tick; the
@@ -462,10 +467,11 @@ export function Planning({ visible }: { visible: boolean }) {
     () => parseFeaturesFile(savedSections[FEATURES_KEY] ?? ""),
     [savedSections],
   );
-  // The locked dependency manifest (#1111/#1127) — authored in the Deploy stage (dependencies.json:
-  // the libraries + the non-default registries they're sourced from). The Deploy gate counts the
-  // deps, publish seeds them into each repo's package.json / Cargo.toml (+ .npmrc / .cargo/config.toml
-  // for private sources), and each worker inlines its repo's slice.
+  // The locked dependency manifest (#1111/#1127/#1191) — authored in the Deploy stage via
+  // `bsc-plan deps set` and reflected from plan.db into the DEPENDENCIES section by the poll (the
+  // libraries + the non-default registries they're sourced from). The Deploy gate counts the deps,
+  // publish seeds them into each repo's package.json / Cargo.toml (+ .npmrc / .cargo/config.toml for
+  // private sources), and each worker inlines its repo's slice.
   const depManifest = useMemo(
     () => parseDependencyManifest(savedSections[DEPENDENCIES_KEY] ?? ""),
     [savedSections],
@@ -1605,6 +1611,32 @@ export function Planning({ visible }: { visible: boolean }) {
           }
         } catch { /* plan.db not created until the planner sets deploy — ignore */ }
 
+        // Dependency manifest is DB-owned (#1191) — the planner records it with `bsc-plan deps set`
+        // (was a raw `dependencies.json`). Reflect the stored blob into the DEPENDENCIES section so the
+        // gate, DeployView, worker scope, and publish all read it from plan.db unchanged. When the DB is
+        // still empty but a legacy `dependencies.json` exists in the section store, import it ONCE
+        // (no data loss) so pre-#1191 projects migrate transparently; after that the DB is authoritative.
+        try {
+          const dbDeps = await invoke<unknown | null>("plan_get_deps", { projectKey: effectiveProjectId });
+          if (dbDeps) {
+            const raw = JSON.stringify(dbDeps);
+            if (raw !== depsAppliedRef.current[effectiveProjectId]) {
+              depsAppliedRef.current[effectiveProjectId] = raw;
+              if (raw !== (saved[DEPENDENCIES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, DEPENDENCIES_KEY, raw);
+            }
+          } else if (!depsImportedRef.current.has(effectiveProjectId)) {
+            // One-time legacy import: the file content surfaced as the DEPENDENCIES section by an earlier
+            // `read_plan_sections` tick. Re-serialize through the tolerant parser so a bare-array (#1111)
+            // file is normalized to the full manifest shape before it lands in plan.db.
+            const legacy = saved[DEPENDENCIES_KEY] ?? "";
+            const manifest = parseDependencyManifest(legacy);
+            if (manifest.dependencies.length || Object.keys(manifest.registries).length) {
+              depsImportedRef.current.add(effectiveProjectId);
+              await invoke("plan_set_deps", { projectKey: effectiveProjectId, manifest });
+            }
+          }
+        } catch { /* plan.db not created until the planner sets deps — ignore */ }
+
         // MCP assignments are DB-owned (#1021) — resolve each assigned catalog name into the MCP-servers
         // store (idempotent). First-party servers are queued for the download-confirmation modal
         // (#1055) instead of cloned silently. The applied-set guards against re-applying the same name
@@ -1654,6 +1686,10 @@ export function Planning({ visible }: { visible: boolean }) {
           // still satisfies the gate (#…).
           const key = canonicalSectionKey(rawKey);
           if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1017/#1018/#1022) — sourced from plan.db above, not a file
+          // Dependencies are DB-owned (#1191): once plan.db has supplied the manifest, the DB blob wins
+          // over any lingering legacy `dependencies.json`. Until then, let the file through so the
+          // one-time legacy import (above) can read it.
+          if (key === DEPENDENCIES_KEY && depsAppliedRef.current[effectiveProjectId]) continue;
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
             store.setPlanSection(effectiveProjectId, key, content);
           }
