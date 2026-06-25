@@ -27,7 +27,7 @@ import {
 } from "../stages/planSections";
 import { resolveSkills } from "@/features/skills/lib/skills";
 import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle, type PlanFeature } from "../issues/featureList";
-import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
+import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, unlockedSharedRepos, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -831,9 +831,14 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const k of confirmedSet) out[confirmedSignal(k)] = true;
     return out;
   }, [confirmedSet]);
-  const signals = useMemo(
-    () => ({ ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals }),
-    [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals]);
+  const signals = useMemo(() => {
+    // Shared-deps gate (#1429): every repo built by 2+ streams must have its deps locked; single-owner
+    // repos (and no-fleet plans) auto-satisfy. Derived from the fleet streams' repos + the manifest.
+    const repoStreams: Record<string, string[]> = {};
+    for (const s of (planFleet[effectiveProjectId]?.streams ?? [])) { if (s.repo) (repoStreams[s.repo] ??= []).push(s.id); }
+    const sharedDepsLocked = unlockedSharedRepos(planDependencies, repoStreams).length === 0;
+    return { ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
+  }, [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user

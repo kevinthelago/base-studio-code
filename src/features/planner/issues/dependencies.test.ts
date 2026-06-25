@@ -2,9 +2,66 @@ import { describe, it, expect } from "vitest";
 import {
   parseDependenciesFile, parseDependencyManifest, depsForRepo, bucketByEcosystem,
   mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, buildWorkerDependencyBlock,
-  groupDependenciesBySource,
+  groupDependenciesBySource, sharedRepoDependencies, unlockedSharedRepos,
   type PlanDependency, type DependencyRegistry,
 } from "./dependencies";
+
+describe("sharedRepoDependencies (#1429 — Streams pane per-stream view)", () => {
+  const registries: Record<string, DependencyRegistry> = {
+    acme: { url: "npm.acme.internal", scope: "@acme", auth: "ACME_NPM_TOKEN" },
+  };
+  const deps: PlanDependency[] = [
+    { repo: "acme/web", ecosystem: "npm", name: "zod", version: "3.23.8", stream: "api", why: "validators" },
+    { repo: "acme/web", ecosystem: "npm", name: "@acme/api-client", source: "acme", stream: "api" },
+    { repo: "acme/web", ecosystem: "npm", name: "react", version: "18.3.1", stream: "ui" },
+    { repo: "acme/web", ecosystem: "npm", name: "zod", version: "3.23.8", stream: "ui" }, // shared with api
+    { repo: "acme/web", ecosystem: "npm", name: "vitest", dev: true, stream: "ui" },
+    { repo: "acme/cli", ecosystem: "cargo", name: "clap", stream: "infra" }, // single-owner repo
+  ];
+  const repoStreams = { "acme/web": ["api", "ui", "director"], "acme/cli": ["infra"] };
+
+  it("includes only repos built by 2+ streams; single-owner repos are omitted", () => {
+    const views = sharedRepoDependencies(deps, registries, repoStreams);
+    expect(views.map((v) => v.repo)).toEqual(["acme/web"]);
+  });
+
+  it("groups deps per declaring stream, with an empty group for a no-dep owner (director)", () => {
+    const [web] = sharedRepoDependencies(deps, registries, repoStreams);
+    const byName = Object.fromEntries(web.byStream.map((g) => [g.stream, g]));
+    expect(byName.api.deps.map((d) => d.name).sort()).toEqual(["@acme/api-client", "zod"]);
+    expect(byName.ui.deps.map((d) => d.name).sort()).toEqual(["react", "vitest", "zod"]);
+    expect(byName.director.empty).toBe(true);
+    expect(web.total).toBe(5);
+  });
+
+  it("derives the version-lock: a package declared by 2+ streams flags sharedWith the others", () => {
+    const [web] = sharedRepoDependencies(deps, registries, repoStreams);
+    const apiZod = web.byStream.find((g) => g.stream === "api")!.deps.find((d) => d.name === "zod")!;
+    const uiZod = web.byStream.find((g) => g.stream === "ui")!.deps.find((d) => d.name === "zod")!;
+    expect(apiZod.sharedWith).toEqual(["ui"]);
+    expect(uiZod.sharedWith).toEqual(["api"]);
+    // react (ui only) isn't shared
+    expect(web.byStream.find((g) => g.stream === "ui")!.deps.find((d) => d.name === "react")!.sharedWith).toEqual([]);
+  });
+
+  it("surfaces the repo's referenced registries (public + private)", () => {
+    const [web] = sharedRepoDependencies(deps, registries, repoStreams);
+    expect(web.registries.some((g) => !g.private)).toBe(true);            // npm public default
+    expect(web.registries.some((g) => g.private && g.auth === "ACME_NPM_TOKEN")).toBe(true);
+  });
+
+  it("a multi-stream repo with no deps yet is included and flagged unlocked", () => {
+    const rs = { "acme/web": ["api", "ui"] };
+    expect(sharedRepoDependencies([], {}, rs).map((v) => v.repo)).toEqual(["acme/web"]);
+    expect(unlockedSharedRepos([], rs)).toEqual(["acme/web"]);
+    expect(unlockedSharedRepos(deps, rs)).toEqual([]); // acme/web now has deps
+  });
+
+  it("parses a stored `stream` field on a dependency", () => {
+    const m = parseDependencyManifest(JSON.stringify({ dependencies: [{ repo: "a/b", ecosystem: "npm", name: "zod", stream: "api" }] }));
+    expect(m.dependencies[0].stream).toBe("api");
+  });
+});
 
 describe("groupDependenciesBySource (#1167 — Deploy pane)", () => {
   it("groups by source: ecosystem defaults for sourceless deps + one group per private registry", () => {

@@ -257,9 +257,10 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
       ...doneCtx, phasesConfirmed: true,
       fleet: { streams: 2, profilesComplete: true }, skillsAck: true,
     };
-    // featuresPhased is an extra signal (added in Planning.tsx alongside hasPlanGaps), not part of
-    // planStateToSignals — supply it the same way the app does (#plan-db).
-    expect(planSectionsComplete(secs, { ...sig(allDone), featuresPhased: true })).toBe(true);
+    // featuresPhased + sharedDepsLocked are extra signals (added in Planning.tsx alongside
+    // hasPlanGaps), not part of planStateToSignals — supply them the same way the app does. With no
+    // multi-stream repos sharedDepsLocked is true (#1429).
+    expect(planSectionsComplete(secs, { ...sig(allDone), featuresPhased: true, sharedDepsLocked: true })).toBe(true);
   });
 
   it("currentSection is the first in-progress section, skipping N/A", () => {
@@ -303,33 +304,39 @@ describe("lint-as-gate (#897 Phase 4b)", () => {
   });
 });
 
-describe("Deploy folds in dependencies (#1127)", () => {
+describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
   it("has no standalone dependencies section anymore", () => {
     expect(SECTION_DEFS.dependencies).toBeUndefined();
     expect(makeBlueprints().find((b) => b.id === "default")!.sections.map((s) => s.key)).not.toContain("dependencies");
   });
 
-  it("requires BOTH shipping and a locked dependency before Deploy passes", () => {
+  it("Deploy gates on shipping only — dependencies moved to the Streams stage (#1429)", () => {
     const gate = SECTION_DEFS.deploy.gateRule!;
     const signals = gate.require.map((r) => r.signal);
     expect(signals).toContain("deploymentDefined");
-    expect(signals).toContain("dependenciesDefined");
-    expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 0 }).done).toBe(false); // deps missing
-    expect(evalGate(gate, { deploymentDefined: false, dependenciesDefined: 2 }).done).toBe(false); // shipping missing
-    expect(evalGate(gate, { deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);  // both ⇒ pass
+    expect(signals).not.toContain("dependenciesDefined"); // deps no longer gate Deploy
+    expect(evalGate(gate, { deploymentDefined: false }).done).toBe(false);
+    expect(evalGate(gate, { deploymentDefined: true }).done).toBe(true);
+  });
+
+  it("the Streams (permissions) gate requires shared deps locked (#1429)", () => {
+    const gate = SECTION_DEFS.permissions.gateRule!;
+    expect(gate.require.map((r) => r.signal)).toContain("sharedDepsLocked");
+    expect(evalGate(gate, { fleetStreams: 1, profilesComplete: true, sharedDepsLocked: false }).done).toBe(false);
+    expect(evalGate(gate, { fleetStreams: 1, profilesComplete: true, sharedDepsLocked: true }).done).toBe(true);
   });
 
   it("folds Deploy into the Repos stage as a ship substep when a blueprint opts in (#1383)", () => {
-    // ship:true → one "Deployment" stage with link+ship substeps, and the gate is the UNION (repos
-    // linked AND shipping+deps). Non-ship → plain Repos, repos-only gate, no substeps.
+    // ship:true → one "Deployment" stage with link+ship substeps; the gate is the UNION (repos linked
+    // AND shipping). Deps are NOT here anymore (#1429). Non-ship → plain Repos, repos-only gate.
     const merged = mkSection("repos", { ship: true });
     expect(merged.name).toBe("Deployment");
     expect(merged.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
     const sig = merged.gateRule!.require.map((r) => r.signal);
-    expect(sig).toEqual(expect.arrayContaining(["repoCount", "deploymentDefined", "dependenciesDefined"]));
-    // The merged gate needs repos AND shipping AND a dependency.
-    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: false, dependenciesDefined: 0 }).done).toBe(false);
-    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: true, dependenciesDefined: 1 }).done).toBe(true);
+    expect(sig).toEqual(expect.arrayContaining(["repoCount", "deploymentDefined"]));
+    expect(sig).not.toContain("dependenciesDefined");
+    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: false }).done).toBe(false);
+    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: true }).done).toBe(true);
 
     const plain = mkSection("repos");
     expect(plain.name).toBe("Repos");
