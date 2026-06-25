@@ -18,29 +18,32 @@ describe("SkillsScreen — CRUD", () => {
     });
   });
 
-  it("'+ skill' opens a draft drawer without creating; 'done' commits it", () => {
+  it("'+ new skill' (empty state) opens a draft drawer without creating; 'done' commits it", () => {
+    // The toolbar import/+skill buttons were removed (#…); the remaining draft entry point is the
+    // empty-state "+ new skill", shown when no skills match.
+    useAppStore.setState({ skills: [] });
     const { container } = render(<SkillsScreen />);
-    expect(container.querySelectorAll(ROW).length).toBe(2);
-    fireEvent.click(screen.getByText("+ skill"));
+    fireEvent.click(screen.getByText("+ new skill"));
     const drawer = container.querySelector(".drawer.on") as HTMLElement;
     expect(drawer).toBeTruthy();
     expect(within(drawer).getByText("procedure — SKILL.md body")).toBeTruthy();
-    expect(useAppStore.getState().skills).toHaveLength(2);  // nothing added yet (draft)
+    expect(useAppStore.getState().skills).toHaveLength(0);  // nothing added yet (draft)
     const done = within(drawer).getByText("done") as HTMLButtonElement;
     expect(done.disabled).toBe(true);
     fireEvent.change(drawer.querySelector("input.input") as HTMLInputElement, { target: { value: "My new skill" } });
     fireEvent.click(within(drawer).getByText("done"));
     const skills = useAppStore.getState().skills;
-    expect(skills).toHaveLength(3);
+    expect(skills).toHaveLength(1);
     expect(skills[skills.length - 1].name).toBe("My new skill");
   });
 
-  it("'+ skill' then 'cancel' creates nothing", () => {
+  it("'+ new skill' then 'cancel' creates nothing", () => {
+    useAppStore.setState({ skills: [] });
     const { container } = render(<SkillsScreen />);
-    fireEvent.click(screen.getByText("+ skill"));
+    fireEvent.click(screen.getByText("+ new skill"));
     const drawer = container.querySelector(".drawer.on") as HTMLElement;
     fireEvent.click(within(drawer).getByText("cancel"));
-    expect(useAppStore.getState().skills).toHaveLength(2);
+    expect(useAppStore.getState().skills).toHaveLength(0);
     expect(container.querySelector(".drawer.on")).toBeNull();
   });
 
