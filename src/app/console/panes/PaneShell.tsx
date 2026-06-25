@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { type ViewKey } from "./ViewTabs";
+import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
-import { prettyModel, toModelId } from "@/app/console/lib/modelDisplay";
+import { toModelId } from "@/app/console/lib/modelDisplay";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
 // here so existing PaneShell importers keep their import path.
@@ -17,16 +17,9 @@ const STATE_META: Record<string, { label: string; color: string; pulse: boolean 
   idle: { label: "idle",    color: "var(--state-idle)", pulse: false },
 };
 
-// LLM-provider → its themed hue (the dot in the model pill) and the harness it runs under.
-// Absent / "claude" ⇒ Claude Code (anthropic); everything else runs under the bsc-agent shell.
-const PROV_COLOR: Record<string, string> = {
-  claude: "var(--prov-anthropic)", anthropic: "var(--prov-anthropic)",
-  openai: "var(--prov-openai)", codex: "var(--prov-openai)",
-  gemini: "var(--prov-google)", google: "var(--prov-google)",
-  local: "var(--prov-local)", ollama: "var(--prov-local)",
-};
-const harnessOf = (provider?: string) =>
-  !provider || provider === "claude" || provider === "anthropic" ? "Claude Code" : "bsc-agent";
+// The provider hue (`PROV_COLOR`) + harness label that once tinted the header pill now live
+// inside `PaneMenu` (#1319) — the compact header trigger is tinted by SESSION STATUS, not
+// provider. They stay on PaneShell as the source the menu reads via props.
 
 interface PaneShellProps {
   agent: string;
@@ -166,14 +159,12 @@ export function PaneShell({
   }, [focused]);
 
   const sm = STATE_META[status] ?? STATE_META.idle;
-  const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
-  const harness = harnessOf(provider);
-  // Model-pill state (#1181): a model is "running" when a Claude session is live in the pane
-  // (`claudeActive`, from the OSC-100 signals); otherwise the pill shows an undetected/empty state.
-  // `runningModel` is the actual model the CLI reports (transcript) when known, else the configured
-  // one; absent ⇒ fall back to the configured `model`.
+  // The compact header trigger (#1319) is the CURRENT VIEW's icon tinted by SESSION STATUS:
+  // accent + pulse when a session is live (`claudeActive`), the themed state color otherwise.
+  // The harness/provider/model the pill once spelled out now live inside `PaneMenu`.
   const running = claudeActive;
-  const modelLabel = prettyModel(runningModel) ?? model;
+  const { Icon: ViewIcon } = VIEW_DEFS[active] ?? VIEW_DEFS.console;
+  const triggerColor = running ? "var(--accent)" : sm.color;
 
   const chip = (txt: string, bg: string, col: string) => (
     <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
@@ -193,19 +184,39 @@ export function PaneShell({
         zIndex: menuOpen ? 10 : 1,
       }}
     >
-      {/* Head — the Console-Shell pane header (#1149): status · name · repo · badges,
-          then the view-switch ▾, harness/model pill, role badge, and ⋯ menu. */}
+      {/* Head — the Console-Shell pane header (#1149, reworked #1319): the compact menu trigger
+          (current-view glyph tinted by status + ▾) at the far left · name · repo · badges, then
+          the role badge. Model/harness/view-switching all live inside the menu the trigger opens. */}
       <div style={{
         height: 36, flex: "0 0 36px", padding: "0 10px",
         display: "flex", alignItems: "center", gap: 7,
         background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)",
       }}>
 
-        {/* Status dot */}
-        <span style={{
-          width: 7, height: 7, borderRadius: "50%", background: sm.color,
-          animation: sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none", flex: "0 0 7px",
-        }} />
+        {/* Menu trigger (#1319) — the leftmost control, where the status dot used to be. A single
+            glyph = the CURRENT view's icon (console/files/branches/…) tinted by SESSION STATUS
+            (accent + pulse when live, the state color when idle) + a ▾. One compact control answers
+            "what am I looking at" + "is it live" and signals the menu (model · views · pane) opens. */}
+        <button
+          ref={menuButtonRef}
+          title="Model, screens & pane options"
+          onClick={onMenuToggle}
+          style={{
+            display: "flex", alignItems: "center", gap: 3, height: 21, padding: "0 5px",
+            border: "1px solid " + (menuOpen ? "var(--accent)" : "var(--border)"), borderRadius: 6,
+            background: menuOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
+            cursor: "pointer", flex: "0 0 auto",
+          }}
+        >
+          <ViewIcon
+            size={13}
+            style={{
+              color: triggerColor,
+              animation: running && sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none",
+            }}
+          />
+          <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
+        </button>
 
         {/* Agent name — double-click to rename */}
         {editingName ? (
@@ -256,41 +267,8 @@ export function PaneShell({
           </span>
         )}
 
-        {/* Spacer pushes the controls to the right edge */}
+        {/* Spacer pushes the role badge to the right edge */}
         <div style={{ flex: 1, minWidth: 0 }} />
-
-        {/* Model pill — the SINGLE consolidated menu trigger (#1181): model · screens · pane
-            actions all live in the one PaneMenu it opens. Shows the running model when live, else
-            the configured model the pane will launch with (#…). */}
-        <button
-          ref={menuButtonRef}
-          title="Model, screens & pane options"
-          onClick={onMenuToggle}
-          style={{
-            display: "flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px",
-            border: "1px solid " + (menuOpen ? "var(--accent)" : "var(--border)"), borderRadius: 6,
-            background: menuOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
-            color: "var(--fg)", cursor: "pointer", flex: "0 0 auto", whiteSpace: "nowrap",
-          }}
-        >
-          {running ? (
-            <>
-              <span style={{ width: 6, height: 6, borderRadius: 2, background: provColor }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{harness}</span>
-              <span style={{ color: "var(--fg-dim)" }}>·</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>{modelLabel}</span>
-            </>
-          ) : (
-            // Idle / not yet live: show the CONFIGURED model (what this pane will launch with) so the
-            // chosen model is always legible on the grid, rather than a bare "undetected" (#…). The
-            // gray dot still signals the session isn't live.
-            <>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--state-idle)" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{model}</span>
-            </>
-          )}
-          <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
-        </button>
 
         {/* Role badge */}
         {role && (
@@ -319,6 +297,7 @@ export function PaneShell({
         }}>
           <PaneMenu
             agent={agent}
+            provider={provider} running={running}
             model={model} runningModel={toModelId(runningModel)} active={active} available={available}
             maxHeight={menuPos.maxHeight}
             fullscreen={fullscreen}
