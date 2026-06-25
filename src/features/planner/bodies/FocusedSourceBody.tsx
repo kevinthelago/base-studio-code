@@ -545,7 +545,6 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   }
 
   // ── readiness line ──
-  const nextNeeded = cfg.sources.find((s) => s.status !== "scanned");
   const checks = sourceChecks(cfg);
 
   return (
@@ -668,22 +667,6 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
           onRemove={() => removeSource(src.uid)}
         />
       ))}
-
-      {/* bottom readiness */}
-      {total > 0 && (
-        <div data-testid="source-readiness" style={{
-          display: "flex", alignItems: "center", gap: 9, borderRadius: "var(--r-md)", padding: "9px 12px",
-          background: `color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 92%)`,
-          border: `1px solid color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 79%)`,
-        }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: ready ? "var(--success)" : "var(--accent)" }}>{ready ? "✓" : `${scanned} / ${total}`}</span>
-          <span style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.4 }}>
-            {ready
-              ? <><b style={{ color: "var(--fg)" }}>{total} of {total} connected</b> → scanning into <span style={{ color: "var(--violet)" }}>{dataModelName}</span>.</>
-              : <><b style={{ color: "var(--fg)" }}>{scanned} of {total} connected</b> → <span style={{ color: "var(--violet)" }}>{dataModelName}</span>.{nextNeeded && <> Needs: <b style={{ color: "var(--accent)" }}>{connector(nextNeeded.connectorId).name}</b>.</>}</>}
-          </span>
-        </div>
-      )}
 
       {/* readiness checklist */}
       {total > 0 && (
