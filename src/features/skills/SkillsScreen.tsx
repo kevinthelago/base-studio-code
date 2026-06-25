@@ -20,9 +20,11 @@ import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/s
 import { Spark, HBars } from "./SkillsCharts";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { LessonsTab } from "./LessonsTab";
+import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import "./skills.css";
 
-type Mode = "library" | "runs" | "catalog";
+type Mode = "library" | "lessons" | "runs" | "catalog";
 type Density = "list" | "cards" | "grouped" | "kind";
 type SortKey = "Most invoked" | "Name (A–Z)" | "Success rate" | "Recently used" | "Recently added";
 
@@ -37,7 +39,7 @@ interface GhProject { id: string; number: number; title: string }
 const PROJECTS_QUERY = `{ viewer { projectsV2(first: 50) { nodes { id title number } } } }`;
 
 const MODES: Array<{ k: Mode; label: string }> = [
-  { k: "library", label: "Library" }, { k: "runs", label: "Runs" }, { k: "catalog", label: "Catalog" },
+  { k: "library", label: "Library" }, { k: "lessons", label: "Lessons" }, { k: "runs", label: "Runs" }, { k: "catalog", label: "Catalog" },
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
@@ -82,6 +84,9 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const setSkillProjects = useAppStore((s) => s.setSkillProjects);
   const upsertSkills = useAppStore((s) => s.upsertSkills);
   const githubToken = useAppStore((s) => s.githubToken);
+  // Lessons (#1362) are per-project (plan.db); the queue scopes to the active project.
+  const activeProjectName = useAppStore((s) => s.activeProjectName);
+  const lessonProjectKey = activeProjectName ? sanitizeProjectKey(activeProjectName) : "";
   const skillGroups = useAppStore((s) => s.skillGroups);
   const addSkillGroup = useAppStore((s) => s.addSkillGroup);
   const removeSkillGroup = useAppStore((s) => s.removeSkillGroup);
@@ -519,6 +524,10 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
             </div>
           </div>
         </div>
+      )}
+
+      {mode === "lessons" && (
+        <LessonsTab projectKey={lessonProjectKey} projectName={activeProjectName ?? undefined} />
       )}
 
       {mode === "runs" && (

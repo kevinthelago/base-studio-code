@@ -17,7 +17,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout
 //! Global flags: --db <path>, --json
 
-use plandb::{is_valid_status, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use plandb::{is_valid_status, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -39,10 +39,13 @@ struct Args {
     positional: Vec<String>,
     status: Option<String>,
     stream: Option<String>,
+    rule: Option<String>,
+    cause: Option<String>,
+    from: Option<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, db: None, positional: Vec::new(), status: None, stream: None };
+    let mut a = Args { json: false, db: None, positional: Vec::new(), status: None, stream: None, rule: None, cause: None, from: None };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -50,6 +53,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--status" => a.status = Some(it.next().ok_or("--status needs a value")?),
             "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
+            "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
+            "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
+            "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -549,6 +555,55 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown integration command '{other}'\n\n{USAGE}")),
             }
         }
+        // Lessons (#1362): the `bsc-learned` capture helper + the review queue speak through these.
+        "lesson" => {
+            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+            let s = store()?;
+            match sub {
+                // `lesson add "<mistake>" --rule "<rule>" [--cause …] [--from <provenance>]` — capture a
+                // candidate (idempotent on its mistake|rule dedup key); prints the lesson id.
+                "add" => {
+                    let mistake = args.positional.get(2).cloned().unwrap_or_default();
+                    let lesson = Lesson {
+                        mistake,
+                        rule: args.rule.clone().unwrap_or_default(),
+                        cause: args.cause.clone().unwrap_or_default(),
+                        provenance: args.from.clone().unwrap_or_default(),
+                        ..Default::default()
+                    };
+                    let id = s.lesson_add(&lesson).map_err(|e| e.to_string())?;
+                    println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id });
+                    Ok(())
+                }
+                // `lesson list [--status pending|confirmed|discarded]` — JSON array (the review queue).
+                "list" => {
+                    let lessons = s.lesson_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
+                    println!("{}", serde_json::to_string_pretty(&lessons).unwrap_or_else(|_| "[]".into()));
+                    Ok(())
+                }
+                "confirm" | "discard" => {
+                    let id = args.positional.get(2).ok_or(format!("usage: bsc-plan lesson {sub} <id>"))?;
+                    let status = if sub == "confirm" { "confirmed" } else { "discarded" };
+                    let n = s.lesson_set_status(id, status).map_err(|e| e.to_string())?;
+                    if n == 0 {
+                        return Err(format!("no lesson with id '{id}'"));
+                    }
+                    if !args.json {
+                        println!("{id} {status}");
+                    }
+                    Ok(())
+                }
+                "remove" => {
+                    let id = args.positional.get(2).ok_or("usage: bsc-plan lesson remove <id>")?;
+                    s.lesson_remove(id).map_err(|e| e.to_string())?;
+                    if !args.json {
+                        println!("removed {id}");
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unknown lesson command '{other}'\n\n{USAGE}")),
+            }
+        }
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
 }
@@ -774,6 +829,13 @@ INTEGRATION (native REST connectors authored at planning time — app-wide, NOT 
   integration get <id>          print one integration (RuntimePreset JSON)
   integration remove <id>       delete a runtime integration
   (the spec carries no credentials — secrets live in the OS keychain; auth: oauth|token|apikey|basic)
+
+LESSONS (self-correction candidates — usually captured via the `bsc-learned` helper; #1362):
+  lesson add \"<mistake>\" --rule \"<rule>\" [--cause <c>] [--from <prov>]   capture a candidate
+  lesson list [--status pending|confirmed|discarded]   list candidates (JSON; queue reads pending)
+  lesson confirm <id> | discard <id>    set the user's verdict
+  lesson remove <id>            delete a candidate
+  (candidates de-dupe on a normalized mistake|rule key — a re-capture bumps a 'seen' counter)
 
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 The connectors store is ~/.base-studio-code/connectors.json (BSC_CONNECTORS overrides).

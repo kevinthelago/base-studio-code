@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc-plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use plandb::{Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -225,5 +225,45 @@ pub fn plan_triage_last_run(project_key: String, repo: String) -> Result<Option<
 #[tauri::command]
 pub fn plan_issues_changed_since(project_key: String, repo: String, since: i64) -> Result<Vec<PlanIssue>, String> {
     open(&project_key)?.issues_changed_since(&repo, since).map_err(|e| e.to_string())
+}
+
+// ── Self-correction lessons (#1362) ──────────────────────────────────────────────
+// The `bsc-learned` helper captures candidates into plan.db via the `bsc-plan lesson` CLI; these
+// commands back the desktop "Pending lessons" review queue. Confirm/discard only set the user's
+// verdict — turning a confirmed lesson INTO a project skill is the frontend's job (it owns the
+// SkillDef shape + the skilldb bridge), so this bridge stays a thin wrapper over the plan store.
+
+/// The project's lesson candidates, newest-touched first. `status` filters (`pending` for the queue);
+/// empty returns all.
+#[tauri::command]
+pub fn plan_lesson_list(project_key: String, status: String) -> Result<Vec<Lesson>, String> {
+    open(&project_key)?.lesson_list(&status).map_err(|e| e.to_string())
+}
+
+/// The user accepts a candidate — mark it `confirmed`. The caller then materializes it as a
+/// project-scoped skill via the skilldb bridge.
+#[tauri::command]
+pub fn plan_lesson_confirm(project_key: String, id: String) -> Result<(), String> {
+    open(&project_key)?.lesson_set_status(&id, "confirmed").map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The user rejects a candidate — mark it `discarded` (kept as a record; its `seen` count still grows
+/// if the mistake recurs).
+#[tauri::command]
+pub fn plan_lesson_discard(project_key: String, id: String) -> Result<(), String> {
+    open(&project_key)?.lesson_set_status(&id, "discarded").map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Permanently delete a lesson candidate.
+#[tauri::command]
+pub fn plan_lesson_remove(project_key: String, id: String) -> Result<(), String> {
+    open(&project_key)?.lesson_remove(&id).map_err(|e| e.to_string())
+}
+
+/// Sweep un-confirmed candidates older than `before` (epoch seconds) — the 14-day expiry. Returns the
+/// number removed.
+#[tauri::command]
+pub fn plan_lesson_expire(project_key: String, before: i64) -> Result<usize, String> {
+    open(&project_key)?.lesson_expire_pending(before).map_err(|e| e.to_string())
 }
 
