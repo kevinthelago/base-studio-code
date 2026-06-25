@@ -25,6 +25,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
+# Single-instance guard (#1303): a second launch focuses the running window instead of
+# spawning a duplicate process. Desktop-only.
+tauri-plugin-single-instance = "2"
 log = "0.4"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
