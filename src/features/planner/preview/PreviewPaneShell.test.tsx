@@ -18,7 +18,7 @@ import { PreviewPaneShell } from './PreviewPaneShell';
 describe('PreviewPaneShell (#581)', () => {
   beforeEach(() => {
     useAppStore.setState({
-      stagePreview: {}, stagePipelineRuns: {}, uiScreens: {}, uiApproved: {},
+      stagePreview: {}, stageRuns: {}, uiScreens: {}, uiApproved: {},
     });
   });
 

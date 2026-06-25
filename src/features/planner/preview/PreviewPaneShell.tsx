@@ -4,18 +4,18 @@
 // limited to { activeKind, rendStatus, briefCopied } — chrome only.
 //
 // External behavior is identical to PlanPreviewPane: reads stagePreview + run state
-// from the store, shows the same approval UI, and uses PipelineScreenFrame chrome.
+// from the store, shows the same approval UI, and uses StageScreenFrame chrome.
 
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../../store';
-import { PipelineScreenFrame } from '../grading/PipelineScreenFrame';
+import { StageScreenFrame } from '../grading/StageScreenFrame';
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from './renderPreview';
 import { buildClaudeDesignBrief } from './claudeDesignBrief';
 import { getRenderer } from './registry';
 import type { RendererHandle } from './registry';
 import type { RenderableChunk, RenderableKind, PreviewStatus } from './types';
-import type { PipelineScreenProps } from '../grading/pipelineScreens';
+import type { StageScreenProps } from '../grading/stageScreens';
 
 const EMPTY: string[] = [];
 
@@ -35,14 +35,14 @@ const DEMO_FILES: Record<string, string> = {
 }`,
 };
 
-export function PreviewPaneShell({ projectKey, onClose }: PipelineScreenProps) {
+export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
   const preview = useAppStore((s) => s.stagePreview[projectKey] ?? null);
-  const run = useAppStore((s) => s.stagePipelineRuns[projectKey]?.[RENDER_PREVIEW_ID]);
+  const run = useAppStore((s) => s.stageRuns[projectKey]?.[RENDER_PREVIEW_ID]);
   const declared = useAppStore((s) => s.uiScreens[projectKey]) ?? EMPTY;
   const approvedList = useAppStore((s) => s.uiApproved[projectKey]) ?? EMPTY;
   const setUiScreenApproved = useAppStore((s) => s.setUiScreenApproved);
 
-  const pipelineStatus = run?.status ?? 'idle';
+  const stageStatus = run?.status ?? 'idle';
   // React state: chrome-only signals. Imperative surface mutates containerRef directly.
   const [rendStatus, setRendStatus] = useState<PreviewStatus>({ status: 'ready' });
   const [activeKind, setActiveKind] = useState<RenderableKind | null>(null);
@@ -107,14 +107,14 @@ export function PreviewPaneShell({ projectKey, onClose }: PipelineScreenProps) {
   };
 
   const frameError = rendStatus.status === 'error' ? (rendStatus.message ?? '') : '';
-  const statusLabel = pipelineStatus === 'running' ? 'building…' : frameError ? 'error' : pipelineStatus;
+  const statusLabel = stageStatus === 'running' ? 'building…' : frameError ? 'error' : stageStatus;
   const statusColor =
-    frameError || pipelineStatus === 'fail' ? 'var(--danger)'
-    : pipelineStatus === 'ok'               ? 'var(--success)'
+    frameError || stageStatus === 'fail' ? 'var(--danger)'
+    : stageStatus === 'ok'               ? 'var(--success)'
     : 'var(--fg-dim)';
 
   return (
-    <PipelineScreenFrame
+    <StageScreenFrame
       label="preview"
       badge={preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
       statusLabel={statusLabel}
@@ -174,7 +174,7 @@ export function PreviewPaneShell({ projectKey, onClose }: PipelineScreenProps) {
       )}
     >
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {pipelineStatus === 'fail' ? (
+        {stageStatus === 'fail' ? (
           <div style={{ padding: 16, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--danger)', whiteSpace: 'pre-wrap', overflow: 'auto' }}>
             {run?.message || 'Preview failed to build.'}
           </div>
@@ -189,20 +189,20 @@ export function PreviewPaneShell({ projectKey, onClose }: PipelineScreenProps) {
             {!activeKind && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg-muted)' }}>
-                  {pipelineStatus === 'running' ? 'Bundling…' : 'No preview yet'}
+                  {stageStatus === 'running' ? 'Bundling…' : 'No preview yet'}
                 </div>
                 <div className="hint" style={{ maxWidth: 280 }}>
                   The UI stage renders generated screens here via the render-preview pipeline.
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn" onClick={loadSkeleton} disabled={pipelineStatus === 'running'}>load from skeleton →</button>
-                  <button className="btn ghost" onClick={renderDemo} disabled={pipelineStatus === 'running'}>demo</button>
+                  <button className="btn" onClick={loadSkeleton} disabled={stageStatus === 'running'}>load from skeleton →</button>
+                  <button className="btn ghost" onClick={renderDemo} disabled={stageStatus === 'running'}>demo</button>
                 </div>
               </div>
             )}
           </>
         )}
       </div>
-    </PipelineScreenFrame>
+    </StageScreenFrame>
   );
 }

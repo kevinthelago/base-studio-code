@@ -6,12 +6,12 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { PipelineScreenFrame } from "../grading/PipelineScreenFrame";
+import { StageScreenFrame } from "../grading/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "../shared/fileIntake";
-import type { PipelineScreenProps } from "../grading/pipelineScreens";
+import type { StageScreenProps } from "../grading/stageScreens";
 import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../shared/dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
@@ -28,7 +28,7 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(bin);
 }
 
-export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
+export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
   const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
   const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
@@ -110,7 +110,7 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
   }
 
   return (
-    <PipelineScreenFrame
+    <StageScreenFrame
       label="file intake"
       statusLabel={busy ? "staging…" : entries.length ? `${entries.length} staged` : undefined}
       statusColor={busy ? "var(--accent)" : "var(--fg-dim)"}
@@ -175,6 +175,6 @@ export function FileIntakePane({ projectKey, onClose }: PipelineScreenProps) {
           </div>
         )}
       </div>
-    </PipelineScreenFrame>
+    </StageScreenFrame>
   );
 }

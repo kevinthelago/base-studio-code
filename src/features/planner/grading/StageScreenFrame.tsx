@@ -1,7 +1,7 @@
-// PipelineScreenFrame — the shared chrome for a pipeline's "second screen" in the
-// planning page. Every registered pipeline screen (render-preview today; generators
+// StageScreenFrame — the shared chrome for a stage module's "second screen" in the
+// planning page. Every registered stage screen (render-preview today; generators
 // later) composes this so they get consistent chrome and run-status for free and only
-// supply their own body. Sections own the page; pipelines own their surface — this is
+// supply their own body. Sections own the page; stage modules own their surface — this is
 // the surface's frame.
 //
 // Layout: the fixed-width pane shell, a header (▸ label · badge · spacer · status ·
@@ -9,21 +9,21 @@
 
 import type { ReactNode } from "react";
 
-export function PipelineScreenFrame({
+export function StageScreenFrame({
   label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,
 }: {
   /** The ▸ title, e.g. "preview". */
   label: string;
   /** A small badge after the label (e.g. the preview's 2d/3d mode tag). */
   badge?: ReactNode;
-  /** Run-status text + color (right-aligned), typically derived from the pipeline run. */
+  /** Run-status text + color (right-aligned), typically derived from the stage run. */
   statusLabel?: string;
   statusColor?: string;
-  /** Pipeline-specific header controls, rendered after the status, before close. */
+  /** Stage-specific header controls, rendered after the status, before close. */
   actions?: ReactNode;
   /** When provided, renders a dismiss affordance (stage-bound screens omit it). */
   onClose?: () => void;
-  /** Pipeline-specific footer (e.g. the declared-screens approval list). */
+  /** Stage-specific footer (e.g. the declared-screens approval list). */
   footer?: ReactNode;
   /** Fill the parent pane instead of the fixed 420px "second screen" width (e.g. the file
    *  intake surface, which is a full-width stage body). */

@@ -8,7 +8,7 @@ import { type PlanSignals } from "../stages/stageGate";
 import { gradeWithRubric, rubricForSection, type GradeResult, type Severity } from "./grading";
 import { type PlanGrade, type Priority } from "@/features/planner/lib/planGrade";
 
-/** The built-in rubric grader's pipeline id (attachable in the blueprint editor). */
+/** The built-in rubric grader's stage id (attachable in the blueprint editor). */
 export const GRADE_RUBRIC_ID = "grade-rubric";
 
 /** The agent-readiness grader id (the grade-plan pipeline). */

@@ -1,9 +1,9 @@
 // Pluggable per-section grading (#615). A grader scores one section and returns a
-// GradeResult; a section can carry MULTIPLE graders (attached as pipelines). This slice
+// GradeResult; a section can carry MULTIPLE graders (attached as stage modules). This slice
 // is the contract + a deterministic, data-driven **rubric grader** — each dimension is
 // either a signal gate (reusing #584's evalGate over PlanSignals) or a declarative
 // content heuristic. Rubrics are plain data, so they ride blueprints and stay
-// WAN-distributable, exactly like the gate rules. Pure; the pipeline screen renders the
+// WAN-distributable, exactly like the gate rules. Pure; the stage screen renders the
 // result and the runtime persists it (slice b).
 
 import { type PlanSignals, type StageGate, evalGate } from "../stages/stageGate";
@@ -136,7 +136,7 @@ export const RUBRICS: Record<string, Rubric> = {
 const GENERIC = rubric("*", "Section rubric", [sub(120), structured, noTodo]);
 
 /** The default rubric(s) for a section kind. Multiple-per-section comes later from the
- *  blueprint (attached grader pipelines); this returns the built-in default. */
+ *  blueprint (attached grader stage modules); this returns the built-in default. */
 export function rubricForSection(sectionKey: string): Rubric {
   return RUBRICS[sectionKey] ?? GENERIC;
 }

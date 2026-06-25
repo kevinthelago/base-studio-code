@@ -38,12 +38,12 @@ describe("renderPreview — handler", () => {
 });
 
 describe("renderPreview — dispatch writes the store", () => {
-  beforeEach(() => useAppStore.setState({ stagePreview: {}, stagePipelineRuns: {} }));
+  beforeEach(() => useAppStore.setState({ stagePreview: {}, stageRuns: {} }));
 
   it("writes the bundled srcdoc + an ok run state", async () => {
     await dispatchRenderPreview({ projectKey: "proj", artifacts: { "Login.jsx": "x" }, entry: "Login.jsx", mode: "2d" });
     expect(useAppStore.getState().stagePreview["proj"]?.srcDoc).toContain("BUNDLE_JS");
-    expect(useAppStore.getState().stagePipelineRuns["proj"][RENDER_PREVIEW_ID].status).toBe("ok");
+    expect(useAppStore.getState().stageRuns["proj"][RENDER_PREVIEW_ID].status).toBe("ok");
   });
 
   it("tags the stored preview with the screen name (#546)", async () => {

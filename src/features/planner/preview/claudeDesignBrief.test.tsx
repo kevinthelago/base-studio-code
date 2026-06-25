@@ -21,7 +21,7 @@ describe("buildClaudeDesignBrief (#634)", () => {
 });
 
 describe("default blueprint accepts Claude Design files (#634)", () => {
-  it("the default blueprint has a UI stage (where the design files are dropped + previewed) (#897 Phase 4c: these are stage features, not pipelines)", () => {
+  it("the default blueprint has a UI stage (where the design files are dropped + previewed) (#897 Phase 4c: these are stage features, not stage modules)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     expect(def.sections.some((s) => s.key === "ui")).toBe(true);
   });
@@ -29,7 +29,7 @@ describe("default blueprint accepts Claude Design files (#634)", () => {
 
 describe("PlanPreviewPane Claude Design brief button (#634)", () => {
   beforeEach(() => {
-    useAppStore.setState({ uiScreens: { p: ["Dashboard"] }, uiApproved: {}, stagePreview: {}, stagePipelineRuns: {} });
+    useAppStore.setState({ uiScreens: { p: ["Dashboard"] }, uiApproved: {}, stagePreview: {}, stageRuns: {} });
   });
 
   it("offers a Claude Design brief once screens are declared, and copies it", () => {

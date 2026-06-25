@@ -17,7 +17,7 @@ import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import type { FleetPlan, AgentStream } from "@/features/planner/stages/planSections";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
-import type { PipelineRunState } from "@/features/planner/grading/pipelineRuntime";
+import type { StageRunState } from "@/features/planner/grading/stageRun";
 import type { GradeResult } from "@/features/planner/grading/grading";
 import type { Blueprint, BlueprintSection } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/shared/deployConfig";
@@ -688,10 +688,10 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
    *  an existing one). Returns the new id. */
   importBlueprint: (bp: Blueprint) => string;
   // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
-  // projectKey -> pipelineUid -> state. Distinct from the fleet conductor's
+  // projectKey -> stageUid -> state. Distinct from the fleet conductor's
   // `workflowRuns` (#220). Session-only (not persisted).
-  stagePipelineRuns: Record<string, Record<string, PipelineRunState>>;
-  setStagePipelineRun: (projectKey: string, pipelineUid: string, state: PipelineRunState) => void;
+  stageRuns: Record<string, Record<string, StageRunState>>;
+  setStageRun: (projectKey: string, stageUid: string, state: StageRunState) => void;
   // The current UI preview per project (#531): the render-preview pipeline writes the
   // bundled iframe srcdoc here; PlanPreviewPane renders it. `screen` names which screen
   // is showing (#546), so its approve button targets the right one. Session-only.

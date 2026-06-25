@@ -1,13 +1,13 @@
-// Pipeline "second screens" — the render-surface registry for the planning page.
+// Stage "second screens" — the render-surface registry for the planning page.
 //
-// Sections are static and own the planning UI; *pipelines* are how capability is added
-// (builtin or external). A pipeline may declare a second screen: a render surface that
-// appears in the planning page when the pipeline's STAGE is the current (reached) one.
+// Sections are static and own the planning UI; *stage modules* are how capability is added
+// (builtin or external). A stage module may declare a second screen: a render surface that
+// appears in the planning page when the module's STAGE is the current (reached) one.
 // The planning page reads the active blueprint directly, finds the current stage's
-// enabled pipelines, and renders whichever of them registered a screen here.
+// enabled modules, and renders whichever of them registered a screen here.
 //
-// Keyed by pipeline id so builtin and external pipelines alike can plug a screen in.
-// React lives here (not in the pure pipelineRuntime), mirroring how renderPreview's
+// Keyed by stage id so builtin and external modules alike can plug a screen in.
+// React lives here (not in the pure stageRun), mirroring how renderPreview's
 // handler is pure but its surface, PlanPreviewPane, is a component.
 
 import type { ComponentType } from "react";
@@ -25,7 +25,7 @@ import { GRADE_LLM_ID } from "./gradeLLM";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */
-export interface PipelineScreenProps {
+export interface StageScreenProps {
   projectKey: string;
   /** The current (reached) section's key — screens bound to a section (e.g. grading)
    *  use it; section-agnostic screens (render-preview) ignore it. (#615) */
@@ -35,9 +35,9 @@ export interface PipelineScreenProps {
   onClose?: () => void;
 }
 
-export type PipelineScreenComponent = ComponentType<PipelineScreenProps>;
+export type StageScreenComponent = ComponentType<StageScreenProps>;
 
-const PIPELINE_SCREENS: Record<string, PipelineScreenComponent> = {
+const STAGE_SCREENS: Record<string, StageScreenComponent> = {
   // Modular streaming feed consumer (#581): PreviewPaneShell routes chunks through the
   // renderer registry; renderer side-effects above register html/gltf/canvas renderers.
   [RENDER_PREVIEW_ID]: PreviewPaneShell,
@@ -48,18 +48,18 @@ const PIPELINE_SCREENS: Record<string, PipelineScreenComponent> = {
   [GRADE_LLM_ID]: GradeReportPane,
 };
 
-/** The second screen for a pipeline id, or undefined when it has none. */
-export function pipelineScreen(id: string): PipelineScreenComponent | undefined {
-  return PIPELINE_SCREENS[id];
+/** The second screen for a stage id, or undefined when it has none. */
+export function stageScreen(id: string): StageScreenComponent | undefined {
+  return STAGE_SCREENS[id];
 }
 
-/** Whether a pipeline declares a second screen. */
-export function hasPipelineScreen(id: string): boolean {
-  return id in PIPELINE_SCREENS;
+/** Whether a stage module declares a second screen. */
+export function hasStageScreen(id: string): boolean {
+  return id in STAGE_SCREENS;
 }
 
-/** Register (or replace) a pipeline's second screen. Lets external pipelines plug a
+/** Register (or replace) a stage module's second screen. Lets external stage modules plug a
  *  render surface into the planning page. Idempotent — last registration wins. */
-export function registerPipelineScreen(id: string, screen: PipelineScreenComponent): void {
-  PIPELINE_SCREENS[id] = screen;
+export function registerStageScreen(id: string, screen: StageScreenComponent): void {
+  STAGE_SCREENS[id] = screen;
 }

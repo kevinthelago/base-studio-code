@@ -1807,22 +1807,22 @@ describe("blueprints library (#513/#514)", () => {
 });
 
 describe("stage pipeline runs (#528/#529)", () => {
-  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {} }));
+  beforeEach(() => useAppStore.setState({ stageRuns: {} }));
 
   it("records a per-project, per-pipeline run state", () => {
-    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "running", lastRun: null });
-    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"].status).toBe("running");
-    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "ok", lastRun: 123 });
-    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
+    useAppStore.getState().setStageRun("proj", "pl-1", { status: "running", lastRun: null });
+    expect(useAppStore.getState().stageRuns["proj"]["pl-1"].status).toBe("running");
+    useAppStore.getState().setStageRun("proj", "pl-1", { status: "ok", lastRun: 123 });
+    expect(useAppStore.getState().stageRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
   });
 
   it("is per-project and per-pipeline (no cross-talk)", () => {
-    useAppStore.getState().setStagePipelineRun("a", "pl-1", { status: "ok", lastRun: 1 });
-    useAppStore.getState().setStagePipelineRun("a", "pl-2", { status: "fail", lastRun: 2 });
-    useAppStore.getState().setStagePipelineRun("b", "pl-1", { status: "blocked", lastRun: 3 });
-    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-1"].status).toBe("ok");
-    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-2"].status).toBe("fail");
-    expect(useAppStore.getState().stagePipelineRuns["b"]["pl-1"].status).toBe("blocked");
+    useAppStore.getState().setStageRun("a", "pl-1", { status: "ok", lastRun: 1 });
+    useAppStore.getState().setStageRun("a", "pl-2", { status: "fail", lastRun: 2 });
+    useAppStore.getState().setStageRun("b", "pl-1", { status: "blocked", lastRun: 3 });
+    expect(useAppStore.getState().stageRuns["a"]["pl-1"].status).toBe("ok");
+    expect(useAppStore.getState().stageRuns["a"]["pl-2"].status).toBe("fail");
+    expect(useAppStore.getState().stageRuns["b"]["pl-1"].status).toBe("blocked");
   });
 });
 
@@ -1843,7 +1843,7 @@ describe("clearPlan (#505)", () => {
       sectionGrades: { myproj: { ui: [] } },
       projectBlueprintId: { myproj: "default" },
       stagePreview: { myproj: { srcDoc: "<html>", mode: "2d" } },
-      stagePipelineRuns: { myproj: { p1: { status: "ok" } as never } },
+      stageRuns: { myproj: { p1: { status: "ok" } as never } },
       pinnedContext: { myproj: ["x"] },
       projectLocalRepos: { myproj: ["o/r"], other: ["o/keep"] },
     })
@@ -1865,7 +1865,7 @@ describe("clearPlan (#505)", () => {
     expect(s.projectBlueprintId["myproj"]).toBeUndefined();
     // the rendered UI preview + pipeline runs + pinned context also clear (#651)
     expect(s.stagePreview["myproj"]).toBeUndefined();
-    expect(s.stagePipelineRuns["myproj"]).toBeUndefined();
+    expect(s.stageRuns["myproj"]).toBeUndefined();
     expect(s.pinnedContext["myproj"]).toBeUndefined();
     expect(s.projectLocalRepos["myproj"]).toBeUndefined(); // repos unlinked (#664)
     // other project untouched

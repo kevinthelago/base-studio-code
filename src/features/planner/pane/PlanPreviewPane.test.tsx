@@ -12,7 +12,7 @@ vi.mock("../preview/previewBundle", () => ({
 import { PlanPreviewPane } from "./PlanPreviewPane";
 
 describe("PlanPreviewPane (#531)", () => {
-  beforeEach(() => useAppStore.setState({ stagePreview: {}, stagePipelineRuns: {}, uiScreens: {}, uiApproved: {} }));
+  beforeEach(() => useAppStore.setState({ stagePreview: {}, stageRuns: {}, uiScreens: {}, uiApproved: {} }));
 
   it("shows the empty state with skeleton + demo actions", () => {
     render(<PlanPreviewPane projectKey="proj" />);
