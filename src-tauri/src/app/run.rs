@@ -37,7 +37,17 @@ pub fn run() {
         log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
     }
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Single-instance guard (#1303): a duplicate launch focuses the running window instead of
+    // spawning a second process (which owns its own PtyState and can't see the live sessions, and
+    // would race over the same on-disk hubs). The plugin MUST be registered first. Bypass with
+    // BSC_ALLOW_MULTIPLE_INSTANCES=1 to run two dev builds side by side.
+    if super::single_instance::guard_enforced() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            super::single_instance::focus_main(app);
+        }));
+    }
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Keep noisy dependencies (tauri/wry/reqwest) quiet — only warnings
