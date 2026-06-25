@@ -33,18 +33,12 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
 }
 
 export function FocusedReposDeployBody({
-  repos, deploy, onDeployChange,
-  onLinkRepo, reposPublic, repoOverrides, onSetRepoPublic,
+  repos, deploy, onDeployChange, onLinkRepo,
 }: {
   repos?: Repo[];
   deploy?: DeployConfig;
   onDeployChange?: (next: DeployConfig) => void;
   onLinkRepo?: (r: string) => void;
-  /** Project-level default GitHub visibility — the per-repo toggle's fallback (#1227); false ⇒ private. */
-  reposPublic?: boolean;
-  /** Per-repo visibility overrides keyed by repo full-name; absent ⇒ inherits the default. */
-  repoOverrides?: Record<string, boolean>;
-  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
 }) {
   const [linking, setLinking] = useState(false);
   const [linkInput, setLinkInput] = useState("");
@@ -59,36 +53,6 @@ export function FocusedReposDeployBody({
   const serviceForRepo = (repoId: string) => d?.services.find((s) => s.repo === repoId);
   const setSvcFor = (svcId: string, patch: Partial<DeployService>) =>
     d && set({ services: d.services.map((s) => (s.id === svcId ? { ...s, ...patch } : s)) });
-
-  // ── per-repo visibility toggle (override → project default, #1227) ──
-  const repoVisToggle = (repoId: string) => {
-    if (!onSetRepoPublic) return null;
-    const pub = repoOverrides?.[repoId] ?? !!reposPublic;
-    return (
-      <span
-        style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", overflow: "hidden" }}
-        title={`Visibility when this repo is created on GitHub${repoOverrides?.[repoId] === undefined ? " (using the project default)" : ""}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {([[false, "🔒"], [true, "🌐"]] as const).map(([val, glyph], i) => {
-          const on = pub === val;
-          return (
-            <button
-              key={glyph}
-              onClick={() => { if (!on) onSetRepoPublic(repoId, val); }}
-              aria-pressed={on}
-              aria-label={val ? `Make ${repoId} public` : `Make ${repoId} private`}
-              style={{
-                height: 20, padding: "0 6px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none",
-                cursor: on ? "default" : "pointer", fontSize: 9.5,
-                background: on ? "var(--bg-elev2)" : "transparent", opacity: on ? 1 : 0.45,
-              }}
-            >{glyph}</button>
-          );
-        })}
-      </span>
-    );
-  };
 
   // ── link affordance ──
   const submitLink = () => { const v = linkInput.trim(); if (v.includes("/")) { onLinkRepo?.(v); setLinkInput(""); setLinking(false); } };
@@ -182,7 +146,6 @@ export function FocusedReposDeployBody({
                 onToggle={() => setOpenRepo(openRepo === r.id ? null : r.id)}
                 primary={r.primary}
                 meta={repoMeta(r)}
-                trailing={repoVisToggle(r.id)}
               />
             );
           })}
