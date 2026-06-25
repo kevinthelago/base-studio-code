@@ -242,7 +242,7 @@ pub(crate) const BSC_FLEET_RC: &str = concat!(
 /// absolute path in `$BSC_PLAN_BIN` (set per-session in pty_create, alongside `$BSC_PLAN_DB` = the
 /// project's plan.db). Falls back to a bare `bsc-plan` on PATH if the var is unset.
 pub(crate) const BSC_PLAN_RC: &str = concat!(
-    r#"bsc-plan() { "${BSC_PLAN_BIN:-bsc-plan}" "$@"; }"#,
+    r#"bsc-plan() { if [ -n "${BSC_PLAN_BIN:-}" ] && [ ! -s "$BSC_PLAN_BIN" ]; then echo "bsc-plan: BSC_PLAN_BIN ($BSC_PLAN_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_PLAN_BIN:-bsc-plan}" "$@"; }"#,
     "\n",
 );
 
