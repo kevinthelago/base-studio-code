@@ -1,57 +1,59 @@
-# Skills task-groups — staged Rust changes (apply on go)
+# Skills task-groups — the Rust channel (#1338, an instance of #1325)
 
-The **frontend** half of task groups (#skills-groups) is implemented and tested: the `SkillGroup`
-model + resolver (`src/lib/session/skills.ts`), the store slice (`skillGroups`, `sessionSkillGroups`,
-+ actions, persisted), the launch wiring (`projects.ts` / `TerminalView.tsx` expand a session's
-groups into `effectiveSessionSkills`), the redesigned **library** (Surface A, `screens/skills/index.tsx`)
-and the **per-session modal** (Surface B, `SessionSkillsModal.tsx`).
+The **frontend** half of task groups (#skills-groups) is shipped and tested: the `SkillGroup` model +
+resolver (`src/features/skills/lib/skills.ts`), the store slice (`skillGroups`, `sessionSkillGroups`,
++ actions, persisted), the launch wiring (`projects.ts` / `TerminalView.tsx` expand a session's groups
+into `effectiveSessionSkills`), the redesigned **library** + the **per-session modal**.
 
-**Key architectural fact:** groups expand to skills *on the frontend* before anything reaches Rust —
-`effectiveSessionSkills(...) → SkillCfg[] → ensure_session_settings → write_session_skills`. So
-**no Rust change is needed for groups to take effect in a session.** The Rust work is only about the
-**planner channel** — letting the *Claude planning session* author groups and toggle them onto a
-fleet stream (the user can already do both manually via the UI). The Rust is under restructuring, so
-this is staged, not applied.
+**Decision — Solution B-global (#1338).** Skills + groups live in ONE **global** SQLite store +
+a `bsc-skill` CLI injected into **every** session — NOT a per-project `plan.db`. Rationale: a group
+authored in one session (the planner, or any session) must be reachable + resolvable by *every other
+live session*, and a per-project `plan.db` reaches only that project's sessions (and would split groups
+from their parent skills). Co-locating skills + groups in one global, CLI-addressable db is exactly
+#1325's thesis (give a running session runtime debug access to app state + `bsc-*` functions).
 
-## What to change, when you give the go
+**Key architectural fact (unchanged):** groups expand to skills *on the frontend* before anything
+reaches the SKILL.md writer — `effectiveSessionSkills(...) → SkillCfg[] → ensure_session_settings →
+write_session_skills`. So `write_session_skills` / `ensure_session_settings` keep receiving the final,
+group-expanded skill list; groups are invisible to them. The global store is the **library** the
+frontend (and any session's shell) reads/writes; it is not on the per-session SKILL.md write path.
 
-### 1. Planner channel — author + assign groups
-Mirror the existing skills channel (`skills.json → upsertSkills`, #1086). Pick one:
+## Phasing
 
-- **File channel (lighter):** the planner writes `skill_groups.json` to the project hub
-  (`~/.base-studio-code/projects/<key>/`). Frontend already has the parser (`parseSkillGroupsFile`)
-  and store upsert (`upsertSkillGroups`) — wiring the read is a small **frontend** follow-up
-  (poll + `upsertSkillGroups`, parallel to how `skills.json` is read). **Rust:** `setup_workspaces`
-  in `src-tauri/src/planner/workspace.rs` should scaffold/allow `skill_groups.json`, and the planner spec
-  (`CLAUDE.md` template / `src-tauri/templates/*.md`) must document the file + its shape:
-  `[{ "name": "Release day", "hue": "var(--accent)", "skills": ["<skill name or slug>", …] }]`.
+### Slice 1 — the crate + CLI (DONE, this issue's first slice)
+`crates/skilldb` — a Tauri-free SQLite store + the `bsc-skill` CLI, self-contained, validated in
+isolation (per #1325's "one domain end-to-end first"). Lands the store + CLI; wires nothing into the app.
 
-- **plan.db channel (more native, per [[plan-db-architecture]]):** add a `bsc-plan skill-group`
-  verb to `crates/plandb` + the `bsc-plan` CLI (create/add-member/assign-to-stream), and a
-  `skill_groups` table. Frontend reads via the existing plan.db bridge. Heavier, but consistent
-  with how issues/features already flow.
+- **Store** (`crates/skilldb/src/lib.rs`): a global `skills.db` (default `~/.base-studio-code/skills.db`),
+  opened with **WAL mode + a busy_timeout** so the CLI and the live app share it concurrently (#1325).
+  - `skills` table — columns from the frontend `SkillDef` (`id` PK, `name`, `kind`, `source`, `desc`,
+    `prompt`, `tools`/`profiles`/`projects` as JSON TEXT, `enabled`/`pinned`/`packaged` flags, +
+    `position`/`updated_at`). The display-only telemetry fields are deliberately NOT persisted (they're
+    derived from the usage log).
+  - `skill_groups` table — `id` PK, `name`, `hue` (default `var(--accent)`), `skill_ids` JSON array,
+    `position`, `updated_at` — mirrors the frontend `SkillGroup`.
+  - Methods: skills `upsert / list / get / remove`; groups `group_add / group_upsert / group_list /
+    group_get / group_remove / group_toggle_member`; and `resolve(group_id) → Vec<Skill>` (ordered,
+    de-duped, existence-filtered — the frontend `expandGroups` + existing-skill filter semantics).
+  - `serde` emits the **camelCase** JSON the frontend reads (`skillIds`, …).
+- **CLI** (`crates/skilldb/src/bin/bsc-skill.rs`): `list` · `add` (JSON on stdin) · `group {add,list,
+  get,remove,member}` · `resolve <group-id>`. JSON to stdout (like `bsc-plan`). Db located via
+  `--db <path>`, `BSC_SKILL_DB`, else the default global path.
 
-### 2. Stream group assignment (`AgentStream` gains `groupIds`)
-For "toggle a group onto a stream", the fleet stream model needs `groupIds: string[]`:
-- **Frontend:** `AgentStream` type (`src/screens/planner/fleet/…`) + the planner fleet authoring.
-- **Launch:** in `fleetStartProject` (`store/slices/projects.ts`), a worker's effective groups become
-  `stream.groupIds ∪ sessionSkillGroups[key]` before the `expandGroups(...)` call already in place
-  (one-line change — the resolver already accepts the merged set).
-- **Rust:** wherever `fleet.json` / the stream schema is written/validated (`planner/workspace.rs` `setup_workspaces`,
-  plan.db `crates/plandb`) gains the `groupIds` field; the planner spec documents assigning a group
-  to a stream.
+### Slice 2 — app integration (next)
+- Thin `#[tauri::command]` wrappers over `crates/skilldb` (unchanged behavior; existing tests green).
+- `console/pty.rs`: inject `BSC_SKILL_DB` + `bsc-skill` on PATH for **every** session (runtime access).
+- Frontend store-source swap: read the library from the skilldb bridge (persist = cache).
+- `AgentStream.groupIds?: string[]` (parallel to `mcp?`); `fleetStartProject` already merges
+  `stream.groupIds ∪ sessionSkillGroups[key]` → `expandGroups`.
+- `planner/directives.rs` authors groups via `bsc-skill group …`; `planner/templates.rs` documents the verbs.
 
-### 3. Planner spec / templates
-Extend the planner `CLAUDE.md` template (in `src-tauri/src/planner/templates.rs` + `planner/directives.rs`) to teach
-the planner the task-groups concept and the chosen channel from (1)/(2): author reusable groups,
-attach a group to a stream, so a stream's workers get the whole bundle at launch.
+### Slice 3 — hot-apply (optional follow-up)
+A running session toggles a group → `write_session_skills` re-materializes its `.claude/skills/`
+without a relaunch.
 
-### Explicitly NOT changing
-- `write_session_skills` / `ensure_session_settings` — they keep receiving the final, group-expanded
-  skill list; groups are invisible to them.
-- SKILL.md format — groups are an app concept, not a Claude Code one.
-
-## Suggested order
-1. Decide channel: `skill_groups.json` (fast) vs `bsc-plan skill-group` (plan.db-native).
-2. Rust: schema/scaffold (`groupIds` on streams; `skill_groups.json` or plan.db table) + planner spec.
-3. Frontend follow-up: read the channel → `upsertSkillGroups` + stream-group merge in `fleetStartProject`.
+## Concurrency / liveness (the #1325 crux)
+SQLite **WAL + busy_timeout** (set on open in slice 1); atomic (temp+rename) SKILL.md writes stay as
+the app already does them. The live app caches the library in memory (Zustand); a CLI mutation to the
+global db is reflected on the next read/poll — document the per-command refresh expectation when the
+app integration (slice 2) wires the read path.
