@@ -199,6 +199,15 @@ pub fn discover_sessions() -> Vec<DiscoveredSession> {
     )
 }
 
+/// Discard ONE discovered session by its identity pane id (#1266 Stage 4): tree-kill its still-running
+/// shell (if any) and forget its ledger entry, so an orphaned/unwanted session is gone. Read-only as
+/// to the user's work on disk — it only reaps the live process + the ledger record, never the worktree
+/// or branch. Returns true if a live shell was killed. The reconcile is recomputed by the caller.
+#[tauri::command]
+pub fn reap_session(pane_id: String) -> bool {
+    crate::pty_ledger::reap_session(&pane_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

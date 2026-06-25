@@ -22,6 +22,7 @@ import { SkillsStatus } from "@/features/skills";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import { SuperUserAchievement } from "@/app/SuperUserAchievement";
 import { CrashRecoveryBanner } from "@/app/CrashRecoveryBanner";
+import { SessionRecoveryBanner } from "@/app/SessionRecoveryBanner";
 import { QuarantineBanner } from "@/app/QuarantineBanner";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
@@ -404,6 +405,7 @@ export default function App() {
       <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
       <CrashRecoveryBanner />
+      <SessionRecoveryBanner />
       <QuarantineBanner />
       <div className="shell">
         <Rail active={activeScreen} onNavigate={setScreen} />

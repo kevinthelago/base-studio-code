@@ -229,6 +229,7 @@ pub fn run() {
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
             session_discovery::discover_sessions,
+            session_discovery::reap_session,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
