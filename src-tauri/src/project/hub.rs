@@ -147,7 +147,8 @@ pub(crate) fn repair_hub_worktrees(hub: &std::path::Path) {
 /// scaffold shell (#922). Drives the migration's "empty `projects/<key>` shell" detection — the
 /// split-brain artifact a failed promote-rename used to leave behind.
 pub(crate) fn dir_is_hub(dir: &std::path::Path) -> bool {
-    ["CLAUDE.md", "goal.md", "scope.md", "phases.json", "fleet.json", "issues.json"]
+    // The fleet now lives in plan.db, not a fleet.json file (#1317) — so plan.db is a hub marker.
+    ["CLAUDE.md", "goal.md", "scope.md", "phases.json", "issues.json", "plan.db"]
         .iter()
         .any(|f| dir.join(f).is_file())
 }
