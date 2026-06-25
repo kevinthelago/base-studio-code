@@ -141,6 +141,47 @@ pub(crate) fn reap_project_shells(key: &str) -> usize {
     kill.len()
 }
 
+/// Pure split for reaping ONE session by its identity pane id (#1266 "Discard"): return its live pid
+/// to tree-kill (if any) and the survivors to keep. A dead/absent pid kills nothing. Testable with a
+/// fake probe.
+pub(crate) fn select_session_shell(
+    entries: &[LedgerEntry],
+    pane_id: &str,
+    probe: &impl ProcProbe,
+) -> (Option<u32>, Vec<LedgerEntry>) {
+    let mut kill = None;
+    let mut keep = Vec::new();
+    for e in entries {
+        if e.pane_id == pane_id {
+            if probe.alive(e.pid) {
+                kill = Some(e.pid);
+            }
+            // dropped from `keep` either way (killed or already dead → forgotten)
+        } else {
+            keep.push(e.clone());
+        }
+    }
+    (kill, keep)
+}
+
+/// Reap ONE discovered session by its identity pane id (#1266 "Discard"): tree-kill its still-running
+/// shell (if any) and forget its ledger entry. Backs the recovery panel's Discard action for an
+/// orphaned/unwanted session. Returns true if a live shell was killed. Best-effort: an unknown pane id
+/// is a no-op (returns false).
+pub(crate) fn reap_session(pane_id: &str) -> bool {
+    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let entries = load_unlocked();
+    let (kill, keep) = select_session_shell(&entries, pane_id, &OsProbe);
+    if let Some(pid) = kill {
+        log::warn!("[pty-reaper] reaping discarded session pid={pid} pane={pane_id:?}");
+        tree_kill(pid);
+    }
+    if keep.len() != entries.len() {
+        save_unlocked(&keep);
+    }
+    kill.is_some()
+}
+
 /// Drop every entry this app instance owns. Called from `kill_all_pty_sessions` (clean exit), so a
 /// graceful shutdown leaves the ledger clean and the next boot has nothing to reconcile.
 pub(crate) fn forget_all_owned() {
@@ -428,6 +469,25 @@ mod tests {
             keep.iter().map(|e| e.pane_id.as_str()).collect::<Vec<_>>(),
             vec!["keep:api", "man:s:p0"],
         );
+    }
+
+    #[test]
+    fn select_session_shell_kills_live_and_forgets_only_that_pane() {
+        let entries = vec![
+            LedgerEntry { pid: 200, pane_id: "proj:auth".into(), owner_pid: 1, start_token: 0 }, // target, live → KILL + forget
+            LedgerEntry { pid: 201, pane_id: "proj:api".into(), owner_pid: 1, start_token: 0 },  // other pane → KEEP
+        ];
+        let probe = Fake { alive: HashSet::from([200, 201]), tokens: HashMap::new() };
+        let (kill, keep) = select_session_shell(&entries, "proj:auth", &probe);
+        assert_eq!(kill, Some(200));
+        assert_eq!(keep.iter().map(|e| e.pane_id.as_str()).collect::<Vec<_>>(), vec!["proj:api"]);
+
+        // A dead target is forgotten without a kill; an unknown pane id is a pure no-op (keeps all).
+        let dead = Fake { alive: HashSet::new(), tokens: HashMap::new() };
+        assert_eq!(select_session_shell(&entries, "proj:auth", &dead).0, None);
+        let (k, keep_all) = select_session_shell(&entries, "proj:nope", &probe);
+        assert_eq!(k, None);
+        assert_eq!(keep_all.len(), 2);
     }
 
     #[test]
