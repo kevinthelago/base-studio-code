@@ -15,7 +15,6 @@ import {
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../shared/deployConfig";
-import { groupDependenciesBySource, type PlanDependency, type DependencyRegistry } from "../issues/dependencies";
 
 const MONO = "var(--mono)";
 const grpLabel: React.CSSProperties = {
@@ -532,73 +531,6 @@ export function ServiceTargetEditor({ svc, setSvc }: {
   );
 }
 
-/** Dependencies grouped by the source each package is pulled from (#1127). */
-export function DependenciesCard({ deps, registries, done }: {
-  deps: PlanDependency[]; registries: Record<string, DependencyRegistry>; done: boolean;
-}) {
-  const groups = groupDependenciesBySource(deps, registries);
-  const ecoColor = (eco: string) => (eco === "cargo" ? "var(--accent)" : "var(--info)");
-  const right = (
-    <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>
-      {deps.length} locked · {groups.length} source{groups.length !== 1 ? "s" : ""}
-    </span>
-  );
-  return (
-    <Card n="05" title="Dependencies" accent="var(--violet)" done={done} right={right}>
-      {deps.length === 0 ? (
-        <span style={monoSm}>No dependencies locked yet — the planner lists each repo&apos;s libraries here as it works this stage. They become each repo&apos;s package.json / Cargo.toml at publish.</span>
-      ) : (
-        <>
-          <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", lineHeight: 1.5, marginBottom: 12 }}>
-            Locked once so the parallel fleet never redefines them — grouped by the <span style={{ color: "var(--fg-muted)" }}>source</span> each package is pulled from.
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-            {groups.map((g) => (
-              <div key={g.key} style={{
-                borderRadius: "var(--r-md)", padding: "10px 11px",
-                border: "1px solid " + (g.private ? "color-mix(in oklch, var(--violet), transparent 74%)" : "var(--border-soft)"),
-                background: g.private ? "color-mix(in oklch, var(--violet), transparent 93%)" : "var(--bg-canvas)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ fontSize: 11, color: g.private ? "var(--violet)" : "var(--fg-muted)" }}>{g.private ? "⛁" : "◇"}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: g.private ? "var(--violet)" : "var(--fg)" }}>{g.name}</span>
-                  <span style={{ ...chip, fontSize: 7.5, ...(g.private ? { color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" } : {}) }}>{g.private ? "private" : "public · default"}</span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)" }}>{g.deps.length} package{g.deps.length !== 1 ? "s" : ""}</span>
-                </div>
-                {g.private ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginTop: 7 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-muted)" }}>{g.url}</span>
-                    {g.scope && <span style={{ ...chip, fontSize: 8, background: "var(--bg-canvas)" }}>scope {g.scope}</span>}
-                    <span style={{ flex: 1 }} />
-                    {g.auth && <span style={{ ...chip, fontSize: 8, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 74%)", background: "color-mix(in oklch, var(--violet), transparent 88%)" }}>secret {g.auth}</span>}
-                  </div>
-                ) : (
-                  <div style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", marginTop: 4 }}>{g.url}</div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 9 }}>
-                  {g.deps.map((dep, i) => (
-                    <div key={`${dep.ecosystem}-${dep.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
-                      <span style={{ fontFamily: MONO, fontSize: 7.5, color: ecoColor(dep.ecosystem), padding: "1px 5px", borderRadius: 3, border: `1px solid color-mix(in oklch, ${ecoColor(dep.ecosystem)}, transparent 70%)`, flex: "0 0 auto" }}>{dep.ecosystem}</span>
-                      <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", whiteSpace: "nowrap" }}>{dep.name}<span style={{ color: "var(--fg-dim)" }}>{dep.version ? `@${dep.version}` : ""}</span></span>
-                      {dep.dev && <span style={{ ...chip, fontSize: 7.5, color: "var(--info)", borderColor: "color-mix(in oklch, var(--info), transparent 74%)", background: "color-mix(in oklch, var(--info), transparent 88%)" }}>dev</span>}
-                      <span style={{ flex: 1 }} />
-                      <span style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", padding: "1px 6px", borderRadius: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "46%" }}>⎇ {dep.repo ?? "all repos"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", lineHeight: 1.5, marginTop: 11 }}>
-            Each source maps to a repo&apos;s <span style={{ color: "var(--fg-muted)" }}>package.json</span> / <span style={{ color: "var(--fg-muted)" }}>Cargo.toml</span>; private sources also write <span style={{ color: "var(--fg-muted)" }}>.npmrc</span> / <span style={{ color: "var(--fg-muted)" }}>.cargo/config.toml</span> with the token from the vault secret.
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
 /** The Deployment pane header — title + the "N of M repos deploy-ready" counter (#1421). */
 function DeployHeader({ ready, total }: { ready: number; total: number }) {
   const allReady = total > 0 && ready === total;
@@ -620,13 +552,12 @@ function DeployHeader({ ready, total }: { ready: number; total: number }) {
 }
 
 /** The Deployment stage body (#1421) — one collapsible card per repo, each a self-contained
- *  deployable unit (target & build · pipeline · environments · config & secrets · rollout). The
- *  project-wide locked dependency manifest follows as a tail (it gates separately, #1127). */
-export function FocusedDeployBody({ deploy, onChange, dependencies = [], registries = {} }: {
+ *  deployable unit (target & build · pipeline · environments · config & secrets · rollout).
+ *  Dependencies live OUTSIDE this pane now (#1429) — they're locked by the planner and gate
+ *  separately; the deploy pane is purely per-repo shipping. */
+export function FocusedDeployBody({ deploy, onChange }: {
   deploy?: DeployConfig;
   onChange?: (next: DeployConfig) => void;
-  dependencies?: PlanDependency[];
-  registries?: Record<string, DependencyRegistry>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (!deploy) {
@@ -636,7 +567,6 @@ export function FocusedDeployBody({ deploy, onChange, dependencies = [], registr
   const setSvcFor = (id: string, patch: Partial<DeployService>) =>
     onChange?.({ ...d, services: d.services.map((s) => s.id === id ? { ...s, ...patch } : s) });
   const ready = readyServiceCount(d);
-  const depsOk = dependencies.length > 0;
 
   if (d.services.length === 0) {
     return (
@@ -660,10 +590,6 @@ export function FocusedDeployBody({ deploy, onChange, dependencies = [], registr
             open={openId === svc.id} onToggle={() => setOpenId((cur) => (cur === svc.id ? null : svc.id))} />
         ))}
       </div>
-
-      {/* The locked dependency manifest is project-wide (#1127) — it gates separately and renders here. */}
-      <Divider label="DEPENDENCIES" color="var(--violet)" />
-      <DependenciesCard deps={dependencies} registries={registries} done={depsOk} />
     </div>
   );
 }
