@@ -104,6 +104,18 @@ export function roleCapability(role: SessionRole, override: Partial<RoleCapabili
   return { ...ROLE_DEFAULTS[role], ...override };
 }
 
+/**
+ * The effective write-scope globs for a pane's role (#1297) — what the `bsc-scope` PreToolUse hook
+ * hard-limits writes to. Uses the pane's assigned owned globs when it has them, else the role's
+ * default boundary, so the planner falls back to {@link PLANNER_WRITE_GLOBS} rather than being
+ * overridden to `[]`. Empty ⇒ the role has no write boundary (a `code: "none"` role, or a worker
+ * with no lane yet) and so gets no scope hook.
+ */
+export function scopeWriteGlobs(role: SessionRole, ownGlobs: string[]): string[] {
+  const cap = roleCapability(role, ownGlobs.length ? { writeGlobs: ownGlobs } : {});
+  return cap.code === "write" ? cap.writeGlobs : [];
+}
+
 // ── Command classification ──────────────────────────────────────────────────────
 
 const GIT_WRITE = new Set([
