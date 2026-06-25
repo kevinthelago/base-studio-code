@@ -441,13 +441,11 @@ export function ServiceDeploySections({ svc, setSvc }: {
  *  status · id · target · workload · ready/✓ · chevron; expanded = the target editor + (once a
  *  target is set) the repo's ship sections. `lead` lets the merged Repos & Deployment pane inject
  *  the repo's git identity row. */
-export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, primary, meta, trailing }: {
+export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, trailing }: {
   svc: DeployService; setSvc: (patch: Partial<DeployService>) => void;
   open: boolean; onToggle: () => void; lead?: React.ReactNode;
-  /** Mark the project's primary repo (collapsed-row tag). */
-  primary?: boolean;
-  /** Collapsed-row identity extras shown after the repo name (language · branch · ahead/behind ·
-   *  agents) — the merged Repositories & Deployment pane folds the repo's git identity in here. */
+  /** Collapsed-row identity extras shown after the repo name (language · ahead/behind · agents) —
+   *  the merged Repositories & Deployment pane folds the repo's git identity in here. */
   meta?: React.ReactNode;
   /** Collapsed-row trailing slot before the chevron (e.g. the per-repo visibility toggle). */
   trailing?: React.ReactNode;
@@ -462,7 +460,6 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, primary, met
       <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 13px", cursor: "pointer", userSelect: "none" }}>
         <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: dot, boxShadow: ready ? `0 0 7px color-mix(in oklch, ${dot}, transparent 60%)` : undefined }} />
         <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{svc.repo || svc.id}</span>
-        {primary && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--accent)", border: "1px solid var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 86%)" }}>primary</span>}
         {meta}
         <span style={{ flex: 1 }} />
         {targeted ? (

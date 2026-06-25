@@ -41,7 +41,8 @@ describe("FocusedReposDeployBody — per-repo cards (#1421)", () => {
   it("renders one per-repo card (with git identity) + the project-wide dependency tail, no global visibility toggle", () => {
     render(<Harness repos={[repo("acme/web", { primary: true, lang: "TypeScript" })]} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();
-    expect(screen.getByText("primary")).toBeInTheDocument();
+    expect(screen.queryByText("primary")).toBeNull();             // primary badge + branch pill removed (#1435)
+    expect(screen.queryByText("⎇ main")).toBeNull();
     expect(screen.getByText("TypeScript")).toBeInTheDocument();   // git identity folded into the card row
     expect(screen.getByText("set target →")).toBeInTheDocument(); // untargeted repo's collapsed-row chip
     // the per-repo deploy sections (CI/CD pipeline etc.) live INSIDE each card now (#1421) — absent
