@@ -12,6 +12,7 @@ import { AchievementsSettings } from "./Achievements";
 import { DiagnosticsSettings } from "./Diagnostics";
 import { PerformanceSettings } from "./Performance";
 import { LogsSettings } from "./Logs";
+import { StorageSettings } from "./Storage";
 
 const NAV_ITEMS = [
   { k: "general",       label: "General"        },
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { k: "diagnostics",   label: "Diagnostics"     },
   { k: "performance",   label: "Performance"     },
   { k: "logs",          label: "Logs"            },
+  { k: "storage",       label: "Storage"         },
   { k: "appearance",    label: "Appearance"      },
   { k: "keyboard",      label: "Keyboard"        },
   { k: "advanced",      label: "Advanced"        },
@@ -71,9 +73,10 @@ export function SettingsScreen() {
           {settingsSection === "diagnostics"  && <DiagnosticsSettings />}
           {settingsSection === "performance"   && <PerformanceSettings />}
           {settingsSection === "logs"          && <LogsSettings />}
+          {settingsSection === "storage"       && <StorageSettings />}
           {settingsSection === "developer"    && <DeveloperSettings />}
           {settingsSection === "achievements" && <AchievementsSettings />}
-          {settingsSection !== "general" && settingsSection !== "appearance" && settingsSection !== "keyboard" && settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "diagnostics" && settingsSection !== "performance" && settingsSection !== "logs" && settingsSection !== "developer" && settingsSection !== "achievements" && (
+          {settingsSection !== "general" && settingsSection !== "appearance" && settingsSection !== "keyboard" && settingsSection !== "github" && settingsSection !== "integrations" && settingsSection !== "agents" && settingsSection !== "claude-config" && settingsSection !== "tunnel" && settingsSection !== "diagnostics" && settingsSection !== "performance" && settingsSection !== "logs" && settingsSection !== "storage" && settingsSection !== "developer" && settingsSection !== "achievements" && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               height: "100%", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
