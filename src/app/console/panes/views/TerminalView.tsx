@@ -20,7 +20,7 @@ import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/sk
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
@@ -454,6 +454,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       const agentEnv: Record<string, string> | undefined = (() => {
         const e: Record<string, string> = {};
         if (ghToken) e.GH_TOKEN = ghToken;
+        // Write-scope gate (#1297): hand the session its allowed write globs so the `bsc-scope`
+        // PreToolUse hook hard-blocks any write outside them — the hard deny the role gate's
+        // allow-only rules lack (e.g. the planner can't be coaxed into writing UI/code). Applies to
+        // every gated pane (Claude reads it via the hook; bsc-agent already enforces natively).
+        const scopeRole = useAppStore.getState().paneRoles[paneId];
+        if (scopeRole) {
+          const sg = scopeWriteGlobs(scopeRole, useAppStore.getState().paneRoleGlobs[paneId] ?? []);
+          if (sg.length > 0) e.BSC_SCOPE_GLOBS = sg.join(" ");
+        }
         if (providerId === "bsc-agent") {
           const st = useAppStore.getState();
           Object.assign(e, bscAgentEnv(resolveLlmConfig(st)));
@@ -548,6 +557,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
              { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
              { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+             // Write-scope gate (#1297): hard-block a file WRITE whose path is outside the pane's
+             // write globs ($BSC_SCOPE_GLOBS) — the hard deny the role gate's allow-only rules lack.
+             // Self-gates on $BSC_SCOPE_GLOBS being set; excludes Read (the planner reads for context).
+             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
              // Tainted-turn gate (#1167): marks the session tainted after it ingests untrusted
              // input (WebFetch / curl / gh view) and blocks an outward/destructive command (exfil,
              // force-push, repo-delete) that runs within the taint window — injection can't act in
