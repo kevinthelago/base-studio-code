@@ -1026,30 +1026,41 @@ mod tests {
     /// Resolve a shared cross-repo contract fixture by FILENAME, walking the frontend `src/` tree.
     ///
     /// `tunnelProtocol.fixtures.json` / `plannerCore.fixtures.json` are byte-exact wire contracts
-    /// shared by these Rust tests, the TS tests, and mobile-studio-code. The frontend reorg (#1309)
-    /// relocates them within `src/`, so we find them by name instead of a brittle fixed path — a
-    /// move no longer reds the Rust CI. Test-only, so the recursive walk's cost is irrelevant.
+    /// shared by these Rust tests, the TS tests, and mobile-studio-code. Per the feature-first
+    /// frontend (#1309) each fixture is **colocated with its feature** (the feature owns its
+    /// contract) and the TS tests import it relatively — so they move with their feature. Rather
+    /// than track those moves with a brittle fixed path, the Rust side resolves them BY NAME, which
+    /// is reorg-immune. (#1335 weighed relocating them to a shared `contracts/` dir and concluded
+    /// NOT to — that would fight the feature-ownership model; hardening this resolver is the fix.)
     ///
-    /// INTERIM: the walk returns the first name match (ambiguous if a fixture name is ever
-    /// duplicated under `src/`). #1335 tracks settling a canonical home for cross-repo contract
-    /// fixtures (e.g. a stable `contracts/` dir) so this can become a direct, unambiguous path.
+    /// We collect ALL matches and require EXACTLY ONE: zero ⇒ the fixture is missing/renamed; two+ ⇒
+    /// a name collision that a first-match walk would silently resolve wrong. Test-only, so cost is
+    /// irrelevant.
     fn find_fixture(name: &str) -> std::path::PathBuf {
-        fn walk(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
-            for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        fn walk(dir: &std::path::Path, name: &str, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    if let Some(found) = walk(&path, name) {
-                        return Some(found);
-                    }
+                    walk(&path, name, out);
                 } else if path.file_name().and_then(|n| n.to_str()) == Some(name) {
-                    return Some(path);
+                    out.push(path);
                 }
             }
-            None
         }
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
-        walk(&src, name)
-            .unwrap_or_else(|| panic!("contract fixture '{name}' not found under {}", src.display()))
+        let mut matches = Vec::new();
+        walk(&src, name, &mut matches);
+        match matches.len() {
+            1 => matches.pop().unwrap(),
+            0 => panic!("contract fixture '{name}' not found under {}", src.display()),
+            n => panic!(
+                "contract fixture '{name}' is AMBIGUOUS — {n} matches under {}: {:?}. \
+                 Give it a unique name or a canonical home (#1335).",
+                src.display(),
+                matches,
+            ),
+        }
     }
 
     /// Validate the plannerCore fixture: FNV-1a hash vectors + plan-sync wire frame serde.
