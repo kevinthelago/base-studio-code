@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { defaultSourceConfig } from "../shared/sourceConfig";
@@ -110,7 +110,9 @@ describe("FocusedSourceBody — readiness", () => {
     fireEvent.click(screen.getByTestId("connector-tile-salesforce"));
     // OAuth connectors connect with one click (no secret form).
     fireEvent.click(screen.getByRole("button", { name: /connect to salesforce/i }));
-    await waitFor(() => expect(within(screen.getByTestId("source-readiness")).getByText(/1 of 1 connected/)).toBeTruthy());
+    // The top banner flips to the all-connected state once the source scans (the bottom
+    // readiness banner that duplicated this counter was removed).
+    await waitFor(() => expect(screen.getByText(/sources connected/i)).toBeTruthy());
   });
 });
 
