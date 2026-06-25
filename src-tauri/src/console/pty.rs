@@ -7,7 +7,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_ACTIVITY_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC, BSC_LEARNED_RC,
+    BSC_TOKENS_RC, BSC_ACTIVITY_RC, BSC_DONE_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC, BSC_LEARNED_RC,
 };
 use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -437,7 +437,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_LEARNED_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_DONE_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_LEARNED_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -477,6 +477,11 @@ pub(crate) async fn pty_create(
     // silence timer so a worker that's working-but-silent doesn't false-idle. Set for every pane
     // (harmless — only panes whose settings install the hooks actually write).
     cmd.env("BSC_ACTIVITY_LOG", to_bash_path(&base.join("activity.log").to_string_lossy()));
+    // Worker self-close log (#1379): a finished WORKER calls `bsc-done`, which appends `ts \t pane`
+    // here. The frontend polls it (`read_done_panes`) and reaps the pane — classify the resting
+    // state from plan.db, `markPaneEnded`, and `pty_kill`. Set for every pane (harmless — only a
+    // worker told to self-close ever writes).
+    cmd.env("BSC_DONE_LOG", to_bash_path(&base.join("done.log").to_string_lossy()));
     // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
