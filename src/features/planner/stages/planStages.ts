@@ -43,8 +43,8 @@ export interface PlanStageState {
   /** Features: how many user-facing capabilities are defined, and whether all are
    *  confirmed. Each feature becomes a fleet stream; the Plan stage reads them. */
   features: { count: number; allConfirmed: boolean };
-  /** Dependencies (#1111): how many libraries the planner has locked in the dependency manifest
-   *  (`dependencies.json`). The Dependencies gate passes once ≥1 is defined. */
+  /** Dependencies (#1111/#1191): how many libraries the planner has locked in the dependency manifest
+   *  (plan.db, via `bsc-plan deps set`). The Dependencies gate passes once ≥1 is defined. */
   dependencies: { count: number };
   /** Structure/Plan: the roadmap is confirmed and granular issues exist. */
   phasesConfirmed: boolean;

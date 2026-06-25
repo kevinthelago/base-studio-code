@@ -101,6 +101,38 @@ describe("parseDependencyManifest — sources + registries (#1127)", () => {
   });
 });
 
+describe("plan.db manifest round-trip (#1191 — bsc-plan deps set/get)", () => {
+  // The poll reads `plan_get_deps` (a JSON object), `JSON.stringify`s it into the DEPENDENCIES
+  // section, and every reader re-parses it with parseDependencyManifest. Prove that path is lossless
+  // for the full manifest shape — so deps stored via the new `bsc-plan deps set` verb survive the trip
+  // through plan.db exactly as the legacy `dependencies.json` did.
+  it("re-parses a stored plan.db blob identically (deps + registries preserved)", () => {
+    const stored = {
+      registries: { internal: { url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" } },
+      dependencies: [
+        { repo: "owner/app", ecosystem: "npm", name: "zod", version: "^3.23", why: "schema validation" },
+        { repo: "owner/app", ecosystem: "npm", name: "@acme/ui", version: "^2", source: "internal", why: "design system", dev: false },
+        { repo: "owner/api", ecosystem: "cargo", name: "serde", version: "1", why: "(de)serialization" },
+      ],
+    };
+    // What the poll does: stringify the DB object, then parse it like any reader.
+    const m = parseDependencyManifest(JSON.stringify(stored));
+    expect(m.dependencies).toHaveLength(3);
+    expect(m.dependencies[1]).toMatchObject({ name: "@acme/ui", source: "internal", ecosystem: "npm" });
+    expect(m.registries.internal).toEqual({ url: "https://npm.internal/", scope: "@acme", auth: "INTERNAL_NPM_TOKEN" });
+    // Idempotent: re-stringifying the parsed manifest and parsing again is a fixed point.
+    const again = parseDependencyManifest(JSON.stringify(m));
+    expect(again).toEqual(m);
+  });
+
+  it("treats an empty / unset DB blob as an empty manifest (no deps locked yet)", () => {
+    expect(parseDependencyManifest(JSON.stringify({ dependencies: [], registries: {} })))
+      .toEqual({ dependencies: [], registries: {} });
+    // A null `plan_get_deps` reaches the parser as "" — also empty, never a throw.
+    expect(parseDependencyManifest("")).toEqual({ dependencies: [], registries: {} });
+  });
+});
+
 describe("depsForRepo (#1111)", () => {
   const deps: PlanDependency[] = [
     { repo: "a/web", ecosystem: "npm", name: "zod" },
