@@ -886,7 +886,7 @@ use crate::console::settings::*;
         perms.set_readonly(true);
         std::fs::set_permissions(&f, perms).unwrap();
 
-        delete_project_dir(key).unwrap();
+        crate::project::hub::delete_project_dir_impl(&key, &crate::pty::PtyState::new()).unwrap();
         assert!(!proj.exists(), "project dir (incl. read-only files) should be deleted");
 
         std::fs::remove_dir_all(&home).ok();
@@ -1127,7 +1127,7 @@ use crate::console::settings::*;
         perms.set_readonly(true);
         std::fs::set_permissions(&wt_file, perms).unwrap();
 
-        delete_project_dir(key.clone()).unwrap();
+        crate::project::hub::delete_project_dir_impl(&key, &crate::pty::PtyState::new()).unwrap();
         assert!(!project_dir(&key).exists(), "hub should be deleted");
         assert!(!worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
 
