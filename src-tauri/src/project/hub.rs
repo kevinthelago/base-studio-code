@@ -19,22 +19,31 @@ pub(crate) fn mark_published(project_key: String) -> Result<(), String> {
 /// it — plan sections, prompts, cloned repos. Best-effort: a missing dir is fine.
 /// Refuses an empty key so it can never wipe the `projects/` root.
 #[tauri::command]
-pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
-    if sanitize_project_key(&project_key).is_empty() {
+pub(crate) fn delete_project_dir(project_key: String, pty: tauri::State<'_, crate::pty::PtyState>) -> Result<(), String> {
+    delete_project_dir_impl(&project_key, pty.inner())
+}
+
+/// Core of [`delete_project_dir`], taking `&PtyState` directly so it's callable from tests without a
+/// Tauri managed-state handle.
+pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::pty::PtyState) -> Result<(), String> {
+    if sanitize_project_key(project_key).is_empty() {
         return Err("delete_project_dir: empty project_key".to_string());
     }
-    // Reap the project's still-running shells first (#1279): kill any live PTY child whose ledger
-    // pane id is `<key>:…` and forget all of its ledger entries. Otherwise a shell still running at
-    // delete time survives as an orphaned pid the deleted-project key can no longer resolve, which
-    // discovery would surface as an unrestorable "running" session. The on-disk hub keys off the
-    // SANITIZED slug, so match the ledger on the same value.
-    let killed = crate::pty_ledger::reap_project_shells(&sanitize_project_key(&project_key));
+    let safe = sanitize_project_key(project_key);
+    // Tear down the project's LIVE PTY sessions FIRST (#1387): drain + Job-Object-kill each shell
+    // whose pane id is `<key>:…`, releasing the cwd locks they hold on the hub. The ledger reap
+    // (#1279) only tree-kills by pid (async, no handle ownership), which races remove_dir_all — so
+    // the in-process teardown (the same path app-exit uses) is what actually frees the directory.
+    crate::pty::kill_project_sessions(pty, &safe);
+    // Then reap any ORPHANED shells left by a prior run (owner gone) — forgetting their ledger
+    // entries so discovery can't surface a deleted project's pid as an unrestorable session.
+    let killed = crate::pty_ledger::reap_project_shells(&safe);
     if killed > 0 {
-        log::info!("delete_project_dir: reaped {killed} running shell(s) of {project_key:?}");
+        log::info!("delete_project_dir: reaped {killed} orphaned shell(s) of {project_key:?}");
     }
     // The hub lives under projects/<key> (#922). Also remove any legacy draft/<key> copy left by a
     // pre-migration build so a stale half-moved hub can't linger and reappear in the list.
-    for dir in [project_dir(&project_key), legacy_draft_dir(&project_key)] {
+    for dir in [project_dir(project_key), legacy_draft_dir(project_key)] {
         if !dir.exists() { continue; }
         // Clear read-only first: on Windows `remove_dir_all` can't delete read-only files, and
         // git pack files in a cloned-repo subdir are read-only — so a project with a linked repo
@@ -42,7 +51,7 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
         // this is Windows-only.
         #[cfg(windows)]
         clear_readonly_recursive(&dir);
-        std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
+        remove_dir_all_retrying(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
     // The fleet's worktrees now live outside the hub (see `worktrees_dir`, #844), so the hub delete
@@ -50,8 +59,28 @@ pub(crate) fn delete_project_dir(project_key: String) -> Result<(), String> {
     // teardown per worktree (dropping the owning clones' admin records too) and, crucially, detaches
     // any `node_modules` JUNCTION first so the recursive delete can't follow it into the shared
     // main-clone node_modules. (A bare `remove_dir_all` here previously risked exactly that.)
-    fleet::teardown::reclaim_project_worktrees(&project_key);
+    fleet::teardown::reclaim_project_worktrees(project_key);
     Ok(())
+}
+
+/// `remove_dir_all` with a few short retries (#1387): even after a holding process is killed, Windows
+/// can keep a directory handle for a few ms (a sharing violation on the first attempt). Retry with a
+/// brief backoff; succeed immediately if the dir is already gone (a concurrent removal).
+fn remove_dir_all_retrying(dir: &std::path::Path) -> std::io::Result<()> {
+    let mut attempt = 0u32;
+    loop {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => return Ok(()),
+            Err(_) if !dir.exists() => return Ok(()), // already gone
+            Err(e) => {
+                attempt += 1;
+                if attempt >= 5 {
+                    return Err(e);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(60 * attempt as u64));
+            }
+        }
+    }
 }
 /// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
 /// unreadable entries are skipped. Needed so `remove_dir_all` can delete cloned-repo dirs
