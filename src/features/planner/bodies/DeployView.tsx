@@ -11,7 +11,7 @@ import { useState } from "react";
 import {
   PLATFORMS, platform, WORKLOAD, PIPE_TRIGGERS, RELEASE_STRATEGIES, ORCHESTRATORS, REPLICA_OPTIONS,
   PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
-  hostMeta, serviceChecks, serviceReady, readyServiceCount, serviceMode, serviceTargetDefined, finalStageName,
+  hostMeta, serviceChecks, serviceReady, serviceMode, serviceTargetDefined, finalStageName,
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../shared/deployConfig";
@@ -531,30 +531,10 @@ export function ServiceTargetEditor({ svc, setSvc }: {
   );
 }
 
-/** The Deployment pane header — title + the "N of M repos deploy-ready" counter (#1421). */
-function DeployHeader({ ready, total }: { ready: number; total: number }) {
-  const allReady = total > 0 && ready === total;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ width: 19, height: 19, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 84%)", border: "1px solid var(--accent-dim)" }}>⎇</span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Deployment</span>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)" }}>how each repository ships — defined per repo</span>
-      </div>
-      <span style={{ flex: 1 }} />
-      {total > 0 && (
-        <span style={{ fontFamily: MONO, fontSize: 10.5, color: allReady ? "var(--success)" : "var(--fg-muted)" }}>
-          <span style={{ color: "var(--fg)" }}>{ready}</span> of {total} repos deploy-ready
-        </span>
-      )}
-    </div>
-  );
-}
-
 /** The Deployment stage body (#1421) — one collapsible card per repo, each a self-contained
  *  deployable unit (target & build · pipeline · environments · config & secrets · rollout).
  *  Dependencies live OUTSIDE this pane now (#1429) — they're locked by the planner and gate
- *  separately; the deploy pane is purely per-repo shipping. */
+ *  separately. No in-body header (#1430): the focused pane's phase header already titles the stage. */
 export function FocusedDeployBody({ deploy, onChange }: {
   deploy?: DeployConfig;
   onChange?: (next: DeployConfig) => void;
@@ -566,30 +546,23 @@ export function FocusedDeployBody({ deploy, onChange }: {
   const d = deploy;
   const setSvcFor = (id: string, patch: Partial<DeployService>) =>
     onChange?.({ ...d, services: d.services.map((s) => s.id === id ? { ...s, ...patch } : s) });
-  const ready = readyServiceCount(d);
 
   if (d.services.length === 0) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <DeployHeader ready={0} total={0} />
-        <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
-          <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
-          <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
-        </div>
+      <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
+        <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
+        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
+        <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <DeployHeader ready={ready} total={d.services.length} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        {d.services.map((svc) => (
-          <RepoDeployCard key={svc.id} svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)}
-            open={openId === svc.id} onToggle={() => setOpenId((cur) => (cur === svc.id ? null : svc.id))} />
-        ))}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      {d.services.map((svc) => (
+        <RepoDeployCard key={svc.id} svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)}
+          open={openId === svc.id} onToggle={() => setOpenId((cur) => (cur === svc.id ? null : svc.id))} />
+      ))}
     </div>
   );
 }
