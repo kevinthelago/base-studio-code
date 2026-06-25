@@ -269,6 +269,27 @@ export function defaultDeployConfig(repos: string[]): DeployConfig {
   return { services: (repos.length ? repos : [""]).map(defaultService) };
 }
 
+/** Backfill a possibly-OLD-shape config (#1421/#1425 migration). Pre-rework configs kept `envs` /
+ *  `pipeline` / `config` / `release` / `health` at the TOP level (shared across services); the
+ *  per-repo rework moved them ONTO each service. A persisted old config therefore has services with
+ *  none of those fields, and the per-service readers (`serviceChecks` → `s.config.secrets`) crash on
+ *  it. Ensure every service owns its sub-configs — from the service, else the legacy top-level, else
+ *  the defaults — and drop the `undefined`/empty case to a fresh config. Self-heals on the next save. */
+export function normalizeDeployConfig(d: DeployConfig | undefined, repos: string[] = []): DeployConfig {
+  if (!d || !Array.isArray(d.services) || d.services.length === 0) return defaultDeployConfig(repos);
+  const legacy = d as Partial<{ envs: DeployEnvironment[]; pipeline: Pipeline; config: DeployConfigBlock; release: ReleasePolicy; health: HealthPolicy }>;
+  return {
+    services: d.services.map((s) => ({
+      ...s,
+      envs: Array.isArray(s.envs) ? s.envs : (legacy.envs ?? defaultEnvs()),
+      pipeline: s.pipeline?.stages ? s.pipeline : (legacy.pipeline ?? defaultPipeline()),
+      config: s.config?.secrets ? s.config : (legacy.config ?? { config: [], secrets: [], vault: "host vault" }),
+      release: s.release && s.release.strategy !== undefined ? s.release : (legacy.release ?? defaultRelease()),
+      health: s.health ?? legacy.health ?? defaultHealth(),
+    })),
+  };
+}
+
 /** The pipeline's final stage label adapts to a service's mode (#1192): cloud ships (`deploy`), a
  *  library publishes (`publish`), a local app packages (`package`). The gating `test` stays put. */
 export function finalStageName(s: DeployService | undefined): "deploy" | "publish" | "package" {
