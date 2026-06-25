@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
+import { placeMenu, type MenuPlacement } from "./menuPlacement";
 import { toModelId } from "@/app/console/lib/modelDisplay";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
@@ -102,27 +103,28 @@ export function PaneShell({
   const paneRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<
-    { right: number; maxHeight: number; top?: number; bottom?: number } | null
-  >(null);
+  const [menuPos, setMenuPos] = useState<MenuPlacement | null>(null);
 
-  // Position the menu from the button when it opens. Open toward whichever side
-  // has more room (so lower panes flip the menu UPWARD instead of clipping off
-  // the bottom of the window) and cap its height to the available space so it
-  // scrolls rather than overflowing the window edge.
-  useEffect(() => {
-    if (menuOpen && menuButtonRef.current) {
-      const r = menuButtonRef.current.getBoundingClientRect();
-      const margin = 8;
-      const right = window.innerWidth - r.right;
-      const spaceBelow = window.innerHeight - r.bottom - margin;
-      const spaceAbove = r.top - margin;
-      if (spaceBelow >= spaceAbove) {
-        setMenuPos({ top: r.bottom + 4, right, maxHeight: spaceBelow });
-      } else {
-        setMenuPos({ bottom: window.innerHeight - r.top + 4, right, maxHeight: spaceAbove });
-      }
-    }
+  // Position the menu so it stays fully on-screen (#1374). We MEASURE the menu's actual size
+  // (the portal renders hidden first, so `menuRef` has real dimensions here) and hand it +
+  // the trigger rect to the pure `placeMenu`, which picks a top/left clamped into the viewport
+  // on all four sides and caps the height to the available space. Recomputes on resize while
+  // open. `useLayoutEffect` runs before paint, so the hidden→placed flip never flickers.
+  useLayoutEffect(() => {
+    if (!menuOpen) { setMenuPos(null); return; }
+    const compute = () => {
+      const btn = menuButtonRef.current?.getBoundingClientRect();
+      const menu = menuRef.current?.getBoundingClientRect();
+      if (!btn || !menu) return;
+      setMenuPos(placeMenu(
+        btn,
+        { width: menu.width, height: menu.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      ));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
   }, [menuOpen]);
 
   // Close the pane menu on outside click, but let the button's own click handler toggle it
@@ -288,18 +290,21 @@ export function PaneShell({
         {children}
       </div>
 
-      {menuOpen && menuPos && createPortal(
+      {menuOpen && createPortal(
         <div ref={menuRef} style={{
           position: "fixed",
-          right: menuPos.right,
-          ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
+          // Hidden for the first (measure) pass, then placed; off-screen meanwhile so the
+          // hidden element can't catch clicks or show a flash at 0,0.
+          left: menuPos ? menuPos.left : -9999,
+          top: menuPos ? menuPos.top : -9999,
+          visibility: menuPos ? "visible" : "hidden",
           zIndex: 1000,
         }}>
           <PaneMenu
             agent={agent}
             provider={provider} running={running}
             model={model} runningModel={toModelId(runningModel)} active={active} available={available}
-            maxHeight={menuPos.maxHeight}
+            maxHeight={menuPos?.maxHeight}
             fullscreen={fullscreen}
             disabled={disabled}
             onToggleFullscreen={onToggleFullscreen}
