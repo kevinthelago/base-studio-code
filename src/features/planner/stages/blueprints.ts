@@ -288,9 +288,21 @@ export function mkSection(
   // BOTH halves, only where the blueprint opts in. The folded SectionDef stays the single source, so
   // blueprints that don't opt in are untouched (no behavior change).
   // #1383: Deploy → Repos ("ship"). #1383-streams: Permissions → Structure ("fleet" → "Streams").
-  if (ship) return foldInto(base, def, SECTION_DEFS.deploy, "Repositories & Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
+  if (ship) return foldInto(base, def, SECTION_DEFS.deploy, "Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
   if (fleet) return foldInto(base, def, SECTION_DEFS.permissions, "Streams", [["plan", "Plan the roadmap"], ["fleet", "Plan the fleet"]]);
   return base;
+}
+
+/** The planner-overview directive id for a (possibly merged) section (#1383/#1392). A merged stage
+ *  reads as ONE directive in the planner's "Active planning stages" scope: a `repos` section with a
+ *  `ship` substep → `repos_deploy` ("Deployment"), a `structure` section with a `fleet` substep →
+ *  `streams` ("Streams"). Plain (unmerged) sections map to their own key. Pure so the planner-scope
+ *  build is testable; `stageIdsFor` (Planning.tsx) passes the result to `setup_workspaces`. */
+export function stageDirectiveId(section: { key: string; substeps?: SubStep[] }): string {
+  const subs = (section.substeps ?? []).map((s) => s.key);
+  if (section.key === "repos" && subs.includes("ship")) return "repos_deploy";
+  if (section.key === "structure" && subs.includes("fleet")) return "streams";
+  return section.key;
 }
 
 /** Seed blueprints — the starter library, depicting every section/pipeline state. */

@@ -49,7 +49,7 @@ describe("PlanStageBar", () => {
     // linked AND the deploy signals; satisfy all and expect the combined stage name.
     const signals = { ...signalsFrom({ repoCount: 2 }), deploymentDefined: true, dependenciesDefined: 1 };
     const { container } = render(<PlanStageBar sections={sections} signals={signals} />);
-    expect(titlesIn(container).some((t) => t === "Repositories & Deployment — complete")).toBe(true);
+    expect(titlesIn(container).some((t) => t === "Deployment — complete")).toBe(true);
   });
 
   it("flags a gate-blocked section in its tooltip (#532)", () => {
