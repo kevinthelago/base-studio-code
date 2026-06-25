@@ -126,6 +126,9 @@ export function Planning({ visible }: { visible: boolean }) {
   // Whether the active API-tier provider can make a call — gates the planning autopilot (#1085).
   const llmHasKey = useAppStore(s => hasLlmKey(resolveLlmConfig(s)));
   const skillDefs = useAppStore(s => s.skills);
+  const skillGroups = useAppStore(s => s.skillGroups);
+  const ensureSessionGroup = useAppStore(s => s.ensureSessionGroup);
+  const refreshSkills = useAppStore(s => s.refreshSkills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const mcpServers = useAppStore(s => s.mcpServers);
 
@@ -141,18 +144,20 @@ export function Planning({ visible }: { visible: boolean }) {
   const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
   // The skills that apply to THIS project (#1056) — the global library filtered to enabled global +
-  // project-scoped, mapped to the focused Skills body's shape. The planner authors skills with
-  // `bsc-skill add` (straight into the global skills.db, #1412), so they show up here via the
-  // library; there is no longer a per-session "authored this session" highlight (the old skills.json
-  // file-poll that fed `isNew` was retired with the file channel — #1417).
-  const paneSkills = useMemo(
-    () => resolveSkills(skillDefs, effectiveProjectId).map(s => ({
+  // project-scoped, mapped to the focused Skills body's shape. Skills the planner authored THIS
+  // session live in the per-project session group (`grp-session-<key>`, #1419) — flag those `isNew`
+  // so the body renders them first + highlighted. The planner pairs them in with
+  // `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"`; the pane reflects membership via refreshSkills.
+  const sessionGroupId = effectiveProjectId ? `grp-session-${effectiveProjectId}` : "";
+  const paneSkills = useMemo(() => {
+    const authored = new Set(skillGroups.find(g => g.id === sessionGroupId)?.skillIds ?? []);
+    return resolveSkills(skillDefs, effectiveProjectId).map(s => ({
       name: s.name,
       kind: "skill" as const,
       desc: s.desc,
-    })),
-    [skillDefs, effectiveProjectId],
-  );
+      isNew: authored.has(s.id),
+    }));
+  }, [skillDefs, skillGroups, sessionGroupId, effectiveProjectId]);
   // A project is bound to the blueprint it was CREATED with (#647/#923): `projectBlueprintId`
   // records it, set at creation (handleStartPlanning) — NOT here on open. Opening a project must
   // never adopt the transient global `activeBlueprintId` (the library selection the user changes
@@ -340,6 +345,24 @@ export function Planning({ visible }: { visible: boolean }) {
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+
+  // The per-project planning session skill group (#1419): ensure it exists, named after the project
+  // (renamed in place if the title changes — never clobbering members). Skills the planner authors
+  // via `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join it; the pane highlights its members.
+  // Persistent — reopening the planner keeps collecting into the same group.
+  useEffect(() => {
+    if (!sessionGroupId || !projectTitle) return;
+    ensureSessionGroup(sessionGroupId, projectTitle);
+  }, [sessionGroupId, projectTitle, ensureSessionGroup]);
+
+  // Re-read the global skills.db while planning so skills the planner authors with `bsc-skill add`
+  // (and their session-group membership) surface live in the pane — the skills.json file-poll that
+  // used to do this was retired (#1417/#1419). Cheap (no push-back); 2.5s ≈ the section-poll cadence.
+  useEffect(() => {
+    void refreshSkills();
+    const t = setInterval(() => void refreshSkills(), 2500);
+    return () => clearInterval(t);
+  }, [refreshSkills]);
 
   // ── Rename a PUBLISHED project (#1226) ──────────────────────────────────────────
   // The published header title is editable; committing on blur/Enter updates the GitHub Project
