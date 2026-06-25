@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore, TRIAGE_PROMPT } from "./";
-import { fleetProfilesComplete } from "../lib/session/profileGen";
-import type { ViewKey } from "../components/pane/ViewTabs";
-import type { QueuedPane } from "../lib/console/focusQueue";
-import type { FleetPlan } from "../screens/planner/stages/planSections";
+import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
+import type { ViewKey } from "@/app/console/panes/ViewTabs";
+import type { QueuedPane } from "@/app/console/lib/focusQueue";
+import type { FleetPlan } from "@/features/planner/stages/planSections";
 import type { McpServer } from "@/features/extensions/lib/mcpServers";
 import type { Hook } from "@/features/extensions/lib/hooks";
-import { defaultStageConfig } from "../screens/planner/stages/planStages";
-import { makeBlueprints } from "../screens/planner/stages/blueprints";
-import { directorPaneId, fleetPaneId, triagePaneId } from "../lib/console/paneIdentity";
-import { sanitizeProjectKey } from "../lib/core/projectPaths";
+import { defaultStageConfig } from "@/features/planner/stages/planStages";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
+import { directorPaneId, fleetPaneId, triagePaneId } from "@/app/console/lib/paneIdentity";
+import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 
 // Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
 // fleet director by `<key>:director`, workers by `<key>:<streamId>`.

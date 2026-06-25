@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { DiagnosticsSettings } from "./Diagnostics";
-import type { PrereqStatus } from "@/lib/core/diagnostics";
+import type { PrereqStatus } from "@/shared/lib/core/diagnostics";
 
 const mockInvoke = vi.mocked(invoke);
 

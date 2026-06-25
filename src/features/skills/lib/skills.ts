@@ -10,7 +10,7 @@
 import {
   SKILLS, SKILL_CATALOG, KIND, PROFILE_COLOR,
   type Skill, type SkillKind, type SkillSource, type SkillProfile,
-} from "@/data/skills";
+} from "@/shared/data/skills";
 
 const KIND_KEYS = Object.keys(KIND) as SkillKind[];
 const PROFILE_KEYS = Object.keys(PROFILE_COLOR) as SkillProfile[];

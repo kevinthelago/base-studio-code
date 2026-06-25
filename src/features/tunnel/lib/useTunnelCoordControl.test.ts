@@ -2,22 +2,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { emptyCoordState, type CoordState, type Waiter } from "@/lib/fleet/coordination";
+import { emptyCoordState, type CoordState, type Waiter } from "@/shared/lib/fleet/coordination";
 
 // Keep the real resolver + prompt builders; only swap ingestCoordLog so the test controls
 // the coordination state without authoring raw coord-log lines.
 const ingestMock = vi.fn();
-vi.mock("@/lib/fleet/coordination", async (orig) => {
-  const actual = await orig<typeof import("@/lib/fleet/coordination")>();
+vi.mock("@/shared/lib/fleet/coordination", async (orig) => {
+  const actual = await orig<typeof import("@/shared/lib/fleet/coordination")>();
   return { ...actual, ingestCoordLog: (...a: unknown[]) => ingestMock(...a) };
 });
 
-vi.mock("@/lib/fleet/coordinatorActuate", () => ({
+vi.mock("@/shared/lib/fleet/coordinatorActuate", () => ({
   actuateWake: vi.fn().mockResolvedValue(true),
   injectWake: vi.fn().mockResolvedValue(true),
 }));
 
-import { actuateWake, injectWake } from "@/lib/fleet/coordinatorActuate";
+import { actuateWake, injectWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { useTunnelCoordControl } from "./useTunnelCoordControl";
 
 const handlers: Record<string, (e: { payload: { session: string } }) => void> = {};

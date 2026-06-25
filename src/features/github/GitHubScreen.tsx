@@ -1,14 +1,14 @@
 import { useAppStore } from "@/store";
-import { useDragResize } from "@/hooks/useDragResize";
-import { TabBar, type TabItem } from "@/components/chrome/TabBar";
-import { usePageTabs } from "@/hooks/usePageTabs";
+import { useDragResize } from "@/shared/hooks/useDragResize";
+import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
-import { ProjectsSummary } from "@/screens/planner/list/ProjectsSummary";
-import { ProjectBoard } from "@/screens/planner/github/ProjectBoard";
-import { Roadmap } from "@/screens/planner/github/Roadmap";
-import { Issues } from "@/screens/planner/github/Issues";
-import { Insights } from "@/screens/planner/github/Insights";
+import { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
+import { ProjectBoard } from "@/features/planner/github/ProjectBoard";
+import { Roadmap } from "@/features/planner/github/Roadmap";
+import { Issues } from "@/features/planner/github/Issues";
+import { Insights } from "@/features/planner/github/Insights";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [

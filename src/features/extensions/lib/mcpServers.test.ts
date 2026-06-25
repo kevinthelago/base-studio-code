@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, toBscAgentMcp, mcpFromCatalog, blankMcpServer, type McpServer, type McpServerPayload } from "./mcpServers";
-import { MCP_CATALOG } from "@/data/mcpCatalog";
+import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 
 // Helper: a minimal enabled stdio server; `name` defaults to the id for readable asserts.
 const mk = (over: Partial<McpServer>): McpServer => ({

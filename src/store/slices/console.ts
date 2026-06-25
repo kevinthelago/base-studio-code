@@ -2,15 +2,15 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { unlock } from "../../lib/core/achievements";
+import { unlock } from "@/shared/lib/core/achievements";
 import { type AgentProfile, PROFILES } from "@/features/agents/lib/agentProfiles";
 import { DEFAULT_ACCENT } from "@/features/settings/lib/appearance";
-import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "../../lib/console/focusQueue";
-import { DEFAULT_REAPER_CONFIG } from "../../lib/console/idleReaper";
-import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../lib/console/terminal";
-import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneKey } from "../../lib/console/paneStatus";
-import { isManualPaneId } from "../../lib/console/paneIdentity";
-import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "../../lib/console/tabReorder";
+import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "@/app/console/lib/focusQueue";
+import { DEFAULT_REAPER_CONFIG } from "@/app/console/lib/idleReaper";
+import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "@/app/console/lib/terminal";
+import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneKey } from "@/app/console/lib/paneStatus";
+import { isManualPaneId } from "@/app/console/lib/paneIdentity";
+import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "@/app/console/lib/tabReorder";
 import { newTabId } from "../helpers";
 
 type ConsoleSlice = Pick<AppStore,
