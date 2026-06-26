@@ -1,11 +1,9 @@
+//! Per-worker worktree audit (#920 / #1102): the git/PR signals the Fleet UI shows for each worker
+//! — uncommitted changes, current branch, recent commits, the branch's PR, and the raw Claude
+//! transcript path. Fleet owns worktrees, so this audit lives next to the rest of the fleet.
+
 use crate::*;
 
-/// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first. Thin wrapper over
-/// the shared `read_tsv_log` reader (`observability::logs`), keyed by stream.
-#[tauri::command]
-pub(crate) fn read_audit_log(limit: usize) -> Vec<String> {
-    crate::observability::logs::read_tsv_log("audit", limit, true)
-}
 /// Repo-relative paths a worktree session has touched but not yet committed: tracked changes
 /// vs HEAD (staged + unstaged) plus untracked files. The warden's conformance check (#1102)
 /// uses this as the trusted "what did this worker actually change" signal. Tolerant: returns
@@ -134,55 +132,4 @@ pub(crate) fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> 
     let mut set: std::collections::BTreeSet<String> = a.into_iter().collect();
     set.extend(b);
     set.into_iter().collect()
-}
-/// Read the skill usage log (#406): the newest `limit` TSV lines, newest first. Thin wrapper over
-/// the shared `read_tsv_log` reader, keyed by stream.
-#[tauri::command]
-pub(crate) fn read_skill_log(limit: usize) -> Vec<String> {
-    crate::observability::logs::read_tsv_log("skills", limit, true)
-}
-/// Read the hook-fire log (#865 PR 2): the newest `limit` TSV lines, newest first. Each line
-/// is `ts \t event \t hook \t outcome` (written by the hook wrappers; absent until that lands,
-/// in which case this returns an empty list). Thin wrapper over the shared `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_hook_log(limit: usize) -> Vec<String> {
-    crate::observability::logs::read_tsv_log("hooks", limit, true)
-}
-/// Read the MCP-call log (#879): the newest `limit` TSV lines, newest first. Each line is
-/// `ts \t server \t tool \t outcome \t ms [\t detail]` (written by the bsc-mcp hook pair;
-/// absent until that lands, in which case this returns an empty list). Thin wrapper over the
-/// shared `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_mcp_log(limit: usize) -> Vec<String> {
-    crate::observability::logs::read_tsv_log("mcp", limit, true)
-}
-/// Read the coordination log (#199): up to the newest `limit` TSV lines, in chronological
-/// (oldest-first) order so the coordinator can replay them. Thin wrapper over the shared
-/// `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_coord_log(limit: usize) -> Vec<String> {
-    crate::observability::logs::read_tsv_log("coord", limit, false)
-}
-/// Append a `woke` event to the coordination log (#199): records that a parked
-/// session was relaunched, so the coordinator won't re-wake it (idempotent across
-/// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
-#[tauri::command]
-pub(crate) fn append_coord_woke(session: String) -> Result<(), String> {
-    use std::io::Write;
-    let path = bsc_base_dir().join("coord.log");
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let fmt = time::macros::format_description!(
-        "[year]-[month]-[day]T[hour]:[minute]:[second]Z"
-    );
-    let ts = time::OffsetDateTime::now_utc().format(&fmt).unwrap_or_default();
-    // TSV shape: ts \t session \t event \t ref \t detail \n — `woke` has no ref/detail.
-    let line = format!("{ts}\t{session}\twoke\t\t\n");
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| e.to_string())?;
-    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
 }
