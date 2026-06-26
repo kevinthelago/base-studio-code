@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { timeAgoShort } from "@/shared/lib/core/format";
+import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
 import type { GhLabel } from "@/shared/lib/github/types";
@@ -361,69 +362,63 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
 
 export function Issues() {
   const {
-    githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
   } = useAppStore();
 
-  const [rawIssues, setRawIssues] = useState<FlatIssue[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<FlatIssue | null>(null);
   const [filters, setFilters] = useState<Filters>({
     search: "", state: "open", label: "", milestone: "", sort: "newest",
   });
 
-  useEffect(() => {
-    if (!githubToken || !activeProjectId) return;
-    setLoading(true);
-    setError(null);
-
-    invoke<{ node: Record<string, unknown> }>("github_graphql", {
-      token: githubToken,
+  const { data, loading, error } = useGithubQuery<{ node: Record<string, unknown> }>(
+    (token) => invoke("github_graphql", {
+      token,
       query: ISSUES_QUERY,
       variables: { id: activeProjectId },
-    })
-      .then(data => {
-        const node = data.node as {
-          items: { nodes: Array<{
-            id: string;
-            fieldValues: { nodes: Array<{ name?: string; field?: { name: string } }> };
-            content?: {
-              number: number; title: string; body: string;
-              state: "OPEN" | "CLOSED"; updatedAt: string;
-              labels: { nodes: Array<{ name: string; color: string }> };
-              assignees: { nodes: Array<{ login: string }> };
-              comments: { totalCount: number };
-              milestone?: { title: string } | null;
-            };
-          }> };
-        };
+    }),
+    [activeProjectId],
+    !!activeProjectId,
+  );
 
-        const issues: FlatIssue[] = [];
-        for (const item of node.items.nodes) {
-          const typename = (item.content as { __typename?: string } | undefined)?.__typename;
-          if (!item.content || typename !== "Issue") continue;
-          const c = item.content;
-          const statusFv = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
-          issues.push({
-            id: item.id,
-            number: c.number,
-            title: c.title,
-            body: c.body ?? "",
-            state: c.state,
-            updatedAt: c.updatedAt,
-            labels: c.labels.nodes,
-            assignees: c.assignees.nodes,
-            comments: c.comments.totalCount,
-            milestone: c.milestone?.title ?? null,
-            statusName: statusFv?.name ?? null,
-          });
-        }
-        setRawIssues(issues);
-      })
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [githubToken, activeProjectId]);
+  const rawIssues = useMemo<FlatIssue[]>(() => {
+    if (!data) return [];
+    const node = data.node as {
+      items: { nodes: Array<{
+        id: string;
+        fieldValues: { nodes: Array<{ name?: string; field?: { name: string } }> };
+        content?: {
+          number: number; title: string; body: string;
+          state: "OPEN" | "CLOSED"; updatedAt: string;
+          labels: { nodes: Array<{ name: string; color: string }> };
+          assignees: { nodes: Array<{ login: string }> };
+          comments: { totalCount: number };
+          milestone?: { title: string } | null;
+        };
+      }> };
+    };
+
+    const issues: FlatIssue[] = [];
+    for (const item of node.items.nodes) {
+      const typename = (item.content as { __typename?: string } | undefined)?.__typename;
+      if (!item.content || typename !== "Issue") continue;
+      const c = item.content;
+      const statusFv = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
+      issues.push({
+        id: item.id,
+        number: c.number,
+        title: c.title,
+        body: c.body ?? "",
+        state: c.state,
+        updatedAt: c.updatedAt,
+        labels: c.labels.nodes,
+        assignees: c.assignees.nodes,
+        comments: c.comments.totalCount,
+        milestone: c.milestone?.title ?? null,
+        statusName: statusFv?.name ?? null,
+      });
+    }
+    return issues;
+  }, [data]);
 
   const updateFilters = (patch: Partial<Filters>) => setFilters(f => ({ ...f, ...patch }));
 
