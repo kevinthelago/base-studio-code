@@ -5,7 +5,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkSection, cloneSections, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalSectionKey, emptyFleet } from "@/features/planner/stages/planSections";
-import { defaultStageConfig, contextOnlyStageConfig } from "@/features/planner/stages/planStages";
+import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
@@ -38,7 +38,7 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedContextOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -207,11 +207,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       // #1395 phase 1: seed a NEW project with the dynamic-stages baseline (Discovery only).
       // Idempotent — a no-op once the project has a stage config, so it never clobbers a plan
       // (or a blueprint-seeded config) that already exists.
-      seedContextOnlyStages: (projectId) =>
+      seedDiscoveryOnlyStages: (projectId) =>
         set((s) =>
           s.planStageConfig[projectId]
             ? {}
-            : { planStageConfig: { ...s.planStageConfig, [projectId]: contextOnlyStageConfig() } },
+            : { planStageConfig: { ...s.planStageConfig, [projectId]: discoveryOnlyStageConfig() } },
         ),
 
       blueprints: makeBlueprints(),
@@ -287,7 +287,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         const id = `bp-${Date.now().toString(36)}`;
         const bp: Blueprint = {
           id, name: "Untitled blueprint", desc: "New configuration",
-          sections: [mkSection("context", { expanded: true })],
+          sections: [mkSection("discovery", { expanded: true })],
         };
         set((s) => ({ blueprints: [...s.blueprints, bp] }));
         syncBlueprintFile(bp);

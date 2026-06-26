@@ -24,11 +24,11 @@ describe("PlanStageBar", () => {
     const expected = sections.filter((s) => s.enabled && s.key !== "ui").length;
     expect(titles.length).toBe(expected);
     expect(titles.some((t) => t.startsWith("UI"))).toBe(false);
-    expect(titles.some((t) => t.startsWith("Context"))).toBe(true);
+    expect(titles.some((t) => t.startsWith("Discovery"))).toBe(true);
   });
 
   it("shows the UI section when the project requires a UI", () => {
-    const signals = signalsFrom({ requiresUi: true, context: { resolved: 1, total: 1, requiredContextReady: true } });
+    const signals = signalsFrom({ requiresUi: true, discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true } });
     const { container } = render(<PlanStageBar sections={defaultSections()} signals={signals} />);
     expect(titlesIn(container).some((t) => t.startsWith("UI"))).toBe(true);
   });
@@ -63,9 +63,9 @@ describe("PlanStageBar", () => {
   it("pulses + flags a highlighted incomplete section (locked-Triage feedback)", () => {
     const sections = defaultSections();
     const { container } = render(
-      <PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} highlight={new Set(["context"])} />,
+      <PlanStageBar sections={sections} signals={signalsFrom({ requiresUi: false })} highlight={new Set(["discovery"])} />,
     );
     expect(container.querySelector(".attn-pulse")).not.toBeNull();
-    expect(titlesIn(container).some((t) => t.startsWith("Context") && t.includes("incomplete"))).toBe(true);
+    expect(titlesIn(container).some((t) => t.startsWith("Discovery") && t.includes("incomplete"))).toBe(true);
   });
 });

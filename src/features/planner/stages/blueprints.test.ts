@@ -24,9 +24,9 @@ describe("blueprints — seed library", () => {
   });
 
   it("each section carries a prompt module and a gate from its def", () => {
-    const ctx = makeBlueprints()[0].sections.find((s) => s.key === "context")!;
+    const ctx = makeBlueprints()[0].sections.find((s) => s.key === "discovery")!;
     expect(ctx.prompt.length).toBeGreaterThan(20);
-    expect(ctx.gate).toBe(SECTION_DEFS.context.gate);
+    expect(ctx.gate).toBe(SECTION_DEFS.discovery.gate);
   });
 
   it("orders Features before UI in every UI-bearing blueprint (#825)", () => {
@@ -61,13 +61,13 @@ describe("blueprints — seed library", () => {
     // Default is the simplest greenfield path — no source/mcp/automations/skills. Deploy folds into
     // `repos` (#1383) and Permissions folds into `structure` (the "Streams" stage, #1383-streams), so
     // neither is a separate section key.
-    expect(keysOf("default")).toEqual(["context", "repos", "features", "ui", "structure"]);
+    expect(keysOf("default")).toEqual(["discovery", "repos", "features", "ui", "structure"]);
     for (const k of ["source", "mcp", "automations", "skills", "deploy", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["context", "repos", "source", "features", "ui", "structure", "mcp", "automations", "skills"],
+      ["discovery", "repos", "source", "features", "ui", "structure", "mcp", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
@@ -144,7 +144,7 @@ describe("blueprints — seed library", () => {
 describe("blueprints — computeStatus (dependency locks)", () => {
   it("locks a section whose enabled dependency is disabled", () => {
     // structure depends on context, repos, ui; disable repos -> structure locked.
-    const secs = [mkSection("context"), mkSection("repos", { enabled: false }), mkSection("ui"), mkSection("structure")];
+    const secs = [mkSection("discovery"), mkSection("repos", { enabled: false }), mkSection("ui"), mkSection("structure")];
     const st = computeStatus(secs);
     expect(st.structure.locked).toBe(true);
     expect(st.structure.unmet).toContain("repos");
@@ -152,14 +152,14 @@ describe("blueprints — computeStatus (dependency locks)", () => {
 
   it("a dependency omitted from the blueprint is treated as met", () => {
     // structure present but ui omitted entirely -> ui not counted as unmet.
-    const secs = [mkSection("context"), mkSection("repos"), mkSection("structure")];
+    const secs = [mkSection("discovery"), mkSection("repos"), mkSection("structure")];
     const st = computeStatus(secs);
     expect(st.structure.unmet).not.toContain("ui");
     expect(st.structure.locked).toBe(false);
   });
 
   it("all deps enabled -> not locked, satisfied", () => {
-    const secs = [mkSection("context"), mkSection("repos"), mkSection("ui"), mkSection("structure")];
+    const secs = [mkSection("discovery"), mkSection("repos"), mkSection("ui"), mkSection("structure")];
     const st = computeStatus(secs);
     expect(st.structure.locked).toBe(false);
     expect(st.structure.satisfied).toBe(true);
@@ -184,10 +184,10 @@ describe("blueprints — helpers", () => {
 describe("blueprints — section status (declarative, blueprint-driven gates)", () => {
   // structure depends on context+repos+ui; build a set where those are satisfiable.
   const baseSecs = () => [
-    mkSection("context"), mkSection("repos"), mkSection("ui"), mkSection("structure"),
+    mkSection("discovery"), mkSection("repos"), mkSection("ui"), mkSection("structure"),
     mkSection("permissions"), mkSection("skills"),
   ];
-  const doneCtx = { context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false };
+  const doneCtx = { discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 1, requiresUi: false };
 
   it("evaluates a section's own declarative gate (not a hardcoded enum)", () => {
     const secs = baseSecs();
@@ -210,7 +210,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   });
 
   it("a gateless (informational) section completes only when confirmed, not vacuously (#664)", () => {
-    const secs = [mkSection("context"), mkSection("testing")];
+    const secs = [mkSection("discovery"), mkSection("testing")];
     const testing = secs.find((s) => s.key === "testing")!;
     // not vacuously complete on a fresh/cleared plan
     expect(sectionStatus(testing, secs, sig()).status).toBe("in-progress");
@@ -219,8 +219,8 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   });
 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
-    const secs = [mkSection("context"), mkSection("ui", { optional: true }), mkSection("structure")];
-    const signals = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, requiresUi: true,
+    const secs = [mkSection("discovery"), mkSection("ui", { optional: true }), mkSection("structure")];
+    const signals = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, requiresUi: true,
       phasesConfirmed: true, issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
@@ -231,8 +231,8 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     // so the user decides whether to do or skip it (was: optional excluded from the frontier).
     expect(currentSection(secs, signals)?.key).toBe("ui");
     // …and an undecided optional stage blocks plan completion until the user decides (do or skip).
-    const twoSec = [mkSection("context"), mkSection("ui", { optional: true })];
-    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, requiresUi: true });
+    const twoSec = [mkSection("discovery"), mkSection("ui", { optional: true })];
+    const ctxDone = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, requiresUi: true });
     expect(planSectionsComplete(twoSec, ctxDone)).toBe(false);
     // a USER-skip resolves the optional stage → it counts as done, the frontier advances, plan completes.
     const skipped = { ...ctxDone, [skippedSignal("ui")]: true };
@@ -244,8 +244,8 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   it("incompleteSections lists each unfinished section with its gate reason", () => {
     const secs = baseSecs();
     const inc = incompleteSections(secs, sig({ requiresUi: false }));
-    const ctx = inc.find((i) => i.key === "context");
-    expect(ctx?.reason).toBe(SECTION_DEFS.context.gate);
+    const ctx = inc.find((i) => i.key === "discovery");
+    expect(ctx?.reason).toBe(SECTION_DEFS.discovery.gate);
     // ui is N/A here, so it must not appear
     expect(inc.some((i) => i.key === "ui")).toBe(false);
   });
@@ -266,14 +266,14 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   it("currentSection is the first in-progress section, skipping N/A", () => {
     const secs = baseSecs();
     // context complete, repos incomplete, ui N/A → repos is the frontier
-    const s = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 0, requiresUi: false });
+    const s = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 0, requiresUi: false });
     expect(currentSection(secs, s)?.key).toBe("repos");
   });
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {
     const known = new Set(PLAN_STAGES.map((s) => s.id));
     // a blueprint including "testing" (a non-registry stage) — dropped from the stage config order.
-    const bp = { id: "t", name: "T", desc: "", sections: [mkSection("context"), mkSection("repos"), mkSection("structure"), mkSection("testing")] } as Blueprint;
+    const bp = { id: "t", name: "T", desc: "", sections: [mkSection("discovery"), mkSection("repos"), mkSection("structure"), mkSection("testing")] } as Blueprint;
     const cfg = blueprintToStageConfig(bp);
     // order only contains registry stage ids, in blueprint order
     expect(cfg.order.every((id) => known.has(id))).toBe(true);
@@ -286,7 +286,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
 describe("lint-as-gate (#897 Phase 4b)", () => {
   it("wires a hasPlanGaps requirement into the context + structure gates", () => {
-    for (const key of ["context", "structure"] as const) {
+    for (const key of ["discovery", "structure"] as const) {
       const reqs = SECTION_DEFS[key].gateRule?.require ?? [];
       const r = reqs.find((x) => x.signal === "hasPlanGaps");
       expect(r, `${key} has a hasPlanGaps requirement`).toBeTruthy();
@@ -296,8 +296,8 @@ describe("lint-as-gate (#897 Phase 4b)", () => {
   });
 
   it("blocks the gate on an unresolved placeholder, passes when clean or absent (absent-safe)", () => {
-    const gate = SECTION_DEFS.context.gateRule!;
-    const base = { requiredContextReady: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
+    const gate = SECTION_DEFS.discovery.gateRule!;
+    const base = { requiredDiscoveryReady: true, topicsResolved: 3, topicsTotal: 3 }; // other context reqs satisfied
     expect(evalGate(gate, { ...base, hasPlanGaps: true }).done).toBe(false);  // a TODO/placeholder blocks
     expect(evalGate(gate, { ...base, hasPlanGaps: false }).done).toBe(true);  // clean passes
     expect(evalGate(gate, base).done).toBe(true);                             // signal absent ⇒ passes
@@ -395,14 +395,14 @@ describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#13
     expect(stageDirectiveId(mkSection("repos"))).toBe("repos");          // transform: link-only, no deploy
     expect(stageDirectiveId(mkSection("structure", { fleet: true }))).toBe("streams");
     expect(stageDirectiveId(mkSection("structure"))).toBe("structure");  // plan-only
-    expect(stageDirectiveId(mkSection("context"))).toBe("context");
+    expect(stageDirectiveId(mkSection("discovery"))).toBe("discovery");
   });
 
   it("the complete blueprint's planner-overview stages read as the merged structure", () => {
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
     const overview = complete.sections.filter((s) => s.enabled).map(stageDirectiveId);
     expect(overview).toEqual(
-      ["context", "repos_deploy", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
+      ["discovery", "repos_deploy", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
     );
   });
 
@@ -426,7 +426,7 @@ describe("data-integration blueprint (#1207)", () => {
     expect(b.mode).toBe("create");
     // Permissions folds into `structure` (the Streams stage, #1383-streams) — no separate key.
     expect(b.sections.map((s) => s.key)).toEqual(
-      ["context", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "deploy"],
+      ["discovery", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "deploy"],
     );
     expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
   });
@@ -451,9 +451,9 @@ describe("data-integration blueprint (#1207)", () => {
   });
 
   it("sync depends on destination — locks until the destination is defined", () => {
-    const secs = [mkSection("context"), mkSection("destination"), mkSection("sync")];
+    const secs = [mkSection("discovery"), mkSection("destination"), mkSection("sync")];
     const sync = secs.find((s) => s.key === "sync")!;
-    const ctxDone = sig({ context: { resolved: 1, total: 1, requiredContextReady: true }, repoCount: 1, requiresUi: false });
+    const ctxDone = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 1, requiresUi: false });
     // dep (destination) unmet + own gate unmet ⇒ locked
     expect(sectionStatus(sync, secs, { ...ctxDone, destinationDefined: false, syncDefined: false }).status).toBe("locked");
     // dep met, own gate still unmet ⇒ in-progress (unlocked)

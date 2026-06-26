@@ -21,7 +21,7 @@ describe("gistUpdateAvailable (#955)", () => {
 
 describe("ImportModal (#609)", () => {
   it("resolves a gist ref to a preview then imports", async () => {
-    const preview: PreviewBlueprint = { name: "Imported", icon: "I", h: 70, author: "x", rev: "r2", sections: [mkStageSection("context"), mkStageSection("stack")] };
+    const preview: PreviewBlueprint = { name: "Imported", icon: "I", h: 70, author: "x", rev: "r2", sections: [mkStageSection("discovery"), mkStageSection("stack")] };
     const onResolve = vi.fn(async () => preview);
     const onImport = vi.fn();
     render(<ImportModal onClose={noop} onResolve={onResolve} onImport={onImport} />);

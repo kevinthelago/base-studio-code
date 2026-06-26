@@ -48,17 +48,17 @@ describe("blueprintShare (#598)", () => {
     // maps it onto the internal `sections`. Stages = the planning STEPS, one per pane.
     const bp = coerceBlueprint({
       id: "x", name: "Authored", category: "greenfield",
-      stages: [{ key: "context", name: "Context" }, { key: "structure", name: "Structure" }],
+      stages: [{ key: "discovery", name: "Discovery" }, { key: "structure", name: "Structure" }],
     });
     expect(bp).not.toBeNull();
-    expect(bp!.sections.map((s) => s.key)).toEqual(["context", "structure"]);
+    expect(bp!.sections.map((s) => s.key)).toEqual(["discovery", "structure"]);
     // `stages` wins when both are present (it's the canonical planner-facing field).
     const both = coerceBlueprint({
       id: "y", name: "Both",
-      stages: [{ key: "context", name: "Context" }],
+      stages: [{ key: "discovery", name: "Discovery" }],
       sections: [{ key: "repos", name: "Repos" }, { key: "ui", name: "UI" }],
     });
-    expect(both!.sections.map((s) => s.key)).toEqual(["context"]);
+    expect(both!.sections.map((s) => s.key)).toEqual(["discovery"]);
   });
 
   it("allowEmptySections accepts a section-less in-progress blueprint (#923 authoring)", () => {
@@ -77,7 +77,7 @@ describe("blueprintShare (#598)", () => {
   it("coerces partial section fields with safe defaults", () => {
     const bp = coerceBlueprint({
       id: "x", name: "Imported",
-      sections: [{ key: "context", name: "Context", skills: ["sk1"], mcp: ["Compliance"] }],
+      sections: [{ key: "discovery", name: "Discovery", skills: ["sk1"], mcp: ["Compliance"] }],
     });
     expect(bp).not.toBeNull();
     expect(bp!.sections[0].glyph).toBe("✚"); // missing glyph → default
@@ -110,7 +110,7 @@ describe("blueprintShare (#598)", () => {
   });
 
   it("ignores a bogus category/mode (falls back to undefined)", () => {
-    const bp = coerceBlueprint({ id: "x", name: "y", category: "bogus", mode: "nope", sections: [{ key: "context", name: "Context" }] });
+    const bp = coerceBlueprint({ id: "x", name: "y", category: "bogus", mode: "nope", sections: [{ key: "discovery", name: "Discovery" }] });
     expect(bp!.category).toBeUndefined();
     expect(bp!.mode).toBeUndefined();
   });

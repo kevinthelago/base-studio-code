@@ -73,7 +73,7 @@ pub(crate) fn clear_project_plan_files(project_key: String) -> Result<u32, Strin
     // The Context-stage discovery sections live in `context/` (#807) — clear them too, or a
     // blueprint reset would leave the old goal/scope/stack/architecture behind. Drop the whole
     // subdir (it holds only generated section files).
-    let context = context_dir_for(&project_key);
+    let context = discovery_dir_for(&project_key);
     if context.is_dir() && std::fs::remove_dir_all(&context).is_ok() {
         removed += 1;
     }
@@ -114,6 +114,6 @@ pub(crate) async fn read_plan_sections(project_key: String) -> Result<std::colle
     // working; context/ is ingested last so a section there wins over a stale root copy.
     let mut sections = std::collections::HashMap::new();
     ingest_section_files(&plans_dir, &mut sections);
-    ingest_section_files(&context_dir_for(&project_key), &mut sections);
+    ingest_section_files(&discovery_dir_for(&project_key), &mut sections);
     Ok(sections)
 }

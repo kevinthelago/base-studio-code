@@ -1081,7 +1081,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
       );
     case "deploy":
       return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} />;
-    case "context":
+    case "discovery":
       return <FocusedContextBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
     case "ui":
       // The UI stage's drop-in-files surface (#604/#829): stage design assets into the

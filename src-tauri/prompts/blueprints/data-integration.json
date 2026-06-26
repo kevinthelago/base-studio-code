@@ -12,7 +12,7 @@
     "Compliance"
   ],
   "sections": [
-    { "key": "context" },
+    { "key": "discovery" },
     { "key": "dataSource" },
     { "key": "dataModel" },
     { "key": "dataMap" },

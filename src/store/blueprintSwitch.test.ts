@@ -90,15 +90,15 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 
-  it("seedContextOnlyStages seeds Discovery-only for a fresh project, and is a no-op once set (#1395)", () => {
+  it("seedDiscoveryOnlyStages seeds Discovery-only for a fresh project, and is a no-op once set (#1395)", () => {
     useAppStore.setState({ planStageConfig: {} });
-    useAppStore.getState().seedContextOnlyStages("fresh");
+    useAppStore.getState().seedDiscoveryOnlyStages("fresh");
     const c = useAppStore.getState().planStageConfig["fresh"];
-    expect(c.enabled.context).toBe(true);
+    expect(c.enabled.discovery).toBe(true);
     expect(c.enabled.features).toBe(false); // every non-context stage starts off (additive)
     // idempotent: re-seeding never clobbers an existing config (a blueprint-seeded or in-progress plan)
     useAppStore.getState().setStageEnabled("fresh", "features", true);
-    useAppStore.getState().seedContextOnlyStages("fresh");
+    useAppStore.getState().seedDiscoveryOnlyStages("fresh");
     expect(useAppStore.getState().planStageConfig["fresh"].enabled.features).toBe(true);
   });
 });
