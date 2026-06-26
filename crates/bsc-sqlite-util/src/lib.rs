@@ -3,15 +3,20 @@
 //! their single home so the copies don't drift:
 //!
 //! - [`arr_to_json`] / [`json_to_arr`] — persist a `Vec<String>` as a JSON-TEXT column (and back).
-//! - [`home_dir`] — cross-platform home directory from the standard env vars (no `dirs` dependency).
+//! - [`home_dir`] — re-exported from [`bsc_util`] (#1646), the single source of truth for home-dir
+//!   resolution shared by the desktop app and every `bsc-*` CLI.
 //! - [`print_json`] — print any `Serialize` value to stdout, compact by default / indented with `--pretty`.
 //! - [`read_stdin_json`] — read stdin as JSON, accepting either one object or an array, into a `Vec<T>`.
 //!
-//! Tauri-free and dependency-light (just `serde` / `serde_json`) so the small CLIs stay small.
+//! Tauri-free and dependency-light (`serde` / `serde_json` + the leaf `bsc-util`) so the small CLIs stay small.
+
+/// Home-directory resolution, re-exported from the leaf `bsc-util` crate (#1646) so there is exactly
+/// ONE implementation (with the app's `USERPROFILE`-first-on-Windows precedence). Existing
+/// `bsc_sqlite_util::home_dir` callers keep compiling against this re-export.
+pub use bsc_util::home_dir;
 
 use serde::de::DeserializeOwned;
 use std::io::Read;
-use std::path::PathBuf;
 
 /// Serialize a string list to a JSON array TEXT value for a SQLite column. Infallible in practice
 /// (a `Vec<String>` always serializes) — falls back to `"[]"` rather than erroring.
@@ -22,15 +27,6 @@ pub fn arr_to_json(v: &[String]) -> String {
 /// Parse a JSON array TEXT column back into a string list. A malformed/empty value yields `[]`.
 pub fn json_to_arr(s: &str) -> Vec<String> {
     serde_json::from_str(s).unwrap_or_default()
-}
-
-/// The user's home directory, from the platform's standard env var (`HOME`, else `USERPROFILE` on
-/// Windows). `None` when neither is set (or is empty) — callers fall back to an explicit `--db`/dir.
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
 }
 
 /// Print a `Serialize` value to stdout as JSON — compact by default (the agent-facing reads are
@@ -92,16 +88,6 @@ mod tests {
         assert!(json_to_arr("not json").is_empty());
         assert!(json_to_arr("").is_empty());
         assert_eq!(json_to_arr("[\"x\"]"), vec!["x".to_string()]);
-    }
-
-    #[test]
-    fn home_dir_reads_the_standard_env_vars() {
-        // Can't mutate process env safely under parallel tests; just assert the contract holds for
-        // whichever var the runner sets (CI/dev always sets one of HOME / USERPROFILE).
-        let expected = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .filter(|p| !p.is_empty());
-        assert_eq!(home_dir().is_some(), expected.is_some());
     }
 
     #[test]

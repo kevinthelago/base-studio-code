@@ -19,7 +19,7 @@
 //!   bsc-skill resolve <group-id>            # the group's member skills, JSON
 //! Global flag: --db <path>
 
-use bsc_sqlite_util::{home_dir, read_stdin_json};
+use bsc_sqlite_util::read_stdin_json;
 use skilldb::{Skill, SkillGroup, Store};
 use std::io::Read;
 use std::path::PathBuf;
@@ -163,8 +163,9 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     if let Ok(p) = std::env::var("BSC_SKILL_DB") {
         return Ok(PathBuf::from(p));
     }
-    let home = home_dir().ok_or("could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB")?;
-    Ok(home.join(".base-studio-code").join("skills.db"))
+    let base = bsc_util::bsc_base_dir()
+        .ok_or("could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB")?;
+    Ok(base.join("skills.db"))
 }
 
 /// Read JSON from stdin (one skill object or an array), upsert each, return the ids. When `group`

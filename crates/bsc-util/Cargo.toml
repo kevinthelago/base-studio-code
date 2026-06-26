@@ -1,0 +1,9 @@
+[package]
+name = "bsc-util"
+version = "0.1.0"
+edition = "2021"
+description = "Tiny dependency-free leaf crate for base-studio-code (#1646) — the ONE definition of home-dir resolution, the `~/.base-studio-code` base dir, epoch clocks (secs/ms), and the epoch-ms↔ISO-8601 civil-date pair. Shared by the desktop app and every `bsc-*` CLI so they all resolve the same on-disk store."
+
+# Leaf crate: std only, no dependencies, so any CLI can pull it in for free.
+[lib]
+name = "bsc_util"

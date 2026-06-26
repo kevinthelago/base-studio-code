@@ -9,5 +9,7 @@ description = "Shared helpers for the base-studio-code SQLite CLI+lib trio (plan
 name = "bsc_sqlite_util"
 
 [dependencies]
+# Shared leaf utilities (#1646): the single source of truth for `home_dir` (re-exported below).
+bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

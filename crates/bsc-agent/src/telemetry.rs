@@ -101,8 +101,9 @@ fn append(path: &str, line: &str) {
 }
 
 fn base_dir() -> PathBuf {
-    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
-    PathBuf::from(home).join(".base-studio-code")
+    // Shared resolver (#1646) so the agent writes under the SAME `~/.base-studio-code` the app +
+    // CLIs use; an unset home falls back to the relative dir (the historical behavior).
+    bsc_util::bsc_base_dir().unwrap_or_else(|| PathBuf::from(".base-studio-code"))
 }
 
 fn transcript_path_for(id: &str) -> PathBuf {
@@ -118,42 +119,14 @@ fn gen_session_id() -> String {
 }
 
 fn utc_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    epoch_to_iso8601(secs)
-}
-
-/// Epoch seconds → `YYYY-MM-DDTHH:MM:SSZ` (UTC), no external crate. Uses Howard
-/// Hinnant's civil-from-days algorithm so cost-log timestamps match the `bsc-*`
-/// helpers' `date -u +%Y-%m-%dT%H:%M:%SZ` format.
-fn epoch_to_iso8601(secs: u64) -> String {
-    let days = (secs / 86_400) as i64;
-    let rem = secs % 86_400;
-    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097; // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+    // Shared civil-date formatter (#1646), so audit/cost timestamps match the `bsc-*` helpers'
+    // `date -u +%Y-%m-%dT%H:%M:%SZ` output.
+    bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn iso8601_formats_known_epochs() {
-        assert_eq!(epoch_to_iso8601(0), "1970-01-01T00:00:00Z");
-        assert_eq!(epoch_to_iso8601(1_700_000_000), "2023-11-14T22:13:20Z");
-    }
 
     #[test]
     fn audit_target_picks_first_field_and_caps() {
