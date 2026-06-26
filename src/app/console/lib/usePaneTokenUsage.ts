@@ -4,8 +4,9 @@
 // "actual running model" (so it reflects what the CLI is really running, not just the configured
 // model) and the Telemetry · cost view.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { usePoll } from "@/shared/hooks/usePoll";
 
 /** One pane's token + cost rollup, as serialized by the Rust `read_token_usage` command
  *  (tokens.rs `TokenUsage` — plain snake_case, no serde rename, so the keys match the struct). */
@@ -30,19 +31,13 @@ const EMPTY: Map<string, PaneTokenUsage> = new Map();
  */
 export function usePaneTokenUsage(limit = 64): Map<string, PaneTokenUsage> {
   const [byPane, setByPane] = useState<Map<string, PaneTokenUsage>>(EMPTY);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const rows = await invoke<PaneTokenUsage[]>("read_token_usage", { limit })
-        .catch(() => [] as PaneTokenUsage[]);
-      if (cancelled) return;
-      const m = new Map<string, PaneTokenUsage>();
-      for (const r of rows ?? []) m.set(r.pane, r);
-      setByPane(m);
-    };
-    load();
-    const id = setInterval(load, 4000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [limit]);
+  usePoll(async (isCancelled) => {
+    const rows = await invoke<PaneTokenUsage[]>("read_token_usage", { limit })
+      .catch(() => [] as PaneTokenUsage[]);
+    if (isCancelled()) return;
+    const m = new Map<string, PaneTokenUsage>();
+    for (const r of rows ?? []) m.set(r.pane, r);
+    setByPane(m);
+  }, 4000, [limit]);
   return byPane;
 }
