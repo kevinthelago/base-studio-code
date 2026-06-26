@@ -17,7 +17,7 @@ import {
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
-import { Spark, HBars } from "./SkillsCharts";
+import { Spark, HBars } from "@/shared/ui/charts";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";

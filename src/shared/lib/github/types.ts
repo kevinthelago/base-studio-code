@@ -19,3 +19,9 @@ export interface GHEvent {
   payload: unknown;
   created_at: string;
 }
+
+/** A GitHub issue/PR label — `name` + a 6-hex `color` (no leading `#`). */
+export interface GhLabel {
+  name: string;
+  color: string;
+}
