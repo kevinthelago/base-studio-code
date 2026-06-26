@@ -45,7 +45,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // not a hardcoded stage list.
 import { stageConfirmKeys, DISCOVERY_BASELINE } from "../stages/planStageDerive";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkSection, blueprintCategory, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { mkStage, blueprintCategory, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { clampIndex, gatePill, footerAction, resolveFooter, shouldAutoCompleteGate } from "../stages/focusedPlan";
@@ -497,10 +497,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // holds the Features gate. `[]` when acyclic; otherwise the slugs on the offending cycle.
   const featureCycle = useMemo(() => featureDependencyCycle(planFeatures), [planFeatures]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
-  const planSecs = useMemo<BlueprintSection[]>(() => {
+  const planSecs = useMemo<BlueprintStage[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     if (bp) return bp.sections;
-    return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
+    return enabledOrderedStages(stageConfig).map(s => mkStage(s.id));
   }, [blueprints, effectiveBlueprintId, stageConfig]);
   // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — call before the gate
   // hook so `usePlanGates` can read this hook's isAuthoring/authoringSig.

@@ -81,7 +81,7 @@ export interface SectionDef {
    *  the section always applies. */
   appliesWhen?: Requirement;
   /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
-   *  downstream dependents, and it's off the critical path (currentSection skips it) — the
+   *  downstream dependents, and it's off the critical path (currentStage skips it) — the
    *  user can fill it or skip it (#676). */
   optional?: boolean;
   /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
@@ -118,15 +118,15 @@ export interface SectionDef {
 }
 
 // The canonical planning-stage data lives as one JSON file per stage under src-tauri/prompts/stages/
-// (one file per key), the unified prompt-data root (#1462). Loaded + assembled into SECTION_DEFS here.
+// (one file per key), the unified prompt-data root (#1462). Loaded + assembled into STAGE_DEFS here.
 const sectionModules = import.meta.glob<{ default: SectionDef }>("@prompts/stages/*.json", { eager: true });
 
 /** Every section definition, keyed by its filename stem (= the section key). */
-export const SECTION_DEFS: Record<string, SectionDef> = Object.fromEntries(
+export const STAGE_DEFS: Record<string, SectionDef> = Object.fromEntries(
   Object.entries(sectionModules).map(([path, mod]) => [path.slice(path.lastIndexOf("/") + 1, -5), mod.default]),
 );
 
-export interface BlueprintSection extends SectionDef {
+export interface BlueprintStage extends SectionDef {
   uid: string;
   key: string;
   enabled: boolean;
@@ -177,7 +177,7 @@ export interface Blueprint {
   id: string;
   name: string;
   desc: string;
-  sections: BlueprintSection[];
+  sections: BlueprintStage[];
   /** Display + provenance metadata (#609). All optional — the Library derives sensible
    *  fallbacks (icon from the name, hue from the id, origin "local", local-only gist). */
   icon?: string;
@@ -286,9 +286,9 @@ export const DEFAULT_BLUEPRINT_ID = "default";
  *  single source (gate + prompt); a blueprint that doesn't opt in is untouched. Shared by the
  *  Deploy→Repos ("ship", #1383) and Permissions→Structure ("fleet", #1383-streams) merges. */
 function foldInto(
-  base: BlueprintSection, def: SectionDef, folded: SectionDef | undefined,
+  base: BlueprintStage, def: SectionDef, folded: SectionDef | undefined,
   name: string, subs: [string, string][],
-): BlueprintSection {
+): BlueprintStage {
   if (!folded) return base;
   // Preserve the base section's OWN substeps (e.g. Structure's "sequence"); a base with none gets a
   // synthesized first substep from its prompt. Then append the folded section as the marker substep
@@ -305,13 +305,13 @@ function foldInto(
 }
 
 /** Build a section instance from a def key + per-blueprint overrides. */
-export function mkSection(
+export function mkStage(
   key: string,
   { enabled = true, expanded = false, optional, ship, fleet }:
     { enabled?: boolean; expanded?: boolean; optional?: boolean; ship?: boolean; fleet?: boolean } = {},
-): BlueprintSection {
-  const def = SECTION_DEFS[key];
-  const base: BlueprintSection = {
+): BlueprintStage {
+  const def = STAGE_DEFS[key];
+  const base: BlueprintStage = {
     uid: uid("sec"), key, ...def, enabled, expanded,
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
@@ -320,8 +320,8 @@ export function mkSection(
   // BOTH halves, only where the blueprint opts in. The folded SectionDef stays the single source, so
   // blueprints that don't opt in are untouched (no behavior change).
   // #1383: Deploy → Repos ("ship"). #1383-streams: Permissions → Structure ("fleet" → "Streams").
-  if (ship) return foldInto(base, def, SECTION_DEFS.deploy, "Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
-  if (fleet) return foldInto(base, def, SECTION_DEFS.permissions, "Streams", [["plan", "Plan the roadmap"], ["fleet", "Plan the fleet"]]);
+  if (ship) return foldInto(base, def, STAGE_DEFS.deploy, "Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
+  if (fleet) return foldInto(base, def, STAGE_DEFS.permissions, "Streams", [["plan", "Plan the roadmap"], ["fleet", "Plan the fleet"]]);
   return base;
 }
 
@@ -359,11 +359,11 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
 
 /** The JSON shape of a built-in blueprint definition (stages/blueprints/*.json): blueprint
  *  metadata + an ordered list of section KEYS (chaining to stages/sections/*.json). The keys
- *  resolve to full section instances via mkSection at load — no blueprint data lives in TS. */
+ *  resolve to full section instances via mkStage at load — no blueprint data lives in TS. */
 export interface BlueprintDef extends Omit<Blueprint, "sections"> {
   /** Display order within the built-in library. */
   order?: number;
-  /** Ordered section refs: a key into SECTION_DEFS + an optional per-blueprint `optional` flag, plus
+  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag, plus
    *  `ship` (#1383, on the `repos` ref → folds Deploy in) and `fleet` (on the `structure` ref →
    *  folds Permissions in, making the "Streams" stage). */
   sections: { key: string; optional?: boolean; ship?: boolean; fleet?: boolean }[];
@@ -374,14 +374,14 @@ export interface BlueprintDef extends Omit<Blueprint, "sections"> {
 const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("@prompts/blueprints/*.json", { eager: true });
 
 /** The built-in blueprint library, assembled from the per-blueprint JSON definitions: ordered by
- *  each def`s `order`, with its section keys resolved into section instances via mkSection. */
+ *  each def`s `order`, with its section keys resolved into section instances via mkStage. */
 export function makeBlueprints(): Blueprint[] {
   return Object.values(blueprintModules)
     .map((m) => m.default)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,
-      sections: sections.map((s) => mkSection(s.key, { optional: s.optional, ship: s.ship, fleet: s.fleet })),
+      sections: sections.map((s) => mkStage(s.key, { optional: s.optional, ship: s.ship, fleet: s.fleet })),
     }));
 }
 
@@ -391,8 +391,8 @@ export interface SectionStatus { locked: boolean; unmet: string[]; satisfied: bo
  * Dependency / lock resolution. A section is LOCKED when it's enabled but a
  * dependency is off or itself locked. A dep this blueprint omits is treated as met.
  */
-export function computeStatus(sections: BlueprintSection[]): Record<string, SectionStatus> {
-  const byKey: Record<string, BlueprintSection> = Object.fromEntries(sections.map((s) => [s.key, s]));
+export function computeStatus(sections: BlueprintStage[]): Record<string, SectionStatus> {
+  const byKey: Record<string, BlueprintStage> = Object.fromEntries(sections.map((s) => [s.key, s]));
   const memo: Record<string, boolean> = {};
   function satisfied(key: string, stack: Set<string>): boolean {
     if (key in memo) return memo[key];
@@ -428,7 +428,7 @@ export function reorder<T extends { uid: string }>(arr: T[], fromUid: string, to
 }
 
 /** Deep-copy sections with fresh uids (for duplicate). */
-export function cloneSections(sections: BlueprintSection[]): BlueprintSection[] {
+export function cloneStages(sections: BlueprintStage[]): BlueprintStage[] {
   return sections.map((s) => ({ ...s, uid: uid("sec") }));
 }
 
@@ -475,7 +475,7 @@ export function blueprintToStageConfig(bp: Blueprint): StageConfig {
 // feedback all read from here.
 
 /** Render status of a blueprint section. `na` = not applicable to this project. */
-export type SectionRenderStatus = "locked" | "in-progress" | "complete" | "na";
+export type StageRenderStatus = "locked" | "in-progress" | "complete" | "na";
 
 /** The signal that marks an informational (gateless) section confirmed/complete (#664). */
 export const confirmedSignal = (key: string) => `confirmed:${key}`;
@@ -489,7 +489,7 @@ export const skippedSignal = (key: string) => `skipped:${key}`;
  *  its gate. Otherwise: a section WITH a declarative gate uses {@link evalGate}; a gateless
  *  ("informational") section is done only when confirmed (a `confirmed:<key>` signal), so a
  *  fresh/cleared plan shows it as in-progress rather than ✓ (#664). */
-export function sectionDone(section: BlueprintSection, signals: PlanSignals): { done: boolean; fraction: number } {
+export function stageDone(section: BlueprintStage, signals: PlanSignals): { done: boolean; fraction: number } {
   if (signals[skippedSignal(section.key)] === true) return { done: true, fraction: 1 };
   if (section.gateRule) return evalGate(section.gateRule, signals);
   const ok = signals[confirmedSignal(section.key)] === true;
@@ -498,42 +498,42 @@ export function sectionDone(section: BlueprintSection, signals: PlanSignals): { 
 
 /** Whether a section was resolved by a deliberate user SKIP (vs genuinely completed) — drives the
  *  distinct "skipped" rendering. (#921) */
-export function sectionSkipped(section: BlueprintSection, signals: PlanSignals): boolean {
+export function stageSkipped(section: BlueprintStage, signals: PlanSignals): boolean {
   return signals[skippedSignal(section.key)] === true;
 }
 
 /** A dependency is satisfied when the blueprint omits it, it's disabled, it's N/A, or
  *  its own gate is complete. Mirrors the registry's dep rule, but over blueprint data. */
-function depSatisfied(depKey: string, byKey: Record<string, BlueprintSection>, signals: PlanSignals): boolean {
+function depSatisfied(depKey: string, byKey: Record<string, BlueprintStage>, signals: PlanSignals): boolean {
   const dep = byKey[depKey];
   if (!dep) return true;        // this blueprint doesn't include the dep
   if (!dep.enabled) return true;
   if (dep.optional) return true;        // optional deps never block dependents (#676)
   if (!gateApplies(dep.appliesWhen, signals)) return true;
-  return sectionDone(dep, signals).done;
+  return stageDone(dep, signals).done;
 }
 
 /**
  * Resolve a section's render status + bar fill from blueprint data alone: its
  * applicability rule, its declarative gate, and its (included, enabled) dependencies.
  */
-export function sectionStatus(
-  section: BlueprintSection,
-  sections: BlueprintSection[],
+export function stageStatus(
+  section: BlueprintStage,
+  sections: BlueprintStage[],
   signals: PlanSignals,
-): { status: SectionRenderStatus; fraction: number } {
+): { status: StageRenderStatus; fraction: number } {
   // An optional section is always shown (it bypasses appliesWhen) — it's just never
   // required; non-optional sections still go N/A when their applicability rule fails (#676).
   if (!section.optional && !gateApplies(section.appliesWhen, signals)) return { status: "na", fraction: 0 };
-  const g = sectionDone(section, signals);
+  const g = stageDone(section, signals);
   if (g.done) return { status: "complete", fraction: 1 };
-  const byKey: Record<string, BlueprintSection> = Object.fromEntries(sections.map((s) => [s.key, s]));
+  const byKey: Record<string, BlueprintStage> = Object.fromEntries(sections.map((s) => [s.key, s]));
   const locked = (section.deps || []).some((d) => !depSatisfied(d, byKey, signals));
   return { status: locked ? "locked" : "in-progress", fraction: g.fraction };
 }
 
 /** The enabled sections of a blueprint, in their declared order. */
-export function enabledSections(sections: BlueprintSection[]): BlueprintSection[] {
+export function enabledStages(sections: BlueprintStage[]): BlueprintStage[] {
   return sections.filter((s) => s.enabled);
 }
 
@@ -541,9 +541,9 @@ export function enabledSections(sections: BlueprintSection[]): BlueprintSection[
  *  section must be DECIDED (completed or user-skipped) just like a required one; a user-skip marks
  *  it done (#921). This is what lets the user, not the app, decide whether to skip an optional
  *  stage — the plan isn't "complete" until each enabled optional stage has been addressed. */
-export function planSectionsComplete(sections: BlueprintSection[], signals: PlanSignals): boolean {
-  return enabledSections(sections).every((s) => {
-    const { status } = sectionStatus(s, sections, signals);
+export function planStagesComplete(sections: BlueprintStage[], signals: PlanSignals): boolean {
+  return enabledStages(sections).every((s) => {
+    const { status } = stageStatus(s, sections, signals);
     return status === "complete" || status === "na";
   });
 }
@@ -553,17 +553,17 @@ export function planSectionsComplete(sections: BlueprintSection[], signals: Plan
  * in progress. When all are complete it falls back to the last enabled + applicable
  * one. Drives which pipelines' second screens render.
  */
-export function currentSection(sections: BlueprintSection[], signals: PlanSignals): BlueprintSection | undefined {
+export function currentStage(sections: BlueprintStage[], signals: PlanSignals): BlueprintStage | undefined {
   // The flow STOPS on an optional stage too, so the USER decides whether to do or skip it (#921) —
-  // a skipped optional section is `sectionDone` ⇒ not "in-progress", so the frontier advances past
-  // it. Optional sections bypass `appliesWhen` (always shown), matching `sectionStatus`.
-  const applicable = enabledSections(sections).filter((s) => s.optional || gateApplies(s.appliesWhen, signals));
-  const active = applicable.find((s) => sectionStatus(s, sections, signals).status === "in-progress");
+  // a skipped optional section is `stageDone` ⇒ not "in-progress", so the frontier advances past
+  // it. Optional sections bypass `appliesWhen` (always shown), matching `stageStatus`.
+  const applicable = enabledStages(sections).filter((s) => s.optional || gateApplies(s.appliesWhen, signals));
+  const active = applicable.find((s) => stageStatus(s, sections, signals).status === "in-progress");
   return active ?? applicable[applicable.length - 1];
 }
 
 /** A blueprint section that isn't satisfied yet — what the user still has to finish. */
-export interface IncompleteSection {
+export interface IncompleteStage {
   key: string;
   /** The section's display name, straight from the blueprint. */
   name: string;
@@ -580,10 +580,10 @@ export interface IncompleteSection {
  * section flows through here with nothing hardcoded per stage. Powers the feedback
  * shown when the user clicks a locked Triage button.
  */
-export function incompleteSections(sections: BlueprintSection[], signals: PlanSignals): IncompleteSection[] {
-  const out: IncompleteSection[] = [];
-  for (const s of enabledSections(sections)) {
-    const { status } = sectionStatus(s, sections, signals);
+export function incompleteStages(sections: BlueprintStage[], signals: PlanSignals): IncompleteStage[] {
+  const out: IncompleteStage[] = [];
+  for (const s of enabledStages(sections)) {
+    const { status } = stageStatus(s, sections, signals);
     if (status === "complete" || status === "na") continue;
     out.push({ key: s.key, name: s.name, reason: s.gate, status });
   }

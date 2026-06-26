@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { PlanGateRow } from "./PlanStageBar";
-import type { BlueprintSection } from "../stages/blueprints";
+import type { BlueprintStage } from "../stages/blueprints";
 
-const sec = (over: Partial<BlueprintSection> & { key: string }): BlueprintSection => ({
+const sec = (over: Partial<BlueprintStage> & { key: string }): BlueprintStage => ({
   uid: `u-${over.key}`, name: over.key, glyph: "", icon: "category", hue: 250, gate: "", deps: [], blurb: "",
   prompt: "", enabled: true, expanded: false, ...over,
 });

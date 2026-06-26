@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { authoringChecks } from "./BlueprintAuthorViews";
-import { mkSection, type Blueprint } from "../stages/blueprints";
+import { mkStage, type Blueprint } from "../stages/blueprints";
 
 describe("authoringChecks (#923 — Review-stage lint)", () => {
   const base = (over: Partial<Blueprint>): Blueprint =>
@@ -13,7 +13,7 @@ describe("authoringChecks (#923 — Review-stage lint)", () => {
 
     const complete = authoringChecks(base({
       name: "Realtime API", pitch: "ship a realtime backend", tags: ["api", "realtime"],
-      sections: [{ ...mkSection("purpose"), prompt: "do x" }, { ...mkSection("bp_stages"), prompt: "do y" }],
+      sections: [{ ...mkStage("purpose"), prompt: "do x" }, { ...mkStage("bp_stages"), prompt: "do y" }],
     }));
     expect(complete.every((c) => c.ok)).toBe(true);
   });
@@ -21,7 +21,7 @@ describe("authoringChecks (#923 — Review-stage lint)", () => {
   it("fails the prompts check when any stage has an empty prompt module", () => {
     const checks = authoringChecks(base({
       name: "BP", pitch: "p", tags: ["api"],
-      sections: [{ ...mkSection("purpose"), prompt: "x" }, { ...mkSection("bp_stages"), prompt: "  " }],
+      sections: [{ ...mkStage("purpose"), prompt: "x" }, { ...mkStage("bp_stages"), prompt: "  " }],
     }));
     const prompts = checks.find((c) => c.id === "prompts")!;
     expect(prompts.ok).toBe(false);

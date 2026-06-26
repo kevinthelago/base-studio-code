@@ -6,7 +6,7 @@ import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "@/shared/lib/core/projectPaths";
 import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
 import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
-import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintSection } from "../stages/blueprints";
+import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintStage } from "../stages/blueprints";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
@@ -56,7 +56,7 @@ interface BpItem {
   pitch: string;
   category: BlueprintCategory;
   stages: number;
-  sections: BlueprintSection[];   // the blueprint's sections — drives the gate-row preview
+  sections: BlueprintStage[];   // the blueprint's sections — drives the gate-row preview
   builtIn?: boolean;   // a code-owned app template (can't be deleted)
   gistLabel?: string;
   updatedLabel: string;
@@ -344,7 +344,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
 }
 
 export function ProjectsList() {
-  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint, setBlueprintSections, updateBlueprintMeta, importBlueprint, installBundledSkills, githubUser } = useAppStore();
+  const { githubToken, activeScreen, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard, setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, hiddenProjectIds, dismissProject, localDraftProjects, addDraftProject, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId, setProjectBlueprintId, planAuthoredBlueprint, setAuthoredBlueprint, blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint, setBlueprintStages, updateBlueprintMeta, importBlueprint, installBundledSkills, githubUser } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -797,7 +797,7 @@ export function ProjectsList() {
   // ── Import a blueprint from a gist (#blueprints): the only piece kept from the removed
   // Blueprints tab — resolve a gist ref to a previewable blueprint, then add/update it in the
   // library (dedupe by source gist id, #955). Editing happens via "modify in planner".
-  const freshSections = (s: BlueprintSection[]): BlueprintSection[] => s.map((x) => ({ ...x, uid: uid("sec") }));
+  const freshSections = (s: BlueprintStage[]): BlueprintStage[] => s.map((x) => ({ ...x, uid: uid("sec") }));
   async function resolveBlueprintImport(ref: string): Promise<PreviewBlueprint> {
     const r = await installFromGist(ref, githubToken);
     if (!r.ok) throw new Error(r.error);
@@ -818,7 +818,7 @@ export function ProjectsList() {
     // Dedupe (#955): a gist already in the library updates in place rather than duplicating.
     const existing = gId ? blueprints.find((b) => b.gist?.id === gId) : undefined;
     if (existing) {
-      setBlueprintSections(existing.id, freshSections(base?.sections ?? preview.sections));
+      setBlueprintStages(existing.id, freshSections(base?.sections ?? preview.sections));
       updateBlueprintMeta(existing.id, {
         ...(base?.name ? { name: base.name } : {}),
         gist: {

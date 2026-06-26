@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { nextInjection, isStepDelivered, flattenPrompt, stagePrompts, type ConductorState, type DeliverySignals } from "./plannerConductor";
-import { mkSection } from "../stages/blueprints";
+import { mkStage } from "../stages/blueprints";
 
 const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
   outputGrew: false, sectionKeys: new Set(), startedFeatures: new Set(), featuresExist: false, ...over,
@@ -11,7 +11,7 @@ const state = (over: Partial<ConductorState> = {}): ConductorState => ({ doneSub
 
 describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
   it("lists the stage overview prompt first, then each substep prompt", () => {
-    const context = mkSection("discovery");
+    const context = mkStage("discovery");
     const list = stagePrompts(context);
     expect(list.length).toBeGreaterThanOrEqual(2);
     expect(list[0].label).toContain("overview");
@@ -28,7 +28,7 @@ describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
 });
 
 describe("nextInjection — stage + static substeps", () => {
-  const context = mkSection("discovery"); // _stage + goal/scope/stack/architecture + dimensions(loop)
+  const context = mkStage("discovery"); // _stage + goal/scope/stack/architecture + dimensions(loop)
 
   it("returns null when there is no active section", () => {
     expect(nextInjection(undefined, new Set(), emptyState())).toBeNull();
@@ -46,14 +46,14 @@ describe("nextInjection — stage + static substeps", () => {
   });
 
   it("a substep-less stage injects only its stage prompt, once", () => {
-    const permissions = mkSection("permissions");
+    const permissions = mkStage("permissions");
     expect(nextInjection(permissions, new Set(), emptyState())?.id).toBe("permissions:_stage");
     expect(nextInjection(permissions, new Set(["permissions:_stage"]), emptyState())).toBeNull();
   });
 });
 
 describe("nextInjection — features loop (Phase 3)", () => {
-  const features = mkSection("features"); // _stage + propose(static) + features(loop)
+  const features = mkStage("features"); // _stage + propose(static) + features(loop)
 
   it("runs stage → propose, and holds until propose is marked done", () => {
     expect(nextInjection(features, new Set(), emptyState())?.id).toBe("features:_stage");

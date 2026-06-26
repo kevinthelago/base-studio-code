@@ -4,9 +4,9 @@
 // the discovery dimensions that double as palette kinds carry them on `discovery.json`'s
 // `dimensions`. STAGE_KINDS is DERIVED from those here — no hand-maintained duplicate. Pure;
 // the editor reads this for glyphs/hues/blurbs/dispositions; the runtime (#584 gateRule/
-// sectionStatus) is unchanged.
+// stageStatus) is unchanged.
 
-import { SECTION_DEFS } from "../stages/blueprints";
+import { STAGE_DEFS } from "../stages/blueprints";
 
 // ── hue helpers (oklch accents; share L/C, vary hue) ──────────────────────────
 export const hue = (h: number): string => `oklch(0.74 0.11 ${h})`;
@@ -22,12 +22,12 @@ interface StageKindMeta { title: string; glyph: string; h: number; blurb: string
  *  palette stays consistent with the stage bar (#1603 reconciled the former divergences). */
 function buildStageKinds(): Record<string, StageKindMeta> {
   const out: Record<string, StageKindMeta> = {};
-  for (const [key, def] of Object.entries(SECTION_DEFS)) {
+  for (const [key, def] of Object.entries(STAGE_DEFS)) {
     if (def.icon && typeof def.hue === "number") {
       out[key] = { title: def.name, glyph: def.icon, h: def.hue, blurb: def.blurb };
     }
   }
-  for (const dim of SECTION_DEFS.discovery?.dimensions ?? []) {
+  for (const dim of STAGE_DEFS.discovery?.dimensions ?? []) {
     if (dim.icon && typeof dim.hue === "number") {
       out[dim.key] = { title: dim.title, glyph: dim.icon, h: dim.hue, blurb: dim.blurb ?? "" };
     }
@@ -43,7 +43,7 @@ export function stageKind(key: string): StageKindMeta {
 
 /** The kinds offered in the editor's "add stage" palette — a CURATED subset of {@link STAGE_KINDS},
  *  NOT every entry. The map now also carries icon/metadata for stages that arrive via blueprints or
- *  SECTION_DEFS but aren't hand-addable (the data-platform pipeline stages, the lifecycle stages
+ *  STAGE_DEFS but aren't hand-addable (the data-platform pipeline stages, the lifecycle stages
  *  seeded by their category's built-in, and the blueprint-authoring meta-stages), so an imported
  *  blueprint resolves a real icon for every stage without those flooding the palette. */
 export const STAGE_KIND_KEYS = [

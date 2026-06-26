@@ -3,9 +3,9 @@ import { buildMcpLibrary, collectBlueprintMcp, applyBlueprintMcp } from "./bluep
 import { addMcpServer, removeMcpServer } from "./blueprintEdit";
 import { type McpStoreLike } from "../lib/planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
-import type { Blueprint, BlueprintSection } from "../stages/blueprints";
+import type { Blueprint, BlueprintStage } from "../stages/blueprints";
 
-const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({
+const sec = (over: Partial<BlueprintStage>): BlueprintStage => ({
   uid: over.uid ?? "u", key: over.key ?? "discovery", name: "S", glyph: "◆", icon: "flag", hue: 70, gate: "", deps: [],
   blurb: "", prompt: "", enabled: true, expanded: false, ...over,
 });
