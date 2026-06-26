@@ -8,6 +8,8 @@
 // outward and continuously. Source extraction is read-only and reuses the connector machinery; this
 // config only describes the sink + cadence.
 
+import type { ReadinessCheck } from "./readiness";
+
 /** Kind of destination the extracted data lands in. */
 export type DestinationType = "warehouse" | "database" | "object-store" | "file" | "api";
 
@@ -78,10 +80,8 @@ export function defaultIntegrationConfig(): IntegrationConfig {
   };
 }
 
-export interface IntegrationCheck { id: string; label: string; ok: boolean; detail: string }
-
 /** Destination readiness checks — drive the pane banner; every one ok ⇒ `destinationDefined`. */
-export function destinationChecks(d: DestinationConfig): IntegrationCheck[] {
+export function destinationChecks(d: DestinationConfig): ReadinessCheck[] {
   return [
     { id: "type",   label: "Destination type chosen",  ok: !!d.type,           detail: d.type ? destinationMeta(d.type).name : "—" },
     { id: "target", label: "Target location set",      ok: !!d.target.trim(),  detail: d.target.trim() || "—" },
@@ -95,7 +95,7 @@ export function destinationDefined(cfg: IntegrationConfig | undefined): boolean 
 }
 
 /** Sync readiness checks — `syncDefined` requires all ok (incremental also needs a watermark). */
-export function syncChecks(s: SyncConfig): IntegrationCheck[] {
+export function syncChecks(s: SyncConfig): ReadinessCheck[] {
   return [
     { id: "mode",      label: "Sync mode chosen",            ok: !!s.mode,            detail: s.mode || "—" },
     { id: "schedule",  label: "Schedule / trigger set",      ok: !!s.schedule.trim(), detail: s.schedule.trim() || "—" },
