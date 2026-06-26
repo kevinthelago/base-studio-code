@@ -3,7 +3,7 @@
 // it dormant. Mounted once in ConsoleScreen (which stays mounted across screens). The pure
 // decision + thresholds live in idleReaper.ts; this is the thin Tauri/React side.
 
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { panesToReap, type ReaperPane } from "./idleReaper";
@@ -31,7 +31,7 @@ export function useIdleReaper(): void {
       dormant: !!s.dormantPanes[paneId],
     }));
     for (const paneId of panesToReap(panes, s.idleReaper, now)) {
-      void invoke("pty_kill", { paneId }).catch(() => {});
+      fireInvoke("pty_kill", { paneId });
       useAppStore.getState().reapPane(paneId);
     }
   }, TICK_MS, [], { immediate: false });

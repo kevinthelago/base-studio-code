@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
@@ -161,7 +162,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 requestPlannerPrompt(projectKey, ROUTE_PROMPT);
                 // Promote the dropped components into .ui-skeleton/ so the preview shows the REAL
                 // design, not the demo (#1373) — deterministic, alongside the planner's routing.
-                void invoke("sync_design_to_skeleton", { projectKey }).catch(() => {});
+                fireInvoke("sync_design_to_skeleton", { projectKey });
                 // Routing the design to the project completes the UI stage (#837).
                 confirmPlanSection(projectKey, "ui");
                 setRouted(true);
