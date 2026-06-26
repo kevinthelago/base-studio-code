@@ -1,4 +1,5 @@
 {
+  "directive": "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
   "name": "Migration plan",
   "glyph": "⇄",
   "gate": "from→to mapped",

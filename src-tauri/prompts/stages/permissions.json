@@ -1,4 +1,5 @@
 {
+  "directive": "**Permissions** — plan the agent fleet IN THE PLAN DB: pipe a FleetPlan JSON (non-overlapping streams with least-privilege profiles + per-stream perms/flows, plus recommended/director/topology) to `bsc-plan fleet set`. A stream may also carry `mcp` (assigned MCP servers) and `groupIds` (skill task-group ids from `bsc-skill group`, authored in the Skills stage) — each worker inherits those at launch. The fleet lives ONLY in plan.db — there is no fleet.json; `bsc-plan fleet get` shows the stored fleet.",
   "name": "Permissions",
   "glyph": "⛉",
   "gate": "every stream scoped + shared deps locked",
