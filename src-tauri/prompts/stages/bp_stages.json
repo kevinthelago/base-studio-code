@@ -16,5 +16,7 @@
     ]
   },
   "blurb": "Compose the stage flow — order, dependencies, and the prompt module each stage runs.",
-  "prompt": "Design the STAGES the authored blueprint will drive, one at a time (propose → interrogate → record).\nFor each stage define: a short key + name, its intent (blurb), the discovery PROMPT the planner runs\nwhen that stage is active, its order + dependencies on earlier stages, and whether it's optional.\nGive each a simple completion gate — default to \"the planner confirms this stage is done\" unless a\nconcrete signal is obvious. Re-emit the FULL <blueprint> tag (with the growing sections array) as the\nstage set firms up.\n\nGate: at least one stage is designed, each confirmed with the user."
+  "prompt": "Design the STAGES the authored blueprint will drive, one at a time (propose → interrogate → record).\nFor each stage define: a short key + name, its intent (blurb), the discovery PROMPT the planner runs\nwhen that stage is active, its order + dependencies on earlier stages, and whether it's optional.\nGive each a simple completion gate — default to \"the planner confirms this stage is done\" unless a\nconcrete signal is obvious. Re-emit the FULL <blueprint> tag (with the growing sections array) as the\nstage set firms up.\n\nGate: at least one stage is designed, each confirmed with the user.",
+  "icon": "layers",
+  "hue": 200
 }

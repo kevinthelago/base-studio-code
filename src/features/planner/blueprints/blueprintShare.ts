@@ -22,6 +22,8 @@ function coerceSection(v: unknown): BlueprintSection | null {
   return {
     uid: uid("sec"), key, name,
     glyph: str(o.glyph, "✚"),
+    icon: str(o.icon, "category"),
+    hue: typeof o.hue === "number" ? o.hue : 250,
     gate: str(o.gate, "stage complete"),
     deps: strArr(o.deps),
     blurb: str(o.blurb),
