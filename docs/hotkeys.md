@@ -9,10 +9,10 @@ All hotkeys are global and active regardless of which element has focus, except 
 | Key | Action |
 |-----|--------|
 | `F1` | Switch to **Console** |
-| `F2` | Switch to **Knowledge Store** |
 | `F3` | Switch to **Automations** |
 | `F4` | Switch to **GitHub** |
-| `F5` | Switch to **Settings** |
+| `F5` | Switch to **Projects** |
+| `F6` | Switch to **Settings** |
 
 ---
 
