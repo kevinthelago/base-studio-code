@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,30 +66,6 @@ query($id: ID!) {
     }
   }
 }`;
-
-// ── Color helpers ─────────────────────────────────────────────────────────────
-
-const GH_OPTION_COLORS: Record<string, string> = {
-  GRAY:   "var(--fg-dim)",
-  BLUE:   "var(--info)",
-  GREEN:  "var(--success)",
-  YELLOW: "oklch(0.78 0.14 70)",
-  ORANGE: "var(--accent)",
-  RED:    "var(--danger)",
-  PINK:   "oklch(0.7 0.18 340)",
-  PURPLE: "oklch(0.68 0.13 290)",
-};
-
-const AVATAR_PALETTE = [
-  "oklch(0.7 0.13 30)", "oklch(0.7 0.10 220)", "oklch(0.68 0.13 145)",
-  "oklch(0.7 0.12 290)", "oklch(0.7 0.14 50)", "oklch(0.65 0.08 195)",
-];
-
-function loginColor(login: string): string {
-  let h = 0;
-  for (const c of login) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
-}
 
 // ── Chart primitives ──────────────────────────────────────────────────────────
 
@@ -414,7 +391,7 @@ export function Insights() {
                           ) : (
                             <span style={{
                               width: 16, height: 16, borderRadius: "50%",
-                              background: loginColor(a.login), color: "#1a120a",
+                              background: avatarColor(a.login), color: "#1a120a",
                               fontFamily: "var(--mono)", fontWeight: 700, fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>{a.login[0]?.toUpperCase()}</span>
@@ -426,7 +403,7 @@ export function Insights() {
                             <div style={{
                               height: "100%",
                               width: `${(a.count / maxAssigneeCount) * 100}%`,
-                              background: loginColor(a.login === "(unassigned)" ? "?" : a.login),
+                              background: avatarColor(a.login === "(unassigned)" ? "?" : a.login),
                               borderRadius: 3,
                             }} />
                           </div>

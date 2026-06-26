@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { avatarColor } from "@/shared/lib/github/colors";
+import { timeAgoShort } from "@/shared/lib/core/format";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,27 +60,6 @@ query($id: ID!) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const AVATAR_PALETTE = [
-  "oklch(0.7 0.13 30)", "oklch(0.7 0.10 220)", "oklch(0.68 0.13 145)",
-  "oklch(0.7 0.12 290)", "oklch(0.7 0.14 50)", "oklch(0.65 0.08 195)",
-];
-
-function loginColor(login: string): string {
-  let h = 0;
-  for (const c of login) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
-}
-
-function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function LabelChip({ label }: { label: GhLabel }) {
@@ -102,7 +83,7 @@ function Avatar({ login, size = 16, ml = 0 }: { login: string; size?: number; ml
   return (
     <span title={"@" + login} style={{
       width: size, height: size, borderRadius: "50%",
-      background: loginColor(login), color: "#1a120a",
+      background: avatarColor(login), color: "#1a120a",
       fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.56,
       display: "flex", alignItems: "center", justifyContent: "center",
       marginLeft: ml, border: "1.5px solid var(--bg-canvas)", flexShrink: 0,
@@ -179,7 +160,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
           )}
           <div style={{ display: "flex", gap: 24, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
             {issue.comments > 0 && <span>💬 {issue.comments} comment{issue.comments !== 1 ? "s" : ""}</span>}
-            <span>updated {timeAgo(issue.updatedAt)} ago</span>
+            <span>updated {timeAgoShort(issue.updatedAt)} ago</span>
           </div>
         </div>
 
@@ -391,7 +372,7 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
 
       {/* Updated */}
       <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
-        {timeAgo(issue.updatedAt)}
+        {timeAgoShort(issue.updatedAt)}
       </div>
 
       {/* Open in pane */}
