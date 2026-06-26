@@ -21,9 +21,15 @@
 //! frontend `parseIssuesFile` expects. Value-list fields are stored as JSON text for now; the
 //! relational `dependsOn` can normalize into a join table later if graph queries want it.
 
+use bsc_sqlite_util::{arr_to_json, json_to_arr};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+/// How long (ms) a connection waits on a locked db before erroring. The desktop app and the
+/// `bsc-plan` CLI share one `plan.db` (a worker writes its status while the app polls), so — like
+/// `skilldb` — a busy_timeout pairs with WAL to keep a quick CLI write from losing to SQLITE_BUSY.
+const BUSY_TIMEOUT_MS: u32 = 5_000;
 
 // Self-correction lessons (#1362) — their own concern, in their own module (mirrors how `crates/data`
 // keeps one file per concern). The module hangs its `lesson_*` methods off `Store` and owns its schema.
@@ -176,19 +182,23 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open (creating + migrating) the plan.db at `path`. Parent dirs are created.
+    /// Open (creating + migrating) the plan.db at `path`. Parent dirs are created. WAL mode + a
+    /// busy_timeout are enabled so the desktop app and the `bsc-plan` CLI can share the db
+    /// concurrently without a SQLITE_BUSY race (matches `skilldb`, #1621).
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
         let conn = Connection::open(path)?;
+        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
         migrate(&conn)?;
         Ok(Store { conn })
     }
 
-    /// An ephemeral in-memory store — for tests.
+    /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
         let conn = Connection::open_in_memory()?;
+        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
         migrate(&conn)?;
         Ok(Store { conn })
     }
@@ -783,13 +793,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 // ── JSON (de)serialization for the value-list / phase columns ─────────────────────
+// `arr_to_json` / `json_to_arr` are shared with skilldb via `bsc_sqlite_util` (#1621); the
+// phase-column codec below is plan.db-specific (a raw JSON value, not a string list).
 
-fn arr_to_json(v: &[String]) -> String {
-    serde_json::to_string(v).unwrap_or_else(|_| "[]".into())
-}
-fn json_to_arr(s: &str) -> Vec<String> {
-    serde_json::from_str(s).unwrap_or_default()
-}
 fn phase_to_db(p: &Option<serde_json::Value>) -> Option<String> {
     p.as_ref().map(|v| v.to_string())
 }
@@ -1026,6 +1032,24 @@ mod tests {
     fn is_valid_status_guards_the_lifecycle() {
         assert!(is_valid_status("verified"));
         assert!(!is_valid_status("done"));
+    }
+
+    #[test]
+    fn open_sets_a_busy_timeout_for_the_app_cli_share() {
+        // The app + the bsc-plan CLI share one plan.db, so open must set a busy_timeout (alongside
+        // WAL) or a CLI write racing the app's poll can hit SQLITE_BUSY with no retry (#1621).
+        let dir = std::env::temp_dir().join(format!("plandb-busy-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("plan.db");
+        let _ = std::fs::remove_file(&path);
+        let s = Store::open(&path).unwrap();
+        let timeout: i64 = s.conn.query_row("PRAGMA busy_timeout", [], |r| r.get(0)).unwrap();
+        assert_eq!(timeout, BUSY_TIMEOUT_MS as i64);
+        // WAL is on for an on-disk db.
+        let mode: String = s.conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        drop(s);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── features ──────────────────────────────────────────────────────────────────

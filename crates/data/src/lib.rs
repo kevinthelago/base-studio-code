@@ -37,7 +37,7 @@ pub mod meta;
 pub use meta::MetaStore;
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
-pub use connector::{Connector, CsvConnector, RowSet, SourceField, SourceObject};
+pub use connector::{Connector, CsvConnector, FetchFn, RowSet, SourceField, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
 pub use behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
@@ -58,7 +58,7 @@ pub use runtime::{
 };
 pub use registry::{LiveSupport, SourceAuth};
 pub use descriptor::{
-    find as source_connector, ConnectorDescriptor, ConnectorKind, FetchFn, ResourceDef, BUILTINS,
+    find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, BUILTINS,
 };
 
 #[cfg(feature = "duckdb-store")]

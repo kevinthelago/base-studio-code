@@ -15,7 +15,6 @@ pub fn generate_keypair() -> Result<Keypair, snow::Error> {
 
 /// Build the responder handshake (desktop side) from its static private key. It
 /// does NOT pre-know the initiator's static key — IK reveals it during the handshake.
-#[allow(dead_code)] // wired into the relay transport in #242b
 pub fn responder(static_priv: &[u8]) -> Result<HandshakeState, snow::Error> {
     Builder::new(PARAMS.parse().expect("valid noise params"))
         .local_private_key(static_priv)?

@@ -1,8 +1,7 @@
 //! Citation-grounded semantic search (#1196). The default retriever is **BM25** over section-tagged
 //! chunks — fully offline, key-less, dependency-free, and good at surfacing the right passages of
 //! the fetched corpus. Each returned [`Passage`] carries its `paper_id` + `section` so the planner
-//! can cite exactly where a claim came from. An optional API embedder (Voyage/OpenAI) can rerank
-//! when a key is configured — see [`crate::engine`] — but BM25 is the always-available baseline.
+//! can cite exactly where a claim came from.
 
 use serde::Serialize;
 

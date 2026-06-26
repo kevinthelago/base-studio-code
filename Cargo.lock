@@ -751,6 +751,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-sqlite-util"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1018,6 +1026,7 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
+ "mcp-rpc",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3072,6 +3081,7 @@ dependencies = [
 name = "logs"
 version = "0.1.0"
 dependencies = [
+ "bsc-sqlite-util",
  "serde",
  "serde_json",
 ]
@@ -3118,6 +3128,13 @@ dependencies = [
  "log",
  "tendril",
  "web_atoms",
+]
+
+[[package]]
+name = "mcp-rpc"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -3871,6 +3888,7 @@ name = "plandb"
 version = "0.1.0"
 dependencies = [
  "bsc-data",
+ "bsc-sqlite-util",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4454,6 +4472,7 @@ dependencies = [
 name = "research"
 version = "0.1.0"
 dependencies = [
+ "mcp-rpc",
  "pdf-extract",
  "reqwest 0.12.28",
  "roxmltree",
@@ -5119,6 +5138,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 name = "skilldb"
 version = "0.1.0"
 dependencies = [
+ "bsc-sqlite-util",
  "rusqlite",
  "serde",
  "serde_json",

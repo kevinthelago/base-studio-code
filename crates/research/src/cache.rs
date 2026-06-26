@@ -50,8 +50,7 @@ impl Cache {
     fn init(conn: Connection) -> Result<Cache, String> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS papers   (id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS fulltext (id TEXT PRIMARY KEY, text TEXT NOT NULL, fetched_at INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS kv       (key TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
+             CREATE TABLE IF NOT EXISTS fulltext (id TEXT PRIMARY KEY, text TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
         )
         .map_err(|e| format!("cache schema: {e}"))?;
         Ok(Cache { conn })
@@ -97,28 +96,6 @@ impl Cache {
             .query_row("SELECT text FROM fulltext WHERE id = ?1", [id], |r| r.get(0))
             .ok()
     }
-
-    /// Store an arbitrary JSON-serializable value under `key` (e.g. a search result set).
-    pub fn put_json<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<(), String> {
-        let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
-        self.conn
-            .execute(
-                "INSERT INTO kv (key, json, fetched_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(key) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at",
-                rusqlite::params![key, json, now_secs()],
-            )
-            .map_err(|e| format!("cache put_json: {e}"))?;
-        Ok(())
-    }
-
-    /// Look up a JSON value stored under `key`, deserializing to `T`.
-    pub fn get_json<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
-        let json: String = self
-            .conn
-            .query_row("SELECT json FROM kv WHERE key = ?1", [key], |r| r.get(0))
-            .ok()?;
-        serde_json::from_str(&json).ok()
-    }
 }
 
 #[cfg(test)]
@@ -143,13 +120,9 @@ mod tests {
     }
 
     #[test]
-    fn fulltext_and_kv_roundtrip() {
+    fn fulltext_roundtrip() {
         let cache = Cache::in_memory().unwrap();
         cache.put_fulltext("arxiv:1", "full body text").unwrap();
         assert_eq!(cache.get_fulltext("arxiv:1").as_deref(), Some("full body text"));
-
-        cache.put_json("search:rt", &vec!["a".to_string(), "b".to_string()]).unwrap();
-        let got: Vec<String> = cache.get_json("search:rt").unwrap();
-        assert_eq!(got, vec!["a", "b"]);
     }
 }

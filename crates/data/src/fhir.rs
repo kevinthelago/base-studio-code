@@ -19,12 +19,11 @@
 
 use serde_json::Value;
 
-use crate::connector::{cell_to_string, sorted_record_columns, Connector, RowSet, SourceObject};
+use crate::connector::{
+    cell_to_string, sorted_record_columns, union_record_columns, Connector, FetchFn, RowSet,
+    SourceObject,
+};
 use crate::error::{DataError, Result};
-
-/// A URL → parsed-JSON fetch closure. Owns any auth (the SMART-on-FHIR bearer token); the connector
-/// never sees or stores credentials. Mirrors the other native API connectors.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// The core FHIR R4 clinical resource types this connector reads, in a stable order. Covers the
 /// migration targets in #1311 (demographics, encounters, observations/labs, conditions, medications,
@@ -123,17 +122,10 @@ impl FhirConnector {
     }
 
     /// Flatten resources into a [`RowSet`]: columns are the sorted union of every resource's top-level
-    /// element names; each cell is the element rendered flat (nested values as compact JSON).
+    /// element names (the shared #1620 derivation); each cell is the element rendered flat (nested
+    /// values as compact JSON).
     fn rows_from_resources(resources: &[Value]) -> RowSet {
-        let mut columns: Vec<String> = Vec::new();
-        for r in resources {
-            for k in sorted_record_columns(r) {
-                if !columns.contains(&k) {
-                    columns.push(k);
-                }
-            }
-        }
-        columns.sort();
+        let columns = union_record_columns(resources, |_| true);
         let rows = resources
             .iter()
             .map(|r| columns.iter().map(|c| r.get(c).map(cell_to_string).unwrap_or_default()).collect())
