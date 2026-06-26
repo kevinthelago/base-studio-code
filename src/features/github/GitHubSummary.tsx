@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
-import { githubRequest, githubGraphql } from "./lib/github";
+import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
 import { languageStats } from "./languageStats";
