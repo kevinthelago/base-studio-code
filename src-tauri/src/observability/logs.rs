@@ -186,6 +186,23 @@ pub fn list_log_files(app: tauri::AppHandle) -> Vec<LogFileInfo> {
     out
 }
 
+/// The newest `limit` non-blank lines of a text log file. `newest_first` selects the order:
+/// `true` returns them newest-first (the audit/skill/hook/mcp readers); `false` keeps the file's
+/// chronological oldest-first order (the coord log + `read_log_tail`). A missing/unreadable file
+/// yields an empty list. The one copy of the six near-identical tail readers' body.
+pub(crate) fn tail_lines(path: &Path, limit: usize, newest_first: bool) -> Vec<String> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let mut lines: Vec<String> =
+        text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    if newest_first {
+        lines.reverse();
+        lines.truncate(limit);
+    } else if lines.len() > limit {
+        lines = lines.split_off(lines.len() - limit);
+    }
+    lines
+}
+
 /// The newest `limit` raw lines of a text stream, in chronological order (oldest of the tail
 /// first). Empty for `perf.db` (binary) or an unknown/missing stream.
 #[tauri::command]
@@ -194,12 +211,7 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
         return Vec::new();
     }
     let Some(path) = stream_path(&app, &stream) else { return Vec::new() };
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    if lines.len() > limit {
-        lines = lines.split_off(lines.len() - limit);
-    }
-    lines
+    tail_lines(&path, limit, false)
 }
 
 /// Truncate a file to empty (the clear primitive). No-ops on a missing file.
@@ -271,6 +283,26 @@ mod tests {
         let pid = std::process::id();
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         std::env::temp_dir().join(format!("log-{name}-{pid}-{nanos}.log"))
+    }
+
+    #[test]
+    fn tail_lines_orders_and_limits_and_filters_blanks() {
+        let path = tmp("tail");
+        // A blank line between b and c must be filtered out by both orderings.
+        std::fs::write(&path, b"a\nb\n\nc\nd\n").unwrap();
+
+        // newest-first: the newest `limit`, reversed.
+        assert_eq!(tail_lines(&path, 2, true), vec!["d".to_string(), "c".to_string()]);
+        // oldest-first: the newest `limit`, in chronological order.
+        assert_eq!(tail_lines(&path, 2, false), vec!["c".to_string(), "d".to_string()]);
+        // limit beyond length returns everything (blank dropped), in each order.
+        assert_eq!(tail_lines(&path, 10, false), vec!["a", "b", "c", "d"]);
+        assert_eq!(tail_lines(&path, 10, true), vec!["d", "c", "b", "a"]);
+
+        let _ = std::fs::remove_file(&path);
+        // Missing file → empty, never a panic.
+        assert!(tail_lines(&path, 5, true).is_empty());
+        assert!(tail_lines(&path, 5, false).is_empty());
     }
 
     #[test]
