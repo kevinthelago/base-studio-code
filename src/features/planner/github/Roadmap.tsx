@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { githubRequest } from "@/features/github/lib/github";
+import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
@@ -47,13 +48,9 @@ function BurnDown({ open, closed }: { open: number; closed: number }) {
 
 export function Roadmap() {
   const {
-    githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
   } = useAppStore();
 
-  const [milestones, setMilestones] = useState<GhMilestone[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // Filters: time window (clamps the Gantt so milestones aren't spread across the
   // project's whole history) and milestone state.
   const [windowWeeks, setWindowWeeks] = useState<number | null>(DEFAULT_WINDOW_WEEKS);
@@ -62,17 +59,14 @@ export function Roadmap() {
   // Use the primary repo; fall back to any repo derived from board items.
   const effectiveRepo = activeProjectRepo || activeProjectRepos[0] || "";
 
-  useEffect(() => {
-    if (!githubToken || !effectiveRepo) return;
-    setLoading(true);
-    setError(null);
-    githubRequest<GhMilestone[]>(
+  const { data, loading, error } = useGithubQuery<GhMilestone[]>(
+    () => githubRequest<GhMilestone[]>(
       `repos/${effectiveRepo}/milestones?state=all&per_page=20&sort=due_on&direction=asc`,
-    )
-      .then(data => setMilestones(Array.isArray(data) ? data : []))
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [githubToken, effectiveRepo]);
+    ),
+    [effectiveRepo],
+    !!effectiveRepo,
+  );
+  const milestones = Array.isArray(data) ? data : [];
 
   const project: ActiveProjectInfo = {
     id: activeProjectId ?? "",
