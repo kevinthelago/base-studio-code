@@ -7,6 +7,7 @@
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import {
@@ -105,7 +106,7 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
     if (tab !== "activity") return;
     let cancelled = false;
     const load = async () => {
-      const lines = await invoke<string[]>("read_audit_log", { limit: 300 }).catch(() => [] as string[]);
+      const lines = await safeInvoke<string[]>("read_audit_log", { limit: 300 }, []);
       const records = parseAuditLog(lines.join("\n"));
       const rows = records.map((rec): AuditDisplayRow => {
         const profileId = paneProfiles[rec.pane] ?? "";
