@@ -287,27 +287,54 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
     })
 }
 
-/// Persist the canonical Data Model as `datamodel.json` in the project hub.
-///
-/// Shape: `{ "model": <DataModel>, "refined": <bool> }`.
-/// `refined` is false on first inference; true once the user confirms/refines it in the pane.
+/// Persist the canonical Data Model into the project's DuckDB store (#1446) — the metadata table,
+/// colocated with the loaded data. `refined` is false on first inference; true once the user
+/// confirms/refines it in the pane. (Replaced the legacy `datamodel.json` file.)
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_persist_model(project_key: String, model: DataModel, refined: bool) -> Result<(), String> {
-    #[derive(serde::Serialize)]
-    struct Artifact<'a> {
-        model: &'a DataModel,
-        refined: bool,
-    }
-    let artifact = Artifact { model: &model, refined };
-    let json = serde_json::to_string_pretty(&artifact).map_err(|e| e.to_string())?;
-    let path = crate::project_dir(&project_key).join("datamodel.json");
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p).map_err(|e| format!("data_persist_model: {e}"))?;
-    }
-    std::fs::write(&path, json).map_err(|e| format!("data_persist_model: {e}"))?;
-    log::info!("data_persist_model({project_key}): wrote datamodel.json (refined={refined})");
+    let db = store_path(&project_key).map_err(|e| format!("data_persist_model: {e}"))?;
+    bsc_data::MetaStore::open(&db)
+        .and_then(|s| s.set_model(&model, refined))
+        .map_err(|e| format!("data_persist_model: {e}"))?;
+    log::info!("data_persist_model({project_key}): wrote Data Model to {db:?} (refined={refined})");
     Ok(())
+}
+
+/// The persisted canonical Data Model for a project (from its DuckDB store), or null when none.
+/// Shape: `{ "model": <DataModel>, "refined": <bool> }`. The model pane reads this; the planner
+/// reads it via the `bsc-data` CLI (#1446). Never CREATES the store on a read.
+#[cfg(feature = "source-stage")]
+#[tauri::command]
+pub fn data_get_model(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    let db = store_path(&project_key).map_err(|e| format!("data_get_model: {e}"))?;
+    if !db.exists() {
+        return Ok(None);
+    }
+    let store = bsc_data::MetaStore::open(&db).map_err(|e| format!("data_get_model: {e}"))?;
+    match store.get_model().map_err(|e| format!("data_get_model: {e}"))? {
+        Some((model, refined)) => Ok(Some(serde_json::json!({ "model": model, "refined": refined }))),
+        None => Ok(None),
+    }
+}
+
+/// Persist a source scan's captured behavior layer (`PlatformScan`) into the project's DuckDB store
+/// (#1446/#786) so the planner can read the Platform Behavior Summary via `bsc-data scan get`.
+/// Best-effort: a persist failure logs but never fails the scan.
+#[cfg(feature = "source-stage")]
+fn persist_scan(project_key: &str, scan: &bsc_data::PlatformScan) {
+    if scan.is_empty() {
+        return;
+    }
+    let result = (|| -> Result<std::path::PathBuf, String> {
+        let db = store_path(project_key).map_err(|e| e.to_string())?;
+        bsc_data::MetaStore::open(&db).and_then(|s| s.set_scan(scan)).map_err(|e| e.to_string())?;
+        Ok(db)
+    })();
+    match result {
+        Ok(db) => log::info!("persist_scan({project_key}): wrote PlatformScan to {db:?}"),
+        Err(e) => log::warn!("persist_scan({project_key}): {e}"),
+    }
 }
 
 /// Load the reconciled canonical data artifact into the project's DuckDB store.
@@ -589,7 +616,7 @@ pub fn data_platform_scan(
             .ok_or_else(|| format!("no stored credential for {connector_id}"))?,
         None => String::new(),
     };
-    match connector_id.as_str() {
+    let result = match connector_id.as_str() {
         "sap-odata" => scan_odata(&fields, &secret),
         "quickbase" => scan_quickbase(QUICKBASE_API, &fields, &secret),
         // OAuth connectors: `secret` is the keychain access token; instance metadata
@@ -602,7 +629,10 @@ pub fn data_platform_scan(
         // FHIR is `auth: Open` (no keychain secret) — its base URL arrives via `fields`.
         "fhir" => scan_fhir(&fields),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
-    }
+    }?;
+    // Persist the captured behavior layer so the planner can read it via `bsc-data scan get` (#786).
+    persist_scan(&project, &result.platform);
+    Ok(result)
 }
 
 /// Which keychain field holds a runtime preset's secret, keyed by its declared auth method (#1235).

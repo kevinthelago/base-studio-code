@@ -137,7 +137,7 @@ export const PLAN_STAGES: Stage[] = [
     label: "Source",
     description: "Migration source — inventory it, infer the data model, confirm the schema",
     optional: true,
-    hasOutputFile: true,  // datamodel.json
+    hasOutputFile: false,  // the Data Model lives in the project's DuckDB store now (#1446), not a file
     dependsOn: ["context", "repos"],
     defaultEnabled: true,
     // Only applicable when the project has an active data migration source pipeline.

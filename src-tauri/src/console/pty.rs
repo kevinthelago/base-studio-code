@@ -7,7 +7,7 @@ use crate::{
 };
 use crate::bsc::{
     BSC_CHECKPOINT_RC, BSC_DECISIONS_RC, BSC_AUDIT_RC, BSC_SKILL_RC, BSC_HOOK_RC, BSC_MCP_RC,
-    BSC_TOKENS_RC, BSC_ACTIVITY_RC, BSC_DONE_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC, BSC_LEARNED_RC,
+    BSC_TOKENS_RC, BSC_ACTIVITY_RC, BSC_DONE_RC, BSC_CONFINE_RC, BSC_SCOPE_RC, BSC_TAINT_RC, BSC_COORD_EMIT_RC, BSC_DEFER_RC, BSC_FLEET_RC, BSC_PLAN_RC, BSC_DATA_RC, BSC_LEARNED_RC,
 };
 use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -270,6 +270,19 @@ fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(projects_root.join(key).join("plan.db"))
 }
 
+/// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
+/// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc-data`
+/// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
+fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let projects_root = bsc_base_dir().join("projects");
+    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
+    let key = rel.components().next()?.as_os_str().to_string_lossy().into_owned();
+    Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
+}
+
 /// The absolute path of the `bsc-plan` CLI — the binary sitting beside the running app exe (the
 /// cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there (#plan-db).
 /// Exposed to sessions as `$BSC_PLAN_BIN` for the `bsc-plan` shell helper to exec — no PATH change.
@@ -295,6 +308,14 @@ fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
 /// change — same pattern as `$BSC_PLAN_BIN` / `$BSC_AGENT_BIN`.
 fn bsc_skill_bin_path() -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { "bsc-skill.exe" } else { "bsc-skill" };
+    let p = std::env::current_exe().ok()?.with_file_name(exe);
+    p.exists().then_some(p)
+}
+
+/// The absolute path of the bundled `bsc-data` CLI beside the app exe — the planner's accessor to
+/// the per-project Data Model + PlatformScan store (#1446), or None if absent.
+fn bsc_data_bin_path() -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { "bsc-data.exe" } else { "bsc-data" };
     let p = std::env::current_exe().ok()?.with_file_name(exe);
     p.exists().then_some(p)
 }
@@ -484,7 +505,7 @@ pub(crate) async fn pty_create(
         cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
     }
     let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_DONE_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_LEARNED_RC}"));
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_DONE_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_DATA_RC}{BSC_LEARNED_RC}"));
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
@@ -560,6 +581,15 @@ pub(crate) async fn pty_create(
     cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
     if let Some(bin) = bsc_skill_bin_path() {
         cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
+    // PlatformScan the planner reads at the UI-kickoff stage via the `bsc-data` CLI. $BSC_DATA_DB is
+    // the project's .duckdb (cwd-derived, like BSC_PLAN_DB); $BSC_DATA_BIN the CLI the shell helper execs.
+    if let Some(db) = data_db_for_cwd(&cwd) {
+        cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    if let Some(bin) = bsc_data_bin_path() {
+        cmd.env("BSC_DATA_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
