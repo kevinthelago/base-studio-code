@@ -1,0 +1,19 @@
+[package]
+name = "logs"
+version = "0.1.0"
+edition = "2021"
+description = "Unified log-query engine for base-studio-code (#1607) — reads the app's per-session event streams (tools/skills/mcp/hooks/cost/coord/activity) and powers the `bsc-logs` CLI + the desktop observability commands."
+
+# The core engine (no Tauri) so the CLI + the desktop app share one reader.
+[lib]
+name = "logs"
+
+# The session-facing CLI: drill into any console session's logs from its own shell
+# (#1325). Reads ~/.base-studio-code/*.log (BSC_LOG_DIR overrides).
+[[bin]]
+name = "bsc-logs"
+path = "src/bin/bsc-logs.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
