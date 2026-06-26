@@ -12,7 +12,7 @@
 // shared with the standalone Deploy stage), so there's no header gate/ship pill (#1403).
 
 import { useState } from "react";
-import { type DeployConfig, type DeployService } from "../shared/deployConfig";
+import { type DeployConfig, type DeployService } from "../lib/deployConfig";
 import { RepoDeployCard } from "./DeployView";
 import type { Repo } from "../pane/projectPane.types";
 

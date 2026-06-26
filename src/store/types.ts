@@ -18,12 +18,12 @@ import type { Topology } from "@/features/planner/relationship/relationshipGraph
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
 import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintSection } from "@/features/planner/stages/blueprints";
-import type { DeployConfig } from "@/features/planner/shared/deployConfig";
-import type { SourceConfig } from "@/features/planner/shared/sourceConfig";
-import type { IntegrationConfig } from "@/features/planner/shared/integrationConfig";
+import type { DeployConfig } from "@/features/planner/lib/deployConfig";
+import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
+import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
 import type { DataModel } from "@/features/planner/data/dataModel";
 import type { TunnelSlice } from "@/features/tunnel/store";
-import type { DirectorMode, IntegrationStrategy } from "@/features/planner/shared/integrationStrategy";
+import type { DirectorMode, IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 import type { McpSlice } from "@/features/mcp/store";
 import type { SkillsSlice } from "@/features/skills/store";

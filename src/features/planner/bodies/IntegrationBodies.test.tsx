@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppStore } from "@/store";
-import { destinationDefined, syncDefined } from "../shared/integrationConfig";
+import { destinationDefined, syncDefined } from "../lib/integrationConfig";
 import { FocusedDestinationBody, FocusedSyncBody } from "./IntegrationBodies";
 
 beforeEach(() => useAppStore.setState({ planIntegrationConfig: {} }));

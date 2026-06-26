@@ -1,74 +1,42 @@
 # Release handoff — maintainer checklist
 
-Most of the release CI is already committed and wired. The remaining steps are:
-1. **Step 0** — apply the `release.yml` workflow change (requires `workflow` scope on your token)
+base-studio-code currently ships **unsigned** installers on every platform
+(v1.0.0–v1.0.4 were all released unsigned). This checklist is what a maintainer does
+to **enable code-signing on a future release** — none of it is required to cut an
+(unsigned) build. The steps are:
+1. **Step 0** — wire the Windows signing step in `release.yml` (not yet applied; requires `workflow` scope on your token)
 2. **Steps 1–2** — procurement: obtain signing credentials and add them as GitHub secrets
-3. **Step 3** — push the `v1.0.0` tag to trigger the release build
+3. **Step 3** — tag the release to trigger the build
 
 > **Detailed procurement steps:** `docs/release-signing.md`
 
 ---
 
-## Step 0 — Apply the workflow change (one-time, requires `workflow` scope)
+## Step 0 — Wire the Windows signing step (one-time, requires `workflow` scope)
 
-The workflow diff below could not be pushed by the automated token (GitHub requires
-`workflow` scope to write `.github/workflows/`). Apply it manually with your personal
-token or via the GitHub web editor, then commit directly to `develop`:
+Windows signing is **not wired yet**: `tauri.conf.json`'s `bundle.windows` is empty
+(`{}`), so nothing signs the `.exe`/`.msi` today. Two pieces are staged but not
+connected — a commented-out `azure/trusted-signing-action` block in `release.yml`
+(already scoped to the `windows-2022` leg) and `scripts/sign-windows.ps1`, a shim
+that exits 0 when `AZURE_CLIENT_ID` is absent. Pick **one** approach and apply it.
+Writing `.github/workflows/` needs a token with `workflow` scope (the automated token
+can't push it), so apply manually with your PAT or the GitHub web editor, then commit
+to `develop`:
 
-```diff
---- a/.github/workflows/release.yml
-+++ b/.github/workflows/release.yml
-@@ after the "Install frontend dependencies" step, before "Build and release" @@
--      # WINDOWS-SIGNING (enable post-procurement, #108): once the Azure Trusted
--      # Signing secrets exist and tauri.conf.json has `bundle.windows.signCommand`,
--      # uncomment to sign the .exe/.msi during bundling. Kept disabled so unsigned
--      # CI builds don't fail for a missing cert. See docs/release-signing.md.
--      # - name: Azure Trusted Signing (Windows)
--      #   if: matrix.platform == 'windows-latest'
--      #   uses: azure/trusted-signing-action@v0
--      #   with:
--      #     azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
--      #     azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
--      #     azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
--      #     endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
--      #     trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
--      #     certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
-+      # Windows signing (#108): scripts/sign-windows.ps1 is called by
-+      # bundle.windows.signCommand (tauri.conf.json). The script exits 0 when
-+      # AZURE_CLIENT_ID is absent, so unsigned builds pass. The CLI is only
-+      # installed when the secret is present — signing auto-activates on
-+      # procurement, no code change required. See docs/release-signing.md.
-+      - name: Install Trusted Signing CLI (Windows)
-+        if: matrix.platform == 'windows-latest' && secrets.AZURE_CLIENT_ID != ''
-+        run: dotnet tool install --global trusted-signing-cli
+- **A — `signCommand` shim:** set `bundle.windows.signCommand` in `tauri.conf.json` to
+  invoke `scripts/sign-windows.ps1`; in `release.yml`'s `windows-2022` leg add a step
+  `dotnet tool install --global trusted-signing-cli` guarded by
+  `secrets.AZURE_CLIENT_ID != ''`, and pass the six `AZURE_*` / `TRUSTED_SIGNING_*`
+  secrets through the build step's `env:`.
+- **B — Azure action:** uncomment the existing `azure/trusted-signing-action@v0` block
+  in `release.yml` and supply the same six secrets.
 
-@@ in the "Build and release" step's env: block, after APPLE_SIGNING_IDENTITY @@
-+          # Windows signing (#108) — passed to sign-windows.ps1 via signCommand.
-+          # Empty when secrets are absent; the script exits 0 in that case.
-+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
-+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
-+          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+Either way, also update the `releaseBody` to note the build is unsigned until the
+secrets are present (Windows SmartScreen → **More info → Run anyway**).
 
-@@ in the releaseBody, replace the existing macOS note @@
--            > **macOS:** the app is currently unsigned/un-notarized. After dragging it
--            > to Applications, clear the download quarantine once:
-+            > **macOS:** this build is unsigned/un-notarized. After dragging to
-+            > Applications, clear the quarantine once:
-             > `xattr -cr /Applications/base-studio-code.app`
-+            >
-+            > **Windows:** this build is unsigned. SmartScreen may warn on first
-+            > run — click **More info → Run anyway**.
-+            >
-+            > Signed releases follow when signing certs are provisioned (#108/#119).
-```
-
-> **Note:** `scripts/sign-windows.ps1` and `tauri.conf.json`'s `signCommand` are
-> already on `develop`. The macOS ad-hoc signing (`APPLE_SIGNING_IDENTITY: '-'`)
-> is preserved — do NOT add `APPLE_CERTIFICATE` without all six APPLE_* secrets
-> present, or the build hard-fails (see the comment block in `release.yml`).
+> **Note:** the macOS ad-hoc signing (`APPLE_SIGNING_IDENTITY: '-'`) is preserved — do
+> NOT add `APPLE_CERTIFICATE` without all six `APPLE_*` secrets present, or the build
+> hard-fails (see the comment block in `release.yml`).
 
 ---
 
@@ -114,7 +82,7 @@ Populate these six GitHub secrets:
 - [ ] Identity validation complete (org ≥ 3 years, or individual path)
 - [ ] Service principal created with Trusted Signing Certificate Profile Signer role
 
-Once Step 0 is applied and all six secrets are added, the `windows-latest` CI leg:
+Once Step 0 is applied and all six secrets are added, the `windows-2022` CI leg:
 1. Installs `trusted-signing-cli` automatically
 2. Signs each `.exe` and `.msi` via `scripts/sign-windows.ps1` during bundling
 
@@ -124,8 +92,8 @@ Once Step 0 is applied and all six secrets are added, the `windows-latest` CI le
 
 ```bash
 git pull origin develop
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z          # the version in package.json / tauri.conf.json
+git push origin vX.Y.Z
 ```
 
 The `release.yml` workflow triggers on `v*` tags and builds installers for all

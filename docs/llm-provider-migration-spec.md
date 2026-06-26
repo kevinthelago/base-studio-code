@@ -9,7 +9,7 @@ The app consumes Claude Code through *contracts*, not a single API:
 - the telemetry log files — `audit.log` / `coord.log` / `tokens.log` / `mcp.log` (`~/.base-studio-code/`),
 - the **transcript** JSONL schema that `tokens.rs` parses for cost accounting,
 - the **context files** (`CLAUDE.md` / `CLAUDE.local.md`),
-- the **role / permission** model (`src/lib/session/sessionRoles.ts`),
+- the **role / permission** model (`src/shared/lib/session/sessionRoles.ts`),
 - MCP config (`.mcp.json`).
 
 If our runtime **emits those same contracts**, every existing reader and UI keeps working unchanged. So the migration builds a producer we own, makes it satisfy the contracts, and switches the producer per session behind an adapter. **Claude Code stays the default until parity.**
@@ -32,7 +32,7 @@ A standalone, **Tauri-free** crate so any binary can depend on it. Normalizes pr
 
 Providers: `anthropic`, `openai`, `gemini`, `local`. Selection + per-provider keys + model + local base URL are configured in **Settings → Integrations**.
 
-### 2. `HarnessAdapter` (runtime tier) — `src-tauri/src/harness/`
+### 2. `HarnessAdapter` (runtime tier) — `src-tauri/src/agent/harness.rs`
 Abstracts how a session runtime is launched and set up, so `pty_create` doesn't hardcode `claude`. Methods (extracted incrementally — launch + pre-launch done):
 
 `detect_history` · `launch_command` · `model_flag` · `shell_fn` · `is_harness_launch` · `prepare_config` · `trust_dir` · *(config/telemetry/usage methods co-evolve with the bsc-agent adapter)*.
