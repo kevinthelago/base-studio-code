@@ -263,6 +263,17 @@ pub(crate) const BSC_LOGS_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-compliance` shell helper (#1718) — execs the bundled compliance standards-store CLI
+/// ($BSC_COMPLIANCE_BIN) so a live session can query (and refresh) the WCAG/GDPR/CCPA/SOC2/…
+/// corpus the planner bakes into plans — the same projections as the `bsc-compliance-mcp` server,
+/// plus the write side (upsert/remove/reseed). The store it reads is $BSC_COMPLIANCE_STORE (set
+/// per-session). Mirrors the `bsc-plan`/`bsc-data`/`bsc-logs` sidecar-helper shape exactly (SQLite,
+/// so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
+pub(crate) const BSC_COMPLIANCE_RC: &str = concat!(
+    r#"bsc-compliance() { if [ -n "${BSC_COMPLIANCE_BIN:-}" ] && [ ! -s "$BSC_COMPLIANCE_BIN" ]; then echo "bsc-compliance: BSC_COMPLIANCE_BIN ($BSC_COMPLIANCE_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_COMPLIANCE_BIN:-bsc-compliance}" "$@"; }"#,
+    "\n",
+);
+
 /// The `bsc-blueprint` shell helper (#1719) — execs the bundled user-blueprint-store CLI
 /// ($BSC_BLUEPRINT_BIN); a live session lists/gets/sets/removes the user blueprint library
 /// (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
@@ -311,6 +322,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_PLAN_RC,
     BSC_DATA_RC,
     BSC_LOGS_RC,
+    BSC_COMPLIANCE_RC,
     BSC_BLUEPRINT_RC,
     BSC_LEARNED_RC,
 ];
