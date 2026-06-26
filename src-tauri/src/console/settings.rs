@@ -103,11 +103,7 @@ pub(crate) fn write_session_settings(
     let root = std::path::PathBuf::from(cwd);
     let settings_path = root.join(".claude").join("settings.json");
 
-    let mut config: serde_json::Value = std::fs::read_to_string(&settings_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !config.is_object() { config = serde_json::json!({}); }
+    let mut config = crate::platform::fsx::read_json_object_or_default(&settings_path);
 
     // Allow. Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved
     // command must be an explicit `Bash(<cmd> *)` rule — so the session's shell posture
@@ -203,10 +199,7 @@ pub(crate) fn write_session_settings(
     }
 
     std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
-    std::fs::write(
-        &settings_path,
-        serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
-    ).map_err(|e| e.to_string())?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &config).map_err(|e| e.to_string())?;
     write_mcp_json(&root, mcp_servers)?;
     write_session_skills(&root, skills)?;
     git_exclude(&root, ".claude/");
@@ -218,7 +211,7 @@ pub(crate) fn write_session_settings(
 pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, rules: &[String]) {
     let obj = config.as_object_mut().unwrap();
     let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
-    if !permissions.is_object() { *permissions = serde_json::json!({}); }
+    crate::platform::fsx::ensure_object(permissions);
     let perm_obj = permissions.as_object_mut().unwrap();
     let list = perm_obj.entry(key).or_insert_with(|| serde_json::json!([]));
     if !list.is_array() { *list = serde_json::json!([]); }
