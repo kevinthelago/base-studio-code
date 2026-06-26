@@ -125,12 +125,14 @@ For each repo `{short}`:
    Drive each feature down to this level (behavior + acceptance, approach, tools,
    files) before moving to the next, the same way the feature workshop does —
    these sections ARE that workshop's per-repo output.
-3. **Record the repo's toolchain commands** the moment you decide its stack — its
+3. **Note the repo's toolchain commands** the moment you decide its stack — its
    build, test, run, and package-manager binaries (e.g. `cargo`, `npm`, `pnpm`,
-   `pytest`, `docker`). Add them under that repo in `commands.json` and emit the
-   `<allow_command>` tag (see "App integration tags"). Required, not optional, and
-   don't just mention them in prose: without it the repo's console/triage sessions
-   block on a permission prompt for every command. `gh`/`git` are always allowed.
+   `pytest`, `docker`) plus any project-specific tool a worker runs unattended. Carry
+   them onto the owning stream's `commands` in the fleet plan (`bsc-plan fleet set` —
+   see "Allow shell commands"). A safe baseline (read-only inspection + common build
+   toolchains) is always allowed, so `commands` only needs the extras; `gh`/`git` are
+   always allowed. Required for anything outside the baseline — without it the worker
+   blocks on a permission prompt for that command.
 4. **Write two starting scripts** into `prompts/` — these are the first messages
    future Claude sessions in that repo receive, so write them as direct
    instructions addressed to that session (not notes about it):
@@ -259,17 +261,18 @@ files and rarely need a human.
      "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
      "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
      "streams": [
-       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"prompt":"prompts/auth-ui-kickoff.md"},
-       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"prompt":"prompts/api-client-kickoff.md"}
+       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md"},
+       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"commands":["cargo"],"prompt":"prompts/api-client-kickoff.md"}
      ]
    }
    ```
-   Each stream may also carry **`"profile"`** — an AgentProfile id that scopes its
-   session's auto-approved commands, per-tool permissions, and write-paths (least
-   privilege, layered on top of the role). After the commands step has discovered the
-   project's toolchain, either reuse an existing profile or, in the fleet card, click
-   **Generate least-privilege profiles** to derive one per agent from its role + `owns`
-   + the project's commands; set each stream's `"profile"` field to assign one.
+   Each stream's **`"commands"`** is the shell toolchain its worker auto-runs without a
+   prompt (see "Allow shell commands"). A stream may also carry **`"profile"`** — an
+   AgentProfile id that scopes its session's auto-approved commands, per-tool permissions,
+   and write-paths (least privilege, layered on top of the role). Either reuse an existing
+   profile or, in the fleet card, click **Generate least-privilege profiles** to derive one
+   per agent from its role + `owns` + its `commands`; set each stream's `"profile"` field
+   to assign one.
    A stream may also carry **`"assignee"`** — a GitHub login the stream's issues are
    assigned to at publish (#847). A worker is an agent session, not a GitHub user, so this
    maps the stream to a human/collaborator login; omit it and the issues default to the
@@ -392,8 +395,8 @@ and `risks` apply to almost every project.
   scope** (explicit exclusions that prevent scope creep).
 - `stack` **(gate-required)** — one line per layer (runtime, framework, datastore, auth,
   hosting) with versions and a justification for non-obvious picks. As soon as the
-  toolchain is decided, record its build/test/run/package binaries in
-  `commands.json` and emit `<allow_command>` (see "App integration tags").
+  toolchain is decided, note its build/test/run/package binaries so the fleet's streams
+  grant them on their `commands` (see "Allow shell commands").
 - `architecture` **(gate-required)** — named components + a one-sentence responsibility each,
   how they communicate, and the 2–3 key cross-component flows. For a multi-repo
   project, say which repo owns what.
@@ -698,23 +701,18 @@ The app auto-assigns it so that repo's future sessions launch with it:
 <startup_script repo="owner/repo" mode="triage" path="prompts/web-triage.md" />
 ```
 
-**Allow shell commands** so the repo's future console/triage sessions run them
-without a permission prompt — the stack's build, test, run, and package-manager
-binaries (e.g. `cargo`, `npm`, `pnpm`, `pytest`, `docker`). `gh`/`git` are always
-allowed, so don't list them. Use BOTH channels — the file is authoritative:
-
-- **Write `commands.json`** in this directory — the reliable channel the app
-  polls (an inline tag in the chat stream can be missed). Project-wide commands
-  under `project`, per-repo under `repos` keyed by full_name. Overwrite the whole
-  file as the stack firms up:
-  ```
-  {"project":["cargo"],"repos":{"owner/web":["npm","pnpm"],"owner/api":["pytest"]}}
-  ```
-- **Inline tag** (fast path; omit `repo` for project scope):
-  ```
-  <allow_command cmd="cargo" />
-  <allow_command repo="owner/repo" cmd="npm" />
-  ```
+**Grant each stream its shell commands** so its worker runs them without a permission
+prompt — the stack's build, test, run, and package-manager binaries (e.g. `cargo`,
+`npm`, `pnpm`, `pytest`, `docker`) plus any project-specific tool the stream runs
+unattended (`wasm-pack`, a repo script, …). Set them on the stream's **`commands`**
+array in the fleet plan (`bsc-plan fleet set` — see "Plan the agent fleet"); they become
+that worker's auto-approved `Bash(<cmd> *)` rules at launch. A safe baseline is ALWAYS
+allowed — read-only inspection (`ls`/`cat`/`grep`/`find`/`cd`/…) for every agent, and the
+common build toolchains for doer (worker) streams — so `commands` only needs the
+project-specific extras. `gh`/`git`/`bsc-plan` are always allowed; don't list them.
+**Required, not optional**, for anything outside that baseline: without it the worker
+blocks on a permission prompt for that command. (There is no `commands.json` file or
+`<allow_command>` tag — those were retired; the stream's `commands` is the only channel.)
 
 **Declare the agent fleet** (the parallel-execution plan). `bsc-plan fleet set` (see
 "Plan the agent fleet") is the authoritative channel; these tags are the fast path that
