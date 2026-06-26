@@ -2,54 +2,8 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
-
-// ── Reusable atoms ─────────────────────────────────────────────────────────────
-
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <span
-      onClick={onToggle}
-      style={{
-        display: "inline-flex", alignItems: "center",
-        width: 32, height: 18, borderRadius: 99, cursor: "pointer",
-        background: on ? "var(--accent)" : "var(--bg-elev2)",
-        border: "1px solid " + (on ? "transparent" : "var(--border)"),
-        transition: "background 0.15s",
-        flex: "0 0 auto",
-      }}
-    >
-      <span style={{
-        width: 12, height: 12, borderRadius: "50%",
-        background: on ? "#1a120a" : "var(--fg-dim)",
-        marginLeft: on ? "auto" : 2,
-        marginRight: on ? 2 : "auto",
-        transition: "margin 0.15s",
-      }} />
-    </span>
-  );
-}
-
-function ConfirmButton({ label, armedLabel, onConfirm, danger = true }: {
-  label: string; armedLabel: string; onConfirm: () => void | Promise<void>; danger?: boolean;
-}) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <button
-      onClick={() => { if (armed) { setArmed(false); void onConfirm(); } else { setArmed(true); } }}
-      onBlur={() => setArmed(false)}
-      style={{
-        alignSelf: "flex-start",
-        padding: "8px 14px", borderRadius: 6, cursor: "pointer",
-        fontFamily: "var(--mono)", fontSize: 11.5,
-        background: armed && danger ? "var(--danger)" : "var(--bg-elev)",
-        color: armed && danger ? "var(--bg-canvas)" : danger ? "var(--danger)" : "var(--fg)",
-        border: "1px solid " + (armed && danger
-          ? "var(--danger)"
-          : danger ? "color-mix(in oklch, var(--danger), transparent 55%)" : "var(--border)"),
-      }}
-    >{armed ? armedLabel : label}</button>
-  );
-}
+import { Toggle } from "@/shared/ui/Toggle";
+import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -129,7 +83,7 @@ export function PerformanceSettings() {
           label="Enable metrics collection"
           hint="Disabling stops sampling and stops writing new rows; existing history is kept."
         >
-          <Toggle on={perfConfig.enabled} onToggle={() => update({ enabled: !perfConfig.enabled })} />
+          <Toggle on={perfConfig.enabled} onClick={() => update({ enabled: !perfConfig.enabled })} />
         </Row>
 
         <Row
@@ -154,11 +108,11 @@ export function PerformanceSettings() {
         >
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-              <Toggle on={perfConfig.trackProcess} onToggle={() => update({ trackProcess: !perfConfig.trackProcess })} />
+              <Toggle on={perfConfig.trackProcess} onClick={() => update({ trackProcess: !perfConfig.trackProcess })} />
               Process
             </label>
             <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-              <Toggle on={perfConfig.trackFrontend} onToggle={() => update({ trackFrontend: !perfConfig.trackFrontend })} />
+              <Toggle on={perfConfig.trackFrontend} onClick={() => update({ trackFrontend: !perfConfig.trackFrontend })} />
               Frontend
             </label>
           </div>
@@ -170,7 +124,7 @@ export function PerformanceSettings() {
           label="Reap idle background sessions"
           hint="Kill the PTY of an idle, non-visible project/planner session after the timeout to free memory. It shows a dormant placeholder and resumes (where it left off) on click — never destructive."
         >
-          <Toggle on={idleReaper.enabled} onToggle={() => setIdleReaperConfig({ enabled: !idleReaper.enabled })} />
+          <Toggle on={idleReaper.enabled} onClick={() => setIdleReaperConfig({ enabled: !idleReaper.enabled })} />
         </Row>
         <Row
           label="Idle timeout"
@@ -193,7 +147,7 @@ export function PerformanceSettings() {
         >
           <Toggle
             on={idleReaper.workerIdleMs !== null}
-            onToggle={() => setIdleReaperConfig({ workerIdleMs: idleReaper.workerIdleMs === null ? idleReaper.idleMs * 2 : null })}
+            onClick={() => setIdleReaperConfig({ workerIdleMs: idleReaper.workerIdleMs === null ? idleReaper.idleMs * 2 : null })}
           />
         </Row>
       </div>

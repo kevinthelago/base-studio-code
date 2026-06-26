@@ -44,3 +44,11 @@ export function hueFor(s: string): number {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
   return h;
 }
+
+/** Human-readable byte size: `0 B` / `1.5 KB` / `2.3 GB` / `1.1 TB`. */
+export function fmtBytes(n: number): string {
+  if (n <= 0) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+}
