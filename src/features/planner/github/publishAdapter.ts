@@ -7,7 +7,7 @@
 // The ops are ordered so each is creatable when its turn comes (project → phases →
 // labels → epics → dependencies). Free of React / xterm / Tauri imports.
 
-import { mapConcept, type CapabilityProfile } from "../grading/capabilityMapping";
+import { mapConcept, type CapabilityProfile } from "./capabilityMapping";
 import type { ExecutionStrategy } from "../fleet/executionTopology";
 
 export interface PublishInput {
