@@ -1,82 +1,82 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseSectionKey,
-  titleForKey,
-  orderProjectKeys,
-  groupSections,
+  parseTopicKey,
+  titleForTopic,
+  orderTopicKeys,
+  groupTopics,
   parseSkipped,
-  canonicalSectionKey,
+  canonicalTopicKey,
   KNOWN_DIMENSIONS,
   SKIPPED_KEY,
   FEATURES_KEY,
-} from "./planSections";
+} from "./planTopics";
 import { FLEET_KEY } from "../fleet/planFleet";
 
-describe("parseSectionKey", () => {
+describe("parseTopicKey", () => {
   it("treats a bare key as a project-tier section", () => {
-    expect(parseSectionKey("security")).toEqual({ tier: "project", repo: null, topic: "security" });
+    expect(parseTopicKey("security")).toEqual({ tier: "project", repo: null, topic: "security" });
   });
 
   it("decodes a repo-namespaced key into repo + topic", () => {
-    expect(parseSectionKey("repo__web__api")).toEqual({ tier: "repo", repo: "web", topic: "api" });
+    expect(parseTopicKey("repo__web__api")).toEqual({ tier: "repo", repo: "web", topic: "api" });
   });
 
   it("keeps multi-part topics intact after the repo segment", () => {
-    expect(parseSectionKey("repo__api__data_lifecycle")).toEqual({
+    expect(parseTopicKey("repo__api__data_lifecycle")).toEqual({
       tier: "repo", repo: "api", topic: "data_lifecycle",
     });
   });
 
   it("falls back to an overview topic when a repo key has no topic", () => {
-    expect(parseSectionKey("repo__web")).toEqual({ tier: "repo", repo: "web", topic: "overview" });
+    expect(parseTopicKey("repo__web")).toEqual({ tier: "repo", repo: "web", topic: "overview" });
   });
 
   it("does not treat a project key with underscores as a repo key", () => {
-    expect(parseSectionKey("data_lifecycle")).toEqual({
+    expect(parseTopicKey("data_lifecycle")).toEqual({
       tier: "project", repo: null, topic: "data_lifecycle",
     });
   });
 });
 
-describe("titleForKey", () => {
+describe("titleForTopic", () => {
   it("uses curated titles for known dimensions", () => {
-    expect(titleForKey("cicd")).toBe("CI/CD");
-    expect(titleForKey("api")).toBe("API & contracts");
-    expect(titleForKey("observability")).toBe("Observability & logging");
+    expect(titleForTopic("cicd")).toBe("CI/CD");
+    expect(titleForTopic("api")).toBe("API & contracts");
+    expect(titleForTopic("observability")).toBe("Observability & logging");
   });
 
   it("humanizes custom project topics", () => {
-    expect(titleForKey("feature_flags")).toBe("Feature Flags");
+    expect(titleForTopic("feature_flags")).toBe("Feature Flags");
   });
 
   it("applies acronym casing inside custom topics", () => {
-    expect(titleForKey("sql_tuning")).toBe("SQL Tuning");
+    expect(titleForTopic("sql_tuning")).toBe("SQL Tuning");
   });
 
   it("titles a repo-tier section by its topic", () => {
-    expect(titleForKey("repo__web__api")).toBe("API & contracts");
+    expect(titleForTopic("repo__web__api")).toBe("API & contracts");
   });
 
   it("labels the skipped record", () => {
-    expect(titleForKey(SKIPPED_KEY)).toBe("Considered & skipped");
+    expect(titleForTopic(SKIPPED_KEY)).toBe("Considered & skipped");
   });
 });
 
-describe("orderProjectKeys", () => {
+describe("orderTopicKeys", () => {
   it("orders known dimensions by the curated checklist regardless of input order", () => {
-    expect(orderProjectKeys(["phases", "goal", "stack"])).toEqual(["goal", "stack", "phases"]);
+    expect(orderTopicKeys(["phases", "goal", "stack"])).toEqual(["goal", "stack", "phases"]);
   });
 
   it("places custom keys after all known dimensions, alphabetically", () => {
-    const ordered = orderProjectKeys(["zeta_topic", "goal", "alpha_topic"]);
+    const ordered = orderTopicKeys(["zeta_topic", "goal", "alpha_topic"]);
     expect(ordered[0]).toBe("goal");
     expect(ordered.slice(1)).toEqual(["alpha_topic", "zeta_topic"]);
   });
 });
 
-describe("groupSections", () => {
+describe("groupTopics", () => {
   it("separates project-tier keys from per-repo groups", () => {
-    const { project, repos } = groupSections([
+    const { project, repos } = groupTopics([
       "goal", "repo__web__api", "security", "repo__web__testing", "repo__api__schema",
     ]);
     expect(project).toEqual(["goal", "security"]);
@@ -87,13 +87,13 @@ describe("groupSections", () => {
   });
 
   it("excludes the skipped record and the DB-owned config keys from both tiers", () => {
-    const { project, repos } = groupSections(["goal", SKIPPED_KEY, FLEET_KEY, FEATURES_KEY]);
+    const { project, repos } = groupTopics(["goal", SKIPPED_KEY, FLEET_KEY, FEATURES_KEY]);
     expect(project).toEqual(["goal"]);
     expect(repos).toEqual([]);
   });
 
   it("orders each repo's topics by the curated checklist", () => {
-    const { repos } = groupSections(["repo__web__phases", "repo__web__goal", "repo__web__api"]);
+    const { repos } = groupTopics(["repo__web__phases", "repo__web__goal", "repo__web__api"]);
     expect(repos[0].keys).toEqual(["repo__web__goal", "repo__web__api", "repo__web__phases"]);
   });
 });
@@ -138,29 +138,29 @@ describe("KNOWN_DIMENSIONS", () => {
   });
 });
 
-describe("canonicalSectionKey", () => {
+describe("canonicalTopicKey", () => {
   it("maps the display title (and casing/separator variants) back to the key — the stack.md fix", () => {
-    expect(canonicalSectionKey("Tech stack")).toBe("stack");
-    expect(canonicalSectionKey("Tech_stack")).toBe("stack");
-    expect(canonicalSectionKey("tech-stack")).toBe("stack");
-    expect(canonicalSectionKey("technology stack")).toBe("stack");
-    expect(canonicalSectionKey("techstack")).toBe("stack");
+    expect(canonicalTopicKey("Tech stack")).toBe("stack");
+    expect(canonicalTopicKey("Tech_stack")).toBe("stack");
+    expect(canonicalTopicKey("tech-stack")).toBe("stack");
+    expect(canonicalTopicKey("technology stack")).toBe("stack");
+    expect(canonicalTopicKey("techstack")).toBe("stack");
   });
   it("canonicalizes other core titles too", () => {
-    expect(canonicalSectionKey("Architecture")).toBe("architecture");
-    expect(canonicalSectionKey("Data model")).toBe("schema");
-    expect(canonicalSectionKey("Users & personas")).toBe("users");
+    expect(canonicalTopicKey("Architecture")).toBe("architecture");
+    expect(canonicalTopicKey("Data model")).toBe("schema");
+    expect(canonicalTopicKey("Users & personas")).toBe("users");
   });
   it("passes canonical keys and unknown custom topics through unchanged", () => {
-    expect(canonicalSectionKey("stack")).toBe("stack");
-    expect(canonicalSectionKey("goal")).toBe("goal");
-    expect(canonicalSectionKey("offline_sync")).toBe("offline_sync");
+    expect(canonicalTopicKey("stack")).toBe("stack");
+    expect(canonicalTopicKey("goal")).toBe("goal");
+    expect(canonicalTopicKey("offline_sync")).toBe("offline_sync");
   });
 });
 
-describe("groupSections excludes the fleet config", () => {
+describe("groupTopics excludes the fleet config", () => {
   it("does not surface the fleet key as a renderable section", () => {
-    const { project, repos } = groupSections(["goal", FLEET_KEY, "phases"]);
+    const { project, repos } = groupTopics(["goal", FLEET_KEY, "phases"]);
     expect(project).toEqual(["goal", "phases"]);
     expect(repos).toEqual([]);
   });

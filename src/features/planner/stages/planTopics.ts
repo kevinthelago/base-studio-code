@@ -70,7 +70,7 @@ const KEY_ALIASES: Record<string, string> = {
  * "Tech stack", "Tech_stack") back to its canonical key ("stack"). Canonical keys and unknown
  * custom topics pass through unchanged.
  */
-export function canonicalSectionKey(key: string): string {
+export function canonicalTopicKey(key: string): string {
   const raw = key.trim();
   if (TITLE_BY_KEY.has(raw)) return raw; // already canonical
   const norm = raw.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
@@ -93,7 +93,7 @@ function humanize(topic: string): string {
     .join(" ");
 }
 
-export interface SectionKeyInfo {
+export interface TopicKeyInfo {
   /** "project" for top-level plan sections, "repo" for a per-repo tier section. */
   tier: "project" | "repo";
   /** Short repo name for repo-tier sections; null for project-tier. */
@@ -110,7 +110,7 @@ export interface SectionKeyInfo {
  * → repo "web", topic "api". A repo key missing its topic falls back to
  * "overview".
  */
-export function parseSectionKey(key: string): SectionKeyInfo {
+export function parseTopicKey(key: string): TopicKeyInfo {
   if (key.startsWith(REPO_PREFIX)) {
     const rest = key.slice(REPO_PREFIX.length);
     const sep = rest.indexOf("__");
@@ -124,9 +124,9 @@ export function parseSectionKey(key: string): SectionKeyInfo {
 }
 
 /** Human-readable title for a section key, honoring the curated titles and acronyms. */
-export function titleForKey(key: string): string {
+export function titleForTopic(key: string): string {
   if (key === SKIPPED_KEY) return "Considered & skipped";
-  const { topic } = parseSectionKey(key);
+  const { topic } = parseTopicKey(key);
   return TITLE_BY_KEY.get(topic) ?? humanize(topic);
 }
 
@@ -135,7 +135,7 @@ export function titleForKey(key: string): string {
  * custom keys alphabetically. The `_skipped` record and repo-tier keys are not
  * expected here (callers filter them out first).
  */
-export function orderProjectKeys(keys: string[]): string[] {
+export function orderTopicKeys(keys: string[]): string[] {
   const rank = (k: string) => ORDER_BY_KEY.get(k) ?? KNOWN_DIMENSIONS.length;
   return [...keys].sort((a, b) => {
     const ra = rank(a), rb = rank(b);
@@ -148,7 +148,7 @@ export function orderProjectKeys(keys: string[]): string[] {
  * Project keys are ordered by the curated checklist; each repo's topics are
  * ordered the same way (by topic). The `_skipped` record is excluded from both.
  */
-export function groupSections(keys: string[]): {
+export function groupTopics(keys: string[]): {
   project: string[];
   repos: { repo: string; keys: string[] }[];
 } {
@@ -156,7 +156,7 @@ export function groupSections(keys: string[]): {
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
     if (key === SKIPPED_KEY || key === FLEET_KEY || key === FEATURES_KEY) continue;
-    const info = parseSectionKey(key);
+    const info = parseTopicKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
       list.push(key);
@@ -170,13 +170,13 @@ export function groupSections(keys: string[]): {
     .map(([repo, ks]) => ({
       repo,
       keys: [...ks].sort((a, b) => {
-        const ta = parseSectionKey(a).topic, tb = parseSectionKey(b).topic;
+        const ta = parseTopicKey(a).topic, tb = parseTopicKey(b).topic;
         const ra = ORDER_BY_KEY.get(ta) ?? KNOWN_DIMENSIONS.length;
         const rb = ORDER_BY_KEY.get(tb) ?? KNOWN_DIMENSIONS.length;
         return ra !== rb ? ra - rb : ta.localeCompare(tb);
       }),
     }));
-  return { project: orderProjectKeys(project), repos };
+  return { project: orderTopicKeys(project), repos };
 }
 
 export interface SkippedItem { topic: string; reason: string; }
