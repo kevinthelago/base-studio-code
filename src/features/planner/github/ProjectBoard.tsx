@@ -4,11 +4,13 @@ import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { reposFromItems } from "../list/projectScan";
-import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
+import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
+import { Avatar } from "@/shared/ui/Avatar";
+import { LabelChip } from "@/shared/ui/LabelChip";
+import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── GitHub data types ─────────────────────────────────────────────────────────
 
-interface GhLabel  { name: string; color: string }
 interface GhUser   { login: string }
 
 interface BoardIssue {
@@ -76,36 +78,6 @@ query($id: ID!) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function LabelChip({ label }: { label: GhLabel }) {
-  const color = `#${label.color}`;
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "1px 6px", borderRadius: 99,
-      fontFamily: "var(--mono)", fontSize: 9,
-      background: `${color}22`,
-      color,
-      border: `1px solid ${color}55`,
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color }} />
-      {label.name}
-    </span>
-  );
-}
-
-function Avatar({ login, size = 18, ml = 0 }: { login: string; size?: number; ml?: number }) {
-  return (
-    <span title={"@" + login} style={{
-      width: size, height: size, borderRadius: "50%",
-      background: avatarColor(login), color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.56,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      marginLeft: ml,
-      border: "1.5px solid var(--bg-canvas)",
-    }}>{login[0]?.toUpperCase() ?? "?"}</span>
-  );
-}
-
 function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: boolean; onClick?: () => void }) {
   return (
     <div
@@ -138,7 +110,7 @@ function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: b
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 1 }}>
         <div style={{ display: "flex" }}>
           {issue.assignees.length > 0
-            ? issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} ml={i === 0 ? 0 : -6} />)
+            ? issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={18} ml={i === 0 ? 0 : -6} palette bordered fontScale={0.56} />)
             : <span style={{
                 width: 18, height: 18, borderRadius: "50%",
                 border: "1px dashed var(--border)", color: "var(--fg-dim)",
@@ -251,7 +223,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {issue.assignees.map(a => (
                 <div key={a.login} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Avatar login={a.login} size={20} />
+                  <Avatar login={a.login} size={20} palette bordered fontScale={0.56} />
                   <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
                 </div>
               ))}
