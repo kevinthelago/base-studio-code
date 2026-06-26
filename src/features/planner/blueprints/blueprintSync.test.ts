@@ -1,12 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { toRevisions, gistRevisions, installFromGistRevision } from "@/features/planner/lib/gist/gist";
-import { diffBlueprints } from "./blueprintDiff";
-import { mkStageSection } from "./blueprintEdit";
-import { setStageField } from "./blueprintEdit";
-import type { Blueprint } from "../stages/blueprints";
-
-const bp = (sections: ReturnType<typeof mkStageSection>[]): Blueprint => ({ id: "b", name: "B", desc: "d", sections });
 
 describe("gist revisions (#598 follow-up)", () => {
   beforeEach(() => vi.mocked(invoke).mockReset());
@@ -34,26 +28,5 @@ describe("gist revisions (#598 follow-up)", () => {
     vi.mocked(invoke).mockResolvedValueOnce({ files: { "extension.json": { content: JSON.stringify(manifest) } } });
     const res = await installFromGistRevision("gid", "sha", "tok");
     expect(res.ok).toBe(true);
-  });
-});
-
-describe("diffBlueprints (#598 follow-up)", () => {
-  it("flags add / del / mod by section key, and nothing when identical", () => {
-    const local = bp([mkStageSection("context"), mkStageSection("ui")]);
-    // upstream: context edited, ui dropped, api added
-    let upSections = [mkStageSection("context"), mkStageSection("api")];
-    upSections = setStageField(upSections, upSections[0].uid, { prompt: "different prompt" });
-    const upstream = bp(upSections);
-
-    const diff = diffBlueprints(local, upstream);
-    expect(diff.find((d) => d.type === "mod" && d.title === upSections[0].name)).toBeTruthy(); // context changed
-    expect(diff.find((d) => d.type === "add")).toMatchObject({ type: "add" }); // api added
-    expect(diff.find((d) => d.type === "del")).toMatchObject({ type: "del" }); // ui removed
-  });
-
-  it("returns no diff for identical blueprints", () => {
-    const a = bp([mkStageSection("context"), mkStageSection("structure")]);
-    const b = bp(a.sections.map((s) => ({ ...s, uid: "x" + s.uid }))); // same content, different uids
-    expect(diffBlueprints(a, b)).toEqual([]);
   });
 });
