@@ -18,13 +18,13 @@ import {
   coordNotifications,
   buildProducerOf,
   producesFromPaneStreams,
-} from "./coordination";
-import { readCoordState } from "./useCoordLog";
+} from "@/shared/lib/fleet/coordination";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { usePoll } from "@/shared/hooks/usePoll";
 import type { SessionMeta } from "@/features/tunnel/lib/tunnel";
-import { injectWake } from "./coordinatorActuate";
+import { injectWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel/lib/tunnelClient";
-import { log } from "../core/log";
+import { log } from "@/shared/lib/core/log";
 
 const POLL_MS = 1000;  // snappy: a director answer should wake the worker within ~1s
 const FRESH_MS = 15 * 60 * 1000;

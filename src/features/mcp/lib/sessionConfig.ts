@@ -3,8 +3,8 @@
 // converted to the payload shapes `ensure_session_settings` writes into a session's
 // `.mcp.json` (servers) and `.claude/settings.json` (hooks).
 
-import { type McpServer, type McpServerPayload, toMcpPayload } from "@/features/mcp/lib/mcpServers";
-import { type Hook, type HookPayload, toHookPayload } from "@/features/mcp/lib/hooks";
+import { type McpServer, type McpServerPayload, toMcpPayload } from "./mcpServers";
+import { type Hook, type HookPayload, toHookPayload } from "./hooks";
 
 /** Resolved servers + hooks → the two backend payload lists, dropping incomplete entries. */
 export function toSessionPayloads(

@@ -17,7 +17,7 @@ import { applyMcpAssign } from "../lib/planExtensions";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { roleCapability, roleWriteRules, roleDeniedCommands } from "@/shared/lib/session/sessionRoles";
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
-import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
+import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { type Blueprint } from "../stages/blueprints";
 

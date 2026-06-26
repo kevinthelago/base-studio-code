@@ -17,6 +17,12 @@
 
 import { matchGlob, roleDeniedCommands, type RoleCapability } from "../session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
+// shared/ is feature-agnostic (#1626), but the warden's conformance check MUST mirror the launch
+// gate exactly, and the launch gate's push policy is derived by these two pure flow→permission
+// functions. They depend transitively on the planner's `agentFlow` (AgentFlow/resolveFlow), so
+// relocating them into shared would just pull the planner's flow domain along — disproportionate.
+// Deliberate, scoped exception (the only feature VALUE import left in shared/, see #1626).
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { flowGrantedPushCommands, flowPermissionRules } from "@/features/planner/fleet/flowPermissions";
 
 /** GitHub-propagation commands the flow governs (mirrors flowPermissions' PUSH_WRITE_RULES). */

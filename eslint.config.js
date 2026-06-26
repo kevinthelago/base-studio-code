@@ -28,5 +28,26 @@ export default tseslint.config(
       // correct + doing real work (the compiler isn't enabled at build). Warn, not error.
       "react-hooks/preserve-manual-memoization": "warn",
     },
+  },
+  {
+    // Architecture boundary (#1626): `shared/` is feature-agnostic — features import from shared,
+    // never the reverse. Forbid VALUE imports from `@/features/*` (and relative `**/features/*`)
+    // in shared runtime modules. `import type` stays allowed (a type dependency is erased at build
+    // and doesn't couple shared to feature runtime). Test files are exempt — they legitimately
+    // render/exercise feature code. The single deliberate exception (conformance.ts) carries an
+    // inline eslint-disable with its rationale.
+    files: ["src/shared/**/*.{ts,tsx}"],
+    ignores: ["src/shared/**/*.test.{ts,tsx}", "src/shared/**/*.spec.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["@/features/*", "@/features/**", "**/features/*", "**/features/**"],
+          allowTypeImports: true,
+          message:
+            "shared/ must stay feature-agnostic (#1626): do not import VALUE symbols from features. " +
+            "`import type` is allowed; otherwise move the module into its owning feature or app/.",
+        }],
+      }],
+    },
   }
 );
