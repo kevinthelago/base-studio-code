@@ -181,34 +181,18 @@ const REPO_PREFIX = "repo__";
  * documenting the ones that apply and recording the rest as skipped. Custom
  * topics Claude invents sort after these (alphabetically). The title is what the
  * section card shows.
+ *
+ * Single-sourced from the Discovery stage data (`src-tauri/prompts/stages/discovery.json`,
+ * its `dimensions` array) so the dimension vocabulary lives in ONE place — the same data
+ * file the planner prompt and gate read (#1591). Loaded directly via `import.meta.glob`
+ * (NOT through blueprints.ts `SECTION_DEFS`) to avoid a circular import.
  */
-export const KNOWN_DIMENSIONS: { key: string; title: string }[] = [
-  { key: "goal",           title: "Goal" },
-  { key: "users",          title: "Users & personas" },
-  { key: "scope",          title: "Scope" },
-  { key: "ux",             title: "UX & flows" },
-  { key: "stack",          title: "Tech stack" },
-  { key: "architecture",   title: "Architecture" },
-  { key: "schema",         title: "Data model" },
-  { key: "api",            title: "API & contracts" },
-  { key: "integrations",   title: "Integrations" },
-  { key: "auth",           title: "Auth & access" },
-  { key: "security",       title: "Security & privacy" },
-  { key: "testing",        title: "Testing" },
-  { key: "observability",  title: "Observability & logging" },
-  { key: "performance",    title: "Performance & reliability" },
-  { key: "infra",          title: "Infrastructure" },
-  { key: "cicd",           title: "CI/CD" },
-  { key: "data_lifecycle", title: "Data lifecycle" },
-  { key: "docs",           title: "Documentation" },
-  { key: "analytics",      title: "Analytics" },
-  { key: "accessibility",  title: "Accessibility & i18n" },
-  { key: "cost",           title: "Cost & resourcing" },
-  { key: "release",        title: "Versioning & release schedule" },
-  { key: "phases",         title: "Roadmap" },
-  { key: "risks",          title: "Risks" },
-  { key: "open_questions", title: "Open questions" },
-];
+const discoveryModules = import.meta.glob<{ default: { dimensions?: { key: string; title: string }[] } }>(
+  "@prompts/stages/discovery.json",
+  { eager: true },
+);
+export const KNOWN_DIMENSIONS: { key: string; title: string }[] =
+  Object.values(discoveryModules)[0]?.default.dimensions ?? [];
 
 const TITLE_BY_KEY = new Map(KNOWN_DIMENSIONS.map(d => [d.key, d.title]));
 const ORDER_BY_KEY = new Map(KNOWN_DIMENSIONS.map((d, i) => [d.key, i]));

@@ -8,10 +8,19 @@ import { buildPlanStageState, type PlanStageState } from "./planStages";
 import type { SectionState } from "../github/ghStructure";
 import type { PlanSignals } from "./stageGate";
 
+// Single-sourced from the Discovery stage data (`src-tauri/prompts/stages/discovery.json`, its
+// `requires` array) so the baseline lives in ONE place — the same data file the planner prompt and
+// gate read (#1591). Loaded directly via `import.meta.glob` (NOT through blueprints.ts SECTION_DEFS)
+// to avoid a circular import.
+const discoveryModules = import.meta.glob<{ default: { requires?: string[] } }>(
+  "@prompts/stages/discovery.json",
+  { eager: true },
+);
+
 /** The universal baseline context topics a project requires when nothing else seeds the manifest
  *  (#1019). A blueprint may seed a different set via its context section's `requires`; the planner
  *  then adjusts it with `bsc-plan context require/unrequire`. */
-export const DISCOVERY_BASELINE = ["goal", "scope", "stack", "architecture", "users", "release"];
+export const DISCOVERY_BASELINE: string[] = Object.values(discoveryModules)[0]?.default.requires ?? [];
 
 // Data-model gate signals (#1446: the model itself now lives in the project's DuckDB store, not a
 // datamodel.json file). These boolean SIGNALS are derived from the live frontend SourceConfig
