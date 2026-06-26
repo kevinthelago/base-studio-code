@@ -1,113 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { useAppStore, type GithubUser, type GithubRepo } from "@/store";
+import { useState } from "react";
+import { useAppStore } from "@/store";
 import { clearGithubCache } from "@/shared/lib/github/github";
-import { runDeviceFlow, type DeviceStartInfo, type DevicePollResult } from "@/features/github/lib/githubDeviceFlow";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useGithubConnect } from "./lib/useGithubConnect";
 import { ToggleRow } from "./General";
 
-/** Mirror of the backend `DeviceStart` struct (`github_device_start`). */
-type DeviceStart = DeviceStartInfo;
-
-// `project` is required to read AND create GitHub Projects v2 (the Projects page
-// + planning publish); without it the API returns "token lacks read:project".
-// `gist` lets the app publish blueprints/extensions as gists (#598 M2).
-const DEVICE_SCOPE = "repo read:org read:user project gist";
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
 function ConnectCard() {
-  const { setGithubToken, setGithubUser, setGithubRepos, setActiveRepo, setGithubConnected } = useAppStore();
-
-  const [token, setToken] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Device flow: clientId === null until probed; "" means this build has no OAuth
-  // app configured, so we offer the PAT path only.
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [device, setDevice] = useState<DeviceStart | null>(null);
-  const [deviceBusy, setDeviceBusy] = useState(false);
-  // Generation token: bumped each time a flow starts (or is cancelled), so a stale run
-  // never updates the UI and starting over supersedes the previous loop — WITHOUT tying
-  // cancellation to unmount. Navigating away no longer aborts an in-flight authorization
-  // (#594); the flow runs to completion and finishConnect's store write lands regardless
-  // of which screen is shown. (No mounted-ref guard: React 18 ignores setState after
-  // unmount, and a mounted-ref stuck false under StrictMode's dev double-mount was itself
-  // a bug — it stopped the device code from rendering.)
-  const runIdRef = useRef(0);
-
-  useEffect(() => {
-    invoke<string>("github_client_id").then(setClientId).catch(() => setClientId(""));
-  }, []);
-
-  // Exchange a validated token for the user + repo list and flip to connected.
-  async function finishConnect(t: string) {
-    // New token (possibly a different account) — drop any cached bodies first.
-    await clearGithubCache().catch(() => {});
-    const user = await invoke<GithubUser>("github_request", { token: t, path: "user" });
-    const repos = await invoke<GithubRepo[]>("github_request", {
-      token: t,
-      path: "user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
-    });
-    setGithubToken(t);
-    setGithubUser(user);
-    setGithubRepos(Array.isArray(repos) ? repos : []);
-    if (Array.isArray(repos) && repos.length > 0) {
-      setActiveRepo(repos[0].full_name);
-    }
-    setGithubConnected(true);
-  }
-
-  async function handleConnect() {
-    const t = token.trim();
-    if (!t) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await finishConnect(t);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDeviceConnect() {
-    const myRun = ++runIdRef.current;
-    // Apply UI updates only for the current run (a restart bumps runIdRef and supersedes
-    // a still-running older loop). finishConnect (the store write) is intentionally NOT
-    // guarded — it must land even after navigating away.
-    const ui = (fn: () => void) => { if (runIdRef.current === myRun) fn(); };
-    ui(() => { setError(null); setDeviceBusy(true); });
-    try {
-      await runDeviceFlow({
-        start: () => invoke<DeviceStart>("github_device_start", { scope: DEVICE_SCOPE }),
-        poll: (deviceCode) => invoke<DevicePollResult>("github_device_poll", { deviceCode }),
-        sleep,
-        // Cancelled only when the user starts a new flow — never on unmount (#594).
-        isCancelled: () => runIdRef.current !== myRun,
-        onDevice: (start) => {
-          ui(() => setDevice(start));
-          openUrl(start.verification_uri).catch(() => { /* user can use the shown URL/code manually */ });
-        },
-        // The store write must complete even if the user navigated away — no ui() guard.
-        onSuccess: (token) => finishConnect(token),
-        onError: (message) => ui(() => { setError(message); setDevice(null); }),
-      });
-    } catch (e) {
-      ui(() => { setError(String(e)); setDevice(null); });
-    } finally {
-      ui(() => setDeviceBusy(false));
-    }
-  }
-
-  function cancelDevice() {
-    // Bump the generation token so the in-flight flow's isCancelled() trips.
-    runIdRef.current++;
-    setDevice(null);
-    setDeviceBusy(false);
-  }
+  const {
+    token, setToken,
+    loading, error,
+    clientId, device, deviceBusy,
+    handleConnect, handleDeviceConnect, cancelDevice,
+  } = useGithubConnect();
 
   return (
     <div className="card">
