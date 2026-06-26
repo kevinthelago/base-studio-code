@@ -4,7 +4,7 @@ import type { StateCreator } from "zustand";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
-import { canonicalSectionKey } from "@/features/planner/stages/planSections";
+import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
@@ -153,7 +153,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           let changed = false;
           const nextSections: Record<string, string> = {};
           for (const [k, v] of Object.entries(sections)) {
-            const ck = canonicalSectionKey(k);
+            const ck = canonicalTopicKey(k);
             if (ck !== k) changed = true;
             // The canonical key's own content always wins; an alias only fills if absent.
             if (k === ck || nextSections[ck] === undefined) nextSections[ck] = v;
@@ -161,7 +161,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           const confirmed = s.planConfirmedSections[projectId];
           let nextConfirmed = confirmed;
           if (confirmed) {
-            const mapped = [...new Set(confirmed.map(canonicalSectionKey))];
+            const mapped = [...new Set(confirmed.map(canonicalTopicKey))];
             if (mapped.length !== confirmed.length || mapped.some((k, i) => k !== confirmed[i])) {
               nextConfirmed = mapped;
               changed = true;
