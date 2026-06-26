@@ -48,7 +48,7 @@ describe("blueprint categories (#645)", () => {
   it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
     // a stale persisted built-in (UI not yet optional) + a user blueprint
     const stale: Blueprint = { id: "default", name: "Default", desc: "old", origin: "built-in",
-      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false }] };
+      sections: [{ uid: "x", key: "ui", name: "UI", glyph: "▣", icon: "design_services", hue: 350, gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false }] };
     const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
     const out = refreshBuiltIns([stale, mine]);
     // the built-in is refreshed from code → UI optional again

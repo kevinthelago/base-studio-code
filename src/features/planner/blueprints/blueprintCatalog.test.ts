@@ -34,3 +34,34 @@ describe("STAGE_KINDS ↔ project-pane stage coverage", () => {
     expect(stageKind("totally-made-up").glyph).toBe("category");
   });
 });
+
+describe("STAGE_KINDS derived from the stage JSON data layer (#1603)", () => {
+  it("resolves every add-stage palette key — including the discovery-dimension kinds — to a real icon + hue", () => {
+    // The palette mixes real stages (discovery/repos/…) with discovery-dimension kinds
+    // (users/stack/architecture/…) that have NO stage file but ARE enriched in discovery.json.
+    // None may fall through to the generic `category` square.
+    const fellThrough = STAGE_KIND_KEYS.filter((k) => stageKind(k).glyph === "category" || !(stageKind(k).glyph in ICONS));
+    expect(fellThrough).toEqual([]);
+    for (const k of STAGE_KIND_KEYS) expect(typeof stageKind(k).h).toBe("number");
+  });
+
+  it("sources icon + hue from the stage's own JSON (SECTION_DEFS), separate from its unicode glyph", () => {
+    expect(stageKind("discovery").glyph).toBe(SECTION_DEFS.discovery.icon);
+    expect(stageKind("discovery").h).toBe(SECTION_DEFS.discovery.hue);
+    expect(stageKind("discovery").glyph).toBe("flag");
+  });
+
+  it("sources the dimension kinds from discovery.json dimensions", () => {
+    const stack = (SECTION_DEFS.discovery.dimensions ?? []).find((d) => d.key === "stack")!;
+    expect(stack.icon).toBeTruthy();
+    expect(stageKind("stack").glyph).toBe(stack.icon);
+    expect(stageKind("stack").h).toBe(stack.hue);
+  });
+
+  it("reconciles the palette title to the stage's JSON name (option A)", () => {
+    // Formerly the palette title diverged from the stage bar; now it's single-sourced to `name`.
+    expect(stageKind("structure").title).toBe("Plan");
+    expect(stageKind("repos").title).toBe("Repos");
+    expect(stageKind("structure").title).toBe(SECTION_DEFS.structure.name);
+  });
+});

@@ -6,5 +6,7 @@
     "discovery"
   ],
   "blurb": "The canonical schema everything maps into — entities, fields, identity keys.",
-  "prompt": "Define the canonical DATA MODEL this project loads into — the single source of truth that\nlater powers any app built over it. For each entity: its fields (with types + which are\nrequired), the relationships between entities, and the IDENTITY key (the fields that decide\nwhen two records describe the same real-world thing — used later to merge across sources).\nPropose it, interrogate it with the user, then write datamodel.json. This is the TARGET the\nmapping/extraction stages aim at — get it right before moving data."
+  "prompt": "Define the canonical DATA MODEL this project loads into — the single source of truth that\nlater powers any app built over it. For each entity: its fields (with types + which are\nrequired), the relationships between entities, and the IDENTITY key (the fields that decide\nwhen two records describe the same real-world thing — used later to merge across sources).\nPropose it, interrogate it with the user, then write datamodel.json. This is the TARGET the\nmapping/extraction stages aim at — get it right before moving data.",
+  "icon": "database",
+  "hue": 150
 }

@@ -7,5 +7,7 @@
     "repos"
   ],
   "blurb": "Merge services back together, unifying data & contracts.",
-  "prompt": "Map the services to merge: overlapping responsibilities, the data stores to unify, and\nthe inter-service calls that become in-process. Plan the merge order, the shared schema,\nand how to retire the redundant deployments/contracts without downtime."
+  "prompt": "Map the services to merge: overlapping responsibilities, the data stores to unify, and\nthe inter-service calls that become in-process. Plan the merge order, the shared schema,\nand how to retire the redundant deployments/contracts without downtime.",
+  "icon": "account_tree",
+  "hue": 110
 }

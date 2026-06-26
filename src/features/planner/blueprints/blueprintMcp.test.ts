@@ -6,7 +6,7 @@ import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Blueprint, BlueprintSection } from "../stages/blueprints";
 
 const sec = (over: Partial<BlueprintSection>): BlueprintSection => ({
-  uid: over.uid ?? "u", key: over.key ?? "discovery", name: "S", glyph: "◆", gate: "", deps: [],
+  uid: over.uid ?? "u", key: over.key ?? "discovery", name: "S", glyph: "◆", icon: "flag", hue: 70, gate: "", deps: [],
   blurb: "", prompt: "", enabled: true, expanded: false, ...over,
 });
 
