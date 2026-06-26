@@ -3,12 +3,7 @@ use crate::*;
 /// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first.
 #[tauri::command]
 pub(crate) fn read_audit_log(limit: usize) -> Vec<String> {
-    let path = bsc_base_dir().join("audit.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    lines.reverse();
-    lines.truncate(limit);
-    lines
+    crate::observability::logs::tail_lines(&bsc_base_dir().join("audit.log"), limit, true)
 }
 /// Repo-relative paths a worktree session has touched but not yet committed: tracked changes
 /// vs HEAD (staged + unstaged) plus untracked files. The warden's conformance check (#1102)
@@ -142,48 +137,27 @@ pub(crate) fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> 
 /// Read the skill usage log (#406): the newest `limit` TSV lines, newest first.
 #[tauri::command]
 pub(crate) fn read_skill_log(limit: usize) -> Vec<String> {
-    let path = bsc_base_dir().join("skills.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    lines.reverse();
-    lines.truncate(limit);
-    lines
+    crate::observability::logs::tail_lines(&bsc_base_dir().join("skills.log"), limit, true)
 }
 /// Read the hook-fire log (#865 PR 2): the newest `limit` TSV lines, newest first. Each line
 /// is `ts \t event \t hook \t outcome` (written by the hook wrappers; absent until that lands,
 /// in which case this returns an empty list). Mirrors `read_skill_log`.
 #[tauri::command]
 pub(crate) fn read_hook_log(limit: usize) -> Vec<String> {
-    let path = bsc_base_dir().join("hooks.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    lines.reverse();
-    lines.truncate(limit);
-    lines
+    crate::observability::logs::tail_lines(&bsc_base_dir().join("hooks.log"), limit, true)
 }
 /// Read the MCP-call log (#879): the newest `limit` TSV lines, newest first. Each line is
 /// `ts \t server \t tool \t outcome \t ms [\t detail]` (written by the bsc-mcp hook pair;
 /// absent until that lands, in which case this returns an empty list). Mirrors `read_hook_log`.
 #[tauri::command]
 pub(crate) fn read_mcp_log(limit: usize) -> Vec<String> {
-    let path = bsc_base_dir().join("mcp.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    lines.reverse();
-    lines.truncate(limit);
-    lines
+    crate::observability::logs::tail_lines(&bsc_base_dir().join("mcp.log"), limit, true)
 }
 /// Read the coordination log (#199): up to the newest `limit` TSV lines, in
 /// chronological (oldest-first) order so the coordinator can replay them.
 #[tauri::command]
 pub(crate) fn read_coord_log(limit: usize) -> Vec<String> {
-    let path = bsc_base_dir().join("coord.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
-    if lines.len() > limit {
-        lines = lines.split_off(lines.len() - limit);
-    }
-    lines
+    crate::observability::logs::tail_lines(&bsc_base_dir().join("coord.log"), limit, false)
 }
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across
