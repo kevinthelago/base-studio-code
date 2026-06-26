@@ -37,7 +37,8 @@ export function Card({ n, title, hint, right, accent, done, children }: {
     <div style={{
       borderRadius: "var(--r-lg)", padding: "13px 14px",
       border: "1px solid " + (done ? "color-mix(in oklch, var(--success), transparent 58%)" : accent ? `color-mix(in oklch, ${accent}, transparent 78%)` : "var(--border-soft)"),
-      background: done ? "color-mix(in oklch, var(--success), transparent 93%)" : "var(--bg-panel)",
+      // Confirmed (done) cards read as outline-only — green border, no green background fill (#1498).
+      background: "var(--bg-panel)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
         <span style={{
