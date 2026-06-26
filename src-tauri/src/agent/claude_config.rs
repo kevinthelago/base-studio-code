@@ -10,19 +10,6 @@ use crate::home_dir;
 /// writes with each other.
 static CLAUDE_JSON_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Writes `content` to `path` atomically: write a sibling temp file, then rename
-/// over the target (atomic on the same volume). A direct `fs::write` can be
-/// observed half-written or interleaved with another process's write — the
-/// failure mode that left trailing bytes after valid JSON and corrupted
-/// `~/.claude.json` when many sessions launched at once.
-fn atomic_write(path: &std::path::Path, content: &str) -> std::io::Result<()> {
-    let mut tmp = path.as_os_str().to_os_string();
-    tmp.push(".tmp");
-    let tmp = std::path::PathBuf::from(tmp);
-    std::fs::write(&tmp, content)?;
-    std::fs::rename(&tmp, path)
-}
-
 /// Returns valid, pretty-printed JSON for `content`: the content re-serialized if
 /// it already parses; otherwise the leading JSON value with any trailing junk
 /// dropped (the common `<valid JSON><junk>` corruption); otherwise `None`.
@@ -51,7 +38,7 @@ pub(crate) fn sanitize_claude_config() {
         Some(j) => (j, "repaired (dropped trailing junk)"),
         None    => ("{}".to_string(), "unrecoverable; reset to {}"),
     };
-    let _ = atomic_write(&path, &json);
+    let _ = crate::platform::fsx::atomic_write(&path, json.as_bytes());
     log::warn!("sanitize_claude_config: ~/.claude.json {what}");
 }
 
@@ -88,15 +75,13 @@ fn claude_project_key(path: &str) -> String {
 /// against a concurrently-running `claude`).
 fn mark_dir_trusted(config: &mut serde_json::Value, key: &str) -> bool {
     use serde_json::{Map, Value};
-    let obj = match config.as_object_mut() {
-        Some(o) => o,
-        None => { *config = Value::Object(Map::new()); config.as_object_mut().unwrap() }
-    };
+    crate::platform::fsx::ensure_object(config);
+    let obj = config.as_object_mut().unwrap();
     let projects = obj.entry("projects").or_insert_with(|| Value::Object(Map::new()));
-    if !projects.is_object() { *projects = Value::Object(Map::new()); }
+    crate::platform::fsx::ensure_object(projects);
     let entry = projects.as_object_mut().unwrap()
         .entry(key.to_string()).or_insert_with(|| Value::Object(Map::new()));
-    if !entry.is_object() { *entry = Value::Object(Map::new()); }
+    crate::platform::fsx::ensure_object(entry);
     let entry = entry.as_object_mut().unwrap();
     if entry.get("hasTrustDialogAccepted") == Some(&Value::Bool(true)) {
         return false;
@@ -128,12 +113,9 @@ pub(crate) fn trust_claude_dir(cwd: &str) {
     };
     let key = claude_project_key(cwd);
     if !mark_dir_trusted(&mut config, &key) { return; }
-    match serde_json::to_string_pretty(&config) {
-        Ok(s) => match atomic_write(&path, &s) {
-            Ok(())  => log::info!("trust_claude_dir: pre-trusted {key}"),
-            Err(e)  => log::warn!("trust_claude_dir: write {} failed: {e}", path.display()),
-        },
-        Err(e) => log::warn!("trust_claude_dir: serialize failed: {e}"),
+    match crate::platform::fsx::atomic_write_json(&path, &config) {
+        Ok(())  => log::info!("trust_claude_dir: pre-trusted {key}"),
+        Err(e)  => log::warn!("trust_claude_dir: write {} failed: {e}", path.display()),
     }
 }
 
@@ -196,15 +178,12 @@ pub(crate) fn write_claude_config(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    std::fs::write(&md_path, &instructions).map_err(|e| e.to_string())?;
+    crate::platform::fsx::atomic_write(&md_path, instructions.as_bytes()).map_err(|e| e.to_string())?;
 
     let settings = serde_json::json!({
         "permissions": { "allow": allow, "deny": deny }
     });
-    std::fs::write(
-        &settings_path,
-        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
-    ).map_err(|e| e.to_string())?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &settings).map_err(|e| e.to_string())?;
 
     Ok(())
 }
