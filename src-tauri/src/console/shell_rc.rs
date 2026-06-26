@@ -284,6 +284,17 @@ pub(crate) const BSC_BLUEPRINT_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-project` shell helper (#1720) — execs the bundled cross-project hub-lifecycle CLI
+/// ($BSC_PROJECT_BIN): `bsc-project list` + `bsc-project published get|set <key>` over EVERY
+/// `~/.base-studio-code/projects/<key>/` hub (not tied to one plan.db, unlike `bsc-plan`). It walks
+/// the projects dir + reads/writes the `.published` marker — sharing the app's path logic, so it
+/// execs a compiled binary, not pure shell. Mirrors the `bsc-plan`/`bsc-logs` sidecar-helper shape
+/// exactly: execs the absolute-path binary, or errors on a 0-byte stub.
+pub(crate) const BSC_PROJECT_RC: &str = concat!(
+    r#"bsc-project() { if [ -n "${BSC_PROJECT_BIN:-}" ] && [ ! -s "$BSC_PROJECT_BIN" ]; then echo "bsc-project: BSC_PROJECT_BIN ($BSC_PROJECT_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_PROJECT_BIN:-bsc-project}" "$@"; }"#,
+    "\n",
+);
+
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
 /// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
@@ -324,6 +335,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_LOGS_RC,
     BSC_COMPLIANCE_RC,
     BSC_BLUEPRINT_RC,
+    BSC_PROJECT_RC,
     BSC_LEARNED_RC,
 ];
 
@@ -589,6 +601,19 @@ mod tests {
             super::bsc_rc_body().contains("bsc-blueprint()"),
             "bsc-blueprint must be in the concat body"
         );
+    }
+
+    #[test]
+    fn bsc_project_rc_execs_the_sidecar_and_is_in_the_concat_body() {
+        // #1720: the `bsc-project` helper mirrors bsc-plan/bsc-logs — it execs the absolute-path
+        // sidecar in $BSC_PROJECT_BIN (falling back to a bare `bsc-project` on PATH) so a live session
+        // can list local projects + read/set `.published` across ALL projects from its own shell. It
+        // must end in a trailing newline (the #296 glue contract) and land in the single-source concat.
+        let rc = super::BSC_PROJECT_RC;
+        assert!(rc.contains("bsc-project()"), "rc must define the hyphenated helper");
+        assert!(rc.contains("BSC_PROJECT_BIN"), "rc must exec the staged sidecar binary");
+        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
+        assert!(super::bsc_rc_body().contains("bsc-project()"), "bsc-project must be in the concat body");
     }
 
     #[test]
