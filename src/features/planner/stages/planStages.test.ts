@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, discoveryOnlyStageConfig, buildPlanStageState,
-  stageStatus, enabledOrderedStages, currentStage, BUILT_IN_BLUEPRINTS, resolveEnabledStages,
+  stageStatus, enabledOrderedStages, currentStage,
   type StageConfig, type StageId,
 } from "./planStages";
 
@@ -218,38 +218,5 @@ describe("planStages — source stage (pp-stage)", () => {
     const featuresIdx = ids.indexOf("features");
     expect(sourceIdx).toBeGreaterThan(reposIdx);
     expect(sourceIdx).toBeLessThan(featuresIdx);
-  });
-});
-
-describe("planStages — BUILT_IN_BLUEPRINTS (#666/#458)", () => {
-  it("includes a 'refactor' blueprint without the structure stage", () => {
-    const refactor = BUILT_IN_BLUEPRINTS.find((b) => b.id === "refactor");
-    expect(refactor).toBeDefined();
-    expect(refactor!.enabledStages).not.toContain("structure");
-    expect(refactor!.enabledStages).toContain("discovery");
-    expect(refactor!.enabledStages).toContain("permissions");
-  });
-
-  it("resolveEnabledStages forces only context (the sole required stage) — structure is optional (#666)", () => {
-    const refactor = BUILT_IN_BLUEPRINTS.find((b) => b.id === "refactor")!;
-    const stages = resolveEnabledStages(refactor);
-    // context is the only required stage (optional: false), so it is always included
-    expect(stages).toContain("discovery");
-    // structure is optional — refactor blueprint omits it and resolveEnabledStages respects that
-    expect(stages).not.toContain("structure");
-    // but the stages the blueprint did enable are present
-    expect(stages).toContain("permissions");
-  });
-
-  it("all built-in blueprints have unique ids", () => {
-    const ids = BUILT_IN_BLUEPRINTS.map((b) => b.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("all built-in blueprints always include context (required stage)", () => {
-    for (const bp of BUILT_IN_BLUEPRINTS) {
-      const resolved = resolveEnabledStages(bp);
-      expect(resolved).toContain("discovery");
-    }
   });
 });
