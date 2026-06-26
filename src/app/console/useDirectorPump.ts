@@ -17,8 +17,8 @@
 import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { injectPrompt } from "./paneInject";
-import { readCoordState } from "./useCoordLog";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,

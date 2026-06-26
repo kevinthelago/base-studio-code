@@ -11,7 +11,7 @@ import { StatusBar } from "@/app/chrome/StatusBar";
 import { Dialog } from "@/shared/ui/Dialog";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { useAppStore } from "@/store";
-import { useHotkeys } from "@/shared/hooks/useHotkeys";
+import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";

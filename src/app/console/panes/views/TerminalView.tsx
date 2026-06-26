@@ -15,7 +15,7 @@ import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { composeReferenceContext } from "@/shared/lib/session/assignments";
 import { resolveMcpServers, toBscAgentMcp } from "@/features/mcp/lib/mcpServers";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
-import { toSessionPayloads } from "@/shared/lib/session/sessionConfig";
+import { toSessionPayloads } from "@/features/mcp/lib/sessionConfig";
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills/lib/skills";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";

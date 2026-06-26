@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { KeyboardSettings } from "./Keyboard";
 import { useAppStore } from "@/store";
-import { SHORTCUT_GROUPS } from "./lib/shortcuts";
-import { SHORTCUT_REGISTRY } from "@/shared/hooks/useHotkeys";
+import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "./lib/shortcuts";
 
 beforeEach(() => {
   useAppStore.setState({ keybindings: {} });
