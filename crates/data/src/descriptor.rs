@@ -16,17 +16,9 @@
 //! Pure: transport + auth live in the `fetch` closure the host supplies (built per the descriptor's
 //! [`SourceAuth`]); the crate never touches HTTP or the keychain (#1194).
 
-use serde_json::Value;
-
-use crate::connector::Connector;
+use crate::connector::{Connector, FetchFn};
 use crate::registry::{LiveSupport, SourceAuth};
 use crate::rest::{RestConnector, RestResource};
-use crate::Result;
-
-/// A path → parsed-JSON fetch closure that owns the source's transport + auth (never stored by the
-/// connector, #1194). The host supplies it (built per the descriptor's [`SourceAuth`]); tests pass a
-/// fixture closure in place of the network.
-pub type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// One declarative REST resource: `(object name, request path/segment, array_key envelope)` — the
 /// same shape [`crate::presets`] uses. `array_key` is where the record array lives in the response
