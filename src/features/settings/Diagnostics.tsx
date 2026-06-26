@@ -5,15 +5,17 @@ import {
   interpretDiagnostics,
   loadReport,
   saveReport,
+  type PrereqStatus,
+  type PrereqVerdict,
+  type DiagnosticsReport,
+} from "@/shared/lib/core/diagnostics";
+import {
   loadShellKind,
   saveShellKind,
   coerceShellKind,
   SHELL_OPTIONS,
-  type PrereqStatus,
-  type PrereqVerdict,
-  type DiagnosticsReport,
   type ShellKind,
-} from "@/shared/lib/core/diagnostics";
+} from "@/shared/lib/core/shellConfig";
 
 // First URL inside a backend hint string, so "…install from https://x" renders a
 // clickable link. Hints are authored in the backend (`prereq_hint`) and always end
