@@ -253,6 +253,16 @@ pub(crate) const BSC_DATA_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-logs` shell helper (#1716) — execs the bundled unified log-query CLI ($BSC_LOGS_BIN); a
+/// live session reads its own audit/skill/mcp/hook/coord/activity streams + token cost + `perf.db`
+/// (`bsc-logs perf`) from its own shell. The directory it reads is $BSC_LOG_DIR (set per-session).
+/// Read-only. Mirrors the `bsc-plan`/`bsc-data` sidecar-helper shape exactly (it needs SQLite for the
+/// `perf` verb, so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
+pub(crate) const BSC_LOGS_RC: &str = concat!(
+    r#"bsc-logs() { if [ -n "${BSC_LOGS_BIN:-}" ] && [ ! -s "$BSC_LOGS_BIN" ]; then echo "bsc-logs: BSC_LOGS_BIN ($BSC_LOGS_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_LOGS_BIN:-bsc-logs}" "$@"; }"#,
+    "\n",
+);
+
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
 /// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
@@ -290,6 +300,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_FLEET_RC,
     BSC_PLAN_RC,
     BSC_DATA_RC,
+    BSC_LOGS_RC,
     BSC_LEARNED_RC,
 ];
 
@@ -524,6 +535,20 @@ mod tests {
 {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+
+    #[test]
+    fn bsc_logs_rc_execs_the_sidecar_and_is_in_the_concat_body() {
+        // #1716: the `bsc-logs` helper mirrors bsc-plan/bsc-data — it execs the absolute-path
+        // sidecar in $BSC_LOGS_BIN (falling back to a bare `bsc-logs` on PATH) so a live session can
+        // read its own log streams + perf.db from its own shell. It must end in a trailing newline
+        // (the #296 glue contract) and land in the single-source-of-truth concat body.
+        let rc = super::BSC_LOGS_RC;
+        assert!(rc.contains("bsc-logs()"), "rc must define the hyphenated helper");
+        assert!(rc.contains("BSC_LOGS_BIN"), "rc must exec the staged sidecar binary");
+        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
+        // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
+        assert!(super::bsc_rc_body().contains("bsc-logs()"), "bsc-logs must be in the concat body");
     }
 
     #[test]
