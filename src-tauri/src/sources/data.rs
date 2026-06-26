@@ -351,7 +351,7 @@ pub fn data_load_reconciled(
     precedence: Vec<String>,
     loaded_at: String,
 ) -> Result<ReconcileReport, String> {
-    // Resolve the persisted model from datamodel.json so the interface is testable
+    // Resolve the persisted model from the DuckDB MetaStore so the interface is testable
     // even as a stub. Load-stream replaces this body with the real reconcile-and-load.
     let _ = (project_key, entity, sources, precedence, loaded_at);
     Ok(ReconcileReport { entity: String::new(), records: 0, conflicts: 0, field_lineage: 0, sources: 0 })

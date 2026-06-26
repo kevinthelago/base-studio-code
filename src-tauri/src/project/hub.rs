@@ -117,7 +117,7 @@ pub(crate) struct LocalProject {
     pub(crate) title: String,
     pub(crate) has_plan: bool,
     pub(crate) updated_at: u64,
-    /// True when the hub lives under `projects/` (published), false under `draft/` (#904).
+    /// True when the hub has been published — marked in-place by the `.published` file (#922).
     pub(crate) published: bool,
 }
 /// List the on-disk local projects (the `projects/<key>/` dirs) so the Projects page can surface

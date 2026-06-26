@@ -130,7 +130,7 @@ pub struct PlanPhase {
 
 
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
-pub fn slugify(name: &str) -> String {
+pub(crate) fn slugify(name: &str) -> String {
     let mut s = String::new();
     let mut prev_dash = false;
     for c in name.to_lowercase().chars() {
@@ -428,14 +428,7 @@ impl Store {
         self.fleet_meta_set(&serde_json::Value::Object(meta))
     }
 
-    /// Upsert one stream by id (appends if new; keeps its slot otherwise).
-    pub fn fleet_stream_upsert(&self, id: &str, data: &serde_json::Value) -> rusqlite::Result<()> {
-        let pos: i64 = self
-            .conn
-            .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM fleet_streams", [], |r| r.get(0))?;
-        self.fleet_stream_upsert_at(id, data, pos)
-    }
-
+    /// Upsert one stream by id at an explicit position (called by `fleet_set`).
     fn fleet_stream_upsert_at(&self, id: &str, data: &serde_json::Value, pos: i64) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT INTO fleet_streams (id, data, position, updated_at) VALUES (?1, ?2, ?3, strftime('%s','now'))
