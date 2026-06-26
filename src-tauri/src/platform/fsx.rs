@@ -172,6 +172,32 @@ pub(crate) fn ensure_object(v: &mut serde_json::Value) {
     }
 }
 
+/// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
+/// unreadable entries are skipped. Needed so `remove_dir_all` can delete cloned-repo dirs
+/// (git's pack files are read-only) on Windows. Windows-only: on Unix `remove_dir_all`
+/// deletes regardless of file perms, and `set_readonly(false)` would loosen the mode there.
+#[cfg(windows)]
+#[allow(clippy::permissions_set_readonly_false)] // clearing the RO attribute IS the intent on Windows
+pub(crate) fn clear_readonly_recursive(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => clear_readonly_recursive(&path),
+            Ok(_) => {
+                if let Ok(meta) = entry.metadata() {
+                    let mut perms = meta.permissions();
+                    if perms.readonly() {
+                        perms.set_readonly(false);
+                        let _ = std::fs::set_permissions(&path, perms);
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +330,37 @@ mod tests {
         if linked_file_created {
             assert!(!keys.iter().any(|k| k == "link.txt"), "symlinked file skipped: {keys:?}");
         }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// On Windows, `clear_readonly_recursive` strips the read-only attribute from every file in the
+    /// tree (including nested ones) so `remove_dir_all` can later delete read-only git packs (#793).
+    #[cfg(windows)]
+    #[test]
+    fn clear_readonly_recursive_clears_nested_readonly_files() {
+        use std::fs;
+        let root = scratch_path("readonly");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("nested")).unwrap();
+        let top = root.join("top.txt");
+        let deep = root.join("nested").join("deep.txt");
+        fs::write(&top, "top").unwrap();
+        fs::write(&deep, "deep").unwrap();
+
+        // Mark both files read-only.
+        for p in [&top, &deep] {
+            let mut perms = fs::metadata(p).unwrap().permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(p, perms).unwrap();
+        }
+        assert!(fs::metadata(&top).unwrap().permissions().readonly());
+        assert!(fs::metadata(&deep).unwrap().permissions().readonly());
+
+        clear_readonly_recursive(&root);
+
+        assert!(!fs::metadata(&top).unwrap().permissions().readonly(), "top-level RO cleared");
+        assert!(!fs::metadata(&deep).unwrap().permissions().readonly(), "nested RO cleared");
 
         let _ = fs::remove_dir_all(&root);
     }

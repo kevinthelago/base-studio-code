@@ -1,7 +1,6 @@
 use crate::*;
 use crate::project::{hub::*, plan_files::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-use crate::fleet::{worktree::*, director::*};
-use crate::observability::worktree_inspect::*;
+use crate::fleet::{worktree::*, director::*, inspect::*};
 use crate::github::readiness::*;
 use crate::extensions::{mcp::*, cfg::*};
 use crate::console::settings::*;
