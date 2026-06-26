@@ -437,7 +437,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   }
 
   return (
-    <div className="console-theme" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
         <div style={{
           padding: "3px 14px",
