@@ -10,3 +10,4 @@ pub mod git;
 pub mod shell;
 pub mod process;
 pub mod fsx;
+pub mod docstore;

@@ -60,7 +60,7 @@ export const APP_ROLES: AgentProfile[] = [
   },
   {
     // The Blueprint Assistant ("Design with Claude") is a STATELESS one-shot completion
-    // (kb_chat) — it drafts/edits blueprint stages, prompts, and skills from a description.
+    // (llm_complete) — it drafts/edits blueprint stages, prompts, and skills from a description.
     // It runs no shell, writes no files, and uses no tools, so its minimal role only really
     // governs what context it may read + net. Distinct from the Project Planner (#680).
     id: "sys_blueprint_assistant",
