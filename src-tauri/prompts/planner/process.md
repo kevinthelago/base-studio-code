@@ -38,6 +38,12 @@ right panel. Overwrite to refine — each write replaces the previous version.
 - Structured plan state is the plan DB, not files — repos (`bsc-plan repo`), the roadmap
   (`bsc-plan phase`), features (`bsc-plan feature`), the fleet (`bsc-plan fleet`), deploy
   (`bsc-plan deploy`). See "App integration tags".
+- **Reads are lean by default** — `bsc-plan list`/`mine`/`feature list` print a compact table
+  (counts, no bodies) and `bsc-plan summary` gives the one-line plan overview (totals · per-status ·
+  per-stream · per-phase). That's enough to orient and decide. Pull the full record ONLY when you
+  need it: `bsc-plan get <ref>` (one issue, full) or `bsc-plan feature get <slug>`; escalate a list
+  with `--full` / `--fields a,b` / `--limit N` / `--since <epoch>`. Don't dump full lists to skim —
+  it wastes the context budget; read lean, then drill in.
 
 Mark the topic you are actively discussing so the UI highlights it:
 ```
