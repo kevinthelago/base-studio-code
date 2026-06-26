@@ -35,19 +35,12 @@ pub fn log_dir() -> PathBuf {
             return PathBuf::from(d);
         }
     }
-    home_dir().map(|h| h.join(".base-studio-code")).unwrap_or_else(|| PathBuf::from(".base-studio-code"))
-}
-
-/// Cross-platform home dir (no `dirs` dependency), matching `bsc-skill`'s resolution.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
+    bsc_util::bsc_base_dir().unwrap_or_else(|| PathBuf::from(".base-studio-code"))
 }
 
 /// Normalize a timestamp to epoch-ms. All-digits ⇒ already epoch-ms (activity/done/hooks/mcp);
-/// otherwise parse `YYYY-MM-DDTHH:MM:SSZ` (audit/skills/coord). `None` on a malformed value.
+/// otherwise parse `YYYY-MM-DDTHH:MM:SSZ` (audit/skills/coord) via the shared civil-date helper
+/// (#1646). `None` on a malformed value.
 pub fn to_ms(ts: &str) -> Option<i64> {
     let ts = ts.trim();
     if ts.is_empty() {
@@ -56,29 +49,7 @@ pub fn to_ms(ts: &str) -> Option<i64> {
     if ts.bytes().all(|b| b.is_ascii_digit()) {
         return ts.parse::<i64>().ok();
     }
-    // ISO-8601 UTC: 2026-06-26T10:04:59Z
-    let (date, time) = ts.split_once('T')?;
-    let mut d = date.split('-');
-    let y: i64 = d.next()?.parse().ok()?;
-    let mo: i64 = d.next()?.parse().ok()?;
-    let da: i64 = d.next()?.parse().ok()?;
-    let time = time.trim_end_matches('Z');
-    let mut t = time.split(':');
-    let h: i64 = t.next()?.parse().ok()?;
-    let mi: i64 = t.next()?.parse().ok()?;
-    let s: i64 = t.next().unwrap_or("0").parse().ok()?;
-    let days = days_from_civil(y, mo, da);
-    Some((days * 86_400 + h * 3_600 + mi * 60 + s) * 1_000)
-}
-
-/// Days since the Unix epoch for a civil (y, m, d) date — Howard Hinnant's algorithm (no deps).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = (if y >= 0 { y } else { y - 399 }) / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
+    bsc_util::iso8601_to_epoch_ms(ts)
 }
 
 /// The streams a `bsc-logs` query knows about, with their file + canonical name.

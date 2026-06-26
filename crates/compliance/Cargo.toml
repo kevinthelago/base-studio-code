@@ -16,6 +16,8 @@ name = "bsc-compliance-mcp"
 path = "src/bin/bsc-compliance-mcp.rs"
 
 [dependencies]
+# Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
+bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Local on-disk store of the standards corpus (keyed by canonical id), so the rules the planner

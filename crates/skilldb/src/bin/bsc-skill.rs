@@ -162,16 +162,9 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     if let Ok(p) = std::env::var("BSC_SKILL_DB") {
         return Ok(PathBuf::from(p));
     }
-    let home = home_dir().ok_or("could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB")?;
-    Ok(home.join(".base-studio-code").join("skills.db"))
-}
-
-/// The user's home directory, from the platform's standard env var (no extra dependency).
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
+    let base = bsc_util::bsc_base_dir()
+        .ok_or("could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB")?;
+    Ok(base.join("skills.db"))
 }
 
 /// Read JSON from stdin (one skill object or an array), upsert each, return the ids. When `group`

@@ -16,6 +16,8 @@ name = "bsc-skill"
 path = "src/bin/bsc-skill.rs"
 
 [dependencies]
+# Shared leaf utilities (#1646): the one home-dir resolver.
+bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability.

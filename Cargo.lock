@@ -533,6 +533,7 @@ dependencies = [
  "base64 0.22.1",
  "bsc-data",
  "bsc-llm",
+ "bsc-util",
  "futures-util",
  "include_dir",
  "jsonwebtoken",
@@ -723,6 +724,7 @@ name = "bsc-agent"
 version = "0.1.0"
 dependencies = [
  "bsc-llm",
+ "bsc-util",
  "glob",
  "regex",
  "reqwest 0.12.28",
@@ -749,6 +751,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "bsc-util"
+version = "0.1.0"
 
 [[package]]
 name = "bumpalo"
@@ -1018,6 +1024,7 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
+ "bsc-util",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3072,6 +3079,7 @@ dependencies = [
 name = "logs"
 version = "0.1.0"
 dependencies = [
+ "bsc-util",
  "serde",
  "serde_json",
 ]
@@ -4454,6 +4462,7 @@ dependencies = [
 name = "research"
 version = "0.1.0"
 dependencies = [
+ "bsc-util",
  "pdf-extract",
  "reqwest 0.12.28",
  "roxmltree",
@@ -5119,6 +5128,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 name = "skilldb"
 version = "0.1.0"
 dependencies = [
+ "bsc-util",
  "rusqlite",
  "serde",
  "serde_json",
