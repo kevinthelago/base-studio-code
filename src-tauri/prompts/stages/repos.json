@@ -1,4 +1,5 @@
 {
+  "directive": "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
   "name": "Repos",
   "glyph": "⑂",
   "gate": "≥1 repo linked",

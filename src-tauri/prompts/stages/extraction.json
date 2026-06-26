@@ -1,4 +1,5 @@
 {
+  "directive": "**Extraction plan** — sequence the incremental, shippable steps to carve out each service.",
   "name": "Extraction plan",
   "glyph": "⤳",
   "gate": "extraction sequenced",

@@ -1,4 +1,5 @@
 {
+  "directive": "**Testing** — define the coverage strategy and the test safety net for the changes.",
   "name": "Testing",
   "glyph": "✓",
   "gate": "coverage strategy set",

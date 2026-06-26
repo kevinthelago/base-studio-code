@@ -7,6 +7,7 @@
 // Mirrors design/base-studio-code-projects/Blueprints.html.
 
 import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
+import { type ClassificationSignals } from "./classification";
 import {
   evalGate, gateApplies,
   type StageGate, type Requirement, type PlanSignals,
@@ -83,6 +84,14 @@ export interface SectionDef {
   /** Ordered substeps the conductor injects one at a time (#…). Absent ⇒ the stage is driven
    *  by a single prompt (its `prompt`). Pipeline `triggerTarget`s reference these by `key`. */
   substeps?: SubStep[];
+  /** The planner-facing directive prose (#1462) — the single source of truth, shared byte-for-byte
+   *  with the Rust `stage_directive`, read from this stage's `prompts/stages/<id>.json`. Only the
+   *  duplicated stages carry one; stages without it use the generic Rust fallback. */
+  directive?: string;
+  /** Reserved (populated by #1395) — the classification signals that gate this stage's applicability,
+   *  and its ordering tier. Typed now so #1395 fills them without re-churning files; unset today. */
+  signals?: ClassificationSignals;
+  phase?: "discover" | "decide" | "generate";
 }
 
 // The canonical planning-stage data lives as one JSON file per stage under src-tauri/prompts/stages/

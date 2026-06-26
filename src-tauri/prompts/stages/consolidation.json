@@ -1,4 +1,5 @@
 {
+  "directive": "**Consolidation** — plan merging the services, unifying data stores and contracts.",
   "name": "Consolidation plan",
   "glyph": "⧈",
   "gate": "merge mapped",
