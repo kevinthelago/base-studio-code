@@ -665,7 +665,6 @@ function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen
 export function appSessionTag(p: AgentProfile): string {
   switch (p.id) {
     case "sys_planner":             return "⌨ planner";
-    case "sys_librarian":           return "⌬ librarian";
     case "sys_blueprint_assistant": return "✦ blueprint";
     case "sys_planning_autopilot":  return "◇ autopilot";
     default:                        return `${p.surfaceGlyph ?? "◆"} ${(p.name.split(" ")[0] ?? "role").toLowerCase()}`;
@@ -676,7 +675,6 @@ export function appSessionTag(p: AgentProfile): string {
 export function appSessionOpenLabel(p: AgentProfile): string {
   switch (p.id) {
     case "sys_planner":             return "planner";
-    case "sys_librarian":           return "library";
     case "sys_blueprint_assistant": return "blueprints";
     case "sys_planning_autopilot":  return "settings";
     default:                        return (p.surface ?? "surface").toLowerCase();
@@ -689,7 +687,6 @@ export function appReachNote(p: AgentProfile): string {
   const first = p.name.split(" ")[0];
   switch (p.id) {
     case "sys_planner":   return `Other agents reach ${first} through the Plan surface — not by being assigned this role.`;
-    case "sys_librarian": return `Other agents reach ${first} through pinned Knowledge blocks — not by being assigned this role.`;
     default:              return `${first} runs on demand as a one-shot helper — it isn't reached by other agents, and can't be assigned to a pane.`;
   }
 }

@@ -5,7 +5,7 @@ import type { AppStore } from "../types";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
-// to the Extensions feature slice (@/features/extensions/store) (#1309). The standalone
+// to the MCP feature slice (@/features/mcp/store) (#1309). The standalone
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,

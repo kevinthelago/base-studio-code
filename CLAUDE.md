@@ -89,7 +89,7 @@ base-studio-code/
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
 │   │   │                    #   + index.ts (public API barrel). Import UI via @/features/<x>; import
 │   │   │                    #   the pure domain via @/features/<x>/lib/* (keeps React out of non-UI).
-│   │   ├── skills/ · extensions/ · automations/ · github/ · tunnel/ · agents/ · settings/
+│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · agents/ · settings/
 │   │   └── planner/         #   the flagship (session/, pane/, bodies/, blueprints/, stages/, …, lib/)
 │   ├── shared/              # feature-agnostic; no feature imports it
 │   │   ├── lib/             #   core (log/perf/llm), session, fleet, security, cleanup

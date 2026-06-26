@@ -70,7 +70,7 @@ const G = "var(--success)";
 const V = "oklch(0.7 0.12 290)";
 const DOCSC = "oklch(0.7 0.06 90)";
 
-/** kind → glyph + color (matches the catalog-icon style on the Extensions screen). */
+/** kind → glyph + color (matches the catalog-icon style on the MCP screen). */
 export const KIND: Record<SkillKind, KindMeta> = {
   workflow: { label: "workflow", glyph: "⌁", color: A },
   scaffold: { label: "scaffold", glyph: "▤", color: I },

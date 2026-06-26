@@ -3,7 +3,7 @@
 // A profile is the per-agent permission unit (#1457): its own shell-command allowlist
 // (gh/git/bsc-plan guaranteed by the backend), a base policy + per-tool tri-states +
 // filesystem/network scope. Assigned to console panes and applied at launch.
-// Application roles (Project Planner, Librarian) are always-present singleton sessions.
+// Application roles (e.g. Project Planner) are always-present singleton sessions.
 //
 // Pure — free of React/Tauri imports so the resolution logic is unit-testable.
 
@@ -57,22 +57,6 @@ export const APP_ROLES: AgentProfile[] = [
     tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
     paths: { allow: [".studio/plan/**", "docs/plan/**"], deny: ["src/**"] },
     net: { allow: ["api.github.com"] },
-  },
-  {
-    id: "sys_librarian",
-    name: "Librarian",
-    color: "oklch(0.72 0.12 175)",
-    category: "application",
-    desc: "Always-present knowledge-base session. Curates the Knowledge Store — indexes the repo into blocks, maintains tags, and serves pinned context to every other agent.",
-    surface: "Knowledge Store",
-    surfaceGlyph: "K",
-    session: "sys/librarian",
-    owns: "the knowledge-base session",
-    mode: "ask",
-    commands: [],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "deny", web: "allow", task: "allow" },
-    paths: { allow: [".studio/knowledge/**"], deny: ["**/*"] },
-    net: { allow: [] },
   },
   {
     // The Blueprint Assistant ("Design with Claude") is a STATELESS one-shot completion
