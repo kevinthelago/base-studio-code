@@ -37,21 +37,8 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
         let mut probe = std::process::Command::new("git");
         probe.args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")]);
         let branch_exists = no_window(&mut probe).status().map(|s| s.success()).unwrap_or(false);
-        let mut args: Vec<String> = vec!["-C".into(), clone_str, "worktree".into(), "add".into()];
-        if branch_exists {
-            args.push(wt_str.clone());
-            args.push(slug.clone());
-        } else {
-            args.push("-b".into());
-            args.push(slug.clone());
-            args.push(wt_str.clone());
-        }
-        let mut wt_cmd = std::process::Command::new("git");
-        wt_cmd.args(&args);
-        let status = no_window(&mut wt_cmd).status().map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err(format!("ensure_worktree: git worktree add failed for {repo} / {agent_id}"));
-        }
+        add_worktree_healing(&clone_str, &wt_str, &slug, branch_exists)
+            .map_err(|e| format!("ensure_worktree: {e} for {repo} / {agent_id}"))?;
         log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
     // Keep the worktree's build outputs (target/, node_modules/, …) out of git status and mark them
@@ -75,6 +62,50 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
     write_worker_context(&wt, &clone, &project_dir(&project_key), scope_md.as_deref());
     Ok(wt_str)
 }
+
+/// Run `git worktree add` for branch `slug` at `wt_str` in the clone at `clone_str`, capturing
+/// git's stderr so a failure is self-describing, and self-healing a dangling worktree admin record.
+///
+/// When a prior worktree directory was removed *outside* `git worktree remove` (a crash mid-create,
+/// a manual `rm`, or the `node_modules` junction hazard), git keeps a dangling record in
+/// `.git/worktrees/<id>` that still claims the branch — so the next `worktree add` fails with
+/// `fatal: '<branch>' is already used by worktree at '<gone path>'`. `git worktree prune` clears
+/// exactly that record, so on a first failure we prune and retry once before surfacing the error
+/// (#1568). `branch_exists` selects reuse (`add <path> <branch>`) vs creation (`add -b <branch>
+/// <path>`), matching the caller's branch probe.
+fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str, branch_exists: bool) -> Result<(), String> {
+    let mut args: Vec<String> = vec!["-C".into(), clone_str.into(), "worktree".into(), "add".into()];
+    if branch_exists {
+        args.push(wt_str.into());
+        args.push(slug.into());
+    } else {
+        args.push("-b".into());
+        args.push(slug.into());
+        args.push(wt_str.into());
+    }
+    let run_add = || -> std::io::Result<std::process::Output> {
+        let mut c = std::process::Command::new("git");
+        c.args(&args);
+        no_window(&mut c).output()
+    };
+    let mut out = run_add().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        // Clear a dangling worktree record (the dir is gone but git still claims the branch), then
+        // retry the add once. Prune is idempotent and harmless when there's nothing to prune.
+        let mut prune = std::process::Command::new("git");
+        prune.args(["-C", clone_str, "worktree", "prune"]);
+        let _ = no_window(&mut prune).status();
+        out = run_add().map_err(|e| e.to_string())?;
+    }
+    if !out.status.success() {
+        return Err(format!(
+            "git worktree add failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 /// The line-additive repo-root commons whose merges use git's `merge=union` driver (#851): files
 /// streams only ever APPEND lines to, so concatenating both sides on merge is the correct resolution
 /// and any residual concurrent append auto-resolves without a conflict. Mirrors the TS
@@ -243,6 +274,62 @@ mod tests {
         let mut c = std::process::Command::new("git");
         c.args(["-C", &dir.to_string_lossy(), "init", "-q", "-b", "main"]);
         assert!(no_window(&mut c).status().unwrap().success());
+    }
+
+    /// Run a git subcommand in `dir`, asserting success.
+    fn git_in(dir: &std::path::Path, args: &[&str]) {
+        let mut c = std::process::Command::new("git");
+        c.args(["-C", &dir.to_string_lossy()]).args(args);
+        assert!(no_window(&mut c).status().unwrap().success(), "git {args:?} failed");
+    }
+
+    /// A repo with one commit, so branches and worktrees can be created.
+    fn init_repo_with_commit(dir: &std::path::Path) {
+        init_repo(dir);
+        git_in(dir, &["config", "user.email", "t@t.t"]);
+        git_in(dir, &["config", "user.name", "t"]);
+        fs::write(dir.join("README.md"), "x").unwrap();
+        git_in(dir, &["add", "."]);
+        git_in(dir, &["commit", "-q", "-m", "init"]);
+    }
+
+    /// #1568: a worktree dir removed *outside* `git worktree remove` leaves a dangling record that
+    /// still claims the branch, so a plain reuse-add fails (`'<branch>' is already used by worktree
+    /// at '<gone>'`). `add_worktree_healing` prunes that stale record and retries, so the launch
+    /// recovers instead of erroring.
+    #[test]
+    fn add_worktree_heals_a_dangling_record() {
+        let base = unique_dir("heal");
+        let clone = base.join("clone");
+        init_repo_with_commit(&clone);
+        // Create branch `feat` + a worktree on it, then delete the dir without telling git.
+        let gone = base.join("gone");
+        git_in(&clone, &["worktree", "add", "-b", "feat", &gone.to_string_lossy()]);
+        fs::remove_dir_all(&gone).unwrap();
+        // Sanity: a plain reuse-add to a NEW path is blocked by the dangling record.
+        let mut plain = std::process::Command::new("git");
+        plain.args(["-C", &clone.to_string_lossy(), "worktree", "add", &base.join("fresh").to_string_lossy(), "feat"]);
+        assert!(!no_window(&mut plain).output().unwrap().status.success(), "dangling record should block a plain add");
+        // The healing helper prunes the stale record and succeeds.
+        let target = base.join("target");
+        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "feat", true).unwrap();
+        assert!(target.join(".git").exists(), "worktree created after self-heal");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// #1568: a genuine failure surfaces git's actual stderr (not a bare "failed"), so a launch
+    /// failure is debuggable from the message alone.
+    #[test]
+    fn add_worktree_surfaces_git_stderr() {
+        let base = unique_dir("stderr");
+        let clone = base.join("clone");
+        init_repo_with_commit(&clone);
+        // Reuse-add a branch that does not exist → git errors with an invalid-reference message.
+        let err = add_worktree_healing(&clone.to_string_lossy(), &base.join("wt").to_string_lossy(), "nope", true)
+            .unwrap_err();
+        assert!(err.starts_with("git worktree add failed:"), "carries the helper prefix: {err}");
+        assert!(err.trim_end().len() > "git worktree add failed:".len(), "carries git's actual stderr: {err}");
+        let _ = fs::remove_dir_all(&base);
     }
 
     /// #851: seeds `.gitignore`/`.env.example` with merge=union so concurrent appends auto-resolve.
