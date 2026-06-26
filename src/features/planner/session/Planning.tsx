@@ -20,8 +20,8 @@ import {
   parseFleetFile,
 } from "../stages/planSections";
 import { resolveSkills } from "@/features/skills/lib/skills";
-import { parseFeaturesFile, featuresSummary, featuresGateComplete, featuresAwaitingConfirm, featuresAllPhased, featuresToPlanIssues, featureDependencyCycle } from "../issues/featureList";
-import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, unlockedSharedRepos, DEPENDENCIES_KEY } from "../issues/dependencies";
+import { parseFeaturesFile, featuresSummary, featuresAwaitingConfirm, featuresToPlanIssues, featureDependencyCycle } from "../issues/featureList";
+import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
@@ -46,23 +46,19 @@ import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionCo
 import { McpDownloadModal } from "../shared/McpDownloadModal";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
-import { normalizeDeployConfig, deploymentDefined } from "../shared/deployConfig";
-import { allSourcesConnected, migrationActive, datamodelSignals } from "../shared/sourceConfig";
-import { destinationDefined, syncDefined } from "../shared/integrationConfig";
+import { normalizeDeployConfig } from "../shared/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
-import { findPlanGaps } from "../lib/lintPlan";
-import { findPlanInjections, injectionGate } from "../lib/planInjection";
+import { stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkSection, planSectionsComplete, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { mkSection, blueprintCategory, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads } from "../blueprints/blueprintSkills";
 import { publishGist } from "@/features/planner/lib/gist/gist";
-import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, shouldAutoCompleteGate } from "../stages/focusedPlan";
+import { clampIndex, gatePill, footerAction, resolveFooter, shouldAutoCompleteGate } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
@@ -73,6 +69,7 @@ import { usePlanMcpDownloads } from "./usePlanMcpDownloads";
 import { usePlanSkillsManagement } from "./usePlanSkillsManagement";
 import { usePlanMcpManagement } from "./usePlanMcpManagement";
 import { usePlannerBlueprint } from "./usePlannerBlueprint";
+import { usePlanGates } from "./usePlanGates";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -509,116 +506,42 @@ export function Planning({ visible }: { visible: boolean }) {
   // The feature dependency DAG must stay acyclic (#plan-db) — a cycle is a planning deadlock that
   // holds the Features gate. `[]` when acyclic; otherwise the slugs on the offending cycle.
   const featureCycle = useMemo(() => featureDependencyCycle(planFeatures), [planFeatures]);
-  // The live snapshot the declarative section gates read.
-  const stageState = useMemo(() => {
-    const streams = planFleet[effectiveProjectId]?.streams ?? [];
-    const issueCount =
-      parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
-    return derivePlanStageState({
-      sections: sections.map(s => ({ k: s.k, state: s.state })),
-      contextRequired: ctxRequired,
-      repoCount: publishRepos.length,
-      issueCount,
-      fleetStreams: streams.length,
-      // Match each stream's ASSIGNED profile id (`st.profile`, e.g. `gen_<stream>`), NOT the
-      // stream id — generateAgentProfile never produces a profile whose id equals the stream id,
-      // so the old `p.id === st.id` check could never pass and the Permissions gate was stuck (#817).
-      fleetProfilesComplete: fleetProfilesComplete(streams, agentProfiles),
-      automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
-      skillsAck: false,
-      requiresUi,
-      ui: uiCounts,
-      // Routing dropped design files to the project completes the UI stage — recorded as a
-      // confirmation of the `ui` section so it persists (#837).
-      uiRouted: confirmedSet.has("ui"),
-      // Features completes ONLY when every feature is populated AND the user has confirmed the set
-      // (#plan-db) — `allConfirmed` (all-defined) alone used to auto-advance after a single feature.
-      // Folding the user-confirm in here keeps the gate signal (`featuresConfirmed`) unchanged.
-      features: { count: featureState.count, allConfirmed: featuresGateComplete(featureState, confirmedSet.has(FEATURES_KEY)) && featureCycle.length === 0 },
-      // Dependencies (#1111/#1127): the Deploy gate passes once ≥1 library is locked in the manifest.
-      dependencies: { count: planDependencies.length },
-      // Source migration (#1205): the scan drives whether the source stage applies + its gate
-      // signals, so the source-inferred schema can dictate features/structure.
-      migrationSourceEnabled: migrationActive(sourceCfg),
-      datamodelArtifact: datamodelSignals(sourceCfg),
-    });
-  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
   // The blueprint sections (fallback: synthesize built-ins from the enabled stage ids).
   const planSecs = useMemo<BlueprintSection[]>(() => {
     const bp = blueprints.find(b => b.id === effectiveBlueprintId);
     if (bp) return bp.sections;
     return enabledOrderedStages(stageConfig).map(s => mkSection(s.id));
   }, [blueprints, effectiveBlueprintId, stageConfig]);
-  // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
-  // (drafted/confirmed; pending ones aren't authored yet) must not carry a deliberate "fill this
-  // in later" marker (TODO / TBD / FIXME / XXX / TKTK). Scanned ONLY over sections that belong to
-  // the ACTIVE blueprint (so stale files from a prior blueprint can't block), and only those
-  // markers — NOT ellipsis or the word "placeholder", which are normal prose and were
-  // false-positiving (#918). Surfaced as `hasPlanGaps`; the gate requires it false, absent-safe.
-  const hasPlanGaps = useMemo(() => {
-    const enabled = new Set(planSecs.map((s) => s.key));
-    const written: Record<string, string> = {};
-    for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
-    return findPlanGaps(written).some((g) => g.endsWith("unresolved placeholder"));
-  }, [sections, planSecs]);
-  // Plan-injection provenance gate (#1107): scan the planner-authored section prose for injected
-  // instructions, then gate plan→fleet promotion. Acknowledge-to-clear by default; hard-block when
-  // the `injectionHardGate` setting is on. Surfaced as a banner; `cleared` gates publish.
-  const injectionGateState = useMemo(() => {
-    const enabled = new Set(planSecs.map((s) => s.key));
-    const written: Record<string, string> = {};
-    for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
-    return injectionGate(findPlanInjections(written), { hardGate: injectionHardGate, ackSig: planInjectionAck[effectiveProjectId] });
-  }, [sections, planSecs, injectionHardGate, planInjectionAck, effectiveProjectId]);
-  // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — extracted so the gate
-  // signals region below is contiguous; `signals` reads this hook's isAuthoring/authoringSig.
+  // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — call before the gate
+  // hook so `usePlanGates` can read this hook's isAuthoring/authoringSig.
   const {
     isAuthoring, treatAsExisting, switchTargets, canSwitch,
     switchOpen, setSwitchOpen, authoringSig, authorSkillLib, authorMcpLib,
   } = usePlannerBlueprint({
     blueprints, effectiveBlueprintId, isExisting, planAuthoredBlueprint, effectiveProjectId, skillDefs, mcpServers,
   });
-  // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
-  // gate model (`sectionDone`) treats them as resolved.
-  const skipSignals = useMemo(() => {
-    const out: Record<string, boolean> = {};
-    for (const k of skippedSet) out[skippedSignal(k)] = true;
-    return out;
-  }, [skippedSet]);
-  // A gateless ("informational") section is done only once CONFIRMED (#664) — `sectionDone` reads a
-  // `confirmed:<key>` signal. Surface those so a confirmed gateless stage (testing, cleanup, the data
-  // stages, a user-authored stage, …) reads as complete and the frontier advances (#954).
-  const confirmSignals = useMemo(() => {
-    const out: Record<string, boolean> = {};
-    for (const k of confirmedSet) out[confirmedSignal(k)] = true;
-    return out;
-  }, [confirmedSet]);
-  const signals = useMemo(() => {
-    // Shared-deps gate (#1429): every repo built by 2+ streams must have its deps locked; single-owner
-    // repos (and no-fleet plans) auto-satisfy. Derived from the fleet streams' repos + the manifest.
-    const repoStreams: Record<string, string[]> = {};
-    for (const s of (planFleet[effectiveProjectId]?.streams ?? [])) { if (s.repo) (repoStreams[s.repo] ??= []).push(s.id); }
-    const sharedDepsLocked = unlockedSharedRepos(planDependencies, repoStreams).length === 0;
-    return { ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
-  }, [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
+  // Gate/`signals` derivation (#1474, usePlanGates) — the live stageState snapshot, the lint/injection
+  // gates, the skip/confirm signal bags, the flat `signals` bag, and the auto-derived focused-pane
+  // phases. `planSecs` + the focused-pane SELECTION (`focusSel` below) stay in this component.
+  const {
+    injectionGateState, phases, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady,
+  } = usePlanGates({
+    sections, planSecs, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations,
+    featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
+    confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
+    planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
+  });
 
-  // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
-  // signals; the selection auto-follows the active phase (`focusSel` null) or pins to a user
-  // pick; reset on project/blueprint switch.
-  const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
-  const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
+  // Focused pane (#652): the SELECTION — auto-follows the active phase (`focusSel` null) or pins to a
+  // user pick; reset on project/blueprint switch. `phases`/`focusActiveIdx` come from usePlanGates.
   const [focusSel, setFocusSel] = useState<number | null>(null);
   useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
-  const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
-  const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
 
   // ── Live planner frames over the tunnel (#934 / #987) ───────────────────────────
   // Project the LIVE planning session (active stage + confirmed sections + files + the
   // conversation) to a paired phone, alongside the async file-sync above. The desktop stays
   // the single source of truth; the phone mirrors these and drives via the inbound listeners.
-  const currentStage = phases[focusActiveIdx]?.key ?? "";
-  const planStatusLabel = planComplete ? "complete" : currentStage ? "in_progress" : "starting";
 
   // The planner is a PTY running `claude`, so the structured conversation lives in Claude's
   // transcript — poll it (newest 50 turns) while paired so the phone renders the real chat,
@@ -845,13 +768,8 @@ export function Planning({ visible }: { visible: boolean }) {
     const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
     return required.length ? Math.round((done / required.length) * 100) : 0;
   }, [phases]);
-  // The plan is "ready" when every non-optional stage's gate is met — gates the Triage launch
-  // (#444/#551) the same way the autopilot decides the plan is publishable.
-  // Triage unlocks on the SAME completion the focused footer publishes on — the blueprint-driven
-  // gate (planComplete). The legacy PLAN_STAGES check used different per-section confirmed-state
-  // criteria and could stay false after the blueprint plan was done, leaving triage locked even
-  // though the footer offered Publish (#823). The blueprint is the authoritative section model.
-  const planReady = planComplete;
+  // `planReady` (from usePlanGates) is `planComplete`: the plan is "ready" — gating the Triage launch
+  // (#444/#551/#823) — on the SAME blueprint-driven completion the focused footer publishes on.
   // The blueprint's enabled stage ids — passed to setup_workspaces so the planner's CLAUDE.md
   // is scoped to this project's stages (#542/#667). The refactor stopped passing this, which
   // silently reverted a refactor/transform plan to the greenfield stage set. (#A — restored.)
