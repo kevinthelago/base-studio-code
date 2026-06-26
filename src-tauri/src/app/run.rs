@@ -106,7 +106,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            knowledge::chat::kb_chat,
+            crate::llm::llm_complete,
             github::github_request,
             github::gist_create,
             github::gist_update,

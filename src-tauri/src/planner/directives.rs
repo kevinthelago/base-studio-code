@@ -1,4 +1,4 @@
-use super::templates::*;
+use super::prompts::*;
 use include_dir::{include_dir, Dir};
 
 /// The migrated stage directives (#1462) live as the `directive` field in each

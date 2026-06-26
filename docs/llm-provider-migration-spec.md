@@ -19,7 +19,7 @@ If our runtime **emits those same contracts**, every existing reader and UI keep
 ### 1. `LlmProvider` (API tier) — `crates/llm` (package `bsc-llm`)
 A standalone, **Tauri-free** crate so any binary can depend on it. Normalizes provider differences:
 
-- `complete()` — single-shot chat (used by `kb_chat` → planning autopilot, LLM grader, cleanup scan). Every provider maps its response into the shared `{ content: [{type:"text", text}], usage }` shape, so the frontend is provider-agnostic.
+- `complete()` — single-shot chat (used by `llm_complete` → planning autopilot, LLM grader, cleanup scan). Every provider maps its response into the shared `{ content: [{type:"text", text}], usage }` shape, so the frontend is provider-agnostic.
 - `turn()` — **multi-turn tool use** (the agent loop). Normalized model:
 
   ```

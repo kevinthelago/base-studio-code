@@ -58,17 +58,17 @@ base-studio-code/
 │       ├── main.rs          #   binary entry → app::run()
 │       ├── lib.rs           #   crate root: module declarations + re-exports only (63 LOC)
 │       ├── tests.rs         #   cross-cutting test module (+ testutil.rs)
-│       ├── platform/        #   OS primitives: paths, git, shell, process, fsx
+│       ├── platform/        #   OS primitives: paths, git, shell, process, fsx, docstore
 │       ├── app/             #   Tauri shell: run(), state, recovery, dialog
 │       ├── console/         #   interactive PTY surface: pty, ledger, discovery, settings, shell_rc
 │       ├── agent/           #   agent launch/config: harness, launch, claude_config
 │       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, inspect
-│       ├── planner/         #   planning session: templates, directives, workspace
+│       ├── planner/         #   planning session: prompts, directives, workspace
 │       ├── fleet/           #   worker fleet: worktree, director, staging
 │       ├── github/          #   GitHub integration: api, oauth, repos, readiness, git_hooks
 │       ├── sources/         #   migration data sources: data, oauth, credentials
 │       ├── extensions/      #   MCP servers, hooks, skills, cfg
-│       ├── knowledge/       #   KB / document store: docstore, workspace, chat
+│       ├── llm.rs           #   the llm_complete command: provider-agnostic one-shot completion (→ crates/llm)
 │       ├── observability/   #   logs, perf, tokens, audit
 │       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
 ├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
@@ -198,7 +198,7 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 ### The planner is plan-only
 Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
 
-### The planning workflow (driven by the planner CLAUDE.md template in `planner/templates.rs` + `planner/directives.rs`)
+### The planning workflow (driven by the planner CLAUDE.md template in `planner/prompts.rs` + `planner/directives.rs`)
 1. Link repositories; read the Knowledge Base.
 2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
 3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.

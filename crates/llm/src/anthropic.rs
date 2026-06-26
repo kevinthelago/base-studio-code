@@ -1,6 +1,6 @@
 //! Anthropic Messages API provider (api.anthropic.com). Returns Anthropic's native
 //! response JSON unchanged — it already carries `content` blocks (text + any
-//! `tool_use`) and `usage`, which is exactly the normalized shape kb_chat returns.
+//! `tool_use`) and `usage`, which is exactly the normalized shape llm_complete returns.
 
 use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 
