@@ -4,13 +4,8 @@ use crate::*;
 /// slugifying `name` (`[A-Za-z0-9._-]`, else `_`) so it can never escape the `mcp/` root.
 /// `Err` for an empty / `.` / `..` name. Pure over the base dir — unit-tested.
 pub(crate) fn mcp_install_dir(name: &str) -> Result<std::path::PathBuf, String> {
-    let safe: String = name
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
-        .collect();
-    if safe.is_empty() || safe == "." || safe == ".." {
-        return Err("mcp_install_dir: invalid name".into());
-    }
+    let safe = crate::platform::fsx::safe_dir_segment(name, |c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        .map_err(|_| "mcp_install_dir: invalid name".to_string())?;
     Ok(bsc_base_dir().join("mcp").join(safe))
 }
 #[tauri::command]
