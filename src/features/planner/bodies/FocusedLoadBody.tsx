@@ -6,7 +6,8 @@
 // merge summary / conflict resolution), and the downstream artifacts + load issues.
 // Transcribed from source/sections.jsx (LoadPreviewCard + DownstreamCard).
 
-import { useStageJson, type LoadPlan, type LoadEntity } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type LoadPlan, type LoadEntity } from "./dataCollection";
 import { Card, Readiness } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";

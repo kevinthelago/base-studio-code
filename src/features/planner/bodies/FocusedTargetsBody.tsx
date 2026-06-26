@@ -5,7 +5,8 @@
 // a readiness gate (≥1 source declared + Data Model bound). Transcribed from the
 // design prototype (collection/panes.jsx · TargetsPane).
 
-import { useStageJson, modeSummary, type CollectTargets } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { modeSummary, type CollectTargets } from "./dataCollection";
 import { Card, EntityChip, SourceHead, Readiness, Kv } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";

@@ -6,7 +6,8 @@
 // quarantine policy for failures. There is no design prototype for this stage; the
 // layout follows the section's intent + the shared card vocabulary.
 
-import { useStageJson, type CleaningPlan, type CleanRule } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type CleaningPlan, type CleanRule } from "./dataCollection";
 import { Card, Readiness } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";
