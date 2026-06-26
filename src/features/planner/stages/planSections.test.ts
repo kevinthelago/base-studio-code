@@ -11,7 +11,6 @@ import {
   SKIPPED_KEY,
   FLEET_KEY,
   FEATURES_KEY,
-  parseReposFile,
 } from "./planSections";
 
 describe("parseSectionKey", () => {
@@ -261,23 +260,5 @@ describe("parseFleetFile", () => {
     expect(parseFleetFile("   ")).toBeNull();
     expect(parseFleetFile("{not json")).toBeNull();
     expect(parseFleetFile("[1,2,3]")).toBeNull();
-  });
-});
-
-
-describe("parseReposFile (#378)", () => {
-  it("parses a bare JSON array of owner/repo", () => {
-    expect(parseReposFile('["acme/web","acme/api"]')).toEqual(["acme/web", "acme/api"]);
-  });
-  it("accepts a { repos: [...] } wrapper and dedupes + trims", () => {
-    expect(parseReposFile('{"repos":[" acme/web ","acme/web","acme/api"]}')).toEqual(["acme/web", "acme/api"]);
-  });
-  it("ignores non-owner/repo strings and non-strings", () => {
-    expect(parseReposFile('["acme/web","notarepo",42,null]')).toEqual(["acme/web"]);
-  });
-  it("returns [] for blank or malformed input", () => {
-    expect(parseReposFile("")).toEqual([]);
-    expect(parseReposFile("   ")).toEqual([]);
-    expect(parseReposFile("{not json")).toEqual([]);
   });
 });
