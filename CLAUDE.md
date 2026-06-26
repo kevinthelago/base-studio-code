@@ -144,7 +144,6 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
 base-studio-code (desktop host)
 ├── Agent Orchestrator      — spawns/manages parallel agent sessions       (src-tauri/src/{console,agent,fleet})
 ├── GitHub Integration      — OAuth, repo selection, PR/issue access       (src-tauri/src/github)
-├── Knowledge Store         — injectable context blocks keyed by stack tag  (src-tauri/src/knowledge)
 ├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/mobile/tunnel)
 └── UI Shell                — Tauri WebView running the React frontend
 ```
