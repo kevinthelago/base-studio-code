@@ -14,21 +14,18 @@ pub(crate) fn get_base_dir() -> String {
     bsc_base_dir().to_string_lossy().into_owned()
 }
 
-/// Validates a base-relative posix path for read: rejects `..` segments,
-/// rejects absolute paths, and only permits paths under `documents/` or
-/// `projects/`. Returns the resolved absolute path on success.
+/// Validates a base-relative posix path for read: rejects `..`/absolute/out-of-root
+/// paths via the shared [`crate::platform::fsx::is_safe_relpath`] guard (component-based,
+/// the single source of truth), then layers docstore's extra requirement that the path
+/// live under `documents/` or `projects/`. Returns the resolved absolute path on success.
 fn resolve_store_path(relpath: &str) -> Result<std::path::PathBuf, String> {
-    if relpath.contains("..") {
-        return Err("invalid relpath: contains '..'".to_string());
+    // Shared traversal/absolute guard: rejects `..` segments, absolute paths, and
+    // Windows drive prefixes (component-based, so a legit name like `a..b.md` passes).
+    if !crate::platform::fsx::is_safe_relpath(std::path::Path::new(relpath)) {
+        return Err("invalid relpath: must be a relative path without traversal".to_string());
     }
+    // Docstore-specific root allow-list on top of the shared guard.
     let normalized = relpath.replace('\\', "/");
-    // Reject absolute paths (unix `/x`, windows `C:/x` or `\\server`).
-    let is_absolute = normalized.starts_with('/')
-        || std::path::Path::new(relpath).is_absolute()
-        || (normalized.len() >= 2 && normalized.as_bytes()[1] == b':');
-    if is_absolute {
-        return Err("invalid relpath: must be relative".to_string());
-    }
     if !(normalized.starts_with("documents/") || normalized.starts_with("projects/")) {
         return Err("invalid relpath: must begin with documents/ or projects/".to_string());
     }
@@ -68,6 +65,15 @@ mod tests {
             tauri::async_runtime::block_on(read_document("projects/p1/goal.md".to_string()))
                 .expect("project read succeeds"),
             "the goal",
+        );
+
+        // A legit filename containing `..` (no traversal) is accepted: the guard is
+        // component-based, not an over-broad `..` substring match (#1664).
+        write_file(&base.join("documents").join("a..b.md"), "dotted name");
+        assert_eq!(
+            tauri::async_runtime::block_on(read_document("documents/a..b.md".to_string()))
+                .expect("dotted-name read succeeds"),
+            "dotted name",
         );
 
         // Traversal is rejected.
