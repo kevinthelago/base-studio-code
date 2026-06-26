@@ -362,6 +362,13 @@ fn wire_bsc_env(
     if let Some(bin) = sidecar_bin_path("bsc-logs") {
         cmd.env("BSC_LOGS_BIN", to_bash_path(&bin.to_string_lossy()));
     }
+    // bsc-project (#1720): the cross-project hub-lifecycle CLI sidecar the `bsc-project` shell helper
+    // execs — `bsc-project list` + `published get|set <key>` over EVERY `~/.base-studio-code/projects/
+    // <key>/` hub (not tied to one plan.db, unlike bsc-plan). Mirrors the bsc-plan/bsc-logs
+    // sidecar-helper shape; staged for every pane, only its explicit subcommands touch disk.
+    if let Some(bin) = sidecar_bin_path("bsc-project") {
+        cmd.env("BSC_PROJECT_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
     // this group, which the Planning pane resolves + highlights as "authored this session". The id is
