@@ -2,6 +2,32 @@
 //! text-file reads, and plan section-file ingestion. Pure-ish helpers shared across domains.
 //! Extracted verbatim from `lib.rs`.
 
+/// Map a string to a filesystem-safe slug: every char for which `allow` is true is kept as-is,
+/// every other char is replaced by `fill`; when `cap` is `Some(n)` the result is truncated to the
+/// first `n` chars. This is the single char-map primitive the Family-A slug helpers delegate to
+/// (#1663) — each named wrapper supplies its own allowed-char set / fill / cap so its byte-exact
+/// semantics are preserved.
+pub(crate) fn map_slug(s: &str, allow: impl Fn(char) -> bool, fill: char, cap: Option<usize>) -> String {
+    let mapped = s.chars().map(|c| if allow(c) { c } else { fill });
+    match cap {
+        Some(n) => mapped.take(n).collect(),
+        None => mapped.collect(),
+    }
+}
+
+/// Slugify `name` into a single safe directory segment: keep every char `allow` accepts, replace the
+/// rest with `_`, and reject the result if it is empty, `.`, or `..` (so it can never escape its
+/// parent dir). The shared empty/`.`/`..` guard behind [`crate::project::blueprints::blueprint_file`]
+/// and [`crate::extensions::mcp::mcp_install_dir`] (#1663). `Err` carries a generic reason; callers
+/// map it to their own message.
+pub(crate) fn safe_dir_segment(name: &str, allow: impl Fn(char) -> bool) -> Result<String, String> {
+    let safe = map_slug(name, allow, '_', None);
+    if safe.is_empty() || safe == "." || safe == ".." {
+        return Err("invalid directory segment".into());
+    }
+    Ok(safe)
+}
+
 /// Sanitize a project key into a filesystem-safe slug.
 ///
 /// Must stay byte-for-byte identical to the frontend's paneId sanitization in
@@ -9,12 +35,8 @@
 /// the planning directory always correspond. ASCII-only on purpose — Rust's
 /// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.
 pub(crate) fn sanitize_project_key(key: &str) -> String {
-    let s: String = key
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
-        .collect();
-    // Truncate so paths stay manageable.
-    s.chars().take(80).collect()
+    // keep [A-Za-z0-9-] → '_', cap 80 (delegates to map_slug; semantics frozen).
+    map_slug(key, |c| c.is_ascii_alphanumeric() || c == '-', '_', Some(80))
 }
 
 /// Slugify a worktree/branch reference: keep `[A-Za-z0-9._-]`, every other char becomes `-`.
@@ -23,9 +45,8 @@ pub(crate) fn sanitize_project_key(key: &str) -> String {
 /// side — the fleet uses it to *create* a worktree's on-disk path while session discovery uses it to
 /// *recompute* that path; if the two ever diverged, recovery would miss live worktrees (#1300).
 pub(crate) fn worktree_slug(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '-' })
-        .collect()
+    // keep [A-Za-z0-9._-] → '-', no cap (delegates to map_slug; semantics frozen).
+    map_slug(s, |c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-', '-', None)
 }
 
 /// Whether `rel` is a safe relative path: not absolute, with no drive prefix, root component, or any
