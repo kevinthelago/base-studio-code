@@ -1747,15 +1747,15 @@ describe("blueprints library (#513/#514)", () => {
     expect(copy.name).toMatch(/copy/);
     // editing the copy doesn't touch the source
     const edited = copy.sections.map((s, i) => (i === 0 ? { ...s, enabled: false } : s));
-    useAppStore.getState().setBlueprintSections(id, edited);
+    useAppStore.getState().setBlueprintStages(id, edited);
     const src = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
     expect(src.sections[0].enabled).toBe(true);
   });
 
-  it("setBlueprintSections persists the new sections for that blueprint only", () => {
+  it("setBlueprintStages persists the new sections for that blueprint only", () => {
     const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
     const flipped = def.sections.map((s) => (s.key === "discovery" ? { ...s, enabled: false } : s));
-    useAppStore.getState().setBlueprintSections("default", flipped);
+    useAppStore.getState().setBlueprintStages("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(false);
     // a sibling blueprint is untouched
     expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);

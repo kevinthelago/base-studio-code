@@ -17,7 +17,7 @@ import type { FleetPlan, AgentStream } from "@/features/planner/stages/planSecti
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
 import type { StageRunState } from "@/features/planner/preview/stageRun";
-import type { Blueprint, BlueprintSection } from "@/features/planner/stages/blueprints";
+import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
 import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
@@ -641,7 +641,7 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
   // Blueprints (#513/#514): named, reusable configs — an ordered list of planning
   // sections, each owning its prompt module + pipelines. The active one seeds new
   // projects. Seeded with the starter library; persisted. Section/pipeline edits go
-  // through setBlueprintSections (the component computes the new sections array).
+  // through setBlueprintStages (the component computes the new sections array).
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
   setActiveBlueprint: (id: string) => void;
@@ -673,7 +673,7 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
   addBlueprint:       () => string;
   duplicateBlueprint: (id: string) => string;
   updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
-  setBlueprintSections: (id: string, sections: BlueprintSection[]) => void;
+  setBlueprintStages: (id: string, sections: BlueprintStage[]) => void;
   /** Delete a blueprint; if it was active, the active id falls back to the first
    *  remaining (or the default). */
   removeBlueprint: (id: string) => void;

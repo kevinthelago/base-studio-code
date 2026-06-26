@@ -15,13 +15,13 @@ import {
   reorderStages, addStage, deleteStage, toggleDep, setOutput, setStageField,
   addSkill, removeSkill, addMcpServer, removeMcpServer, depCandidates,
 } from "./blueprintEdit";
-import type { Blueprint, BlueprintSection } from "../stages/blueprints";
+import type { Blueprint, BlueprintStage } from "../stages/blueprints";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
 
 const col = (gap = 12): CSSProperties => ({ display: "flex", flexDirection: "column", gap });
 const rowS = (gap = 10): CSSProperties => ({ display: "flex", alignItems: "center", gap });
-const gateCount = (s: BlueprintSection) => (s.gateRule ? 1 : 0);
+const gateCount = (s: BlueprintStage) => (s.gateRule ? 1 : 0);
 
 export interface AuthorViewProps {
   bp: Blueprint;
@@ -151,7 +151,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
-  const setSections = (next: BlueprintSection[]) => onChange({ ...bp, sections: next });
+  const setSections = (next: BlueprintStage[]) => onChange({ ...bp, sections: next });
   const used = new Set(stages.map((s) => s.key));
 
   const add = (key: string) => {
@@ -267,7 +267,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
   const stages = bp.sections ?? [];
   const [open, setOpen] = useState<Set<string>>(() => new Set(stages[0] ? [stages[0].uid] : []));
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const setSections = (next: BlueprintSection[]) => onChange({ ...bp, sections: next });
+  const setSections = (next: BlueprintStage[]) => onChange({ ...bp, sections: next });
 
   const totalSkills = new Set(stages.flatMap((s) => s.skills ?? [])).size;
   const totalMcp = new Set(stages.flatMap((s) => s.mcp ?? [])).size;

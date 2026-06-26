@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSkillLibrary } from "./blueprintSkills";
 import { addSkill, removeSkill, mkStageSection } from "./blueprintEdit";
 import type { SkillDef } from "@/features/skills/lib/skills";
-import type { BlueprintSection } from "../stages/blueprints";
+import type { BlueprintStage } from "../stages/blueprints";
 
 const skillDef = (id: string, name: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: `${name} desc`, prompt: "", tools: [], profiles: [],
@@ -21,7 +21,7 @@ describe("blueprintSkills library (#636)", () => {
 });
 
 describe("blueprintEdit skill helpers (#636)", () => {
-  const base = (): BlueprintSection[] => [mkStageSection("api")];
+  const base = (): BlueprintStage[] => [mkStageSection("api")];
   it("addSkill attaches (no dupes); removeSkill detaches", () => {
     let s = base();
     s = addSkill(s, s[0].uid, "s1");

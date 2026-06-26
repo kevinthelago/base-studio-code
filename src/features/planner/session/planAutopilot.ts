@@ -23,7 +23,7 @@ export type AutopilotAction =
 
 /** Everything the driver needs to decide, computed by the runner from the live plan state. */
 export interface AutopilotContext {
-  /** Whole plan is publishable (planSectionsComplete over the blueprint). */
+  /** Whole plan is publishable (planStagesComplete over the blueprint). */
   planReady: boolean;
   /** Whether publish has already fired (so we don't loop on it). */
   published: boolean;

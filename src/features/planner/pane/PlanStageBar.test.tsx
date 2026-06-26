@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { PlanStageBar } from "./PlanStageBar";
-import { makeBlueprints, type BlueprintSection } from "../stages/blueprints";
+import { makeBlueprints, type BlueprintStage } from "../stages/blueprints";
 import { planStateToSignals } from "../stages/planStageDerive";
 import { buildPlanStageState } from "../stages/planStages";
 
 function titlesIn(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "");
 }
-const defaultSections = (): BlueprintSection[] => makeBlueprints()[0].sections;
-const setEnabled = (sections: BlueprintSection[], key: string, enabled: boolean): BlueprintSection[] =>
+const defaultSections = (): BlueprintStage[] => makeBlueprints()[0].sections;
+const setEnabled = (sections: BlueprintStage[], key: string, enabled: boolean): BlueprintStage[] =>
   sections.map((s) => (s.key === key ? { ...s, enabled } : s));
 const signalsFrom = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
   planStateToSignals(buildPlanStageState(over));

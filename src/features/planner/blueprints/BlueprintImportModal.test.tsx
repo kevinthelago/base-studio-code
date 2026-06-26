@@ -3,14 +3,14 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { BlueprintImportModal, type BlueprintImportModalProps } from "./BlueprintImportModal";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
 import { type PreviewBlueprint } from "./BlueprintModals";
-import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 
 vi.mock("@/features/planner/lib/gist/gist", () => ({ listBlueprintGists: vi.fn() }));
 
 const SECTIONS = [
   { uid: "u1", key: "discovery", name: "Discovery", glyph: "◆", icon: "flag", hue: 70, gate: "", deps: [], blurb: "", prompt: "Establish the goal, users, and scope.", enabled: true, expanded: false },
   { uid: "u2", key: "repos", name: "Repos", glyph: "▦", icon: "account_tree", hue: 230, gate: "", deps: [], blurb: "", prompt: "Decide the repositories the project needs.", enabled: true, expanded: false },
-] as BlueprintSection[];
+] as BlueprintStage[];
 const PREVIEW: PreviewBlueprint = {
   name: "Fresh BP", icon: "F", h: 70, sections: SECTIONS,
   blueprint: { id: "fresh", name: "Fresh BP", desc: "", category: "greenfield", sections: SECTIONS } as Blueprint,

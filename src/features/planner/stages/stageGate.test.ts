@@ -53,7 +53,7 @@ describe("stageGate — evalGate", () => {
   });
 
   it("the Context gate completes when a blueprint surfaces no discovery topics (#953)", () => {
-    // The real SECTION_DEFS.discovery gateRule: core confirmed (must-pass, no fill) + every
+    // The real STAGE_DEFS.discovery gateRule: core confirmed (must-pass, no fill) + every
     // surfaced topic resolved + no leftover gaps. A lighter blueprint (e.g. a maintain
     // "Feature Add" one) can legitimately surface zero topics — the gate must still complete
     // rather than deadlock on `topicsResolved of topicsTotal` with a 0 denominator.
