@@ -1,11 +1,13 @@
-// Shared presentational primitives for the data-collection focused panes
-// (Targets, Source legitimacy, …). Token-styled inline to match the other focused
-// bodies (FocusedSourceBody etc.); transcribed from collection/panes.jsx.
+// Shared presentational primitives for the planner focused-pane bodies — the single home for the
+// reusable, cross-body components (Card, Readiness, ModeChip, EntityChip, SourceHead, Kv). Used by
+// the data-collection panes (Targets, Source legitimacy, Mapping, …) and renamed from
+// DataCollectionPrimitives.tsx in #1635 to reflect that it is the shared body-primitives module.
+// Token-styled inline to match the other focused bodies (FocusedSourceBody etc.); transcribed from
+// collection/panes.jsx.
 
 import type { ReactNode } from "react";
 import { type CollectMode, type CollectSource, modeHue } from "./dataCollection";
-
-const mono = "var(--mono)";
+import { MONO as mono } from "./bodyStyles";
 
 /** scrape / fetch pill. */
 export function ModeChip({ mode }: { mode: CollectMode }) {

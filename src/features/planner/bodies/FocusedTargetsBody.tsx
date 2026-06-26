@@ -7,7 +7,7 @@
 
 import { useStageJson } from "./useStageJson";
 import { modeSummary, type CollectTargets } from "./dataCollection";
-import { Card, EntityChip, SourceHead, Readiness, Kv } from "./DataCollectionPrimitives";
+import { Card, EntityChip, SourceHead, Readiness, Kv } from "./bodyPrimitives";
 
 const mono = "var(--mono)";
 
