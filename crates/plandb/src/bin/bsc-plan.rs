@@ -25,6 +25,7 @@
 
 use bsc_sqlite_util::{print_json, read_stdin_json};
 use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use serde::Serialize;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -107,585 +108,594 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
 
-    // `render`/writes/reads all need the DB; resolve it once.
-    let store = || -> Result<Store, String> {
-        let path = resolve_db(&args.db)?;
-        Store::open(&path).map_err(|e| format!("opening {}: {e}", path.display()))
-    };
-
+    // Each arm is a one-line dispatch to the verb's / noun's handler; the handler resolves the DB
+    // and owns its own `match sub`. Shared output shapes live in the `emit_*` helpers below.
     match cmd.as_str() {
-        "add" => {
-            let s = store()?;
-            let refs = cmd_add(&s)?;
-            if args.json {
-                println!("{}", serde_json::to_string(&refs).unwrap_or_else(|_| "[]".into()));
-            } else {
-                for r in &refs {
-                    println!("{r}");
-                }
+        "add" => cmd_add_cmd(&args),
+        "get" => cmd_get(&args),
+        "summary" => cmd_summary(&args),
+        "list" | "mine" => cmd_list(&args),
+        "status" => cmd_status(&args),
+        "remove" => cmd_remove(&args),
+        "render" => cmd_render(&args),
+        "feature" => cmd_feature(&args),
+        "repo" => cmd_repo(&args),
+        "phase" => cmd_phase(&args),
+        "fleet" => cmd_fleet(&args),
+        "deploy" => cmd_deploy(&args),
+        "deps" => cmd_deps(&args),
+        "mcp" => cmd_mcp(&args),
+        "blueprint" => cmd_blueprint(&args),
+        "discovery" => cmd_discovery(&args),
+        "integration" => cmd_integration(&args),
+        "lesson" => cmd_lesson(&args),
+        other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// Open the project's plan.db (resolved from `--db` / `BSC_PLAN_DB`). Every DB-backed handler opens
+/// it lazily so a pure error path (unknown sub, bad usage) never touches the disk.
+fn open_store(db: &Option<String>) -> Result<Store, String> {
+    let path = resolve_db(db)?;
+    Store::open(&path).map_err(|e| format!("opening {}: {e}", path.display()))
+}
+
+/// Emit `items` as a JSON array (when `json`) or one `line_fn(index, item)` line each, with `empty`
+/// shown for an empty non-JSON read. The shared shape behind every plural human/JSON `list` read.
+fn emit_json_or_lines<T: Serialize>(json: bool, items: &[T], empty: &str, line_fn: impl Fn(usize, &T) -> String) {
+    if json {
+        println!("{}", serde_json::to_string(items).unwrap_or_else(|_| "[]".into()));
+    } else if items.is_empty() {
+        println!("{empty}");
+    } else {
+        for (i, it) in items.iter().enumerate() {
+            println!("{}", line_fn(i, it));
+        }
+    }
+}
+
+/// Echo a just-written set of `names` (refs/slugs/repos/topics): a JSON array (when `json`) or one
+/// `<verb> <name>` line each — an empty `verb` prints the bare name (the ref/slug roster echo).
+fn emit_set_result<T: Serialize + std::fmt::Display>(json: bool, names: &[T], verb: &str) {
+    if json {
+        println!("{}", serde_json::to_string(names).unwrap_or_else(|_| "[]".into()));
+    } else if verb.is_empty() {
+        for n in names {
+            println!("{n}");
+        }
+    } else {
+        for n in names {
+            println!("{verb} {n}");
+        }
+    }
+}
+
+/// Emit an optional single blob: the JSON value (`--pretty`-aware) or, when absent, `null` (JSON
+/// mode) / `none_text` (human mode). The shared shape behind `deploy/deps/blueprint get`.
+fn emit_blob_or_null(json: bool, pretty: bool, blob: Option<serde_json::Value>, none_text: &str) {
+    match blob {
+        Some(v) => print_json(&v, pretty),
+        None => println!("{}", if json { "null" } else { none_text }),
+    }
+}
+
+/// `add` — upsert issues from JSON on stdin, echo the assigned ref(s).
+fn cmd_add_cmd(args: &Args) -> Result<(), String> {
+    let s = open_store(&args.db)?;
+    let refs = cmd_add(&s)?;
+    emit_set_result(args.json, &refs, "");
+    Ok(())
+}
+
+/// `get <ref>` — one issue's FULL spec (compact `--json` by design; `--pretty` re-indents). An agent
+/// escalates here for the detail the lean list omits.
+fn cmd_get(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc-plan get <ref>")?;
+    let s = open_store(&args.db)?;
+    match s.get(r).map_err(|e| e.to_string())? {
+        Some(issue) if args.json => print_json(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
+        Some(issue) => print!("{}", render_issue(&issue)),
+        None => return Err(format!("no issue with ref '{r}'")),
+    }
+    Ok(())
+}
+
+/// `summary` — the cheapest "where does the plan stand" read: totals + per-status/stream/phase counts.
+fn cmd_summary(args: &Args) -> Result<(), String> {
+    let s = open_store(&args.db)?;
+    let rows = s.list_summary(None, None, None, None).map_err(|e| e.to_string())?;
+    let phases = s.phase_list().map_err(|e| e.to_string())?;
+    let o = compute_overview(&rows, &phases);
+    if args.json {
+        print_json(&overview_json(&o), args.pretty);
+    } else {
+        print!("{}", render_overview_text(&o));
+    }
+    Ok(())
+}
+
+/// `list` / `mine` — the issue table. Lean by default (#1562); `--fields` is an explicit TSV
+/// projection, `--full` every field (TSV lines or full `--json`).
+fn cmd_list(args: &Args) -> Result<(), String> {
+    let s = open_store(&args.db)?;
+    let (status, stream) = (args.status.as_deref(), args.stream.as_deref());
+    if let Some(fields) = &args.fields {
+        // Explicit projection wins over lean/full: fetch the full record, emit only the named
+        // columns as TSV (so `body` is reachable when asked for, a typo'd field is a blank column).
+        let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+        print!("{}", render_fields_tsv(&issues, fields));
+    } else if args.full {
+        let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+        if args.json {
+            print_json(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
+        } else if issues.is_empty() {
+            println!("(no matching issues)");
+        } else {
+            for issue in &issues {
+                println!("{}", render_issue_line(issue));
             }
+        }
+    } else {
+        // Lean by default (#1562): body omitted at the SQL layer, value-lists as counts.
+        let rows = s.list_summary(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+        if args.json {
+            print_json(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
+        } else if rows.is_empty() {
+            println!("(no matching issues)");
+        } else {
+            print!("{}", render_summary_tsv(&rows));
+        }
+    }
+    Ok(())
+}
+
+/// `status <ref> <status>` — set an issue's status (validated against {@link STATUSES}).
+fn cmd_status(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc-plan status <ref> <status>")?;
+    let new = args.positional.get(2).ok_or("usage: bsc-plan status <ref> <status>")?;
+    if !is_valid_status(new) {
+        return Err(format!("unknown status '{new}' (expected one of {STATUSES:?})"));
+    }
+    let s = open_store(&args.db)?;
+    let n = s.set_status(r, new).map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("no issue with ref '{r}'"));
+    }
+    if !args.json {
+        println!("{r} → {new}");
+    }
+    Ok(())
+}
+
+/// `remove <ref>` — delete one issue.
+fn cmd_remove(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc-plan remove <ref>")?;
+    let s = open_store(&args.db)?;
+    s.remove(r).map_err(|e| e.to_string())?;
+    if !args.json {
+        println!("removed {r}");
+    }
+    Ok(())
+}
+
+/// `render` — print the issues.json projection (full, unchanged) to stdout.
+fn cmd_render(args: &Args) -> Result<(), String> {
+    let s = open_store(&args.db)?;
+    println!("{}", s.render_issues_json().map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `feature` — the features roster (titles-first) + the detail-fill path.
+fn cmd_feature(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `feature add <name>...` registers titles (the roster); with no names it reads a feature
+        // object/array on stdin (the detail-fill path, merged by slug).
+        "add" => {
+            let names: Vec<&String> = args.positional.iter().skip(2).collect();
+            let slugs = if names.is_empty() {
+                cmd_feature_add(&s)?
+            } else {
+                names
+                    .iter()
+                    .map(|n| s.feature_upsert(&PlanFeature { name: (*n).clone(), ..Default::default() }))
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| e.to_string())?
+            };
+            emit_set_result(args.json, &slugs, "");
+            Ok(())
+        }
+        "list" => {
+            let feats = s.feature_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &feats, "(no features)", |_, f| render_feature_line(f));
             Ok(())
         }
         "get" => {
-            let r = args.positional.get(1).ok_or("usage: bsc-plan get <ref>")?;
-            let s = store()?;
-            match s.get(r).map_err(|e| e.to_string())? {
-                // The single-issue read is the full record by design (an agent escalates here for the
-                // detail the lean list omits) — `--json` is compact by default, `--pretty` re-indents.
-                Some(issue) if args.json => print_json(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
-                Some(issue) => print!("{}", render_issue(&issue)),
-                None => return Err(format!("no issue with ref '{r}'")),
-            }
-            Ok(())
-        }
-        "summary" => {
-            // The cheapest "where does the plan stand" read: totals + per-status/stream/phase counts.
-            let s = store()?;
-            let rows = s.list_summary(None, None, None, None).map_err(|e| e.to_string())?;
-            let phases = s.phase_list().map_err(|e| e.to_string())?;
-            let o = compute_overview(&rows, &phases);
-            if args.json {
-                print_json(&overview_json(&o), args.pretty);
-            } else {
-                print!("{}", render_overview_text(&o));
-            }
-            Ok(())
-        }
-        "list" | "mine" => {
-            let s = store()?;
-            let (status, stream) = (args.status.as_deref(), args.stream.as_deref());
-            if let Some(fields) = &args.fields {
-                // Explicit projection wins over lean/full: fetch the full record, emit only the named
-                // columns as TSV (so `body` is reachable when asked for, a typo'd field is a blank column).
-                let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
-                print!("{}", render_fields_tsv(&issues, fields));
-            } else if args.full {
-                let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
-                if args.json {
-                    print_json(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
-                } else if issues.is_empty() {
-                    println!("(no matching issues)");
-                } else {
-                    for issue in &issues {
-                        println!("{}", render_issue_line(issue));
-                    }
-                }
-            } else {
-                // Lean by default (#1562): body omitted at the SQL layer, value-lists as counts.
-                let rows = s.list_summary(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
-                if args.json {
-                    print_json(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
-                } else if rows.is_empty() {
-                    println!("(no matching issues)");
-                } else {
-                    print!("{}", render_summary_tsv(&rows));
-                }
-            }
-            Ok(())
-        }
-        "status" => {
-            let r = args.positional.get(1).ok_or("usage: bsc-plan status <ref> <status>")?;
-            let new = args.positional.get(2).ok_or("usage: bsc-plan status <ref> <status>")?;
-            if !is_valid_status(new) {
-                return Err(format!("unknown status '{new}' (expected one of {STATUSES:?})"));
-            }
-            let s = store()?;
-            let n = s.set_status(r, new).map_err(|e| e.to_string())?;
-            if n == 0 {
-                return Err(format!("no issue with ref '{r}'"));
-            }
-            if !args.json {
-                println!("{r} → {new}");
+            let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
+            match s.feature_get(slug).map_err(|e| e.to_string())? {
+                Some(f) if args.json => print_json(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
+                Some(f) => print!("{}", render_feature(&f)),
+                None => return Err(format!("no feature with slug '{slug}'")),
             }
             Ok(())
         }
         "remove" => {
-            let r = args.positional.get(1).ok_or("usage: bsc-plan remove <ref>")?;
-            let s = store()?;
-            s.remove(r).map_err(|e| e.to_string())?;
+            let slug = args.positional.get(2).ok_or("usage: bsc-plan feature remove <slug>")?;
+            s.feature_remove(slug).map_err(|e| e.to_string())?;
             if !args.json {
-                println!("removed {r}");
+                println!("removed {slug}");
             }
             Ok(())
         }
-        "render" => {
-            let s = store()?;
-            println!("{}", s.render_issues_json().map_err(|e| e.to_string())?);
+        other => Err(format!("unknown feature command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `repo` — repos linked to the project (durable in plan.db).
+fn cmd_repo(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `repo add <owner/repo>...` links repo(s) to the project.
+        "add" => {
+            let names: Vec<&String> = args.positional.iter().skip(2).collect();
+            if names.is_empty() {
+                return Err("usage: bsc-plan repo add <owner/repo>...".into());
+            }
+            for n in &names {
+                s.repo_add(n).map_err(|e| e.to_string())?;
+            }
+            emit_set_result(args.json, &names, "linked");
             Ok(())
         }
-        "feature" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `feature add <name>...` registers titles (the roster); with no names it reads a
-                // feature object/array on stdin (the detail-fill path, merged by slug).
-                "add" => {
-                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
-                    let slugs = if names.is_empty() {
-                        cmd_feature_add(&s)?
-                    } else {
-                        names
-                            .iter()
-                            .map(|n| s.feature_upsert(&PlanFeature { name: (*n).clone(), ..Default::default() }))
-                            .collect::<rusqlite::Result<Vec<_>>>()
-                            .map_err(|e| e.to_string())?
-                    };
-                    if args.json {
-                        println!("{}", serde_json::to_string(&slugs).unwrap_or_else(|_| "[]".into()));
-                    } else {
-                        for sl in &slugs {
-                            println!("{sl}");
-                        }
-                    }
-                    Ok(())
-                }
-                "list" => {
-                    let feats = s.feature_list().map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&feats).unwrap_or_else(|_| "[]".into()));
-                    } else if feats.is_empty() {
-                        println!("(no features)");
-                    } else {
-                        for f in &feats {
-                            println!("{}", render_feature_line(f));
-                        }
-                    }
-                    Ok(())
-                }
-                "get" => {
-                    let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
-                    match s.feature_get(slug).map_err(|e| e.to_string())? {
-                        Some(f) if args.json => print_json(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
-                        Some(f) => print!("{}", render_feature(&f)),
-                        None => return Err(format!("no feature with slug '{slug}'")),
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let slug = args.positional.get(2).ok_or("usage: bsc-plan feature remove <slug>")?;
-                    s.feature_remove(slug).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("removed {slug}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown feature command '{other}'\n\n{USAGE}")),
-            }
+        "list" => {
+            let repos = s.repo_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &repos, "(no linked repos)", |_, r| r.clone());
+            Ok(())
         }
-        "repo" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `repo add <owner/repo>...` links repo(s) to the project (durable in plan.db).
-                "add" => {
-                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
-                    if names.is_empty() {
-                        return Err("usage: bsc-plan repo add <owner/repo>...".into());
-                    }
-                    for n in &names {
-                        s.repo_add(n).map_err(|e| e.to_string())?;
-                    }
-                    if args.json {
-                        println!("{}", serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
-                    } else {
-                        for n in &names {
-                            println!("linked {n}");
-                        }
-                    }
-                    Ok(())
-                }
-                "list" => {
-                    let repos = s.repo_list().map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&repos).unwrap_or_else(|_| "[]".into()));
-                    } else if repos.is_empty() {
-                        println!("(no linked repos)");
-                    } else {
-                        for r in &repos {
-                            println!("{r}");
-                        }
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let name = args.positional.get(2).ok_or("usage: bsc-plan repo remove <owner/repo>")?;
-                    s.repo_remove(name).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("unlinked {name}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
+        "remove" => {
+            let name = args.positional.get(2).ok_or("usage: bsc-plan repo remove <owner/repo>")?;
+            s.repo_remove(name).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("unlinked {name}");
             }
+            Ok(())
         }
-        "phase" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `phase add <name> [description...]` — name first, the rest joined as the description.
-                "add" => {
-                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase add <name> [description]")?;
-                    let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
-                    s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("phase: {name}");
-                    }
-                    Ok(())
-                }
-                "list" => {
-                    let phases = s.phase_list().map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&phases).unwrap_or_else(|_| "[]".into()));
-                    } else if phases.is_empty() {
-                        println!("(no phases)");
-                    } else {
-                        for (i, p) in phases.iter().enumerate() {
-                            let d = if p.description.is_empty() { String::new() } else { format!("  — {}", p.description) };
-                            println!("{}. {}{}", i + 1, p.name, d);
-                        }
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let name = args.positional.get(2).ok_or("usage: bsc-plan phase remove <name>")?;
-                    s.phase_remove(name).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("removed {name}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `phase` — the roadmap (features reference a phase by its 1-based order).
+fn cmd_phase(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `phase add <name> [description...]` — name first, the rest joined as the description.
+        "add" => {
+            let name = args.positional.get(2).ok_or("usage: bsc-plan phase add <name> [description]")?;
+            let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
+            s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("phase: {name}");
             }
+            Ok(())
         }
-        "fleet" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
-                "set" => {
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-                    let plan: serde_json::Value =
-                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing fleet JSON: {e}"))?;
-                    s.fleet_set(&plan).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        let n = plan.get("streams").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                        println!("fleet set ({n} streams)");
-                    }
-                    Ok(())
-                }
-                "get" | "list" => match s.fleet_get().map_err(|e| e.to_string())? {
-                    None => {
-                        println!("{}", if args.json { "null" } else { "(no fleet)" });
-                        Ok(())
-                    }
-                    Some(f) => {
-                        if let Some(id) = args.positional.get(2) {
-                            // `fleet get <stream-id>` → one stream in full (the rest of the fleet stays unread).
-                            let stream = f
-                                .get("streams")
-                                .and_then(|v| v.as_array())
-                                .and_then(|arr| arr.iter().find(|st| st.get("id").and_then(|i| i.as_str()) == Some(id.as_str())));
-                            match stream {
-                                Some(st) => print_json(st, args.pretty),
-                                None => return Err(format!("no stream with id '{id}' in the fleet")),
-                            }
-                        } else if args.full {
-                            print_json(&f, args.pretty);
-                        } else {
-                            // Lean default: id/name/dependsOn per stream; `--full` for the permissions/flows.
-                            print_json(&fleet_lean(&f), args.pretty);
-                        }
-                        Ok(())
-                    }
-                },
-                "remove" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
-                    s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("removed {id}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
+        "list" => {
+            let phases = s.phase_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &phases, "(no phases)", |i, p| {
+                let d = if p.description.is_empty() { String::new() } else { format!("  — {}", p.description) };
+                format!("{}. {}{}", i + 1, p.name, d)
+            });
+            Ok(())
+        }
+        "remove" => {
+            let name = args.positional.get(2).ok_or("usage: bsc-plan phase remove <name>")?;
+            s.phase_remove(name).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("removed {name}");
             }
+            Ok(())
         }
-        "deploy" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `deploy set` reads the whole DeployConfig JSON on stdin and replaces it (one blob).
-                "set" => {
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-                    let cfg: serde_json::Value =
-                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing deploy JSON: {e}"))?;
-                    s.deploy_set(&cfg).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        let n = cfg.get("services").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                        println!("deploy set ({n} services)");
-                    }
-                    Ok(())
-                }
-                "get" => {
-                    match s.deploy_get().map_err(|e| e.to_string())? {
-                        Some(c) => print_json(&c, args.pretty),
-                        None => println!("{}", if args.json { "null" } else { "(no deploy config)" }),
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `fleet` — streams + per-stream permissions/flows + director/topology.
+fn cmd_fleet(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
+        "set" => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let plan: serde_json::Value =
+                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing fleet JSON: {e}"))?;
+            s.fleet_set(&plan).map_err(|e| e.to_string())?;
+            if !args.json {
+                let n = plan.get("streams").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                println!("fleet set ({n} streams)");
             }
+            Ok(())
         }
-        "deps" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `deps set` reads the whole DependencyManifest JSON on stdin and replaces it (one blob).
-                "set" => {
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-                    let manifest: serde_json::Value =
-                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing dependency manifest JSON: {e}"))?;
-                    s.deps_set(&manifest).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        let n = manifest.get("dependencies").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                        println!("deps set ({n} dependencies)");
-                    }
-                    Ok(())
-                }
-                "get" => {
-                    match s.deps_get().map_err(|e| e.to_string())? {
-                        Some(m) => print_json(&m, args.pretty),
-                        None => println!("{}", if args.json { "null" } else { "(no dependency manifest)" }),
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown deps command '{other}'\n\n{USAGE}")),
+        "get" | "list" => match s.fleet_get().map_err(|e| e.to_string())? {
+            None => {
+                println!("{}", if args.json { "null" } else { "(no fleet)" });
+                Ok(())
             }
-        }
-        "mcp" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `mcp add <name>...` assigns catalog MCP server(s) to the project (durable in plan.db).
-                "add" => {
-                    let names: Vec<&String> = args.positional.iter().skip(2).collect();
-                    if names.is_empty() {
-                        return Err("usage: bsc-plan mcp add <name>...".into());
+            Some(f) => {
+                if let Some(id) = args.positional.get(2) {
+                    // `fleet get <stream-id>` → one stream in full (the rest of the fleet stays unread).
+                    let stream = f
+                        .get("streams")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.iter().find(|st| st.get("id").and_then(|i| i.as_str()) == Some(id.as_str())));
+                    match stream {
+                        Some(st) => print_json(st, args.pretty),
+                        None => return Err(format!("no stream with id '{id}' in the fleet")),
                     }
-                    for n in &names {
-                        s.mcp_add(n).map_err(|e| e.to_string())?;
-                    }
-                    if args.json {
-                        println!("{}", serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()));
-                    } else {
-                        for n in &names {
-                            println!("assigned {n}");
-                        }
-                    }
-                    Ok(())
+                } else if args.full {
+                    print_json(&f, args.pretty);
+                } else {
+                    // Lean default: id/name/dependsOn per stream; `--full` for the permissions/flows.
+                    print_json(&fleet_lean(&f), args.pretty);
                 }
-                "list" => {
-                    let mcps = s.mcp_list().map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&mcps).unwrap_or_else(|_| "[]".into()));
-                    } else if mcps.is_empty() {
-                        println!("(no assigned MCP servers)");
-                    } else {
-                        for m in &mcps {
-                            println!("{m}");
-                        }
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let name = args.positional.get(2).ok_or("usage: bsc-plan mcp remove <name>")?;
-                    s.mcp_remove(name).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("unassigned {name}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
+                Ok(())
             }
-        }
-        "blueprint" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `blueprint set` reads the whole Blueprint JSON on stdin and replaces it (one blob).
-                "set" => {
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-                    let bp: serde_json::Value =
-                        serde_json::from_str(buf.trim()).map_err(|e| format!("parsing blueprint JSON: {e}"))?;
-                    s.blueprint_set(&bp).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        let n = bp.get("sections").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                        let name = bp.get("name").and_then(|v| v.as_str()).unwrap_or("blueprint");
-                        println!("blueprint set: {name} ({n} sections)");
-                    }
-                    Ok(())
-                }
-                "get" => {
-                    match s.blueprint_get().map_err(|e| e.to_string())? {
-                        Some(b) => print_json(&b, args.pretty),
-                        None => println!("{}", if args.json { "null" } else { "(no blueprint)" }),
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
+        },
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
+            s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("removed {id}");
             }
+            Ok(())
         }
-        "discovery" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `discovery require/unrequire <topic>...` shape the DYNAMIC required set as the project
-                // clarifies. Discovery files gate on GENERATION (the gate checks each required
-                // `discovery/<topic>.md` exists) — they are not confirmed (#1028).
-                "require" | "unrequire" => {
-                    let topics: Vec<&String> = args.positional.iter().skip(2).collect();
-                    if topics.is_empty() {
-                        return Err(format!("usage: bsc-plan discovery {sub} <topic>..."));
-                    }
-                    let required = sub == "require";
-                    for t in &topics {
-                        s.discovery_require(t, required).map_err(|e| e.to_string())?;
-                    }
-                    if args.json {
-                        println!("{}", serde_json::to_string(&topics).unwrap_or_else(|_| "[]".into()));
-                    } else {
-                        let verb = if required { "required" } else { "unrequired" };
-                        for t in &topics {
-                            println!("{verb} {t}");
-                        }
-                    }
-                    Ok(())
-                }
-                "list" => {
-                    let required = s.discovery_list().map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&required).unwrap_or_else(|_| "[]".into()));
-                    } else if required.is_empty() {
-                        println!("(no required discovery topics)");
-                    } else {
-                        for t in &required {
-                            println!("{t}");
-                        }
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown discovery command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `deploy` — the Deploy stage's structured config (one blob).
+fn cmd_deploy(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `deploy set` reads the whole DeployConfig JSON on stdin and replaces it (one blob).
+        "set" => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let cfg: serde_json::Value =
+                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing deploy JSON: {e}"))?;
+            s.deploy_set(&cfg).map_err(|e| e.to_string())?;
+            if !args.json {
+                let n = cfg.get("services").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                println!("deploy set ({n} services)");
             }
+            Ok(())
         }
-        "integration" => {
-            // Runtime (planner-authored) REST connector presets (#1235). These live in the
-            // connectors store (~/.base-studio-code/connectors.json) — NOT plan.db — so an
-            // authored integration is a native, app-wide connector like the built-ins. The spec
-            // is validated + secret-free on add (credentials go to the keychain, #1194).
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let path = bsc_data::runtime_store_path();
-            match sub {
-                // `integration add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
-                "add" => {
-                    let mut buf = String::new();
-                    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-                    let preset: bsc_data::RuntimePreset = serde_json::from_str(buf.trim())
-                        .map_err(|e| format!("parsing integration JSON: {e}"))?;
-                    let id = preset.id.clone();
-                    bsc_data::upsert_runtime_preset(&path, preset)?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&id).unwrap_or_default());
-                    } else {
-                        println!("integration added: {id}");
-                    }
-                    Ok(())
-                }
-                "list" => {
-                    let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
-                    if args.json {
-                        println!("{}", serde_json::to_string(&presets).unwrap_or_else(|_| "[]".into()));
-                    } else if presets.is_empty() {
-                        println!("(no runtime integrations)");
-                    } else {
-                        for p in &presets {
-                            println!("{}  {} [{}] — {} resource(s)", p.id, p.label, p.auth, p.resources.len());
-                        }
-                    }
-                    Ok(())
-                }
-                "get" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
-                    match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
-                        Some(p) => print_json(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
-                        None if args.json => println!("null"),
-                        None => println!("(no integration '{id}')"),
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-plan integration remove <id>")?;
-                    let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("{}", if removed { format!("removed {id}") } else { format!("(no integration '{id}')") });
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown integration command '{other}'\n\n{USAGE}")),
+        "get" => {
+            emit_blob_or_null(args.json, args.pretty, s.deploy_get().map_err(|e| e.to_string())?, "(no deploy config)");
+            Ok(())
+        }
+        other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `deps` — the Deploy stage's locked dependency manifest (one blob).
+fn cmd_deps(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `deps set` reads the whole DependencyManifest JSON on stdin and replaces it (one blob).
+        "set" => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let manifest: serde_json::Value =
+                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing dependency manifest JSON: {e}"))?;
+            s.deps_set(&manifest).map_err(|e| e.to_string())?;
+            if !args.json {
+                let n = manifest.get("dependencies").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                println!("deps set ({n} dependencies)");
             }
+            Ok(())
         }
-        // Lessons (#1362): the `bsc-learned` capture helper + the review queue speak through these.
-        "lesson" => {
-            let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-            let s = store()?;
-            match sub {
-                // `lesson add "<mistake>" --rule "<rule>" [--cause …] [--from <provenance>]` — capture a
-                // candidate (idempotent on its mistake|rule dedup key); prints the lesson id.
-                "add" => {
-                    let mistake = args.positional.get(2).cloned().unwrap_or_default();
-                    let lesson = Lesson {
-                        mistake,
-                        rule: args.rule.clone().unwrap_or_default(),
-                        cause: args.cause.clone().unwrap_or_default(),
-                        provenance: args.from.clone().unwrap_or_default(),
-                        ..Default::default()
-                    };
-                    let id = s.lesson_add(&lesson).map_err(|e| e.to_string())?;
-                    println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id });
-                    Ok(())
-                }
-                // `lesson list [--status pending|confirmed|discarded]` — JSON array (the review queue).
-                "list" => {
-                    let lessons = s.lesson_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
-                    print_json(&serde_json::to_value(&lessons).unwrap_or_default(), args.pretty);
-                    Ok(())
-                }
-                "confirm" | "discard" => {
-                    let id = args.positional.get(2).ok_or(format!("usage: bsc-plan lesson {sub} <id>"))?;
-                    let status = if sub == "confirm" { "confirmed" } else { "discarded" };
-                    let n = s.lesson_set_status(id, status).map_err(|e| e.to_string())?;
-                    if n == 0 {
-                        return Err(format!("no lesson with id '{id}'"));
-                    }
-                    if !args.json {
-                        println!("{id} {status}");
-                    }
-                    Ok(())
-                }
-                "remove" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-plan lesson remove <id>")?;
-                    s.lesson_remove(id).map_err(|e| e.to_string())?;
-                    if !args.json {
-                        println!("removed {id}");
-                    }
-                    Ok(())
-                }
-                other => Err(format!("unknown lesson command '{other}'\n\n{USAGE}")),
+        "get" => {
+            emit_blob_or_null(args.json, args.pretty, s.deps_get().map_err(|e| e.to_string())?, "(no dependency manifest)");
+            Ok(())
+        }
+        other => Err(format!("unknown deps command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `mcp` — catalog MCP servers scoped to the project (durable in plan.db).
+fn cmd_mcp(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `mcp add <name>...` assigns catalog MCP server(s) to the project.
+        "add" => {
+            let names: Vec<&String> = args.positional.iter().skip(2).collect();
+            if names.is_empty() {
+                return Err("usage: bsc-plan mcp add <name>...".into());
             }
+            for n in &names {
+                s.mcp_add(n).map_err(|e| e.to_string())?;
+            }
+            emit_set_result(args.json, &names, "assigned");
+            Ok(())
         }
-        other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+        "list" => {
+            let mcps = s.mcp_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &mcps, "(no assigned MCP servers)", |_, m| m.clone());
+            Ok(())
+        }
+        "remove" => {
+            let name = args.positional.get(2).ok_or("usage: bsc-plan mcp remove <name>")?;
+            s.mcp_remove(name).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("unassigned {name}");
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `blueprint` — the blueprint an authoring project is designing (one blob).
+fn cmd_blueprint(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `blueprint set` reads the whole Blueprint JSON on stdin and replaces it (one blob).
+        "set" => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let bp: serde_json::Value =
+                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing blueprint JSON: {e}"))?;
+            s.blueprint_set(&bp).map_err(|e| e.to_string())?;
+            if !args.json {
+                let n = bp.get("sections").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                let name = bp.get("name").and_then(|v| v.as_str()).unwrap_or("blueprint");
+                println!("blueprint set: {name} ({n} sections)");
+            }
+            Ok(())
+        }
+        "get" => {
+            emit_blob_or_null(args.json, args.pretty, s.blueprint_get().map_err(|e| e.to_string())?, "(no blueprint)");
+            Ok(())
+        }
+        other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `discovery` — the Discovery stage's DYNAMIC required-set (prose lives in discovery/<topic>.md).
+fn cmd_discovery(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `discovery require/unrequire <topic>...` shape the DYNAMIC required set as the project
+        // clarifies. Discovery files gate on GENERATION (the gate checks each required
+        // `discovery/<topic>.md` exists) — they are not confirmed (#1028).
+        "require" | "unrequire" => {
+            let topics: Vec<&String> = args.positional.iter().skip(2).collect();
+            if topics.is_empty() {
+                return Err(format!("usage: bsc-plan discovery {sub} <topic>..."));
+            }
+            let required = sub == "require";
+            for t in &topics {
+                s.discovery_require(t, required).map_err(|e| e.to_string())?;
+            }
+            emit_set_result(args.json, &topics, if required { "required" } else { "unrequired" });
+            Ok(())
+        }
+        "list" => {
+            let required = s.discovery_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &required, "(no required discovery topics)", |_, t| t.clone());
+            Ok(())
+        }
+        other => Err(format!("unknown discovery command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `integration` — runtime (planner-authored) REST connector presets (#1235). These live in the
+/// connectors store (~/.base-studio-code/connectors.json) — NOT plan.db — so an authored integration
+/// is a native, app-wide connector like the built-ins. The spec is validated + secret-free on add
+/// (credentials go to the keychain, #1194).
+fn cmd_integration(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let path = bsc_data::runtime_store_path();
+    match sub {
+        // `integration add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
+        "add" => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            let preset: bsc_data::RuntimePreset = serde_json::from_str(buf.trim())
+                .map_err(|e| format!("parsing integration JSON: {e}"))?;
+            let id = preset.id.clone();
+            bsc_data::upsert_runtime_preset(&path, preset)?;
+            if args.json {
+                println!("{}", serde_json::to_string(&id).unwrap_or_default());
+            } else {
+                println!("integration added: {id}");
+            }
+            Ok(())
+        }
+        "list" => {
+            let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &presets, "(no runtime integrations)", |_, p| {
+                format!("{}  {} [{}] — {} resource(s)", p.id, p.label, p.auth, p.resources.len())
+            });
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
+            match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
+                Some(p) => print_json(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
+                None if args.json => println!("null"),
+                None => println!("(no integration '{id}')"),
+            }
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-plan integration remove <id>")?;
+            let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("{}", if removed { format!("removed {id}") } else { format!("(no integration '{id}')") });
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown integration command '{other}'\n\n{USAGE}")),
+    }
+}
+
+/// `lesson` — self-correction candidates (#1362): the `bsc-learned` capture helper + the review queue.
+fn cmd_lesson(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `lesson add "<mistake>" --rule "<rule>" [--cause …] [--from <provenance>]` — capture a
+        // candidate (idempotent on its mistake|rule dedup key); prints the lesson id.
+        "add" => {
+            let mistake = args.positional.get(2).cloned().unwrap_or_default();
+            let lesson = Lesson {
+                mistake,
+                rule: args.rule.clone().unwrap_or_default(),
+                cause: args.cause.clone().unwrap_or_default(),
+                provenance: args.from.clone().unwrap_or_default(),
+                ..Default::default()
+            };
+            let id = s.lesson_add(&lesson).map_err(|e| e.to_string())?;
+            println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id });
+            Ok(())
+        }
+        // `lesson list [--status pending|confirmed|discarded]` — JSON array (the review queue).
+        "list" => {
+            let lessons = s.lesson_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
+            print_json(&serde_json::to_value(&lessons).unwrap_or_default(), args.pretty);
+            Ok(())
+        }
+        "confirm" | "discard" => {
+            let id = args.positional.get(2).ok_or(format!("usage: bsc-plan lesson {sub} <id>"))?;
+            let status = if sub == "confirm" { "confirmed" } else { "discarded" };
+            let n = s.lesson_set_status(id, status).map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err(format!("no lesson with id '{id}'"));
+            }
+            if !args.json {
+                println!("{id} {status}");
+            }
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-plan lesson remove <id>")?;
+            s.lesson_remove(id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("removed {id}");
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown lesson command '{other}'\n\n{USAGE}")),
     }
 }
 
