@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card } from "./DataCollectionPrimitives";
+import { Card } from "./bodyPrimitives";
 import type { DataModel, Entity, Field } from "@/features/planner/data/dataModel";
 
 const mono = "var(--mono)";

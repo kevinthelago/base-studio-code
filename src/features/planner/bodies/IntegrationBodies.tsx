@@ -8,9 +8,7 @@ import {
   defaultIntegrationConfig, destinationChecks, syncChecks,
   type IntegrationConfig, type DestinationConfig, type SyncConfig, type DestinationType, type WriteMode, type SyncMode,
 } from "../lib/integrationConfig";
-
-const MONO = "var(--mono)";
-const grpLabel: React.CSSProperties = { fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" };
+import { MONO, grpLabel } from "./bodyStyles";
 
 function Readiness({ checks, label }: { checks: { ok: boolean }[]; label: string }) {
   const ok = checks.filter((c) => c.ok).length;
