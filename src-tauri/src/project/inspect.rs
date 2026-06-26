@@ -46,31 +46,14 @@ pub(crate) fn scan_dead_code(repo_path: String, tool: String) -> ScanResult {
     }
 }
 /// Collect a UI-skeleton directory as (relpath, contents) pairs — source files only,
-/// size-capped, recursive. Pure over a path so it's unit-testable (#533).
+/// size-capped, recursive. Pure over a path so it's unit-testable (#533). Delegates to the
+/// shared [`read_text_files`] walker, differing from [`read_files_dir`] only by the extension
+/// filter (`ok_ext`); the size cap, slash-normalize, sort, and symlink-skip live there.
 pub(crate) fn read_skeleton_dir(root: &std::path::Path) -> Vec<(String, String)> {
     fn ok_ext(p: &std::path::Path) -> bool {
         matches!(p.extension().and_then(|s| s.to_str()), Some("jsx" | "tsx" | "js" | "ts" | "css" | "json"))
     }
-    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(base, &p, out);
-            } else if ok_ext(&p) {
-                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
-                if small {
-                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
-                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
-                    }
-                }
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(root, root, &mut out);
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
+    read_text_files(root, ok_ext)
 }
 /// Read a project's `.ui-skeleton/` folder (relpath → contents) for the render-preview
 /// pipeline (#533): the lightweight, functionless UI promoted from the user's dropped Claude
