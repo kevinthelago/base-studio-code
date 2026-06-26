@@ -44,7 +44,7 @@ src/
 ### The dependency rules
 
 - **`app/` (the shell)** knows every feature and composes them. Features must **not** import from `app/`.
-- **`shared/`** is feature-agnostic: it may be imported by anything, but it imports no feature.
+- **`shared/`** is feature-agnostic: it may be imported by anything, but it imports no feature **and no `app/`**. This is **lint-enforced** — an ESLint `no-restricted-imports` guard on `src/shared/**` blocks value imports from `@/features/*` and `@/app/*` (`import type` is allowed). Reintroducing a value import fails `npm run lint` (#1626/#1703).
 - **A feature owns everything it needs:** UI components, a `lib/` of pure (React-free) domain logic, a `store.ts` (its Zustand slice + slice interface), colocated `*.test.ts(x)` tests, and an `index.ts` barrel that is its public API.
 - Import a feature's **UI** via the barrel (`@/features/skills`); import its **pure domain** directly (`@/features/skills/lib/skills`) so non-UI modules never pull in React.
 
@@ -55,7 +55,7 @@ Set in `tsconfig.json` (`paths`) and mirrored in `vite.config.ts` + `vitest.conf
 | Alias | Resolves to | Use |
 |---|---|---|
 | `@/…` | `src/…` | all frontend imports — never `../../..` |
-| `@prompts/…` | `src-tauri/prompts/…` | build-time-bundled prompt/stage/blueprint JSON (lives outside `src/`, loaded via `import.meta.glob`) |
+| `@prompts/…` | `src-tauri/prompts/…` | build-time-bundled prompt/stage/blueprint/**skills** JSON (lives outside `src/`, loaded via `import.meta.glob`) |
 
 ---
 
@@ -93,8 +93,9 @@ The shell is the chrome around the screens plus the console execution surface.
 This is **not** a feature — the console + its state are part of the shell. It is where planned work runs.
 
 - **`ConsoleScreen.tsx`** — renders the active tab's CSS-grid of panes.
-- **`panes/`** — `PaneShell.tsx` (one pane), `ViewTabs.tsx` (the icon tabs that swap a pane's view), `HamburgerMenu.tsx` / `PaneMenu.tsx` (per-pane config: model, repo, cwd), and **`panes/views/`** — the swappable views: `TerminalView` (the xterm PTY — the launch wiring), `ConsoleView`, `FilesView`, `BranchesView`, `ChangesView`, `LogView`, `ToolsView`, `TelemetryView`.
-- **`lib/`** — the pane domain logic (pure + a few hooks): `paneIdentity.ts` (the **stable pane id** model, #1176), `focusQueue.ts`, `paneStatus.ts`/`paneActivity.ts`, `idleReaper.ts`, `sessionRecovery.ts`/`resumeClaude.ts`, `broadcast.ts`, `models.ts`/`modelDisplay.ts`, `detachWindow.ts` (tear-off windows), and **`lib/providers/`** — the pluggable console-provider registry (claude, codex, gemini, aider, ollama, amazonq, `bsc-agent`).
+- **`panes/`** — `PaneShell.tsx` (one pane), `ViewTabs.tsx` (the icon tabs that swap a pane's view), `PaneMenu.tsx` (per-pane config: model, repo, cwd), and **`panes/views/`** — the swappable views: `TerminalView` (the xterm renderer + PTY launch), `ConsoleView`, `FilesView`, `BranchesView`, `ChangesView`, `LogView`, `ToolsView`, `TelemetryView`.
+- **console-root hooks** — `useTerminalSession.ts` (readiness verdict + retry) and `useCoordinator.ts`/`useDirectorPump.ts` (shell-only mount hooks, moved here from `shared/` to keep `shared/` feature-agnostic, #1626) live directly under `app/console/`.
+- **`lib/`** — the pane domain logic (pure + a few hooks): `paneIdentity.ts` (the **stable pane id** model, #1176), `focusQueue.ts`, `paneStatus.ts`/`paneActivity.ts`, `idleReaper.ts`, `sessionRecovery.ts`/`resumeClaude.ts`, `sessionLaunch.ts` (the pure provider/MCP/skills/permissions/init-cmd builders the `TerminalView` launch effect calls, #1645), `broadcast.ts`, `models.ts`/`modelDisplay.ts`, `detachWindow.ts` (console-tab tear-off; the page-section tear-off `openDetachedSection` + the pure `moveInArray` now live in `shared/lib/core/`, #1703), and **`lib/providers/`** — the pluggable console-provider registry (claude, codex, gemini, aider, ollama, amazonq, `bsc-agent`).
 
 ### Banners & safety — `app/`
 
@@ -120,7 +121,7 @@ features/<x>/
 | Feature | Screen | What it is |
 |---|---|---|
 | **`planner/`** | Projects | **the flagship** — the app-owned planning session that turns a pitch or repo set into an executable plan. See below. |
-| `skills/` | Skills | the **Skills library** — reusable markdown context blocks (the injectable-context system that superseded the old Knowledge Base), written into a session's `.claude/skills/`. Source of truth is the global `skills.db`; the slice is a write-through cache (`hydrateSkills`). |
+| `skills/` | Skills | the **Skills library** — reusable markdown context blocks (the injectable-context system that superseded the old Knowledge Base), written into a session's `.claude/skills/`. Source of truth is the global `skills.db`; the slice is a write-through cache (`hydrateSkills`). The **packaged** built-ins live as data at `src-tauri/prompts/skills/*.json` — a dual consumer like blueprints/stages: the frontend reads them via `import.meta.glob` (`shared/data/skills.ts`) and the Rust `skilldb` seeds a fresh DB from the same files via `include_dir!` (CLI/planner parity without a UI boot), #1715. |
 | `mcp/` | MCP | MCP servers + hooks management; catalog + per-session assignment. |
 | `automations/` | Automations | cron-triggered rules (`useScheduler`) that dispatch a command into a console pane. |
 | `github/` | GitHub | GitHub OAuth, repo selection, the Projects v2 board (the board moved here, #498). |
@@ -136,14 +137,14 @@ features/<x>/
 
 | Sub-dir | Holds |
 |---|---|
-| `session/` | the live planning session: **`Planning.tsx`** (the big page) + its extracted **`use*` hooks** (`usePlanGates`, `usePlanPublish`, `usePlanSectionPoll`, `usePlannerTagStream`, `usePlannerRepoManagement`, `usePlanMcpDownloads`, `usePlanSkillsManagement`, `usePlannerBlueprint`, …) + the autopilot (`planAutopilot*`), parsing (`planningParse.ts`), and the planner-conductor. |
-| `list/` | `ProjectsList.tsx` — the project list + blueprint-library rail. |
-| `pane/` | the focused project pane (`ProjectPane.tsx`, `FocusedShell.tsx`, `focusedPlan.ts`) — one phase at a time, a stepper, gate pill, advance bar (#652). |
-| `stages/` | the planning-stage model: `blueprints.ts` (lifecycle templates), `planStages.ts`, `planSections.ts`. |
+| `session/` | the live planning session: **`Planning.tsx`** (the big page, now a layout/composition shell) + its extracted **`use*` hooks** (`usePlanningSession` + `usePlanningModals` (the clear/restart/blueprint-switch FSM + modal state, #1642), `usePlanGates`, `usePlanPublish`, `usePlanSectionPoll`, `usePlannerTagStream`, `usePlannerRepoManagement`, `usePlanMcpDownloads`, `usePlanSkillsManagement`, `usePlannerBlueprint`, …) + the autopilot (`planAutopilot*`), parsing (`planningParse.ts`), and the planner-conductor. |
+| `list/` | the project list + blueprint-library rail — **`ProjectsList.tsx`** (thin composer) split into `BlueprintLibrary.tsx` + `PublishedProjects.tsx` (#1641); **`ProjectsSummary.tsx`** split into `projectsSummaryQueries`/`projectsSummaryDerive` + chart sub-components (`IterationBurnDown`, `CrossProjectActivity`, #1705). |
+| `pane/` | the focused project pane (`ProjectPane.tsx`, `FocusedShell.tsx`, `FocusedBodies.tsx` dispatcher, `focusedPlan.ts`) — one phase at a time, a stepper, gate pill, advance bar (#652). |
+| `stages/` | the planning-stage model: `blueprints.ts` (lifecycle templates), `planStages.ts`, `planTopics.ts` (the discovery topics, renamed from `planSections`, #1615). |
 | `blueprints/` | the blueprint editor (`BlueprintEditor.tsx`) + `blueprintSkills.ts`. |
-| `bodies/` | per-stage body components rendered in the focused pane. |
+| `bodies/` | per-stage body components rendered in the focused pane, over the shared `bodyPrimitives.tsx` + `bodyStyles.ts` (#1635). The big ones are split: `DeployView` → `deployTargetSection`/`deployShipSections`/`deployPrimitives` (#1636); `FocusedSourceBody` → the `connectorForm` renderer + the `sourceConnection` FSM hook (#1637). |
 | `fleet/` | the agent-fleet model: `agentFlow.ts` (autonomy + push policy, #297), `directorDrive.ts`. |
-| `issues/` · `relationship/` · `preview/` · `data/` · `github/` · `lib/` | granular issues, the relationship/topology graph, render-preview, canonical Data Models, GitHub-structure cards, and a large `lib/` of pure planning domain (`planEval/`, `planContract/`, `plannerCore/`, `plannerSync/`, deploy/source/integration config, lint/readiness/injection scanners). |
+| `issues/` · `relationship/` · `preview/` · `data/` · `github/` · `lib/` | granular issues, the relationship/topology graph, render-preview, canonical Data Models, GitHub-structure cards, and a large `lib/` of pure planning domain — `plannerCore/`, `plannerSync/`, the deploy/source/integration config (each split into focused modules behind a barrel: `deployConfig` → `deployPlatforms`/`deployServices`/`deployEnv`/`deployCoerce` #1639; `sourceConfig` → `sourceCatalog`/`sourceSpecs`/`sourceGate`/`dataModelDerivation`/… #1638/#1712), `repoScaffold` → `repoReadme`/`stackTopics` (#1710), and the lint/readiness/injection scanners. `planEval/` + `planContract/` are CI/eval-harness only (not imported by the app). |
 
 A blueprint seeds a project's plan (ordered stages, each with a prompt module, pipelines, a declarative gate, attached skills). Built-ins are code-owned and refreshed from code on every load (`refreshBuiltIns` in the store's `onRehydrateStorage`); user blueprints persist to an on-disk dir. See the root `CLAUDE.md` "Project Planning" section for the full planner workflow.
 
@@ -156,7 +157,8 @@ One Zustand store, composed from slices, persisted via the Tauri store plugin.
 - **`store/index.ts`** — `create<AppStore>()(persist(...))`. The state object is built by **spreading every slice creator** together:
   - shell/core slices under `store/slices/`: `console.ts` (the ~110-field core app state — tabs, panes, navigation, hydration), `core.ts`, `shell.ts`, `plan.ts`, `projects.ts`, `session.ts`.
   - feature slices under `features/<x>/store.ts`: `createMcpSlice`, `createSkillsSlice`, `createAutomationsSlice`, `createGithubSlice`, `createTunnelSlice`.
-- **`store/types.ts`** — the `AppStore` interface. It `extends` each feature's slice interface (`SkillsSlice`, `McpSlice`, `AutomationsSlice`, `GithubSlice`, `TunnelSlice`) and adds the core fields/actions inline. This is the place to read to understand the full state shape.
+- **`store/types.ts`** — a thin **barrel** re-exporting the per-domain type modules under **`store/types/`** (`appStore.ts`, `console.ts`, `shell.ts`, `llm.ts`, `plan.ts`, `projects.ts`, `session.ts`, `github.ts`, `perf.ts`, `log.ts`, #1634). `AppStore` (in `types/appStore.ts`) still `extends` each feature's slice interface (`SkillsSlice`, `McpSlice`, `AutomationsSlice`, `GithubSlice`, `TunnelSlice`) and the per-domain core interfaces. Read `store/types/` to understand the full state shape.
+- **`store/updateHelpers.ts`** — pure immutable-update helpers (`setMapEntry`/`deleteMapEntry`/`deleteMapEntries`/`updateArrayItem`) adopted across the slices to cut the `{ ...map, [k]: v }` boilerplate (#1704).
 - **Persistence** — `name: "app-state"`, backed by `persistStorage` (the Tauri plugin-store) via `createJSONStorage`. A **`partialize`** whitelist persists only durable state; transient UI state (focus queue, live pane status, dormant/quarantined panes, hydration flag) is excluded. `onRehydrateStorage` runs one-time migrations (legacy tab identity backfill, `extensions` → `mcpServers`/`hooks` split, blueprint/skill refresh-from-code) and flips `hasHydrated` so the shell can paint.
 
 Because storage is async, hydration finishes *after* first render — hence the `hasHydrated` gate in `App.tsx`.
@@ -174,7 +176,7 @@ All color, type, radius, and base component styling is driven by CSS custom prop
 
 Components mostly use these tokens via inline styles and shared CSS classes (`.btn`, `.field`, etc.). Match the `design/` prototype for new screens (it is reference-only — do not edit it).
 
-Shared presentational primitives live in **`src/shared/ui/`**: `Dialog`, `Avatar`, `ConfirmButton`, `LabelChip`, `Toggle`, and `charts/`.
+Shared presentational primitives live in **`src/shared/ui/`**: `Dialog`, `Avatar`, `ConfirmButton`, `LabelChip`, `Chip` (the consolidated color-mix pill, #1713), `Toggle`, and `charts/`.
 
 ---
 

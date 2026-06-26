@@ -263,6 +263,27 @@ pub(crate) const BSC_LOGS_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-compliance` shell helper (#1718) — execs the bundled compliance standards-store CLI
+/// ($BSC_COMPLIANCE_BIN) so a live session can query (and refresh) the WCAG/GDPR/CCPA/SOC2/…
+/// corpus the planner bakes into plans — the same projections as the `bsc-compliance-mcp` server,
+/// plus the write side (upsert/remove/reseed). The store it reads is $BSC_COMPLIANCE_STORE (set
+/// per-session). Mirrors the `bsc-plan`/`bsc-data`/`bsc-logs` sidecar-helper shape exactly (SQLite,
+/// so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
+pub(crate) const BSC_COMPLIANCE_RC: &str = concat!(
+    r#"bsc-compliance() { if [ -n "${BSC_COMPLIANCE_BIN:-}" ] && [ ! -s "$BSC_COMPLIANCE_BIN" ]; then echo "bsc-compliance: BSC_COMPLIANCE_BIN ($BSC_COMPLIANCE_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_COMPLIANCE_BIN:-bsc-compliance}" "$@"; }"#,
+    "\n",
+);
+
+/// The `bsc-blueprint` shell helper (#1719) — execs the bundled user-blueprint-store CLI
+/// ($BSC_BLUEPRINT_BIN); a live session lists/gets/sets/removes the user blueprint library
+/// (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
+/// Mirrors the `bsc-logs`/`bsc-plan` sidecar-helper shape exactly (a compiled bin, not pure shell):
+/// execs the absolute-path binary, or errors on a 0-byte stub; falls back to a PATH `bsc-blueprint`.
+pub(crate) const BSC_BLUEPRINT_RC: &str = concat!(
+    r#"bsc-blueprint() { if [ -n "${BSC_BLUEPRINT_BIN:-}" ] && [ ! -s "$BSC_BLUEPRINT_BIN" ]; then echo "bsc-blueprint: BSC_BLUEPRINT_BIN ($BSC_BLUEPRINT_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_BLUEPRINT_BIN:-bsc-blueprint}" "$@"; }"#,
+    "\n",
+);
+
 /// The `bsc-project` shell helper (#1720) — execs the bundled cross-project hub-lifecycle CLI
 /// ($BSC_PROJECT_BIN): `bsc-project list` + `bsc-project published get|set <key>` over EVERY
 /// `~/.base-studio-code/projects/<key>/` hub (not tied to one plan.db, unlike `bsc-plan`). It walks
@@ -312,6 +333,8 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_PLAN_RC,
     BSC_DATA_RC,
     BSC_LOGS_RC,
+    BSC_COMPLIANCE_RC,
+    BSC_BLUEPRINT_RC,
     BSC_PROJECT_RC,
     BSC_LEARNED_RC,
 ];
@@ -561,6 +584,23 @@ mod tests {
         assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
         // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
         assert!(super::bsc_rc_body().contains("bsc-logs()"), "bsc-logs must be in the concat body");
+    }
+
+    #[test]
+    fn bsc_blueprint_rc_execs_the_sidecar_and_is_in_the_concat_body() {
+        // #1719: the `bsc-blueprint` helper mirrors bsc-logs/bsc-plan — it execs the absolute-path
+        // sidecar in $BSC_BLUEPRINT_BIN (falling back to a bare `bsc-blueprint` on PATH) so a live
+        // session can list/get/set/remove the user blueprint store from its own shell. It must end in
+        // a trailing newline (the #296 glue contract) and land in the single-source-of-truth body.
+        let rc = super::BSC_BLUEPRINT_RC;
+        assert!(rc.contains("bsc-blueprint()"), "rc must define the hyphenated helper");
+        assert!(rc.contains("BSC_BLUEPRINT_BIN"), "rc must exec the staged sidecar binary");
+        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
+        // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
+        assert!(
+            super::bsc_rc_body().contains("bsc-blueprint()"),
+            "bsc-blueprint must be in the concat body"
+        );
     }
 
     #[test]
