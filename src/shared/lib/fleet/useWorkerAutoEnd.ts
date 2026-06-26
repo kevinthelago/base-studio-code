@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "../core/safeInvoke";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { emptyCoordState } from "./coordination";
 import { readCoordState } from "./useCoordLog";
@@ -97,21 +98,15 @@ export function useWorkerAutoEnd(): void {
   // bsc-done self-close (#1379): poll the workers that self-reported done and reap each —
   // classify from plan.db (markPaneEnded) AND pty_kill the still-live shell. The endedPanes guard
   // in evaluateExit makes this idempotent across polls (a lingering done.log line won't re-kill).
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const done = await safeInvoke<string[]>("read_done_panes", undefined, []);
-      if (cancelled || !Array.isArray(done)) return;
-      const s = useAppStore.getState();
-      for (const paneId of done) {
-        if (s.endedPanes[paneId] || !s.fleetPaneStreams[paneId]) continue;
-        await evaluateExit(paneId, { kill: true });
-      }
-    };
-    void poll();
-    const id = setInterval(() => void poll(), 2000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  usePoll(async (isCancelled) => {
+    const done = await safeInvoke<string[]>("read_done_panes", undefined, []);
+    if (isCancelled() || !Array.isArray(done)) return;
+    const s = useAppStore.getState();
+    for (const paneId of done) {
+      if (s.endedPanes[paneId] || !s.fleetPaneStreams[paneId]) continue;
+      await evaluateExit(paneId, { kill: true });
+    }
+  }, 2000, []);
 
   // Idle close-nudge (#1379 stage 3): for each at-rest worker, decide via the pure core whether to
   // nudge it to self-close. A worker that's question-free, idle past the short window, and whose
@@ -120,56 +115,50 @@ export function useWorkerAutoEnd(): void {
   // an outstanding director question routes to the resurface path (stage 4), never a close.
   const nudgedRef = useRef<Set<string>>(new Set());
   const resurfacedRef = useRef<Set<string>>(new Set()); // lost-ask resurfaces, one per stale ask
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      const activity = await safeInvoke<ActivityRow[]>("read_pane_activity", undefined, []);
-      const coordRes = await readCoordState(5000);
-      if (cancelled || !Array.isArray(activity)) return;
-      const coord = coordRes?.state ?? emptyCoordState();
-      const s = useAppStore.getState();
-      const now = Date.now();
-      for (const paneId of Object.keys(s.fleetPaneStreams)) {
-        if (s.endedPanes[paneId] || (s.paneRoles[paneId] ?? "worker") !== "worker") continue;
-        const act = activity.find((a) => a.pane === paneId);
-        if (act?.state === "run") { nudgedRef.current.delete(paneId); resurfacedRef.current.delete(paneId); continue; } // working → re-arm
-        if (coord.waiting.some((w) => w.session === paneId)) continue;             // paused for the user → leave it
-        if (!coord.asking.some((a) => a.session === paneId)) resurfacedRef.current.delete(paneId); // ask answered → re-arm resurface
-        const stream = s.fleetPaneStreams[paneId];
-        const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
-        if (!projectKey || !stream) continue;
-        const issues = await invoke<OwnedIssue[]>("plan_list_issues", { projectKey, stream: stream.id }).catch(() => null);
-        if (cancelled || !issues) continue;
-        const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
-        const action = decideWorkerAutoEnd({
-          turnOpen: act?.state === "run",
-          idleMs: act?.state === "idle" ? now - act.at : 0,
-          hasOutstandingQuestion: coord.asking.some((a) => a.session === paneId),
-          verdict,
-        }, DEFAULT_AUTO_END_THRESHOLDS);
-        if (action === "close-nudge" && !nudgedRef.current.has(paneId)) {
-          nudgedRef.current.add(paneId); // once per idle period; cleared when the turn reopens
-          log.info(`auto-end: nudging ${paneId} (${stream.id}) to self-close — idle + work complete`);
-          await invoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }).catch(() => {});
-        } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
-          // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
-          // answer — its ask may have been missed. Re-surface it to the live director ONCE so it
-          // handles it when ready (never close it, never make the worker repeat itself). Re-arms
-          // once the ask is answered (it drops out of coord.asking; cleared above).
-          const ask = coord.asking.find((a) => a.session === paneId);
-          const directorPane = `${projectKey}:director`;
-          if (ask && s.paneRoles[directorPane] === "director") {
-            resurfacedRef.current.add(paneId);
-            const waited = Math.max(1, Math.round((now - ask.at) / 60_000));
-            const msg = `Worker ${stream.id} (${paneId}) asked "${ask.question}" ~${waited}m ago and is still waiting with no answer — it may have been missed. Answer it when ready: echo "<answer>" | bsc-answer ${paneId} (or reassign). Don't leave it parked.`;
-            log.info(`auto-end: resurfacing ${paneId}'s lost question to the director`);
-            await invoke("pty_write", { paneId: directorPane, data: `${msg}\r` }).catch(() => {});
-          }
+  usePoll(async (isCancelled) => {
+    const activity = await safeInvoke<ActivityRow[]>("read_pane_activity", undefined, []);
+    const coordRes = await readCoordState(5000);
+    if (isCancelled() || !Array.isArray(activity)) return;
+    const coord = coordRes?.state ?? emptyCoordState();
+    const s = useAppStore.getState();
+    const now = Date.now();
+    for (const paneId of Object.keys(s.fleetPaneStreams)) {
+      if (s.endedPanes[paneId] || (s.paneRoles[paneId] ?? "worker") !== "worker") continue;
+      const act = activity.find((a) => a.pane === paneId);
+      if (act?.state === "run") { nudgedRef.current.delete(paneId); resurfacedRef.current.delete(paneId); continue; } // working → re-arm
+      if (coord.waiting.some((w) => w.session === paneId)) continue;             // paused for the user → leave it
+      if (!coord.asking.some((a) => a.session === paneId)) resurfacedRef.current.delete(paneId); // ask answered → re-arm resurface
+      const stream = s.fleetPaneStreams[paneId];
+      const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
+      if (!projectKey || !stream) continue;
+      const issues = await invoke<OwnedIssue[]>("plan_list_issues", { projectKey, stream: stream.id }).catch(() => null);
+      if (isCancelled() || !issues) continue;
+      const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
+      const action = decideWorkerAutoEnd({
+        turnOpen: act?.state === "run",
+        idleMs: act?.state === "idle" ? now - act.at : 0,
+        hasOutstandingQuestion: coord.asking.some((a) => a.session === paneId),
+        verdict,
+      }, DEFAULT_AUTO_END_THRESHOLDS);
+      if (action === "close-nudge" && !nudgedRef.current.has(paneId)) {
+        nudgedRef.current.add(paneId); // once per idle period; cleared when the turn reopens
+        log.info(`auto-end: nudging ${paneId} (${stream.id}) to self-close — idle + work complete`);
+        await invoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }).catch(() => {});
+      } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
+        // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
+        // answer — its ask may have been missed. Re-surface it to the live director ONCE so it
+        // handles it when ready (never close it, never make the worker repeat itself). Re-arms
+        // once the ask is answered (it drops out of coord.asking; cleared above).
+        const ask = coord.asking.find((a) => a.session === paneId);
+        const directorPane = `${projectKey}:director`;
+        if (ask && s.paneRoles[directorPane] === "director") {
+          resurfacedRef.current.add(paneId);
+          const waited = Math.max(1, Math.round((now - ask.at) / 60_000));
+          const msg = `Worker ${stream.id} (${paneId}) asked "${ask.question}" ~${waited}m ago and is still waiting with no answer — it may have been missed. Answer it when ready: echo "<answer>" | bsc-answer ${paneId} (or reassign). Don't leave it parked.`;
+          log.info(`auto-end: resurfacing ${paneId}'s lost question to the director`);
+          await invoke("pty_write", { paneId: directorPane, data: `${msg}\r` }).catch(() => {});
         }
       }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), IDLE_POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+    }
+  }, IDLE_POLL_MS, []);
 }
