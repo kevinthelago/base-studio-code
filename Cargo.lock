@@ -763,6 +763,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-project"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-sqlite-util"
 version = "0.1.0"
 dependencies = [

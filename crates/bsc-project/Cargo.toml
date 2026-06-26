@@ -1,0 +1,21 @@
+[package]
+name = "bsc-project"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-project hub lifecycle for base-studio-code (#1720) — list the on-disk projects + read/set the `.published` marker across ALL projects (not tied to one plan.db). Shared by the `bsc-project` session CLI."
+
+# The core lib (no Tauri) so the tiny CLI can reuse the projects-dir walk + `.published` logic.
+[lib]
+name = "bsc_project"
+
+# The session-facing CLI: list local projects + read/set `.published` from any live console's shell
+# (#1325). Walks `~/.base-studio-code/projects/<key>/` over the shared `bsc_util::bsc_base_dir()`.
+[[bin]]
+name = "bsc-project"
+path = "src/bin/bsc-project.rs"
+
+[dependencies]
+# Shared leaf utilities (#1646): the ONE home-dir / `~/.base-studio-code` resolver, so this CLI and
+# the desktop app (`project/hub.rs`) agree on which projects dir they read/write.
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"
