@@ -56,12 +56,11 @@ import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BAS
 import { findPlanGaps } from "../lib/lintPlan";
 import { findPlanInjections, injectionGate } from "../lib/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
-import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
+import { mkSection, planSectionsComplete, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
+import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
-import { resolveBlueprintSkillPayloads, buildSkillLibrary } from "../blueprints/blueprintSkills";
-import { buildMcpLibrary } from "../blueprints/blueprintMcp";
+import { resolveBlueprintSkillPayloads } from "../blueprints/blueprintSkills";
 import { publishGist } from "@/features/planner/lib/gist/gist";
 import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, shouldAutoCompleteGate } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
@@ -73,6 +72,7 @@ import { usePlannerRepoManagement } from "./usePlannerRepoManagement";
 import { usePlanMcpDownloads } from "./usePlanMcpDownloads";
 import { usePlanSkillsManagement } from "./usePlanSkillsManagement";
 import { usePlanMcpManagement } from "./usePlanMcpManagement";
+import { usePlannerBlueprint } from "./usePlannerBlueprint";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -570,30 +570,14 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const s of sections) if (s.state !== "pending" && enabled.has(s.k)) written[`${s.k}.md`] = s.content ?? "";
     return injectionGate(findPlanInjections(written), { hardGate: injectionHardGate, ackSig: planInjectionAck[effectiveProjectId] });
   }, [sections, planSecs, injectionHardGate, planInjectionAck, effectiveProjectId]);
-  // Blueprint-authoring lifecycle (#923): this project DESIGNS a blueprint (the deliverable) rather
-  // than building software. The in-progress blueprint arrives via the planner's <blueprint> tag.
-  const activeBlueprint = useMemo(() => blueprints.find(b => b.id === effectiveBlueprintId), [blueprints, effectiveBlueprintId]);
-  const isAuthoring = isAuthoringBlueprint(activeBlueprint);
-  // #1286: the planner's orientation (its intro greeting AND its generated CLAUDE.md spec) follows
-  // the blueprint's lifecycle MODE — an operate-mode blueprint (transform/harden/maintain) takes the
-  // "existing repos" orientation even on a fresh draft or right after a lifecycle switch, where the
-  // bare `isExisting` (saved-project) proxy would mis-greet it as a new greenfield project. Plain
-  // `isExisting` stays for the drafting/expanding UI labels (genuinely about save-state).
-  const treatAsExisting = plannerTreatAsExisting({ isSaved: isExisting, mode: activeBlueprint?.mode });
-  // Blueprint switching (#1281): any project blueprint may switch to any OTHER one — the
-  // reset/keep/export confirmation modal is the safety, not a category rule (only the blueprint-
-  // authoring lifecycle is excluded). Offer every other blueprint as a target.
-  const switchTargets = useMemo(
-    () => blueprints.filter(b => canSwitchBlueprint(activeBlueprint, b)),
-    [blueprints, activeBlueprint]);
-  const canSwitch = canChangeBlueprint(activeBlueprint) && switchTargets.length > 0;
-  const [switchOpen, setSwitchOpen] = useState(false);
-  const authoredBp = planAuthoredBlueprint[effectiveProjectId];
-  // Signals the authoring stages' gates read (name+category, stage count, validity).
-  const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
-  // Pickable libraries for the Capabilities stage's skill + MCP pickers.
-  const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs), [skillDefs]);
-  const authorMcpLib = useMemo(() => buildMcpLibrary(mcpServers), [mcpServers]);
+  // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — extracted so the gate
+  // signals region below is contiguous; `signals` reads this hook's isAuthoring/authoringSig.
+  const {
+    isAuthoring, treatAsExisting, switchTargets, canSwitch,
+    switchOpen, setSwitchOpen, authoringSig, authorSkillLib, authorMcpLib,
+  } = usePlannerBlueprint({
+    blueprints, effectiveBlueprintId, isExisting, planAuthoredBlueprint, effectiveProjectId, skillDefs, mcpServers,
+  });
   // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
   // gate model (`sectionDone`) treats them as resolved.
   const skipSignals = useMemo(() => {
