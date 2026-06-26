@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { dueAutomations } from "./lib/scheduler";
 import { dispatchAutomation } from "./lib/dispatch";
 
@@ -19,27 +20,28 @@ const TICK_MS = 20_000;
  * {@link dispatchAutomation}.
  */
 export function useScheduler() {
+  const tick = useCallback(async (isCancelled: () => boolean) => {
+    const s = useAppStore.getState();
+    const deps = {
+      tabs: s.tabs,
+      disabledPanes: s.disabledPanes,
+      write: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),
+      recordRun: s.recordAutomationRun,
+      now: () => Date.now(),
+    };
+    for (const a of dueAutomations(s.automations, Date.now())) {
+      if (isCancelled()) return;
+      await dispatchAutomation(a, deps);
+    }
+  }, []);
+
+  // A beat after mount (so the store has hydrated): the first tick. usePoll runs the rest on the
+  // fixed interval (immediate:false — the grace tick covers mount, so the first interval tick is at TICK_MS).
   useEffect(() => {
     let cancelled = false;
+    const initial = setTimeout(() => void tick(() => cancelled), 1000);
+    return () => { cancelled = true; clearTimeout(initial); };
+  }, [tick]);
 
-    async function tick() {
-      const s = useAppStore.getState();
-      const deps = {
-        tabs: s.tabs,
-        disabledPanes: s.disabledPanes,
-        write: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),
-        recordRun: s.recordAutomationRun,
-        now: () => Date.now(),
-      };
-      for (const a of dueAutomations(s.automations, Date.now())) {
-        if (cancelled) return;
-        await dispatchAutomation(a, deps);
-      }
-    }
-
-    // A beat after mount (so the store has hydrated), then on a fixed interval.
-    const initial = setTimeout(tick, 1000);
-    const id = setInterval(tick, TICK_MS);
-    return () => { cancelled = true; clearTimeout(initial); clearInterval(id); };
-  }, []);
+  usePoll(tick, TICK_MS, [], { immediate: false });
 }
