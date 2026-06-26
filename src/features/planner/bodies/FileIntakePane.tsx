@@ -6,12 +6,12 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { StageScreenFrame } from "../grading/StageScreenFrame";
+import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
 } from "../shared/fileIntake";
-import type { StageScreenProps } from "../grading/stageScreens";
+import type { StageScreenProps } from "../preview/stageScreens";
 import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../shared/dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {

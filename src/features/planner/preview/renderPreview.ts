@@ -10,8 +10,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { bundleSkeleton, buildPreviewSrcDoc } from "./previewBundle";
-import { type StageContext, type StageRunResult } from "../grading/stageRun";
-import { registerStageModule } from "../grading/stageCommands";
+import { type StageContext, type StageRunResult } from "./stageRun";
+import { registerStageModule } from "./stageCommands";
 
 export type PreviewMode = "2d" | "3d";
 export interface PreviewOutput { srcDoc: string; mode: PreviewMode; screen?: string }
