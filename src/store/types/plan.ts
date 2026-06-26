@@ -1,0 +1,209 @@
+// Plan-session domain — Claude config profiles, plan section files, blueprints, data models,
+// stage config/runs/preview, and the agent fleet plan. Plus the config + automation-suggestion
+// value types it owns. Split from store/types (#1634).
+import type { ModelId } from "@/app/console/panes/PaneMenu";
+import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
+import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
+import type { Topology } from "@/features/planner/relationship/relationshipGraph";
+import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
+import type { StageRunState } from "@/features/planner/preview/stageRun";
+import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
+import type { DeployConfig } from "@/features/planner/lib/deployConfig";
+import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
+import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
+import type { DataModel } from "@/features/planner/data/dataModel";
+import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
+import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
+
+export interface ToolPermissions {
+  allow: string[];
+  deny: string[];
+}
+
+export interface ConfigProfile {
+  id: string;
+  name: string;
+  instructions: string;
+  tools: ToolPermissions;
+}
+
+export interface AutomationSuggestion {
+  name: string;
+  command: string;
+  schedule?: string;
+  description?: string;
+}
+
+/** Plan-session slice of {@link AppStore}. */
+export interface PlanState {
+  // Claude config profiles (persisted)
+  configProfiles: ConfigProfile[];
+  addConfigProfile: (profile: Omit<ConfigProfile, "id">) => void;
+  updateConfigProfile: (id: string, patch: Partial<Omit<ConfigProfile, "id">>) => void;
+  removeConfigProfile: (id: string) => void;
+
+  // Plan session data — persisted per project so navigation away doesn't lose state.
+  planSections:    Record<string, Record<string, string>>;
+  setPlanSection:  (projectId: string, key: string, content: string) => void;
+  planConfirmedSections: Record<string, string[]>;
+  confirmPlanSection:   (projectId: string, key: string) => void;
+  unconfirmPlanSection: (projectId: string, key: string) => void;
+  /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
+   *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
+  planAuthoredBlueprint: Record<string, Blueprint>;
+  setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
+  /** Per-project deployment & infrastructure config (#919) — edited by the planner's Deploy
+   *  stage pane; the `deploymentDefined` gate signal derives from it. */
+  planDeployConfig: Record<string, DeployConfig>;
+  setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Per-project migration SOURCE config (#source-pane) — the legacy systems a project migrates
+   *  from, declared + connected read-only in the Source stage pane; the `sourcesConnected` gate
+   *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
+  planSourceConfig: Record<string, SourceConfig>;
+  setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
+  /** Per-project Integration config (#1207) — the destination/sink + sync strategy the Integration
+   *  blueprint's Destination and Sync stages edit; the `destinationDefined` / `syncDefined` gate
+   *  signals derive from it. */
+  planIntegrationConfig: Record<string, IntegrationConfig>;
+  setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
+  /** Per-project DEFAULT GitHub repo visibility for new repos at publish (#…). Absent ⇒ false ⇒
+   *  PRIVATE; a per-repo override (`repoPublic`) wins over it. Set the default for the project (and
+   *  the fallback for repos with no override). */
+  reposPublic: Record<string, boolean>;
+  setReposPublic: (projectId: string, isPublic: boolean) => void;
+  /** Per-REPO GitHub visibility override (#1227), keyed `<projectKey>::<repoFullName>`. Wins over
+   *  the project default `reposPublic`; absent ⇒ falls back to the default ⇒ private. Resolved by
+   *  `resolveRepoPublic` at the Repos card + at publish. */
+  repoPublic: Record<string, boolean>;
+  setRepoPublic: (projectKey: string, repoId: string, isPublic: boolean) => void;
+  /** #1107: per-project signature of the injection findings the user acknowledged (acknowledge-to-
+   *  clear). Cleared when findings change; ignored when the hard-gate setting is on. */
+  planInjectionAck: Record<string, string>;
+  acknowledgePlanInjections: (projectId: string, signature: string) => void;
+  /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
+   *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
+  planSkippedSections:  Record<string, string[]>;
+  skipPlanSection:      (projectId: string, key: string) => void;
+  unskipPlanSection:    (projectId: string, key: string) => void;
+  /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
+   *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
+   *  stuck on a stale title-named section (#803). */
+  canonicalizePlanSections: (projectId: string) => void;
+  planAutomations:    Record<string, AutomationSuggestion[]>;
+  addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
+  clearPlanAutomations: (projectId: string) => void;
+  // Modular planning stages (#512): per-project on/off + ordering of the planning
+  // stages. Defaults (all-on, registry order) are resolved lazily via
+  // defaultStageConfig, so an unset project behaves exactly as today.
+  planStageConfig:    Record<string, StageConfig>;
+  setStageEnabled:    (projectId: string, stageId: StageId, enabled: boolean) => void;
+  reorderStages:      (projectId: string, order: StageId[]) => void;
+  /** Wholesale-set a project's stage config (used to seed it from a blueprint). */
+  setProjectStageConfig: (projectId: string, config: StageConfig) => void;
+  /** Seed a NEW project with the dynamic-stages baseline (#1395): Discovery (`context`) only,
+   *  every other stage off + lighting up additively from classification signals. Idempotent —
+   *  a no-op once the project has a stage config, so it never clobbers an existing plan. */
+  seedDiscoveryOnlyStages: (projectId: string) => void;
+  // Blueprints (#513/#514): named, reusable configs — an ordered list of planning
+  // sections, each owning its prompt module + pipelines. The active one seeds new
+  // projects. Seeded with the starter library; persisted. Section/pipeline edits go
+  // through setBlueprintStages (the component computes the new sections array).
+  blueprints:         Blueprint[];
+  activeBlueprintId:  string;
+  setActiveBlueprint: (id: string) => void;
+  // Canonical Data Models (#780) — the schema library the data blueprints map into and
+  // the build side later generates over. Seeded with a starter CRM model; persisted.
+  dataModels:         DataModel[];
+  activeDataModelId:  string;
+  setActiveDataModel: (id: string) => void;
+  /** Add a new empty Data Model; returns its id. */
+  addDataModel:       () => string;
+  /** Replace a model wholesale (the editor computes the next model from the pure transforms). */
+  setDataModel:       (id: string, model: DataModel) => void;
+  /** Delete a model; if it was active, the active id falls back to the first remaining. */
+  removeDataModel:    (id: string) => void;
+  /** Per-project, per-entity load verification (#ls-reconcile-ui).
+   *  projectKey → entityKey → verified. A verified load has passed the quality gate and
+   *  is ready for cutover; persisted so it survives app restarts. */
+  loadVerified:       Record<string, Record<string, boolean>>;
+  setLoadVerified:    (projectKey: string, entity: string, verified: boolean) => void;
+  // Which blueprint each project was last seeded/reset from (#647), keyed by project key.
+  // Lets the planner detect when the selected blueprint differs from the project's and
+  // offer to reset. Set on first seed + on an explicit blueprint switch.
+  projectBlueprintId: Record<string, string>;
+  setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
+  /** Re-seed a project's plan from a blueprint and CLEAR its progress (grades, screen
+   *  approvals, preview, pipeline runs) — the destructive "reset plan to blueprint" (#647).
+   *  The planner restarts the session separately. No-op if the blueprint is unknown. */
+  applyBlueprintToProject: (projectId: string, blueprintId: string) => void;
+  addBlueprint:       () => string;
+  duplicateBlueprint: (id: string) => string;
+  updateBlueprintMeta: (id: string, patch: Partial<Omit<Blueprint, "id" | "sections">>) => void;
+  setBlueprintStages: (id: string, sections: BlueprintStage[]) => void;
+  /** Delete a blueprint; if it was active, the active id falls back to the first
+   *  remaining (or the default). */
+  removeBlueprint: (id: string) => void;
+  /** Add an imported blueprint under a fresh id + fresh section uids (never overwrites
+   *  an existing one). Returns the new id. */
+  importBlueprint: (bp: Blueprint) => string;
+  // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
+  // projectKey -> stageUid -> state. Distinct from the fleet conductor's
+  // `workflowRuns` (#220). Session-only (not persisted).
+  stageRuns: Record<string, Record<string, StageRunState>>;
+  setStageRun: (projectKey: string, stageUid: string, state: StageRunState) => void;
+  // The current UI preview per project (#531): the render-preview pipeline writes the
+  // bundled iframe srcdoc here; PlanPreviewPane renders it. `screen` names which screen
+  // is showing (#546), so its approve button targets the right one. Session-only.
+  stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null>;
+  setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null) => void;
+  // Per-screen UI approval (#544/#546). `uiScreens` is the set of screens the planner
+  // has declared via <ui_preview> tags (the denominator); `uiApproved` is the names the
+  // user has signed off in the preview pane (the numerator). The UI stage completes only
+  // when every declared screen is approved. Both persisted — real approval signals.
+  uiScreens: Record<string, string[]>;
+  addUiScreen: (projectKey: string, screen: string) => void;
+  uiApproved: Record<string, string[]>;
+  setUiScreenApproved: (projectKey: string, screen: string, approved: boolean) => void;
+  // Agent fleet — the parallel-execution plan (work streams + optional director +
+  // the optimal concurrent session count). Persisted per project.
+  planFleet:             Record<string, FleetPlan>;
+  setPlanFleet:          (projectId: string, fleet: FleetPlan) => void;       // wholesale (from fleet.json poll)
+  /** Per-project set of context-file names pinned in the project pane (overrides the
+   *  confirmed-section default). projectId -> pinned file names. */
+  pinnedContext:         Record<string, string[]>;
+  togglePinnedContext:   (projectId: string, name: string) => void;
+  addPlanAgentStream:    (projectId: string, stream: AgentStream) => void;    // merge-by-id (from inline tag)
+  removePlanAgentStream: (projectId: string, id: string) => void;
+  /** #289: assign an AgentProfile id to a stream (null clears). */
+  setPlanAgentStreamProfile: (projectId: string, streamId: string, profileId: string | null) => void;
+  /** #297: set one or more flow fields on a stream (merged into its resolved flow). */
+  setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
+  /** #…: set a stream's per-agent LLM model (undefined clears it so the stream inherits the
+   *  global `defaultModel`). Applied at fleet launch as `claude --model <tier>`. */
+  setPlanAgentStreamModel: (projectId: string, streamId: string, model: ModelId | undefined) => void;
+  /** #378: set a stream's per-stream integration-strategy override (undefined clears
+   *  it so the stream inherits the fleet default). */
+  setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;
+  /** Set a stream's per-capability permission posture from the project pane's agent
+   *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
+  setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** Apply a named permission preset to a stream from the project pane: sets both
+   *  the preset name and the full per-capability posture it implies. */
+  setPlanAgentStreamPreset: (projectId: string, streamId: string, preset: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
+  /** #289: generate + assign a least-privilege profile for each unassigned stream,
+   *  scoped to that stream's resolved toolchain. Idempotent. */
+  generateFleetProfiles: (projectId: string) => void;
+  setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string, strategy?: IntegrationStrategy) => void;
+  /** Per-project coordination-topology override (#…), set in the Permissions pane. Wins
+   *  over the planner's fleet.json topology and survives a fleet re-poll. */
+  planFleetTopology:     Record<string, Topology>;
+  setPlanFleetTopology:  (projectId: string, topology: Topology) => void;
+  /** Per-project director-drive override (#…), set in the Permissions pane alongside the
+   *  topology. Wins over fleet.json's `director.drive` and survives a fleet re-poll. */
+  planFleetDirectorDrive:    Record<string, DirectorDrive>;
+  setPlanFleetDirectorDrive: (projectId: string, drive: DirectorDrive) => void;
+  setPlanDirector:       (projectId: string, enabled: boolean, role?: string) => void;
+  setPlanDirectorDrive:  (projectId: string, drive: DirectorDrive) => void;
+  clearPlanFleet:        (projectId: string) => void;
+  clearPlan:             (key: string) => void;
+}
