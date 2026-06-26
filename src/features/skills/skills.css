@@ -60,7 +60,7 @@
 /* empty state */
 .skills-screen .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:64px 24px; text-align:center; }
 
-/* page-mode strip (Library / Runs / Catalog) */
+/* page-mode strip (Library / Lessons / Runs) */
 .skills-screen .modestrip {
   padding: 0 24px;
   border-bottom: 1px solid var(--border-soft);
