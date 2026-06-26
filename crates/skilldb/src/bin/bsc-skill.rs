@@ -19,6 +19,7 @@
 //!   bsc-skill resolve <group-id>            # the group's member skills, JSON
 //! Global flag: --db <path>
 
+use bsc_sqlite_util::read_stdin_json;
 use skilldb::{Skill, SkillGroup, Store};
 use std::io::Read;
 use std::path::PathBuf;
@@ -172,17 +173,7 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
 /// placeholder the app overwrites with the project name) if it doesn't exist yet. This is how the
 /// planner pairs the skills it authors into its per-project session group in one command (#1419).
 fn cmd_add(s: &Store, group: Option<&str>) -> Result<Vec<String>, String> {
-    let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-    let buf = buf.trim();
-    if buf.is_empty() {
-        return Err("add: expected a skill (or array of skills) as JSON on stdin".into());
-    }
-    let skills: Vec<Skill> = if buf.starts_with('[') {
-        serde_json::from_str(buf).map_err(|e| format!("parsing skill array: {e}"))?
-    } else {
-        vec![serde_json::from_str(buf).map_err(|e| format!("parsing skill: {e}"))?]
-    };
+    let skills: Vec<Skill> = read_stdin_json("skill")?;
     let mut ids = Vec::new();
     for skill in &skills {
         if skill.id.trim().is_empty() {

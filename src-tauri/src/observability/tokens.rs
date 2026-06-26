@@ -171,32 +171,49 @@ pub(crate) fn json_unescape_path(p: &str) -> String {
     p.replace("\\\\", "\\").replace("\\/", "/")
 }
 
+/// Generic "latest row per key, newest-line-first" parser shared by the per-pane TSV readers
+/// (`tokens.log` / `activity.log` / `done.log`). Walks `text` line-by-line, skipping blank
+/// lines and any line with fewer than `min_cols` tab-separated fields, then hands the fields
+/// to `parse_row` to extract `(key, payload)` — returning `None` drops the row. The logs are
+/// append-only oldest-first, so the LAST row seen per key wins; the payloads come back
+/// newest-line-first. Pure (no fs) so it's unit-testable through its callers.
+fn latest_per_key<R>(
+    text: &str,
+    min_cols: usize,
+    parse_row: impl Fn(&[&str]) -> Option<(String, R)>,
+) -> Vec<R> {
+    use std::collections::HashMap;
+    // key -> (line order, payload)
+    let mut latest: HashMap<String, (usize, R)> = HashMap::new();
+    for (i, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < min_cols {
+            continue;
+        }
+        if let Some((key, payload)) = parse_row(&f) {
+            latest.insert(key, (i, payload));
+        }
+    }
+    let mut rows: Vec<(usize, R)> = latest.into_iter().map(|(_, (ord, r))| (ord, r)).collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
+    rows.into_iter().map(|(_, r)| r).collect()
+}
+
 /// The latest `(pane, session_id, transcript_path)` per pane from a `tokens.log` body,
 /// newest pane first. The log is append-only oldest-first, so a later line for a pane
 /// supersedes earlier ones (a resumed `--continue` session keeps the same transcript,
 /// which already accumulates all usage). Pure (no fs) so it's unit-testable.
 fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String, String)> {
-    use std::collections::HashMap;
-    // pane -> (order, session_id, transcript_path)
-    let mut latest: HashMap<String, (usize, String, String)> = HashMap::new();
-    for (i, line) in log_text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 4 {
-            continue;
-        }
+    latest_per_key(log_text, 4, |f| {
         let (pane, sid, tp) = (f[1].to_string(), f[2].to_string(), f[3].to_string());
         if pane.is_empty() || tp.is_empty() {
-            continue;
+            return None;
         }
-        latest.insert(pane, (i, sid, tp));
-    }
-    let mut rows: Vec<(usize, String, String, String)> =
-        latest.into_iter().map(|(pane, (ord, sid, tp))| (ord, pane, sid, tp)).collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
-    rows.into_iter().map(|(_, pane, sid, tp)| (pane, sid, tp)).collect()
+        Some((pane.clone(), (pane, sid, tp)))
+    })
 }
 
 /// Read per-pane token + cost accounting (#416). Reads `tokens.log`, takes the latest
@@ -261,31 +278,14 @@ pub(crate) struct PaneActivity {
 /// `idle` states are kept; malformed/short lines and unknown states are dropped. Pure (no fs) so
 /// it's unit-testable.
 fn latest_activity_per_pane(log_text: &str) -> Vec<(String, String, u64)> {
-    use std::collections::HashMap;
-    // pane -> (line order, state, at)
-    let mut latest: HashMap<String, (usize, String, u64)> = HashMap::new();
-    for (i, line) in log_text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 3 {
-            continue;
-        }
+    latest_per_key(log_text, 3, |f| {
         let (at, pane, state) = (f[0], f[1].to_string(), f[2].trim().to_string());
         if pane.is_empty() || (state != "run" && state != "idle") {
-            continue;
+            return None;
         }
-        let at: u64 = match at.trim().parse() {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        latest.insert(pane, (i, state, at));
-    }
-    let mut rows: Vec<(usize, String, String, u64)> =
-        latest.into_iter().map(|(pane, (ord, state, at))| (ord, pane, state, at)).collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
-    rows.into_iter().map(|(_, pane, state, at)| (pane, state, at)).collect()
+        let at: u64 = at.trim().parse().ok()?;
+        Some((pane.clone(), (pane, state, at)))
+    })
 }
 
 /// Read the latest turn-boundary state per pane (#1184). Reads `activity.log` and returns one
@@ -310,25 +310,13 @@ pub(crate) fn read_pane_activity() -> Vec<PaneActivity> {
 /// The deduped set of panes that have self-reported `done` (via `bsc-done`), newest first. The log
 /// is `ts \t pane` per line; blank/short lines and empty pane fields are dropped. Pure (no fs).
 fn done_panes(log_text: &str) -> Vec<String> {
-    use std::collections::HashMap;
-    let mut latest: HashMap<String, usize> = HashMap::new();
-    for (i, line) in log_text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 2 {
-            continue;
-        }
+    latest_per_key(log_text, 2, |f| {
         let pane = f[1].trim().to_string();
         if pane.is_empty() {
-            continue;
+            return None;
         }
-        latest.insert(pane, i);
-    }
-    let mut rows: Vec<(usize, String)> = latest.into_iter().map(|(p, i)| (i, p)).collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first
-    rows.into_iter().map(|(_, p)| p).collect()
+        Some((pane.clone(), pane))
+    })
 }
 
 /// The panes a finished worker self-reported via `bsc-done` (#1379). Missing log ⇒ empty (no worker

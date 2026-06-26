@@ -3,7 +3,7 @@
 //! `candidates[0].content.parts[].text` back into the normalized `{content,usage}`
 //! so llm_complete's consumers read it unchanged.
 
-use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{post_json, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 
 pub struct GeminiProvider;
 
@@ -73,10 +73,9 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
 /// to the canonical 4-key shape `tokens.rs` parses; Gemini has no prompt-cache split,
 /// so cache_* = 0. Pure.
 pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
-    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
     serde_json::json!({
-        "input_tokens": g("promptTokenCount"),
-        "output_tokens": g("candidatesTokenCount"),
+        "input_tokens": usage_u64(u, "promptTokenCount"),
+        "output_tokens": usage_u64(u, "candidatesTokenCount"),
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
     })
@@ -180,57 +179,30 @@ pub(crate) fn normalize_response(raw: &serde_json::Value) -> serde_json::Value {
 
 impl LlmProvider for GeminiProvider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
-        let client = reqwest::Client::new();
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             req.model
         );
-        let response = client
-            .post(&url)
-            .header("x-goog-api-key", api_key)
-            .header("content-type", "application/json")
-            .json(&build_request_body(req))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown error")
-                .to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
+        let json = post_json(
+            &url,
+            &[("x-goog-api-key", api_key.to_string())],
+            &build_request_body(req),
+        )
+        .await?;
         Ok(normalize_response(&json))
     }
 
     async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
-        let client = reqwest::Client::new();
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             t.model
         );
-        let response = client
-            .post(&url)
-            .header("x-goog-api-key", api_key)
-            .header("content-type", "application/json")
-            .json(&turn_request_body(t))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"].as_str().unwrap_or("Unknown error").to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
+        let json = post_json(
+            &url,
+            &[("x-goog-api-key", api_key.to_string())],
+            &turn_request_body(t),
+        )
+        .await?;
         Ok(parse_turn_response(&json))
     }
 }

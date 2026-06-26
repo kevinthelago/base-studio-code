@@ -37,7 +37,7 @@ pub(crate) use platform::paths::{
 };
 pub(crate) use platform::git::{git_lines, git_output, git_exclude};
 pub(crate) use platform::process::no_window;
-pub(crate) use platform::fsx::{is_safe_relpath, read_files_dir, ingest_section_files, sanitize_project_key, worktree_slug};
+pub(crate) use platform::fsx::{is_safe_relpath, read_files_dir, read_text_files, ingest_section_files, sanitize_project_key, worktree_slug};
 pub(crate) use platform::shell::{split_utf8_at_boundary, to_bash_path, to_native_path, bash_ansi_c_quote};
 
 // ── stage 3: helpers carved from lib.rs that are referenced cross-module (commands are referenced
@@ -54,7 +54,7 @@ pub(crate) use extensions::mcp::write_mcp_json;
 pub(crate) use extensions::hooks::write_session_hooks;
 pub(crate) use extensions::skills::write_session_skills;
 pub(crate) use extensions::cfg::{McpServerCfg, HookCfg, SkillCfg};
-pub(crate) use fleet::director::{FLEET_PROTOCOL_MD, INJECTION_RESISTANCE_MD, INJECTION_RESISTANCE_MARKER};
+pub(crate) use fleet::protocols::{FLEET_PROTOCOL_MD, INJECTION_RESISTANCE_MD, INJECTION_RESISTANCE_MARKER};
 
 #[cfg(test)]
 pub(crate) mod testutil;

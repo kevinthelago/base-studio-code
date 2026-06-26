@@ -1,10 +1,6 @@
 use crate::*;
 use std::collections::HashMap;
 
-/// Ensure the claude session rooted at `cwd` can run shell commands without a
-/// permission prompt while blocking dangerous ones, and apply the session's
-/// extensions (MCP servers → `.mcp.json`, hooks → settings.json), by merging into
-/// `<cwd>/.claude/settings.json` and `<cwd>/.mcp.json`.
 /// Markers the GitHub-readiness probe echoes when each check passes (#297). Plain
 /// `echo` tokens so parsing is a locale-independent substring match, not coupled to
 /// gh/git output formatting.

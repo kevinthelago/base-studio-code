@@ -19,3 +19,6 @@ path = "src/bin/bsc-logs.rs"
 bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Shared SQLite CLI+lib helpers (#1621): the cross-platform home-dir resolution + the JSON printer
+# the `bsc-logs` CLI shares with `bsc-plan` / `bsc-skill`.
+bsc-sqlite-util = { path = "../bsc-sqlite-util" }

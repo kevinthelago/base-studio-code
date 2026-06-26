@@ -1,11 +1,5 @@
 use crate::*;
 
-/// Download (or update) a catalog MCP server repo into the app-managed
-/// `~/.base-studio-code/mcp/<name>` and return its local path (#859 follow-up). The
-/// Extensions catalog's "download" button calls this so a first-party server lands at a
-/// known location ready to build + run, instead of just opening the browser. Idempotent:
-/// an existing clone is fast-forwarded; a fresh one is a shallow clone of the default
-/// branch (`main`). `name` is slugified so it can never escape the `mcp/` root.
 /// Resolve a catalog MCP server's download directory under `~/.base-studio-code/mcp/`,
 /// slugifying `name` (`[A-Za-z0-9._-]`, else `_`) so it can never escape the `mcp/` root.
 /// `Err` for an empty / `.` / `..` name. Pure over the base dir — unit-tested.
@@ -15,7 +9,7 @@ pub(crate) fn mcp_install_dir(name: &str) -> Result<std::path::PathBuf, String> 
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
         .collect();
     if safe.is_empty() || safe == "." || safe == ".." {
-        return Err("mcp_clone: invalid name".into());
+        return Err("mcp_install_dir: invalid name".into());
     }
     Ok(bsc_base_dir().join("mcp").join(safe))
 }

@@ -23,3 +23,6 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # RuntimePreset shape the scan command consumes. `default-features = false` keeps the heavy
 # DuckDB store out of the CLI — the preset/connector logic compiles without it.
 bsc-data = { path = "../data", default-features = false }
+# Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the stdin/print
+# helpers the `bsc-plan` CLI shares with `bsc-skill` / `bsc-logs`.
+bsc-sqlite-util = { path = "../bsc-sqlite-util" }
