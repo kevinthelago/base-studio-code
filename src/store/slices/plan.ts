@@ -38,7 +38,7 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "sectionGrades" | "setSectionGrade" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planKbAssignments" | "addPlanKbAssignment" | "removePlanKbAssignment" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintSections" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -279,7 +279,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             planAutomations:       drop(s.planAutomations),
             planFleet:             drop(s.planFleet),
             issueLinks:            drop(s.issueLinks),
-            sectionGrades:         drop(s.sectionGrades),
             uiScreens:             drop(s.uiScreens),
             uiApproved:            drop(s.uiApproved),
             stagePreview:          drop(s.stagePreview),
@@ -351,14 +350,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       stagePreview: {},
       setStagePreview: (projectKey, value) =>
         set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
-      sectionGrades: {},
-      setSectionGrade: (projectKey, sectionKey, result) =>
-        set((s) => {
-          const proj = s.sectionGrades[projectKey] ?? {};
-          const prior = proj[sectionKey] ?? [];
-          const next = [...prior.filter((g) => g.graderId !== result.graderId), result];
-          return { sectionGrades: { ...s.sectionGrades, [projectKey]: { ...proj, [sectionKey]: next } } };
-        }),
       uiScreens: {},
       addUiScreen: (projectKey, screen) =>
         set((s) => {
@@ -509,7 +500,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           uiApproved:            omitKey(s.uiApproved),
           planFleet:             omitKey(s.planFleet),
           issueLinks:            omitKey(s.issueLinks),
-          sectionGrades:         omitKey(s.sectionGrades),
           // rendered artifacts + planning context — the UI preview is "the ui" that must
           // also clear, plus pipeline run states and pinned context (#651).
           stagePreview:          omitKey(s.stagePreview),

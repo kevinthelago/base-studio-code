@@ -9,14 +9,11 @@
 import type { DirectorDrive } from "../fleet/directorDrive";
 import type { IntegrationStrategy } from "../shared/integrationStrategy";
 import type { ModelId } from "@/app/console/lib/models";
-import type { PlanGrade } from "@/features/planner/lib/planGrade";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../shared/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import type { Topology, RelationshipArtifact, AgentRelationship } from "../relationship/relationshipGraph";
-
-export type { PlanGrade };
 
 export type Posture = "allow" | "ask" | "deny";
 export type Perm = Record<string, Posture>;
@@ -167,8 +164,4 @@ export interface ProjectPaneData {
   relationshipArtifacts?: RelationshipArtifact[];
   /** Typed relationship edges between streams — the Structure relationship graph. */
   relationships?: AgentRelationship[];
-  // The agent-readiness grade (#445) is no longer carried on the pane data: it is now
-  // produced by the grade-plan pipeline and read from the store (sectionGrades, as the
-  // structure "agent-readiness" grader's detail) by the pane directly. PlanGrade is
-  // still re-exported here for the report component's types.
 }
