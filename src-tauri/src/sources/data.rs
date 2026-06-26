@@ -273,8 +273,8 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
     }).collect();
 
     let identity = fields.first().map(|f| vec![f.key.clone()]).unwrap_or_default();
-    // Identity fields are merge keys and must round-trip as text — force String (matching
-    // crates/data::infer), so a numeric-looking key like `id` joins/dedupes as a key, not a number.
+    // Identity fields are merge keys and must round-trip as text — force String, so a
+    // numeric-looking key like `id` joins/dedupes as a key, not a number.
     for f in fields.iter_mut() {
         if identity.iter().any(|k| k == &f.key) && !matches!(f.ty, FieldType::Ref) {
             f.ty = FieldType::String;
