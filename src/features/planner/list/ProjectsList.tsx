@@ -4,6 +4,7 @@ import { ExternalLink, MoreHorizontal, Trash2, Pencil, Check, Search, Layers, Gi
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "@/shared/lib/core/projectPaths";
+import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
 import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintSection } from "../stages/blueprints";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
@@ -149,19 +150,6 @@ const DELETE_MUTATION = `
     }
   }
 `;
-
-function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-function timeAgoMs(ms: number): string {
-  return ms > 0 ? timeAgo(new Date(ms).toISOString()) : "—";
-}
 
 interface ProjectRowProps {
   p: GhProject;

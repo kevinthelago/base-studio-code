@@ -3,6 +3,7 @@
 // Fleet / Repo Pulse analytics pages.
 import { useState, useCallback, type ReactNode, type CSSProperties } from "react";
 import type { ChartTip } from "./Charts";
+import { loginColor } from "@/shared/lib/core/format";
 
 /** Compact number formatter (e.g. 1234 → "1.2k", 12000 → "12k"). */
 export function fmt(n: number): string {
@@ -57,13 +58,6 @@ export function RangeToggle({ value, onChange, options = ["7d", "14d", "30d"] }:
       ))}
     </div>
   );
-}
-
-/** Deterministic color from a string (mirrors loginColor elsewhere). */
-function loginColor(login: string): string {
-  let h = 0;
-  for (let i = 0; i < login.length; i++) h = (h * 31 + login.charCodeAt(i)) >>> 0;
-  return `oklch(0.68 0.12 ${h % 360})`;
 }
 
 /** A small agent/user avatar; `bot` renders a rounded-square agent glyph. */

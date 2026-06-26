@@ -9,6 +9,7 @@
 import type {
   VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch, BranchStatusKey,
 } from "@/shared/data/repoPulse";
+import { loginColor } from "@/shared/lib/core/format";
 
 // ── GitHub payload shapes (subset of the fields we use) ──────────────────────
 export interface GhAccount { login: string; type?: string }
@@ -139,11 +140,6 @@ export function mapHottestFiles(details: GhCommitDetail[], topN = 16): ChurnFile
 }
 
 // ── contributors (bot vs human, GitHub-attributed) ───────────────────────────
-function loginColor(login: string): string {
-  let h = 0;
-  for (let i = 0; i < login.length; i++) h = (h * 31 + login.charCodeAt(i)) >>> 0;
-  return `oklch(0.68 0.12 ${h % 360})`;
-}
 export function mapContributors(commits: GhCommitItem[], details: GhCommitDetail[]): Contributor[] {
   const acc = new Map<string, { bot: boolean; commits: number; add: number; del: number }>();
   const keyOf = (c: GhCommitItem) => c.author?.login ?? c.commit.author?.name ?? "unknown";
