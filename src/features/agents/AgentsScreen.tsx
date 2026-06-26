@@ -6,6 +6,7 @@
 // per-tool tri-states + path scope. Data model + helpers live in ./agentProfiles.
 // (The Activity feed is still sample data — a real audit log is a follow-up.)
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
@@ -102,10 +103,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
   const tab = sectionOverride ?? activeId; // active section
 
-  useEffect(() => {
-    if (tab !== "activity") return;
-    let cancelled = false;
-    const load = async () => {
+  usePoll(async (isCancelled) => {
+      if (tab !== "activity") return;
       const lines = await safeInvoke<string[]>("read_audit_log", { limit: 300 }, []);
       const records = parseAuditLog(lines.join("\n"));
       const rows = records.map((rec): AuditDisplayRow => {
@@ -132,12 +131,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
           decision: decideAudit(rec, gate, roleCap),
         };
       });
-      if (!cancelled) setAuditRows(rows);
-    };
-    load();
-    const id = setInterval(load, 3000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [tab, paneProfiles, profiles, paneRoles, consoles]);
+      if (!isCancelled()) setAuditRows(rows);
+  }, 3000, [tab, paneProfiles, profiles, paneRoles, consoles]);
 
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
@@ -855,24 +850,18 @@ function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
   const [waking, setWaking] = useState<Set<string>>(new Set());
 
   // Polls only while this tab is mounted (the tab is conditionally rendered).
-  useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      invoke<string[]>("read_coord_log", { limit: 1000 })
-        .then((lines) => {
-          if (cancelled) return;
-          const r = ingestCoordLog(lines, emptyCoordState());
-          setViews(coordinationSummary(r.state));
-          setReady(r.ready);
-          setState(r.state);
-          setErr(null);
-        })
-        .catch((e) => { if (!cancelled) setErr(String(e)); });
-    };
-    poll();
-    const id = setInterval(poll, COORD_POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  usePoll((isCancelled) => {
+    invoke<string[]>("read_coord_log", { limit: 1000 })
+      .then((lines) => {
+        if (isCancelled()) return;
+        const r = ingestCoordLog(lines, emptyCoordState());
+        setViews(coordinationSummary(r.state));
+        setReady(r.ready);
+        setState(r.state);
+        setErr(null);
+      })
+      .catch((e) => { if (!isCancelled()) setErr(String(e)); });
+  }, COORD_POLL_MS);
 
   const handleWake = useCallback(async (wtr: Waiter) => {
     setWaking((cur) => new Set(cur).add(wtr.session));

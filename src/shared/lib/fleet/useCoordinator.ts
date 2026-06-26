@@ -10,7 +10,7 @@
 //     when the director replies (`bsc-answer`), recency-gated, independent of any toggle.
 //   • Mobile push (#366): coordination notifications to a paired phone, deduped + once each — the
 //     surviving alert path (a stuck/failed signal still reaches the human).
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useAppStore } from "@/store";
 import {
   ingestCoordLog,
@@ -20,6 +20,7 @@ import {
   producesFromPaneStreams,
 } from "./coordination";
 import { readCoordState } from "./useCoordLog";
+import { usePoll } from "@/shared/hooks/usePoll";
 import type { SessionMeta } from "@/features/tunnel/lib/tunnel";
 import { injectWake } from "./coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel/lib/tunnelClient";
@@ -33,35 +34,29 @@ export function useCoordinator(): void {
   // Notification keys already pushed to mobile this app run -- so the poll loop fires
   // each alert exactly once (FCM is a push, not a poll).
   const notified = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      const res = await readCoordState(1000);
-      if (cancelled || !res) return;
-      const { state, ready, answered } = res;
-      const now = Date.now();
+  usePoll(async (isCancelled) => {
+    if (isCancelled()) return;
+    const res = await readCoordState(1000);
+    if (isCancelled() || !res) return;
+    const { state, ready, answered } = res;
+    const now = Date.now();
 
-      // A director answer (#369) always resumes the asking worker, recency-gated -- this is the
-      // surviving wake path: deferring a worker's question to the director only works if its
-      // answer reliably wakes the worker.
-      for (const a of answered) {
-        if (inFlight.current.has(a.session)) continue;
-        if (now - a.at >= FRESH_MS) continue;
-        inFlight.current.add(a.session);
-        void injectWake(a.session, answerWakePrompt(a))
-          .finally(() => inFlight.current.delete(a.session));
-      }
+    // A director answer (#369) always resumes the asking worker, recency-gated -- this is the
+    // surviving wake path: deferring a worker's question to the director only works if its
+    // answer reliably wakes the worker.
+    for (const a of answered) {
+      if (inFlight.current.has(a.session)) continue;
+      if (now - a.at >= FRESH_MS) continue;
+      inFlight.current.add(a.session);
+      void injectWake(a.session, answerWakePrompt(a))
+        .finally(() => inFlight.current.delete(a.session));
+    }
 
-      // Mobile push (#366): alerts to a paired phone, deduped + once each.
-      void pushNotifications(state, ready, notified.current).catch((e) =>
-        log.error(`coordinator: notify failed: ${e}`),
-      );
-    };
-    void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+    // Mobile push (#366): alerts to a paired phone, deduped + once each.
+    void pushNotifications(state, ready, notified.current).catch((e) =>
+      log.error(`coordinator: notify failed: ${e}`),
+    );
+  }, POLL_MS, []);
 }
 
 /**

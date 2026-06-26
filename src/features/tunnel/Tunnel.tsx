@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
@@ -102,13 +103,10 @@ export function TunnelSettings() {
   // `sync` is stable (useCallback over the stable store setter), so this re-runs only
   // when the running state flips.
   const running = status?.running ?? false;
-  useEffect(() => {
+  usePoll(() => {
     if (!running) return;
-    const id = setInterval(() => {
-      tunnelStatus().then(sync).catch(() => { /* transient; keep last */ });
-    }, 2000);
-    return () => clearInterval(id);
-  }, [running, sync]);
+    tunnelStatus().then(sync).catch(() => { /* transient; keep last */ });
+  }, 2000, [running, sync], { immediate: false });
 
   // A view-only phone that tries to type fires this once; surface it so the desktop can
   // decide to grant input. The badge clears as soon as the desktop grants or revokes.
