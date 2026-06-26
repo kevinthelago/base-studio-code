@@ -146,22 +146,30 @@ describe("task groups (#skills-groups)", () => {
     expect(g.find((x) => x.name === "Release day")!.skillIds).toEqual(["a"]);
   });
 
-  it("ensureSessionGroup creates the per-project session group with a fixed id + name (#1419)", () => {
+  it("ensureSessionGroup does NOT pre-create a group when none exists yet — lazy (#1616)", () => {
+    // On planner open the group doesn't exist; we must not write an empty group. bsc-skill creates it
+    // only when the planner authors its first skill.
+    useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme CRM");
+    expect(useAppStore.getState().skillGroups).toHaveLength(0);
+  });
+
+  it("ensureSessionGroup adopts the lazily-created placeholder group: renames it + fills the empty hue (#1616)", () => {
+    // bsc-skill created the group on the first authored skill: placeholder name = its id, empty hue.
+    useAppStore.getState().upsertSkillGroups([{ id: "grp-session-acme", name: "grp-session-acme", hue: "", skillIds: ["sk1"] }]);
     useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme CRM");
     const g = useAppStore.getState().skillGroups;
     expect(g).toHaveLength(1);
-    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme CRM", skillIds: [] });
+    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme CRM", hue: "var(--violet)", skillIds: ["sk1"] });
   });
 
   it("ensureSessionGroup renames in place on a title change WITHOUT clobbering members (#1419)", () => {
-    useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme CRM");
-    // The planner paired a skill into it (as `bsc-skill add --group` would).
-    useAppStore.getState().toggleSkillGroupMember("grp-session-acme", "sk1");
-    // Re-ensure with a new title (the project was renamed) — must keep the member, just rename.
+    // The group already exists (bsc-skill created it + paired a skill in).
+    useAppStore.getState().upsertSkillGroups([{ id: "grp-session-acme", name: "Acme CRM", hue: "var(--violet)", skillIds: ["sk1"] }]);
+    // Re-ensure with a new title (the project was renamed) — must keep the member + hue, just rename.
     useAppStore.getState().ensureSessionGroup("grp-session-acme", "Acme Platform");
     const g = useAppStore.getState().skillGroups;
     expect(g).toHaveLength(1); // not duplicated
-    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme Platform", skillIds: ["sk1"] });
+    expect(g[0]).toMatchObject({ id: "grp-session-acme", name: "Acme Platform", hue: "var(--violet)", skillIds: ["sk1"] });
   });
 
   it("setSessionSkillGroup toggles a group on/off per session and prunes an emptied entry", () => {

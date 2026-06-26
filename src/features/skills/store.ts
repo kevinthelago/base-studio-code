@@ -204,14 +204,17 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
     void dropGroup(id);
   },
   ensureSessionGroup: (id, name, hue) => {
+    // Lazy session group (#1616): never PRE-CREATE. `bsc-skill add --group <id>` creates the group on
+    // the planner's FIRST authored skill (placeholder name = its id, empty hue); here we only ADOPT it
+    // once it exists — rename the placeholder to the project name (and on later title changes) and fill
+    // the empty placeholder hue, never clobbering members or a user-set color. A project that authors
+    // no skills never gets an empty group written to skills.db.
     const existing = get().skillGroups.find((g) => g.id === id);
-    if (existing) {
-      if (name && existing.name !== name) get().updateSkillGroup(id, { name });
-      return;
-    }
-    const group: SkillGroup = { id, name, hue: hue ?? "var(--violet)", skillIds: [] };
-    set((s) => ({ skillGroups: [...s.skillGroups, group] }));
-    void pushGroup(group);
+    if (!existing) return;
+    const patch: Partial<Omit<SkillGroup, "id">> = {};
+    if (name && existing.name !== name) patch.name = name;
+    if (!existing.hue) patch.hue = hue ?? "var(--violet)";
+    if (Object.keys(patch).length > 0) get().updateSkillGroup(id, patch);
   },
   toggleSkillGroupMember: (groupId, skillId) => {
     set((s) => ({
