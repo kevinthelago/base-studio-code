@@ -25,7 +25,8 @@ pub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {
 /// non-alphanumeric character replaced by `-`
 /// (e.g. `C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
 pub(crate) fn claude_project_dir_name(cwd: &str) -> String {
-    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+    // keep [A-Za-z0-9] → '-', no cap (delegates to map_slug; semantics frozen).
+    crate::platform::fsx::map_slug(cwd, |c| c.is_ascii_alphanumeric(), '-', None)
 }
 /// Whether Claude has a prior conversation for `cwd`. `--continue` aborts with
 /// "No conversation found to continue" (and never delivers the baked startup
