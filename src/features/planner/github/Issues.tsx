@@ -5,6 +5,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { timeAgoShort } from "@/shared/lib/core/format";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
+import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
 import type { GhLabel } from "@/shared/lib/github/types";
@@ -380,45 +381,26 @@ export function Issues() {
     !!activeProjectId,
   );
 
-  const rawIssues = useMemo<FlatIssue[]>(() => {
-    if (!data) return [];
-    const node = data.node as {
-      items: { nodes: Array<{
-        id: string;
-        fieldValues: { nodes: Array<{ name?: string; field?: { name: string } }> };
-        content?: {
-          number: number; title: string; body: string;
-          state: "OPEN" | "CLOSED"; updatedAt: string;
-          labels: { nodes: Array<{ name: string; color: string }> };
-          assignees: { nodes: Array<{ login: string }> };
-          comments: { totalCount: number };
-          milestone?: { title: string } | null;
-        };
-      }> };
-    };
-
-    const issues: FlatIssue[] = [];
-    for (const item of node.items.nodes) {
-      const typename = (item.content as { __typename?: string } | undefined)?.__typename;
-      if (!item.content || typename !== "Issue") continue;
-      const c = item.content;
-      const statusFv = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
-      issues.push({
-        id: item.id,
-        number: c.number,
-        title: c.title,
-        body: c.body ?? "",
-        state: c.state,
-        updatedAt: c.updatedAt,
-        labels: c.labels.nodes,
-        assignees: c.assignees.nodes,
-        comments: c.comments.totalCount,
-        milestone: c.milestone?.title ?? null,
-        statusName: statusFv?.name ?? null,
-      });
-    }
-    return issues;
-  }, [data]);
+  const rawIssues = useMemo<FlatIssue[]>(() => parseProjectV2Items<{
+    number: number; title: string; body: string;
+    state: "OPEN" | "CLOSED"; updatedAt: string;
+    labels: { nodes: GhLabel[] };
+    assignees: { nodes: GhUser[] };
+    comments: { totalCount: number };
+    milestone?: { title: string } | null;
+  }, FlatIssue>(data?.node as ProjectV2Node | undefined, (c, item) => ({
+    id: item.id,
+    number: c.number,
+    title: c.title,
+    body: c.body ?? "",
+    state: c.state,
+    updatedAt: c.updatedAt,
+    labels: c.labels.nodes,
+    assignees: c.assignees.nodes,
+    comments: c.comments.totalCount,
+    milestone: c.milestone?.title ?? null,
+    statusName: statusFieldValue(item)?.name ?? null,
+  })), [data]);
 
   const updateFilters = (patch: Partial<Filters>) => setFilters(f => ({ ...f, ...patch }));
 
