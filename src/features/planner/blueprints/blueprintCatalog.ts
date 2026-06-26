@@ -1,67 +1,41 @@
-// Blueprints-page registry layer (#609) — the editor's palette metadata, ported from
-// the design (design/base-studio-code-blueprints/js/data.jsx) and reconciled with our
-// runtime model: stage keys match ours (`ui`, not the design's `ux`). Pure; the editor
-// reads this for glyphs/hues/blurbs/dispositions; the runtime (#584 gateRule/sectionStatus)
-// is unchanged.
+// Blueprints-page registry layer (#609) — the editor's palette metadata. The per-stage
+// metadata (icon + hue + title + blurb) is single-sourced from the stage's own JSON in
+// the prompts data layer (#1603): real stages carry `icon`/`hue` on their SECTION_DEF, and
+// the discovery dimensions that double as palette kinds carry them on `discovery.json`'s
+// `dimensions`. STAGE_KINDS is DERIVED from those here — no hand-maintained duplicate. Pure;
+// the editor reads this for glyphs/hues/blurbs/dispositions; the runtime (#584 gateRule/
+// sectionStatus) is unchanged.
+
+import { SECTION_DEFS } from "../stages/blueprints";
 
 // ── hue helpers (oklch accents; share L/C, vary hue) ──────────────────────────
 export const hue = (h: number): string => `oklch(0.74 0.11 ${h})`;
 export const tint = (h: number, a: number): string => `oklch(0.74 0.11 ${h} / ${a})`;
 
 // ── stage kinds: the palette of stages a blueprint can contain ────────────────
+// `glyph` is the Material/Lucide icon name (for the editor `<Ic>`); `h` is the accent hue.
 interface StageKindMeta { title: string; glyph: string; h: number; blurb: string }
 
-export const STAGE_KINDS: Record<string, StageKindMeta> = {
-  discovery:     { title: "Discovery",        glyph: "flag",            h: 70,  blurb: "Pitch, goals & house rules the agents read first." },
-  repos:         { title: "Repositories",     glyph: "account_tree",    h: 230, blurb: "Which repos this project spans + linking." },
-  users:         { title: "Users & personas", glyph: "group",           h: 295, blurb: "Who it's for and the jobs they need done." },
-  ui:            { title: "UI design",        glyph: "design_services", h: 350, blurb: "Claude Design kickoff + route the user's design files." },
-  stack:         { title: "Tech stack",       glyph: "layers",          h: 195, blurb: "Languages, frameworks & runtime choices." },
-  architecture:  { title: "Architecture",     glyph: "hub",             h: 230, blurb: "Services, boundaries & how pieces fit." },
-  schema:        { title: "Data model",       glyph: "database",        h: 145, blurb: "Entities, relations & migrations." },
-  api:           { title: "API & contracts",  glyph: "api",             h: 195, blurb: "Endpoints & interface contracts." },
-  structure:     { title: "Structure",        glyph: "checklist",       h: 70,  blurb: "Milestones, issues & stream labels." },
-  permissions:   { title: "Permissions",      glyph: "key",             h: 25,  blurb: "Per-capability posture for each agent." },
-  automations:   { title: "Automations",      glyph: "bolt",            h: 145, blurb: "Cron jobs & knowledge injections." },
-  skills:        { title: "Skills",           glyph: "extension",       h: 70,  blurb: "Reusable capability bundles to index." },
-  testing:       { title: "Testing",          glyph: "science",         h: 145, blurb: "Test strategy & coverage gates." },
-  security:      { title: "Security",         glyph: "security",        h: 25,  blurb: "Threat model, secrets & access review." },
-  observability: { title: "Observability",    glyph: "monitoring",      h: 230, blurb: "Logging, metrics & tracing plan." },
-  infra:         { title: "Infrastructure",   glyph: "dns",             h: 295, blurb: "Hosting, environments & provisioning." },
-  cicd:          { title: "CI/CD",            glyph: "deployed_code",   h: 195, blurb: "Build, test & release pipelines." },
-  docs:          { title: "Documentation",    glyph: "menu_book",       h: 70,  blurb: "READMEs, guides & reference docs." },
-  cleanup:       { title: "Dead & legacy code", glyph: "rule",          h: 25,  blurb: "Unused code, dead deps & legacy debt to remove." },
-  // Greenfield workshop + lifecycle stages (#…): these have SECTION_DEFS (one project pane each)
-  // but were absent from this map, so their card/editor icon fell through to the generic
-  // `category` square. Each is mapped to a Lucide glyph already in the ICONS set.
-  features:      { title: "Features",         glyph: "task_alt",        h: 160, blurb: "The user-facing capabilities — each one a stream." },
-  deploy:        { title: "Deploy",           glyph: "conveyor_belt",   h: 30,  blurb: "How each service ships — target, environments, pipeline, secrets." },
-  boundaries:    { title: "Service boundaries", glyph: "hub",           h: 260, blurb: "Bounded contexts and the seams to split the monolith along." },
-  extraction:    { title: "Extraction plan",  glyph: "fork_right",      h: 90,  blurb: "Incremental, shippable steps to carve each service out." },
-  consolidation: { title: "Consolidation plan", glyph: "account_tree",  h: 110, blurb: "Merge services back together, unifying data & contracts." },
-  migration:     { title: "Migration plan",   glyph: "sync",            h: 50,  blurb: "The from→to mapping and an incremental, reversible cutover." },
-  hardening:     { title: "Security hardening", glyph: "security",      h: 15,  blurb: "Threat model, an authz/secrets/deps audit, and concrete fixes." },
-  integrations:  { title: "Integrations",     glyph: "link",            h: 280, blurb: "The tools, connectors, and credentials the plan implies." },
-  mcp:           { title: "MCP servers",      glyph: "lan",             h: 200, blurb: "External tools + data the fleet's agents can call." },
-  // Data-platform / migration stages (#779–786) — one project pane each (ProjectPane focused body).
-  source:        { title: "Source",           glyph: "cloud_download",  h: 250, blurb: "Connect the legacy systems you're migrating from, read-only." },
-  dataSource:    { title: "Source",           glyph: "database",        h: 245, blurb: "Connect the system of record and inventory what's there." },
-  collectTargets:{ title: "Targets",          glyph: "account_tree",    h: 300, blurb: "Declare the external sources and the Data Model they feed." },
-  sourceLicensing:{ title: "Source legitimacy", glyph: "fact_check",    h: 15,  blurb: "ToS / robots / license clearance — blocks acquisition." },
-  dataModel:     { title: "Data Model",       glyph: "database",        h: 150, blurb: "The canonical schema everything maps into." },
-  dataAcquire:   { title: "Acquire",          glyph: "cloud_download",  h: 255, blurb: "Scrape (rate-limited, robots-aware) or fetch the raw data." },
-  dataExtract:   { title: "Extract",          glyph: "description",     h: 200, blurb: "Parse raw artifacts into structured rows." },
-  dataMap:       { title: "Mapping",          glyph: "account_tree",    h: 230, blurb: "Field-by-field: source object → Data Model entity." },
-  dataClean:     { title: "Cleaning",         glyph: "rule",            h: 20,  blurb: "Coerce, standardize, validate against the Data Model." },
-  dataLoad:      { title: "Load & reconcile", glyph: "upload",          h: 330, blurb: "Merge into the Data Model by identity key, with lineage." },
-  destination:   { title: "Destination",      glyph: "upload",          h: 320, blurb: "Where the extracted data is delivered — sink + write semantics." },
-  sync:          { title: "Sync & schedule",  glyph: "sync",            h: 60,  blurb: "How and how often the data syncs — full vs. incremental." },
-  // Blueprint-authoring stages (#923) — the meta-blueprint editor's own panes.
-  purpose:       { title: "Purpose",          glyph: "flag",            h: 65,  blurb: "What this blueprint is for, who it serves, how it appears." },
-  bp_stages:     { title: "Stages",           glyph: "layers",          h: 200, blurb: "Compose the stage flow — order, dependencies, prompts." },
-  bp_capabilities:{ title: "Capabilities",    glyph: "extension",       h: 75,  blurb: "Wire each stage's disposition, skills/knowledge, and MCP servers." },
-  bp_review:     { title: "Review & publish", glyph: "fact_check",      h: 290, blurb: "Validate the blueprint, choose visibility, and publish." },
-};
+/** Built at load from the stage JSON data layer: every real stage (a SECTION_DEF with an
+ *  `icon`/`hue`) + every discovery dimension that doubles as a palette kind (an enriched
+ *  `discovery.json` dimension). A stage's title/blurb come from its `name`/`blurb`, so the
+ *  palette stays consistent with the stage bar (#1603 reconciled the former divergences). */
+function buildStageKinds(): Record<string, StageKindMeta> {
+  const out: Record<string, StageKindMeta> = {};
+  for (const [key, def] of Object.entries(SECTION_DEFS)) {
+    if (def.icon && typeof def.hue === "number") {
+      out[key] = { title: def.name, glyph: def.icon, h: def.hue, blurb: def.blurb };
+    }
+  }
+  for (const dim of SECTION_DEFS.discovery?.dimensions ?? []) {
+    if (dim.icon && typeof dim.hue === "number") {
+      out[dim.key] = { title: dim.title, glyph: dim.icon, h: dim.hue, blurb: dim.blurb ?? "" };
+    }
+  }
+  return out;
+}
+
+export const STAGE_KINDS: Record<string, StageKindMeta> = buildStageKinds();
 
 export function stageKind(key: string): StageKindMeta {
   return STAGE_KINDS[key] ?? { title: key, glyph: "category", h: 250, blurb: "" };

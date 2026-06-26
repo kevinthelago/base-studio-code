@@ -7,5 +7,7 @@
     "structure"
   ],
   "blurb": "Test strategy, fixtures, and CI gates.",
-  "prompt": "Define the testing strategy: unit / integration / e2e split, fixtures, and the\nCI gates that must pass before merge to develop. Write testing.md.\n\nGate: a coverage strategy and CI gates are defined."
+  "prompt": "Define the testing strategy: unit / integration / e2e split, fixtures, and the\nCI gates that must pass before merge to develop. Write testing.md.\n\nGate: a coverage strategy and CI gates are defined.",
+  "icon": "science",
+  "hue": 145
 }

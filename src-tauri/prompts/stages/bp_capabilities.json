@@ -8,5 +8,7 @@
   ],
   "optional": true,
   "blurb": "Wire each stage's output disposition, attached skills/knowledge, and MCP servers.",
-  "prompt": "OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every\nproject seeded from it inherits them. Attach them blueprint-wide or to a specific stage and fold them\ninto the <blueprint> tag (a section's skills/mcp arrays, or the blueprint-level skills/mcp). Skip this\nstage if the blueprint needs no bundled capabilities.\n\nGate: the applicable skills + MCP servers are attached (optional)."
+  "prompt": "OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every\nproject seeded from it inherits them. Attach them blueprint-wide or to a specific stage and fold them\ninto the <blueprint> tag (a section's skills/mcp arrays, or the blueprint-level skills/mcp). Skip this\nstage if the blueprint needs no bundled capabilities.\n\nGate: the applicable skills + MCP servers are attached (optional).",
+  "icon": "extension",
+  "hue": 75
 }

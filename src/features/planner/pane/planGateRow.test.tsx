@@ -4,7 +4,7 @@ import { PlanGateRow } from "./PlanStageBar";
 import type { BlueprintSection } from "../stages/blueprints";
 
 const sec = (over: Partial<BlueprintSection> & { key: string }): BlueprintSection => ({
-  uid: `u-${over.key}`, name: over.key, glyph: "", gate: "", deps: [], blurb: "",
+  uid: `u-${over.key}`, name: over.key, glyph: "", icon: "category", hue: 250, gate: "", deps: [], blurb: "",
   prompt: "", enabled: true, expanded: false, ...over,
 });
 

@@ -21,5 +21,7 @@
       "gate": "every in-scope field mapped or dropped",
       "prompt": "Now, per bound object, map every field to a Data Model field or mark it DROPPED with a reason,\nrecording the transform each needs. Write the mapping spec, then confirm."
     }
-  ]
+  ],
+  "icon": "account_tree",
+  "hue": 230
 }

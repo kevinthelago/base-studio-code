@@ -19,7 +19,7 @@ export function mkStageSection(kind: string): BlueprintSection {
   }
   const k = stageKind(kind);
   return {
-    uid: uid("sec"), key: kind, name: k.title, glyph: "✚",
+    uid: uid("sec"), key: kind, name: k.title, glyph: "✚", icon: k.glyph, hue: k.h,
     gate: "stage complete", deps: [], blurb: k.blurb,
     prompt: `Document the project's ${k.title.toLowerCase()}. ${k.blurb}`,
     enabled: true, expanded: false, output: defaultDisposition(kind),
