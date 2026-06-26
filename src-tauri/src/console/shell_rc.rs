@@ -266,6 +266,39 @@ pub(crate) const BSC_LEARNED_RC: &str = concat!(
     "\n",
 );
 
+/// The ordered list of every `BSC_*_RC` fragment, in the EXACT sequence the rc file
+/// concatenates them. This is the single source of truth for the concat order: the rc
+/// writer (`wire_bsc_env`) and the `full_bsc_rc_is_syntactically_valid_bash` syntax
+/// guard both derive from it, so a new helper (or a reorder) lands in one place and can
+/// never silently fall out of lockstep between the two. Each fragment already ends in a
+/// trailing newline (#296), so `.concat()` keeps every helper on its own line.
+pub(crate) const ALL_BSC_RC: &[&str] = &[
+    BSC_CHECKPOINT_RC,
+    BSC_DECISIONS_RC,
+    BSC_AUDIT_RC,
+    BSC_SKILL_RC,
+    BSC_HOOK_RC,
+    BSC_MCP_RC,
+    BSC_TOKENS_RC,
+    BSC_ACTIVITY_RC,
+    BSC_DONE_RC,
+    BSC_CONFINE_RC,
+    BSC_SCOPE_RC,
+    BSC_TAINT_RC,
+    BSC_COORD_EMIT_RC,
+    BSC_DEFER_RC,
+    BSC_FLEET_RC,
+    BSC_PLAN_RC,
+    BSC_DATA_RC,
+    BSC_LEARNED_RC,
+];
+
+/// The full bsc-* rc body that `pty_create` writes to `bsc-env.sh` — every fragment in
+/// `ALL_BSC_RC` concatenated in order. Byte-identical to the old inline `format!`.
+pub(crate) fn bsc_rc_body() -> String {
+    ALL_BSC_RC.concat()
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -473,27 +506,10 @@ mod tests {
             eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
             return;
         }
-        let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
-            super::BSC_CHECKPOINT_RC,
-            super::BSC_DECISIONS_RC,
-            super::BSC_AUDIT_RC,
-            super::BSC_SKILL_RC,
-            super::BSC_HOOK_RC,
-            super::BSC_MCP_RC,
-            super::BSC_TOKENS_RC,
-            super::BSC_ACTIVITY_RC,
-            super::BSC_DONE_RC,
-            super::BSC_CONFINE_RC,
-            super::BSC_SCOPE_RC,
-            super::BSC_TAINT_RC,
-            super::BSC_COORD_EMIT_RC,
-            super::BSC_DEFER_RC,
-            super::BSC_FLEET_RC,
-            super::BSC_PLAN_RC,
-            super::BSC_DATA_RC,
-            super::BSC_LEARNED_RC,
-        );
+        // Concatenate via the shared ALL_BSC_RC slice — the single source of truth for the
+        // fragment order, the same one wire_bsc_env writes (bsc_rc_body). A new helper added to
+        // the slice is covered here automatically, so the writer + this guard can't drift apart.
+        let rc_body = super::bsc_rc_body();
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
