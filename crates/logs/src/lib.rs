@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 pub mod cost;
 pub use cost::Cost;
 
+pub mod perf;
+pub use perf::PerfSample;
+
 /// One normalized event from any stream. `ts_ms` is epoch milliseconds (normalized from the
 /// stream's native ISO-8601 or epoch-ms timestamp); `session` is the pane id (or `"?"` for the
 /// not-yet-pane-tagged mcp/hooks streams); `summary` is a one-line human rendering.

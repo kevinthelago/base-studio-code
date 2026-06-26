@@ -314,6 +314,11 @@ fn wire_bsc_env(
     // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
     // merge/close append satisfy events later. Set for every pane; only --on writes.
     cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
+    // bsc-logs (#1716): point every session at the log directory the unified `bsc-logs` query CLI
+    // reads (the `logs::log_dir` resolver honors $BSC_LOG_DIR, else `~/.base-studio-code`). It's the
+    // same `base` dir that holds all the *_LOG TSVs above + `perf.db`, so a live agent can drill into
+    // its own audit/coord/tokens/perf streams from its own shell. Set for every pane (read-only).
+    cmd.env("BSC_LOG_DIR", to_bash_path(&base.to_string_lossy()));
     // FS confinement (#158): the session's repo root (bash-style), against which the
     // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
     // the repo root. Set for every pane; only gated panes install the hook.
@@ -350,6 +355,12 @@ fn wire_bsc_env(
     }
     if let Some(bin) = sidecar_bin_path("bsc-data") {
         cmd.env("BSC_DATA_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-logs (#1716): the unified log-query CLI sidecar the `bsc-logs` shell helper execs (like
+    // bsc-plan/bsc-data — it needs SQLite for `bsc-logs perf` over perf.db, so it can't be pure shell).
+    // $BSC_LOG_DIR (set above) is the directory it reads. Staged for every pane; read-only.
+    if let Some(bin) = sidecar_bin_path("bsc-logs") {
+        cmd.env("BSC_LOGS_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
@@ -964,6 +975,18 @@ mod tests {
         // A worker in a worktree beneath the hub resolves to the SAME db.
         let wt = projects.join("my-app").join(".worktrees").join("web--auth");
         assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(hub.join("plan.db")));
+    }
+
+    #[test]
+    fn wire_bsc_env_exports_the_log_dir_for_bsc_logs() {
+        // #1716: every session must be able to query its own log streams + perf.db via the unified
+        // `bsc-logs` CLI, which reads $BSC_LOG_DIR. wire_bsc_env stages it for every pane (the same
+        // base dir that holds the *_LOG TSVs). The sidecar binary isn't present in the test target,
+        // so BSC_LOGS_BIN is only set when staged — BSC_LOG_DIR is the unconditional contract.
+        use super::CommandBuilder;
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
+        assert!(cmd.get_env("BSC_LOG_DIR").is_some(), "BSC_LOG_DIR must be exported for bsc-logs");
     }
 
     #[test]
