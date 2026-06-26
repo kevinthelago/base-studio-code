@@ -185,7 +185,7 @@ const REPO_PREFIX = "repo__";
  * Single-sourced from the Discovery stage data (`src-tauri/prompts/stages/discovery.json`,
  * its `dimensions` array) so the dimension vocabulary lives in ONE place — the same data
  * file the planner prompt and gate read (#1591). Loaded directly via `import.meta.glob`
- * (NOT through blueprints.ts `SECTION_DEFS`) to avoid a circular import.
+ * (NOT through blueprints.ts `STAGE_DEFS`) to avoid a circular import.
  */
 const discoveryModules = import.meta.glob<{ default: { dimensions?: { key: string; title: string }[] } }>(
   "@prompts/stages/discovery.json",

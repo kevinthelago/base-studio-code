@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { activeSubstep, substepDone } from "./planSubsteps";
-import { SECTION_DEFS, mkSection, makeBlueprints, type SubStep } from "./blueprints";
+import { STAGE_DEFS, mkStage, makeBlueprints, type SubStep } from "./blueprints";
 import { derivePlanStageState, planStateToSignals } from "./planStageDerive";
 
 const STATIC: SubStep[] = [
@@ -40,35 +40,35 @@ describe("activeSubstep", () => {
 
 describe("authored substeps (built-in sections)", () => {
   it("Context exposes the baseline required substeps + a topics loop", () => {
-    const keys = (SECTION_DEFS.discovery.substeps ?? []).map((s) => s.key);
+    const keys = (STAGE_DEFS.discovery.substeps ?? []).map((s) => s.key);
     expect(keys).toEqual(["goal", "scope", "stack", "architecture", "users", "release", "dimensions"]);
-    const loop = SECTION_DEFS.discovery.substeps?.find((s) => s.key === "dimensions");
+    const loop = STAGE_DEFS.discovery.substeps?.find((s) => s.key === "dimensions");
     expect(loop?.loop).toBe("topics");
   });
   it("Features exposes a propose step then a per-feature loop", () => {
-    const subs = SECTION_DEFS.features.substeps ?? [];
+    const subs = STAGE_DEFS.features.substeps ?? [];
     expect(subs.map((s) => s.key)).toEqual(["propose", "features"]);
     expect(subs.find((s) => s.key === "features")?.loop).toBe("features");
   });
   it("Structure (Plan) exposes a single sequence step (issues are generated at publish, #plan-db)", () => {
-    const subs = SECTION_DEFS.structure.substeps ?? [];
+    const subs = STAGE_DEFS.structure.substeps ?? [];
     expect(subs.map((s) => s.key)).toEqual(["sequence"]);
   });
   it("no built-in substep prompt mentions publishing (user owns publish)", () => {
-    for (const def of Object.values(SECTION_DEFS)) {
+    for (const def of Object.values(STAGE_DEFS)) {
       for (const s of def.substeps ?? []) {
         expect(s.prompt.toLowerCase()).not.toMatch(/\bpublish|gh repo create|gh issue create|milestone/);
       }
     }
   });
-  it("substeps carry onto a built section instance via mkSection", () => {
-    expect(mkSection("discovery").substeps?.length).toBe(7);
+  it("substeps carry onto a built section instance via mkStage", () => {
+    expect(mkStage("discovery").substeps?.length).toBe(7);
   });
 });
 
 describe("Features stage (Phase 1)", () => {
   it("the Features gate keys off featuresConfirmed + featuresDefined", () => {
-    const signals = (SECTION_DEFS.features.gateRule?.require ?? []).map((r) => r.signal);
+    const signals = (STAGE_DEFS.features.gateRule?.require ?? []).map((r) => r.signal);
     expect(signals).toContain("featuresConfirmed");
     expect(signals).toContain("featuresDefined");
   });

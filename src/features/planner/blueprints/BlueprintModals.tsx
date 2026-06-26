@@ -7,12 +7,12 @@ import "../../../styles/blueprints.css";
 import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
-import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
 
 /** A resolved import/preview blueprint (subset enough to preview + import). */
 export interface PreviewBlueprint {
-  name: string; icon: string; h: number; author?: string; rev?: string; sections: BlueprintSection[];
+  name: string; icon: string; h: number; author?: string; rev?: string; sections: BlueprintStage[];
   /** The upstream gist id this preview came from (#955) — recorded on import so a re-import is
    *  recognized (dedupe → update in place) and the import page can show its sync state. */
   gistId?: string;
@@ -47,7 +47,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   );
 }
 
-export function StageSummary({ sections }: { sections: BlueprintSection[] }) {
+export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {sections.map((s, i) => {
