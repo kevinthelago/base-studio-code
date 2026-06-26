@@ -41,31 +41,47 @@ pub(crate) fn is_safe_relpath(rel: &std::path::Path) -> bool {
         ))
 }
 
-/// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
-/// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
-/// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
-/// extension) — pipelines persist arbitrary file types (`.vue`, `.svg`, `.html`, …).
-pub(crate) fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
-    fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+/// Recursively read every text file under `root` for which `accept(path)` is true, as
+/// `(relpath → contents)` pairs — capped at 512 KiB each, skipping unreadable/binary files.
+/// relpaths are forward-slashed and relative to `root`; the result is sorted by relpath.
+///
+/// This is the one shared walker behind [`read_files_dir`] (accept-all) and
+/// `inspect::read_skeleton_dir` (extension-filtered) — the size cap, slash-normalize, and sort
+/// live here in one place. **Symlinks and junctions are skipped** (never recursed into or read):
+/// each entry's `symlink_metadata().file_type().is_symlink()` is checked first, closing the
+/// node_modules junction-traversal hazard (#1650).
+pub(crate) fn read_text_files(root: &std::path::Path, accept: impl Fn(&std::path::Path) -> bool) -> Vec<(String, String)> {
+    fn walk(base: &std::path::Path, dir: &std::path::Path, accept: &dyn Fn(&std::path::Path) -> bool, out: &mut Vec<(String, String)>) {
         let Ok(entries) = std::fs::read_dir(dir) else { return };
         for e in entries.flatten() {
             let p = e.path();
-            if p.is_dir() {
-                walk(base, &p, out);
-            } else {
-                let small = std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false);
-                if small {
-                    if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
-                        out.push((rel.to_string_lossy().replace('\\', "/"), content));
-                    }
+            // Skip symlinks/junctions outright: never recurse into them, never read them (#1650).
+            let Ok(meta) = std::fs::symlink_metadata(&p) else { continue };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                walk(base, &p, accept, out);
+            } else if accept(&p) && meta.len() <= 512 * 1024 {
+                if let (Ok(rel), Ok(content)) = (p.strip_prefix(base), std::fs::read_to_string(&p)) {
+                    out.push((rel.to_string_lossy().replace('\\', "/"), content));
                 }
             }
         }
     }
     let mut out = Vec::new();
-    walk(root, root, &mut out);
+    walk(root, root, &accept, &mut out);
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
+}
+
+/// Recursively read every (text) file under `root` as `(relpath → contents)`, capped at
+/// 512 KiB each, skipping unreadable/binary files. relpaths are forward-slashed and
+/// relative to `root`. The generic complement to `read_skeleton_dir` (which filters by
+/// extension) — pipelines persist arbitrary file types (`.vue`, `.svg`, `.html`, …).
+/// Delegates to [`read_text_files`] (accept-all).
+pub(crate) fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
+    read_text_files(root, |_| true)
 }
 
 /// Ingest every non-empty `.md`/`.json` section file in `dir` (top level only), keyed by
@@ -88,5 +104,70 @@ pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::co
                 sections.insert(stem.to_string(), content);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// Create a directory symlink/junction `link` → `target`, returning whether it succeeded.
+    /// On Windows a directory *junction* (`mklink /J`) needs no elevation but can still be denied
+    /// in locked-down environments — the caller skips the test when this returns `false`.
+    fn try_link_dir(target: &Path, link: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            let mut mk = std::process::Command::new("cmd");
+            mk.args(["/c", "mklink", "/J", &link.to_string_lossy(), &target.to_string_lossy()]);
+            crate::no_window(&mut mk).status().map(|s| s.success()).unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    #[test]
+    fn read_text_files_skips_symlinked_dirs_and_files() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!(
+            "bsc_fsx_symlink_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("real")).unwrap();
+        fs::write(root.join("top.txt"), "top").unwrap();
+        fs::write(root.join("real").join("keep.txt"), "real content").unwrap();
+
+        // A symlinked/junctioned dir pointing at `real`; if the platform denies link creation
+        // (e.g. no privilege), skip gracefully rather than fail.
+        let linkdir = root.join("linkdir");
+        if !try_link_dir(&root.join("real"), &linkdir) {
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
+
+        // A symlinked *file* too, when the platform supports it without elevation (Unix). Its
+        // skip is asserted only when actually created.
+        #[cfg(not(windows))]
+        let linked_file_created = std::os::unix::fs::symlink(root.join("real").join("keep.txt"), root.join("link.txt")).is_ok();
+        #[cfg(windows)]
+        let linked_file_created = false;
+
+        let keys: Vec<String> = read_text_files(&root, |_| true).into_iter().map(|(k, _)| k).collect();
+
+        // Real files are read.
+        assert!(keys.contains(&"top.txt".to_string()), "real top-level file read: {keys:?}");
+        assert!(keys.contains(&"real/keep.txt".to_string()), "real nested file read: {keys:?}");
+        // The symlinked dir is never recursed into.
+        assert!(!keys.iter().any(|k| k.starts_with("linkdir")), "symlinked dir skipped: {keys:?}");
+        // The symlinked file (when created) is never read.
+        if linked_file_created {
+            assert!(!keys.iter().any(|k| k == "link.txt"), "symlinked file skipped: {keys:?}");
+        }
+
+        let _ = fs::remove_dir_all(&root);
     }
 }
