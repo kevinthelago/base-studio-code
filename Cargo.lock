@@ -744,6 +744,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-blueprint"
+version = "0.1.0"
+dependencies = [
+ "bsc-sqlite-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-data"
 version = "0.1.0"
 dependencies = [
