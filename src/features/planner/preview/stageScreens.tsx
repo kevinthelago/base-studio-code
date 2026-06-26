@@ -12,11 +12,11 @@
 
 import type { ComponentType } from "react";
 // Preview module: import renderers (side-effects) + the new shell component (#581).
-import "../preview/renderers/htmlRenderer";
-import "../preview/renderers/gltfRenderer";
-import "../preview/renderers/canvasRenderer";
-import { PreviewPaneShell } from "../preview/PreviewPaneShell";
-import { RENDER_PREVIEW_ID } from "../preview/renderPreview";
+import "./renderers/htmlRenderer";
+import "./renderers/gltfRenderer";
+import "./renderers/canvasRenderer";
+import { PreviewPaneShell } from "./PreviewPaneShell";
+import { RENDER_PREVIEW_ID } from "./renderPreview";
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FILE_INTAKE_ID } from "../shared/fileIntake";
 
