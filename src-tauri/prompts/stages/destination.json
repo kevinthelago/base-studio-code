@@ -3,7 +3,7 @@
   "glyph": "↗",
   "gate": "destination defined",
   "deps": [
-    "context"
+    "discovery"
   ],
   "blurb": "Where the extracted data is delivered — the sink, its target, and the write semantics.",
   "gateRule": {

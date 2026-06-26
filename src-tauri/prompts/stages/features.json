@@ -4,7 +4,7 @@
   "glyph": "◇",
   "gate": "every feature defined",
   "deps": [
-    "context"
+    "discovery"
   ],
   "gateRule": {
     "require": [
