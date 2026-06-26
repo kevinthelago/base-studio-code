@@ -101,7 +101,7 @@ pub(crate) fn remove_worktree_at(clone: &Path, wt: &Path) -> Result<(), String> 
     // Fallback: forcibly delete the directory (read-only git packs need clearing on Windows), then
     // prune the dangling worktree record from whichever clone owns it.
     #[cfg(windows)]
-    crate::project::hub::clear_readonly_recursive(wt);
+    crate::platform::fsx::clear_readonly_recursive(wt);
     std::fs::remove_dir_all(wt).map_err(|e| format!("remove_worktree: {e}"))?;
     if clone.join(".git").exists() {
         let clone_str = clone.to_string_lossy().into_owned();
