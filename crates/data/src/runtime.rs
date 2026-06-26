@@ -12,9 +12,8 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
-
-use crate::rest::{RestConnector, RestResource};
+use crate::descriptor::RestPreset;
+use crate::rest::RestResource;
 use crate::{DataError, Result};
 
 /// The sanctioned auth methods a runtime preset may declare (#1199 Part C — sanctioned only).
@@ -47,25 +46,16 @@ pub struct RuntimePreset {
     pub resources: Vec<RuntimeResource>,
 }
 
-impl RuntimePreset {
-    /// This preset's resources as [`RestResource`]s.
-    pub fn rest_resources(&self) -> Vec<RestResource> {
+impl RestPreset for RuntimePreset {
+    fn rest_resources(&self) -> Vec<RestResource> {
         self.resources
             .iter()
             .map(|r| RestResource::new(r.name.clone(), r.path.clone(), r.array_key.as_deref()))
             .collect()
     }
+}
 
-    /// Build the audited generic REST connector from this preset. `fetch` resolves a resource path
-    /// against the instance and carries the auth — never stored by the connector (#1194).
-    pub fn connector(
-        &self,
-        instance_name: impl Into<String>,
-        fetch: impl Fn(&str) -> Result<Value> + Send + Sync + 'static,
-    ) -> RestConnector {
-        RestConnector::new(instance_name, self.rest_resources(), fetch)
-    }
-
+impl RuntimePreset {
     /// Validate the spec is well-formed, non-shadowing, and **secret-free** (#1194). Returns a
     /// human-readable error describing the first problem.
     pub fn validate(&self) -> std::result::Result<(), String> {

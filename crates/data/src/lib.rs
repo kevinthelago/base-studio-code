@@ -58,7 +58,7 @@ pub use runtime::{
 };
 pub use source_meta::{LiveSupport, SourceAuth};
 pub use descriptor::{
-    find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, BUILTINS,
+    find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, RestPreset, BUILTINS,
 };
 
 #[cfg(feature = "duckdb-store")]
