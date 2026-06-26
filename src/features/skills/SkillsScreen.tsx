@@ -5,20 +5,26 @@
 // + the planner channel). Reads/mutates the store `skills` + `skillGroups` slices; every enabled,
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
-import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import {
-  KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount,
+  KIND, PROFILE_COLOR, fmtCount,
   type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
 import {
   blankSkill, deriveSkillKpis, parseSkillsFile, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
+import {
+  mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
+  SORTS, type Density, type SortKey, type FacetSelection,
+} from "./lib/skillsFilter";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
+import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
+import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
@@ -29,13 +35,10 @@ import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 import "./skills.css";
 
 type Mode = "library" | "lessons" | "runs";
-type Density = "list" | "cards" | "grouped" | "kind";
-type SortKey = "Most invoked" | "Name (A–Z)" | "Success rate" | "Recently used" | "Recently added";
 
 const KIND_KEYS = Object.keys(KIND) as SkillKind[];
 const PROFILE_KEYS = Object.keys(PROFILE_COLOR) as SkillProfile[];
 const SOURCE_KEYS: SkillSource[] = ["first-party", "team", "imported", "community"];
-const SORTS: SortKey[] = ["Most invoked", "Name (A–Z)", "Success rate", "Recently used", "Recently added"];
 const GROUP_HUES = ["var(--accent)", "var(--danger)", "var(--info)", "var(--violet)", "var(--success)", "var(--fg-muted)"];
 const DRAFT_ID = "__draft__";
 
@@ -45,30 +48,6 @@ const MODES: Array<{ k: Mode; label: string }> = [
   { k: "library", label: "Library" }, { k: "lessons", label: "Lessons" }, { k: "runs", label: "Runs" },
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
-
-const successColor = (s: number | null): string =>
-  s == null ? "var(--fg-dim)" : s >= 95 ? "var(--success)" : s >= 85 ? "var(--accent)" : "var(--danger)";
-
-function tintBg(hue: string, t = 88): string { return `color-mix(in oklch, ${hue}, transparent ${t}%)`; }
-function pill(hue: string, plain = false): CSSProperties {
-  const base: CSSProperties = { fontFamily: "var(--mono)", fontSize: 9.5, padding: "2px 7px", borderRadius: 99, lineHeight: 1.1, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" };
-  if (plain) return { ...base, background: tintBg("var(--fg-dim)"), border: "1px solid " + tintBg("var(--fg-dim)", 80), color: "var(--fg-muted)" };
-  return { ...base, background: tintBg(hue), border: `1px solid ${tintBg(hue, 74)}`, color: hue };
-}
-/** A square glyph tile in an arbitrary hue (a `--token` ref or oklch literal). */
-function hueTile(c: string, lg = false): CSSProperties {
-  const d = lg ? 30 : 22;
-  return { width: d, height: d, flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, fontFamily: "var(--mono)", fontSize: lg ? 15 : 12, color: c, background: `color-mix(in oklch, ${c} 22%, var(--bg-elev))`, border: `1px solid ${tintBg(c, 70)}` };
-}
-function glyphTile(kind: SkillKind, lg = false): CSSProperties {
-  return hueTile(KIND[kind].color, lg);
-}
-const sourcePill = (src: SkillSource): CSSProperties =>
-  src === "team" ? pill("var(--info)") : src === "imported" ? pill("var(--accent)") : pill("", true);
-const scopePill = (projects: string[]): CSSProperties => (projects.length ? pill("var(--info)") : pill("", true));
-
-/** Stable pseudo-recency from the id so "Recently used/added" sort is deterministic in the demo. */
-const hashN = (s: string): number => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 
 export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const skills = useAppStore((s) => s.skills);
@@ -99,7 +78,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupFilter, setGroupFilter] = useState<string | null>(null);     // selected task group id
-  const [facetSel, setFacetSel] = useState<Record<string, Set<string>>>({});
+  const [facetSel, setFacetSel] = useState<FacetSelection>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SkillDef | null>(null);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
@@ -123,17 +102,10 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
     if (!isCancelled()) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
   }, 5000);
 
-  const merged = useMemo<SkillDef[]>(() => skills.map((s) => {
-    const st = stats[skillSlug(s.name)];
-    return st ? { ...s, invocations: st.invocations, success: st.successRate, trend: st.trend } : { ...s, invocations: 0, success: 0, trend: [] };
-  }), [skills, stats]);
+  const merged = useMemo<SkillDef[]>(() => mergeSkillStats(skills, stats), [skills, stats]);
 
   // group membership index: skillId -> the groups it's in
-  const groupsBySkill = useMemo(() => {
-    const m = new Map<string, SkillGroup[]>();
-    for (const g of skillGroups) for (const id of g.skillIds) { const a = m.get(id) ?? []; a.push(g); m.set(id, a); }
-    return m;
-  }, [skillGroups]);
+  const groupsBySkill = useMemo(() => indexGroupsBySkill(skillGroups), [skillGroups]);
 
   const kpis = useMemo(() => deriveSkillKpis(merged), [merged]);
   const invToday = useMemo(() => Object.values(stats).reduce((a, s) => a + s.today, 0), [stats]);
@@ -145,26 +117,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const neverRun = useMemo(() => merged.filter((s) => s.invocations === 0).length, [merged]);
 
   // ── facets ──────────────────────────────────────────────────────────────────
-  const facetDefs = useMemo(() => {
-    const c = (pred: (s: SkillDef) => boolean) => merged.filter(pred).length;
-    return [
-      { key: "kind", title: "Kind", options: KIND_KEYS.map((k) => ({ value: k, label: k, glyph: KIND[k].glyph, color: KIND[k].color, count: c((s) => s.kind === k), match: (s: SkillDef) => s.kind === k })) },
-      { key: "source", title: "Source", options: SOURCE_KEYS.map((k) => ({ value: k, label: k, glyph: "", color: "", count: c((s) => s.source === k), match: (s: SkillDef) => s.source === k })) },
-      { key: "scope", title: "Scope", options: [
-        { value: "global", label: "global", glyph: "", color: "", count: c((s) => !s.projects.length), match: (s: SkillDef) => !s.projects.length },
-        { value: "scoped", label: "project-scoped", glyph: "", color: "", count: c((s) => s.projects.length > 0), match: (s: SkillDef) => s.projects.length > 0 },
-      ] },
-      { key: "status", title: "Status", options: [
-        { value: "enabled", label: "enabled", glyph: "", color: "", count: c((s) => s.enabled), match: (s: SkillDef) => s.enabled },
-        { value: "disabled", label: "disabled", glyph: "", color: "", count: c((s) => !s.enabled), match: (s: SkillDef) => !s.enabled },
-        { value: "pinned", label: "pinned", glyph: "", color: "", count: c((s) => s.pinned), match: (s: SkillDef) => s.pinned },
-      ] },
-      { key: "usage", title: "Usage", options: [
-        { value: "used", label: "used · 7d", glyph: "", color: "", count: c((s) => s.invocations > 0), match: (s: SkillDef) => s.invocations > 0 },
-        { value: "never", label: "never run", glyph: "", color: "", count: c((s) => s.invocations === 0), match: (s: SkillDef) => s.invocations === 0 },
-      ] },
-    ];
-  }, [merged]);
+  const facetDefs = useMemo(() => buildFacetDefs(merged), [merged]);
 
   const toggleFacet = (facetKey: string, value: string) => setFacetSel((prev) => {
     const next = { ...prev };
@@ -177,25 +130,10 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const clearFilters = () => { setQuery(""); setGroupFilter(null); setFacetSel({}); };
 
   // ── filter + sort ─────────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let pool = merged;
-    if (groupFilter) { const g = skillGroups.find((x) => x.id === groupFilter); const ids = new Set(g?.skillIds ?? []); pool = pool.filter((s) => ids.has(s.id)); }
-    if (q) pool = pool.filter((s) => (s.name + " " + s.desc + " " + s.tools.join(" ") + " " + s.source).toLowerCase().includes(q));
-    for (const def of facetDefs) {
-      const sel = facetSel[def.key]; if (!sel?.size) continue;
-      const opts = def.options.filter((o) => sel.has(o.value));
-      pool = pool.filter((s) => opts.some((o) => o.match(s)));   // OR within a facet
-    }
-    const sorters: Record<SortKey, (a: SkillDef, b: SkillDef) => number> = {
-      "Name (A–Z)": (a, b) => a.name.localeCompare(b.name),
-      "Most invoked": (a, b) => b.invocations - a.invocations,
-      "Success rate": (a, b) => (b.success || 0) - (a.success || 0),
-      "Recently used": (a, b) => hashN(b.id + "u") - hashN(a.id + "u"),
-      "Recently added": (a, b) => hashN(b.id + "a") - hashN(a.id + "a"),
-    };
-    return [...pool].sort(sorters[sort]);
-  }, [merged, query, groupFilter, skillGroups, facetDefs, facetSel, sort]);
+  const filtered = useMemo(
+    () => filterSkills(merged, { query, groupFilter, skillGroups, facetDefs, facetSel, sort }),
+    [merged, query, groupFilter, skillGroups, facetDefs, facetSel, sort],
+  );
 
   const isEmpty = filtered.length === 0;
 
@@ -240,46 +178,17 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
     reader.readAsText(file);
   }
 
-  // ── shared row renderer (List + Grouped) ────────────────────────────────────────
-  const colTemplate = (sel: boolean) => (sel ? "26px " : "") + "24px minmax(190px,1fr) 90px minmax(120px,170px) 96px 150px 26px 40px";
-  function SkillRow({ s, i }: { s: SkillDef; i: number }) {
-    const isSel = selected.has(s.id);
-    return (
-      <div className="skill-row" data-skill-id={s.id} onClick={() => (selectMode ? toggleSel(s.id) : (setSelectedId(s.id), setDraft(null)))}
-        style={{ display: "grid", gridTemplateColumns: colTemplate(selectMode), alignItems: "center", gap: 10, height: 37, padding: "0 18px", background: i % 2 ? "var(--bg-elev)" : "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", cursor: "pointer", opacity: s.enabled ? 1 : 0.55 }}>
-        {selectMode && <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid " + (isSel ? "var(--accent)" : "var(--border)"), background: isSel ? "var(--accent)" : "transparent", color: "var(--bg-canvas)", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>{isSel ? "✓" : ""}</span>}
-        <span style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</span>
-        <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
-          {(groupsBySkill.get(s.id)?.length ?? 0) > 0 && <span title={groupsBySkill.get(s.id)!.map((g) => g.name).join(", ")} style={{ color: "var(--fg-dim)", fontSize: 10 }}>⬡{groupsBySkill.get(s.id)!.length > 1 ? groupsBySkill.get(s.id)!.length : ""}</span>}
-        </span>
-        <span><span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span></span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
-          {s.tools.slice(0, 2).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-          {s.tools.length > 2 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>+{s.tools.length - 2}</span>}
-        </span>
-        <span><span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] + (s.projects.length > 1 ? " +" + (s.projects.length - 1) : "") : "global"}</span></span>
-        <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7 }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)", width: 38, textAlign: "right" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "—"}</span>
-          {s.trend.length > 1 ? <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} /> : <span style={{ width: 46 }} />}
-        </span>
-        <span className="pin-btn" onClick={(e) => { e.stopPropagation(); toggleSkillPin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
-        <span style={{ display: "flex", justifyContent: "center" }}><Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); toggleSkill(s.id); }} /></span>
-      </div>
-    );
-  }
+  // ── shared row handlers (List + Grouped views) ──────────────────────────────────
+  const rowHandlers: SkillRowHandlers = {
+    selectMode, selected, groupsBySkill,
+    onSelect: toggleSel,
+    onOpen: (id) => { setSelectedId(id); setDraft(null); },
+    onTogglePin: toggleSkillPin,
+    onToggle: toggleSkill,
+  };
 
   // grouped sections (by task group, or by kind in "kind" density)
-  const groupedSections = useMemo(() => {
-    if (density === "kind") {
-      return KIND_KEYS.map((k) => ({ id: k, label: KIND[k].label, glyph: KIND[k].glyph, hue: KIND[k].color, items: filtered.filter((s) => s.kind === k) })).filter((g) => g.items.length);
-    }
-    const sections = skillGroups.map((g) => ({ id: g.id, label: g.name, glyph: "⬡", hue: g.hue, items: filtered.filter((s) => g.skillIds.includes(s.id)) })).filter((g) => g.items.length);
-    const grouped = new Set(skillGroups.flatMap((g) => g.skillIds));
-    const ungrouped = filtered.filter((s) => !grouped.has(s.id));
-    if (ungrouped.length) sections.push({ id: "__ungrouped__", label: "Ungrouped", glyph: "·", hue: "var(--fg-dim)", items: ungrouped });
-    return sections;
-  }, [density, filtered, skillGroups]);
+  const groupedSections = useMemo(() => buildGroupedSections(density, filtered, skillGroups), [density, filtered, skillGroups]);
   // Grouped density with no task groups at all → everything lands in one "Ungrouped"
   // section; surface a hint to create groups rather than reading as a broken single bucket.
   const groupedNoGroups = density === "grouped" && skillGroups.length === 0;
@@ -465,43 +374,13 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                   </div>
                 </div>
               ) : density === "list" ? (
-                <div>
-                  <div style={{ display: "grid", gridTemplateColumns: colTemplate(selectMode), alignItems: "center", gap: 10, height: 32, padding: "0 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-dim)", position: "sticky", top: 0, zIndex: 6 }}>
-                    {selectMode && <span />}<span /><span>Skill</span><span>Source</span><span>Tools</span><span>Scope</span><span style={{ textAlign: "right" }}>Usage</span><span style={{ textAlign: "center" }}>Pin</span><span style={{ textAlign: "center" }}>On</span>
-                  </div>
-                  {filtered.map((s, i) => <SkillRow key={s.id} s={s} i={i} />)}
-                </div>
+                <SkillsListView filtered={filtered} h={rowHandlers} />
               ) : density === "cards" ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "14px 18px" }}>
-                  {filtered.map((s) => <SkillCard key={s.id} s={s} groups={groupsBySkill.get(s.id) ?? []} onOpen={() => { setSelectedId(s.id); setDraft(null); }} onPin={() => toggleSkillPin(s.id)} onToggle={() => toggleSkill(s.id)} />)}
-                </div>
+                <SkillsCardsView filtered={filtered} groupsBySkill={groupsBySkill}
+                  onOpen={(id) => { setSelectedId(id); setDraft(null); }} onPin={toggleSkillPin} onToggle={toggleSkill} />
               ) : (
-                <div style={{ padding: "12px 18px 0" }}>
-                  {groupedNoGroups && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-                      <span style={{ color: "var(--fg-dim)" }}>⬡</span>
-                      <span>No task groups yet — every skill falls under <b style={{ color: "var(--fg)" }}>Ungrouped</b>. Create a group to bundle related skills.</span>
-                      <span style={{ flex: 1 }} />
-                      <button className="btn" onClick={() => setAddGroupOpen(true)}>＋ New group</button>
-                    </div>
-                  )}
-                  {groupedSections.map((sec, si) => (
-                    <div key={sec.id} className="skill-section" data-section-id={sec.id}
-                      style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, borderRadius: "var(--r-lg)", overflow: "hidden", background: "var(--bg-panel)" }}>
-                      {/* Section header — sticky; its own hue tile + a left accent rail ties the rows below to it.
-                          Later sections sit above earlier ones as they scroll under (descending z, opaque bg). */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 16px", position: "sticky", top: 0, zIndex: groupedSections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
-                        <span style={hueTile(sec.hue)}>{sec.glyph}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</span>
-                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
-                      </div>
-                      {/* Member rows, indented under the header so they clearly belong to this section. */}
-                      <div style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
-                        {sec.items.map((s, i) => <SkillRow key={s.id} s={s} i={i} />)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <SkillsGroupedView sections={groupedSections} showNoGroupsHint={groupedNoGroups}
+                  onNewGroup={() => setAddGroupOpen(true)} h={rowHandlers} />
               )}
             </div>
           </div>
@@ -549,40 +428,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
           onToggleGroup={(gid) => toggleSkillGroupMember(gid, editing.id)}
         />
       )}
-    </div>
-  );
-}
-
-function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups: SkillGroup[]; onOpen: () => void; onPin: () => void; onToggle: () => void }) {
-  const sc = successColor(s.invocations > 0 ? s.success : null);
-  return (
-    <div className="skill-card" data-skill-id={s.id} onClick={onOpen} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "13px 14px", cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
-        <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
-            <span style={{ flex: 1 }} />
-            <span onClick={(e) => { e.stopPropagation(); onPin(); }} style={{ fontSize: 13, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
-            <Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginTop: 3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{s.desc || "No description yet."}</div>
-        </div>
-      </div>
-      {groups.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>{groups.map((g) => <span key={g.id} style={{ ...pill(g.hue), display: "inline-flex", alignItems: "center", gap: 4 }}>⬡ {g.name}</span>)}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 11, flexWrap: "wrap" }}>
-        <span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span>
-        <span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] : "global"}</span>
-        <span style={{ flex: 1 }} />
-        {s.tools.slice(0, 3).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", gap: 5 }}>{s.profiles.map((p) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</div>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</span>
-        {s.invocations > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sc }}>{s.success}%</span>}
-        {s.trend.length > 1 && <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} />}
-      </div>
     </div>
   );
 }
