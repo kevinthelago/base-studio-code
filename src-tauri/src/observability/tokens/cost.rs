@@ -17,145 +17,6 @@ pub(crate) struct TokenUsage {
     cost_usd: f64,
 }
 
-/// Dollars-per-million-token list prices for one model family: base `input`, `output`, the
-/// 5-minute cache-write rate, and the cache-read (hit) rate.
-struct Pricing {
-    input: f64,
-    output: f64,
-    cache_write: f64,
-    cache_read: f64,
-}
-
-/// Open-weight model families the app runs through the *local* provider (Ollama / any
-/// OpenAI-compatible endpoint) — self-hosted, so $0. Matched as substrings of the model id.
-const LOCAL_FAMILIES: [&str; 9] =
-    ["llama", "qwen", "mistral", "mixtral", "gemma", "phi", "deepseek", "codestral", "ollama"];
-
-/// Price table keyed by a model-name substring (USD per million tokens), spanning every
-/// provider the app can drive (#1078): Anthropic, OpenAI, Gemini, and local/open-weight.
-/// Matched against the lowercased model id recorded in the transcript, most-specific family
-/// first. Local models are free ($0). An unrecognized *hosted* model falls back to Sonnet —
-/// the app's default — so it's priced conservatively rather than as $0.
-///
-/// Only `input`/`output` affect a session's cost for OpenAI/Gemini/local: those providers'
-/// usage normalizes the prompt-cache counts to 0 (see `crates/llm`), so their `cache_*` rates
-/// are recorded for completeness but never billed; Anthropic's caching is what they price.
-/// List prices as of 2026-06 — they drift, so they live in this one place to update.
-fn model_pricing(model: &str) -> Pricing {
-    let m = model.to_ascii_lowercase();
-
-    // ── Anthropic (Claude) ── cache write = 1.25× input, cache read = 0.10× input.
-    if m.contains("opus") {
-        // Opus 4.8 list price (down from the 4.x-era $15/$75).
-        return Pricing { input: 5.0, output: 25.0, cache_write: 6.25, cache_read: 0.50 };
-    }
-    if m.contains("haiku") {
-        return Pricing { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.10 };
-    }
-    if m.contains("sonnet") {
-        return Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 };
-    }
-
-    // ── OpenAI (GPT) ── no cache-write premium (cache_write = input); cache_read is the
-    // "cached input" rate. Size suffixes (nano/mini/pro) take precedence over the family.
-    if m.contains("gpt") {
-        if m.contains("nano") {
-            return Pricing { input: 0.20, output: 1.25, cache_write: 0.20, cache_read: 0.02 };
-        }
-        if m.contains("mini") {
-            return Pricing { input: 0.75, output: 4.50, cache_write: 0.75, cache_read: 0.075 };
-        }
-        if m.contains("pro") {
-            return Pricing { input: 30.0, output: 180.0, cache_write: 30.0, cache_read: 30.0 };
-        }
-        if m.contains("gpt-5.5") {
-            return Pricing { input: 5.0, output: 30.0, cache_write: 5.0, cache_read: 0.50 };
-        }
-        // gpt-5.4 / gpt-5 base, and any unrecognized GPT.
-        return Pricing { input: 2.50, output: 15.0, cache_write: 2.50, cache_read: 0.25 };
-    }
-
-    // ── Google (Gemini) ── cache_read is the context-cache rate; no cache-write premium.
-    if m.contains("gemini") {
-        if m.contains("flash-lite") {
-            return Pricing { input: 0.10, output: 0.40, cache_write: 0.10, cache_read: 0.01 };
-        }
-        if m.contains("flash") {
-            return Pricing { input: 0.30, output: 2.50, cache_write: 0.30, cache_read: 0.03 };
-        }
-        // gemini-2.5-pro (≤200k tier), and any unrecognized Gemini.
-        return Pricing { input: 1.25, output: 10.0, cache_write: 1.25, cache_read: 0.125 };
-    }
-
-    // ── Local / open-weight ── self-hosted, free.
-    if LOCAL_FAMILIES.iter().any(|f| m.contains(f)) {
-        return Pricing { input: 0.0, output: 0.0, cache_write: 0.0, cache_read: 0.0 };
-    }
-
-    // Unknown hosted model → Sonnet (conservative; never $0 for a paid model).
-    Pricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
-}
-
-/// Summed usage across a transcript, plus the last-seen model for pricing.
-#[derive(Default, Debug, PartialEq)]
-struct TranscriptTotals {
-    model: String,
-    input: u64,
-    output: u64,
-    cache_creation: u64,
-    cache_read: u64,
-}
-
-impl TranscriptTotals {
-    fn is_empty(&self) -> bool {
-        self.input == 0 && self.output == 0 && self.cache_creation == 0 && self.cache_read == 0
-    }
-}
-
-/// Sum the per-message `usage` across every assistant line of a Claude Code transcript
-/// (JSONL). Usage is reported per-message (not cumulative), so the session total is the
-/// sum. Captures the last non-empty model seen for pricing. Tolerant: malformed/non-JSON
-/// lines and lines without a `usage` object are skipped, so a partially-written
-/// transcript still yields a partial total.
-fn parse_transcript_usage(jsonl: &str) -> TranscriptTotals {
-    let mut t = TranscriptTotals::default();
-    for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let v: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let msg = &v["message"];
-        let usage = &msg["usage"];
-        if !usage.is_object() {
-            continue;
-        }
-        t.input += usage["input_tokens"].as_u64().unwrap_or(0);
-        t.output += usage["output_tokens"].as_u64().unwrap_or(0);
-        t.cache_creation += usage["cache_creation_input_tokens"].as_u64().unwrap_or(0);
-        t.cache_read += usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
-        if let Some(model) = msg["model"].as_str() {
-            if !model.is_empty() {
-                t.model = model.to_string();
-            }
-        }
-    }
-    t
-}
-
-/// Total USD cost for a transcript's usage, priced by its model.
-fn compute_cost(t: &TranscriptTotals) -> f64 {
-    let p = model_pricing(&t.model);
-    (t.input as f64 * p.input
-        + t.output as f64 * p.output
-        + t.cache_creation as f64 * p.cache_write
-        + t.cache_read as f64 * p.cache_read)
-        / 1_000_000.0
-}
-
 /// Decode a JSON-escaped path stored verbatim in `tokens.log` (`bsc-tokens` writes the
 /// hook's `transcript_path` field without unescaping). Reverses the escapes a JSON string
 /// can carry for a filesystem path — `\\` → `\` (Windows separators) and `\/` → `/`.
@@ -208,111 +69,47 @@ pub(super) fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String,
     })
 }
 
-/// Read per-pane token + cost accounting (#416). Reads `tokens.log`, takes the latest
-/// transcript per pane, parses + prices its usage, and returns up to `limit` records
-/// (newest pane first). Panes whose transcript is missing/unreadable or carries no usage
-/// are skipped — honest empties, never fabricated numbers.
+/// Read per-pane token + cost accounting (#416). Delegates the whole pricing engine — the price
+/// table, the transcript-usage parser, and the cost math — to the canonical implementation in
+/// `crates/logs` (`bsc_logs::cost::all_costs`, #1686), then maps each [`bsc_logs::cost::Cost`] to the
+/// frontend [`TokenUsage`]. `all_costs` already takes the latest transcript per pane and skips
+/// panes with a missing/unreadable transcript or no usage (newest pane first), so this is a thin
+/// shape adapter bounded to `limit` records.
+///
+/// `bsc_logs::cost::Cost` keys a session by its pane but doesn't carry the `session_id`, so we recover
+/// the `pane → session_id` map from the same `tokens.log` to keep the frontend record complete.
+/// The serde field names below are a frontend contract — keep them byte-identical.
 #[tauri::command]
 pub(crate) fn read_token_usage(limit: usize) -> Vec<TokenUsage> {
-    let path = bsc_base_dir().join("tokens.log");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut out: Vec<TokenUsage> = Vec::new();
-    for (pane, session_id, tp) in latest_transcript_per_pane(&text) {
-        if out.len() >= limit {
-            break;
-        }
-        let jsonl = match std::fs::read_to_string(json_unescape_path(&tp)) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let totals = parse_transcript_usage(&jsonl);
-        if totals.is_empty() {
-            continue;
-        }
-        let cost = compute_cost(&totals);
-        out.push(TokenUsage {
-            pane,
-            session_id,
-            model: totals.model,
-            input_tokens: totals.input,
-            output_tokens: totals.output,
-            cache_creation_tokens: totals.cache_creation,
-            cache_read_tokens: totals.cache_read,
-            cost_usd: cost,
-        });
-    }
-    out
+    use std::collections::HashMap;
+    let dir = bsc_base_dir();
+    let log_text = std::fs::read_to_string(dir.join("tokens.log")).unwrap_or_default();
+    let session_ids: HashMap<String, String> = latest_transcript_per_pane(&log_text)
+        .into_iter()
+        .map(|(pane, sid, _)| (pane, sid))
+        .collect();
+    bsc_logs::cost::all_costs(&dir)
+        .into_iter()
+        .take(limit)
+        .map(|c| TokenUsage {
+            session_id: session_ids.get(&c.session).cloned().unwrap_or_default(),
+            pane: c.session,
+            model: c.model,
+            input_tokens: c.input,
+            output_tokens: c.output,
+            cache_creation_tokens: c.cache_creation,
+            cache_read_tokens: c.cache_read,
+            cost_usd: c.cost_usd,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn parse_transcript_usage_sums_per_message_usage() {
-        // Usage is per-message (not cumulative), so the session total is the sum across
-        // assistant lines. The last non-empty model is captured for pricing; non-JSON
-        // lines and lines without `usage` are skipped (partial transcripts still total).
-        let jsonl = concat!(
-            r#"{"type":"user","message":{"role":"user","content":"hi"}}"#, "\n",
-            r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":20,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}"#, "\n",
-            "not json at all\n",
-            r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":5,"output_tokens":7,"cache_creation_input_tokens":0,"cache_read_input_tokens":2000}}}"#, "\n",
-        );
-        let t = super::parse_transcript_usage(jsonl);
-        assert_eq!(t.input, 15);
-        assert_eq!(t.output, 27);
-        assert_eq!(t.cache_creation, 100);
-        assert_eq!(t.cache_read, 3000);
-        assert_eq!(t.model, "claude-sonnet-4-6");
-        assert!(!t.is_empty());
-        // An empty / usage-free transcript yields a zero total flagged empty.
-        assert!(super::parse_transcript_usage("").is_empty());
-        assert!(super::parse_transcript_usage(r#"{"type":"user","message":{"role":"user"}}"#).is_empty());
-    }
-
-    #[test]
-    fn compute_cost_prices_each_model_family() {
-        // Cost = sum(tokens * per-million-rate) / 1e6. Sonnet is the fallback for
-        // unknown/empty models so they never price as $0. Spot-check each family with
-        // 1M tokens of each kind so the rate equals the table entry directly.
-        let make = |model: &str| super::TranscriptTotals {
-            model: model.to_string(),
-            input: 1_000_000,
-            output: 1_000_000,
-            cache_creation: 1_000_000,
-            cache_read: 1_000_000,
-        };
-        // Sonnet: 3 + 15 + 3.75 + 0.30 = 22.05
-        assert!((super::compute_cost(&make("claude-sonnet-4-6")) - 22.05).abs() < 1e-9);
-        // Unknown / empty HOSTED model falls back to Sonnet pricing.
-        assert!((super::compute_cost(&make("")) - 22.05).abs() < 1e-9);
-        assert!((super::compute_cost(&make("some-future-hosted-model")) - 22.05).abs() < 1e-9);
-        // Opus 4.8: 5 + 25 + 6.25 + 0.50 = 36.75
-        assert!((super::compute_cost(&make("claude-opus-4-8")) - 36.75).abs() < 1e-9);
-        // Haiku: 1 + 5 + 1.25 + 0.10 = 7.35
-        assert!((super::compute_cost(&make("claude-haiku-4-5")) - 7.35).abs() < 1e-9);
-        // OpenAI gpt-5.4 base: 2.50 + 15 + 2.50 + 0.25 = 20.25
-        assert!((super::compute_cost(&make("gpt-5.4")) - 20.25).abs() < 1e-9);
-        // gpt-5.4-mini: 0.75 + 4.50 + 0.75 + 0.075 = 6.075 (suffix beats the base family)
-        assert!((super::compute_cost(&make("gpt-5.4-mini")) - 6.075).abs() < 1e-9);
-        // gpt-5.4-nano: 0.20 + 1.25 + 0.20 + 0.02 = 1.67
-        assert!((super::compute_cost(&make("gpt-5.4-nano")) - 1.67).abs() < 1e-9);
-        // gpt-5.5: 5 + 30 + 5 + 0.50 = 40.50
-        assert!((super::compute_cost(&make("gpt-5.5")) - 40.50).abs() < 1e-9);
-        // Gemini 2.5 Pro: 1.25 + 10 + 1.25 + 0.125 = 12.625
-        assert!((super::compute_cost(&make("gemini-2.5-pro")) - 12.625).abs() < 1e-9);
-        // Gemini 2.5 Flash: 0.30 + 2.50 + 0.30 + 0.03 = 3.13
-        assert!((super::compute_cost(&make("gemini-2.5-flash")) - 3.13).abs() < 1e-9);
-        // Gemini 2.5 Flash-Lite: 0.10 + 0.40 + 0.10 + 0.01 = 0.61
-        assert!((super::compute_cost(&make("gemini-2.5-flash-lite")) - 0.61).abs() < 1e-9);
-        // Local / open-weight models are free.
-        assert_eq!(super::compute_cost(&make("llama-3.3-70b")), 0.0);
-        assert_eq!(super::compute_cost(&make("qwen2.5-coder")), 0.0);
-        // A realistic small total prices to a small positive number.
-        let small = super::TranscriptTotals { model: "claude-sonnet-4-6".into(), input: 10, output: 20, cache_creation: 100, cache_read: 1000 };
-        let c = super::compute_cost(&small);
-        assert!(c > 0.0 && c < 0.01, "got {c}");
-    }
-
+    // The price table + the transcript-usage parser + the cost math now live in `crates/logs`
+    // (`logs::cost`) and are tested there (#1686). This module keeps only the desktop-specific
+    // log-reader the other tokens submodules share (`latest_transcript_per_pane`, which carries
+    // the `session_id` the logs engine doesn't).
     #[test]
     fn latest_transcript_per_pane_dedupes_to_newest_line() {
         // tokens.log is append-only oldest-first; a later line for a pane supersedes
