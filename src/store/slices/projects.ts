@@ -26,6 +26,7 @@ import { resolveReferenceContext, resolveStartupPrompt } from "@/shared/lib/sess
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
+import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
 
 type ProjectsSlice = Pick<AppStore,
   "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
@@ -45,7 +46,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // missing/null in a long-lived persisted store — `Object.entries(undefined)`
           // would throw and (without a boundary) crash the whole app on delete (#874).
           const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k)));
+            deleteMapEntries(m ?? {}, keySet);
           // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
           const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
             Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
@@ -110,10 +111,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       setDefaultStartupPromptDoc: (doc) => set({ defaultStartupPromptDoc: doc }),
       projectStartupPromptDoc: {},
       setProjectStartupPromptDoc: (projectId, doc) =>
-        set((s) => ({ projectStartupPromptDoc: { ...s.projectStartupPromptDoc, [projectId]: doc } })),
+        set((s) => ({ projectStartupPromptDoc: setMapEntry(s.projectStartupPromptDoc, projectId, doc) })),
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
-        set((s) => ({ repoStartupPromptDoc: { ...s.repoStartupPromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
+        set((s) => ({ repoStartupPromptDoc: setMapEntry(s.repoStartupPromptDoc, repoPromptKey(projectId, repo), doc) })),
       refContextDefault: [],
       refContextProject: {},
       refContextRepo: {},
@@ -124,14 +125,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (level === "default") return { refContextDefault: toggle(s.refContextDefault) };
           if (level === "project") {
             const k = key ?? "";
-            return { refContextProject: { ...s.refContextProject, [k]: toggle(s.refContextProject[k] ?? []) } };
+            return { refContextProject: setMapEntry(s.refContextProject, k, toggle(s.refContextProject[k] ?? [])) };
           }
           const k = key ?? "";
-          return { refContextRepo: { ...s.refContextRepo, [k]: toggle(s.refContextRepo[k] ?? []) } };
+          return { refContextRepo: setMapEntry(s.refContextRepo, k, toggle(s.refContextRepo[k] ?? [])) };
         }),
       repoTriagePromptDoc: {},
       setRepoTriagePromptDoc: (projectId, repo, doc) =>
-        set((s) => ({ repoTriagePromptDoc: { ...s.repoTriagePromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
+        set((s) => ({ repoTriagePromptDoc: setMapEntry(s.repoTriagePromptDoc, repoPromptKey(projectId, repo), doc) })),
       githubTab: "summary",
       setGithubTab: (t) => set({ githubTab: t }),
       githubBoardOpen: false,
@@ -148,8 +149,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
           ok = true;
           return {
-            paneStartupPromptText: { ...st.paneStartupPromptText, [paneId]: prompt },
-            paneContinue: { ...st.paneContinue, [paneId]: false },
+            paneStartupPromptText: setMapEntry(st.paneStartupPromptText, paneId, prompt),
+            paneContinue: setMapEntry(st.paneContinue, paneId, false),
             tabs: st.tabs.map((t, i) => (i === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
           };
         });
@@ -165,11 +166,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           return mountState(s, id, startRun(pipeline, id).run);
         }),
       workflowClear: (item) =>
-        set((s) => {
-          const runs = { ...s.workflowRuns };
-          delete runs[item];
-          return { workflowRuns: runs };
-        }),
+        set((s) => ({ workflowRuns: deleteMapEntry(s.workflowRuns, item) })),
       workflowMount: (item) =>
         set((s) => {
           const run = s.workflowRuns[item];
@@ -187,22 +184,20 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       setPlanningSession: (key) => set({ planningSessionKey: key }),
       pendingPlannerPrompt: {},
       requestPlannerPrompt: (projectKey, text) =>
-        set((s) => ({ pendingPlannerPrompt: { ...s.pendingPlannerPrompt, [projectKey]: text } })),
+        set((s) => ({ pendingPlannerPrompt: setMapEntry(s.pendingPlannerPrompt, projectKey, text) })),
       clearPlannerPrompt: (projectKey) =>
         set((s) => {
           if (!(projectKey in s.pendingPlannerPrompt)) return {};
-          const next = { ...s.pendingPlannerPrompt };
-          delete next[projectKey];
-          return { pendingPlannerPrompt: next };
+          return { pendingPlannerPrompt: deleteMapEntry(s.pendingPlannerPrompt, projectKey) };
         }),
       projectKeyAlias: {},
       setProjectKeyAlias: (nodeId, key) =>
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
-          ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
+          ? { projectKeyAlias: setMapEntry(s.projectKeyAlias, nodeId, key) }
           : {})),
       issueLinks: {},
       setIssueLinks: (projectKey, links) =>
-        set((s) => ({ issueLinks: { ...s.issueLinks, [projectKey]: { ...(s.issueLinks[projectKey] ?? {}), ...links } } })),
+        set((s) => ({ issueLinks: setMapEntry(s.issueLinks, projectKey, { ...(s.issueLinks[projectKey] ?? {}), ...links }) })),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -211,7 +206,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         set((s) => {
           const existing = s.projectLocalRepos[projectId] ?? [];
           if (existing.includes(fullName)) return {};
-          return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
+          return { projectLocalRepos: setMapEntry(s.projectLocalRepos, projectId, [...existing, fullName]) };
         }),
       findTriageTabIdx: (projectName, projectId = "") =>
         findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
@@ -369,7 +364,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             // Bumped runId remounts this tab's panes; clear their old statuses so a
             // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435).
             paneStatus: clearTabStatusesPure(s.paneStatus, newTabIdx),
-            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
             activeScreen: "console" as Screen,
           };

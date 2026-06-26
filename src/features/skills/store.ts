@@ -16,6 +16,7 @@ import {
   type SkillDef, type SessionSkillOverride, type SkillGroup,
 } from "./lib/skills";
 import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "./lib/skillBridge";
+import { deleteMapEntry } from "@/store/updateHelpers";
 
 export interface SkillsSlice {
   // Skills — reusable capability bundles (prompt + bundled tools + profile guardrails) the fleet can
@@ -171,11 +172,10 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
       const hadOverride = !!s.sessionSkillOverrides[sessionKey];
       const hadGroups = !!s.sessionSkillGroups[sessionKey];
       if (!hadOverride && !hadGroups) return {};
-      const overrides = { ...s.sessionSkillOverrides };
-      const groups = { ...s.sessionSkillGroups };
-      delete overrides[sessionKey];
-      delete groups[sessionKey];
-      return { sessionSkillOverrides: overrides, sessionSkillGroups: groups };
+      return {
+        sessionSkillOverrides: deleteMapEntry(s.sessionSkillOverrides, sessionKey),
+        sessionSkillGroups: deleteMapEntry(s.sessionSkillGroups, sessionKey),
+      };
     }),
 
   // ── Task groups (#skills-groups) ──────────────────────────────────────

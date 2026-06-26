@@ -5,6 +5,7 @@
 import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { invoke } from "@tauri-apps/api/core";
+import { setMapEntry } from "../updateHelpers";
 
 type ShellSlice = Pick<AppStore,
   "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
@@ -15,7 +16,7 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       setAutomationsTab: (tab) => set({ automationsTab: tab }),
       pageTabOrder: {},
       setPageTabOrder: (page, order) =>
-        set((s) => ({ pageTabOrder: { ...s.pageTabOrder, [page]: order } })),
+        set((s) => ({ pageTabOrder: setMapEntry(s.pageTabOrder, page, order) })),
       detachedTabIds: [],
       setTabDetached: (id, detached) =>
         set((s) => ({
@@ -30,7 +31,7 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
           const next = detached
             ? (cur.includes(id) ? cur : [...cur, id])
             : cur.filter((x) => x !== id);
-          return { detachedSections: { ...s.detachedSections, [page]: next } };
+          return { detachedSections: setMapEntry(s.detachedSections, page, next) };
         }),
 
       settingsSection: "github",
