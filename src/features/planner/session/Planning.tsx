@@ -76,6 +76,7 @@ import { usePlannerTagStream } from "./usePlannerTagStream";
 import { usePlanSectionPoll } from "./usePlanSectionPoll";
 import { usePlannerRepoManagement } from "./usePlannerRepoManagement";
 import { usePlanMcpDownloads } from "./usePlanMcpDownloads";
+import { usePlanSkillsManagement } from "./usePlanSkillsManagement";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -123,8 +124,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const llmHasKey = useAppStore(s => hasLlmKey(resolveLlmConfig(s)));
   const skillDefs = useAppStore(s => s.skills);
   const skillGroups = useAppStore(s => s.skillGroups);
-  const ensureSessionGroup = useAppStore(s => s.ensureSessionGroup);
-  const refreshSkills = useAppStore(s => s.refreshSkills);
   // The extensions store drives the MCP stage pane (#878); the base dir is read on demand.
   const mcpServers = useAppStore(s => s.mcpServers);
 
@@ -295,23 +294,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
   const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
 
-  // The per-project planning session skill group (#1419): ensure it exists, named after the project
-  // (renamed in place if the title changes — never clobbering members). Skills the planner authors
-  // via `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join it; the pane highlights its members.
-  // Persistent — reopening the planner keeps collecting into the same group.
-  useEffect(() => {
-    if (!sessionGroupId || !projectTitle) return;
-    ensureSessionGroup(sessionGroupId, projectTitle);
-  }, [sessionGroupId, projectTitle, ensureSessionGroup]);
-
-  // Re-read the global skills.db while planning so skills the planner authors with `bsc-skill add`
-  // (and their session-group membership) surface live in the pane — the skills.json file-poll that
-  // used to do this was retired (#1417/#1419). Cheap (no push-back); 2.5s ≈ the section-poll cadence.
-  useEffect(() => {
-    void refreshSkills();
-    const t = setInterval(() => void refreshSkills(), 2500);
-    return () => clearInterval(t);
-  }, [refreshSkills]);
+  // Planner session skill-group + live skills refresh (#1474, usePlanSkillsManagement).
+  usePlanSkillsManagement(sessionGroupId, projectTitle);
 
   // ── Rename a PUBLISHED project (#1226) ──────────────────────────────────────────
   // The published header title is editable; committing on blur/Enter updates the GitHub Project
