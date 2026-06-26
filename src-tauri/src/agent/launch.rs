@@ -20,10 +20,15 @@ pub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-/// Claude Code's on-disk directory name for a launch cwd. Conversations live at
+/// Claude Code's on-disk *directory name* for a launch cwd. Conversations live at
 /// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every
 /// non-alphanumeric character replaced by `-`
 /// (e.g. `C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
+///
+/// NOT to be confused with [`crate::agent::claude_config::claude_project_key`] (`claude_config.rs`):
+/// that produces the cwd's *key in the `projects` map of `~/.claude.json`* — a slash-normalised path
+/// (`C:/Users/Kevin/foo`), a different transform for a different on-disk Claude Code contract. Both
+/// names are frozen to match what Claude Code writes; do not "unify" them.
 pub(crate) fn claude_project_dir_name(cwd: &str) -> String {
     // keep [A-Za-z0-9] → '-', no cap (delegates to map_slug; semantics frozen).
     crate::platform::fsx::map_slug(cwd, |c| c.is_ascii_alphanumeric(), '-', None)
