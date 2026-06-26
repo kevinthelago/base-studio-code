@@ -9,6 +9,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Frontend dedup & shared primitives** — a code-health sweep giving copy-pasted logic one home: a `shared/lib/github/` for the GitHub display layer (avatar palette + `loginColor`/`timeAgo`/`hueFor` consolidated, the scattered `GhProject`/`GHEvent`/`GhLabel` types unified) (#1492); shared `shared/ui/` atoms (`Avatar`, `LabelChip`, and the chart `Spark`/`HBars`) (#1493); and four reusable hooks/helpers that replace hand-rolled boilerplate across the app — `usePoll` (15 polling loops migrated, #1494), `useCoordLog`/`readCoordState` (the `read_coord_log → ingestCoordLog` replay, 5 fleet hooks, #1495), `useGithubQuery` (the planner/github fetch lifecycle, 4 screens, #1496), and `safeInvoke`/`fireInvoke` for Tauri error handling (#1497)
+- **Planning.tsx decomposition** — the planner session component split into focused, colocated hooks (`usePlannerTagStream`, `usePlanSectionPoll`, `usePlannerBlueprint`, `usePlanGates`, …), ~2.8k → ~2.2k LOC (#1474)
+
+### Removed
+- **Per-stage grading** — the advisory plan-grading system (graders, `sectionGrades`, the `grading/` module) removed end to end; it gated nothing (#1459, #1473, #1468)
+- **Skills Catalog tab** and the standalone allowed-commands permission scope (profiles now own command permissions) (#1466, #1457)
+
 ## [1.0.4] — 2026-06-24
 
 The **enterprise integration & migration release** — connect read-only to an existing platform

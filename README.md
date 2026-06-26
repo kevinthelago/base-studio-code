@@ -28,7 +28,7 @@ A standout capability is the **live UI preview**: the UI stage's generated scree
 
 The planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
 
-> 🚧 Blueprints are largely mature: lifecycle categories, the drag-reorder Blueprint editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, drag-and-drop file intake, and gist sharing all work today. The main remaining piece is the execution-side conductor (staged build → test → review → integrate).
+> 🚧 Blueprints are largely mature: lifecycle categories, the drag-reorder Blueprint editor with the Design-with-Claude assistant, attachable skills/knowledge, drag-and-drop file intake, and gist sharing all work today. The main remaining piece is the execution-side conductor (staged build → test → review → integrate).
 
 ## Features
 
@@ -106,16 +106,15 @@ base-studio-code/
 │   │                   #   github · sources · extensions · knowledge · observability · mobile
 │   └── tauri.conf.json
 ├── crates/             # Tauri-free workspace crates — data · plandb · llm · research · bsc-agent
-├── src/                # React frontend
-│   ├── App.tsx         # Shell (Titlebar + Rail + screen switcher)
-│   ├── styles/
-│   │   └── tokens.css  # Design tokens + base styles
-│   ├── components/
-│   │   ├── chrome/     # Titlebar, Rail, Tabstrip, StatusBar
-│   │   └── pane/       # PaneShell, ViewTabs, PaneMenu, views/
-│   ├── screens/        # Console, Projects (planning), Agents (profiles), KnowledgeStore, GitHub, Automations, Settings
-│   ├── store/          # Zustand store
-│   └── data/           # Mock/sample data
+├── src/                # React frontend — feature-first vertical slices (imports use `@/…`)
+│   ├── app/            # the shell — main/App, chrome (Rail · Titlebar · Tabstrip), and the
+│   │                   #   console execution surface (ConsoleScreen + panes/ + lib/)
+│   ├── features/       # one folder per feature = UI + lib/ (pure domain) + store.ts + index.ts:
+│   │                   #   planner (flagship) · skills · mcp · automations · github · tunnel · agents · settings
+│   ├── shared/         # feature-agnostic: lib/ (core · session · fleet · github · security),
+│   │                   #   hooks/ (usePoll, …), ui/ (Avatar, LabelChip, charts), data/
+│   ├── store/          # Zustand store composition (slices/ + types)
+│   └── styles/         # tokens.css — design tokens + base styles
 ├── design/             # ⚠️ Reference prototype only — do not edit
 └── docs/               # Architecture and design documentation
 ```
@@ -141,7 +140,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 
 - **Run on any model** *(parallel pillar)* — a model-agnostic agent shell we own, **`bsc-agent`**: an `LlmProvider` layer (Anthropic, OpenAI, Gemini, local; `crates/llm`) plus a native agent runtime — tool use, native permission enforcement, telemetry + transcript, ancestor context + skills loading, and an MCP client — packaged as a sidecar and selected per session behind a `HarnessAdapter`. It emits the same contracts as Claude Code, which **stays the default until parity**
 - **Simplicity** — a foolproof, trimmed **Default** blueprint (context → repos → deploy → features → UI → structure → permissions); the advanced stages (MCP servers, automations, skills) moved to a new **Complete** blueprint
-- **Planner consolidation** — Blueprints folded into the planner page with the live render-preview; lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, per-stage grading, file intake, gist sharing, and authoring your own blueprint
+- **Planner consolidation** — Blueprints folded into the planner page with the live render-preview; lifecycle categories, the drag-reorder editor with the Design-with-Claude assistant, attachable skills/knowledge, file intake, gist sharing, and authoring your own blueprint
 - **Dependencies in Deploy** — the planner locks every repo's libraries (and their registries/sources) once; publish seeds each repo's `package.json` / `Cargo.toml` (+ `.npmrc` / `.cargo/config.toml`) and the role gate keeps workers from redefining them, so the parallel fleet stops colliding on deps
 - **plan.db working store** — the plan's live state (context required-set, fleet + per-stream permissions, deploy, MCP, the authored blueprint, issues) moved into a per-project SQLite store, rehydratable from GitHub
 - **Progress-gated triage** — relaunch reads issue status from plan.db, resumes from what changed, and **skips workers that already finished** so completed work doesn't restart
