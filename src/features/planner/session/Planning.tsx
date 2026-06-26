@@ -74,6 +74,7 @@ import { flattenPrompt, stagePrompts } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
 import { usePlannerTagStream } from "./usePlannerTagStream";
 import { usePlanSectionPoll } from "./usePlanSectionPoll";
+import { usePlannerRepoManagement } from "./usePlannerRepoManagement";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -198,42 +199,18 @@ export function Planning({ visible }: { visible: boolean }) {
       effectiveRepos.includes(r)
     );
 
-  // Repos surfaced by <repo_link> tags emitted by Claude during this session.
-  const [repoLinkFullNames, setRepoLinkFullNames] = useState<string[]>([]);
+  // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): owns the
+  // <repo_link>-surfaced repo set and clones each linked repo into the project dir as it appears.
+  const { repoLinkFullNames, setRepoLinkFullNames } = usePlannerRepoManagement(effectiveProjectId, effectiveRepos);
 
   const isExisting = !!activeProjectId;
 
-  // Eager auto-clone (#508): the visible repo strip was removed from the header, but its
-  // clone engine lives on headlessly here. Each linked / <repo_link>-surfaced repo is cloned
-  // into the project dir as soon as it appears, populating projectLocalRepos → linkedRepos →
-  // setup_workspaces, so the planner can read repo contents during planning (triage launch
-  // re-clones fail-soft, but that's too late for in-session context). Idempotent on the Rust side.
-  const autoCloneRef = useRef<Set<string>>(new Set());
   // Context manifest (#1019): the dynamic required-set + confirm state, polled from plan.db. The gate
   // (`requiredContextConfirmed`) reads it; the change-guard avoids churning state every tick; the
   // seeded-set guards the baseline seed so it runs at most once per project per session.
   const [ctxRequired, setCtxRequired] = useState<string[]>([]);
   const ctxRequiredJsonRef = useRef<string>("");
   const ctxSeededRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!effectiveProjectId) return;
-    const repos = [...new Set([...effectiveRepos, ...repoLinkFullNames])];
-    const cloned = new Set(useAppStore.getState().projectLocalRepos[effectiveProjectId] ?? []);
-    for (const fullName of repos) {
-      if (cloned.has(fullName) || autoCloneRef.current.has(fullName)) continue;
-      autoCloneRef.current.add(fullName);
-      invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
-        .then(() => {
-          useAppStore.getState().addProjectRepo(effectiveProjectId, fullName);
-          // Persist the link in the hub's plan.db (#1012) — durable across a store/app-state reset,
-          // which the store-only persistence didn't survive.
-          void invoke("plan_add_repo", { projectKey: effectiveProjectId, fullName }).catch(() => {});
-        })
-        .catch(e => console.error(`clone ${fullName} failed:`, e))
-        .finally(() => autoCloneRef.current.delete(fullName));
-    }
-  }, [effectiveProjectId, effectiveRepos, repoLinkFullNames]);
-
   // Canonical set of repos for publish/sync — union of project-linked repos,
   // Claude-surfaced repo_link tags, and the store's planningRepo fallback.
   // Feeds both handlePublish and the GitHubStructureCard.
