@@ -3,7 +3,7 @@
 Least-privilege per session type. A session's abilities are bounded by its **role**, so a
 planner can shape the plan but can't mutate the repo or GitHub, and any out-of-scope action
 is blocked (or escalated to explicit user confirmation) rather than run freely. Pure
-enforcement core in `src/lib/sessionRoles.ts`; the gates that *use* it are the role's
+enforcement core in `src/shared/lib/session/sessionRoles.ts`; the gates that *use* it are the role's
 denied-command set and a write-path guard on the write tool, applied alongside the pane's
 per-agent **profile** (the source of auto-approved commands since #1457).
 
