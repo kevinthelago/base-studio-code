@@ -3,12 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
-import { avatarColor } from "@/shared/lib/github/colors";
 import { timeAgoShort } from "@/shared/lib/core/format";
+import { Avatar } from "@/shared/ui/Avatar";
+import { LabelChip } from "@/shared/ui/LabelChip";
+import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface GhLabel { name: string; color: string }
 interface GhUser  { login: string }
 
 interface FlatIssue {
@@ -59,37 +60,6 @@ query($id: ID!) {
 }`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function LabelChip({ label }: { label: GhLabel }) {
-  const color = `#${label.color}`;
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 3,
-      padding: "1px 5px", borderRadius: 99,
-      fontFamily: "var(--mono)", fontSize: 9,
-      background: `${color}22`, color,
-      border: `1px solid ${color}55`,
-      whiteSpace: "nowrap",
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color }} />
-      {label.name}
-    </span>
-  );
-}
-
-function Avatar({ login, size = 16, ml = 0 }: { login: string; size?: number; ml?: number }) {
-  return (
-    <span title={"@" + login} style={{
-      width: size, height: size, borderRadius: "50%",
-      background: avatarColor(login), color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.56,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      marginLeft: ml, border: "1.5px solid var(--bg-canvas)", flexShrink: 0,
-    }}>{login[0]?.toUpperCase() ?? "?"}</span>
-  );
-}
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
@@ -151,7 +121,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {issue.assignees.map(a => (
                   <div key={a.login} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Avatar login={a.login} size={18} />
+                    <Avatar login={a.login} size={18} palette bordered fontScale={0.56} />
                     <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
                   </div>
                 ))}
@@ -349,7 +319,7 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
       <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
         {issue.assignees.length > 0 && (
           <div style={{ display: "flex" }}>
-            {issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} ml={i === 0 ? 0 : -5} />)}
+            {issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={16} ml={i === 0 ? 0 : -5} palette bordered fontScale={0.56} />)}
             <span style={{
               fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginLeft: 6,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
