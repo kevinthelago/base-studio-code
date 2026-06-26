@@ -723,6 +723,8 @@ version = "0.1.0"
 dependencies = [
  "bsc-llm",
  "glob",
+ "regex",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
