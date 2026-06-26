@@ -41,6 +41,18 @@ npm run dev            # Frontend-only (no Rust backend)
 - **Rust**: `cargo fmt` + `cargo clippy --all-targets -- -D warnings`.
 - Inline styles are used throughout the React frontend (intentional — see `src/styles/tokens.css`).
 
+### Frontend layout & shared primitives
+
+The frontend is **feature-first vertical slices** — `app/` (the shell) · `features/<x>/` (UI + pure `lib/` + `store.ts` + `index.ts` barrel) · `shared/` (feature-agnostic) · `store/`. Import with the `@/…` alias (→ `src/…`), never deep `../../..` relatives. A feature owns everything it needs; `shared/` is imported by features but imports none.
+
+Before hand-rolling common plumbing, reach for the shared primitive — these exist so the same logic isn't re-implemented per file:
+
+- **Polling** (`useEffect` + `setInterval` + cancel-guard) → `usePoll(fn, ms, deps?, { immediate? })` (`@/shared/hooks/usePoll`)
+- **Tauri error handling** → `safeInvoke(cmd, args, fallback)` / `fireInvoke(cmd, args?)` (`@/shared/lib/core/safeInvoke`) instead of ad-hoc `invoke(...).catch(...)`
+- **GitHub fetch** (`{ data, loading, error }` + token gate) → `useGithubQuery(fetcher, deps, enabled?)` (`@/features/github/lib/useGithubQuery`)
+- **Coordination log** → `useCoordLog()` / `readCoordState()` (`@/shared/lib/fleet/useCoordLog`)
+- **GitHub display** (avatar colors, time/number formatters, `Gh*` types) → `@/shared/lib/github/*` + `@/shared/lib/core/format`; small UI atoms (`Avatar`, `LabelChip`, charts) → `@/shared/ui/*`
+
 ## Commit Messages
 
 Use a short imperative subject line: `feat: add X`, `fix: Y`, `docs: Z`, `refactor: ...`.
