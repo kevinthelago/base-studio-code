@@ -73,4 +73,14 @@ describe("reconcileSessions (#1266)", () => {
     // A genuinely restorable worker is unaffected.
     expect(byId["proj:auth"].reapOnly).toBe(false);
   });
+
+  it("excludes the dedicated planner pane (planning_<key>) entirely (#1579)", () => {
+    const out = reconcileSessions(
+      [sess("planning_proj", "running"), sess("proj:auth", "dormant")],
+      [],
+    );
+    // The planning session is re-entered from the Projects page, not the recovery banner —
+    // it never appears in the recoverable list, while a real worker still does.
+    expect(out.map((s) => s.paneId)).toEqual(["proj:auth"]);
+  });
 });

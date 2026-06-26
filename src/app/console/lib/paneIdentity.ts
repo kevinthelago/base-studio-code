@@ -51,6 +51,15 @@ export function isManualPaneId(id: string): boolean {
 }
 
 /**
+ * Whether an id is the dedicated PLANNER pane — `planning_<key>` (Planning.tsx), the intentional
+ * exception to the `<key>:<stream>` identity scheme. A planning session is re-entered via the
+ * Projects page, not restored from the crash-recovery banner, so it's excluded from recovery (#1579).
+ */
+export function isPlanningPaneId(id: string): boolean {
+  return id.startsWith("planning_");
+}
+
+/**
  * Resolve a pane's identity id from its tab + grid position. A minted `paneIds[idx]` (fleet/triage,
  * Stage 2) wins; otherwise a fleet/triage tab keeps the positional id (Stage 1), a manual tab with a
  * stable `id` gets a `man:` id, and an id-less legacy tab falls back to positional.
