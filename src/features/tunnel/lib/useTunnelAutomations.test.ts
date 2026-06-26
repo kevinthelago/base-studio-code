@@ -39,7 +39,6 @@ beforeEach(() => {
     tunnelRunning: true,
     tabs: [{ name: "build", layout: "1×1", id: "t0" }] as never,
     disabledPanes: {},
-    kbBlocks: [],
   });
 });
 

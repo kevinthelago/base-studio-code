@@ -2,4 +2,3 @@
 
 pub mod docstore;
 pub mod chat;
-pub mod workspace;

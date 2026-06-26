@@ -90,7 +90,6 @@ export function Planning({ visible }: { visible: boolean }) {
     planningSessionKey,
     activeProjectId, activeProjectName, activeProjectNumber,
     githubToken,
-    kbBlocks,
     activeProjectRepos,
     projectLocalRepos,
     planSections, planConfirmedSections,
@@ -613,7 +612,7 @@ export function Planning({ visible }: { visible: boolean }) {
     const store = useAppStore.getState();
     const bp = store.blueprints.find(b => b.id === effectiveBlueprintId);
     if (!bp) return;
-    void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills, kb: store.kbBlocks })
+    void writeBlueprintSkillContext({ projectKey: effectiveProjectId, blueprint: bp, skills: store.skills })
       .catch((e) => console.warn("writeBlueprintSkillContext failed:", e));
   }, [bpSkillKey, effectiveProjectId, effectiveBlueprintId]);
 
@@ -798,7 +797,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // Signals the authoring stages' gates read (name+category, stage count, validity).
   const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
   // Pickable libraries for the Capabilities stage's skill + MCP pickers.
-  const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs, kbBlocks), [skillDefs, kbBlocks]);
+  const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs), [skillDefs]);
   const authorMcpLib = useMemo(() => buildMcpLibrary(mcpServers), [mcpServers]);
   // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
   // gate model (`sectionDone`) treats them as resolved.
@@ -1099,12 +1098,11 @@ export function Planning({ visible }: { visible: boolean }) {
     let live = true;
     invoke<string>("compute_context_signature", {
       repoFullNames: linkedRepos,
-      kbIds:         kbBlocks.map(b => b.id),
       enabledStages: stageIdsFor(effectiveProjectId),
     }).then(sig => { if (live) setCurrentSig(sig); }).catch(() => { if (live) setCurrentSig(null); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkedRepos, kbBlocks, effectiveProjectId]);
+  }, [linkedRepos, effectiveProjectId]);
   // Re-read the baseline the backend last wrote — called on open and after every workspace
   // setup (mount / link / restart), so the badge reflects the most recent regeneration.
   const refreshSetupSig = useCallback(() => {
@@ -1121,7 +1119,7 @@ export function Planning({ visible }: { visible: boolean }) {
   //
   // #1296: gate the auto-open on a true template-version mismatch (`shouldAutoOpenBlueprintModal`,
   // which compares only the `v{version}` prefix of the two signatures), NOT the broad `contextStale`
-  // flag. `contextStale` also flips on benign setup tweaks (link a repo, toggle a KB block, enable/
+  // flag. `contextStale` also flips on benign setup tweaks (link a repo, enable/
   // disable a stage) — those must keep driving only the quiet "context updated · refresh" badge
   // below, never this destructive restart dialog.
   const [showBlueprintModal, setShowBlueprintModal] = useState(false);
@@ -1219,7 +1217,6 @@ export function Planning({ visible }: { visible: boolean }) {
     });
 
     // Capture state at mount time for workspace sync.
-    const kbSnapshot      = kbBlocks;
     const repoSnapshot    = linkedRepos;  // string[] of full_names
     const treatAsExistingSnap = treatAsExisting;
     const isAuthoringSnap = isAuthoring;
@@ -1248,17 +1245,10 @@ export function Planning({ visible }: { visible: boolean }) {
         term.write("\r\n\x1b[33m[session ended — navigate away and back to restart]\x1b[0m\r\n");
       });
 
-      // Create isolated workspace directories with settings.json + CLAUDE.md,
-      // and sync all KB blocks to disk so the planner can Read them via ../kb/.
-      const paths = await invoke<{ kb_dir: string; planning_dir: string }>(
+      // Create the isolated planning workspace directory with settings.json + CLAUDE.md.
+      const paths = await invoke<{ planning_dir: string }>(
         "setup_workspaces",
         {
-          kbBlocks: kbSnapshot.map(b => ({
-            id:      b.id,
-            title:   b.title,
-            tags:    b.tags,
-            content: b.content,
-          })),
           repoFullNames: repoSnapshot,
           automations:   automationsSnap,
           isExisting:    treatAsExistingSnap,
@@ -1549,18 +1539,10 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [visible, effectiveProjectId]);
 
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
-  // kbBlocks is captured via ref to avoid including it in deps (it's large and
-  // stable — we don't want to re-run on every KB edit).
-  const kbBlocksRef = useRef(kbBlocks);
-  useEffect(() => { kbBlocksRef.current = kbBlocks; }, [kbBlocks]);
-
   useEffect(() => {
     if (linkedRepos.length === 0) return;
     const { commands: cmds, schedules: scheds } = useAppStore.getState();
     invoke("setup_workspaces", {
-      kbBlocks: kbBlocksRef.current.map(b => ({
-        id: b.id, title: b.title, tags: b.tags, content: b.content,
-      })),
       repoFullNames: linkedRepos,
       automations: [
         ...cmds.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
@@ -1584,16 +1566,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // version, WITHOUT touching the plan section files. Shared by the restart flow and the "keep
   // files" choice of the blueprint-update modal (#827). refreshSetupSig() rebaselines the
   // signature so the staleness clears.
-  async function regenerateWorkspace(): Promise<{ kb_dir: string; planning_dir: string } | null> {
+  async function regenerateWorkspace(): Promise<{ planning_dir: string } | null> {
     const store = useAppStore.getState();
     const currentAutomations = [
       ...store.commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
       ...store.schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
     ];
-    const paths = await invoke<{ kb_dir: string; planning_dir: string }>(
+    const paths = await invoke<{ planning_dir: string }>(
       "setup_workspaces",
       {
-        kbBlocks: kbBlocks.map(b => ({ id: b.id, title: b.title, tags: b.tags, content: b.content })),
         repoFullNames: linkedRepos,
         automations: currentAutomations,
         isExisting: treatAsExisting,
@@ -1787,7 +1768,7 @@ export function Planning({ visible }: { visible: boolean }) {
         return;
       }
       // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
-      const bundled = resolveBlueprintSkillPayloads(valid, store.skills, kbBlocks);
+      const bundled = resolveBlueprintSkillPayloads(valid, store.skills);
       const res = await publishGist(githubToken, blueprintToManifest(valid, bundled), { public: visibility === "catalog" });
       setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
       setPublishPhase("done");

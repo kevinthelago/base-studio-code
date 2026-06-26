@@ -4,28 +4,26 @@ import { buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { addSkill, removeSkill, mkStageSection } from "./blueprintEdit";
 import { BlueprintEditorView } from "./BlueprintEditor";
 import type { SkillDef } from "@/features/skills/lib/skills";
-import type { KbBlock } from "@/shared/data/mock";
 import type { BlueprintSection } from "../stages/blueprints";
 
 const skillDef = (id: string, name: string): SkillDef => ({
   id, name, kind: "procedure", source: "local", desc: `${name} desc`, prompt: "", tools: [], profiles: [],
   projects: [], enabled: true, pinned: false, invocations: 0, success: 0, avgTokensK: 0, lastUsed: "", trend: [],
 } as unknown as SkillDef);
-const kb = (id: string, title: string): KbBlock => ({ id, title, tags: ["rust"], updated: "", lines: 10 });
 
 describe("blueprintSkills library + resolver (#636)", () => {
-  const lib = buildSkillLibrary([skillDef("s1", "API design")], [kb("k1", "House style")]);
+  const lib = buildSkillLibrary([skillDef("s1", "API design"), skillDef("s2", "House style")]);
 
-  it("unifies skills + kb into one pickable list", () => {
+  it("lists skills as pickable items", () => {
     expect(lib).toEqual([
       { id: "s1", name: "API design", kind: "skill", desc: "API design desc" },
-      { id: "k1", name: "House style", kind: "kb", desc: "rust" },
+      { id: "s2", name: "House style", kind: "skill", desc: "House style desc" },
     ]);
   });
 
   it("resolves attached ids into found + missing", () => {
-    const r = resolveBlueprintSkills(["s1", "ghost", "k1"], lib);
-    expect(r.found.map((i) => i.id)).toEqual(["s1", "k1"]);
+    const r = resolveBlueprintSkills(["s1", "ghost", "s2"], lib);
+    expect(r.found.map((i) => i.id)).toEqual(["s1", "s2"]);
     expect(r.missing).toEqual(["ghost"]);
   });
 });
@@ -45,7 +43,7 @@ describe("blueprintEdit skill helpers (#636)", () => {
 });
 
 describe("editor Skills block (#636)", () => {
-  const lib = buildSkillLibrary([skillDef("s1", "API design")], [kb("k1", "House style")]);
+  const lib = buildSkillLibrary([skillDef("s1", "API design"), skillDef("s2", "House style")]);
 
   it("offers library items and attaches one on click", () => {
     const onChange = vi.fn();
