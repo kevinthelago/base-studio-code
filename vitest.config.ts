@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  resolve: { alias: {
+    "@": fileURLToPath(new URL("./src", import.meta.url)),
+    "@prompts": fileURLToPath(new URL("./src-tauri/prompts", import.meta.url)),
+  } },
   test: {
     environment: "jsdom",
     globals: true,
