@@ -7,7 +7,7 @@
 // Diff-derived panels (lines/day, churn-by-area, hottest files, contributor
 // ±lines) need per-commit detail calls — capped to the most recent N commits.
 import { useState, useEffect } from "react";
-import { githubRequest, isGithubAuthError } from "@/features/github/lib/github";
+import { githubRequest, isGithubAuthError } from "@/shared/lib/github/github";
 import type { GithubRepo } from "@/store";
 import {
   mapVelocity, mapChurnAreas, mapHottestFiles, mapContributors, mapCI,
