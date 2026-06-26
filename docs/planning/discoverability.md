@@ -18,7 +18,7 @@ Run over the plan tree on every change. Emits typed `Gap`s with a **severity**:
 and **caps** it — discoverability never fire-hoses.
 
 ## Relevant — node-scoped retrieval (`rankRelevant`)
-Given the node you're on and a set of candidates (KB blocks, prior contracts, archetypes,
+Given the node you're on and a set of candidates (skills, prior contracts, archetypes,
 MCP templates…), rank by overlap between the candidate's tags and the node's terms
 (kind + title + summary). Returns only matches, highest first, **capped**. Pull-first.
 

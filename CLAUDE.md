@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. The desktop is authoritative — it owns the agent processes, GitHub connections, and knowledge stores. It pairs with **mobile-studio-code**, a **standalone** mobile app (its own repo, usable on its own) that can **optionally tunnel** into a desktop session — over a zero-knowledge Cloudflare relay, end-to-end encrypted (Noise IK) — so the same agents can be driven from a phone, from anywhere.
+**base-studio-code** is the desktop host application for a multi-agent AI development workflow platform. The desktop is authoritative — it owns the agent processes, GitHub connections, and the skills library. It pairs with **mobile-studio-code**, a **standalone** mobile app (its own repo, usable on its own) that can **optionally tunnel** into a desktop session — over a zero-knowledge Cloudflare relay, end-to-end encrypted (Noise IK) — so the same agents can be driven from a phone, from anywhere.
 
 The core value proposition: run many AI coding agents in parallel across multiple repositories, with standardized knowledge (prompts, GitHub Actions templates, automation recipes) injected per project based on its tech stack.
 
@@ -156,9 +156,9 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 ## Key Concepts
 
-**Knowledge Block** — A named markdown blob tagged with stack identifiers (e.g., `rust`, `react`, `postgres`). Injected into an agent's system prompt or as a user message. Enables standardized GitHub Actions configs, code review checklists, and architecture patterns across all projects.
+**Skill** — A named, reusable markdown block (the **Skills library**, `src/features/skills/` + `crates/skilldb` + the `bsc-skill` CLI) that supplies injectable context — standardized GitHub Actions configs, code review checklists, architecture patterns. Attached per blueprint/section and written into the session's `.claude/skills/`. This is the injectable-context system (it superseded the old Knowledge Base).
 
-**Console** — A single agent session tied to a repo, model, and optional knowledge blocks. Multiple consoles run in parallel within a tab.
+**Console** — A single agent session tied to a repo, model, and optional skills. Multiple consoles run in parallel within a tab.
 
 **Pane** — The UI cell that renders one console. Each pane has a swappable view (console chat, file tree, branch list, diff, commit log) selected via icon tabs. Configuration is exposed via the hamburger menu (model, repo, cwd).
 
@@ -166,7 +166,7 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 **Tunnel** — The **optional** bridge between desktop and the standalone mobile app. Both peers dial out to a **zero-knowledge Cloudflare relay** (`relay/`); the desktop runs the relay client (`src-tauri/src/mobile/tunnel/`) and the session is end-to-end encrypted with **Noise IK** (the relay only ever sees ciphertext). Pairing is by QR.
 
-**Automation** — A cron-triggered rule that automatically dispatches a command or loads a knowledge block into a specified console pane.
+**Automation** — A cron-triggered rule that automatically dispatches a command into a specified console pane.
 
 ## Project Planning
 
@@ -178,7 +178,7 @@ The planning page is a split: the live Claude session (terminal, center) + the *
 ### Blueprints — the lifecycle library (#609 / #645 / #636 / #647)
 A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`; UI: `blueprints/BlueprintEditor.tsx` (drag-reorder editor + Design-with-Claude assistant) + the library rail in `list/ProjectsList.tsx`.
 - **Category + mode (#645):** every blueprint carries a lifecycle `category` — **greenfield** (create from a pitch), **transform** (restructure existing repos), **harden** (improve in place), **maintain** — and a `mode` (`create` vs `operate`, which selects the planner intro). The Library groups/filters/searches by category. Built-ins: Default / Full-stack / Mobile / API (greenfield) + Refactor & Cleanup, Split / Combine microservices, Migrate (transform) + Harden security (harden). Domain greenfields (CAD, simulation) stay out of the packaged app — catalog later (#649).
-- **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills / knowledge** — the KB blocks + Skills library, unified (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`). The assistant can author + attach new ones.
+- **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills** — the Skills library (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`). The assistant can author + attach new ones.
 - **Switching (#647):** `projectBlueprintId` records which blueprint seeded a project; opening one whose blueprint differs from the selected one prompts to **reset** (re-seed + clear progress + restart, `applyBlueprintToProject`), **keep**, or export files first.
 
 ### The project key
@@ -191,14 +191,14 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 - plan **section files**, flat: `goal.md`, `scope.md`, `stack.md`, `architecture.md`, …
 - `phases.json` (milestones), `issues.json` (granular issues), `fleet.json` (streams)
 - `prompts/` — kickoff scripts the planner authors (`<stream>-kickoff.md`, `director-kickoff.md`)
-- `kb_index.md`, `automations.md`, `github_context.md`
+- `automations.md`, `github_context.md`
 - linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees under `<key>/.worktrees/`
 
 ### The planner is plan-only
 Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
 
 ### The planning workflow (driven by the planner CLAUDE.md template in `planner/prompts.rs` + `planner/directives.rs`)
-1. Link repositories; read the Knowledge Base.
+1. Link repositories.
 2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
 3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.
 4. **Granular, agent-ready issues** (#311, `issues.json`): each `PlanIssue` carries acceptance criteria, owned files, dependencies, labels, milestone, owning stream — enough that an agent finishes without asking.
@@ -369,7 +369,6 @@ Gotchas:
        ├─ #4 pane system
        └─ #5 store + router
             ├─ #6 Console screen
-            ├─ #7 Knowledge Store screen
             ├─ #8 GitHub screen
             ├─ #9 Automations screen
             └─ #10 Settings screen

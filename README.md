@@ -37,11 +37,11 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 - **Parallel agent sessions** — multiple PTY-backed console panes per workspace tab, each tied to its own agent instance
 - **Live git context** — repo name, branch, and dirty status auto-detected from the shell's working directory
 - **Dependencies, locked once** — the Deploy stage pins every repo's libraries — and the registry/source each comes from — in one manifest; publish seeds each repo's `package.json` / `Cargo.toml` (plus `.npmrc` / `.cargo/config.toml` for private sources) so the parallel fleet never collides on dependencies
-- **Knowledge Store** — named markdown blocks tagged by tech stack, injected into agent system prompts
+- **Skills** — reusable markdown blocks (the Skills library), attachable per blueprint/section and written into each agent's `.claude/skills/` as injectable context
 - **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, webhook management, and a richer publish (repo description, stack topics, a plan-driven README)
 - **Extensions (MCP)** — attach Model Context Protocol servers per project, pre-trusted into every agent session
 - **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
-- **Automations** — cron-scheduled commands and knowledge injections across panes
+- **Automations** — cron-scheduled commands dispatched across panes
 - **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
 - **Data models** *(landing — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
@@ -125,7 +125,7 @@ base-studio-code/
 base-studio-code (desktop host)
 ├── Agent Orchestrator   — parallel agent sessions (PTY: Claude Code or bsc-agent) + planning/fleet
 ├── GitHub Integration   — OAuth, repos, PRs, Actions, hooks
-├── Knowledge Store      — context blocks keyed by stack tag
+├── Skills Library       — reusable context blocks keyed by stack tag
 ├── Mobile relay client  — dials the zero-knowledge Cloudflare relay (Noise IK E2E)
 └── UI Shell             — Tauri WebView + React frontend
 ```
@@ -147,7 +147,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Resiliency** — **crash recovery** (unclean-shutdown detection + one-click session restore), faster/lazier boot (metrics + logging deferred off the startup path), durable per-project repo links, and **log management** (view / filter / limit / clear / export in Settings → Logs)
 - **Richer publishing** — repos go out with a description, stack-derived topics, and a plan-driven README, plus the standard community-health files
 - **Fleet model** — least-privilege workers in git worktrees coordinated by a director; workers build against planned contracts **in parallel** (no runtime dependency-wait) and don't spin up their own sub-agents
-- Parallel **console** sessions, **Knowledge Store**, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
+- Parallel **console** sessions, the **Skills** library, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 
 **🚧 Current — `1.0.4` · enterprise integration & migration**
 
