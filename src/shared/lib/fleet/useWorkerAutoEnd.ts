@@ -12,7 +12,8 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { ingestCoordLog, emptyCoordState } from "./coordination";
+import { emptyCoordState } from "./coordination";
+import { readCoordState } from "./useCoordLog";
 import { classifyWorkerEnd, type OwnedIssue } from "./workerEnd";
 import { decideWorkerAutoEnd, DEFAULT_AUTO_END_THRESHOLDS } from "./workerAutoEnd";
 import { log } from "../core/log";
@@ -54,8 +55,7 @@ async function evaluateExit(paneId: string, opts: { kill?: boolean } = {}): Prom
     .catch((e) => { log.error(`auto-end: plan_list_issues failed for ${paneId}: ${e}`); return null; });
   if (!issues) return;
 
-  const coordLines = await invoke<string[]>("read_coord_log", { limit: 5000 }).catch(() => [] as string[]);
-  const { state: coord } = ingestCoordLog(coordLines, emptyCoordState());
+  const coord = (await readCoordState(5000))?.state ?? emptyCoordState();
 
   const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
   log.info(`auto-end: ${paneId} (${stream.id}) → ${verdict.state} — ${verdict.summary}`);
@@ -123,9 +123,9 @@ export function useWorkerAutoEnd(): void {
     let cancelled = false;
     const tick = async () => {
       const activity = await invoke<ActivityRow[]>("read_pane_activity").catch(() => [] as ActivityRow[]);
-      const coordLines = await invoke<string[]>("read_coord_log", { limit: 5000 }).catch(() => [] as string[]);
+      const coordRes = await readCoordState(5000);
       if (cancelled || !Array.isArray(activity)) return;
-      const { state: coord } = ingestCoordLog(Array.isArray(coordLines) ? coordLines : [], emptyCoordState());
+      const coord = coordRes?.state ?? emptyCoordState();
       const s = useAppStore.getState();
       const now = Date.now();
       for (const paneId of Object.keys(s.fleetPaneStreams)) {
