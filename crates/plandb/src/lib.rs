@@ -77,6 +77,28 @@ pub struct PlanIssue {
     pub status: String,
 }
 
+/// The **lean** projection of a {@link PlanIssue} for the agent token budget (#1562): identity +
+/// status + placement, with the heavy `body` dropped and the value-lists collapsed to counts. This
+/// is what `bsc-plan list`/`mine` emit by default; an agent escalates to the full record with
+/// `get <ref>` (one issue) or `list --full` (every field).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueSummary {
+    pub r#ref: String,
+    pub title: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<serde_json::Value>,
+    /// Count of acceptance criteria (the full list is on the record via `get <ref>`).
+    pub acceptance: usize,
+    /// Count of owned-file globs.
+    pub owns: usize,
+    /// Count of dependency refs.
+    pub depends_on: usize,
+}
+
 /// A planned feature — a capability AND a fleet stream (#plan-db). Not just user-facing: a feature
 /// can be foundational (an engine core, a data model) that others build on. The roster forms a
 /// dependency DAG via `dependsOn`, so the layering lives on the features themselves. The Features
@@ -215,38 +237,31 @@ impl Store {
         }
     }
 
-    /// List issues, optionally filtered to one status (e.g. the director's `complete` queue) and/or
-    /// one owning stream (e.g. a worker's `mine`). Always in stable plan order.
+    /// List issues, optionally filtered to one status and/or one owning stream. Stable plan order.
+    /// Full records (incl. `body`). Kept signature-stable — the Tauri command bridge depends on it.
     pub fn list(&self, status: Option<&str>, stream: Option<&str>) -> rusqlite::Result<Vec<PlanIssue>> {
-        let mut sql = String::from(SELECT_COLS);
-        let mut clauses: Vec<&str> = Vec::new();
-        if status.is_some() {
-            clauses.push("status = :status");
-        }
-        if stream.is_some() {
-            clauses.push("stream = :stream");
-        }
-        if !clauses.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&clauses.join(" AND "));
-        }
-        sql.push_str(" ORDER BY position, ref");
+        self.list_filtered(status, stream, None, None)
+    }
+
+    /// Full-record list with the escalation filters (`--limit`, `--since`). `since` keeps only rows
+    /// with `updated_at > since` (the resume-delta read). Powers `bsc-plan list --full`.
+    pub fn list_filtered(
+        &self, status: Option<&str>, stream: Option<&str>, limit: Option<usize>, since: Option<i64>,
+    ) -> rusqlite::Result<Vec<PlanIssue>> {
+        let sql = list_sql(SELECT_COLS, status.is_some(), stream.is_some(), since.is_some(), limit);
         let mut stmt = self.conn.prepare(&sql)?;
-        // Bind only the params the query actually references (rusqlite ignores unused named params,
-        // but building the slice conditionally keeps it explicit).
-        let out: rusqlite::Result<Vec<PlanIssue>> = match (status, stream) {
-            (Some(st), Some(sr)) => stmt
-                .query_map(rusqlite::named_params! { ":status": st, ":stream": sr }, row_to_issue)?
-                .collect(),
-            (Some(st), None) => stmt
-                .query_map(rusqlite::named_params! { ":status": st }, row_to_issue)?
-                .collect(),
-            (None, Some(sr)) => stmt
-                .query_map(rusqlite::named_params! { ":stream": sr }, row_to_issue)?
-                .collect(),
-            (None, None) => stmt.query_map([], row_to_issue)?.collect(),
-        };
-        out
+        list_query(&mut stmt, status, stream, since, row_to_issue)
+    }
+
+    /// **Lean** list for the agent token budget (#1562): summary fields only — `body` omitted at the
+    /// SQL layer, value-lists returned as counts. Same filters as {@link list_filtered}. This is the
+    /// CLI's default plural read; `--full` escalates to {@link list_filtered}.
+    pub fn list_summary(
+        &self, status: Option<&str>, stream: Option<&str>, limit: Option<usize>, since: Option<i64>,
+    ) -> rusqlite::Result<Vec<IssueSummary>> {
+        let sql = list_sql(SELECT_SUMMARY_COLS, status.is_some(), stream.is_some(), since.is_some(), limit);
+        let mut stmt = self.conn.prepare(&sql)?;
+        list_query(&mut stmt, status, stream, since, row_to_issue_summary)
     }
 
     /// Delete an issue by `ref` (no-op if absent).
@@ -780,6 +795,60 @@ fn phase_from_db(s: Option<String>) -> Option<serde_json::Value> {
 const SELECT_COLS: &str =
     "SELECT ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status FROM issues";
 
+/// Lean column set for {@link Store::list_summary}: **no `body`** (the big blob is dropped at the SQL
+/// layer, not in Rust), value-lists still selected so we can count them. Column order must match
+/// {@link row_to_issue_summary}.
+const SELECT_SUMMARY_COLS: &str =
+    "SELECT ref, title, phase, stream, acceptance, owns, depends_on, status FROM issues";
+
+/// Build a `list`/`list_summary` query: pick the column set, AND together the optional filters
+/// (status / stream / `updated_at > since`), then stable plan order + optional `LIMIT`. The named
+/// params are bound conditionally by {@link list_query}.
+fn list_sql(cols: &str, status: bool, stream: bool, since: bool, limit: Option<usize>) -> String {
+    let mut sql = String::from(cols);
+    let mut clauses: Vec<&str> = Vec::new();
+    if status {
+        clauses.push("status = :status");
+    }
+    if stream {
+        clauses.push("stream = :stream");
+    }
+    if since {
+        clauses.push("updated_at > :since");
+    }
+    if !clauses.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&clauses.join(" AND "));
+    }
+    sql.push_str(" ORDER BY position, ref");
+    if let Some(n) = limit {
+        sql.push_str(&format!(" LIMIT {n}"));
+    }
+    sql
+}
+
+/// Run a prepared `list` query, binding only the params the SQL actually references, mapping each
+/// row with `f`. Shared by the full ({@link row_to_issue}) and lean ({@link row_to_issue_summary}) paths.
+fn list_query<T, F>(
+    stmt: &mut rusqlite::Statement, status: Option<&str>, stream: Option<&str>, since: Option<i64>, f: F,
+) -> rusqlite::Result<Vec<T>>
+where
+    F: Fn(&rusqlite::Row) -> rusqlite::Result<T>,
+{
+    // `rusqlite` ignores unused named params, but binding exactly the referenced set keeps it explicit.
+    let mut params: Vec<(&str, &dyn rusqlite::ToSql)> = Vec::new();
+    if let Some(st) = status.as_ref() {
+        params.push((":status", st));
+    }
+    if let Some(sr) = stream.as_ref() {
+        params.push((":stream", sr));
+    }
+    if let Some(si) = since.as_ref() {
+        params.push((":since", si));
+    }
+    stmt.query_map(params.as_slice(), f)?.collect()
+}
+
 fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
     Ok(PlanIssue {
         r#ref: r.get(0)?,
@@ -794,6 +863,20 @@ fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
         depends_on: json_to_arr(&r.get::<_, String>(9)?),
         labels: json_to_arr(&r.get::<_, String>(10)?),
         status: r.get(11)?,
+    })
+}
+
+/// Map a {@link SELECT_SUMMARY_COLS} row → {@link IssueSummary}: counts for the value-lists, no body.
+fn row_to_issue_summary(r: &rusqlite::Row) -> rusqlite::Result<IssueSummary> {
+    Ok(IssueSummary {
+        r#ref: r.get(0)?,
+        title: r.get(1)?,
+        phase: phase_from_db(r.get::<_, Option<String>>(2)?),
+        stream: r.get(3)?,
+        acceptance: json_to_arr(&r.get::<_, String>(4)?).len(),
+        owns: json_to_arr(&r.get::<_, String>(5)?).len(),
+        depends_on: json_to_arr(&r.get::<_, String>(6)?).len(),
+        status: r.get(7)?,
     })
 }
 
@@ -1227,5 +1310,67 @@ mod tests {
         assert!(t2 >= t);
         s.clear().unwrap();
         assert_eq!(s.triage_last_run("o/web").unwrap(), None);
+    }
+
+    #[test]
+    fn list_summary_drops_body_and_counts_value_lists() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&PlanIssue {
+            r#ref: "F1".into(), title: "Add login".into(), stream: Some("auth".into()),
+            phase: Some(serde_json::json!(1)), body: Some("a very long body blob".repeat(50)),
+            acceptance: vec!["a".into(), "b".into(), "c".into()],
+            owns: vec!["src/auth/".into()], depends_on: vec!["F0".into()], ..Default::default()
+        }).unwrap();
+        let rows = s.list_summary(None, None, None, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.r#ref, "F1");
+        assert_eq!(r.stream.as_deref(), Some("auth"));
+        assert_eq!(r.phase, Some(serde_json::json!(1)));
+        // value-lists collapse to counts
+        assert_eq!((r.acceptance, r.owns, r.depends_on), (3, 1, 1));
+        // the lean JSON has no `body` key at all (dropped at the SQL layer)
+        let json = serde_json::to_value(r).unwrap();
+        assert!(json.get("body").is_none(), "summary must not carry the body");
+        assert_eq!(json["dependsOn"], serde_json::json!(1), "depends_on serializes camelCase");
+        // the full path still has the body
+        assert!(s.list(None, None).unwrap()[0].body.is_some());
+    }
+
+    #[test]
+    fn list_summary_and_filtered_respect_status_stream_limit() {
+        let s = Store::open_in_memory().unwrap();
+        for (r, st, status) in [
+            ("F1", "auth", "open"), ("F2", "auth", "complete"), ("F3", "ui", "open"),
+        ] {
+            s.upsert(&PlanIssue {
+                r#ref: r.into(), title: r.into(), stream: Some(st.into()), status: status.into(),
+                ..Default::default()
+            }).unwrap();
+        }
+        // stream filter
+        assert_eq!(s.list_summary(None, Some("auth"), None, None).unwrap().len(), 2);
+        // status filter
+        assert_eq!(s.list_summary(Some("open"), None, None, None).unwrap().len(), 2);
+        // both
+        assert_eq!(s.list_summary(Some("open"), Some("auth"), None, None).unwrap().len(), 1);
+        // limit caps rows (full path honors it too)
+        assert_eq!(s.list_summary(None, None, Some(1), None).unwrap().len(), 1);
+        assert_eq!(s.list_filtered(None, None, Some(2), None).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_filtered_since_returns_only_changed_rows() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("F1", "one")).unwrap();
+        let t = s.triage_record_run("probe").unwrap(); // a monotonic "now" reference
+        s.upsert(&mk("F2", "two")).unwrap();
+        s.set_status("F2", "complete").unwrap();
+        // only F2 changed at/after the reference; query from just before so the same-second write counts
+        let delta = s.list_summary(None, None, None, Some(t - 1)).unwrap();
+        assert!(delta.iter().any(|r| r.r#ref == "F2"));
+        // the full path applies the same since filter
+        let full = s.list_filtered(None, None, None, Some(t - 1)).unwrap();
+        assert!(full.iter().any(|r| r.r#ref == "F2"));
     }
 }
