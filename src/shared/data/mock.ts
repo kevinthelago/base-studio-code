@@ -26,13 +26,10 @@ export interface DiffHunk { file: string; add: number; del: number; sample: Diff
 
 export interface Commit { s: string; m: string; who: string; t: string; head?: boolean; merge?: boolean }
 
-export interface KbTag   { name: string; n: number }
-export interface KbBlock { id: string; title: string; tags: string[]; updated: string; lines: number; content?: string }
-
 export interface Schedule {
   id: string; name: string; on: boolean;
   when: string; target: string;
-  action: "command" | "knowledge";
+  action: "command";
   detail: string; lastRun: string; nextRun: string;
 }
 

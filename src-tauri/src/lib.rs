@@ -31,7 +31,7 @@ pub(crate) use project::plan_db;
 // ── platform primitives ──
 pub(crate) use platform::shell;
 pub(crate) use platform::paths::{
-    home_dir, bsc_base_dir, documents_dir, project_dir, repo_dir, worktrees_dir,
+    home_dir, bsc_base_dir, project_dir, repo_dir, worktrees_dir,
     plan_dir_for, context_dir_for, published_marker, is_published, legacy_draft_dir,
     nearest_existing_ancestor,
 };

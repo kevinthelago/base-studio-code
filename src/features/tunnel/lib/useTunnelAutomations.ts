@@ -56,7 +56,6 @@ export function useTunnelAutomations(): void {
       await dispatchAutomation(a, {
         tabs: s.tabs,
         disabledPanes: s.disabledPanes,
-        kbBlocks: s.kbBlocks,
         write: (paneId, data) => invoke<void>("pty_write", { paneId, data }),
         recordRun: s.recordAutomationRun,
         now: () => Date.now(),

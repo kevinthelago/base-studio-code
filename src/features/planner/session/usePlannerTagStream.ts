@@ -99,19 +99,6 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
       );
     }
 
-    // ── <kb_assign id="block-id" /> ───────────────────────────────────────
-    const kbAssignRe = new RegExp(`<kb_assign\\s+id=${Q}([^\\u0022\\u201c\\u201d]+)${Q}\\s*\\/>`, 'g');
-    let foundKb = false;
-    while ((m = kbAssignRe.exec(bufRef.current)) !== null) {
-      useAppStore.getState().addPlanKbAssignment(projIdSnap, m[1].trim());
-      foundKb = true;
-    }
-    if (foundKb) {
-      bufRef.current = bufRef.current.replace(
-        new RegExp(`<kb_assign\\s+id=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'), ""
-      );
-    }
-
     // ── <automation_assign name="..." command="..." … /> ──────────────────
     const autoAssignRe = /<automation_assign([^/]*)\s*\/>/g;
     let foundAuto = false;

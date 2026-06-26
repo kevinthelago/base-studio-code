@@ -1,6 +1,6 @@
 // Automations feature store slice (#1309) — schedules, commands, and cron automations. Extracted
-// from the former grab-bag `automations` slice (which kept kbBlocks / LLM config / active-project
-// state, now in store/slices/core.ts). Composed into the app store by store/index.ts.
+// from the former grab-bag `automations` slice (which kept LLM config / active-project state, now
+// in store/slices/core.ts). Composed into the app store by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import { type Automation, type AutomationRun, appendRun, computeNextRun } from "./lib/scheduler";
