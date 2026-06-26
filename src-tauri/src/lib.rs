@@ -19,8 +19,8 @@ mod extensions;
 pub use app::run::run;
 
 // ── stage 1/2 domain modules, re-exported under their pre-restructure names ──
-pub(crate) use console::{pty, ledger as pty_ledger, discovery as session_discovery, shell_rc as bsc};
-pub(crate) use agent::{harness, claude_config as config};
+pub(crate) use console::{pty, ledger as pty_ledger, discovery as session_discovery};
+pub(crate) use agent::harness;
 pub(crate) use github::{oauth, git_hooks as githooks};
 pub(crate) use sources::{data, oauth as source_oauth, credentials};
 pub(crate) use platform::docstore;
