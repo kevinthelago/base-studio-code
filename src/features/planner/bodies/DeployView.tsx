@@ -15,12 +15,8 @@ import {
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../lib/deployConfig";
+import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
-const MONO = "var(--mono)";
-const grpLabel: React.CSSProperties = {
-  fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em",
-};
-const monoSm: React.CSSProperties = { fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)" };
 const prop: React.CSSProperties = { fontFamily: MONO, fontSize: 9, color: "var(--accent)" };
 const chip: React.CSSProperties = {
   padding: "1px 7px", borderRadius: 99, fontFamily: MONO, fontSize: 9, background: "var(--bg-elev2)",

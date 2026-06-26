@@ -9,9 +9,7 @@ import { useAppStore } from "@/store";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { defaultSourceConfig } from "../lib/sourceConfig";
 import { integrationGaps, type ImpliedIntegration, type IntegrationStatus } from "../lib/integrationGaps";
-
-const MONO = "var(--mono)";
-const grpLabel: React.CSSProperties = { fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" };
+import { MONO, grpLabel } from "./bodyStyles";
 
 const STATUS_COLOR: Record<IntegrationStatus, string> = {
   assigned: "var(--success)",
