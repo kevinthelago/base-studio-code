@@ -13,11 +13,11 @@
 use serde_json::Value;
 
 use crate::behavior::{Automation, AutomationKind, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{
+    cell_to_string, sorted_record_columns, union_record_columns, Connector, FetchFn, RowSet,
+    SourceObject,
+};
 use crate::Result;
-
-/// A query → parsed-JSON closure. Owns the OAuth token; the connector never sees it.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// The standard QuickBooks Online entities worth inventorying by default.
 const STANDARD_ENTITIES: &[&str] =
@@ -61,25 +61,6 @@ impl QuickBooksConnector {
     }
 }
 
-/// Top-level field names of a record, sorted for a stable column order.
-fn record_columns(rec: &Value) -> Vec<String> {
-    let mut cols: Vec<String> =
-        rec.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
-    cols.sort();
-    cols
-}
-
-/// Render one cell: scalars as plain text, nested objects/arrays as compact JSON.
-fn cell_to_string(v: &Value) -> String {
-    match v {
-        Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        other => other.to_string(),
-    }
-}
-
 impl Connector for QuickBooksConnector {
     fn name(&self) -> &str {
         &self.name
@@ -89,10 +70,11 @@ impl Connector for QuickBooksConnector {
         let mut out = Vec::new();
         for e in &self.entities {
             let body = self.run_query(&format!("SELECT * FROM {e} MAXRESULTS 1"))?;
+            // objects() samples one record (MAXRESULTS 1), so its columns are that record's keys.
             let columns = body["QueryResponse"][e]
                 .as_array()
                 .and_then(|a| a.first())
-                .map(record_columns)
+                .map(sorted_record_columns)
                 .unwrap_or_default();
             out.push(SourceObject { name: e.clone(), columns });
         }
@@ -102,7 +84,9 @@ impl Connector for QuickBooksConnector {
     fn read(&self, object: &str) -> Result<RowSet> {
         let body = self.run_query(&format!("SELECT * FROM {object} MAXRESULTS 200"))?;
         let records = body["QueryResponse"][object].as_array().cloned().unwrap_or_default();
-        let columns = records.first().map(record_columns).unwrap_or_default();
+        // Union across all rows (#1620): QBO entities are heterogeneous (optional fields are
+        // omitted per-record), so a first-record peek would drop columns that later rows carry.
+        let columns = union_record_columns(&records, |_| true);
         let rows = records
             .iter()
             .map(|r| columns.iter().map(|c| cell_to_string(&r[c])).collect())

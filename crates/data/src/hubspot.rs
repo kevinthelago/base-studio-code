@@ -11,12 +11,9 @@
 use serde_json::Value;
 
 use crate::behavior::{Automation, AutomationKind, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::connector::{cell_to_string, Connector, FetchFn, RowSet, SourceField, SourceObject};
 use crate::schema::FieldType;
 use crate::Result;
-
-/// A path → parsed-JSON closure. Owns the bearer token; the connector never sees it.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// The standard HubSpot CRM object types worth inventorying by default.
 const STANDARD_TYPES: &[&str] = &["contacts", "companies", "deals", "tickets"];
@@ -55,16 +52,6 @@ impl HubSpotConnector {
             .as_array()
             .map(|r| r.iter().filter_map(|p| p["name"].as_str().map(str::to_string)).collect())
             .unwrap_or_default())
-    }
-}
-
-fn cell_to_string(v: &Value) -> String {
-    match v {
-        Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        other => other.to_string(),
     }
 }
 
