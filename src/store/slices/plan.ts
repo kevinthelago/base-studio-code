@@ -440,11 +440,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           // dangling reference (the planner assigned an id we never created) is
           // materialized here, keeping the assigned id so the reference stays stable.
           if (stream.profile && byId.has(stream.profile)) return stream;
-          // Commands are a per-stream PROFILE property now (#1457), not a project-wide union. A
-          // generated profile starts with no auto-approved prefixes — the broad Bash allow +
-          // MANDATORY_BASH (gh/git/bsc-plan) still cover execution — and is refined per stream in
-          // the Permissions pane (its `commands` list is the single source).
-          const gen = generateAgentProfile(stream, "worker", []);
+          // Commands are a per-stream PROFILE property (#1457). Seed the generated profile from
+          // the stream's granted toolchain (#1572) — `stream.commands`, authored by the planner in
+          // the Permissions stage — so the worker auto-approves exactly those (written as
+          // `Bash(<cmd> *)` rules), on top of the posture-scaled safe baseline. Refined further per
+          // stream in the Permissions pane (its `commands` list is the single source).
+          const gen = generateAgentProfile(stream, "worker", stream.commands ?? []);
           const id = stream.profile || gen.id;
           if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
           return { ...stream, profile: id };

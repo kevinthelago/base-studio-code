@@ -6,6 +6,25 @@ use crate::*;
 /// `bsc-plan` is the plan-store CLI (#plan-db) the planner/director/workers use to
 /// read+write issues, so it must never prompt (the planner runs it under autopilot).
 pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc-plan"];
+/// Safe read-only inspection / navigation commands auto-approved in every session whose
+/// shell posture is not `deny`, so ordinary work (`ls`, `cat`, `grep`, …) never prompts.
+/// Pure inspection + light scaffolding; the destructive forms are still caught by
+/// [`DEFAULT_DENY`]. Written as explicit `Bash(<cmd> *)` rules because Claude Code does NOT
+/// honor a bare `Bash` allow as allow-all — every auto-runnable command must be enumerated.
+pub(crate) const BASELINE_READONLY: &[&str] = &[
+    "ls", "cat", "head", "tail", "grep", "rg", "find", "fd", "pwd", "cd", "echo", "wc",
+    "sort", "uniq", "diff", "tree", "which", "env", "date", "file", "stat", "basename",
+    "dirname", "cut", "sleep", "printf", "test", "sed", "awk", "jq", "tr", "mkdir", "touch",
+];
+/// Common build / test / run toolchains auto-approved for an `allow`-shell agent (a doer —
+/// worker/tester). A coordinator (`ask` shell) does NOT get these (it prompts before
+/// building); a `deny`-shell agent gets neither baseline. The planner grants project-specific
+/// tools beyond this set per stream (the session's `allowed_commands`).
+pub(crate) const BASELINE_BUILD: &[&str] = &[
+    "cargo", "rustc", "rustup", "npm", "pnpm", "yarn", "npx", "node", "deno", "bun",
+    "python", "python3", "pip", "pip3", "pytest", "make", "go", "tsc", "vite", "eslint",
+    "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet",
+];
 /// Dangerous command patterns denied in every spawned session by default.
 ///
 /// The session allows the Bash tool broadly so ordinary work — including loops
@@ -43,6 +62,7 @@ pub(crate) async fn ensure_session_settings(
     ask_tool_rules: Option<Vec<String>>,
     skills: Option<Vec<SkillCfg>>,
     replace_permissions: Option<bool>,
+    bash_posture: Option<String>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
@@ -51,18 +71,20 @@ pub(crate) async fn ensure_session_settings(
         &ask_tool_rules.unwrap_or_default(),
         &skills.unwrap_or_default(),
         replace_permissions.unwrap_or(false),
+        bash_posture.as_deref().unwrap_or("allow"),
     )
 }
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
 ///
-/// Security model: the session ALLOWS the Bash tool broadly so normal commands
-/// (loops, pipes, `&&` chains) run without a prompt. A curated default deny-list
-/// ({@link DEFAULT_DENY}) plus any user/project `denied_commands` block the most
-/// dangerous direct invocations (deny wins over allow). The configured
-/// `allowed_commands` are still written as explicit prefix rules — harmless under
-/// the broad allow, and meaningful if "Bash" is ever removed to go strict.
-/// Merges into existing settings rather than clobbering; `.claude/` stays out of
-/// the repo's `git status`.
+/// Security model: Claude Code does NOT honor a bare `Bash` allow as allow-all, so the set
+/// of auto-runnable commands is enumerated as explicit `Bash(<cmd> *)` rules, scaled by the
+/// session's `bash_posture` (the agent profile's bash tier): `allow` doers get the bare
+/// `Bash` + the read-only AND build baselines; `ask` coordinators get the read-only baseline
+/// only (build/unlisted commands prompt); `deny` agents get neither. Always added: the
+/// mandatory gh/git/bsc-plan and the per-stream `allowed_commands` the planner granted. A
+/// curated default deny-list ({@link DEFAULT_DENY}) plus any user/project `denied_commands`
+/// block the most dangerous direct invocations (deny wins over allow). Merges into existing
+/// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_session_settings(
     cwd: &str,
@@ -75,6 +97,7 @@ pub(crate) fn write_session_settings(
     ask_tool_rules: &[String],
     skills: &[SkillCfg],
     replace_permissions: bool,
+    bash_posture: &str,
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     let root = std::path::PathBuf::from(cwd);
@@ -86,10 +109,28 @@ pub(crate) fn write_session_settings(
         .unwrap_or_else(|| serde_json::json!({}));
     if !config.is_object() { config = serde_json::json!({}); }
 
-    // Allow: the Bash tool broadly (start-and-go) + mandatory gh/git + each
-    // configured command as an explicit prefix rule (deduped).
-    let mut allow_rules: Vec<String> = vec!["Bash".to_string()];
-    for c in MANDATORY_BASH.iter().map(|s| (*s).to_string())
+    // Allow. Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved
+    // command must be an explicit `Bash(<cmd> *)` rule — so the session's shell posture
+    // (`bash_posture`, from the agent profile's bash tier) decides how generous the set is:
+    //   - "allow" (doers — worker/tester): the bare `Bash` (forward-compat / intent) + the
+    //     read-only AND build baselines.
+    //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
+    //     unlisted commands fall through to a prompt.
+    //   - "deny"  (sandboxed): neither baseline.
+    // ALWAYS: mandatory gh/git/bsc-plan + each per-stream granted command (`allowed_commands`).
+    let mut allow_rules: Vec<String> = Vec::new();
+    let mut baseline: Vec<&str> = Vec::new();
+    match bash_posture {
+        "deny" => {}
+        "ask" => baseline.extend_from_slice(BASELINE_READONLY),
+        _ /* "allow" */ => {
+            allow_rules.push("Bash".to_string());
+            baseline.extend_from_slice(BASELINE_READONLY);
+            baseline.extend_from_slice(BASELINE_BUILD);
+        }
+    }
+    for c in baseline.iter().map(|s| (*s).to_string())
+        .chain(MANDATORY_BASH.iter().map(|s| (*s).to_string()))
         .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
     {
         if !c.is_empty() {
