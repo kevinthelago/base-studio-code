@@ -72,7 +72,7 @@ pub(super) struct Inner {
 pub struct TunnelState {
     pub(super) inner: Mutex<Inner>,
     /// High-volume raw PTY output, fanned out to the transport (filtered per-pane).
-    output_tx: broadcast::Sender<PaneOutput>,
+    output_tx: broadcast::Sender<PaneOutputChunk>,
     /// Low-volume control events (pane_list / session_state / user_request).
     pub(super) event_tx: broadcast::Sender<ServerMsg>,
     /// The desktop's long-lived Noise static keypair (identity proven to mobile).
@@ -294,7 +294,7 @@ impl TunnelState {
     }
 
     /// Subscribe to the PTY-output fan-out (the relay transport calls this per client).
-    pub(super) fn subscribe_output(&self) -> broadcast::Receiver<PaneOutput> {
+    pub(super) fn subscribe_output(&self) -> broadcast::Receiver<PaneOutputChunk> {
         self.output_tx.subscribe()
     }
 
@@ -310,7 +310,7 @@ impl TunnelState {
         if self.output_tx.receiver_count() == 0 {
             return;
         }
-        let _ = self.output_tx.send(PaneOutput {
+        let _ = self.output_tx.send(PaneOutputChunk {
             pane_id: pane_id.to_string(),
             data: data.to_string(),
         });

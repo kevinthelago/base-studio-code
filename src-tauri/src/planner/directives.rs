@@ -12,9 +12,9 @@ static STAGES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/prompts/stages");
 #[tauri::command]
 pub(crate) fn planner_intro_prompt(mode: String) -> String {
     match mode.as_str() {
-        "blueprint" => PLANNING_INTRO_BLUEPRINT,
-        "existing" => PLANNING_INTRO_EXISTING,
-        _ => PLANNING_INTRO_NEW,
+        "blueprint" => PLANNING_GREETING_BLUEPRINT,
+        "existing" => PLANNING_GREETING_EXISTING,
+        _ => PLANNING_GREETING_NEW,
     }
     .to_string()
 }

@@ -20,6 +20,6 @@ pub(crate) const PLANNER_INJECTION_RESISTANCE_MD: &str = include_str!("../../pro
 // summarize capabilities, ask one orienting question). Trusted, app-authored content (#1107), and
 // per-mode like the CLAUDE.md spec intros — but addressed to the user, not the spec. Distinct from
 // PLANNING_*_INTRO above, which is the Claude-facing instruction set written into CLAUDE.md.
-pub(crate) const PLANNING_INTRO_NEW: &str = include_str!("../../prompts/planner/greeting.new.md");
-pub(crate) const PLANNING_INTRO_EXISTING: &str = include_str!("../../prompts/planner/greeting.existing.md");
-pub(crate) const PLANNING_INTRO_BLUEPRINT: &str = include_str!("../../prompts/planner/greeting.blueprint.md");
+pub(crate) const PLANNING_GREETING_NEW: &str = include_str!("../../prompts/planner/greeting.new.md");
+pub(crate) const PLANNING_GREETING_EXISTING: &str = include_str!("../../prompts/planner/greeting.existing.md");
+pub(crate) const PLANNING_GREETING_BLUEPRINT: &str = include_str!("../../prompts/planner/greeting.blueprint.md");
