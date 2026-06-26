@@ -5,7 +5,7 @@
 // confirmation. Presentational + self-contained (the parent owns the clone/build + status) so it's
 // unit-testable; styled to match the blueprint modals.
 
-import { useEffect } from "react";
+import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 
 export type McpDownloadStatus = "pending" | "downloading" | "building" | "ready" | "error";
 
@@ -47,11 +47,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
   onCancel: () => void;
 }) {
   const busy = items.some((i) => i.status === "downloading" || i.status === "building");
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onCancel(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onCancel, busy]);
+  useModalDismiss(onCancel, { enabled: !busy });
 
   const anyActionable = items.some((i) => i.status === "pending" || i.status === "error");
   const allDone = items.length > 0 && items.every((i) => i.status === "ready");
@@ -59,7 +55,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
   return (
     <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
       <div className="overlay" style={{ position: "fixed", inset: 0, background: "oklch(0.08 0.005 250 / 0.66)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 30 }}
-        onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
+        onMouseDown={overlayDismiss(busy ? undefined : onCancel)}>
         <div className="modal" role="dialog" aria-label="Download MCP servers" style={{ width: 560, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}
           onMouseDown={(e) => e.stopPropagation()}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
