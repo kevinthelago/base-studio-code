@@ -7,17 +7,23 @@
 //! the CLI resolves the hub's plan.db even from a worker's worktree). Default output is human text;
 //! `--json` emits machine-readable JSON.
 //!
+//! Reads are **lean by default** (#1562): plural reads (`list`/`mine`) emit a compact, body-free TSV
+//! (value-lists as counts) and `--json` a compact summary array, so an embedded plan.db read is cheap
+//! on the agent token budget. Escalate only when needed — `get <ref>` for one full issue, or the list
+//! flags `--full` / `--fields` / `--limit` / `--since` (and `--pretty` to re-indent a JSON read).
+//!
 //! Commands:
 //!   bsc-plan add                      # upsert from JSON on stdin (one object or an array); prints ref(s)
-//!   bsc-plan get <ref>                # one issue's full spec
-//!   bsc-plan list [--status S] [--stream S]
+//!   bsc-plan get <ref>                # one issue's FULL spec
+//!   bsc-plan summary                  # totals + per-status / per-stream / per-phase counts
+//!   bsc-plan list [--status S] [--stream S] [--full|--fields a,b|--limit N|--since EPOCH]
 //!   bsc-plan mine --stream S [--status S]   # alias for `list --stream S`
 //!   bsc-plan status <ref> <status>    # open|in_progress|blocked|complete|verified|failed
 //!   bsc-plan remove <ref>
-//!   bsc-plan render                   # print the issues.json projection to stdout
-//! Global flags: --db <path>, --json
+//!   bsc-plan render                   # print the issues.json projection to stdout (full)
+//! Global flags: --db <path>, --json, --pretty
 
-use plandb::{is_valid_status, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -42,10 +48,24 @@ struct Args {
     rule: Option<String>,
     cause: Option<String>,
     from: Option<String>,
+    /// Plural reads (`list`/`mine`) escalate from the lean default to every field (#1562).
+    full: bool,
+    /// Explicit column projection for `list`/`mine`, e.g. `--fields ref,title,status` → TSV.
+    fields: Option<String>,
+    /// Cap the number of rows a plural read returns (newest in plan order).
+    limit: Option<usize>,
+    /// Delta read: only rows whose `updated_at > <epoch-seconds>` (resume-aware).
+    since: Option<i64>,
+    /// Re-expand a JSON read to indented form (the default is compact, to save agent tokens).
+    pretty: bool,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, db: None, positional: Vec::new(), status: None, stream: None, rule: None, cause: None, from: None };
+    let mut a = Args {
+        json: false, db: None, positional: Vec::new(), status: None, stream: None,
+        rule: None, cause: None, from: None, full: false, fields: None, limit: None,
+        since: None, pretty: false,
+    };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -56,6 +76,17 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
             "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
             "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
+            "--full" => a.full = true,
+            "--pretty" => a.pretty = true,
+            "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
+            "--limit" => {
+                let v = it.next().ok_or("--limit needs a number")?;
+                a.limit = Some(v.parse().map_err(|_| format!("--limit: '{v}' is not a number"))?);
+            }
+            "--since" => {
+                let v = it.next().ok_or("--since needs an epoch-seconds value")?;
+                a.since = Some(v.parse().map_err(|_| format!("--since: '{v}' is not an integer"))?);
+            }
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -98,24 +129,55 @@ fn run() -> Result<(), String> {
             let r = args.positional.get(1).ok_or("usage: bsc-plan get <ref>")?;
             let s = store()?;
             match s.get(r).map_err(|e| e.to_string())? {
-                Some(issue) if args.json => println!("{}", to_json(&issue)),
+                // The single-issue read is the full record by design (an agent escalates here for the
+                // detail the lean list omits) — `--json` is compact by default, `--pretty` re-indents.
+                Some(issue) if args.json => print_blob(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
                 Some(issue) => print!("{}", render_issue(&issue)),
                 None => return Err(format!("no issue with ref '{r}'")),
             }
             Ok(())
         }
+        "summary" => {
+            // The cheapest "where does the plan stand" read: totals + per-status/stream/phase counts.
+            let s = store()?;
+            let rows = s.list_summary(None, None, None, None).map_err(|e| e.to_string())?;
+            let phases = s.phase_list().map_err(|e| e.to_string())?;
+            let o = compute_overview(&rows, &phases);
+            if args.json {
+                print_blob(&overview_json(&o), args.pretty);
+            } else {
+                print!("{}", render_overview_text(&o));
+            }
+            Ok(())
+        }
         "list" | "mine" => {
             let s = store()?;
-            let issues = s
-                .list(args.status.as_deref(), args.stream.as_deref())
-                .map_err(|e| e.to_string())?;
-            if args.json {
-                println!("{}", serde_json::to_string(&issues).unwrap_or_else(|_| "[]".into()));
-            } else if issues.is_empty() {
-                println!("(no matching issues)");
+            let (status, stream) = (args.status.as_deref(), args.stream.as_deref());
+            if let Some(fields) = &args.fields {
+                // Explicit projection wins over lean/full: fetch the full record, emit only the named
+                // columns as TSV (so `body` is reachable when asked for, a typo'd field is a blank column).
+                let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+                print!("{}", render_fields_tsv(&issues, fields));
+            } else if args.full {
+                let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+                if args.json {
+                    print_blob(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
+                } else if issues.is_empty() {
+                    println!("(no matching issues)");
+                } else {
+                    for issue in &issues {
+                        println!("{}", render_issue_line(issue));
+                    }
+                }
             } else {
-                for issue in &issues {
-                    println!("{}", render_issue_line(issue));
+                // Lean by default (#1562): body omitted at the SQL layer, value-lists as counts.
+                let rows = s.list_summary(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
+                if args.json {
+                    print_blob(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
+                } else if rows.is_empty() {
+                    println!("(no matching issues)");
+                } else {
+                    print!("{}", render_summary_tsv(&rows));
                 }
             }
             Ok(())
@@ -192,7 +254,7 @@ fn run() -> Result<(), String> {
                 "get" => {
                     let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
                     match s.feature_get(slug).map_err(|e| e.to_string())? {
-                        Some(f) if args.json => println!("{}", serde_json::to_string_pretty(&f).unwrap_or_default()),
+                        Some(f) if args.json => print_blob(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
                         Some(f) => print!("{}", render_feature(&f)),
                         None => return Err(format!("no feature with slug '{slug}'")),
                     }
@@ -311,13 +373,31 @@ fn run() -> Result<(), String> {
                     }
                     Ok(())
                 }
-                "get" | "list" => {
-                    match s.fleet_get().map_err(|e| e.to_string())? {
-                        Some(f) => println!("{}", serde_json::to_string_pretty(&f).unwrap_or_default()),
-                        None => println!("{}", if args.json { "null" } else { "(no fleet)" }),
+                "get" | "list" => match s.fleet_get().map_err(|e| e.to_string())? {
+                    None => {
+                        println!("{}", if args.json { "null" } else { "(no fleet)" });
+                        Ok(())
                     }
-                    Ok(())
-                }
+                    Some(f) => {
+                        if let Some(id) = args.positional.get(2) {
+                            // `fleet get <stream-id>` → one stream in full (the rest of the fleet stays unread).
+                            let stream = f
+                                .get("streams")
+                                .and_then(|v| v.as_array())
+                                .and_then(|arr| arr.iter().find(|st| st.get("id").and_then(|i| i.as_str()) == Some(id.as_str())));
+                            match stream {
+                                Some(st) => print_blob(st, args.pretty),
+                                None => return Err(format!("no stream with id '{id}' in the fleet")),
+                            }
+                        } else if args.full {
+                            print_blob(&f, args.pretty);
+                        } else {
+                            // Lean default: id/name/dependsOn per stream; `--full` for the permissions/flows.
+                            print_blob(&fleet_lean(&f), args.pretty);
+                        }
+                        Ok(())
+                    }
+                },
                 "remove" => {
                     let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
                     s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
@@ -348,7 +428,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.deploy_get().map_err(|e| e.to_string())? {
-                        Some(c) => println!("{}", serde_json::to_string_pretty(&c).unwrap_or_default()),
+                        Some(c) => print_blob(&c, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no deploy config)" }),
                     }
                     Ok(())
@@ -375,7 +455,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.deps_get().map_err(|e| e.to_string())? {
-                        Some(m) => println!("{}", serde_json::to_string_pretty(&m).unwrap_or_default()),
+                        Some(m) => print_blob(&m, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no dependency manifest)" }),
                     }
                     Ok(())
@@ -449,7 +529,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.blueprint_get().map_err(|e| e.to_string())? {
-                        Some(b) => println!("{}", serde_json::to_string_pretty(&b).unwrap_or_default()),
+                        Some(b) => print_blob(&b, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no blueprint)" }),
                     }
                     Ok(())
@@ -538,7 +618,7 @@ fn run() -> Result<(), String> {
                 "get" => {
                     let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
                     match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
-                        Some(p) => println!("{}", serde_json::to_string_pretty(&p).unwrap_or_default()),
+                        Some(p) => print_blob(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
                         None if args.json => println!("null"),
                         None => println!("(no integration '{id}')"),
                     }
@@ -578,7 +658,7 @@ fn run() -> Result<(), String> {
                 // `lesson list [--status pending|confirmed|discarded]` — JSON array (the review queue).
                 "list" => {
                     let lessons = s.lesson_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
-                    println!("{}", serde_json::to_string_pretty(&lessons).unwrap_or_else(|_| "[]".into()));
+                    print_blob(&serde_json::to_value(&lessons).unwrap_or_default(), args.pretty);
                     Ok(())
                 }
                 "confirm" | "discard" => {
@@ -645,8 +725,206 @@ fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
     Ok(refs)
 }
 
-fn to_json(issue: &PlanIssue) -> String {
-    serde_json::to_string_pretty(issue).unwrap_or_else(|_| "{}".into())
+/// Print a JSON value compact by default — the agent-facing reads are token-budget-sensitive (#1562),
+/// so an embedded `plan.db` read shouldn't cost an extra newline+indent per field. `--pretty` restores
+/// the indented form for human inspection.
+fn print_blob(v: &serde_json::Value, pretty: bool) {
+    let s = if pretty {
+        serde_json::to_string_pretty(v).unwrap_or_default()
+    } else {
+        serde_json::to_string(v).unwrap_or_default()
+    };
+    println!("{s}");
+}
+
+/// Sanitize one cell for TSV output: collapse the delimiters (tab / newline / CR) to a single space
+/// so a free-text title or body can't break the one-row-per-issue table.
+fn tsv(s: &str) -> String {
+    s.replace(['\t', '\n', '\r'], " ")
+}
+
+/// Render a phase JSON value (a 1-based number, or a name string) to a bare cell.
+fn phase_str(p: &Option<serde_json::Value>) -> String {
+    match p {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(v) => v.to_string().trim_matches('"').to_string(),
+        None => String::new(),
+    }
+}
+
+/// The lean default for `list`/`mine`: a header row + one tab-separated row per issue. Title is last
+/// (it's the free-text column) and every cell is delimiter-sanitized. Value-lists show as counts;
+/// the full detail is one `get <ref>` away.
+fn render_summary_tsv(rows: &[IssueSummary]) -> String {
+    let mut out = String::from("ref\tstatus\tstream\tphase\tacc\towns\tdeps\ttitle\n");
+    for r in rows {
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            tsv(&r.r#ref),
+            tsv(&r.status),
+            tsv(r.stream.as_deref().unwrap_or("")),
+            tsv(&phase_str(&r.phase)),
+            r.acceptance,
+            r.owns,
+            r.depends_on,
+            tsv(&r.title),
+        ));
+    }
+    out
+}
+
+/// `list --fields ref,title,status` → TSV of just the named columns (header + rows). Unknown names
+/// render as a blank column (a typo is visible, not fatal); `body` is reachable here when explicitly asked.
+fn render_fields_tsv(issues: &[PlanIssue], spec: &str) -> String {
+    let cols: Vec<&str> = spec.split(',').map(|c| c.trim()).filter(|c| !c.is_empty()).collect();
+    let mut out = String::new();
+    out.push_str(&cols.join("\t"));
+    out.push('\n');
+    for i in issues {
+        let row: Vec<String> = cols.iter().map(|c| tsv(&issue_field(i, c))).collect();
+        out.push_str(&row.join("\t"));
+        out.push('\n');
+    }
+    out
+}
+
+/// Resolve one named field of a {@link PlanIssue} to a string cell (for `--fields`). Counts stay full
+/// here — `--fields` is an explicit projection, so the caller gets exactly what they named.
+fn issue_field(i: &PlanIssue, field: &str) -> String {
+    match field {
+        "ref" => i.r#ref.clone(),
+        "title" => i.title.clone(),
+        "status" => i.status.clone(),
+        "stream" => i.stream.clone().unwrap_or_default(),
+        "repo" => i.repo.clone().unwrap_or_default(),
+        "parent" => i.parent.clone().unwrap_or_default(),
+        "phase" => phase_str(&i.phase),
+        "acceptance" => i.acceptance.join(" | "),
+        "owns" => i.owns.join(", "),
+        "dependsOn" | "depends_on" | "deps" => i.depends_on.join(", "),
+        "labels" => i.labels.join(", "),
+        "body" => i.body.clone().unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// Reduce a full FleetPlan JSON to the lean per-stream view (`id` / `name` / `dependsOn`). The
+/// permission/flow/kickoff detail is reached with `fleet get <stream-id>` (one stream) or `--full`.
+fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
+    let streams: Vec<serde_json::Value> = f
+        .get("streams")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|st| {
+                    serde_json::json!({
+                        "id": st.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                        "name": st.get("name").cloned().unwrap_or(serde_json::Value::Null),
+                        "dependsOn": st.get("dependsOn").cloned().unwrap_or_else(|| serde_json::json!([])),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({ "streams": streams })
+}
+
+/// The aggregated plan overview behind the `summary` verb — computed once, rendered as text or JSON.
+struct PlanOverview {
+    total: usize,
+    /// Per-status counts, canonical {@link STATUSES} order, non-zero only.
+    status: Vec<(String, usize)>,
+    /// Per-stream counts, first-seen order.
+    streams: Vec<(String, usize)>,
+    /// Per-phase counts: (1-based number, resolved name, count), phase order.
+    phases: Vec<(usize, String, usize)>,
+}
+
+/// Tally a lean issue set into a {@link PlanOverview}. Phase values that are names resolve to their
+/// 1-based roster position so a name-tagged and a number-tagged issue land in the same bucket.
+fn compute_overview(rows: &[IssueSummary], phases: &[PlanPhase]) -> PlanOverview {
+    let status: Vec<(String, usize)> = STATUSES
+        .iter()
+        .filter_map(|st| {
+            let n = rows.iter().filter(|r| r.status == *st).count();
+            (n > 0).then(|| ((*st).to_string(), n))
+        })
+        .collect();
+
+    let mut stream_order: Vec<String> = Vec::new();
+    let mut stream_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for r in rows {
+        if let Some(s) = &r.stream {
+            if !stream_count.contains_key(s) {
+                stream_order.push(s.clone());
+            }
+            *stream_count.entry(s.clone()).or_default() += 1;
+        }
+    }
+    let streams: Vec<(String, usize)> = stream_order.into_iter().map(|s| {
+        let n = stream_count[&s];
+        (s, n)
+    }).collect();
+
+    // Resolve a phase value to its 1-based number (a name → its roster index + 1).
+    let phase_num = |p: &Option<serde_json::Value>| -> Option<usize> {
+        match p {
+            Some(serde_json::Value::Number(n)) => n.as_u64().map(|v| v as usize),
+            Some(serde_json::Value::String(s)) => phases.iter().position(|ph| ph.name == *s).map(|i| i + 1),
+            _ => None,
+        }
+    };
+    let mut phase_count: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    for r in rows {
+        if let Some(n) = phase_num(&r.phase) {
+            *phase_count.entry(n).or_default() += 1;
+        }
+    }
+    let phases: Vec<(usize, String, usize)> = phase_count
+        .into_iter()
+        .map(|(n, c)| {
+            let name = phases.get(n - 1).map(|p| p.name.clone()).unwrap_or_default();
+            (n, name, c)
+        })
+        .collect();
+
+    PlanOverview { total: rows.len(), status, streams, phases }
+}
+
+/// Render the overview as three compact lines (totals · streams · phases).
+fn render_overview_text(o: &PlanOverview) -> String {
+    let mut out = format!("{} issue{}", o.total, if o.total == 1 { "" } else { "s" });
+    for (st, n) in &o.status {
+        out.push_str(&format!(" · {st} {n}"));
+    }
+    out.push('\n');
+    if !o.streams.is_empty() {
+        let parts: Vec<String> = o.streams.iter().map(|(s, n)| format!("{s} {n}")).collect();
+        out.push_str(&format!("stream: {}\n", parts.join(" · ")));
+    }
+    if !o.phases.is_empty() {
+        let parts: Vec<String> = o
+            .phases
+            .iter()
+            .map(|(n, name, c)| if name.is_empty() { format!("{n} {c}") } else { format!("{n} {name} {c}") })
+            .collect();
+        out.push_str(&format!("phase:  {}\n", parts.join(" · ")));
+    }
+    out
+}
+
+/// Render the overview as a structured object (for `summary --json`).
+fn overview_json(o: &PlanOverview) -> serde_json::Value {
+    let status: serde_json::Map<String, serde_json::Value> =
+        o.status.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();
+    let streams: serde_json::Map<String, serde_json::Value> =
+        o.streams.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();
+    let phases: Vec<serde_json::Value> = o
+        .phases
+        .iter()
+        .map(|(n, name, c)| serde_json::json!({ "phase": n, "name": name, "count": c }))
+        .collect();
+    serde_json::json!({ "total": o.total, "status": status, "streams": streams, "phases": phases })
 }
 
 /// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
@@ -768,14 +1046,27 @@ bsc-plan — the project plan store (#plan-db)
 USAGE:
   bsc-plan <command> [args] [--db <path>] [--json]
 
+READING IS LEAN BY DEFAULT (#1562): list/mine emit a compact TSV (counts, no body) and --json emits
+a compact summary array; escalate only when you need more — `get <ref>` for one full issue, or the
+list flags below. This keeps an embedded plan.db read cheap on the agent token budget.
+
 COMMANDS:
   add                       upsert from JSON on stdin (one object or array); prints ref(s)
-  get <ref>                 print one issue's full spec
-  list [--status S] [--stream S]   list issues (optionally filtered)
+  get <ref>                 print one issue's FULL spec (--json compact; --pretty to indent)
+  summary                   plan overview: totals + per-status / per-stream / per-phase counts
+  list [--status S] [--stream S] [--full] [--fields a,b] [--limit N] [--since EPOCH]
+                            lean issue table by default; escalate with the flags
   mine --stream S [--status S]     your stream's issues (alias for list --stream)
   status <ref> <status>     set status: open|in_progress|blocked|complete|verified|failed
   remove <ref>              delete an issue
-  render                    print the issues.json projection to stdout
+  render                    print the issues.json projection to stdout (full, unchanged)
+
+LIST ESCALATION FLAGS:
+  --full                    every field (not the lean summary) — TSV lines, or full --json
+  --fields ref,title,...    project just these columns as TSV (body reachable here)
+  --limit N                 cap to N rows (plan order)
+  --since EPOCH             only rows changed after EPOCH seconds (resume-delta read)
+  --pretty                  re-indent a --json / blob read (default is compact)
 
 FEATURES (titles-first):
   feature add <name>...     register feature title(s) — the roster (slug derived from name)
@@ -840,3 +1131,142 @@ LESSONS (self-correction candidates — usually captured via the `bsc-learned` h
 The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
 The connectors store is ~/.base-studio-code/connectors.json (BSC_CONNECTORS overrides).
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(r: &str, stream: Option<&str>, phase: Option<serde_json::Value>, acc: usize) -> IssueSummary {
+        IssueSummary {
+            r#ref: r.into(), title: r.into(), status: "open".into(),
+            stream: stream.map(Into::into), phase, acceptance: acc, owns: 0, depends_on: 0,
+        }
+    }
+
+    #[test]
+    fn summary_tsv_has_header_and_one_row_per_issue_title_last() {
+        let rows = vec![summary("F1", Some("auth"), Some(serde_json::json!(2)), 3)];
+        let out = render_summary_tsv(&rows);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], "ref\tstatus\tstream\tphase\tacc\towns\tdeps\ttitle");
+        let cells: Vec<&str> = lines[1].split('\t').collect();
+        assert_eq!(cells[0], "F1");
+        assert_eq!(cells[2], "auth");
+        assert_eq!(cells[3], "2");
+        assert_eq!(cells[4], "3"); // acceptance count
+        assert_eq!(cells.last(), Some(&"F1")); // title is the last column
+        assert_eq!(cells.len(), 8);
+    }
+
+    #[test]
+    fn summary_tsv_sanitizes_delimiters_in_title() {
+        let mut row = summary("F1", None, None, 0);
+        row.title = "has\ta tab\nand newline".into();
+        let out = render_summary_tsv(&row_slice(&row));
+        // exactly two lines (header + one row) — the embedded tab/newline must NOT split the table
+        assert_eq!(out.lines().count(), 2);
+        let cells: Vec<&str> = out.lines().nth(1).unwrap().split('\t').collect();
+        assert_eq!(cells.len(), 8);
+        assert_eq!(cells[7], "has a tab and newline");
+    }
+
+    fn row_slice(r: &IssueSummary) -> Vec<IssueSummary> {
+        vec![r.clone()]
+    }
+
+    #[test]
+    fn fields_projection_emits_only_named_columns_unknown_is_blank() {
+        let issues = vec![PlanIssue {
+            r#ref: "F1".into(), title: "Login".into(), status: "open".into(),
+            owns: vec!["src/a".into(), "src/b".into()], ..Default::default()
+        }];
+        let out = render_fields_tsv(&issues, "ref,owns,nope");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], "ref\towns\tnope");
+        let cells: Vec<&str> = lines[1].split('\t').collect();
+        assert_eq!(cells[0], "F1");
+        assert_eq!(cells[1], "src/a, src/b");
+        assert_eq!(cells[2], ""); // unknown field → blank column, not an error
+    }
+
+    #[test]
+    fn fleet_lean_keeps_only_id_name_depends_on() {
+        let full = serde_json::json!({
+            "streams": [
+                { "id": "auth", "name": "Auth", "dependsOn": ["core"], "permissions": { "git": "write" }, "kickoff": "long..." },
+                { "id": "ui", "name": "UI" }
+            ],
+            "director": { "enabled": true }
+        });
+        let lean = fleet_lean(&full);
+        let streams = lean["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 2);
+        assert_eq!(streams[0]["id"], serde_json::json!("auth"));
+        assert_eq!(streams[0]["dependsOn"], serde_json::json!(["core"]));
+        assert!(streams[0].get("permissions").is_none(), "lean fleet drops the heavy detail");
+        assert_eq!(streams[1]["dependsOn"], serde_json::json!([])); // missing → empty
+    }
+
+    #[test]
+    fn overview_counts_by_status_stream_and_phase() {
+        let rows = vec![
+            summary("F1", Some("auth"), Some(serde_json::json!(1)), 0),
+            summary("F2", Some("auth"), Some(serde_json::json!(2)), 0),
+            summary("F3", Some("ui"), Some(serde_json::json!("Core")), 0),
+        ];
+        let phases = vec![
+            PlanPhase { name: "Foundations".into(), description: String::new() },
+            PlanPhase { name: "Core".into(), description: String::new() },
+        ];
+        let o = compute_overview(&rows, &phases);
+        assert_eq!(o.total, 3);
+        assert_eq!(o.status, vec![("open".to_string(), 3)]);
+        assert_eq!(o.streams, vec![("auth".to_string(), 2), ("ui".to_string(), 1)]);
+        // phase 2 has F2 (number) + F3 (name "Core" resolves to roster position 2)
+        assert_eq!(o.phases, vec![(1, "Foundations".to_string(), 1), (2, "Core".to_string(), 2)]);
+
+        let text = render_overview_text(&o);
+        assert!(text.starts_with("3 issues · open 3"));
+        assert!(text.contains("stream: auth 2 · ui 1"));
+        assert!(text.contains("phase:  1 Foundations 1 · 2 Core 2"));
+
+        let json = overview_json(&o);
+        assert_eq!(json["total"], serde_json::json!(3));
+        assert_eq!(json["status"]["open"], serde_json::json!(3));
+        assert_eq!(json["streams"]["auth"], serde_json::json!(2));
+        assert_eq!(json["phases"][1], serde_json::json!({ "phase": 2, "name": "Core", "count": 2 }));
+    }
+
+    #[test]
+    fn print_blob_compactness_is_the_default() {
+        // We can't capture stdout cheaply here, but the format choice is the contract: compact unless pretty.
+        let v = serde_json::json!({ "a": 1, "b": [2, 3] });
+        assert_eq!(serde_json::to_string(&v).unwrap(), "{\"a\":1,\"b\":[2,3]}");
+        assert!(serde_json::to_string_pretty(&v).unwrap().contains('\n'));
+    }
+
+    #[test]
+    fn phase_str_renders_number_and_name() {
+        assert_eq!(phase_str(&Some(serde_json::json!(3))), "3");
+        assert_eq!(phase_str(&Some(serde_json::json!("auth"))), "auth");
+        assert_eq!(phase_str(&None), "");
+    }
+
+    #[test]
+    fn list_dispatch_lean_vs_full_against_a_real_db() {
+        // End-to-end through the Store: lean omits body, full keeps it.
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&PlanIssue {
+            r#ref: "F1".into(), title: "Add login".into(), stream: Some("auth".into()),
+            body: Some("BIGBODY".into()), acceptance: vec!["x".into()], ..Default::default()
+        }).unwrap();
+        // matches what `list` (lean) feeds render_summary_tsv
+        let lean = s.list_summary(None, None, None, None).unwrap();
+        let tsv = render_summary_tsv(&lean);
+        assert!(!tsv.contains("BIGBODY"));
+        assert!(tsv.contains("F1"));
+        // matches what `list --full` / `--fields body` can reach
+        let full = s.list_filtered(None, None, None, None).unwrap();
+        assert!(render_fields_tsv(&full, "ref,body").contains("BIGBODY"));
+    }
+}
