@@ -214,6 +214,18 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
     tail_lines(&path, limit, false)
 }
 
+/// Tail one of the bsc-* TSV streams by registry key (`coord`/`audit`/`skills`/`hooks`/`mcp`/
+/// `tokens`): the newest `limit` non-blank lines. `newest_first` matches each stream's convention —
+/// the audit/skill/hook/mcp readers replay newest-first; the coord log replays oldest-first. Empty
+/// for an unknown key or a missing/unreadable file. The single body behind the per-stream
+/// `read_*_log` command wrappers in `observability::audit`.
+pub(crate) fn read_tsv_log(stream: &str, limit: usize, newest_first: bool) -> Vec<String> {
+    let Some((_, file, _)) = TSV_STREAMS.iter().find(|(k, _, _)| *k == stream) else {
+        return Vec::new();
+    };
+    tail_lines(&bsc_base_dir().join(file), limit, newest_first)
+}
+
 /// Truncate a file to empty (the clear primitive). No-ops on a missing file.
 fn clear_file(path: &Path) -> Result<(), String> {
     if path.exists() {
@@ -303,6 +315,15 @@ mod tests {
         // Missing file → empty, never a panic.
         assert!(tail_lines(&path, 5, true).is_empty());
         assert!(tail_lines(&path, 5, false).is_empty());
+    }
+
+    #[test]
+    fn read_tsv_log_is_empty_for_unknown_stream() {
+        // An unknown registry key returns empty without touching the filesystem; `perf`/`app`
+        // are not TSV keys either.
+        assert!(read_tsv_log("nope", 10, true).is_empty());
+        assert!(read_tsv_log("perf", 10, true).is_empty());
+        assert!(read_tsv_log("app", 10, false).is_empty());
     }
 
     #[test]
