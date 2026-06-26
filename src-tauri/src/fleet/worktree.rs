@@ -33,11 +33,7 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let clone_str = clone.to_string_lossy().into_owned();
-        // Reuse the branch if a prior run already created it; otherwise create it.
-        let mut probe = std::process::Command::new("git");
-        probe.args(["-C", &clone_str, "rev-parse", "--verify", "--quiet", &format!("refs/heads/{slug}")]);
-        let branch_exists = no_window(&mut probe).status().map(|s| s.success()).unwrap_or(false);
-        add_worktree_healing(&clone_str, &wt_str, &slug, branch_exists)
+        add_worktree_healing(&clone_str, &wt_str, &slug)
             .map_err(|e| format!("ensure_worktree: {e} for {repo} / {agent_id}"))?;
         log::info!("ensure_worktree: {repo} agent {agent_id} → {wt_str}");
     }
@@ -63,39 +59,49 @@ pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id:
     Ok(wt_str)
 }
 
-/// Run `git worktree add` for branch `slug` at `wt_str` in the clone at `clone_str`, capturing
-/// git's stderr so a failure is self-describing, and self-healing a dangling worktree admin record.
+/// Create the git worktree for branch `slug` at `wt_str` in the clone at `clone_str`, capturing
+/// git's stderr so a failure is self-describing, and self-healing the two ways a prior aborted run
+/// leaves the repo unable to re-launch.
 ///
-/// When a prior worktree directory was removed *outside* `git worktree remove` (a crash mid-create,
-/// a manual `rm`, or the `node_modules` junction hazard), git keeps a dangling record in
-/// `.git/worktrees/<id>` that still claims the branch — so the next `worktree add` fails with
-/// `fatal: '<branch>' is already used by worktree at '<gone path>'`. `git worktree prune` clears
-/// exactly that record, so on a first failure we prune and retry once before surfacing the error
-/// (#1568). `branch_exists` selects reuse (`add <path> <branch>`) vs creation (`add -b <branch>
-/// <path>`), matching the caller's branch probe.
-fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str, branch_exists: bool) -> Result<(), String> {
-    let mut args: Vec<String> = vec!["-C".into(), clone_str.into(), "worktree".into(), "add".into()];
-    if branch_exists {
-        args.push(wt_str.into());
-        args.push(slug.into());
-    } else {
-        args.push("-b".into());
-        args.push(slug.into());
-        args.push(wt_str.into());
-    }
-    let run_add = || -> std::io::Result<std::process::Output> {
+/// The add form depends on whether the branch already exists — reuse (`add <path> <branch>`) vs
+/// create (`add -b <branch> <path>`) — so the branch is **probed** first. On a failure we:
+///   1. `git worktree prune` — clears a **dangling worktree record** (a prior worktree dir removed
+///      *outside* `git worktree remove` — crash, manual `rm`, the `node_modules` junction hazard —
+///      leaves a record that still claims the path/branch, failing the add with
+///      `'<x>' is a missing but already registered worktree` / `already used by worktree at '<gone>'`).
+///   2. **Re-probe and rebuild the add form**, then retry once. This is the crucial step: a failed
+///      `add -b <branch>` **creates the branch before it fails** on the path, so a blind retry of the
+///      same `-b` would hit `fatal: a branch named '<x>' already exists` (#1570). Re-probing detects
+///      the now-existing branch and retries with the reuse form instead.
+///
+/// Both healing actions are idempotent and harmless when nothing is wrong. git's stderr is surfaced
+/// verbatim if the retry still fails (#1568).
+fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(), String> {
+    let branch_ref = format!("refs/heads/{slug}");
+    let branch_exists = || {
+        let mut p = std::process::Command::new("git");
+        p.args(["-C", clone_str, "rev-parse", "--verify", "--quiet", &branch_ref]);
+        no_window(&mut p).status().map(|s| s.success()).unwrap_or(false)
+    };
+    let run_add = |reuse: bool| -> std::io::Result<std::process::Output> {
         let mut c = std::process::Command::new("git");
-        c.args(&args);
+        c.args(["-C", clone_str, "worktree", "add"]);
+        if reuse {
+            c.args([wt_str, slug]); // attach the existing branch
+        } else {
+            c.args(["-b", slug, wt_str]); // create the branch at HEAD
+        }
         no_window(&mut c).output()
     };
-    let mut out = run_add().map_err(|e| e.to_string())?;
+
+    let mut out = run_add(branch_exists()).map_err(|e| e.to_string())?;
     if !out.status.success() {
-        // Clear a dangling worktree record (the dir is gone but git still claims the branch), then
-        // retry the add once. Prune is idempotent and harmless when there's nothing to prune.
         let mut prune = std::process::Command::new("git");
         prune.args(["-C", clone_str, "worktree", "prune"]);
         let _ = no_window(&mut prune).status();
-        out = run_add().map_err(|e| e.to_string())?;
+        // Re-probe: the first attempt may itself have created the branch, so the correct form can
+        // have flipped from create to reuse.
+        out = run_add(branch_exists()).map_err(|e| e.to_string())?;
     }
     if !out.status.success() {
         return Err(format!(
@@ -310,10 +316,34 @@ mod tests {
         let mut plain = std::process::Command::new("git");
         plain.args(["-C", &clone.to_string_lossy(), "worktree", "add", &base.join("fresh").to_string_lossy(), "feat"]);
         assert!(!no_window(&mut plain).output().unwrap().status.success(), "dangling record should block a plain add");
-        // The healing helper prunes the stale record and succeeds.
+        // The healing helper prunes the stale record and succeeds (probes `feat`, reuses it).
         let target = base.join("target");
-        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "feat", true).unwrap();
+        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "feat").unwrap();
         assert!(target.join(".git").exists(), "worktree created after self-heal");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// #1570: a failed `worktree add -b <branch>` CREATES the branch before it fails on the path, so
+    /// a blind retry of the same `-b` would hit "a branch named '<x>' already exists". The helper
+    /// re-probes after pruning and switches to the reuse form. Reproduces the STEM `ui-modes` launch.
+    #[test]
+    fn add_worktree_reprobes_after_a_failed_create() {
+        let base = unique_dir("reprobe");
+        let clone = base.join("clone");
+        init_repo_with_commit(&clone);
+        // Occupy the TARGET path with a dangling record (a worktree on a different branch, dir
+        // removed without prune). The target branch `ui-modes` does not exist yet.
+        let target = base.join("wt");
+        git_in(&clone, &["worktree", "add", "-b", "decoy", &target.to_string_lossy()]);
+        fs::remove_dir_all(&target).unwrap();
+        // First `-b ui-modes <target>` fails on the dangling path but creates the branch; prune
+        // clears the record; re-probe finds ui-modes; the reuse form succeeds.
+        add_worktree_healing(&clone.to_string_lossy(), &target.to_string_lossy(), "ui-modes").unwrap();
+        assert!(target.join(".git").exists(), "worktree created after re-probe + reuse");
+        let mut head = std::process::Command::new("git");
+        head.args(["-C", &target.to_string_lossy(), "rev-parse", "--abbrev-ref", "HEAD"]);
+        let branch = String::from_utf8_lossy(&no_window(&mut head).output().unwrap().stdout).trim().to_string();
+        assert_eq!(branch, "ui-modes", "reused the branch the failed -b created");
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -322,10 +352,11 @@ mod tests {
     #[test]
     fn add_worktree_surfaces_git_stderr() {
         let base = unique_dir("stderr");
-        let clone = base.join("clone");
-        init_repo_with_commit(&clone);
-        // Reuse-add a branch that does not exist → git errors with an invalid-reference message.
-        let err = add_worktree_healing(&clone.to_string_lossy(), &base.join("wt").to_string_lossy(), "nope", true)
+        // A clone path that is not a git repo → every git call errors; the message must reach the
+        // caller (and the prune+retry can't paper over it).
+        let bogus = base.join("not-a-repo");
+        fs::create_dir_all(&bogus).unwrap();
+        let err = add_worktree_healing(&bogus.to_string_lossy(), &base.join("wt").to_string_lossy(), "x")
             .unwrap_err();
         assert!(err.starts_with("git worktree add failed:"), "carries the helper prefix: {err}");
         assert!(err.trim_end().len() > "git worktree add failed:".len(), "carries git's actual stderr: {err}");
