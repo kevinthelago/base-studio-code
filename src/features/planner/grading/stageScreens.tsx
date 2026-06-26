@@ -19,18 +19,15 @@ import { PreviewPaneShell } from "../preview/PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "../preview/renderPreview";
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FILE_INTAKE_ID } from "../shared/fileIntake";
-import { GradeReportPane } from "./GradeReportPane";
-import { GRADE_RUBRIC_ID } from "./gradeDispatch";
-import { GRADE_LLM_ID } from "./gradeLLM";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */
 export interface StageScreenProps {
   projectKey: string;
-  /** The current (reached) section's key — screens bound to a section (e.g. grading)
-   *  use it; section-agnostic screens (render-preview) ignore it. (#615) */
+  /** The current (reached) section's key — screens bound to a section use it;
+   *  section-agnostic screens (render-preview) ignore it. */
   sectionKey?: string;
-  /** The current section's plan markdown, when available (e.g. for content grading). */
+  /** The current section's plan markdown, when available. */
   sectionContent?: string;
   onClose?: () => void;
 }
@@ -43,9 +40,6 @@ const STAGE_SCREENS: Record<string, StageScreenComponent> = {
   [RENDER_PREVIEW_ID]: PreviewPaneShell,
   // Drag-and-drop file intake (#604): stage design/any files for the planner to route.
   [FILE_INTAKE_ID]: FileIntakePane,
-  // Grade report card (#615): renders the section's grader results (multiple → tabs).
-  [GRADE_RUBRIC_ID]: GradeReportPane,
-  [GRADE_LLM_ID]: GradeReportPane,
 };
 
 /** The second screen for a stage id, or undefined when it has none. */

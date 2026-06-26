@@ -18,7 +18,6 @@ import type { FleetPlan, AgentStream } from "@/features/planner/stages/planSecti
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
 import type { StageRunState } from "@/features/planner/grading/stageRun";
-import type { GradeResult } from "@/features/planner/grading/grading";
 import type { Blueprint, BlueprintSection } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/shared/deployConfig";
 import type { SourceConfig } from "@/features/planner/shared/sourceConfig";
@@ -697,11 +696,6 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   // is showing (#546), so its approve button targets the right one. Session-only.
   stagePreview: Record<string, { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null>;
   setStagePreview: (projectKey: string, value: { srcDoc: string; mode: "2d" | "3d"; screen?: string } | null) => void;
-  // Per-section grades (#615): project → section key → one GradeResult per grader id.
-  // A section can carry MULTIPLE graders; setSectionGrade upserts by graderId. The
-  // report-card pipeline screen renders these. Session-only.
-  sectionGrades: Record<string, Record<string, GradeResult[]>>;
-  setSectionGrade: (projectKey: string, sectionKey: string, result: GradeResult) => void;
   // Per-screen UI approval (#544/#546). `uiScreens` is the set of screens the planner
   // has declared via <ui_preview> tags (the denominator); `uiApproved` is the names the
   // user has signed off in the preview pane (the numerator). The UI stage completes only

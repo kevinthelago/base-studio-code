@@ -15,7 +15,6 @@ import { resolvePhaseIndex } from "../issues/planIssues";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveDirectorDrive } from "../fleet/directorDrive";
 
-export type { PlanGrade, IssueGrade, MilestoneGrade, RepoGrade, Letter } from "@/features/planner/lib/planGrade";
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.

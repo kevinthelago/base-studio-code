@@ -17,16 +17,11 @@ export interface LifecycleSignals {
   totalIssues: number;
   /** Issues marked closed on GitHub (from ghProgress / phaseStructure). */
   closedIssues: number;
-  /** 0–1 plan grade score from planGrade; undefined when no issues exist. */
-  planGradeScore?: number;
 }
 
-// A project is "near-complete" when ≥75% of its issues are closed, OR when
-// ≥50% are closed AND the plan grade is B or better (≥0.75). Both thresholds
-// are conservative to avoid false positives on small plans.
-const NEAR_COMPLETE_RATIO        = 0.75;
-const NEAR_COMPLETE_RATIO_GRADED = 0.50;
-const NEAR_COMPLETE_GRADE_B      = 0.75;
+// A project is "near-complete" when ≥75% of its issues are closed — a conservative
+// threshold to avoid false positives on small plans.
+const NEAR_COMPLETE_RATIO = 0.75;
 
 /**
  * Derive a project's lifecycle state from its current signals.
@@ -36,10 +31,7 @@ const NEAR_COMPLETE_GRADE_B      = 0.75;
 export function deriveLifecycleState(s: LifecycleSignals): LifecycleState {
   if (!s.isExisting) return "new";
   const ratio = s.totalIssues > 0 ? s.closedIssues / s.totalIssues : 0;
-  const nearComplete =
-    ratio >= NEAR_COMPLETE_RATIO ||
-    (ratio >= NEAR_COMPLETE_RATIO_GRADED && (s.planGradeScore ?? 0) >= NEAR_COMPLETE_GRADE_B);
-  return nearComplete ? "near-complete" : "active";
+  return ratio >= NEAR_COMPLETE_RATIO ? "near-complete" : "active";
 }
 
 export const LIFECYCLE_LABEL: Record<LifecycleState, string> = {
