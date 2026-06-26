@@ -7,16 +7,12 @@
 
 use crate::seed;
 use crate::types::{Domain, Standard};
+use bsc_util::now_secs;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Store {
     conn: Connection,
-}
-
-fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 /// The corpus version + last-updated stamp, surfaced so callers/UI can show how current the

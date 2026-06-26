@@ -5,18 +5,16 @@
 
 use crate::platform::fsx::sanitize_project_key;
 
+/// The user's home directory. Delegates to the shared [`bsc_util::home_dir`] (#1646) so the app
+/// and every `bsc-*` CLI resolve the SAME directory; an unset home falls back to the empty path
+/// (the historical behavior — callers join `.base-studio-code` onto it). The precedence
+/// (`USERPROFILE`-then-`HOME` on Windows, `HOME` on Unix) lives there.
 pub(crate) fn home_dir() -> std::path::PathBuf {
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default())
-    } else {
-        std::env::var("HOME").unwrap_or_default()
-    };
-    std::path::PathBuf::from(home)
+    bsc_util::home_dir().unwrap_or_default()
 }
 
 pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
-    home_dir().join(".base-studio-code")
+    bsc_util::bsc_base_dir().unwrap_or_else(|| std::path::PathBuf::from(".base-studio-code"))
 }
 
 /// The project hub directory and the planner session's CWD: `~/.base-studio-code/projects/<key>`.

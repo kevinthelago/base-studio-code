@@ -5,16 +5,12 @@
 //! caller falls back to the network on a miss, so a missing/corrupt cache never breaks a tool call.
 
 use crate::types::Paper;
+use bsc_util::now_secs;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Cache {
     conn: Connection,
-}
-
-fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 impl Cache {
