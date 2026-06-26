@@ -12,15 +12,8 @@
 //! dedicated connector later (e.g. to capture its behavior layer), exactly as the spec's
 //! connector seam intends. Read-only throughout (#782).
 
-use serde_json::Value;
-
-use crate::rest::{RestConnector, RestResource};
-use crate::Result;
-
-/// One resource entry: `(object name, request path/segment, array_key envelope)`.
-/// `array_key` is the key the record array lives under in the response, or `None` if the body
-/// is itself an array.
-type ResourceDef = (&'static str, &'static str, Option<&'static str>);
+use crate::descriptor::{ResourceDef, RestPreset};
+use crate::rest::RestResource;
 
 /// An out-of-the-box REST configuration for a vendor.
 pub struct VendorPreset {
@@ -32,24 +25,15 @@ pub struct VendorPreset {
 }
 
 impl VendorPreset {
-    /// This preset's resources as [`RestResource`]s.
-    pub fn resources(&self) -> Vec<RestResource> {
-        self.resources.iter().map(|(n, p, k)| RestResource::new(*n, *p, *k)).collect()
-    }
-
     /// The resource object names this preset reads (for the catalog "contributes" blurb, #1288).
     pub fn resource_names(&self) -> Vec<&'static str> {
         self.resources.iter().map(|(n, _, _)| *n).collect()
     }
+}
 
-    /// Build a generic REST connector configured for this vendor. `fetch` resolves a resource
-    /// path against the instance and carries the auth — never stored by the connector (#1194).
-    pub fn connector(
-        &self,
-        instance_name: impl Into<String>,
-        fetch: impl Fn(&str) -> Result<Value> + Send + Sync + 'static,
-    ) -> RestConnector {
-        RestConnector::new(instance_name, self.resources(), fetch)
+impl RestPreset for VendorPreset {
+    fn rest_resources(&self) -> Vec<RestResource> {
+        self.resources.rest_resources()
     }
 }
 
@@ -941,7 +925,7 @@ mod tests {
         let se = find("softexpert").expect("softexpert preset present out of the box");
         assert_eq!(se.label, "SoftExpert Suite");
         assert_eq!(se.category, "bpm-grc");
-        let resources = se.resources();
+        let resources = se.rest_resources();
         let names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"workflow"));
         assert!(names.contains(&"risk"));
@@ -953,7 +937,7 @@ mod tests {
         let se = find("softexpert").unwrap();
         let names = se.resource_names();
         assert!(names.contains(&"workflow") && names.contains(&"risk"));
-        assert_eq!(names.len(), se.resources().len());
+        assert_eq!(names.len(), se.rest_resources().len());
     }
 
     #[test]
@@ -972,7 +956,7 @@ mod tests {
         // #1313 — finance / accounting source connectors.
         for id in ["quickbooks", "xero", "netsuite", "plaid"] {
             let p = find(id).unwrap_or_else(|| panic!("{id} preset present out of the box"));
-            assert!(!p.resources().is_empty(), "{id} must declare read resources");
+            assert!(!p.rest_resources().is_empty(), "{id} must declare read resources");
         }
 
         // QuickBooks reads the accounting ledger surface; Plaid groups under `banking`.
@@ -990,7 +974,7 @@ mod tests {
         // POS / commerce additions (#1312). Square + Shopify ship elsewhere; these are the new ids.
         for id in ["toast", "clover", "lightspeed", "stripe"] {
             let p = find(id).unwrap_or_else(|| panic!("{id} preset present out of the box"));
-            assert!(!p.resources().is_empty(), "{id} must declare read resources");
+            assert!(!p.rest_resources().is_empty(), "{id} must declare read resources");
             assert!(!p.label.is_empty(), "{id} must have a label");
         }
         // Stripe is assigned to this issue (#1312) and sits in `payments`.
@@ -999,19 +983,22 @@ mod tests {
         let stripe = find("stripe").unwrap();
         let names = stripe.resource_names();
         assert!(names.contains(&"charges") && names.contains(&"refunds"));
-        assert_eq!(names.len(), stripe.resources().len());
+        assert_eq!(names.len(), stripe.rest_resources().len());
     }
 
     #[test]
     fn preset_builds_a_working_connector() {
         let se = find("softexpert").unwrap();
         // SoftExpert resources are bare arrays (array_key = None).
-        let c = se.connector("acme-se", move |_path| {
-            Ok(serde_json::json!([
-                {"id": 1, "name": "Onboarding", "status": "active"},
-                {"id": 2, "name": "Offboarding", "status": "draft"}
-            ]))
-        });
+        let c = se.connector(
+            "acme-se",
+            Box::new(move |_path| {
+                Ok(serde_json::json!([
+                    {"id": 1, "name": "Onboarding", "status": "active"},
+                    {"id": 2, "name": "Offboarding", "status": "draft"}
+                ]))
+            }),
+        );
         let objs = c.objects().unwrap();
         assert!(objs.iter().any(|o| o.name == "workflow"));
         let rs = c.read("workflow").unwrap();
