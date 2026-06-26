@@ -482,7 +482,7 @@ fn spawn_emitter(
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn pty_create(
+pub(crate) fn pty_create(
     pane_id: String,
     cols: u16,
     rows: u16,
@@ -726,7 +726,7 @@ pub(crate) async fn pty_create(
 }
 
 #[tauri::command]
-pub(crate) async fn pty_write(
+pub(crate) fn pty_write(
     pane_id: String,
     data: String,
     state: State<'_, PtyState>,
@@ -761,7 +761,7 @@ pub(crate) fn pty_broadcast(
 }
 
 #[tauri::command]
-pub(crate) async fn pty_resize(
+pub(crate) fn pty_resize(
     pane_id: String,
     cols: u16,
     rows: u16,
@@ -782,7 +782,7 @@ pub(crate) async fn pty_resize(
 }
 
 #[tauri::command]
-pub(crate) async fn pty_kill(
+pub(crate) fn pty_kill(
     pane_id: String,
     state: State<'_, PtyState>,
     perf_state: State<'_, perf::PerfState>,
