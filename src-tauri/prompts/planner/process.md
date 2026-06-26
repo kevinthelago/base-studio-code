@@ -383,7 +383,7 @@ and `risks` apply to almost every project.
 > `discovery/goal.md`, `discovery/scope.md`, `discovery/stack.md`, `discovery/architecture.md`,
 > `discovery/users.md`, and `discovery/release.md`.** Write each; shape the set for THIS project with `bsc-plan discovery
 > require <topic>` / `bsc-plan discovery unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
-> platform requires `schema`; `bsc-plan discovery list` shows the required set). The Context stage
+> platform requires `schema`; `bsc-plan discovery list` shows the required set). The Discovery stage
 > completes once every required topic's file exists — discovery files are generated, not confirmed.
 
 - `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
