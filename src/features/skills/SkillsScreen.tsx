@@ -7,6 +7,7 @@
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import {
   KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount,
@@ -125,7 +126,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const lines = await invoke<string[]>("read_skill_log", { limit: 4000 }).catch(() => [] as string[]);
+      const lines = await safeInvoke<string[]>("read_skill_log", { limit: 4000 }, []);
       if (!cancelled) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
     };
     load();
