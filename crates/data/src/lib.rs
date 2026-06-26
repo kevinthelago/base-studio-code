@@ -41,6 +41,7 @@ pub mod rest;
 pub mod presets;
 pub mod runtime;
 pub mod registry;
+pub mod descriptor;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -86,6 +87,7 @@ pub use runtime::{
     RUNTIME_AUTH_KINDS,
 };
 pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
+pub use descriptor::{BuildFn, ConnectorDescriptor, ConnectorKind, FetchFn, ResourceDef};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
