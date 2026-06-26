@@ -1,11 +1,18 @@
 // Modular planning stages (#512/#515). The registry is the single source of
-// truth that ties each planning stage's bar, gate, and prompt module together
-// by a stable `id`. Everything is pure here — no React/Tauri — so the gating
-// logic is unit-testable in isolation, and both the progress bar and the Rust
-// prompt assembler can key off the same stage ids.
+// truth for the canonical, ordered stage set and each stage's stable `id` — what
+// the config/ordering layer (defaultStageConfig / enabledOrderedStages) and the
+// blueprint seeder key off.
 //
-// Blueprint schema (#514): a Blueprint is a named, reusable configuration of
-// which stages are active and what per-stage options apply. See Blueprints.tsx.
+// Gating is NOT here. A stage's "done-ness" and applicability are declarative DATA
+// — the `gateRule` / `appliesWhen` carried by each stage's prompt JSON
+// (`src-tauri/prompts/stages/*.json`), evaluated by {@link evalGate} in stageGate.ts
+// against the flat signal bag {@link planStateToSignals} publishes. That makes a
+// stage authorable, shareable, and WAN-distributable as data; the executable code
+// gates that used to live here (#1598) were dead duplicates that had drifted from
+// the authoritative JSON, so they were removed.
+//
+// Everything here is pure — no React/Tauri — so the registry + config logic stays
+// unit-testable, and both the bar and the Rust prompt assembler key off the same ids.
 
 /** All valid stage identifiers, in pipeline order.
  *  `load` is signal-only — it has no PLAN_STAGES entry and is never shown in the bar,
@@ -23,9 +30,10 @@ export type StageId =
   | "load";
 
 /**
- * Normalized snapshot the gates read. A later slice builds this from the live plan
- * data (sections, repos, fleet, …) at the call site; the gates only ever see this
- * shape, which keeps them pure and testable. Use {@link buildPlanStageState} to
+ * Normalized snapshot of live plan progress. A later slice builds this from the live
+ * plan data (sections, repos, fleet, …) via {@link buildPlanStageState}, and
+ * {@link planStateToSignals} (planStageDerive.ts) flattens it into the serializable
+ * {@link PlanSignals} bag the declarative JSON gates read. Use buildPlanStageState to
  * construct one with safe defaults for any field not yet known.
  */
 export interface PlanStageState {
@@ -69,9 +77,6 @@ export interface PlanStageState {
   };
 }
 
-/** Status of a stage for rendering. `na` = not applicable to this project. */
-export type StageStatus = "locked" | "in-progress" | "complete" | "na";
-
 export interface Stage {
   id: StageId;
   /** Short display label shown in the PlanStageBar. */
@@ -79,21 +84,17 @@ export interface Stage {
   /** One-line description of what this stage produces (shown in Blueprint editor). */
   description: string;
   /** Whether the stage can be toggled off in a Blueprint.
-   *  Only `context` is required (optional: false). All other stages — including
+   *  Only `discovery` is required (optional: false). All other stages — including
    *  `structure` — can be omitted by blueprints that don't need them (e.g. a
    *  refactor/cleanup blueprint skips the feature workshop). */
   optional: boolean;
   /** Whether this stage produces a visible output file the app polls for
    *  (e.g. phases.json, fleet.json). Informational only — drives tooltip copy. */
   hasOutputFile: boolean;
-  /** Prerequisite stages. A disabled (or N/A) dependency counts as satisfied. */
+  /** Prerequisite stages (documentation of the canonical ordering). Live dependency
+   *  gating is the blueprint section's declarative `deps`, not this field. */
   dependsOn: StageId[];
   defaultEnabled: boolean;
-  /** When present and false, the stage is N/A for this project (auto-satisfied,
-   *  and hidden by the bar). Used by the UI stage via `requiresUi`. */
-  applies?: (s: PlanStageState) => boolean;
-  /** Stage-local completion + 0..1 progress, ignoring dependencies. */
-  gate: (s: PlanStageState) => { done: boolean; fraction: number };
 }
 
 /** Per-project (or per-blueprint) on/off + ordering of the stages (#512). */
@@ -104,8 +105,8 @@ export interface StageConfig {
 
 // ── The canonical stage registry ─────────────────────────────────────────────
 // Default order puts `ui` before `structure` so issues can reference approved
-// screens (#510). Dependencies encode the real prerequisites; because a disabled
-// dependency is treated as satisfied, turning any stage off never deadlocks others.
+// screens (#510). `dependsOn` documents the real prerequisites; runtime gating
+// reads each stage's declarative JSON `gateRule` / `deps`, not this registry.
 export const PLAN_STAGES: Stage[] = [
   {
     id: "discovery",
@@ -115,10 +116,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: false,
     dependsOn: [],
     defaultEnabled: true,
-    gate: (s) => ({
-      done: s.discovery.requiredDiscoveryReady,
-      fraction: s.discovery.total > 0 ? s.discovery.resolved / s.discovery.total : 0,
-    }),
   },
   {
     id: "repos",
@@ -128,7 +125,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: true,  // repos.json
     dependsOn: [],
     defaultEnabled: true,
-    gate: (s) => ({ done: s.repoCount > 0, fraction: s.repoCount > 0 ? 1 : 0 }),
   },
   {
     // source: connects the migration source, infers the data model, and confirms the schema.
@@ -140,13 +136,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: false,  // the Data Model lives in the project's DuckDB store now (#1446), not a file
     dependsOn: ["discovery", "repos"],
     defaultEnabled: true,
-    // Only applicable when the project has an active data migration source pipeline.
-    applies: (s) => s.migrationSourceEnabled,
-    gate: (s) => {
-      const m = s.datamodel.modelInferred;
-      const r = s.datamodel.schemaRefined;
-      return { done: m && r, fraction: (m ? 0.5 : 0) + (r ? 0.5 : 0) };
-    },
   },
   {
     id: "features",
@@ -156,10 +145,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: true,  // features.json
     dependsOn: ["discovery"],
     defaultEnabled: true,
-    gate: (s) => ({
-      done: s.features.count > 0 && s.features.allConfirmed,
-      fraction: s.features.count > 0 ? (s.features.allConfirmed ? 1 : 0.5) : 0,
-    }),
   },
   {
     id: "ui",
@@ -171,12 +156,6 @@ export const PLAN_STAGES: Stage[] = [
     // capabilities (the planner plans the UI — it does not design/generate the screens) (#825/#1404).
     dependsOn: ["discovery", "features"],
     defaultEnabled: true,
-    applies: (s) => s.requiresUi,
-    // Done when the design is routed to the project OR every screen preview is approved (#837).
-    gate: (s) => ({
-      done: s.ui.routed || (s.ui.total > 0 && s.ui.approved >= s.ui.total),
-      fraction: s.ui.routed ? 1 : (s.ui.total > 0 ? s.ui.approved / s.ui.total : 0),
-    }),
   },
   {
     id: "structure",
@@ -188,10 +167,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: true,  // phases.json + issues.json
     dependsOn: ["discovery", "repos", "features"],
     defaultEnabled: true,
-    gate: (s) => ({
-      done: s.phasesConfirmed && s.issueCount > 0,
-      fraction: (s.phasesConfirmed ? 0.5 : 0) + (s.issueCount > 0 ? 0.5 : 0),
-    }),
   },
   {
     id: "permissions",
@@ -201,10 +176,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: true,  // fleet.json
     dependsOn: ["structure"],
     defaultEnabled: true,
-    gate: (s) => ({
-      done: s.fleet.streams > 0 && s.fleet.profilesComplete,
-      fraction: s.fleet.streams > 0 ? (s.fleet.profilesComplete ? 1 : 0.5) : 0,
-    }),
   },
   {
     id: "automations",
@@ -214,7 +185,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: false,
     dependsOn: ["structure"],
     defaultEnabled: true,
-    gate: (s) => ({ done: s.automationsAck, fraction: s.automationsAck ? 1 : 0 }),
   },
   {
     id: "skills",
@@ -224,7 +194,6 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: false,  // authored straight into the global skills.db via `bsc-skill add` — no file
     dependsOn: [],
     defaultEnabled: true,
-    gate: (s) => ({ done: s.skillsAck, fraction: s.skillsAck ? 1 : 0 }),
   },
 ];
 
@@ -241,7 +210,7 @@ export function defaultStageConfig(): StageConfig {
 }
 
 /**
- * The dynamic-stages seed (#1395 phase 1): ONLY Discovery (`context`) is enabled; every other
+ * The dynamic-stages seed (#1395 phase 1): ONLY Discovery is enabled; every other
  * stage starts OFF and lights up additively as Discovery's classification signals select it.
  * The full registry order is preserved so an additively-enabled stage slots into its place.
  * Distinct from {@link defaultStageConfig} (all-on), which reproduces the legacy blueprint behavior;
@@ -279,44 +248,7 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
   };
 }
 
-function applies(stage: Stage, s: PlanStageState): boolean {
-  return stage.applies ? stage.applies(s) : true;
-}
-
-/** A dependency is satisfied when it is disabled, N/A, or its own gate is done. */
-function depSatisfied(depId: StageId, s: PlanStageState, cfg: StageConfig): boolean {
-  if (!cfg.enabled[depId]) return true;
-  const dep = STAGE_BY_ID[depId];
-  if (!dep) return true;
-  if (!applies(dep, s)) return true;
-  return dep.gate(s).done;
-}
-
-/**
- * Resolve a stage's render status + bar fill, honoring applicability, its gate, and
- * its (enabled) dependencies. A disabled or N/A dependency never blocks a stage.
- */
-export function stageStatus(stage: Stage, s: PlanStageState, cfg: StageConfig): { status: StageStatus; fraction: number } {
-  if (!applies(stage, s)) return { status: "na", fraction: 0 };
-  const g = stage.gate(s);
-  if (g.done) return { status: "complete", fraction: 1 };
-  const locked = stage.dependsOn.some((d) => !depSatisfied(d, s, cfg));
-  return { status: locked ? "locked" : "in-progress", fraction: g.fraction };
-}
-
 /** The enabled stages, in the configured order (what the bar renders). */
 export function enabledOrderedStages(cfg: StageConfig): Stage[] {
   return cfg.order.filter((id) => cfg.enabled[id]).map((id) => STAGE_BY_ID[id]).filter(Boolean);
-}
-
-/**
- * The current ("reached") stage: the first enabled + applicable stage that is neither
- * complete nor locked — the in-progress frontier. When every stage is complete it
- * falls back to the last enabled+applicable stage, so a finished plan still resolves
- * to one. Drives which pipelines' second screens render in the planning page.
- */
-export function currentStage(cfg: StageConfig, s: PlanStageState): Stage | undefined {
-  const stages = enabledOrderedStages(cfg).filter((st) => applies(st, s));
-  const active = stages.find((st) => stageStatus(st, s, cfg).status === "in-progress");
-  return active ?? stages[stages.length - 1];
 }
