@@ -2,8 +2,9 @@
 // Faithful UI; the side-effecting flows (publish / import) take async callbacks so the
 // page shell can wire them to the real gist client (gist.ts) while these stay testable.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import "../../../styles/blueprints.css";
+import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { Ic } from "./blueprintIcons";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type DiffLine } from "./blueprintDiff";
@@ -27,15 +28,11 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   icon: ReactNode; iconBg?: string; iconColor?: string; title: string; sub?: string;
   onClose: () => void; children: ReactNode; foot?: ReactNode; lg?: boolean;
 }) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  useModalDismiss(onClose);
   return (
     <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
       <div className="overlay" style={{ position: "fixed", inset: 0, background: "oklch(0.08 0.005 250 / 0.66)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 30 }}
-        onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        onMouseDown={overlayDismiss(onClose)}>
         <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}
           onMouseDown={(e) => e.stopPropagation()}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>

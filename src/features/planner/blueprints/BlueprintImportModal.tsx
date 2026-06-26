@@ -10,6 +10,7 @@ import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, Ale
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
+import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
@@ -114,12 +115,11 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   useEffect(() => { load(); }, [load]);
 
   // Esc closes; clear any pending toast/busy timers on unmount.
+  useModalDismiss(onClose);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
     const pending = timers.current;
-    return () => { window.removeEventListener("keydown", onKey); pending.forEach(clearTimeout); };
-  }, [onClose]);
+    return () => pending.forEach(clearTimeout);
+  }, []);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -179,7 +179,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
 
   return (
     <div
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={overlayDismiss(onClose)}
       style={{
         position: "fixed", inset: 0, zIndex: 200, background: "oklch(0.08 0.005 250 / .66)",
         backdropFilter: "blur(2.5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 36,
