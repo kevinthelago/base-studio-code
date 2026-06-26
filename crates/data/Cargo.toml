@@ -7,6 +7,13 @@ description = "Canonical Data Model store (DuckDB) + connector framework for the
 [lib]
 name = "bsc_data"
 
+# The planner's accessor to the per-project Data Model + PlatformScan store (#1446); needs the
+# DuckDB store, so it's skipped under --no-default-features.
+[[bin]]
+name = "bsc-data"
+path = "src/bin/bsc-data.rs"
+required-features = ["duckdb-store"]
+
 [features]
 # DuckDB-backed store is on by default. The schema / DDL / connector / coercion
 # logic compiles and tests without it (`--no-default-features`), so the bulk of
