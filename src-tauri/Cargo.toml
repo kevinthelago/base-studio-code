@@ -66,6 +66,11 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 
+# Shared leaf utilities (#1646): the ONE home-dir / `~/.base-studio-code` resolver, so the app
+# and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
+# delegates `home_dir`/`bsc_base_dir` here.
+bsc-util = { path = "../crates/bsc-util" }
+
 # Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
