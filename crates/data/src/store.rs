@@ -31,6 +31,10 @@ pub struct DataStore {
     model: DataModel,
 }
 
+/// A sampled slice of an entity table: the column names plus the rows, every cell read back
+/// as text (`None` ⇒ SQL NULL). Returned by [`DataStore::sample`].
+pub type Sample = (Vec<String>, Vec<Vec<Option<String>>>);
+
 impl DataStore {
     /// Open (or create) a store at `path` for `model`.
     pub fn open(path: impl AsRef<Path>, model: DataModel) -> Result<DataStore> {
@@ -184,6 +188,60 @@ impl DataStore {
         )?;
         Ok(n as usize)
     }
+
+    /// The Data Model this store materializes.
+    pub fn model(&self) -> &DataModel {
+        &self.model
+    }
+
+    /// A small sample of an entity's rows for inspection (#1717). Columns are the entity's
+    /// fields, in declaration order; every cell is read back as text (a NULL → `None`) by
+    /// casting each column to `VARCHAR`, so mixed column types render uniformly and the
+    /// CLI accessor stays type-free. `limit` caps the rows returned.
+    pub fn sample(&self, entity_key: &str, limit: usize) -> Result<Sample> {
+        let entity = self
+            .model
+            .entity(entity_key)
+            .ok_or_else(|| DataError::Schema(format!("unknown entity `{entity_key}`")))?;
+        let cols: Vec<String> = entity.fields.iter().map(|f| f.key.clone()).collect();
+        let select = entity
+            .fields
+            .iter()
+            .map(|f| Ok(format!("CAST({} AS VARCHAR)", ddl::quote_ident(&f.key)?)))
+            .collect::<Result<Vec<_>>>()?
+            .join(", ");
+        let table = ddl::quote_ident(entity_key)?;
+        // `limit` is a usize, so interpolating it is injection-safe.
+        let sql = format!("SELECT {select} FROM {table} LIMIT {limit}");
+        let n = cols.len();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map([], |row| {
+                (0..n).map(|i| row.get::<usize, Option<String>>(i)).collect::<std::result::Result<Vec<_>, _>>()
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok((cols, rows))
+    }
+
+    /// Per-row lineage records attributed to one entity (the `_lineage` rows for it, #781).
+    pub fn entity_lineage_count(&self, entity_key: &str) -> Result<usize> {
+        let n: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM {} WHERE entity = ?", ddl::LINEAGE_TABLE),
+            params![entity_key],
+            |r| r.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// Per-field lineage records attributed to one entity (reconciliation, #785).
+    pub fn entity_field_lineage_count(&self, entity_key: &str) -> Result<usize> {
+        let n: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM {} WHERE entity = ?", ddl::FIELD_LINEAGE_TABLE),
+            params![entity_key],
+            |r| r.get(0),
+        )?;
+        Ok(n as usize)
+    }
 }
 
 /// Insert a rowset into an entity's table, coercing each cell per its field type and
@@ -298,6 +356,48 @@ mod tests {
         let mut store = DataStore::open_in_memory(model()).unwrap();
         let rs = RowSet::default();
         assert!(store.load_rowset("ghost", &rs, &src()).is_err());
+    }
+
+    #[test]
+    fn model_accessor_and_sample_read_back_typed_cells_as_text() {
+        let mut store = DataStore::open_in_memory(model()).unwrap();
+        assert_eq!(store.model().name, "CRM");
+        let rs = RowSet {
+            columns: vec!["id".into(), "name".into(), "balance".into()],
+            rows: vec![
+                vec!["1".into(), "Acme".into(), "1,200.50".into()],
+                vec!["2".into(), "Globex".into(), "".into()], // empty money → NULL
+            ],
+        };
+        store.load_rowset("account", &rs, &src()).unwrap();
+
+        // columns mirror the entity's fields in declaration order
+        let (cols, rows) = store.sample("account", 10).unwrap();
+        assert_eq!(cols, vec!["id", "name", "balance"]);
+        assert_eq!(rows.len(), 2);
+        // money coerced + read back as text; the empty cell is a NULL (None)
+        assert_eq!(rows[0][1].as_deref(), Some("Acme"));
+        assert_eq!(rows[0][2].as_deref(), Some("1200.50"));
+        assert_eq!(rows[1][2], None);
+
+        // limit caps the row count
+        assert_eq!(store.sample("account", 1).unwrap().1.len(), 1);
+        // unknown entity is rejected
+        assert!(store.sample("ghost", 10).is_err());
+    }
+
+    #[test]
+    fn per_entity_lineage_counts_filter_by_entity() {
+        let mut store = DataStore::open_in_memory(model()).unwrap();
+        let rs = RowSet {
+            columns: vec!["id".into(), "name".into()],
+            rows: vec![vec!["1".into(), "Acme".into()], vec!["2".into(), "Globex".into()]],
+        };
+        store.load_rowset("account", &rs, &src()).unwrap();
+        assert_eq!(store.entity_lineage_count("account").unwrap(), 2);
+        assert_eq!(store.entity_lineage_count("other").unwrap(), 0);
+        // no reconcile load yet → no per-field lineage
+        assert_eq!(store.entity_field_lineage_count("account").unwrap(), 0);
     }
 
     #[test]
