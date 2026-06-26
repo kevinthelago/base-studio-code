@@ -10,6 +10,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../core/safeInvoke";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
@@ -34,8 +35,8 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   const cwd = st.paneCwds[paneId];
   if (!cwd) return null;
 
-  const changedFiles = await invoke<string[]>("read_worktree_changes", { cwd }).catch(() => [] as string[]);
-  const auditLines = await invoke<string[]>("read_audit_log", { limit: 500 }).catch(() => [] as string[]);
+  const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
+  const auditLines = await safeInvoke<string[]>("read_audit_log", { limit: 500 }, []);
   return {
     paneId,
     anchor: {

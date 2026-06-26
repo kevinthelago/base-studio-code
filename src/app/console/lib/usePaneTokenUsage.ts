@@ -5,7 +5,7 @@
 // model) and the Telemetry · cost view.
 
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 
 /** One pane's token + cost rollup, as serialized by the Rust `read_token_usage` command
@@ -32,8 +32,7 @@ const EMPTY: Map<string, PaneTokenUsage> = new Map();
 export function usePaneTokenUsage(limit = 64): Map<string, PaneTokenUsage> {
   const [byPane, setByPane] = useState<Map<string, PaneTokenUsage>>(EMPTY);
   usePoll(async (isCancelled) => {
-    const rows = await invoke<PaneTokenUsage[]>("read_token_usage", { limit })
-      .catch(() => [] as PaneTokenUsage[]);
+    const rows = await safeInvoke<PaneTokenUsage[]>("read_token_usage", { limit }, []);
     if (isCancelled()) return;
     const m = new Map<string, PaneTokenUsage>();
     for (const r of rows ?? []) m.set(r.pane, r);
