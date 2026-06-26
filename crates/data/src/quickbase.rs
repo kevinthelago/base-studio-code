@@ -14,13 +14,9 @@
 use serde_json::Value;
 
 use crate::behavior::{Automation, AutomationKind, DerivedKind, DerivedLogic, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::connector::{cell_to_string, json_id_as_string, Connector, FetchFn, RowSet, SourceField, SourceObject};
 use crate::schema::FieldType;
 use crate::{DataError, Result};
-
-/// A request-descriptor → parsed-JSON closure. Owns the user token + realm; the connector
-/// never sees them. Descriptors: `tables?appId=…`, `fields:{tableId}`, `records:{tableId}`.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// Read-only Quickbase connector, scoped to one application.
 pub struct QuickbaseConnector {
@@ -72,23 +68,14 @@ fn as_array(body: &Value, key: &str) -> Vec<Value> {
     body.as_array().cloned().or_else(|| body[key].as_array().cloned()).unwrap_or_default()
 }
 
-/// A table's id as a string (Quickbase ids are strings, e.g. `bqr2x`).
+/// A table's id as a string (Quickbase ids are strings, e.g. `bqr2x`, but the API can also return
+/// numeric ids — [`json_id_as_string`] normalizes both).
 fn table_id(t: &Value) -> Option<String> {
-    t["id"].as_str().map(str::to_string).or_else(|| t["id"].as_i64().map(|n| n.to_string()))
+    json_id_as_string(&t["id"])
 }
 
 fn field_id(f: &Value) -> Option<String> {
-    f["id"].as_i64().map(|n| n.to_string()).or_else(|| f["id"].as_str().map(str::to_string))
-}
-
-fn cell_to_string(v: &Value) -> String {
-    match v {
-        Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        other => other.to_string(),
-    }
+    json_id_as_string(&f["id"])
 }
 
 /// Map a Quickbase field's declared `fieldType` to a vendor-neutral [`SourceField`] (#1230):

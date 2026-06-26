@@ -11,10 +11,10 @@
 
 use serde_json::Value;
 
-use crate::connector::{cell_to_string, sorted_record_columns, Connector, RowSet, SourceObject};
+use crate::connector::{
+    cell_to_string, union_record_columns, Connector, FetchFn, RowSet, SourceObject,
+};
 use crate::{DataError, Result};
-
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// A configured REST resource: its object name, the path to fetch, and where its records live.
 #[derive(Debug, Clone)]
@@ -90,7 +90,9 @@ impl Connector for RestConnector {
     fn objects(&self) -> Result<Vec<SourceObject>> {
         let mut out = Vec::new();
         for res in &self.resources {
-            let columns = self.records(res)?.first().map(sorted_record_columns).unwrap_or_default();
+            // Union over the sampled records (standardized #1620) — a column on only some records
+            // is still surfaced rather than dropped by a first-record peek.
+            let columns = union_record_columns(&self.records(res)?, |_| true);
             out.push(SourceObject { name: res.name.clone(), columns });
         }
         Ok(out)
@@ -99,7 +101,7 @@ impl Connector for RestConnector {
     fn read(&self, object: &str) -> Result<RowSet> {
         let res = self.resource(object)?;
         let records = self.records(res)?;
-        let columns = records.first().map(sorted_record_columns).unwrap_or_default();
+        let columns = union_record_columns(&records, |_| true);
         let rows = records
             .iter()
             .map(|r| columns.iter().map(|c| cell_to_string(&r[c])).collect())
