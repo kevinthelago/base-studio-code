@@ -35,15 +35,9 @@ pub fn log_dir() -> PathBuf {
             return PathBuf::from(d);
         }
     }
-    home_dir().map(|h| h.join(".base-studio-code")).unwrap_or_else(|| PathBuf::from(".base-studio-code"))
-}
-
-/// Cross-platform home dir (no `dirs` dependency), matching `bsc-skill`'s resolution.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
+    bsc_sqlite_util::home_dir()
+        .map(|h| h.join(".base-studio-code"))
+        .unwrap_or_else(|| PathBuf::from(".base-studio-code"))
 }
 
 /// Normalize a timestamp to epoch-ms. All-digits ⇒ already epoch-ms (activity/done/hooks/mcp);
