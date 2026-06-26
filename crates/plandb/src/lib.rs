@@ -31,6 +31,23 @@ use std::path::Path;
 /// `skilldb` — a busy_timeout pairs with WAL to keep a quick CLI write from losing to SQLITE_BUSY.
 const BUSY_TIMEOUT_MS: u32 = 5_000;
 
+/// Every plan-store table, in the order `clear()` truncates them — the single source of truth for the
+/// store's table set so a new table is wired into the reset by adding one entry here.
+const ALL_TABLES: &[&str] = &[
+    "issues",
+    "features",
+    "repos",
+    "phases",
+    "fleet_streams",
+    "fleet_meta",
+    "deploy",
+    "deps",
+    "mcp",
+    "blueprint",
+    "discovery",
+    "triage_runs",
+];
+
 // Self-correction lessons (#1362) — their own concern, in their own module (mirrors how `crates/data`
 // keeps one file per concern). The module hangs its `lesson_*` methods off `Store` and owns its schema.
 mod lessons;
@@ -354,11 +371,33 @@ impl Store {
     /// reset: without it the cleared file/store state would be re-populated from the DB on the next
     /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
     pub fn clear(&self) -> rusqlite::Result<()> {
-        self.conn.execute_batch(
-            "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
-             DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM deps; \
-             DELETE FROM mcp; DELETE FROM blueprint; DELETE FROM discovery; DELETE FROM triage_runs;",
-        )
+        let stmt = ALL_TABLES.iter().map(|t| format!("DELETE FROM {t};")).collect::<String>();
+        self.conn.execute_batch(&stmt)
+    }
+
+    // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint tables each hold ONE
+    //    row (`id = 1`) carrying a JSON blob. These two methods are the shared upsert/read those four
+    //    set/get pairs delegate to, so the `ON CONFLICT … DO UPDATE` / `from_str().ok()` pattern lives
+    //    in exactly one place. `table` is a hardcoded string literal at every call site (never user
+    //    input), so formatting it into the SQL is safe — there is no injection surface. ──
+
+    /// Upsert the single JSON blob for a singleton-blob `table` (the row keyed `id = 1`).
+    fn blob_set(&self, table: &str, data: &serde_json::Value) -> rusqlite::Result<()> {
+        self.conn.execute(
+            &format!("INSERT INTO {table} (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data"),
+            params![data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Read the single JSON blob from a singleton-blob `table`, or None if unset (or malformed).
+    fn blob_get(&self, table: &str) -> rusqlite::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare(&format!("SELECT data FROM {table} WHERE id = 1"))?;
+        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        match rows.next() {
+            Some(s) => Ok(serde_json::from_str(&s?).ok()),
+            None => Ok(None),
+        }
     }
 
     // ── linked repos (#1012) — the repos linked to a project, durable in the hub's plan.db so a
@@ -481,20 +520,11 @@ impl Store {
 
     /// Set the fleet meta (the FleetPlan minus `streams`: recommended, reasoning, director, topology, …).
     pub fn fleet_meta_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
-        self.conn.execute(
-            "INSERT INTO fleet_meta (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-            params![data.to_string()],
-        )?;
-        Ok(())
+        self.blob_set("fleet_meta", data)
     }
 
     fn fleet_meta_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
-        let mut stmt = self.conn.prepare("SELECT data FROM fleet_meta WHERE id = 1")?;
-        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        match rows.next() {
-            Some(s) => Ok(serde_json::from_str(&s?).ok()),
-            None => Ok(None),
-        }
+        self.blob_get("fleet_meta")
     }
 
     /// The whole FleetPlan (meta + streams), or None if nothing's set — the shape `parseFleetFile` reads.
@@ -517,21 +547,12 @@ impl Store {
 
     /// Replace the project's deploy config (a single JSON blob — the full DeployConfig shape).
     pub fn deploy_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
-        self.conn.execute(
-            "INSERT INTO deploy (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-            params![data.to_string()],
-        )?;
-        Ok(())
+        self.blob_set("deploy", data)
     }
 
     /// The stored deploy config, or None if unset.
     pub fn deploy_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
-        let mut stmt = self.conn.prepare("SELECT data FROM deploy WHERE id = 1")?;
-        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        match rows.next() {
-            Some(s) => Ok(serde_json::from_str(&s?).ok()),
-            None => Ok(None),
-        }
+        self.blob_get("deploy")
     }
 
     // ── dependency manifest (#1191) — the locked library manifest (the Deploy stage's OTHER half) as
@@ -541,21 +562,12 @@ impl Store {
 
     /// Replace the project's dependency manifest (a single JSON blob — the full DependencyManifest shape).
     pub fn deps_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
-        self.conn.execute(
-            "INSERT INTO deps (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-            params![data.to_string()],
-        )?;
-        Ok(())
+        self.blob_set("deps", data)
     }
 
     /// The stored dependency manifest, or None if unset.
     pub fn deps_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
-        let mut stmt = self.conn.prepare("SELECT data FROM deps WHERE id = 1")?;
-        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        match rows.next() {
-            Some(s) => Ok(serde_json::from_str(&s?).ok()),
-            None => Ok(None),
-        }
+        self.blob_get("deps")
     }
 
     // ── MCP assignments (#1021) — the catalog server names scoped to a project; durable in plan.db
@@ -596,21 +608,12 @@ impl Store {
 
     /// Replace the authored blueprint (a single JSON blob — the full Blueprint shape).
     pub fn blueprint_set(&self, data: &serde_json::Value) -> rusqlite::Result<()> {
-        self.conn.execute(
-            "INSERT INTO blueprint (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-            params![data.to_string()],
-        )?;
-        Ok(())
+        self.blob_set("blueprint", data)
     }
 
     /// The stored authored blueprint, or None if unset.
     pub fn blueprint_get(&self) -> rusqlite::Result<Option<serde_json::Value>> {
-        let mut stmt = self.conn.prepare("SELECT data FROM blueprint WHERE id = 1")?;
-        let mut rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        match rows.next() {
-            Some(s) => Ok(serde_json::from_str(&s?).ok()),
-            None => Ok(None),
-        }
+        self.blob_get("blueprint")
     }
 
     // ── Context manifest (#1019) — the DYNAMIC required-set + confirm state for the Context stage.
