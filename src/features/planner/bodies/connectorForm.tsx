@@ -15,6 +15,7 @@ import {
   type DeclaredSource, type SpecField, type SourceStatus,
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
+import { Chip } from "@/shared/ui/Chip";
 
 export const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",
@@ -103,11 +104,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
 /** Info / boundary chip ("🛡 Credentials stay on this device …"). */
 function InfoChip({ children, color = "var(--info)" }: { children: React.ReactNode; color?: string }) {
   return (
-    <span style={{
-      display: "inline-flex", alignSelf: "flex-start", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 9.5, color,
-      background: `color-mix(in oklch, ${color}, transparent 89%)`, border: `1px solid color-mix(in oklch, ${color}, transparent 76%)`,
-      borderRadius: 99, padding: "3px 9px",
-    }}>{children}</span>
+    <Chip color={color} alignSelf="flex-start" gap={6} padding="3px 9px" bgAlpha={89} borderAlpha={76}>{children}</Chip>
   );
 }
 

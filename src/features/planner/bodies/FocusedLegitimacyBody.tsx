@@ -9,6 +9,7 @@
 import { useStageJson } from "./useStageJson";
 import { type Licensing, type ClearStatus } from "./dataCollection";
 import { Card, ModeChip, SourceHead, Readiness } from "./bodyPrimitives";
+import { Chip } from "@/shared/ui/Chip";
 
 const mono = "var(--mono)";
 
@@ -21,14 +22,9 @@ const CLR: Record<ClearStatus, { color: string; label: string }> = {
 function ClearChip({ status }: { status: ClearStatus }) {
   const m = CLR[status];
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5, padding: "1px 7px", borderRadius: 99,
-      fontFamily: mono, fontSize: 9.5, color: m.color,
-      background: `color-mix(in oklch, ${m.color}, transparent 88%)`,
-      border: `1px solid color-mix(in oklch, ${m.color}, transparent 70%)`,
-    }}>
+    <Chip color={m.color} gap={5} padding="1px 7px" bgAlpha={88} borderAlpha={70}>
       <span style={{ width: 5, height: 5, borderRadius: 99, background: m.color }} />{m.label}
-    </span>
+    </Chip>
   );
 }
 
