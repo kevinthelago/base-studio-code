@@ -39,9 +39,6 @@ import {
 } from "../relationship/relationshipGraph";
 import { DIRECTOR_DRIVES, type DirectorDrive } from "../fleet/directorDrive";
 
-// KindDot lives in focusedPrimitives now (#1560); re-export so ProjectPane's import path is unchanged.
-export { KindDot };
-
 /** The three coordination topologies + their one-line explainers (Permissions control). */
 const TOPOLOGY_OPTS: { id: Topology; label: string; hint: string }[] = [
   { id: "director", label: "Director", hint: "hub-and-spoke — every relationship routes through the director" },

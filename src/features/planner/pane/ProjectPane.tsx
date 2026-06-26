@@ -17,7 +17,8 @@ import type { StagePrompt } from "../session/plannerConductor";
 import type { DeployConfig } from "../lib/deployConfig";
 import { type Topology } from "../relationship/relationshipGraph";
 import { type DirectorDrive } from "../fleet/directorDrive";
-import { KindDot, FocusedPhaseBody, type AuthoringWiring } from "./FocusedBodies";
+import { FocusedPhaseBody, type AuthoringWiring } from "./FocusedBodies";
+import { KindDot } from "./focusedPrimitives";
 export function ProjectPane({
   data,
   projectId,
