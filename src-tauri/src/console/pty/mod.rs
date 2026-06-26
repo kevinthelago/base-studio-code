@@ -6,7 +6,7 @@
 use crate::{
     bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
 };
-use crate::bsc::bsc_rc_body;
+use crate::console::shell_rc::bsc_rc_body;
 use crate::{perf, tunnel};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;

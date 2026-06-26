@@ -62,11 +62,11 @@ impl HarnessAdapter for ClaudeCodeAdapter {
     }
 
     fn prepare_config(&self) {
-        crate::config::sanitize_claude_config();
+        crate::agent::claude_config::sanitize_claude_config();
     }
 
     fn trust_dir(&self, cwd: &str) {
-        crate::config::trust_claude_dir(cwd);
+        crate::agent::claude_config::trust_claude_dir(cwd);
     }
 }
 
