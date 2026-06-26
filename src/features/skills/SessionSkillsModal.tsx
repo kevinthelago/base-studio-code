@@ -8,6 +8,7 @@
 // which toggles the same groups onto a stream.
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
+import { Toggle } from "@/shared/ui/Toggle";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
@@ -35,13 +36,6 @@ function pill(hue: string, plain = false): React.CSSProperties {
   const base: React.CSSProperties = { fontFamily: "var(--mono)", fontSize: 9.5, padding: "2px 7px", borderRadius: 99, lineHeight: 1.1, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" };
   if (plain) return { ...base, background: "color-mix(in oklch, var(--fg-dim), transparent 88%)", border: "1px solid color-mix(in oklch, var(--fg-dim), transparent 80%)", color: "var(--fg-muted)" };
   return { ...base, background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 74%)`, color: hue };
-}
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return (
-    <span className="sess-toggle" onClick={onClick} style={{ width: 26, height: 15, borderRadius: 99, position: "relative", flex: "0 0 auto", cursor: "pointer", background: on ? "var(--accent)" : "var(--bg-elev2)", border: "1px solid " + (on ? "transparent" : "var(--border)") }}>
-      <span style={{ position: "absolute", top: 1, left: on ? 12 : 1, width: 11, height: 11, borderRadius: "50%", background: on ? "var(--bg-canvas)" : "var(--fg-dim)" }} />
-    </span>
-  );
 }
 
 export interface SessionSkillsModalProps {
@@ -105,7 +99,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {st.overridden && <span onClick={() => setSessionSkill(sessionKey, st.skill.id, "inherit")} style={{ fontSize: 10.5, color: "var(--fg-dim)", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>reset</span>}
-          <Toggle on={st.on} onClick={() => flip(st)} />
+          <Toggle size="sm" className="sess-toggle" on={st.on} onClick={() => flip(st)} />
         </span>
       </div>
     );

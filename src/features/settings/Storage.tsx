@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ConfirmButton } from "@/shared/ui/ConfirmButton";
+import { fmtBytes } from "@/shared/lib/core/format";
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -10,35 +12,8 @@ interface WorktreeUsage {
   targetBytes: number;
 }
 
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
-}
-
 function btn(extra: React.CSSProperties = {}): React.CSSProperties {
   return { padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5, background: "var(--bg-elev)", color: "var(--fg-muted)", border: "1px solid var(--border)", ...extra };
-}
-
-function ConfirmButton({ label, armedLabel, onConfirm, disabled }: {
-  label: string; armedLabel: string; onConfirm: () => void | Promise<void>; disabled?: boolean;
-}) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <button
-      disabled={disabled}
-      onClick={() => { if (armed) { setArmed(false); void onConfirm(); } else { setArmed(true); } }}
-      onBlur={() => setArmed(false)}
-      style={{
-        padding: "5px 10px", borderRadius: 6, cursor: disabled ? "default" : "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
-        opacity: disabled ? 0.5 : 1,
-        background: armed ? "var(--danger)" : "var(--bg-elev)",
-        color: armed ? "var(--bg-canvas)" : "var(--danger)",
-        border: "1px solid " + (armed ? "var(--danger)" : "color-mix(in oklch, var(--danger), transparent 55%)"),
-      }}
-    >{armed ? armedLabel : label}</button>
-  );
 }
 
 export function StorageSettings() {
@@ -116,7 +91,7 @@ export function StorageSettings() {
                   {p.list.length} worktree{p.list.length === 1 ? "" : "s"} · {fmtBytes(p.total)} ({fmtBytes(p.targetTotal)} in target/)
                 </div>
               </div>
-              <ConfirmButton label="Reclaim" armedLabel="Confirm" disabled={busy} onConfirm={() => reclaim(p.key)} />
+              <ConfirmButton size="sm" label="Reclaim" armedLabel="Confirm" disabled={busy} onConfirm={() => reclaim(p.key)} />
             </div>
             {p.list.map((w) => (
               <div key={w.path} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>

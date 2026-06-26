@@ -1,46 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { ModelId } from "@/app/console/panes/PaneMenu";
-
-const MODELS: { id: ModelId; label: string }[] = [
-  { id: "haiku-4.5",  label: "haiku-4.5 · fast"     },
-  { id: "sonnet-4.5", label: "sonnet-4.5 · balanced" },
-  { id: "opus-4.5",   label: "opus-4.5 · deep"      },
-];
-
-/** Pill toggle matching the one in Integrations. */
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <span
-      onClick={onToggle}
-      role="switch"
-      aria-checked={on}
-      style={{
-        display: "inline-flex", alignItems: "center",
-        width: 32, height: 18, borderRadius: 99, cursor: "pointer",
-        background: on ? "var(--accent)" : "var(--bg-elev2)",
-        border: "1px solid " + (on ? "transparent" : "var(--border)"),
-        transition: "background 0.15s",
-        flex: "0 0 auto",
-      }}
-    >
-      <span style={{
-        width: 12, height: 12, borderRadius: "50%",
-        background: on ? "#1a120a" : "var(--fg-dim)",
-        marginLeft: on ? "auto" : 2,
-        marginRight: on ? 2 : "auto",
-        transition: "margin 0.15s",
-      }} />
-    </span>
-  );
-}
+import { MODELS, type ModelId } from "@/app/console/lib/models";
+import { Toggle } from "@/shared/ui/Toggle";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: React.ReactNode;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <Toggle on={on} onToggle={onToggle} />
+      <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
       <div>
         <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
           {title}
@@ -109,7 +77,7 @@ export function GeneralSettings() {
             onChange={(e) => setDefaultModel(e.target.value as ModelId)}
           >
             {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.label}</option>
+              <option key={m.id} value={m.id}>{m.id} · {m.tone}</option>
             ))}
           </select>
           <div className="hint">Per-pane override is available from the pane hamburger menu.</div>
