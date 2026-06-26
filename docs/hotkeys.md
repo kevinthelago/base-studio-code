@@ -1,54 +1,20 @@
 # Hotkeys
 
-All hotkeys are global and active regardless of which element has focus, except when the cursor is inside a text input or textarea.
+Hotkeys are **rebindable** and **Console-scoped** (#1218): the listeners attach only
+on the Console screen and detach while a pane is maximized. Because bindings are
+user-editable, this file does **not** enumerate them — a hand-maintained list drifts
+from the code the moment a key changes.
 
----
+## Where to find them
 
-## Screen Navigation
+- **In the app:** open **Settings → Keyboard** for the full, live list grouped by
+  category (screen navigation, pane focus/fullscreen, view switching, broadcast,
+  zoom, …), where you can also rebind any shortcut or reset to defaults.
+- **In the code (source of truth):** the canonical registry is
+  `src/features/settings/lib/shortcuts.ts` (`SHORTCUT_REGISTRY` / `SHORTCUT_GROUPS`);
+  the dispatcher is `src/shared/hooks/useHotkeys.ts`. Digit detection uses `e.code`
+  (e.g. `"Digit1"`) so chords like `Alt+Shift+1` resolve regardless of keyboard
+  layout or OS input method.
 
-| Key | Action |
-|-----|--------|
-| `F1` | Switch to **Console** |
-| `F3` | Switch to **Automations** |
-| `F4` | Switch to **GitHub** |
-| `F5` | Switch to **Projects** |
-| `F6` | Switch to **Settings** |
-
----
-
-## Pane Focus & Fullscreen
-
-Panes are numbered left-to-right, top-to-bottom within the active console tab layout.
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+1` – `Ctrl+9` | **First press** — focus that pane (accent border highlight) |
-| `Ctrl+N` *(focused)* | **Second press** — fullscreen that pane (fills the entire console area) |
-| `Ctrl+N` *(fullscreened)* | **Third press** — restore the pane to the grid |
-
-> Pressing `Ctrl+N` on a *different* pane while one is focused clears the previous focus and focuses the new one. If a pane is fullscreened and you press a different `Ctrl+N`, the fullscreen is exited and the new pane becomes focused.
-
-Only applies while on the **Console** screen. Keys higher than the pane count for the active layout are ignored (e.g. `Ctrl+5` is a no-op in a 2×2 layout).
-
----
-
-## Pane View Switching
-
-| Key | Action |
-|-----|--------|
-| `Alt+1` | Switch **focused pane** to **Console** view |
-| `Alt+2` | Switch **focused pane** to **Files** view |
-| `Alt+3` | Switch **focused pane** to **Branches** view |
-| `Alt+4` | Switch **focused pane** to **Changes** view |
-| `Alt+5` | Switch **focused pane** to **Log** view |
-| `Alt+Shift+1` – `Alt+Shift+5` | Switch **all panes** to the corresponding view |
-
-> `Alt+1`–`Alt+5` require a focused pane (`Ctrl+N` to focus one first). `Alt+Shift+N` applies to all panes unconditionally.
-
-Only applies while on the **Console** screen.
-
----
-
-## Implementation Notes
-
-Hotkeys are implemented in `src/hooks/useHotkeys.ts` and mounted once in `src/App.tsx`. Digit detection uses `e.code` (e.g. `"Digit1"`) rather than `e.key` so that modifier combinations like `Alt+Shift+1` resolve correctly regardless of keyboard layout or OS input method.
+To document a specific binding elsewhere, read it from `SHORTCUT_REGISTRY` rather than
+copying it here.
