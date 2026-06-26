@@ -30,22 +30,27 @@ export default tseslint.config(
     },
   },
   {
-    // Architecture boundary (#1626): `shared/` is feature-agnostic — features import from shared,
-    // never the reverse. Forbid VALUE imports from `@/features/*` (and relative `**/features/*`)
-    // in shared runtime modules. `import type` stays allowed (a type dependency is erased at build
-    // and doesn't couple shared to feature runtime). Test files are exempt — they legitimately
-    // render/exercise feature code. The single deliberate exception (conformance.ts) carries an
-    // inline eslint-disable with its rationale.
+    // Architecture boundary (#1626 / #1703): `shared/` is feature- AND app-agnostic — features and
+    // the app shell import from shared, never the reverse. Forbid VALUE imports from `@/features/*`
+    // and `@/app/*` (and their relative `**/features/*` / `**/app/*` forms) in shared runtime
+    // modules. `import type` stays allowed (a type dependency is erased at build and doesn't couple
+    // shared to feature/app runtime). Test files are exempt — they legitimately render/exercise
+    // feature/app code. The single deliberate exception (conformance.ts) carries an inline
+    // eslint-disable with its rationale.
     files: ["src/shared/**/*.{ts,tsx}"],
     ignores: ["src/shared/**/*.test.{ts,tsx}", "src/shared/**/*.spec.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-restricted-imports": ["error", {
         patterns: [{
-          group: ["@/features/*", "@/features/**", "**/features/*", "**/features/**"],
+          group: [
+            "@/features/*", "@/features/**", "**/features/*", "**/features/**",
+            "@/app/*", "@/app/**", "**/app/*", "**/app/**",
+          ],
           allowTypeImports: true,
           message:
-            "shared/ must stay feature-agnostic (#1626): do not import VALUE symbols from features. " +
-            "`import type` is allowed; otherwise move the module into its owning feature or app/.",
+            "shared/ must stay feature- and app-agnostic (#1626/#1703): do not import VALUE symbols " +
+            "from features or app/. `import type` is allowed; otherwise move the module into its " +
+            "owning feature or app/, or invert the dependency (pass it in as a parameter).",
         }],
       }],
     },

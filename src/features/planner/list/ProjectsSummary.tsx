@@ -5,7 +5,7 @@ import { Avatar } from "@/shared/ui/Avatar";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
-import { openDetachedSection } from "@/app/console/lib/detachWindow";
+import { openDetachedSection } from "@/shared/lib/core/detachSection";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

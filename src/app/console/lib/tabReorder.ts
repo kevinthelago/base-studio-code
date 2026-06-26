@@ -8,16 +8,12 @@
 // the remap is unit-testable; the store's `moveTab` action composes them.
 
 import type { QueuedPane } from "./focusQueue";
+// moveInArray now lives in shared/ (#1703 — a pure helper shouldn't force shared/
+// to depend on app/). Re-exported here so existing consumers (the store's moveTab,
+// the tab-reorder tests) keep their import path.
+import { moveInArray } from "@/shared/lib/core/arrayMove";
 
-/** Move the element at `from` to `to` in a new array (no mutation). Out-of-range
- *  or no-op moves return a shallow copy unchanged. */
-export function moveInArray<T>(arr: T[], from: number, to: number): T[] {
-  const out = arr.slice();
-  if (from < 0 || from >= out.length || to < 0 || to >= out.length || from === to) return out;
-  const [m] = out.splice(from, 1);
-  out.splice(to, 0, m);
-  return out;
-}
+export { moveInArray };
 
 /** Map OLD tab index → NEW tab index after moving a tab from `from` to `to`
  *  (`result[oldIdx] = newIdx`). Identity for invalid/no-op moves. */
