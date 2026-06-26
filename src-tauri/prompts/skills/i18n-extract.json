@@ -1,0 +1,11 @@
+{
+  "id": "i18n-extract",
+  "name": "Internationalize the UI (i18n)",
+  "kind": "codemod",
+  "source": "first-party",
+  "desc": "Extracts hardcoded strings into a message catalog, wires the i18n framework, and handles locale, pluralization, RTL, and date/number formatting.",
+  "body": "Internationalize the UI. Make code changes on a branch and verify with a typecheck.\n1. Pick/confirm the framework already in use (e.g. i18next, react-intl, FormatJS); if none, propose one and wire the provider at the app root.\n2. Sweep components for user-visible hardcoded strings (JSX text, placeholders, aria-labels, titles, alt). Skip logs and developer-only text.\n3. Replace each with a translation call keyed by a stable id; collect the defaults into the source-locale catalog (e.g. `en.json`).\n4. Handle plurals and interpolation (ICU MessageFormat) — never concatenate translated fragments.\n5. Locale-aware dates/numbers/currency via Intl; set `dir`/logical CSS properties so RTL locales mirror correctly.\n6. Add a missing-key check and verify the build/typecheck is green. Report the extracted-key count and any strings that need human translation.",
+  "tools": ["edit", "write_file", "repo_map", "rank_files"],
+  "profiles": ["build"],
+  "pinned": false
+}
