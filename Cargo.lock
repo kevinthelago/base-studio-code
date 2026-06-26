@@ -540,6 +540,7 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "logs",
  "plandb",
  "portable-pty",
  "rand 0.10.1",

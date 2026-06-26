@@ -32,9 +32,12 @@ struct Pricing {
 const LOCAL_FAMILIES: [&str; 9] =
     ["llama", "qwen", "mistral", "mixtral", "gemma", "phi", "deepseek", "codestral", "ollama"];
 
-/// Price table keyed by a model-name substring (USD per million tokens). Mirrors
-/// `observability/tokens.rs::model_pricing` — keep the two in sync (a later slice folds the
-/// desktop reader onto this engine, collapsing the duplication). List prices as of 2026-06.
+/// Price table keyed by a model-name substring (USD per million tokens). The ONE price table for
+/// the whole app: the desktop token reader (`observability::tokens::cost::read_token_usage`)
+/// delegates here via `all_costs` (#1686), so rates live in this single place. List prices as of
+/// 2026-06. Matched against the lowercased model id, most-specific family first; local/open-weight
+/// models are free ($0); an unrecognized *hosted* model falls back to Sonnet (never $0 for a paid
+/// model).
 fn model_pricing(model: &str) -> Pricing {
     let m = model.to_ascii_lowercase();
     // Anthropic (Claude) — cache write = 1.25× input, cache read = 0.10× input.
@@ -204,6 +207,50 @@ mod tests {
         assert!((compute_cost(&mk("claude-opus-4-8")) - 25.0).abs() < 1e-9);
         assert!((compute_cost(&mk("llama-3.1-70b")) - 0.0).abs() < 1e-9);
         assert!((compute_cost(&mk("some-unknown-model")) - 15.0).abs() < 1e-9); // → sonnet
+    }
+
+    #[test]
+    fn compute_cost_prices_each_model_family() {
+        // Cost = sum(tokens * per-million-rate) / 1e6. Sonnet is the fallback for unknown/empty
+        // models so they never price as $0. 1M tokens of EACH kind makes the result equal the sum
+        // of that family's four rates directly. (Ported from the desktop reader, #1686.)
+        let make = |model: &str| Totals {
+            model: model.to_string(),
+            input: 1_000_000,
+            output: 1_000_000,
+            cache_creation: 1_000_000,
+            cache_read: 1_000_000,
+        };
+        // Sonnet: 3 + 15 + 3.75 + 0.30 = 22.05
+        assert!((compute_cost(&make("claude-sonnet-4-6")) - 22.05).abs() < 1e-9);
+        // Unknown / empty HOSTED model falls back to Sonnet pricing.
+        assert!((compute_cost(&make("")) - 22.05).abs() < 1e-9);
+        assert!((compute_cost(&make("some-future-hosted-model")) - 22.05).abs() < 1e-9);
+        // Opus 4.8: 5 + 25 + 6.25 + 0.50 = 36.75
+        assert!((compute_cost(&make("claude-opus-4-8")) - 36.75).abs() < 1e-9);
+        // Haiku: 1 + 5 + 1.25 + 0.10 = 7.35
+        assert!((compute_cost(&make("claude-haiku-4-5")) - 7.35).abs() < 1e-9);
+        // OpenAI gpt-5.4 base: 2.50 + 15 + 2.50 + 0.25 = 20.25
+        assert!((compute_cost(&make("gpt-5.4")) - 20.25).abs() < 1e-9);
+        // gpt-5.4-mini: 0.75 + 4.50 + 0.75 + 0.075 = 6.075 (suffix beats the base family)
+        assert!((compute_cost(&make("gpt-5.4-mini")) - 6.075).abs() < 1e-9);
+        // gpt-5.4-nano: 0.20 + 1.25 + 0.20 + 0.02 = 1.67
+        assert!((compute_cost(&make("gpt-5.4-nano")) - 1.67).abs() < 1e-9);
+        // gpt-5.5: 5 + 30 + 5 + 0.50 = 40.50
+        assert!((compute_cost(&make("gpt-5.5")) - 40.50).abs() < 1e-9);
+        // Gemini 2.5 Pro: 1.25 + 10 + 1.25 + 0.125 = 12.625
+        assert!((compute_cost(&make("gemini-2.5-pro")) - 12.625).abs() < 1e-9);
+        // Gemini 2.5 Flash: 0.30 + 2.50 + 0.30 + 0.03 = 3.13
+        assert!((compute_cost(&make("gemini-2.5-flash")) - 3.13).abs() < 1e-9);
+        // Gemini 2.5 Flash-Lite: 0.10 + 0.40 + 0.10 + 0.01 = 0.61
+        assert!((compute_cost(&make("gemini-2.5-flash-lite")) - 0.61).abs() < 1e-9);
+        // Local / open-weight models are free.
+        assert_eq!(compute_cost(&make("llama-3.3-70b")), 0.0);
+        assert_eq!(compute_cost(&make("qwen2.5-coder")), 0.0);
+        // A realistic small total prices to a small positive number.
+        let small = Totals { model: "claude-sonnet-4-6".into(), input: 10, output: 20, cache_creation: 100, cache_read: 1000 };
+        let c = compute_cost(&small);
+        assert!(c > 0.0 && c < 0.01, "got {c}");
     }
 
     #[test]
