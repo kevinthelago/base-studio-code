@@ -19,6 +19,35 @@ pub struct Tool {
     pub run: ToolFn,
 }
 
+// --- Runtime bridges -------------------------------------------------------
+//
+// A tool's [`ToolFn`] is **synchronous** (`Fn(&Value) -> Result<String, String>`) and runs inline
+// on the tokio worker that drives the agent loop, but some tools need work that can't simply run
+// there. There are two distinct sync→async bridges, deliberately kept as TWO helpers because they
+// are NOT interchangeable:
+//
+// - [`run_off_runtime`] moves the work onto a **dedicated OS thread** and joins it. Used when the
+//   work must run with NO ambient tokio runtime: `reqwest::blocking` panics if started inside a
+//   runtime (`webfetch`), and the `task` sub-agent builds its OWN current-thread runtime on that
+//   thread (a `block_on` would refuse to nest inside the parent runtime).
+// - [`block_on_tool`] stays on the **current** (ambient) multi-thread runtime: `block_in_place` so
+//   blocking the worker doesn't stall the whole runtime, then `block_on`s the future. Used when the
+//   async work needs the live runtime (the MCP executor's shared client + I/O). It REQUIRES the
+//   multi-thread runtime `bsc-agent` runs on — `block_in_place` panics on a current-thread runtime.
+
+/// Run blocking work on a dedicated OS thread, away from the agent's tokio worker, and return its
+/// result. See the module's "Runtime bridges" note for why this is separate from [`block_on_tool`].
+pub fn run_off_runtime<T: Send>(f: impl FnOnce() -> Result<T, String> + Send) -> Result<T, String> {
+    std::thread::scope(|s| s.spawn(f).join()).map_err(|_| "tool worker thread panicked".to_string())?
+}
+
+/// Block on `fut` from a sync tool body using the **current** multi-thread runtime
+/// (`block_in_place` + `Handle::block_on`). See the module's "Runtime bridges" note; panics if the
+/// ambient runtime is current-thread.
+pub fn block_on_tool<F: std::future::Future>(fut: F) -> F::Output {
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+}
+
 /// Run the agent loop: build a [`Turn`] from the conversation + tools, ask the
 /// provider, and while it returns tool calls, execute them, append the results, and
 /// continue — until the provider answers with no tool calls (final text) or the
@@ -407,7 +436,7 @@ pub fn webfetch_tool() -> Tool {
         },
         run: Box::new(|args| {
             let url = args["url"].as_str().ok_or("missing 'url' argument")?.to_string();
-            let body = std::thread::spawn(move || -> Result<String, String> {
+            let body = run_off_runtime(move || -> Result<String, String> {
                 let client = reqwest::blocking::Client::builder()
                     .user_agent("bsc-agent")
                     .build()
@@ -420,9 +449,7 @@ pub fn webfetch_tool() -> Tool {
                 } else {
                     Ok(format!("[http {}]\n{text}", status.as_u16()))
                 }
-            })
-            .join()
-            .map_err(|_| "webfetch: worker thread panicked".to_string())??;
+            })?;
             // Char-safe cap (never split a UTF-8 boundary).
             const MAX_CHARS: usize = 100_000;
             if body.chars().count() > MAX_CHARS {
@@ -521,7 +548,7 @@ pub fn task_tool<P: LlmProvider + Send + Sync + 'static>(
             let provider = Arc::clone(&provider);
             let (api_key, model, perms) = (api_key.clone(), model.clone(), perms.clone());
             let system = format!("{TASK_SYSTEM_PREFIX}{system}");
-            std::thread::spawn(move || -> Result<String, String> {
+            run_off_runtime(move || -> Result<String, String> {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -545,8 +572,6 @@ pub fn task_tool<P: LlmProvider + Send + Sync + 'static>(
                     .await
                 })
             })
-            .join()
-            .map_err(|_| "task: sub-agent thread panicked".to_string())?
         }),
     }
 }

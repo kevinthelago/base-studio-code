@@ -180,14 +180,13 @@ pub async fn connect(cfg: &McpServerCfg) -> Result<(Arc<Mutex<McpClient>>, Vec<T
             let tool_name = name.clone();
             Tool {
                 def: ToolDef { name: format!("mcp__{}__{}", cfg.name, name), description, schema },
-                // The agent's ToolFn is sync but tools/call is async I/O — bridge via
-                // block_in_place + block_on (requires the multi-thread runtime, which bsc-agent
-                // uses; the executor only runs from the agent loop on that runtime).
+                // The agent's ToolFn is sync but tools/call is async I/O — bridge on the ambient
+                // multi-thread runtime via `block_on_tool` (see its "Runtime bridges" note; the
+                // executor only runs from the agent loop on that runtime).
                 run: Box::new(move |args: &Value| {
                     let args = args.clone();
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current()
-                            .block_on(async { client.lock().await.call_tool(&tool_name, &args).await })
+                    crate::agent::block_on_tool(async {
+                        client.lock().await.call_tool(&tool_name, &args).await
                     })
                 }),
             }
