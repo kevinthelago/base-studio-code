@@ -240,6 +240,20 @@ export function defaultStageConfig(): StageConfig {
   };
 }
 
+/**
+ * The dynamic-stages seed (#1395 phase 1): ONLY Discovery (`context`) is enabled; every other
+ * stage starts OFF and lights up additively as Discovery's classification signals select it.
+ * The full registry order is preserved so an additively-enabled stage slots into its place.
+ * Distinct from {@link defaultStageConfig} (all-on), which reproduces the legacy blueprint behavior;
+ * this is the source-of-truth seed a new project gets once blueprints stop hand-picking the set.
+ */
+export function contextOnlyStageConfig(): StageConfig {
+  return {
+    enabled: Object.fromEntries(PLAN_STAGES.map((s) => [s.id, s.id === "context"])) as Record<StageId, boolean>,
+    order: PLAN_STAGES.map((s) => s.id),
+  };
+}
+
 /** Fill a partial snapshot with safe defaults so callers needn't specify every field. */
 export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageState {
   return {
