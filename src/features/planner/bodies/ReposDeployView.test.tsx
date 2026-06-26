@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { FocusedReposDeployBody } from "./ReposDeployView";
-import { defaultDeployConfig, type DeployConfig } from "../shared/deployConfig";
+import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
 import type { Repo } from "../pane/projectPane.types";
 
 const repo = (id: string, over: Partial<Repo> = {}): Repo => ({

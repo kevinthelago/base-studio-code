@@ -25,7 +25,7 @@ import {
   proposeFromPitch,
   type SourceConfig, type DeclaredSource, type SpecField, type SourceStatus, type PlatformScanView, type DiscoveredField,
   type Connector, type ConnectorCatalogEntry,
-} from "../shared/sourceConfig";
+} from "../lib/sourceConfig";
 import { ScanViews } from "./ScanViews";
 
 const MONO = "var(--mono)";
