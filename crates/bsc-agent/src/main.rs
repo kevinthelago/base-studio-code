@@ -11,12 +11,13 @@ mod mcp;
 mod permissions;
 mod telemetry;
 
-use agent::{
-    bash_tool, edit_file_tool, glob_tool, grep_tool, read_file_tool, run_agent, webfetch_tool,
-    write_file_tool,
-};
+use agent::{default_tools, run_agent, Tool};
+use llm::{LlmProvider, Msg};
+use permissions::Permissions;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
+use telemetry::Telemetry;
 
 /// Compose the system prompt the way Claude Code does: every `CLAUDE.md` from the filesystem root
 /// down to `start` (most-specific last), then `start/CLAUDE.local.md` (the plan / local overrides
@@ -96,18 +97,14 @@ async fn main() {
     // System prompt = the CLAUDE.md chain (ancestors + cwd) + CLAUDE.local.md (the plan),
     // matching Claude Code's context loading so a bsc-agent worker sees the same context.
     let system = compose_system(&std::env::current_dir().unwrap_or_default());
-    let mut tools = vec![
-        read_file_tool(),
-        write_file_tool(),
-        edit_file_tool(),
-        bash_tool(),
-        grep_tool(),
-        glob_tool(),
-        webfetch_tool(),
-    ];
+    // The native tool set (read/write/edit/bash/grep/glob/webfetch + the `task` sub-agent
+    // tool) is built per-provider by `default_tools` once the provider is resolved below, so
+    // the `task` tool can capture the live provider. MCP tools are collected up front here.
+    //
     // MCP tools ($BSC_AGENT_MCP, a JSON array of server cfgs) — connect each (best-effort: a
     // failed server is logged + skipped), add its tools (namespaced mcp__<server>__<tool>), and
     // keep the clients alive for the session so the child processes aren't dropped.
+    let mut mcp_tools: Vec<Tool> = Vec::new();
     let mut _mcp_clients = Vec::new();
     if let Ok(raw) = std::env::var("BSC_AGENT_MCP") {
         if !raw.trim().is_empty() {
@@ -116,7 +113,7 @@ async fn main() {
                     for cfg in &cfgs {
                         match mcp::connect(cfg).await {
                             Ok((client, mut mtools)) => {
-                                tools.append(&mut mtools);
+                                mcp_tools.append(&mut mtools);
                                 _mcp_clients.push(client);
                             }
                             Err(e) => eprintln!("bsc-agent: mcp '{}' connect failed: {e}", cfg.name),
@@ -140,7 +137,7 @@ async fn main() {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .map(std::path::PathBuf::from);
-    let prior: Vec<llm::Msg> = match (resume, &session_path) {
+    let prior: Vec<Msg> = match (resume, &session_path) {
         (true, Some(p)) => agent::load_conversation(p),
         _ => Vec::new(),
     };
@@ -156,13 +153,13 @@ async fn main() {
 
     let result = match kind {
         llm::ProviderKind::Anthropic => {
-            run_agent(&llm::AnthropicProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
+            run_with_provider(llm::AnthropicProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
         }
         llm::ProviderKind::OpenAi => {
-            run_agent(&llm::OpenAiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
+            run_with_provider(llm::OpenAiProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
         }
         llm::ProviderKind::Gemini => {
-            run_agent(&llm::GeminiProvider, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
+            run_with_provider(llm::GeminiProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
         }
         llm::ProviderKind::Local => {
             // The OpenAI-compatible endpoint for local models — $BSC_AGENT_BASE_URL (set by the
@@ -171,8 +168,7 @@ async fn main() {
                 .ok()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
-            let p = llm::LocalProvider { base_url };
-            run_agent(&p, &api_key, &model, &system, &task, &tools, &perms, &tele, &prior, session_path, 20).await
+            run_with_provider(llm::LocalProvider { base_url }, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
         }
     };
 
@@ -180,6 +176,36 @@ async fn main() {
         eprintln!("bsc-agent: {e}");
         std::process::exit(1);
     }
+}
+
+/// Build the full tool set for `provider` (the native `default_tools` — which captures an
+/// `Arc<provider>` so the `task` tool can spawn child loops — plus the connected MCP tools)
+/// and run the root agent loop. Generic over the provider so each [`llm::ProviderKind`] arm
+/// shares one path. `mcp_tools` is moved in (only the matched arm runs).
+#[allow(clippy::too_many_arguments)]
+async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
+    provider: P,
+    api_key: &str,
+    model: &str,
+    system: &str,
+    task: &str,
+    mcp_tools: Vec<Tool>,
+    perms: &Permissions,
+    tele: &Telemetry,
+    prior: &[Msg],
+    session_path: Option<&Path>,
+) -> Result<String, String> {
+    let provider = Arc::new(provider);
+    let mut tools = default_tools(
+        Arc::clone(&provider),
+        api_key.to_string(),
+        model.to_string(),
+        system.to_string(),
+        perms.clone(),
+        0,
+    );
+    tools.extend(mcp_tools);
+    run_agent(&*provider, api_key, model, system, task, &tools, perms, tele, prior, session_path, 20).await
 }
 
 #[cfg(test)]
