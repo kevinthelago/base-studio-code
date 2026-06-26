@@ -1,16 +1,16 @@
-//! The stdio MCP server core (#1005) — JSON-RPC 2.0 over newline-delimited stdin/stdout, mirroring
-//! the shape the app's MCP *client* speaks (`crates/bsc-agent/src/mcp.rs`) and the Research server:
-//! `initialize` → `notifications/initialized` → `tools/list` → `tools/call`, protocol `2024-11-05`.
-//! The request builders, the tool schemas, and the argument parsers are pure + unit-tested; only
-//! [`run`] and the [`Engine`] calls touch the outside world. The server is the live source of truth
-//! for compliance standards so the planner bakes the right requirements into every plan.
+//! The Compliance stdio MCP server (#1005). The JSON-RPC 2.0 plumbing — handshake, request builders,
+//! dispatch, and the stdin→stdout run-loop — lives in the shared [`mcp_rpc`] core (#1622); this module
+//! keeps only what is Compliance-specific: the tool catalog ([`tool_schemas`]), the argument parsers
+//! (`parse_domain_arg`/`parse_domains_arg`/`arg_str_array`), and the [`Server`] that wires the
+//! [`Engine`] into [`mcp_rpc::ToolServer`]. The schemas + parsers are pure + unit-tested; only
+//! [`Server::from_env`] and the [`Engine`] calls touch the outside world. The server is the live source
+//! of truth for compliance standards so the planner bakes the right requirements into every plan.
 
 use crate::engine::Engine;
 use crate::types::Domain;
+use mcp_rpc::arg_str;
 use serde_json::{json, Value};
-use std::io::{BufRead, Write};
 
-const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "compliance";
 
 /// The tools this server exposes, with JSON-Schema input shapes.
@@ -71,36 +71,7 @@ pub fn tool_schemas() -> Value {
     ])
 }
 
-// ── pure JSON-RPC builders ───────────────────────────────────────────────────
-
-fn result(id: &Value, value: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": value })
-}
-
-fn error(id: &Value, code: i64, message: &str) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
-}
-
-/// A `tools/call` success payload (text content). Structured results are JSON-stringified.
-fn tool_text(value: &Value) -> Value {
-    let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    json!({ "content": [{ "type": "text", "text": text }] })
-}
-
-/// A `tools/call` error payload — still a successful JSON-RPC response, with `isError: true`.
-fn tool_error(message: &str) -> Value {
-    json!({ "content": [{ "type": "text", "text": message }], "isError": true })
-}
-
 // ── argument parsers (pure) ──────────────────────────────────────────────────
-
-fn arg_str(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| format!("missing required string argument '{key}'"))
-}
 
 /// A string array argument → a deduped, non-empty, lowercased token list (empty when absent).
 fn arg_str_array(args: &Value, key: &str) -> Vec<String> {
@@ -146,7 +117,7 @@ pub fn parse_domains_arg(args: &Value) -> Result<Vec<Domain>, String> {
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
 
-/// Run one tool, returning its result Value (caller wraps in `tool_text`/`tool_error`).
+/// Run one tool, returning its result Value (the shared core wraps it in `tool_text`/`tool_error`).
 fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "list_standards" => {
@@ -184,108 +155,54 @@ fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String>
     }
 }
 
-/// Handle one parsed JSON-RPC request. Returns `Some(response)` for requests and `None` for
-/// notifications (no `id`). `engine` is optional so the routing/handshake can be unit-tested
-/// without a live engine; tool calls require it.
-pub fn handle(engine: Option<&Engine>, req: &Value) -> Option<Value> {
-    let method = req.get("method").and_then(|m| m.as_str()).unwrap_or_default();
+/// The Compliance MCP server: an [`Engine`] behind the shared [`mcp_rpc::ToolServer`] seam. Build it
+/// with [`Server::from_env`], then drive the stdio loop via [`mcp_rpc::run_stdio_server`].
+pub struct Server {
+    engine: Engine,
+}
 
-    // Notifications have no id and expect no response.
-    let id = req.get("id").cloned()?;
+impl Server {
+    /// Construct the server, opening the standards store from the environment (seeded on first open).
+    pub fn from_env() -> Result<Self, String> {
+        Ok(Self { engine: Engine::from_env()? })
+    }
 
-    match method {
-        "initialize" => {
-            let client_proto = req
-                .get("params")
-                .and_then(|p| p.get("protocolVersion"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(PROTOCOL_VERSION);
-            Some(result(
-                &id,
-                json!({
-                    "protocolVersion": client_proto,
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") }
-                }),
-            ))
-        }
-        "ping" => Some(result(&id, json!({}))),
-        "tools/list" => Some(result(&id, json!({ "tools": tool_schemas() }))),
-        "tools/call" => {
-            let params = req.get("params").cloned().unwrap_or_else(|| json!({}));
-            let name = params.get("name").and_then(|n| n.as_str()).unwrap_or_default();
-            let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            let Some(engine) = engine else {
-                return Some(result(&id, tool_error("engine unavailable")));
-            };
-            match call_tool(engine, name, &args) {
-                Ok(value) => Some(result(&id, tool_text(&value))),
-                Err(e) => Some(result(&id, tool_error(&e))),
-            }
-        }
-        other => Some(error(&id, -32601, &format!("method not found: {other}"))),
+    /// Wrap an already-built engine (e.g. an in-memory store in tests).
+    #[cfg(test)]
+    pub fn with_engine(engine: Engine) -> Self {
+        Self { engine }
     }
 }
 
-/// Run the server: read newline-delimited JSON-RPC requests from stdin, write responses to stdout.
-pub fn run() -> Result<(), String> {
-    let engine = Engine::from_env()?;
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|e| format!("stdin read: {e}"))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let req: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(e) => {
-                let resp = error(&Value::Null, -32700, &format!("parse error: {e}"));
-                writeln!(out, "{resp}").map_err(|e| e.to_string())?;
-                out.flush().map_err(|e| e.to_string())?;
-                continue;
-            }
-        };
-        if let Some(resp) = handle(Some(&engine), &req) {
-            writeln!(out, "{resp}").map_err(|e| e.to_string())?;
-            out.flush().map_err(|e| e.to_string())?;
-        }
+impl mcp_rpc::ToolServer for Server {
+    fn server_name(&self) -> &str {
+        SERVER_NAME
     }
-    Ok(())
+    fn server_version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
+    fn tool_schemas(&self) -> Value {
+        tool_schemas()
+    }
+    fn call_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
+        call_tool(&self.engine, name, args)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::Engine;
     use crate::store::Store;
+    use mcp_rpc::handle;
 
-    fn engine() -> Engine {
-        Engine::with_store(Store::in_memory().unwrap())
+    fn server() -> Server {
+        Server::with_engine(Engine::with_store(Store::in_memory().unwrap()))
     }
 
     #[test]
-    fn initialize_echoes_protocol_and_names_server() {
-        let req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": { "protocolVersion": "2024-11-05", "capabilities": {} } });
-        let resp = handle(None, &req).unwrap();
-        assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
-        assert_eq!(resp["result"]["serverInfo"]["name"], "compliance");
-        assert!(resp["result"]["capabilities"]["tools"].is_object());
-    }
-
-    #[test]
-    fn notifications_get_no_response() {
-        let req = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        assert!(handle(None, &req).is_none());
-    }
-
-    #[test]
-    fn tools_list_exposes_the_five_tools() {
-        let req = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-        let resp = handle(None, &req).unwrap();
-        let tools = resp["result"]["tools"].as_array().unwrap();
+    fn tool_schemas_exposes_the_five_tools() {
+        let tools = tool_schemas();
+        let tools = tools.as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(
             names,
@@ -295,10 +212,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_method_is_a_jsonrpc_error() {
-        let req = json!({ "jsonrpc": "2.0", "id": 3, "method": "frobnicate" });
-        let resp = handle(None, &req).unwrap();
-        assert_eq!(resp["error"]["code"], -32601);
+    fn initialize_names_the_compliance_server() {
+        let s = server();
+        let req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": { "protocolVersion": "2024-11-05", "capabilities": {} } });
+        let resp = handle(&s, &req).unwrap();
+        assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+        assert_eq!(resp["result"]["serverInfo"]["name"], "compliance");
     }
 
     #[test]
@@ -312,10 +232,10 @@ mod tests {
 
     #[test]
     fn tools_call_get_standard_returns_record_over_seeded_store() {
-        let e = engine();
+        let s = server();
         let req = json!({ "jsonrpc": "2.0", "id": 9, "method": "tools/call",
             "params": { "name": "get_standard", "arguments": { "id": "gdpr" } } });
-        let resp = handle(Some(&e), &req).unwrap();
+        let resp = handle(&s, &req).unwrap();
         assert!(resp.get("error").is_none());
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
@@ -326,10 +246,10 @@ mod tests {
 
     #[test]
     fn tools_call_requirements_for_scopes_and_succeeds() {
-        let e = engine();
+        let s = server();
         let req = json!({ "jsonrpc": "2.0", "id": 10, "method": "tools/call",
             "params": { "name": "requirements_for", "arguments": { "regions": ["eu"], "data_types": ["pii"] } } });
-        let resp = handle(Some(&e), &req).unwrap();
+        let resp = handle(&s, &req).unwrap();
         assert_eq!(resp["result"].get("isError"), None);
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
@@ -341,10 +261,10 @@ mod tests {
 
     #[test]
     fn tools_call_with_bad_args_returns_iserror_not_rpc_error() {
-        let e = engine();
+        let s = server();
         let req = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
             "params": { "name": "privacy_requirements", "arguments": {} } });
-        let resp = handle(Some(&e), &req).unwrap();
+        let resp = handle(&s, &req).unwrap();
         assert!(resp.get("error").is_none());
         assert_eq!(resp["result"]["isError"], true);
     }
