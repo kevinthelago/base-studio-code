@@ -2,26 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
-
-// ── Reusable atoms (mirrors Performance.tsx) ─────────────────────────────────────
-
-function ConfirmButton({ label, armedLabel, onConfirm }: {
-  label: string; armedLabel: string; onConfirm: () => void | Promise<void>;
-}) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <button
-      onClick={() => { if (armed) { setArmed(false); void onConfirm(); } else { setArmed(true); } }}
-      onBlur={() => setArmed(false)}
-      style={{
-        padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
-        background: armed ? "var(--danger)" : "var(--bg-elev)",
-        color: armed ? "var(--bg-canvas)" : "var(--danger)",
-        border: "1px solid " + (armed ? "var(--danger)" : "color-mix(in oklch, var(--danger), transparent 55%)"),
-      }}
-    >{armed ? armedLabel : label}</button>
-  );
-}
+import { ConfirmButton } from "@/shared/ui/ConfirmButton";
+import { fmtBytes } from "@/shared/lib/core/format";
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -60,12 +42,6 @@ interface LogFileInfo {
   sizeBytes: number; mtimeMs: number; exists: boolean; text: boolean;
 }
 
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const u = ["B", "KB", "MB", "GB"];
-  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
-}
 
 function fmtAgo(ms: number): string {
   if (!ms) return "—";
@@ -161,7 +137,7 @@ export function LogsSettings() {
             {f.exists && <button style={btn()} onClick={() => void exportStream(f.stream)}>Export</button>}
             {f.stream === "perf"
               ? <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
-              : <ConfirmButton label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
+              : <ConfirmButton size="sm" label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
           </div>
         ))}
       </div>

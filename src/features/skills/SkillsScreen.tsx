@@ -20,6 +20,7 @@ import {
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
 import { Spark, HBars } from "@/shared/ui/charts";
+import { Toggle } from "@/shared/ui/Toggle";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
@@ -61,13 +62,6 @@ function hueTile(c: string, lg = false): CSSProperties {
 }
 function glyphTile(kind: SkillKind, lg = false): CSSProperties {
   return hueTile(KIND[kind].color, lg);
-}
-function Toggle({ on, onClick }: { on: boolean; onClick?: (e: React.MouseEvent) => void }) {
-  return (
-    <span onClick={onClick} style={{ width: 26, height: 15, borderRadius: 99, position: "relative", flex: "0 0 auto", cursor: onClick ? "pointer" : "default", background: on ? "var(--accent)" : "var(--bg-elev2)", border: "1px solid " + (on ? "transparent" : "var(--border)") }}>
-      <span style={{ position: "absolute", top: 1, left: on ? 12 : 1, width: 11, height: 11, borderRadius: "50%", background: on ? "var(--bg-canvas)" : "var(--fg-dim)" }} />
-    </span>
-  );
 }
 const sourcePill = (src: SkillSource): CSSProperties =>
   src === "team" ? pill("var(--info)") : src === "imported" ? pill("var(--accent)") : pill("", true);
@@ -270,7 +264,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
           {s.trend.length > 1 ? <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} /> : <span style={{ width: 46 }} />}
         </span>
         <span className="pin-btn" onClick={(e) => { e.stopPropagation(); toggleSkillPin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
-        <span style={{ display: "flex", justifyContent: "center" }}><Toggle on={s.enabled} onClick={(e) => { e.stopPropagation(); toggleSkill(s.id); }} /></span>
+        <span style={{ display: "flex", justifyContent: "center" }}><Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); toggleSkill(s.id); }} /></span>
       </div>
     );
   }
@@ -570,7 +564,7 @@ function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups
             <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
             <span style={{ flex: 1 }} />
             <span onClick={(e) => { e.stopPropagation(); onPin(); }} style={{ fontSize: 13, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
-            <Toggle on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
+            <Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
           </div>
           <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginTop: 3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{s.desc || "No description yet."}</div>
         </div>
@@ -628,7 +622,7 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
         <div className="dr-body">
           <div className="field"><label>name <span className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</span></label><input className="input" value={s.name} placeholder="Skill name" onChange={(e) => onPatch({ name: e.target.value })} /></div>
           <div style={{ display: "flex", gap: 16 }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">enabled</span><Toggle on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">enabled</span><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">pinned</span><span onClick={() => onPatch({ pinned: !s.pinned })} style={{ fontSize: 14, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span></span>
           </div>
           <div className="field"><label>kind</label><div className="scope">{KIND_KEYS.map((k) => <button key={k} className={s.kind === k ? "on" : ""} onClick={() => onPatch({ kind: k })}>{KIND[k].label}</button>)}</div></div>
@@ -652,7 +646,7 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
             <label>project assignment</label>
             <div className="global-banner" style={isGlobal ? undefined : { opacity: 0.6 }}>
               <span className="gd" /><b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><div style={{ flex: 1 }} />
-              <Toggle on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
+              <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
             </div>
             {!isGlobal && (projects.length === 0
               ? <div className="hint" style={{ marginTop: 6 }}>No GitHub projects — connect GitHub in Settings to scope per project.</div>
