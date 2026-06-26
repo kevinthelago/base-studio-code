@@ -3,7 +3,7 @@
   "glyph": "⊹",
   "gate": "needed integrations surfaced",
   "deps": [
-    "context"
+    "discovery"
   ],
   "optional": true,
   "blurb": "The tools, connectors, and credentials the plan implies — assigned, available, or missing.",
