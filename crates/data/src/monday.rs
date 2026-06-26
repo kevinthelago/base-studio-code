@@ -14,11 +14,8 @@
 use serde_json::Value;
 
 use crate::behavior::{BusinessProcess, PlatformScan};
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{json_id_as_string, Connector, FetchFn, RowSet, SourceObject};
 use crate::{DataError, Result};
-
-/// A GraphQL-query → parsed-JSON closure. Owns the API token; the connector never sees it.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
 
 /// Read-only monday.com connector.
 ///
@@ -76,10 +73,7 @@ fn column_pairs(board: &Value) -> Vec<(String, String)> {
 }
 
 fn board_id(board: &Value) -> Result<String> {
-    board["id"]
-        .as_str()
-        .map(str::to_string)
-        .or_else(|| board["id"].as_i64().map(|n| n.to_string()))
+    json_id_as_string(&board["id"])
         .ok_or_else(|| DataError::Schema("monday: board missing id".into()))
 }
 

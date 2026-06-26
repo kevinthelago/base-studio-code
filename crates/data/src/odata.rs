@@ -14,11 +14,14 @@
 
 use serde_json::Value;
 
-use crate::connector::{Connector, RowSet, SourceObject};
+use crate::connector::{cell_to_string, union_record_columns, Connector, FetchFn, RowSet, SourceObject};
 use crate::{DataError, Result};
 
-/// A path → parsed-JSON closure. Owns the auth; the connector never sees it.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
+/// Drop OData's `@odata.*` control annotations (etag, context, …) from a record's columns,
+/// keeping only the entity's own properties.
+fn is_data_property(key: &str) -> bool {
+    !key.starts_with('@')
+}
 
 /// Read-only OData v4 connector.
 pub struct ODataConnector {
@@ -53,26 +56,6 @@ impl ODataConnector {
     }
 }
 
-/// Sorted property names of an OData record, dropping `@odata.*` control annotations.
-fn record_columns(rec: &Value) -> Vec<String> {
-    let mut cols: Vec<String> = rec
-        .as_object()
-        .map(|m| m.keys().filter(|k| !k.starts_with('@')).cloned().collect())
-        .unwrap_or_default();
-    cols.sort();
-    cols
-}
-
-fn cell_to_string(v: &Value) -> String {
-    match v {
-        Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        other => other.to_string(),
-    }
-}
-
 impl Connector for ODataConnector {
     fn name(&self) -> &str {
         &self.name
@@ -82,11 +65,8 @@ impl Connector for ODataConnector {
         let mut out = Vec::new();
         for set in self.entity_sets()? {
             let sample = self.get(&format!("{set}?$top=1"))?;
-            let columns = sample["value"]
-                .as_array()
-                .and_then(|a| a.first())
-                .map(record_columns)
-                .unwrap_or_default();
+            let columns =
+                union_record_columns(sample["value"].as_array().and_then(|a| a.first()), is_data_property);
             out.push(SourceObject { name: set, columns });
         }
         Ok(out)
@@ -98,7 +78,8 @@ impl Connector for ODataConnector {
             .as_array()
             .cloned()
             .ok_or_else(|| DataError::Schema(format!("odata: {object} response missing 'value'")))?;
-        let columns = records.first().map(record_columns).unwrap_or_default();
+        // Union across all rows (#1620), still dropping `@odata.*` annotations.
+        let columns = union_record_columns(&records, is_data_property);
         let rows = records
             .iter()
             .map(|r| columns.iter().map(|c| cell_to_string(&r[c])).collect())
