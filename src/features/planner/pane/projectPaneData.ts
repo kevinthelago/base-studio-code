@@ -24,9 +24,9 @@ import type {
 } from "./projectPane.types";
 import type { PlanFeature } from "../issues/featureList";
 import type { Blueprint } from "../stages/blueprints";
-import type { DeployConfig } from "../shared/deployConfig";
+import type { DeployConfig } from "../lib/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
-import { buildMcpServers, type McpInstallState } from "../shared/mcpPaneData";
+import { buildMcpServers, type McpInstallState } from "../lib/mcpPaneData";
 import type { McpServer as McpServerDef } from "@/features/mcp/lib/mcpServers";
 
 export type {

@@ -18,7 +18,7 @@ import "./renderers/canvasRenderer";
 import { PreviewPaneShell } from "./PreviewPaneShell";
 import { RENDER_PREVIEW_ID } from "./renderPreview";
 import { FileIntakePane } from "../bodies/FileIntakePane";
-import { FILE_INTAKE_ID } from "../shared/fileIntake";
+import { FILE_INTAKE_ID } from "../lib/fileIntake";
 
 /** Props every pipeline second screen receives. `onClose`, when provided, renders a
  *  dismiss affordance (stage-driven screens omit it — they're bound to the stage). */

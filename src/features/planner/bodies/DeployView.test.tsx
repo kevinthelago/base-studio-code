@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { FocusedDeployBody } from "./DeployView";
-import { defaultDeployConfig, type DeployConfig } from "../shared/deployConfig";
+import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
 
 /** A controlled host so toggling the mode/kind actually re-renders with the new config. */
 function Harness({ initial }: { initial: DeployConfig }) {

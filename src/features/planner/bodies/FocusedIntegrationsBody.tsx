@@ -6,9 +6,9 @@
 
 import { useMemo } from "react";
 import { useAppStore } from "@/store";
-import { applyMcpAssign } from "../shared/planExtensions";
-import { defaultSourceConfig } from "../shared/sourceConfig";
-import { integrationGaps, type ImpliedIntegration, type IntegrationStatus } from "../shared/integrationGaps";
+import { applyMcpAssign } from "../lib/planExtensions";
+import { defaultSourceConfig } from "../lib/sourceConfig";
+import { integrationGaps, type ImpliedIntegration, type IntegrationStatus } from "../lib/integrationGaps";
 
 const MONO = "var(--mono)";
 const grpLabel: React.CSSProperties = { fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" };

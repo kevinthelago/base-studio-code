@@ -14,7 +14,7 @@ import {
   hostMeta, serviceChecks, serviceReady, serviceMode, serviceTargetDefined, finalStageName,
   type DeployConfig, type DeployService, type Workload, type ReleaseStrategy,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
-} from "../shared/deployConfig";
+} from "../lib/deployConfig";
 
 const MONO = "var(--mono)";
 const grpLabel: React.CSSProperties = {
