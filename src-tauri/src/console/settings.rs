@@ -13,8 +13,8 @@ pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc-plan"];
 /// These guard against the most catastrophic *direct* invocations; deny takes
 /// precedence over allow in Claude Code. Best-effort: prefix matching can't catch
 /// a dangerous command nested inside a loop or pipe, so this raises the bar
-/// against accidents, not a true sandbox. Users extend it from the Knowledge Base
-/// → Commands section (the per-session `denied_commands`).
+/// against accidents, not a true sandbox. Users extend it via the per-session
+/// `denied_commands` (set by the agent profile's command policy).
 pub(crate) const DEFAULT_DENY: &[&str] = &[
     "Bash(sudo *)",
     "Bash(rm -rf /*)",
