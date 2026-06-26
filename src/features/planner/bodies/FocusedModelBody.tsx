@@ -1,13 +1,14 @@
 // FocusedModelBody — right-pane body for the "dataModel" stage.
 //
 // Read-only view of the canonical Data Model the project loads into (the TARGET the
-// mapping/extraction stages aim at). Reuses the persisted `datamodel.json` (the same
-// shape FocusedSourceBody writes), rendering each entity's fields with type, identity
+// mapping/extraction stages aim at). Reads the model from the project's DuckDB store via
+// `data_get_model` (#1446), rendering each entity's fields with type, identity
 // key, required flag, enum values / ref target — and, when the planner inferred them,
 // populated-% / provenance / drop-candidate hints. Transcribed from source/sections.jsx
 // (InferredModelCard).
 
-import { useStageJson } from "./dataCollection";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Card } from "./DataCollectionPrimitives";
 import type { DataModel, Entity, Field } from "@/features/planner/data/dataModel";
 
@@ -59,7 +60,19 @@ function FieldRow({ entity, field }: { entity: Entity; field: ModelField }) {
 }
 
 export function FocusedModelBody({ projectId }: { projectId?: string }) {
-  const { data, loading } = useStageJson<DataModel>(projectId, "datamodel");
+  // The Data Model now lives in the project's DuckDB store (#1446) — read it via `data_get_model`
+  // (returns `{ model, refined } | null`) instead of the retired `datamodel.json` file.
+  const [data, setData] = useState<DataModel | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!projectId) { setData(null); setLoading(false); return; }
+    let live = true;
+    setLoading(true);
+    invoke<{ model: DataModel; refined: boolean } | null>("data_get_model", { projectKey: projectId })
+      .then((res) => { if (live) { setData(res?.model ?? null); setLoading(false); } })
+      .catch(() => { if (live) { setData(null); setLoading(false); } });
+    return () => { live = false; };
+  }, [projectId]);
 
   if (loading) {
     return <div className="empty-state" data-testid="model-loading"><span className="empty-icon">◆</span>
@@ -76,7 +89,7 @@ export function FocusedModelBody({ projectId }: { projectId?: string }) {
             <span className="empty-icon">◆</span>
             <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No Data Model yet</span>
             <span style={{ fontFamily: mono, fontSize: 11, color: "var(--fg-dim)", maxWidth: 380, textAlign: "center", lineHeight: 1.5 }}>
-              The canonical model — the single target every source maps into — appears here once the planner writes <code>datamodel.json</code> (or the Source stage infers one from a sample).
+              The canonical model — the single target every source maps into — appears here once the planner persists it to the project&apos;s data store (or the Source stage infers one from a sample).
             </span>
           </div>
         </Card>

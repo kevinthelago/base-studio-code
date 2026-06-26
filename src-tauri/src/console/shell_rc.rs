@@ -246,6 +246,13 @@ pub(crate) const BSC_PLAN_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-data` shell helper (#1446) — execs the bundled per-project Data Model + PlatformScan
+/// CLI ($BSC_DATA_BIN); the planner reads them with `bsc-data model get` / `bsc-data scan get`.
+pub(crate) const BSC_DATA_RC: &str = concat!(
+    r#"bsc-data() { if [ -n "${BSC_DATA_BIN:-}" ] && [ ! -s "$BSC_DATA_BIN" ]; then echo "bsc-data: BSC_DATA_BIN ($BSC_DATA_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_DATA_BIN:-bsc-data}" "$@"; }"#,
+    "\n",
+);
+
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
 /// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
@@ -467,7 +474,7 @@ mod tests {
             return;
         }
         let rc_body = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             super::BSC_CHECKPOINT_RC,
             super::BSC_DECISIONS_RC,
             super::BSC_AUDIT_RC,
@@ -484,6 +491,7 @@ mod tests {
             super::BSC_DEFER_RC,
             super::BSC_FLEET_RC,
             super::BSC_PLAN_RC,
+            super::BSC_DATA_RC,
             super::BSC_LEARNED_RC,
         );
         let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
