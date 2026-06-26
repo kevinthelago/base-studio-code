@@ -326,7 +326,7 @@ into milestones is different from scoping the solution down.)
 **Enterprise / production-readiness bars — part of "done," folded into the build.** For a
 production or enterprise target, **weigh each of these and APPLY the ones that matter** — as the
 relevant feature's acceptance criteria, an architecture decision, a reusable Skill, or a short
-section + `<kb_assign>`. Don't run them as a dozen set-piece context chats; fold each into the
+section. Don't run them as a dozen set-piece context chats; fold each into the
 feature/issue that carries it, and record any you deliberately skip in `context/_skipped.md`:
 - **Observability & SLOs** — structured logging, metrics, distributed tracing (OpenTelemetry),
   dashboards, and explicit SLIs/SLOs with alerting. ("Can you see it in prod, and know when it breaks?")
@@ -568,8 +568,7 @@ not a one-off prose sketch it has to re-derive:
    implies (e.g. an epic "WebGL renderer" → sub-issues for scene graph, instancing,
    picking). The agent building it should never have to re-derive the approach.
 4. **Capture the source** so the agent inherits the provenance: write a short
-   reference section (a `{topic}.md` plan section, e.g. `research_renderer.md`)
-   and/or assign a Knowledge Base block (`<kb_assign>`) scoped to the project so it
+   reference section (a `{topic}.md` plan section, e.g. `research_renderer.md`) so it
    lands in the agent's prompt — preferred over a loose note; failing that, link the
    source in the issue body.
 
@@ -644,10 +643,6 @@ context; you never mutate it.
 listed, or discovered; duplicates are harmless):
 ```
 <repo_link full_name="owner/repo" />
-```
-**Assign a knowledge block** (read `kb_index.md` for ids):
-```
-<kb_assign id="block-id" />
 ```
 **Suggest an automation** (read `automations.md` first; omit `schedule` for
 on-demand commands — otherwise it's a cron expression):
