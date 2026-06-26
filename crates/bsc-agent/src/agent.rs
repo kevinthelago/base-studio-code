@@ -6,6 +6,8 @@ use crate::telemetry::Telemetry;
 use llm::{LlmProvider, Msg, ToolDef, Turn, TurnResult};
 use serde_json::Value;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// A tool executor: takes the model-supplied `args` and returns its result (or error).
@@ -434,6 +436,121 @@ pub fn webfetch_tool() -> Tool {
     }
 }
 
+/// Max sub-agent nesting depth. A `task` tool built at depth `d` refuses to spawn when
+/// `d >= MAX_TASK_DEPTH` — the root tool set is depth 0, so this permits `MAX_TASK_DEPTH`
+/// levels of delegation (director → sub-agent → sub-sub-agent) before the backstop trips.
+const MAX_TASK_DEPTH: usize = 2;
+/// Process-wide cap on the total number of sub-agents spawned in one run — a backstop
+/// against a model fanning out unboundedly. Never reset (one process = one agent run).
+const MAX_TASK_CHILDREN: usize = 32;
+/// Step budget for a sub-agent loop (mirrors the root loop's 20).
+const MAX_TASK_STEPS: usize = 20;
+/// Prepended to the inherited project context so a delegated child knows its remit.
+const TASK_SYSTEM_PREFIX: &str = "You are a sub-agent spawned to complete one focused task. Work autonomously with the tools available and return your final answer as plain text when you are done.\n\n";
+
+static TASK_CHILDREN_SPAWNED: AtomicUsize = AtomicUsize::new(0);
+
+/// The standard tool set every `bsc-agent` session (root or sub-agent) is launched with:
+/// the file/shell/search/web verbs plus a [`task_tool`] for delegation. The provider /
+/// model / permissions are threaded through so the `task` tool can spawn a child loop on
+/// the same provider under the same (no broader) grants. `depth` is the caller's nesting
+/// level (0 at the root); the child receives `depth + 1`.
+pub fn default_tools<P: LlmProvider + Send + Sync + 'static>(
+    provider: Arc<P>,
+    api_key: String,
+    model: String,
+    system: String,
+    perms: Permissions,
+    depth: usize,
+) -> Vec<Tool> {
+    vec![
+        read_file_tool(),
+        write_file_tool(),
+        edit_file_tool(),
+        bash_tool(),
+        grep_tool(),
+        glob_tool(),
+        webfetch_tool(),
+        task_tool(provider, api_key, model, system, perms, depth),
+    ]
+}
+
+/// The `task` tool: delegate a focused sub-task to a child agent loop. The child runs the
+/// SAME provider/model under the SAME [`Permissions`] (a sub-agent can never exceed its
+/// parent's grants — the permission set is passed through unchanged), with a fresh
+/// conversation that is not persisted, and returns its final text as the tool result.
+///
+/// Two backstops bound runaway delegation: a per-call depth check ([`MAX_TASK_DEPTH`]) and
+/// a process-wide child counter ([`MAX_TASK_CHILDREN`]).
+///
+/// The child loop is async but the agent runs tools inline on a tokio worker, so the child
+/// runs on a dedicated OS thread with its own current-thread runtime — `block_on` inside
+/// the parent runtime would panic (mirrors `webfetch`'s blocking isolation).
+pub fn task_tool<P: LlmProvider + Send + Sync + 'static>(
+    provider: Arc<P>,
+    api_key: String,
+    model: String,
+    system: String,
+    perms: Permissions,
+    depth: usize,
+) -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "task".into(),
+            description: "Delegate a focused, self-contained sub-task to a sub-agent. The sub-agent runs its own tool-using loop under the same permissions and returns its final answer as text. Use it to hand off independent work (research, a contained edit, a verification pass).".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "prompt": { "type": "string", "description": "the task for the sub-agent to complete, with all the context it needs" }
+                },
+                "required": ["prompt"]
+            }),
+        },
+        run: Box::new(move |args| {
+            let prompt = args["prompt"].as_str().ok_or("missing 'prompt' argument")?.to_string();
+            if depth >= MAX_TASK_DEPTH {
+                return Err(format!(
+                    "task: max sub-agent depth ({MAX_TASK_DEPTH}) reached — handle this work directly"
+                ));
+            }
+            if TASK_CHILDREN_SPAWNED.fetch_add(1, Ordering::SeqCst) >= MAX_TASK_CHILDREN {
+                return Err(format!("task: max sub-agent count ({MAX_TASK_CHILDREN}) reached"));
+            }
+            // Clone the captured session config for the child (the closure is `Fn`, so it
+            // may run many times — each spawns its own child).
+            let provider = Arc::clone(&provider);
+            let (api_key, model, perms) = (api_key.clone(), model.clone(), perms.clone());
+            let system = format!("{TASK_SYSTEM_PREFIX}{system}");
+            std::thread::spawn(move || -> Result<String, String> {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| format!("task: runtime: {e}"))?;
+                rt.block_on(async {
+                    // The child gets its own telemetry session (own id + transcript) writing to
+                    // the SAME log files, so the nested run is visible to the app's readers.
+                    let tele = Telemetry::from_env();
+                    let child_tools = default_tools(
+                        Arc::clone(&provider),
+                        api_key.clone(),
+                        model.clone(),
+                        system.clone(),
+                        perms.clone(),
+                        depth + 1,
+                    );
+                    run_agent(
+                        &*provider, &api_key, &model, &system, &prompt, &child_tools, &perms, &tele,
+                        &[], None, MAX_TASK_STEPS,
+                    )
+                    .await
+                })
+            })
+            .join()
+            .map_err(|_| "task: sub-agent thread panicked".to_string())?
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -809,5 +926,76 @@ mod tests {
         // Missing `url` is a clean Err (no thread spawn / no network), so this stays
         // offline-safe in CI. The happy path is exercised by the parity smoke (#1444).
         assert!((webfetch_tool().run)(&serde_json::json!({})).is_err());
+    }
+
+    /// A `Sync` scripted provider for the `task` tests (the real `Arc<P>` capture in
+    /// `task_tool` needs `P: Send + Sync`, which `MockProvider`'s `Cell` is not). Each
+    /// `turn` is driven purely by an atomic call counter: turn 1 optionally emits one
+    /// tool call, every later turn returns final text.
+    struct ScriptedProvider {
+        calls: AtomicUsize,
+        first_call: Option<ToolCall>,
+        final_text: String,
+    }
+    impl ScriptedProvider {
+        fn finishing(text: &str) -> Self {
+            ScriptedProvider { calls: AtomicUsize::new(0), first_call: None, final_text: text.into() }
+        }
+        fn calling(tc: ToolCall, then: &str) -> Self {
+            ScriptedProvider { calls: AtomicUsize::new(0), first_call: Some(tc), final_text: then.into() }
+        }
+    }
+    impl LlmProvider for ScriptedProvider {
+        async fn complete(&self, _r: &LlmRequest, _k: &str) -> Result<serde_json::Value, String> {
+            unreachable!()
+        }
+        async fn turn(&self, _t: &Turn, _k: &str) -> Result<TurnResult, String> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            let tool_calls = match (n, &self.first_call) {
+                (0, Some(tc)) => vec![tc.clone()],
+                _ => vec![],
+            };
+            let text = if tool_calls.is_empty() { self.final_text.clone() } else { String::new() };
+            Ok(TurnResult { text, tool_calls, usage: serde_json::Value::Null, stop_reason: "x".into() })
+        }
+    }
+
+    #[test]
+    fn task_refuses_at_max_depth_without_spawning() {
+        // A tool built at the depth limit must reject immediately (no thread / no provider call).
+        let provider = Arc::new(ScriptedProvider::finishing("unused"));
+        let tool = task_tool(provider, String::new(), "m".into(), String::new(), Permissions::default(), MAX_TASK_DEPTH);
+        let err = (tool.run)(&serde_json::json!({ "prompt": "do it" })).unwrap_err();
+        assert!(err.contains("max sub-agent depth"), "got: {err}");
+    }
+
+    #[test]
+    fn task_delegates_and_returns_child_final_text() {
+        // The child finishes on its first turn; the tool returns that text verbatim.
+        let provider = Arc::new(ScriptedProvider::finishing("sub-agent answer"));
+        let tool = task_tool(provider, String::new(), "m".into(), String::new(), Permissions::default(), 0);
+        let out = (tool.run)(&serde_json::json!({ "prompt": "summarize" })).unwrap();
+        assert_eq!(out, "sub-agent answer");
+    }
+
+    #[test]
+    fn sub_agent_inherits_parent_permission_denies() {
+        // The child is given the parent's perms (bash denied). It scripts a `bash` that would
+        // create a sentinel file; the inherited deny must block execution, so the file never
+        // appears even though the child loop runs to completion.
+        let sentinel = std::env::temp_dir().join(format!("bsc_task_perm_{}.flag", std::process::id()));
+        let _ = std::fs::remove_file(&sentinel);
+        let bash = ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: serde_json::json!({ "command": format!("touch {}", sentinel.display()) }),
+        };
+        let provider = Arc::new(ScriptedProvider::calling(bash, "done"));
+        let perms = Permissions { deny_tools: vec!["bash".into()], ..Default::default() };
+        let tool = task_tool(provider, String::new(), "m".into(), String::new(), perms, 0);
+        let out = (tool.run)(&serde_json::json!({ "prompt": "run it" })).unwrap();
+        assert_eq!(out, "done");
+        assert!(!sentinel.exists(), "denied bash must not have executed in the sub-agent");
+        let _ = std::fs::remove_file(&sentinel);
     }
 }
