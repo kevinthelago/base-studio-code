@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
@@ -7,84 +7,20 @@ import { parseProjectIteration, type BurndownResult, type ProjectIterationNode }
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { openDetachedSection } from "@/app/console/lib/detachWindow";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface GhProject {
-  id: string;
-  number: number;
-  title: string;
-  shortDescription: string | null;
-  closed: boolean;
-  updatedAt: string;
-  items: { totalCount: number };
-  repositories: { nodes: Array<{ nameWithOwner: string }> };
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-const PROJECT_COLORS = [
-  "oklch(0.78 0.14 70)",
-  "oklch(0.7 0.10 220)",
-  "oklch(0.7 0.12 145)",
-  "oklch(0.6 0.06 50)",
-  "oklch(0.7 0.12 290)",
-  "oklch(0.45 0 0)",
-];
-
-// ── GraphQL query ─────────────────────────────────────────────────────────────
-
-const PROJECTS_SUMMARY_QUERY = `{
-  viewer {
-    projectsV2(first: 20) {
-      nodes {
-        id number title shortDescription closed updatedAt
-        items { totalCount }
-        repositories(first: 5) { nodes { nameWithOwner } }
-      }
-    }
-  }
-}`;
-
-// Fetches one project's Iteration + Status fields and items (with close times) so
-// the burn-down can be computed from real iteration data. See burndown.ts.
-const PROJECT_ITERATION_QUERY = `query ProjectIteration($projectId: ID!) {
-  node(id: $projectId) {
-    ... on ProjectV2 {
-      title
-      fields(first: 30) {
-        nodes {
-          __typename
-          ... on ProjectV2IterationField {
-            name
-            configuration {
-              iterations { id title startDate duration }
-              completedIterations { id title startDate duration }
-            }
-          }
-          ... on ProjectV2SingleSelectField { name options { id name } }
-        }
-      }
-      items(first: 100) {
-        nodes {
-          content {
-            __typename
-            ... on Issue { closed closedAt }
-            ... on PullRequest { closed closedAt }
-          }
-          fieldValues(first: 20) {
-            nodes {
-              __typename
-              ... on ProjectV2ItemFieldIterationValue { iterationId field { ... on ProjectV2IterationField { name } } }
-              ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } }
-            }
-          }
-        }
-      }
-    }
-  }
-}`;
+import { PROJECTS_SUMMARY_QUERY, PROJECT_ITERATION_QUERY } from "./projectsSummaryQueries";
+import {
+  computeAllocation,
+  computeVelocity,
+  computeUpcomingMilestones,
+  computeProjectStats,
+  countOpenIssues,
+  countMilestonesDueSoon,
+  countLinkedRepos,
+  avgWeeklyClosed,
+  type GhProject,
+} from "./projectsSummaryDerive";
+import { IterationBurnDown } from "./IterationBurnDown";
+import { CrossProjectActivity } from "./CrossProjectActivity";
 
 // ── Data hook ─────────────────────────────────────────────────────────────────
 
@@ -184,7 +120,6 @@ export function ProjectsPageModeStrip() {
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
-
 function ProjectSparkline({ data, color, w = 80, h = 18 }: { data: number[]; color: string; w?: number; h?: number }) {
   if (data.length < 2 || data.every(v => v === 0)) return null;
   const max = Math.max(...data, 1);
@@ -233,90 +168,10 @@ function AISummary() {
   );
 }
 
-// ── Iteration burn-down (real, from the project's Projects V2 Iteration field) ──
-
-function BurnCard({ hint, badge, children }: {
-  hint: string;
-  badge?: { text: string; tone: string };
-  children?: ReactNode;
-}) {
-  return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
-        <span className="hint">{hint}</span>
-        <div style={{ flex: 1 }} />
-        {badge && <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-const burnNote = (text: string): ReactNode => (
-  <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "12px 0" }}>{text}</div>
-);
-
-function IterationBurnDown({ data, loading }: { data: BurndownResult | null; loading: boolean }) {
-  if (loading && !data) return <BurnCard hint="loading…">{burnNote("loading…")}</BurnCard>;
-  if (!data || data.status === "no-field")
-    return <BurnCard hint="Projects V2 Iteration field">{burnNote("No Iteration field on the lead project — add one in the project's field settings to see a real burn-down.")}</BurnCard>;
-  if (data.status === "no-active-iteration")
-    return <BurnCard hint={data.projectTitle}>{burnNote("No active iteration right now (today is between iterations).")}</BurnCard>;
-
-  const { series, projectTitle, iterationTitle } = data;
-  if (series.total === 0)
-    return <BurnCard hint={`${projectTitle} · ${iterationTitle}`}>{burnNote("No items assigned to this iteration yet.")}</BurnCard>;
-
-  const { total, daysTotal, daysElapsed, ideal, actual, remaining, onTrack } = series;
-  const W = 720, H = 180, PAD = { l: 36, r: 20, t: 14, b: 24 };
-  const innerW = W - PAD.l - PAD.r;
-  const innerH = H - PAD.t - PAD.b;
-  const x = (i: number) => PAD.l + (i / daysTotal) * innerW;
-  const y = (v: number) => PAD.t + (1 - v / total) * innerH;
-  const idealPath = ideal.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
-  const pts = actual.flatMap((v, i) => (v != null ? [{ v, i }] : []));
-  const actualPath = pts.map((p, k) => `${k === 0 ? "M" : "L"} ${x(p.i)} ${y(p.v)}`).join(" ");
-  const yTicks = [0, Math.round(total * 0.25), Math.round(total * 0.5), Math.round(total * 0.75), total];
-
-  return (
-    <BurnCard
-      hint={`${projectTitle} · ${iterationTitle} · day ${daysElapsed + 1}/${daysTotal}`}
-      badge={{ text: onTrack ? "on track" : "behind", tone: onTrack ? "var(--success)" : "var(--danger)" }}
-    >
-      <svg width={W} height={H} style={{ width: "100%", maxWidth: W, display: "block" }}>
-        {yTicks.map(v => (
-          <g key={v}>
-            <line x1={PAD.l} y1={y(v)} x2={W - PAD.r} y2={y(v)} stroke="var(--border-soft)" strokeDasharray="2 3" />
-            <text x={PAD.l - 4} y={y(v) + 3} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">{v}</text>
-          </g>
-        ))}
-        {ideal.map((_, i) => i % 2 === 0 ? (
-          <text key={i} x={x(i)} y={H - PAD.b + 12} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">d{i + 1}</text>
-        ) : null)}
-        <path d={idealPath} fill="none" stroke="var(--fg-dim)" strokeDasharray="3 4" strokeWidth="1.5" />
-        <path d={actualPath} fill="none" stroke="var(--accent)" strokeWidth="2" />
-        {pts.map(p => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r="2.5" fill="var(--accent)" />)}
-        <line x1={x(daysElapsed)} y1={PAD.t} x2={x(daysElapsed)} y2={H - PAD.b} stroke="var(--accent)" strokeDasharray="2 3" strokeWidth="1" />
-        <text x={x(daysElapsed)} y={PAD.t - 3} textAnchor="middle" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">today</text>
-        <text x={x(daysTotal) - 2} y={y(remaining) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--accent)">remaining · {remaining}</text>
-        <text x={x(daysTotal) - 2} y={y(0) - 6} textAnchor="end" fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)">ideal · 0</text>
-      </svg>
-    </BurnCard>
-  );
-}
-
 // ── Where the team is (project allocation) ────────────────────────────────────
 
 function ProjectAllocation({ projects }: { projects: GhProject[] }) {
-  const active = projects.filter(p => !p.closed && p.items.totalCount > 0);
-  const total = active.reduce((s, p) => s + p.items.totalCount, 0);
-
-  const items = active.map((p, i) => ({
-    n: p.title,
-    pct: total > 0 ? Math.round(p.items.totalCount / total * 100) : 0,
-    c: PROJECT_COLORS[i % PROJECT_COLORS.length],
-  }));
+  const items = computeAllocation(projects);
 
   if (items.length === 0) {
     return (
@@ -357,33 +212,7 @@ function VelocityCard({ repoIssues, loading }: {
   repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { opened, closed, weekLabels, avgClosed } = useMemo(() => {
-    const opened = new Array(8).fill(0);
-    const closed = new Array(8).fill(0);
-    const now = Date.now();
-
-    Object.values(repoIssues).forEach(issues => {
-      issues.forEach(issue => {
-        if (issue.pull_request) return;
-        const createdWeeksAgo = Math.floor((now - new Date(issue.created_at).getTime()) / (7 * 86400000));
-        if (createdWeeksAgo < 8) opened[7 - createdWeeksAgo]++;
-        if (issue.state === "closed" && issue.closed_at) {
-          const closedWeeksAgo = Math.floor((now - new Date(issue.closed_at).getTime()) / (7 * 86400000));
-          if (closedWeeksAgo < 8) closed[7 - closedWeeksAgo]++;
-        }
-      });
-    });
-
-    const weekLabels = Array.from({ length: 8 }, (_, i) => {
-      const d = new Date(now - (7 - i) * 7 * 86400000);
-      const start = new Date(d.getFullYear(), 0, 0);
-      const week = Math.floor((d.getTime() - start.getTime()) / (7 * 86400000));
-      return `w${week}`;
-    });
-
-    const avgClosed = (closed.reduce((s, v) => s + v, 0) / 8).toFixed(1);
-    return { opened, closed, weekLabels, avgClosed };
-  }, [repoIssues]);
+  const { opened, closed, weekLabels, avgClosed } = useMemo(() => computeVelocity(repoIssues), [repoIssues]);
 
   const hasData = Object.keys(repoIssues).length > 0;
   const maxV = Math.max(...opened, ...closed, 1);
@@ -438,22 +267,7 @@ function UpcomingMilestones({ repoMilestones, loading }: {
   repoMilestones: Record<string, GhMilestone[]>;
   loading: boolean;
 }) {
-  const upcoming = useMemo(() => {
-    const now = Date.now();
-    const all: Array<{ title: string; repo: string; weeksFromNow: number; pct: number; overdue: boolean }> = [];
-    Object.entries(repoMilestones).forEach(([slug, milestones]) => {
-      const repoName = slug.split("/")[1] ?? slug;
-      milestones.forEach(ms => {
-        if (!ms.due_on) return;
-        const weeksFromNow = (new Date(ms.due_on).getTime() - now) / (7 * 86400000);
-        if (weeksFromNow > 8) return; // beyond window
-        const total = ms.open_issues + ms.closed_issues;
-        const pct = total > 0 ? ms.closed_issues / total : 0;
-        all.push({ title: ms.title, repo: repoName, weeksFromNow, pct, overdue: weeksFromNow < 0 });
-      });
-    });
-    return all.sort((a, b) => a.weeksFromNow - b.weeksFromNow).slice(0, 6);
-  }, [repoMilestones]);
+  const upcoming = useMemo(() => computeUpcomingMilestones(repoMilestones), [repoMilestones]);
 
   const hasData = Object.keys(repoMilestones).length > 0;
   const numLines = upcoming.length;
@@ -590,106 +404,6 @@ function RiskRegister() {
   );
 }
 
-// ── Cross-project activity ────────────────────────────────────────────────────
-
-const EVENT_TONE: Record<string, string> = {
-  closed: "var(--success)", merged: "var(--info)", opened: "var(--accent)",
-  moved: "var(--info)", linked: "var(--fg-muted)", published: "var(--accent)",
-  commented: "var(--fg-dim)", created: "var(--accent)", reviewed: "var(--fg-muted)",
-  pushed: "var(--success)",
-};
-
-function mapGHEvent(evt: GHEvent): { action: string; target: string } | null {
-  const p = evt.payload as Record<string, unknown>;
-  switch (evt.type) {
-    case "PushEvent": {
-      const commits = p.commits as Array<{ message: string }> | undefined;
-      const sha = (p.head as string | undefined)?.slice(0, 7) ?? "";
-      const msg = commits?.[0]?.message?.split("\n")[0] ?? "";
-      if (!sha && !msg) return null;
-      return { action: "pushed", target: sha ? `${sha} ${msg}` : msg };
-    }
-    case "PullRequestEvent": {
-      const pr = p.pull_request as { number: number; title: string; merged?: boolean } | undefined;
-      if (!pr) return null;
-      const action = p.action === "closed" && pr.merged ? "merged" : (p.action as string) ?? "updated";
-      return { action, target: `#${pr.number} ${pr.title}` };
-    }
-    case "IssuesEvent": {
-      const issue = p.issue as { number: number; title: string } | undefined;
-      if (!issue) return null;
-      return { action: (p.action as string) ?? "updated", target: `#${issue.number} ${issue.title}` };
-    }
-    case "IssueCommentEvent": {
-      const issue = p.issue as { number: number; title: string } | undefined;
-      if (!issue) return null;
-      return { action: "commented", target: `#${issue.number} ${issue.title}` };
-    }
-    case "CreateEvent": {
-      const ref = p.ref as string | undefined;
-      if (!ref) return null;
-      return { action: "created", target: `${(p.ref_type as string) ?? "branch"} ${ref}` };
-    }
-    default:
-      return null;
-  }
-}
-
-function CrossProjectActivity({ events, projects, loading }: {
-  events: GHEvent[];
-  projects: GhProject[];
-  loading: boolean;
-}) {
-  const feed = useMemo(() => {
-    const projectRepos = new Set<string>();
-    projects.forEach(p => p.repositories.nodes.forEach(r => projectRepos.add(r.nameWithOwner)));
-
-    // Prefer events from project repos; fall back to all events
-    let filtered = events.filter(e => projectRepos.has(e.repo.name));
-    if (filtered.length < 3) filtered = events;
-
-    return filtered.slice(0, 60).map(evt => {
-      const mapped = mapGHEvent(evt);
-      if (!mapped) return null;
-      const repoShort = evt.repo.name.split("/").pop() ?? evt.repo.name;
-      return { login: evt.actor.login, ...mapped, repo: repoShort, createdAt: evt.created_at };
-    }).filter((e): e is NonNullable<typeof e> => e !== null).slice(0, 6);
-  }, [events, projects]);
-
-  return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Recent activity</h3>
-        <span className="hint">across all projects</span>
-      </div>
-      {feed.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No recent activity.</div>
-      )}
-      {loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>Loading…</div>
-      )}
-      {feed.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-          {feed.map((e, i) => (
-            <div key={i} style={{
-              padding: "10px 12px",
-              background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
-              display: "grid", gridTemplateColumns: "22px 80px 1fr 110px 50px",
-              gap: 10, alignItems: "center", fontSize: 11,
-            }}>
-              <Avatar login={e.login} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: EVENT_TONE[e.action] ?? "var(--fg-muted)" }}>{e.action}</span>
-              <span style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.target}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{e.repo}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{timeAgo(e.createdAt)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Projects grid ─────────────────────────────────────────────────────────────
 
 function ProjectsGrid({ projects, repoIssues, loading }: {
@@ -708,27 +422,10 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
     openGithubBoard("board");
   };
 
-  const projectsWithStats = useMemo(() => {
-    return projects.map((p, i) => {
-      const c = PROJECT_COLORS[i % PROJECT_COLORS.length];
-      const status = p.closed ? "shipped" : p.items.totalCount === 0 ? "drafting" : "active";
-
-      // Build weekly close sparkline from linked repos' issues
-      const spark = new Array(9).fill(0);
-      const now = Date.now();
-      p.repositories.nodes.forEach(r => {
-        const issues = repoIssues[r.nameWithOwner] ?? [];
-        issues.forEach(issue => {
-          if (issue.pull_request || issue.state !== "closed" || !issue.closed_at) return;
-          const weeksAgo = Math.floor((now - new Date(issue.closed_at).getTime()) / (7 * 86400000));
-          if (weeksAgo < 9) spark[8 - weeksAgo]++;
-        });
-      });
-
-      const repo = p.repositories.nodes[0]?.nameWithOwner ?? "(no repo)";
-      return { p, c, status, spark, repo };
-    });
-  }, [projects, repoIssues]);
+  const projectsWithStats = useMemo(
+    () => computeProjectStats(projects, repoIssues),
+    [projects, repoIssues],
+  );
 
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
@@ -783,36 +480,9 @@ export function ProjectsSummary() {
   const activeCount = activeProjects.filter(p => p.items.totalCount > 0).length;
   const shippedCount = projects.filter(p => p.closed).length;
 
-  const totalOpenIssues = useMemo(() =>
-    Object.values(repoIssues).reduce((s, issues) =>
-      s + issues.filter(i => !i.pull_request && i.state === "open").length, 0),
-    [repoIssues]
-  );
-
-  const totalMilestones = useMemo(() =>
-    Object.values(repoMilestones).reduce((s, ms) => {
-      const now = Date.now();
-      return s + ms.filter(m => {
-        if (!m.due_on) return false;
-        const weeksOut = (new Date(m.due_on).getTime() - now) / (7 * 86400000);
-        return weeksOut >= 0 && weeksOut <= 2;
-      }).length;
-    }, 0),
-    [repoMilestones]
-  );
-
-  const avgVelocity = useMemo(() => {
-    const closed = new Array(8).fill(0);
-    const now = Date.now();
-    Object.values(repoIssues).forEach(issues => {
-      issues.forEach(issue => {
-        if (issue.pull_request || issue.state !== "closed" || !issue.closed_at) return;
-        const weeksAgo = Math.floor((now - new Date(issue.closed_at).getTime()) / (7 * 86400000));
-        if (weeksAgo < 8) closed[7 - weeksAgo]++;
-      });
-    });
-    return (closed.reduce((s, v) => s + v, 0) / 8).toFixed(1);
-  }, [repoIssues]);
+  const totalOpenIssues = useMemo(() => countOpenIssues(repoIssues), [repoIssues]);
+  const totalMilestones = useMemo(() => countMilestonesDueSoon(repoMilestones), [repoMilestones]);
+  const avgVelocity = useMemo(() => avgWeeklyClosed(repoIssues), [repoIssues]);
 
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
@@ -838,7 +508,7 @@ export function ProjectsSummary() {
             ["active",      loading ? "…" : String(activeCount),        "in-progress projects",              "info"   ],
             ["velocity",    loading ? "…" : `${avgVelocity}/wk`,        "avg issues closed",                 "muted"  ],
             ["milestones",  loading ? "…" : String(totalMilestones),    "due in next 2 weeks",               "info"   ],
-            ["repos",       loading ? "…" : String(new Set(projects.flatMap(p => p.repositories.nodes.map(r => r.nameWithOwner))).size), "linked across projects", "muted"],
+            ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
           ] as const).map(([k, v, sub, tone]) => (
             <div key={k} className="card" style={{ padding: "10px 12px" }}>
               <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
