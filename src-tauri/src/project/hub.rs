@@ -50,7 +50,7 @@ pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::pty::PtySt
         // would otherwise fail to delete (#793). Unix's `remove_dir_all` ignores file perms, so
         // this is Windows-only.
         #[cfg(windows)]
-        clear_readonly_recursive(&dir);
+        crate::platform::fsx::clear_readonly_recursive(&dir);
         remove_dir_all_retrying(&dir).map_err(|e| format!("delete_project_dir: {e}"))?;
         log::info!("deleted project hub {:?}", dir);
     }
@@ -79,31 +79,6 @@ fn remove_dir_all_retrying(dir: &std::path::Path) -> std::io::Result<()> {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(60 * attempt as u64));
             }
-        }
-    }
-}
-/// Recursively clear the read-only attribute on every file under `dir`. Best-effort:
-/// unreadable entries are skipped. Needed so `remove_dir_all` can delete cloned-repo dirs
-/// (git's pack files are read-only) on Windows. Windows-only: on Unix `remove_dir_all`
-/// deletes regardless of file perms, and `set_readonly(false)` would loosen the mode there.
-#[cfg(windows)]
-#[allow(clippy::permissions_set_readonly_false)] // clearing the RO attribute IS the intent on Windows
-pub(crate) fn clear_readonly_recursive(dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        match entry.file_type() {
-            Ok(ft) if ft.is_dir() => clear_readonly_recursive(&path),
-            Ok(_) => {
-                if let Ok(meta) = entry.metadata() {
-                    let mut perms = meta.permissions();
-                    if perms.readonly() {
-                        perms.set_readonly(false);
-                        let _ = std::fs::set_permissions(&path, perms);
-                    }
-                }
-            }
-            Err(_) => {}
         }
     }
 }
