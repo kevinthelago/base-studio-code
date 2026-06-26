@@ -34,6 +34,10 @@ export interface ProfileSessionSettings {
   allowToolRules: string[];
   /** Verbatim tool-permission denies (deny wins over allow). */
   denyToolRules: string[];
+  /** The catch-all shell disposition (the profile's bash tier) the backend uses to scale how
+   *  generous the auto-approve baseline is (#1572): `allow` doers get the read-only + build
+   *  baselines, `ask` coordinators get read-only only, `deny` gets neither. */
+  bashPosture: Tier;
 }
 
 const dedupe = (xs: string[]): string[] => [...new Set(xs)];
@@ -79,5 +83,6 @@ export function resolveProfileSettings(profile: AgentProfile): ProfileSessionSet
     deniedCommands: [],
     allowToolRules: dedupe(allowToolRules),
     denyToolRules: dedupe(denyToolRules),
+    bashPosture: profile.tools.bash,
   };
 }

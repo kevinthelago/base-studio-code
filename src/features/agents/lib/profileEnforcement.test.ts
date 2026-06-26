@@ -26,6 +26,14 @@ describe("resolveProfileSettings", () => {
     expect(s.denyToolRules).not.toContain("Bash");
   });
 
+  it("exposes the bash posture from the profile's bash tier (#1572)", () => {
+    // The backend uses this to scale the auto-approve baseline (a bare `Bash` allow isn't
+    // honored by Claude Code), rather than a deny rule.
+    expect(resolveProfileSettings(profile("pf_auto")).bashPosture).toBe("allow");
+    expect(resolveProfileSettings(profile("pf_review")).bashPosture).toBe("ask");
+    expect(resolveProfileSettings(profile("pf_sandbox")).bashPosture).toBe("deny");
+  });
+
   it("scopes file-write tools by path globs (deny wins)", () => {
     const s = resolveProfileSettings(profile("pf_sandbox")); // paths.deny: ["**/*"]
     for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
