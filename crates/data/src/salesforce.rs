@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
-use crate::connector::{Connector, RowSet, SourceField, SourceObject};
+use crate::connector::{cell_to_string, Connector, FetchFn, RowSet, SourceField, SourceObject};
 use crate::schema::FieldType;
 use crate::{DataError, Result};
 
@@ -91,10 +91,6 @@ impl From<&SalesforceObject> for SourceObject {
 ///     Ok(body)
 /// });
 /// ```
-/// A URL → parsed-JSON fetch closure. Owns any auth (bearer token / API key); the connector
-/// never sees or stores credentials.
-type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
-
 pub struct SalesforceConnector {
     name: String,
     instance_url: String,
@@ -279,16 +275,7 @@ impl Connector for SalesforceConnector {
         })?;
         let rows = records
             .iter()
-            .map(|r| {
-                columns
-                    .iter()
-                    .map(|col| match &r[col] {
-                        Value::Null => String::new(),
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    })
-                    .collect()
-            })
+            .map(|r| columns.iter().map(|col| cell_to_string(&r[col])).collect())
             .collect();
         Ok(RowSet { columns, rows })
     }

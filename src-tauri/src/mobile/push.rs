@@ -295,21 +295,6 @@ impl FcmSender {
         format!("https://fcm.googleapis.com/v1/projects/{}/messages:send", self.sa.project_id)
     }
 
-    /// Send one combined notification+data push to `device_token`. Returns a `SendOutcome`
-    /// telling the caller whether to drop the token (it was stale/invalid).
-    // The sender landed ahead of its caller — the FCM trigger (user_request / coordination
-    // pushes, #932/#936) wires it. Until then clippy's -D dead-code would fail CI, so allow it.
-    #[allow(dead_code)]
-    pub async fn send(
-        &self,
-        device_token: &str,
-        pane_id: &str,
-        prompt: &str,
-        session_name: &str,
-    ) -> SendOutcome {
-        self.send_built(build_message(device_token, pane_id, prompt, session_name)).await
-    }
-
     /// Send a pre-built FCM message object (the value of the `message` key in the FCM v1
     /// request body). Used by the push worker when it builds the message with one of the
     /// specialised `build_*` helpers before dispatching. Returns a `SendOutcome`.

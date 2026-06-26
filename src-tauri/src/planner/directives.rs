@@ -22,7 +22,6 @@ pub(crate) fn planner_intro_prompt(mode: String) -> String {
 /// section. Unknown ids fall back to a generic line.
 pub(crate) fn stage_directive(id: &str) -> String {
     // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
-    // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
     // Every stage directive — including the composed/lifecycle ids (`repos_deploy`, `streams`,
     // `refactor`, `transform`) — now resolves from its `prompts/stages/<id>.json` `directive` field;
     // an unknown id gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
