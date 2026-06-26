@@ -1,0 +1,11 @@
+{
+  "id": "gdpr-review",
+  "name": "GDPR data-protection review",
+  "kind": "review",
+  "source": "first-party",
+  "desc": "Maps personal-data flows and checks lawful basis, consent, data-subject rights (access/erasure/portability), and retention — flagging each violation.",
+  "body": "Read-only data-protection review against the GDPR. Produce a findings report; do not modify code.\n1. Map the personal-data flows: what PII is collected, where it is stored, who it is shared with (third parties, sub-processors), and cross-border transfers.\n2. For each flow confirm a lawful basis (Art. 6) and, for special-category data, an Art. 9 condition.\n3. Verify the data-subject rights are technically supported: access/export (Art. 15/20), erasure (Art. 17), rectification, and objection — find the endpoint/handler or flag it missing.\n4. Check consent capture (granular, opt-in, withdrawable) and retention limits (data deleted/anonymized after its purpose ends).\n5. Check data-minimization and that PII isn't logged in plaintext.\n6. Output: data-flow inventory + a violations table (article · issue · file:line · fix).",
+  "tools": ["git_diff", "rank_files", "repo_map"],
+  "profiles": ["review"],
+  "pinned": true
+}

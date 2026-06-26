@@ -20,6 +20,10 @@ path = "src/bin/bsc-skill.rs"
 bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Embeds the packaged-skill JSON data files (src-tauri/prompts/skills/*.json) at compile time so a
+# fresh skills.db seeds them on first open — the SAME files the frontend reads via import.meta.glob
+# (#1715). Mirrors planner/directives.rs::STAGES_DIR.
+include_dir = "0.7"
 # `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the home-dir / stdin
