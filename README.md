@@ -103,17 +103,19 @@ cargo test          # Rust backend tests
 base-studio-code/
 ├── src-tauri/          # Rust backend (Tauri v2) — one folder per subsystem under src/
 │   ├── src/            # platform · app · console · agent · project · planner · fleet ·
-│   │                   #   github · sources · extensions · knowledge · observability · mobile
+│   │                   #   github · sources · extensions · observability · mobile
 │   └── tauri.conf.json
-├── crates/             # Tauri-free workspace crates — data · plandb · llm · research · bsc-agent
+├── crates/             # Tauri-free workspace crates — data · plandb · skilldb · llm · research ·
+│                       #   compliance · logs · bsc-agent (+ bsc-util / bsc-sqlite-util / mcp-rpc)
 ├── src/                # React frontend — feature-first vertical slices (imports use `@/…`)
 │   ├── app/            # the shell — main/App, chrome (Rail · Titlebar · Tabstrip), and the
 │   │                   #   console execution surface (ConsoleScreen + panes/ + lib/)
 │   ├── features/       # one folder per feature = UI + lib/ (pure domain) + store.ts + index.ts:
 │   │                   #   planner (flagship) · skills · mcp · automations · github · tunnel · agents · settings
-│   ├── shared/         # feature-agnostic: lib/ (core · session · fleet · github · security),
-│   │                   #   hooks/ (usePoll, …), ui/ (Avatar, LabelChip, charts), data/
-│   ├── store/          # Zustand store composition (slices/ + types)
+│   ├── shared/         # feature-agnostic (lint-enforced: no @/features or @/app value imports):
+│   │                   #   lib/ (core · session · fleet · github · security), hooks/, ui/ (Avatar ·
+│   │                   #   LabelChip · Chip · Dialog · charts), data/
+│   ├── store/          # Zustand store composition (slices/ + types/ + updateHelpers)
 │   └── styles/         # tokens.css — design tokens + base styles
 ├── design/             # ⚠️ Reference prototype only — do not edit
 └── docs/               # Architecture and design documentation
