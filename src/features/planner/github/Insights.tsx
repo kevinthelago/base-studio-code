@@ -5,6 +5,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
+import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,11 +22,6 @@ interface InsightIssue {
   statusName: string | null;
 }
 
-interface StatusOption {
-  id: string;
-  name: string;
-  color: string;  // GH enum e.g. "GREEN"
-}
 
 // ── GraphQL ───────────────────────────────────────────────────────────────────
 
@@ -167,44 +163,27 @@ export function Insights() {
   );
 
   const { issues, statusOptions } = useMemo(() => {
-    if (!data) return { issues: [] as InsightIssue[], statusOptions: [] as StatusOption[] };
-    const node = data.node as {
-      fields: { nodes: Array<{ id?: string; name?: string; options?: StatusOption[] }> };
-      items: { nodes: Array<{
-        id: string;
-        fieldValues: { nodes: Array<{ name?: string; optionId?: string; field?: { name: string } }> };
-        content?: {
-          number: number; state: "OPEN" | "CLOSED";
-          createdAt: string; updatedAt: string;
-          labels: { nodes: Array<{ name: string; color: string }> };
-          assignees: { nodes: Array<{ login: string }> };
-          comments: { totalCount: number };
-          milestone?: { title: string } | null;
-        };
-      }> };
-    };
-
-    const statusField = node.fields.nodes.find(f => f.name === "Status" && f.options);
-    const list: InsightIssue[] = [];
-    for (const item of node.items.nodes) {
-      const typename = (item.content as { __typename?: string } | undefined)?.__typename;
-      if (!item.content || typename !== "Issue") continue;
-      const c = item.content;
-      const statusFv = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
-      list.push({
-        id: item.id,
-        number: c.number,
-        state: c.state,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        labels: c.labels.nodes,
-        assignees: c.assignees.nodes,
-        comments: c.comments.totalCount,
-        milestone: c.milestone?.title ?? null,
-        statusName: statusFv?.name ?? null,
-      });
-    }
-    return { issues: list, statusOptions: statusField?.options ?? [] };
+    const node = data?.node as ProjectV2Node | undefined;
+    const list = parseProjectV2Items<{
+      number: number; state: "OPEN" | "CLOSED";
+      createdAt: string; updatedAt: string;
+      labels: { nodes: Array<{ name: string; color: string }> };
+      assignees: { nodes: Array<{ login: string }> };
+      comments: { totalCount: number };
+      milestone?: { title: string } | null;
+    }, InsightIssue>(node, (c, item) => ({
+      id: item.id,
+      number: c.number,
+      state: c.state,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      labels: c.labels.nodes,
+      assignees: c.assignees.nodes,
+      comments: c.comments.totalCount,
+      milestone: c.milestone?.title ?? null,
+      statusName: statusFieldValue(item)?.name ?? null,
+    }));
+    return { issues: list, statusOptions: parseProjectV2Fields(node) };
   }, [data]);
 
   // ── Derived metrics ─────────────────────────────────────────────────────────
