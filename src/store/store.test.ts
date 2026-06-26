@@ -32,7 +32,6 @@ const RESET_STATE = {
   paneCwds: {} as Record<string, string>,
   paneInitCmds: {} as Record<string, string>,
   disabledPanes: {} as Record<string, boolean>,
-  kbBlocks: [],
   schedules: [],
   commands: [],
   deniedCommands: [] as string[],
@@ -922,7 +921,6 @@ describe("config profiles", () => {
     name,
     instructions: `# ${name}`,
     tools: { allow: ["Read"], deny: ["Bash"] },
-    kbBlockIds: [],
   });
 
   it("addConfigProfile appends with a unique id", () => {
@@ -970,11 +968,6 @@ describe("config profiles", () => {
     expect(configProfiles[0].name).toBe("keep");
   });
 
-  it("addConfigProfile stores kbBlockIds", () => {
-    useAppStore.getState().addConfigProfile({ ...makeProfile("p"), kbBlockIds: ["blk_1", "blk_2"] });
-    const p = useAppStore.getState().configProfiles[0];
-    expect(p.kbBlockIds).toEqual(["blk_1", "blk_2"]);
-  });
 });
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
@@ -1775,7 +1768,6 @@ describe("clearPlan (#505)", () => {
       planConfirmedSections: { myproj: ["goal"], other: [] },
       planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
       planSkippedSections: { myproj: ["ui"], other: [] },
-      planKbAssignments: { myproj: ["kb-1"] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
       uiScreens: { myproj: ["Home"] },
@@ -1797,7 +1789,6 @@ describe("clearPlan (#505)", () => {
     expect(s.planConfirmedSections["myproj"]).toBeUndefined();
     expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
     expect(s.planSkippedSections["myproj"]).toBeUndefined();
-    expect(s.planKbAssignments["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
     expect(s.uiApproved["myproj"]).toBeUndefined();

@@ -3,13 +3,12 @@
 // target pane, build the payload, write it, and record the run. No React here; the host
 // (PTY write, store record, clock) is injected so it's unit-testable.
 
-import { resolveTargetPane, dispatchPayload, type Automation, type AutomationRun, type TabLike, type BlockLike } from "./scheduler";
+import { resolveTargetPane, dispatchPayload, type Automation, type AutomationRun, type TabLike } from "./scheduler";
 import { log } from "@/shared/lib/core/log";
 
 export interface DispatchDeps {
   tabs: TabLike[];
   disabledPanes: Record<string, boolean>;
-  kbBlocks: BlockLike[];
   /** Write into a pane (e.g. invoke("pty_write", …) + a trailing CR is added here). */
   write: (paneId: string, data: string) => Promise<void>;
   recordRun: (id: string, run: AutomationRun) => void;
@@ -30,21 +29,15 @@ export async function dispatchAutomation(a: Automation, deps: DispatchDeps): Pro
     return;
   }
 
-  const payload = dispatchPayload(a, deps.kbBlocks);
+  const payload = dispatchPayload(a);
   if (payload == null) {
-    deps.recordRun(a.id, {
-      at, status: "fail",
-      note: a.action === "command" ? "empty command" : "knowledge block missing or empty",
-    });
+    deps.recordRun(a.id, { at, status: "fail", note: "empty command" });
     return;
   }
 
   try {
     await deps.write(paneId, payload + "\r");
-    deps.recordRun(a.id, {
-      at, status: "ok",
-      note: a.action === "command" ? `ran command in ${where}` : `loaded knowledge into ${where}`,
-    });
+    deps.recordRun(a.id, { at, status: "ok", note: `ran command in ${where}` });
   } catch (e) {
     log.error(`automation ${a.id} dispatch failed: ${e}`);
     deps.recordRun(a.id, { at, status: "fail", note: String(e) });

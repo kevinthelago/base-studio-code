@@ -63,7 +63,7 @@ function ChipInput({
 
 export function ClaudeConfigSettings() {
   const {
-    projectLocalRepos, bscBaseDir, kbBlocks, projectKeyAlias,
+    projectLocalRepos, bscBaseDir, projectKeyAlias,
     configProfiles, addConfigProfile, updateConfigProfile, removeConfigProfile,
   } = useAppStore();
 
@@ -91,7 +91,6 @@ export function ClaudeConfigSettings() {
   const [instructions, setInstructions]     = useState("");
   const [allow, setAllow]                   = useState<string[]>([]);
   const [deny, setDeny]                     = useState<string[]>([]);
-  const [selectedKbIds, setSelectedKbIds]   = useState<Set<string>>(new Set());
   const [allowInput, setAllowInput]         = useState("");
   const [denyInput, setDenyInput]           = useState("");
 
@@ -111,7 +110,6 @@ export function ClaudeConfigSettings() {
   useEffect(() => {
     setReading(true);
     setWriteStatus("idle");
-    setSelectedKbIds(new Set());
     setActiveProfileId(null);
     const localPath = target === "global" ? "" : target;
     invoke<{ instructions: string; allow: string[]; deny: string[] }>(
@@ -132,7 +130,6 @@ export function ClaudeConfigSettings() {
     setInstructions(profile.instructions);
     setAllow(profile.tools.allow);
     setDeny(profile.tools.deny);
-    setSelectedKbIds(new Set(profile.kbBlockIds));
     setActiveProfileId(profile.id);
     setWriteStatus("idle");
   }
@@ -154,27 +151,13 @@ export function ClaudeConfigSettings() {
     setDenyInput("");
   }
 
-  function toggleKb(id: string) {
-    setSelectedKbIds((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      return n;
-    });
-    setActiveProfileId(null);
-  }
-
   async function handleWrite() {
     setWriting(true);
     setWriteStatus("idle");
     try {
-      const kbSections = kbBlocks
-        .filter((b) => selectedKbIds.has(b.id))
-        .map((b) => `\n\n---\n## ${b.title}\n\n${b.content}`)
-        .join("");
-      const finalInstructions = instructions + kbSections;
       await invoke("write_claude_config", {
         localPath:    target === "global" ? "" : target,
-        instructions: finalInstructions,
+        instructions,
         allow,
         deny,
       });
@@ -197,14 +180,12 @@ export function ClaudeConfigSettings() {
         name,
         instructions,
         tools: { allow, deny },
-        kbBlockIds: Array.from(selectedKbIds),
       });
     } else {
       addConfigProfile({
         name,
         instructions,
         tools: { allow, deny },
-        kbBlockIds: Array.from(selectedKbIds),
       });
       // Find the newly added profile and select it
       const profiles = useAppStore.getState().configProfiles;
@@ -329,7 +310,7 @@ export function ClaudeConfigSettings() {
 
       {/* Main editor grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 14, alignItems: "start" }}>
-        {/* Left: CLAUDE.md + KB selector */}
+        {/* Left: CLAUDE.md */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{
             background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
@@ -359,72 +340,6 @@ export function ClaudeConfigSettings() {
                 boxSizing: "border-box",
               }}
             />
-          </div>
-
-          {/* KB article selector */}
-          <div style={{
-            background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
-            overflow: "hidden",
-          }}>
-            <div style={{
-              padding: "8px 14px", borderBottom: "1px solid var(--border-soft)",
-              background: "var(--bg-elev)",
-              display: "flex", alignItems: "center", gap: 8,
-              fontFamily: "var(--mono)", fontSize: 10,
-            }}>
-              <span style={{ color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>Knowledge articles</span>
-              <span style={{ color: "var(--fg-dim)" }}>·</span>
-              <span style={{ color: "var(--fg-dim)" }}>appended to CLAUDE.md when writing to disk</span>
-              {selectedKbIds.size > 0 && (
-                <span style={{
-                  marginLeft: 4, padding: "0 6px", borderRadius: 99,
-                  background: "color-mix(in oklch, var(--accent), transparent 80%)",
-                  color: "var(--accent)", fontSize: 9,
-                }}>{selectedKbIds.size} selected</span>
-              )}
-            </div>
-            {kbBlocks.length === 0 ? (
-              <div style={{ padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>
-                No knowledge blocks yet.
-              </div>
-            ) : (
-              <div style={{ padding: "6px 0" }}>
-                {kbBlocks.map((b) => {
-                  const on = selectedKbIds.has(b.id);
-                  return (
-                    <div
-                      key={b.id}
-                      onClick={() => toggleKb(b.id)}
-                      style={{
-                        padding: "7px 16px", cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: 10,
-                        background: on ? "color-mix(in oklch, var(--accent), transparent 92%)" : "transparent",
-                        borderLeft: `3px solid ${on ? "var(--accent)" : "transparent"}`,
-                      }}
-                    >
-                      <span style={{
-                        width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                        background: on ? "var(--accent)" : "var(--bg-elev)",
-                        border: "1px solid " + (on ? "transparent" : "var(--border)"),
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 9, color: "#1a120a", fontWeight: 700,
-                      }}>{on ? "✓" : ""}</span>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: on ? "var(--fg)" : "var(--fg-muted)", flex: 1 }}>
-                        {b.title}
-                      </span>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        {b.tags.slice(0, 3).map((t) => (
-                          <span key={t} className="tag" style={{ fontSize: 9 }}>{t}</span>
-                        ))}
-                      </div>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-                        {b.lines}L
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
 
@@ -528,9 +443,7 @@ export function ClaudeConfigSettings() {
         )}
         {writeStatus === "idle" && (
           <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
-            {selectedKbIds.size > 0
-              ? `${selectedKbIds.size} KB article${selectedKbIds.size > 1 ? "s" : ""} will be appended to CLAUDE.md`
-              : "CLAUDE.md and .claude/settings.json"}
+            CLAUDE.md and .claude/settings.json
           </span>
         )}
         <div style={{ flex: 1 }} />

@@ -142,7 +142,6 @@ pub fn run() {
             source_oauth::source_oauth_begin,
             planner::workspace::setup_workspaces,
             planner::directives::planner_intro_prompt,
-            knowledge::workspace::setup_kb_workspace,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
