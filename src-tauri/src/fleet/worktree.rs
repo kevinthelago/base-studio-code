@@ -235,7 +235,7 @@ pub(crate) fn design_context_block(screens: &[String]) -> Option<String> {
 /// `.ui-skeleton/` (populated from `design/`) for the screen names and appends `design_context_block`.
 /// Idempotent; a no-op when there's no dropped design.
 pub(crate) fn inject_design_context(hub: &std::path::Path, wt_local: &std::path::Path) {
-    let screens: Vec<String> = crate::project::inspect::read_skeleton_dir(&hub.join(".ui-skeleton"))
+    let screens: Vec<String> = crate::project::ui_skeleton::read_skeleton_dir(&hub.join(".ui-skeleton"))
         .into_iter()
         .map(|(rel, _)| rel)
         .collect();
