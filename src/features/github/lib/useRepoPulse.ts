@@ -14,7 +14,7 @@ import {
   mapReviewLatency, mapBranches, deriveKpis,
   type GhCommitItem, type GhCommitDetail, type GhPull, type GhBranchItem,
   type GhWorkflowItem, type GhRun, type GhCompare, type CiHealth, type PulseKpis,
-} from "@/features/github/lib/repoPulseLive";
+} from "./repoPulseLive";
 import type {
   VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch,
 } from "@/shared/data/repoPulse";

@@ -16,9 +16,9 @@ import { shouldAdvanceOnReply } from "@/app/console/lib/consoleFocus";
 import type { ViewKey } from "@/app/console/panes/ViewTabs";
 import type { EndedInfo } from "@/store/types";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
-import { useCoordinator } from "@/shared/lib/fleet/useCoordinator";
+import { useCoordinator } from "./useCoordinator";
 import { useWorkflowConductor } from "@/shared/lib/fleet/useWorkflowConductor";
-import { useDirectorPump } from "@/shared/lib/fleet/useDirectorPump";
+import { useDirectorPump } from "./useDirectorPump";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
 
