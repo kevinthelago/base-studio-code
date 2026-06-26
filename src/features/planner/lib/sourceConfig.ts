@@ -11,11 +11,14 @@
 // keychain on the device and are never persisted here or shared with the planning agent). The config
 // keeps only non-secret fields, a redacted `handle`, and the discovered (not extracted) inventory.
 //
-// This module is the PUBLIC SURFACE (#1638). The implementation is split across three focused modules
-// that this file re-exports so importers don't churn:
-//   - sourceSpecs.ts    — the type model (auth/field specs, discovered-inventory shapes, SourceConfig)
-//   - sourceCatalog.ts  — the connector catalog + resolution, presets, samples, pitch proposal, colors
-//   - sourceValidate.ts — connection counts/readiness, Data Model derivation, scan view-models, coercion
+// This module is the PUBLIC SURFACE (#1638). The implementation is split across focused modules that
+// this file re-exports so importers don't churn:
+//   - sourceSpecs.ts          — the type model (auth/field specs, discovered-inventory shapes, SourceConfig)
+//   - sourceCatalog.ts        — the connector catalog + resolution, presets, samples, pitch proposal, colors
+//   - sourceGate.ts           — connection counts/readiness + the gate signals (#1712)
+//   - dataModelDerivation.ts  — the canonical Data Model derivation (#1712)
+//   - sourceScanViews.ts      — the Graph / List / Process scan view-models (#1712)
+//   - sourceCoerce.ts         — the lenient `<source_config>` planner-channel coercion (#1712)
 
 export type {
   AuthMethod, SpecField, ConnectionSpec, Connector, ConnectorCatalogEntry,
@@ -30,10 +33,11 @@ export {
   sampleScan, proposeFromPitch, redactedHandle,
 } from "./sourceCatalog";
 
-export type { ScanViewField, ScanViewEntity } from "./sourceValidate";
 export {
   isConnected, connectedCount, allSourcesConnected, sourceChecks,
-  deriveDataModel, migrationActive, datamodelSignals, downstreamImpact,
-  scanEntities, scanEdges, aggregatePlatform, isMultiSource,
-  coerceSourceConfig, parseSourceConfigTag,
-} from "./sourceValidate";
+  migrationActive, datamodelSignals, downstreamImpact,
+} from "./sourceGate";
+export { deriveDataModel } from "./dataModelDerivation";
+export type { ScanViewField, ScanViewEntity } from "./sourceScanViews";
+export { scanEntities, scanEdges, aggregatePlatform, isMultiSource } from "./sourceScanViews";
+export { coerceSourceConfig, parseSourceConfigTag } from "./sourceCoerce";
