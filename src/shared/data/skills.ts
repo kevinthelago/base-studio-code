@@ -43,13 +43,6 @@ export interface Skill {
   pinned?: boolean;
 }
 
-export interface SkillCatalogItem {
-  name: string;
-  by: string;
-  glyph: string;
-  desc: string;
-}
-
 export interface KindMeta {
   label: string;
   glyph: string;
@@ -241,34 +234,6 @@ export const SKILLS: Skill[] = [
     trend: [0, 0, 0, 0, 0, 0, 0], pinned: true,
   },
 ];
-
-// Additional standards a team can add to the library on demand.
-export const SKILL_CATALOG: SkillCatalogItem[] = [
-  { name: "ISO 27001 control mapping", by: "first-party", glyph: "◇", desc: "Map controls to ISO 27001 Annex A and flag the unaddressed ones." },
-  { name: "CCPA / CPRA consumer-rights review", by: "first-party", glyph: "◇", desc: "Check know/delete/correct/opt-out rights and sale-share disclosures." },
-  { name: "OWASP ASVS verification", by: "community", glyph: "◇", desc: "Verify the app against OWASP ASVS L1/L2 security requirements." },
-  { name: "Cookie consent & ePrivacy", by: "team", glyph: "◇", desc: "Audit cookie/tracker consent against ePrivacy and the TCF." },
-  { name: "Data retention & erasure policy", by: "first-party", glyph: "¶", desc: "Draft retention schedules and automated-erasure rules per data class." },
-];
-
-/** A packaged {@link Skill} → a catalog row, so the packaged set and the add-on
- *  extras present as ONE pool in the Skills screen's "add a skill" surfaces. */
-function skillToCatalogItem(s: Skill): SkillCatalogItem {
-  return { name: s.name, by: s.source, glyph: KIND[s.kind].glyph, desc: s.desc };
-}
-
-/**
- * The single catalog the Skills screen offers under "add a skill": every packaged
- * skill plus the add-on standards, deduped by name. The library is seeded from the
- * same packaged set ({@link SKILLS}), so the catalog and the main list draw from one
- * source — the screen then hides whatever is already in the user's library.
- */
-export function skillCatalog(): SkillCatalogItem[] {
-  const items = SKILLS.map(skillToCatalogItem);
-  const seen = new Set(items.map((i) => i.name));
-  for (const c of SKILL_CATALOG) if (!seen.has(c.name)) items.push(c);
-  return items;
-}
 
 /** Compact number formatter (e.g. 1234 → "1.2k") — mirrors the design's `fmt`. */
 export function fmtCount(n: number): string {
