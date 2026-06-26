@@ -25,7 +25,7 @@ pub mod fhir;
 pub mod rest;
 pub mod presets;
 pub mod runtime;
-pub mod registry;
+pub mod source_meta;
 pub mod descriptor;
 
 #[cfg(feature = "duckdb-store")]
@@ -56,7 +56,7 @@ pub use runtime::{
     save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
     RUNTIME_AUTH_KINDS,
 };
-pub use registry::{LiveSupport, SourceAuth};
+pub use source_meta::{LiveSupport, SourceAuth};
 pub use descriptor::{
     find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, BUILTINS,
 };
