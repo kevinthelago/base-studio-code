@@ -125,7 +125,7 @@ describe("blueprintShare (#598)", () => {
     }];
     const bp = {
       id: "x", name: "BP", desc: "", skills: ["sk2"],
-      sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
+      sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", icon: "checklist", hue: 70, gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
     } as unknown as Blueprint;
 
     const bundled = resolveBlueprintSkillPayloads(bp, skills);

@@ -14,5 +14,7 @@
     ]
   },
   "blurb": "Reusable skills from the global library.",
-  "prompt": "Select reusable skills from the global library that apply to this project's\nstack, and author any new ones worth saving for reuse with `bsc-skill add`.\n\nGate: the applicable skills are selected."
+  "prompt": "Select reusable skills from the global library that apply to this project's\nstack, and author any new ones worth saving for reuse with `bsc-skill add`.\n\nGate: the applicable skills are selected.",
+  "icon": "extension",
+  "hue": 70
 }

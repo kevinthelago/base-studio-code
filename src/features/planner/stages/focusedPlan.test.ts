@@ -7,7 +7,7 @@ import { confirmedSignal, skippedSignal, type BlueprintSection } from "./bluepri
 import type { PlanSignals } from "./stageGate";
 
 const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
-  uid: key, key, name: key.toUpperCase(), glyph: "•", gate: `${key} gate`,
+  uid: key, key, name: key.toUpperCase(), glyph: "•", icon: "category", hue: 250, gate: `${key} gate`,
   deps: [], blurb: `${key} blurb`, prompt: "", enabled: true, expanded: false,
   ...over,
 });

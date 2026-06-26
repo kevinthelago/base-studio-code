@@ -44,9 +44,29 @@ export interface SubStep {
 }
 
 // ── Sections (the canonical planning stages) ─────────────────────────────────
+
+/** One discovery-checklist dimension. The editor-presentation fields (`icon`/`hue`/`blurb`)
+ *  are present only for the dimensions that double as add-stage palette kinds (#1603); plain
+ *  checklist dimensions carry just `key` + `title`. */
+export interface DimensionMeta {
+  key: string;
+  title: string;
+  /** Material/Lucide icon name (the editor `<Ic>` glyph). */
+  icon?: string;
+  /** Accent hue (oklch) for the palette card. */
+  hue?: number;
+  blurb?: string;
+}
+
 export interface SectionDef {
   name: string;
+  /** Unicode symbol rendered as text in the focused-pane stepper (`focusedPlan.ts`). */
   glyph: string;
+  /** Material/Lucide icon name for the editor/bar `<Ic>` component (#1603 — the editor
+   *  presentation metadata, single-sourced here from the stage's own JSON). */
+  icon: string;
+  /** Accent hue (oklch) for the stage's editor/palette card (#1603). */
+  hue: number;
   /** Human-readable gate description, shown in the editor and the readiness feedback. */
   gate: string;
   deps: string[];
@@ -68,6 +88,9 @@ export interface SectionDef {
    *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with
    *  `bsc-plan context require/unrequire`. Absent ⇒ the universal {@link DISCOVERY_BASELINE}. */
   requires?: string[];
+  /** Discovery stage only (#1603): the checklist dimensions, carried as data so the editor's
+   *  add-stage palette + the dimension vocabulary (`KNOWN_DIMENSIONS`) single-source from here. */
+  dimensions?: DimensionMeta[];
   /** Output disposition (#609) — what happens to this stage's artifact (a key into
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
    *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */

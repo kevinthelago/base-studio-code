@@ -6,5 +6,7 @@
     "discovery"
   ],
   "blurb": "Connect the system of record and inventory what's there.",
-  "prompt": "Identify the source system to migrate from (database, SaaS export, API — e.g. SAP via OData,\nSalesforce Bulk API, a SQL dump). Record how it's reached and an INVENTORY of its objects and\ntheir schemas, and pull a small representative sample of rows for the mapping stage. Don't move\nanything yet — this stage just establishes what exists."
+  "prompt": "Identify the source system to migrate from (database, SaaS export, API — e.g. SAP via OData,\nSalesforce Bulk API, a SQL dump). Record how it's reached and an INVENTORY of its objects and\ntheir schemas, and pull a small representative sample of rows for the mapping stage. Don't move\nanything yet — this stage just establishes what exists.",
+  "icon": "database",
+  "hue": 245
 }

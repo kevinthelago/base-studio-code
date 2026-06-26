@@ -32,5 +32,7 @@
       "gate": "every feature is phased in the DB",
       "prompt": "Using the feature DAG (`bsc-plan feature list`), sequence the features into ordered phases\n— foundations first, a feature's `dependsOn` features in the same or an earlier phase. Two DB writes:\n(1) define the phases via `bsc-plan phase add \"<name>\" \"<done-when>\"` (in order); (2) assign EVERY\nfeature its phase number via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add` (merges in place).\nDo NOT write phases.json or any issues — phases live in the DB, and issues are generated from the\nfeatures afterward, not in this stage. Present the roadmap + the dependency graph and get the user's APPROVAL."
     }
-  ]
+  ],
+  "icon": "checklist",
+  "hue": 70
 }
