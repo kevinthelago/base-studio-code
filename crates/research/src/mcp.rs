@@ -1,16 +1,16 @@
-//! The stdio MCP server core (#1196) — JSON-RPC 2.0 over newline-delimited stdin/stdout, mirroring
-//! the shape the app's MCP *client* speaks (`crates/bsc-agent/src/mcp.rs`): `initialize` →
-//! `notifications/initialized` → `tools/list` → `tools/call`, protocol `2024-11-05`. The request
-//! builders, the tool schemas, and the argument parsers are pure + unit-tested; only [`run`] and the
-//! [`Engine`] calls touch the outside world. "Preserve the contract, swap the producer": this is the
-//! native producer behind the same agent-facing tool surface.
+//! The Research stdio MCP server (#1196). The JSON-RPC 2.0 plumbing — handshake, request builders,
+//! dispatch, and the stdin→stdout run-loop — lives in the shared [`mcp_rpc`] core (#1622); this module
+//! keeps only what is Research-specific: the tool catalog ([`tool_schemas`]), the argument parsers, and
+//! the [`Server`] that wires the [`Engine`] into [`mcp_rpc::ToolServer`]. The schemas and parsers are
+//! pure and unit-tested; only [`Server::from_env`] and the [`Engine`] calls touch the outside world.
+//! "Preserve the contract, swap the producer": this is the native producer behind the same
+//! agent-facing tool surface.
 
 use crate::engine::Engine;
 use crate::types::{SearchQuery, Source};
+use mcp_rpc::arg_str;
 use serde_json::{json, Value};
-use std::io::{BufRead, Write};
 
-const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "research";
 
 /// The five tools this server exposes, with JSON-Schema input shapes.
@@ -73,36 +73,7 @@ pub fn tool_schemas() -> Value {
     ])
 }
 
-// ── pure JSON-RPC builders ───────────────────────────────────────────────────
-
-fn result(id: &Value, value: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": value })
-}
-
-fn error(id: &Value, code: i64, message: &str) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
-}
-
-/// A `tools/call` success payload (text content). Large/structured results are JSON-stringified.
-fn tool_text(value: &Value) -> Value {
-    let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    json!({ "content": [{ "type": "text", "text": text }] })
-}
-
-/// A `tools/call` error payload — still a successful JSON-RPC response, with `isError: true`.
-fn tool_error(message: &str) -> Value {
-    json!({ "content": [{ "type": "text", "text": message }], "isError": true })
-}
-
 // ── argument parsers (pure) ──────────────────────────────────────────────────
-
-fn arg_str(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| format!("missing required string argument '{key}'"))
-}
 
 /// Parse the `search` tool arguments into a [`SearchQuery`].
 pub fn parse_search_args(args: &Value) -> Result<SearchQuery, String> {
@@ -148,7 +119,7 @@ pub fn parse_semantic_args(args: &Value) -> Result<(String, Vec<String>, usize),
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
 
-/// Run one tool, returning its result Value (caller wraps in `tool_text`/`tool_error`).
+/// Run one tool, returning its result Value (the shared core wraps it in `tool_text`/`tool_error`).
 fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "search" => {
@@ -176,76 +147,32 @@ fn call_tool(engine: &Engine, name: &str, args: &Value) -> Result<Value, String>
     }
 }
 
-/// Handle one parsed JSON-RPC request. Returns `Some(response)` for requests and `None` for
-/// notifications (no `id`, e.g. `notifications/initialized`). `engine` is optional so the routing /
-/// handshake can be unit-tested without constructing a live engine; tool calls require it.
-pub fn handle(engine: Option<&Engine>, req: &Value) -> Option<Value> {
-    let method = req.get("method").and_then(|m| m.as_str()).unwrap_or_default();
+/// The Research MCP server: an [`Engine`] behind the shared [`mcp_rpc::ToolServer`] seam. Build it with
+/// [`Server::from_env`], then drive the stdio loop via [`mcp_rpc::run_stdio_server`].
+pub struct Server {
+    engine: Engine,
+}
 
-    // Notifications have no id and expect no response.
-    let id = req.get("id").cloned()?;
-
-    match method {
-        "initialize" => {
-            let client_proto = req
-                .get("params")
-                .and_then(|p| p.get("protocolVersion"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(PROTOCOL_VERSION);
-            Some(result(
-                &id,
-                json!({
-                    "protocolVersion": client_proto,
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") }
-                }),
-            ))
-        }
-        "ping" => Some(result(&id, json!({}))),
-        "tools/list" => Some(result(&id, json!({ "tools": tool_schemas() }))),
-        "tools/call" => {
-            let params = req.get("params").cloned().unwrap_or_else(|| json!({}));
-            let name = params.get("name").and_then(|n| n.as_str()).unwrap_or_default();
-            let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            let Some(engine) = engine else {
-                return Some(result(&id, tool_error("engine unavailable")));
-            };
-            match call_tool(engine, name, &args) {
-                Ok(value) => Some(result(&id, tool_text(&value))),
-                Err(e) => Some(result(&id, tool_error(&e))),
-            }
-        }
-        other => Some(error(&id, -32601, &format!("method not found: {other}"))),
+impl Server {
+    /// Construct the server, building the engine from the environment (cache path, optional API keys).
+    pub fn from_env() -> Result<Self, String> {
+        Ok(Self { engine: Engine::from_env()? })
     }
 }
 
-/// Run the server: read newline-delimited JSON-RPC requests from stdin, write responses to stdout.
-pub fn run() -> Result<(), String> {
-    let engine = Engine::from_env()?;
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|e| format!("stdin read: {e}"))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let req: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(e) => {
-                // Parse error with null id, per JSON-RPC.
-                let resp = error(&Value::Null, -32700, &format!("parse error: {e}"));
-                writeln!(out, "{resp}").map_err(|e| e.to_string())?;
-                out.flush().map_err(|e| e.to_string())?;
-                continue;
-            }
-        };
-        if let Some(resp) = handle(Some(&engine), &req) {
-            writeln!(out, "{resp}").map_err(|e| e.to_string())?;
-            out.flush().map_err(|e| e.to_string())?;
-        }
+impl mcp_rpc::ToolServer for Server {
+    fn server_name(&self) -> &str {
+        SERVER_NAME
     }
-    Ok(())
+    fn server_version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
+    fn tool_schemas(&self) -> Value {
+        tool_schemas()
+    }
+    fn call_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
+        call_tool(&self.engine, name, args)
+    }
 }
 
 #[cfg(test)]
@@ -253,37 +180,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initialize_echoes_protocol_and_names_server() {
-        let req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": { "protocolVersion": "2024-11-05", "capabilities": {} } });
-        let resp = handle(None, &req).unwrap();
-        assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
-        assert_eq!(resp["result"]["serverInfo"]["name"], "research");
-        assert!(resp["result"]["capabilities"]["tools"].is_object());
-    }
-
-    #[test]
-    fn notifications_get_no_response() {
-        let req = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        assert!(handle(None, &req).is_none());
-    }
-
-    #[test]
-    fn tools_list_exposes_the_five_tools() {
-        let req = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-        let resp = handle(None, &req).unwrap();
-        let tools = resp["result"]["tools"].as_array().unwrap();
+    fn tool_schemas_exposes_the_five_tools() {
+        let tools = tool_schemas();
+        let tools = tools.as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert_eq!(names, vec!["search", "get_paper", "get_fulltext", "get_references", "semantic_search"]);
         // Each tool has an object input schema.
         assert!(tools.iter().all(|t| t["inputSchema"]["type"] == "object"));
-    }
-
-    #[test]
-    fn unknown_method_is_a_jsonrpc_error() {
-        let req = json!({ "jsonrpc": "2.0", "id": 3, "method": "frobnicate" });
-        let resp = handle(None, &req).unwrap();
-        assert_eq!(resp["error"]["code"], -32601);
     }
 
     #[test]
@@ -309,15 +212,5 @@ mod tests {
         assert_eq!(ok.2, 3);
         assert!(parse_semantic_args(&json!({ "query": "q", "ids": [] })).is_err());
         assert!(parse_semantic_args(&json!({ "query": "q" })).is_err());
-    }
-
-    #[test]
-    fn tools_call_with_bad_args_returns_iserror_not_rpc_error() {
-        // No engine + a tool call: we short-circuit to a tool error payload, still a result.
-        let req = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-            "params": { "name": "search", "arguments": {} } });
-        let resp = handle(None, &req).unwrap();
-        assert!(resp.get("error").is_none());
-        assert_eq!(resp["result"]["isError"], true);
     }
 }

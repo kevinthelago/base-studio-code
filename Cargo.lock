@@ -1026,6 +1026,7 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
+ "mcp-rpc",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3130,6 +3131,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp-rpc"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4464,6 +4472,7 @@ dependencies = [
 name = "research"
 version = "0.1.0"
 dependencies = [
+ "mcp-rpc",
  "pdf-extract",
  "reqwest 0.12.28",
  "roxmltree",
