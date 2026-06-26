@@ -11,16 +11,15 @@
 //   • Mobile push (#366): coordination notifications to a paired phone, deduped + once each — the
 //     surviving alert path (a stuck/failed signal still reaches the human).
 import { useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import {
   ingestCoordLog,
   answerWakePrompt,
-  emptyCoordState,
   coordNotifications,
   buildProducerOf,
   producesFromPaneStreams,
 } from "./coordination";
+import { readCoordState } from "./useCoordLog";
 import type { SessionMeta } from "@/features/tunnel/lib/tunnel";
 import { injectWake } from "./coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel/lib/tunnelClient";
@@ -38,9 +37,9 @@ export function useCoordinator(): void {
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
-      const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => null);
-      if (cancelled || !lines) return;
-      const { state, ready, answered } = ingestCoordLog(lines, emptyCoordState());
+      const res = await readCoordState(1000);
+      if (cancelled || !res) return;
+      const { state, ready, answered } = res;
       const now = Date.now();
 
       // A director answer (#369) always resumes the asking worker, recency-gated -- this is the

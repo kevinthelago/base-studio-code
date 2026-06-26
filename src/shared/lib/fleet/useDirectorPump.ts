@@ -15,10 +15,9 @@
 // Mounted once in ConsoleScreen (which stays mounted across screens). Pure logic lives in
 // directorDrive.ts + coordination.ts; this is the thin Tauri/React actuator.
 import { useEffect, useRef, type RefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { injectPrompt } from "./paneInject";
-import { ingestCoordLog, emptyCoordState } from "./coordination";
+import { readCoordState } from "./useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
@@ -41,13 +40,13 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
       const drives = useAppStore.getState().paneDirectorDrive;
       const paneIds = Object.keys(drives);
       if (paneIds.length === 0) return;
-      const lines = await invoke<string[]>("read_coord_log", { limit: 2000 }).catch(() => null);
-      if (cancelled || !lines) return;
+      const res = await readCoordState(2000);
+      if (cancelled || !res) return;
       const now = Date.now();
       const statuses = paneStatusesRef.current ?? {};
 
       // Pending unanswered questions, re-derived from the whole log (restart-safe).
-      const { state } = ingestCoordLog(lines, emptyCoordState());
+      const { lines, state } = res;
       const pendingAsks = state.asking;
       const pendingKeys = new Set(pendingAsks.map(askKey));
       for (const k of [...surfaced.current]) {
