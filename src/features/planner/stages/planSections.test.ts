@@ -210,6 +210,18 @@ describe("parseFleetFile", () => {
     expect(fleet.streams[1].mcp).toBeUndefined();
   });
 
+  it("carries a stream's granted commands, undefined when none (#1572)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "rust", repo: "o/r", commands: ["cargo", "wasm-pack"] },
+        { id: "ui", repo: "o/r" },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].commands).toEqual(["cargo", "wasm-pack"]);
+    expect(fleet.streams[1].commands).toBeUndefined();
+  });
+
   it("accepts depends_on as an alias and coerces a string recommended", () => {
     const raw = JSON.stringify({
       recommended: "2",
