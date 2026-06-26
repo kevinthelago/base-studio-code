@@ -25,7 +25,7 @@ pub(crate) use github::{oauth, git_hooks as githooks};
 pub(crate) use sources::{data, oauth as source_oauth, credentials};
 pub(crate) use platform::docstore;
 pub(crate) use observability::{logs, perf, tokens};
-pub(crate) use mobile::{push as fcm, tunnel};
+pub(crate) use mobile::{fcm, tunnel};
 pub(crate) use project::plan_db;
 
 // ── platform primitives ──

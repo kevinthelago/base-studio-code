@@ -36,12 +36,12 @@ pub(crate) fn clear(project_key: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn plan_upsert_issue(project_key: String, issue: PlanIssue) -> Result<(), String> {
+pub(crate) fn plan_upsert_issue(project_key: String, issue: PlanIssue) -> Result<(), String> {
     open(&project_key)?.upsert(&issue).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_list_issues(
+pub(crate) fn plan_list_issues(
     project_key: String,
     status: Option<String>,
     stream: Option<String>,
@@ -52,14 +52,14 @@ pub fn plan_list_issues(
 }
 
 #[tauri::command]
-pub fn plan_remove_issue(project_key: String, issue_ref: String) -> Result<(), String> {
+pub(crate) fn plan_remove_issue(project_key: String, issue_ref: String) -> Result<(), String> {
     open(&project_key)?.remove(&issue_ref).map_err(|e| e.to_string())
 }
 
 /// Set an issue's execution status (workers: in_progress/complete; director: verified/failed).
 /// Validates against the known lifecycle so a typo can't wedge the board.
 #[tauri::command]
-pub fn plan_set_issue_status(project_key: String, issue_ref: String, status: String) -> Result<(), String> {
+pub(crate) fn plan_set_issue_status(project_key: String, issue_ref: String, status: String) -> Result<(), String> {
     if !plandb::is_valid_status(&status) {
         return Err(format!("unknown status '{status}' (expected one of {STATUSES:?})"));
     }
@@ -75,17 +75,17 @@ pub fn plan_set_issue_status(project_key: String, issue_ref: String, status: Str
 
 /// Merge-upsert a feature (titles-first: register titles, then fill detail by slug). Returns the slug.
 #[tauri::command]
-pub fn plan_upsert_feature(project_key: String, feature: PlanFeature) -> Result<String, String> {
+pub(crate) fn plan_upsert_feature(project_key: String, feature: PlanFeature) -> Result<String, String> {
     open(&project_key)?.feature_upsert(&feature).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_list_features(project_key: String) -> Result<Vec<PlanFeature>, String> {
+pub(crate) fn plan_list_features(project_key: String) -> Result<Vec<PlanFeature>, String> {
     open(&project_key)?.feature_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_remove_feature(project_key: String, slug: String) -> Result<(), String> {
+pub(crate) fn plan_remove_feature(project_key: String, slug: String) -> Result<(), String> {
     open(&project_key)?.feature_remove(&slug).map_err(|e| e.to_string())
 }
 
@@ -93,63 +93,63 @@ pub fn plan_remove_feature(project_key: String, slug: String) -> Result<(), Stri
 //    app-state reset can't lose them (the store-only persistence proved fragile). ──────────────
 
 #[tauri::command]
-pub fn plan_add_repo(project_key: String, full_name: String) -> Result<(), String> {
+pub(crate) fn plan_add_repo(project_key: String, full_name: String) -> Result<(), String> {
     open(&project_key)?.repo_add(&full_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_list_repos(project_key: String) -> Result<Vec<String>, String> {
+pub(crate) fn plan_list_repos(project_key: String) -> Result<Vec<String>, String> {
     open(&project_key)?.repo_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
+pub(crate) fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
     open(&project_key)?.repo_remove(&full_name).map_err(|e| e.to_string())
 }
 
 // ── roadmap phases (#1017) — names/descriptions; the structure card + publish read them from here. ──
 
 #[tauri::command]
-pub fn plan_upsert_phase(project_key: String, phase: PlanPhase) -> Result<(), String> {
+pub(crate) fn plan_upsert_phase(project_key: String, phase: PlanPhase) -> Result<(), String> {
     open(&project_key)?.phase_upsert(&phase).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_list_phases(project_key: String) -> Result<Vec<PlanPhase>, String> {
+pub(crate) fn plan_list_phases(project_key: String) -> Result<Vec<PlanPhase>, String> {
     open(&project_key)?.phase_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_remove_phase(project_key: String, name: String) -> Result<(), String> {
+pub(crate) fn plan_remove_phase(project_key: String, name: String) -> Result<(), String> {
     open(&project_key)?.phase_remove(&name).map_err(|e| e.to_string())
 }
 
 // ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────
 
 #[tauri::command]
-pub fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
+pub(crate) fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
     open(&project_key)?.fleet_set(&fleet).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::Value>, String> {
+pub(crate) fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::Value>, String> {
     open(&project_key)?.fleet_get().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_remove_stream(project_key: String, id: String) -> Result<(), String> {
+pub(crate) fn plan_remove_stream(project_key: String, id: String) -> Result<(), String> {
     open(&project_key)?.fleet_stream_remove(&id).map_err(|e| e.to_string())
 }
 
 // ── deploy config (#1020) — the Deploy stage's structured config as one blob (the poll coerces it). ──
 
 #[tauri::command]
-pub fn plan_set_deploy(project_key: String, config: serde_json::Value) -> Result<(), String> {
+pub(crate) fn plan_set_deploy(project_key: String, config: serde_json::Value) -> Result<(), String> {
     open(&project_key)?.deploy_set(&config).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>, String> {
+pub(crate) fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>, String> {
     open(&project_key)?.deploy_get().map_err(|e| e.to_string())
 }
 
@@ -157,41 +157,41 @@ pub fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>,
 //    The poll coerces it into the DEPENDENCIES section + the one-time legacy-file import writes here. ──
 
 #[tauri::command]
-pub fn plan_set_deps(project_key: String, manifest: serde_json::Value) -> Result<(), String> {
+pub(crate) fn plan_set_deps(project_key: String, manifest: serde_json::Value) -> Result<(), String> {
     open(&project_key)?.deps_set(&manifest).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_get_deps(project_key: String) -> Result<Option<serde_json::Value>, String> {
+pub(crate) fn plan_get_deps(project_key: String) -> Result<Option<serde_json::Value>, String> {
     open(&project_key)?.deps_get().map_err(|e| e.to_string())
 }
 
 // ── MCP assignments (#1021) — catalog server names scoped to the project; the poll resolves each. ──
 
 #[tauri::command]
-pub fn plan_add_mcp(project_key: String, name: String) -> Result<(), String> {
+pub(crate) fn plan_add_mcp(project_key: String, name: String) -> Result<(), String> {
     open(&project_key)?.mcp_add(&name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
+pub(crate) fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
     open(&project_key)?.mcp_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> {
+pub(crate) fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> {
     open(&project_key)?.mcp_remove(&name).map_err(|e| e.to_string())
 }
 
 // ── authored blueprint (#1022) — the blueprint an authoring project designs, as one blob. ──
 
 #[tauri::command]
-pub fn plan_set_blueprint(project_key: String, blueprint: serde_json::Value) -> Result<(), String> {
+pub(crate) fn plan_set_blueprint(project_key: String, blueprint: serde_json::Value) -> Result<(), String> {
     open(&project_key)?.blueprint_set(&blueprint).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Value>, String> {
+pub(crate) fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Value>, String> {
     open(&project_key)?.blueprint_get().map_err(|e| e.to_string())
 }
 
@@ -200,12 +200,12 @@ pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Valu
 //    Context files gate on GENERATION (the file exists), not confirmation — there is no confirm. ──
 
 #[tauri::command]
-pub fn plan_list_discovery(project_key: String) -> Result<Vec<String>, String> {
+pub(crate) fn plan_list_discovery(project_key: String) -> Result<Vec<String>, String> {
     open(&project_key)?.discovery_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_require_discovery(project_key: String, topic: String, required: bool) -> Result<(), String> {
+pub(crate) fn plan_require_discovery(project_key: String, topic: String, required: bool) -> Result<(), String> {
     open(&project_key)?.discovery_require(&topic, required).map_err(|e| e.to_string())
 }
 
@@ -213,17 +213,17 @@ pub fn plan_require_discovery(project_key: String, topic: String, required: bool
 //    resumes cheaply from what changed instead of re-ingesting the whole project. ──
 
 #[tauri::command]
-pub fn plan_triage_record_run(project_key: String, repo: String) -> Result<i64, String> {
+pub(crate) fn plan_triage_record_run(project_key: String, repo: String) -> Result<i64, String> {
     open(&project_key)?.triage_record_run(&repo).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_triage_last_run(project_key: String, repo: String) -> Result<Option<i64>, String> {
+pub(crate) fn plan_triage_last_run(project_key: String, repo: String) -> Result<Option<i64>, String> {
     open(&project_key)?.triage_last_run(&repo).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_issues_changed_since(project_key: String, repo: String, since: i64) -> Result<Vec<PlanIssue>, String> {
+pub(crate) fn plan_issues_changed_since(project_key: String, repo: String, since: i64) -> Result<Vec<PlanIssue>, String> {
     open(&project_key)?.issues_changed_since(&repo, since).map_err(|e| e.to_string())
 }
 
@@ -236,34 +236,34 @@ pub fn plan_issues_changed_since(project_key: String, repo: String, since: i64) 
 /// The project's lesson candidates, newest-touched first. `status` filters (`pending` for the queue);
 /// empty returns all.
 #[tauri::command]
-pub fn plan_lesson_list(project_key: String, status: String) -> Result<Vec<Lesson>, String> {
+pub(crate) fn plan_lesson_list(project_key: String, status: String) -> Result<Vec<Lesson>, String> {
     open(&project_key)?.lesson_list(&status).map_err(|e| e.to_string())
 }
 
 /// The user accepts a candidate — mark it `confirmed`. The caller then materializes it as a
 /// project-scoped skill via the skilldb bridge.
 #[tauri::command]
-pub fn plan_lesson_confirm(project_key: String, id: String) -> Result<(), String> {
+pub(crate) fn plan_lesson_confirm(project_key: String, id: String) -> Result<(), String> {
     open(&project_key)?.lesson_set_status(&id, "confirmed").map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// The user rejects a candidate — mark it `discarded` (kept as a record; its `seen` count still grows
 /// if the mistake recurs).
 #[tauri::command]
-pub fn plan_lesson_discard(project_key: String, id: String) -> Result<(), String> {
+pub(crate) fn plan_lesson_discard(project_key: String, id: String) -> Result<(), String> {
     open(&project_key)?.lesson_set_status(&id, "discarded").map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Permanently delete a lesson candidate.
 #[tauri::command]
-pub fn plan_lesson_remove(project_key: String, id: String) -> Result<(), String> {
+pub(crate) fn plan_lesson_remove(project_key: String, id: String) -> Result<(), String> {
     open(&project_key)?.lesson_remove(&id).map_err(|e| e.to_string())
 }
 
 /// Sweep un-confirmed candidates older than `before` (epoch seconds) — the 14-day expiry. Returns the
 /// number removed.
 #[tauri::command]
-pub fn plan_lesson_expire(project_key: String, before: i64) -> Result<usize, String> {
+pub(crate) fn plan_lesson_expire(project_key: String, before: i64) -> Result<usize, String> {
     open(&project_key)?.lesson_expire_pending(before).map_err(|e| e.to_string())
 }
 
