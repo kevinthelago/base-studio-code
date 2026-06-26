@@ -1130,6 +1130,34 @@ describe("agent fleet store", () => {
     expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
   });
 
+  it("fleetStartProject materializes a stream's dangling profile so perms route (#1580)", () => {
+    // A fleet revised after publish (or set via bsc-plan) can reference a profile id that was
+    // never created — the empty-agentProfiles STEM condition. Launch must materialize it.
+    const danglingFleet: FleetPlan = {
+      recommended: 1,
+      reasoning: "r",
+      director: { enabled: false },
+      streams: [
+        { id: "ui-modes", name: "UI modes", repo: "own/web", owns: ["src/modes/**"], issues: [], dependsOn: [], profile: "ui-modes-dev", commands: ["vite", "tauri"] },
+        { id: "data", name: "Data", repo: "own/web", owns: ["src/data/**"], issues: [], dependsOn: [] }, // no profile assigned
+      ],
+    };
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", agentProfiles: [] });
+    useAppStore.getState().fleetStartProject("MZ", danglingFleet, "mz-key");
+    const st = useAppStore.getState();
+
+    // The dangling id is materialized, carrying the stream's granted commands (#1572, sorted+deduped).
+    const uiProf = st.agentProfiles.find((p) => p.id === "ui-modes-dev");
+    expect(uiProf).toBeDefined();
+    expect(uiProf!.commands).toEqual(["tauri", "vite"]);
+    // The worker pane binds to the now-existing profile, so TerminalView resolves it at launch.
+    expect(st.paneProfiles[fleetPaneId("mz-key", "ui-modes")]).toBe("ui-modes-dev");
+
+    // A stream with no assigned profile gets a generated one (gen_<id>), also bound.
+    expect(st.agentProfiles.find((p) => p.id === "gen_data")).toBeDefined();
+    expect(st.paneProfiles[fleetPaneId("mz-key", "data")]).toBe("gen_data");
+  });
+
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
     // bscBaseDir EMPTY — the exact condition that silently dropped every session at
     // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then
