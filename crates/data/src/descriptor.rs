@@ -25,6 +25,30 @@ use crate::rest::{RestConnector, RestResource};
 /// (a dot-path like `_embedded.leads`), or `None` when the body itself is the array.
 pub type ResourceDef = (&'static str, &'static str, Option<&'static str>);
 
+/// Anything that can describe a fixed set of REST resources gets the generic [`RestConnector`]
+/// builder for free. The single source of the `connector()` build: the compiled-in
+/// [`VendorPreset`](crate::presets::VendorPreset), the runtime
+/// [`RuntimePreset`](crate::runtime::RuntimePreset), and the `Rest` resource list of a
+/// [`ConnectorDescriptor`] all reach the same code path.
+pub trait RestPreset {
+    /// This preset's resources as [`RestResource`]s.
+    fn rest_resources(&self) -> Vec<RestResource>;
+
+    /// Build the audited generic REST connector for this preset. `fetch` resolves a resource path
+    /// against the instance and carries the auth — never stored by the connector (#1194).
+    fn connector(&self, name: impl Into<String>, fetch: FetchFn) -> RestConnector {
+        RestConnector::new(name, self.rest_resources(), fetch)
+    }
+}
+
+/// A static `Rest` resource list builds its resources by cloning the declared tuples — the shape a
+/// [`ConnectorKind::Rest`] descriptor carries.
+impl RestPreset for [ResourceDef] {
+    fn rest_resources(&self) -> Vec<RestResource> {
+        self.iter().map(|(n, p, k)| RestResource::new(*n, *p, *k)).collect()
+    }
+}
+
 /// How a descriptor's [`Connector`] is built.
 pub enum ConnectorKind {
     /// Pure data: the generic [`RestConnector`] over a fixed resource list. Covers the long tail and
@@ -57,11 +81,7 @@ impl ConnectorDescriptor {
     /// those are built by the host's native dispatch (their transport is bespoke).
     pub fn build_rest(&self, name: &str, fetch: FetchFn) -> Option<Box<dyn Connector>> {
         match &self.kind {
-            ConnectorKind::Rest(resources) => {
-                let res: Vec<RestResource> =
-                    resources.iter().map(|(n, p, k)| RestResource::new(*n, *p, *k)).collect();
-                Some(Box::new(RestConnector::new(name.to_string(), res, fetch)))
-            }
+            ConnectorKind::Rest(resources) => Some(Box::new(resources.connector(name, fetch))),
             ConnectorKind::Native => None,
         }
     }
