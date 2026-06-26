@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { AgentStream, FleetPlan } from "@/features/planner/stages/planSections";
+import type { AgentStream, FleetPlan } from "@/features/planner/fleet/planFleet";
 import { blankSkill, type SkillDef } from "./lib/skills";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 

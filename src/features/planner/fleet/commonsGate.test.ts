@@ -6,7 +6,7 @@ import {
   applyCommonsGate,
 } from "./commonsGate";
 import { commonsGlobsForStack } from "@/shared/lib/session/commons";
-import type { AgentStream, FleetPlan } from "../stages/planSections";
+import type { AgentStream, FleetPlan } from "./planFleet";
 
 const stream = (over: Partial<AgentStream> = {}): AgentStream => ({
   id: "auth-ui",

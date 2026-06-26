@@ -8,7 +8,7 @@
 // Framework-free + unit-tested; the store/coord wiring lives in hooks/useFleetLive.
 
 import type { CoordState } from "./coordination";
-import type { AgentStream } from "@/features/planner/stages/planSections";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { WorkerStatus } from "@/shared/data/fleet";
 
 /** Minimal AgentProfile fields we need for labels/colors (avoids a hard dep). */

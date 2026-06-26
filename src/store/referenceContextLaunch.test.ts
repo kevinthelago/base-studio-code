@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import type { FleetPlan } from "@/features/planner/stages/planSections";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { directorPaneId, fleetPaneId, triagePaneId } from "@/app/console/lib/paneIdentity";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 

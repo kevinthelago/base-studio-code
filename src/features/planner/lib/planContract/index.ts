@@ -10,7 +10,7 @@
 // on contract violations. Reuses validateIssues (planIssues.ts) for issue checks.
 
 import { parseIssuesFile, validateIssues } from "@/features/planner/issues/planIssues";
-import { parseFleetFile } from "@/features/planner/stages/planSections";
+import { parseFleetFile } from "@/features/planner/fleet/planFleet";
 import { parsePhases } from "@/features/planner/github/ghStructure";
 
 // ── Blueprint types ─────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import type { Section } from "../github/ghStructure";
 import type { BlueprintStage } from "../stages/blueprints";
 import { skippedSignal, confirmedSignal, planStagesComplete, authoringSignals } from "../stages/blueprints";
 import { derivePlanStageState, planStateToSignals } from "../stages/planStageDerive";
-import { FEATURES_KEY } from "../stages/planSections";
+import { FEATURES_KEY } from "../stages/planTopics";
 import { parseIssuesFile } from "../issues/planIssues";
 import { featuresGateComplete, featuresAllPhased, featuresSummary } from "../issues/featureList";
 import { findPlanGaps } from "../lib/lintPlan";

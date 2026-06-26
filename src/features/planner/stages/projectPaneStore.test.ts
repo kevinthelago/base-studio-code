@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import { emptyFleet } from "./planSections";
-import type { AgentStream } from "./planSections";
+import { emptyFleet } from "../fleet/planFleet";
+import type { AgentStream } from "../fleet/planFleet";
 
 const PID = "prj_test";
 

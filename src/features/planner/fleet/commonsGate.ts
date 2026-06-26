@@ -12,7 +12,7 @@
 // Pure (no store/IO) so it's exhaustively unit-testable; `fleetStartProject` calls these with the
 // project's stack to wire the director's writeGlobs + the feature gating.
 
-import type { FleetPlan, AgentStream } from "../stages/planSections";
+import type { FleetPlan, AgentStream } from "./planFleet";
 import { excludeCommonsFromOwns } from "@/shared/lib/session/commons";
 import { matchGlob } from "@/shared/lib/session/sessionRoles";
 

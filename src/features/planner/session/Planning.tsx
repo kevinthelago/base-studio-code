@@ -15,9 +15,9 @@ import {
 } from "./planningSession";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
-  parseFleetFile,
-} from "../stages/planSections";
+  ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForTopic, groupTopics,
+} from "../stages/planTopics";
+import { FLEET_KEY, parseFleetFile } from "../fleet/planFleet";
 import { resolveSkills } from "@/features/skills/lib/skills";
 import { parseFeaturesFile, featuresSummary, featuresAwaitingConfirm, featureDependencyCycle } from "../issues/featureList";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
@@ -230,12 +230,12 @@ export function Planning({ visible }: { visible: boolean }) {
       // `dependencies` is the locked manifest JSON (#1111) — gate-driving, not a prose card.
       if (k !== SKIPPED_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
     }
-    const { project, repos } = groupSections([...keys]);
+    const { project, repos } = groupTopics([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
     return ordered.map(k => {
       const content = savedSections[k] ?? "";
       const state: SectionState = confirmedSet.has(k) ? "confirmed" : (content ? "drafted" : "pending");
-      return { k, title: titleForKey(k), state, content };
+      return { k, title: titleForTopic(k), state, content };
     });
   }, [savedSections, confirmedSet]);
 
@@ -628,7 +628,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const confirmStageKeys = useCallback((keys: string[]) => {
     if (keys.length === 0) return;
     for (const k of keys) confirmPlanSection(effectiveProjectId, k);
-    const name = keys.map((k) => titleForKey(k)).join(", ") || "section";
+    const name = keys.map((k) => titleForTopic(k)).join(", ") || "section";
     invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
   }, [effectiveProjectId, paneId, confirmPlanSection]);
 
