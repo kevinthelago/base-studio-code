@@ -362,6 +362,19 @@ fn wire_bsc_env(
     if let Some(bin) = sidecar_bin_path("bsc-logs") {
         cmd.env("BSC_LOGS_BIN", to_bash_path(&bin.to_string_lossy()));
     }
+    // bsc-compliance (#1718): point every session at the GLOBAL compliance standards store + its CLI.
+    // $BSC_COMPLIANCE_STORE is the store.db the `bsc-compliance` helper reads/writes (and which the
+    // bundled `bsc-compliance-mcp` server reads — same `Store::default_path` default), $BSC_COMPLIANCE_BIN
+    // the absolute path of the CLI it execs. Unlike BSC_PLAN_DB (per-project, cwd-derived), the corpus is
+    // global — set unconditionally for every pane (like bsc-skill's skills.db), so any live session can
+    // inspect/refresh the standards from its own shell.
+    cmd.env(
+        "BSC_COMPLIANCE_STORE",
+        to_bash_path(&base.join("compliance").join("store.db").to_string_lossy()),
+    );
+    if let Some(bin) = sidecar_bin_path("bsc-compliance") {
+        cmd.env("BSC_COMPLIANCE_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
     // this group, which the Planning pane resolves + highlights as "authored this session". The id is
