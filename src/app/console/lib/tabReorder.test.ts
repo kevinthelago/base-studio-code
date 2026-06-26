@@ -1,20 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue,
+  tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue,
 } from "./tabReorder";
 
-describe("moveInArray", () => {
-  it("moves an element forward", () => {
-    expect(moveInArray(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
-  });
-  it("moves an element backward", () => {
-    expect(moveInArray(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]);
-  });
-  it("is a no-op (copy) for from===to or out-of-range", () => {
-    expect(moveInArray(["a", "b"], 1, 1)).toEqual(["a", "b"]);
-    expect(moveInArray(["a", "b"], 5, 0)).toEqual(["a", "b"]);
-  });
-});
+// moveInArray's own tests live next to it at shared/lib/core/arrayMove.test.ts
+// (#1703); tabReorder re-exports it, and the maps below exercise it transitively.
 
 describe("tabIndexMap (old index -> new index)", () => {
   it("maps a forward move", () => {
