@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
@@ -317,7 +318,7 @@ export default function App() {
     for (let i = 0; i < c * r; i++) {
       // Kill the pane's RESOLVED identity id (#1176) — manual panes are `man:<tabId>:p<idx>`,
       // so the old positional `t{tabIdx}p{i}` would miss the real session and leak it.
-      invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
+      fireInvoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }, console.error);
     }
   }
 
@@ -330,7 +331,7 @@ export default function App() {
     // Kill PTY sessions for panes that will no longer exist (resolved identity id, #1176).
     if (newCount < oldCount) {
       for (let i = newCount; i < oldCount; i++) {
-        invoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }).catch(console.error);
+        fireInvoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }, console.error);
       }
     }
     setTabLayout(tabIdx, layout);

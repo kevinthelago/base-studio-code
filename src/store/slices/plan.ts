@@ -1,7 +1,7 @@
 // PlanSlice — extracted from the store implementation (store split, stage 2).
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkSection, cloneSections, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalSectionKey, emptyFleet } from "@/features/planner/stages/planSections";
@@ -46,11 +46,11 @@ type PlanSlice = Pick<AppStore,
 // fire-and-forget — the store stays the in-memory source; the dir is the durable copy.
 const syncBlueprintFile = (bp?: Blueprint) => {
   if (bp && bp.origin !== "built-in") {
-    void invoke("write_blueprint", { id: bp.id, json: JSON.stringify(bp) }).catch(() => {});
+    fireInvoke("write_blueprint", { id: bp.id, json: JSON.stringify(bp) });
   }
 };
 const deleteBlueprintFile = (id: string) => {
-  void invoke("delete_blueprint", { id }).catch(() => {});
+  fireInvoke("delete_blueprint", { id });
 };
 
 export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, get) => {
@@ -66,7 +66,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
     const next = updater(get().planFleet[projectId]);
     if (next === null) return;
     set({ planFleet: { ...get().planFleet, [projectId]: next } });
-    void invoke("plan_set_fleet", { projectKey: projectId, fleet: next }).catch(() => {});
+    fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
   };
   return ({
       configProfiles: [],
@@ -451,7 +451,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         });
         const next = { ...fleet, streams };
         set({ agentProfiles: profiles, planFleet: { ...get().planFleet, [projectId]: next } });
-        void invoke("plan_set_fleet", { projectKey: projectId, fleet: next }).catch(() => {});
+        fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
       },
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         mutateFleet(projectId, (raw) => {
