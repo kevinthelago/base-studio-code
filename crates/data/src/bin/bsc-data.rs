@@ -1,19 +1,27 @@
 //! `bsc-data` — read/write a project's canonical **Data Model** + **Platform Behavior Summary** in
-//! its per-project DuckDB store (#1446). The desktop app writes them; the **planner** reads them at
-//! the UI-kickoff stage to drive data-driven screens (it can't query DuckDB directly, so this CLI is
-//! its accessor — the #1325 pattern, mirroring `bsc-plan` / `bsc-skill`).
+//! its per-project DuckDB store (#1446), and read the materialized **DataStore** — the typed entity
+//! tables + lineage (#1717). The desktop app writes them; the **planner** reads them at the
+//! UI-kickoff stage to drive data-driven screens (it can't query DuckDB directly, so this CLI is its
+//! accessor — the #1325 pattern, mirroring `bsc-plan` / `bsc-skill`).
 //!
 //! The store is located via `--db <path>` or the `BSC_DATA_DB` env var (set per-session at launch).
+//!
+//! Reading is lean by default; `--json` emits compact JSON and `--pretty` re-indents it.
 //!
 //! USAGE:
 //!   bsc-data model get                 # print {"model":<DataModel>,"refined":<bool>} or null
 //!   bsc-data model set [--refined]     # upsert the DataModel JSON from stdin
 //!   bsc-data scan get                  # print the PlatformScan JSON or null
 //!   bsc-data scan set                  # upsert the PlatformScan JSON from stdin
+//!   bsc-data tables                    # entity tables + row counts
+//!   bsc-data rows <entity> [--limit N] # sample rows from an entity table
+//!   bsc-data count <entity>            # row count for an entity
+//!   bsc-data nulls <entity> [<field>]  # NULL counts (all fields, or one)
+//!   bsc-data lineage <entity>          # per-row + per-field lineage counts
 
-use bsc_data::{DataModel, MetaStore, PlatformScan};
+use bsc_data::{DataModel, DataStore, MetaStore, PlatformScan};
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -30,16 +38,38 @@ fn main() -> ExitCode {
 struct Args {
     db: Option<String>,
     refined: bool,
+    /// Compact JSON output (set implicitly by `--pretty`).
+    json: bool,
+    /// Pretty (re-indented) JSON output.
+    pretty: bool,
+    /// Row cap for `rows` (default [`DEFAULT_ROW_LIMIT`]).
+    limit: Option<usize>,
     positional: Vec<String>,
 }
 
+/// Default sample size for `rows` — small so an agent reads a peek, not a dump.
+const DEFAULT_ROW_LIMIT: usize = 20;
+
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, refined: false, positional: Vec::new() };
+    let mut a = Args { db: None, refined: false, json: false, pretty: false, limit: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--refined" => a.refined = true,
+            "--json" => a.json = true,
+            "--pretty" => {
+                a.json = true;
+                a.pretty = true;
+            }
+            "--limit" => {
+                a.limit = Some(
+                    it.next()
+                        .ok_or("--limit needs a number")?
+                        .parse()
+                        .map_err(|_| "--limit needs a number")?,
+                );
+            }
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -67,6 +97,32 @@ fn read_stdin() -> Result<String, String> {
     Ok(buf)
 }
 
+/// Open the DataStore at `db`, seeding it with the Data Model persisted in the same file's
+/// MetaStore. The MetaStore connection is opened and **dropped** (releasing the DuckDB file lock)
+/// before the DataStore re-opens it, so the two single-file views never contend within this process.
+fn open_data_store(db: &Path) -> Result<DataStore, String> {
+    let model = {
+        let meta = MetaStore::open(db).map_err(|e| e.to_string())?;
+        meta.get_model()
+            .map_err(|e| e.to_string())?
+            .map(|(m, _refined)| m)
+            .ok_or("no Data Model in the store — run `bsc-data model set` first")?
+    };
+    DataStore::open(db, model).map_err(|e| e.to_string())
+}
+
+/// Render a value per the output flags, or fall back to the caller's lean text. `--pretty`
+/// re-indents, `--json` is compact, default is the human-readable `lean` rendering.
+fn emit(args: &Args, value: serde_json::Value, lean: impl FnOnce() -> String) {
+    if args.pretty {
+        println!("{}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".into()));
+    } else if args.json {
+        println!("{}", serde_json::to_string(&value).unwrap_or_else(|_| "null".into()));
+    } else {
+        println!("{}", lean());
+    }
+}
+
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
@@ -75,9 +131,10 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let store = MetaStore::open(resolve_db(&args.db)?).map_err(|e| e.to_string())?;
+    let db = resolve_db(&args.db)?;
     match (cmd.as_str(), sub) {
         ("model", "get") => {
+            let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
             match store.get_model().map_err(|e| e.to_string())? {
                 Some((model, refined)) => println!("{}", serde_json::json!({ "model": model, "refined": refined })),
                 None => println!("null"),
@@ -85,12 +142,14 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ("model", "set") => {
+            let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
             let model: DataModel =
                 serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing DataModel: {e}"))?;
             store.set_model(&model, args.refined).map_err(|e| e.to_string())?;
             Ok(())
         }
         ("scan", "get") => {
+            let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
             match store.get_scan().map_err(|e| e.to_string())? {
                 Some(scan) => println!("{}", serde_json::to_string(&scan).unwrap_or_else(|_| "null".into())),
                 None => println!("null"),
@@ -98,9 +157,116 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ("scan", "set") => {
+            let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
             let scan: PlatformScan =
                 serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing PlatformScan: {e}"))?;
             store.set_scan(&scan).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        ("tables", _) => {
+            let store = open_data_store(&db)?;
+            let mut rows = Vec::new();
+            for e in &store.model().entities {
+                let n = store.count(&e.key).map_err(|e| e.to_string())?;
+                rows.push((e.key.clone(), e.label.clone(), n));
+            }
+            let value = serde_json::Value::Array(
+                rows.iter()
+                    .map(|(k, l, n)| serde_json::json!({ "entity": k, "label": l, "rows": n }))
+                    .collect(),
+            );
+            emit(&args, value, || {
+                let mut lines = vec!["entity\trows".to_string()];
+                lines.extend(rows.iter().map(|(k, _l, n)| format!("{k}\t{n}")));
+                lines.join("\n")
+            });
+            Ok(())
+        }
+        ("rows", _) => {
+            let entity = args.positional.get(1).ok_or("usage: bsc-data rows <entity> [--limit N]")?;
+            let store = open_data_store(&db)?;
+            let (cols, data) =
+                store.sample(entity, args.limit.unwrap_or(DEFAULT_ROW_LIMIT)).map_err(|e| e.to_string())?;
+            let objs: Vec<serde_json::Value> = data
+                .iter()
+                .map(|row| {
+                    let mut m = serde_json::Map::new();
+                    for (c, v) in cols.iter().zip(row) {
+                        let jv = match v {
+                            Some(s) => serde_json::Value::String(s.clone()),
+                            None => serde_json::Value::Null,
+                        };
+                        m.insert(c.clone(), jv);
+                    }
+                    serde_json::Value::Object(m)
+                })
+                .collect();
+            emit(&args, serde_json::Value::Array(objs), || {
+                let mut lines = vec![cols.join("\t")];
+                lines.extend(data.iter().map(|row| {
+                    row.iter().map(|c| c.clone().unwrap_or_default()).collect::<Vec<_>>().join("\t")
+                }));
+                lines.join("\n")
+            });
+            Ok(())
+        }
+        ("count", _) => {
+            let entity = args.positional.get(1).ok_or("usage: bsc-data count <entity>")?;
+            let store = open_data_store(&db)?;
+            let n = store.count(entity).map_err(|e| e.to_string())?;
+            emit(&args, serde_json::json!({ "entity": entity, "rows": n }), || n.to_string());
+            Ok(())
+        }
+        ("nulls", _) => {
+            let entity = args.positional.get(1).ok_or("usage: bsc-data nulls <entity> [<field>]")?;
+            let store = open_data_store(&db)?;
+            match args.positional.get(2) {
+                Some(field) => {
+                    let n = store.null_count(entity, field).map_err(|e| e.to_string())?;
+                    emit(
+                        &args,
+                        serde_json::json!({ "entity": entity, "field": field, "nulls": n }),
+                        || n.to_string(),
+                    );
+                }
+                None => {
+                    let fields: Vec<String> = store
+                        .model()
+                        .entity(entity)
+                        .ok_or_else(|| format!("unknown entity `{entity}`"))?
+                        .fields
+                        .iter()
+                        .map(|f| f.key.clone())
+                        .collect();
+                    let mut counts = Vec::new();
+                    for key in &fields {
+                        counts.push((key.clone(), store.null_count(entity, key).map_err(|e| e.to_string())?));
+                    }
+                    let value = serde_json::Value::Array(
+                        counts.iter().map(|(k, n)| serde_json::json!({ "field": k, "nulls": n })).collect(),
+                    );
+                    emit(&args, value, || {
+                        let mut lines = vec!["field\tnulls".to_string()];
+                        lines.extend(counts.iter().map(|(k, n)| format!("{k}\t{n}")));
+                        lines.join("\n")
+                    });
+                }
+            }
+            Ok(())
+        }
+        ("lineage", _) => {
+            let entity = args.positional.get(1).ok_or("usage: bsc-data lineage <entity>")?;
+            let store = open_data_store(&db)?;
+            if store.model().entity(entity).is_none() {
+                return Err(format!("unknown entity `{entity}`"));
+            }
+            let row_lineage = store.entity_lineage_count(entity).map_err(|e| e.to_string())?;
+            let field_lineage = store.entity_field_lineage_count(entity).map_err(|e| e.to_string())?;
+            emit(
+                &args,
+                serde_json::json!({ "entity": entity, "rowLineage": row_lineage, "fieldLineage": field_lineage }),
+                || format!("rowLineage\t{row_lineage}\nfieldLineage\t{field_lineage}"),
+            );
             Ok(())
         }
         _ => {
@@ -111,10 +277,10 @@ fn run() -> Result<(), String> {
 }
 
 const USAGE: &str = "\
-bsc-data — the per-project Data Model + Platform Behavior Summary store (#1446)
+bsc-data — the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)
 
 USAGE:
-  bsc-data <model|scan> <get|set> [--db <path>] [--refined]
+  bsc-data <command> [args] [--db <path>] [--json] [--pretty]
 
 MODEL (the canonical Data Model):
   model get                 print {\"model\":<DataModel>,\"refined\":<bool>} (or null)
@@ -123,6 +289,17 @@ MODEL (the canonical Data Model):
 SCAN (the Platform Behavior Summary):
   scan get                  print the PlatformScan JSON (or null)
   scan set                  upsert the PlatformScan JSON on stdin
+
+DATASTORE (the materialized entity tables + lineage; reading is lean by default):
+  tables                    list entity tables + row counts
+  rows <entity> [--limit N] sample rows from an entity table (default 20)
+  count <entity>            row count for an entity
+  nulls <entity> [<field>]  NULL counts — all fields, or just <field>
+  lineage <entity>          per-row + per-field lineage counts for an entity
+
+OUTPUT:
+  --json                    compact JSON (default is lean TSV)
+  --pretty                  re-indented JSON (implies --json)
 
 The store is found via --db <path> or the BSC_DATA_DB env var.
 ";
@@ -151,5 +328,24 @@ mod tests {
     #[test]
     fn unknown_flag_is_rejected() {
         assert!(parse_args(vec!["model".into(), "--bogus".into()]).is_err());
+    }
+
+    #[test]
+    fn parses_json_pretty_and_limit() {
+        let a = parse_args(vec!["rows".into(), "account".into(), "--limit".into(), "5".into(), "--pretty".into()]).unwrap();
+        assert_eq!(a.positional, vec!["rows", "account"]);
+        assert_eq!(a.limit, Some(5));
+        assert!(a.pretty);
+        assert!(a.json, "--pretty implies --json");
+
+        let j = parse_args(vec!["tables".into(), "--json".into()]).unwrap();
+        assert!(j.json);
+        assert!(!j.pretty);
+    }
+
+    #[test]
+    fn limit_requires_a_number() {
+        assert!(parse_args(vec!["rows".into(), "--limit".into(), "abc".into()]).is_err());
+        assert!(parse_args(vec!["rows".into(), "--limit".into()]).is_err());
     }
 }
