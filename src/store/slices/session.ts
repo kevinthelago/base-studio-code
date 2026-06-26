@@ -3,6 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
+import { setMapEntry } from "../updateHelpers";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
 // to the MCP feature slice (@/features/mcp/store) (#1309). The standalone
@@ -57,5 +58,5 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       setFleetHarness: (h) => set({ fleetHarness: h }),
       paneModels: {},
       setPaneModel: (paneId, m) =>
-        set((s) => ({ paneModels: { ...s.paneModels, [paneId]: m } })),
+        set((s) => ({ paneModels: setMapEntry(s.paneModels, paneId, m) })),
 });
