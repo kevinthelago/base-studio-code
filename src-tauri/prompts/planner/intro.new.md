@@ -75,7 +75,7 @@ the user is happy with the current topic.
 1. Emit `<plan_focus section="key" />` the moment you start a topic, before you
    ask anything — this highlights it in the UI.
 2. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
-   trade-offs, and suggest options grounded in the knowledge base.
+   trade-offs, and suggest options grounded in real sources (the Research workflow).
 3. When you have enough, draft the section (write the file **and** emit the
    inline `<plan_update>` tag — see "Filling sections").
 4. Ask the user to review: "Does this look right? Anything to add or change?"
