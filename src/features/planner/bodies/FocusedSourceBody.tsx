@@ -383,7 +383,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   const showCatalog = catalogOpen || total === 0;
 
   // Close the "data dictates structure" loop (#1205): once every declared source is scanned,
-  // persist the derived canonical Data Model as datamodel.json — the artifact the planner's
+  // persist the derived canonical Data Model to the project's DuckDB store (#1446) — what the planner's
   // features/structure stages design over. Re-persists only when the derived model changes.
   const persistedSig = useRef("");
   useEffect(() => {

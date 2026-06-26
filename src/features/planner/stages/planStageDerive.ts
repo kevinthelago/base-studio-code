@@ -13,10 +13,11 @@ import type { PlanSignals } from "./stageGate";
  *  then adjusts it with `bsc-plan context require/unrequire`. */
 export const CONTEXT_BASELINE = ["goal", "scope", "stack", "architecture", "users", "release"];
 
-// datamodel.json contract
-// Path:    ~/.base-studio-code/projects/<key>/datamodel.json
-// Writer:  source-experience stream
-// Reader:  planner-plumbing (this file) — absent artifact or missing fields read as false
+// Data-model gate signals (#1446: the model itself now lives in the project's DuckDB store, not a
+// datamodel.json file). These boolean SIGNALS are derived from the live frontend SourceConfig
+// (see datamodelSignals in shared/sourceConfig.ts), NOT read from any artifact — the canonical
+// model/scan are persisted separately to DuckDB via data_persist_model / bsc-data.
+// Reader:  planner-plumbing (this file) — missing fields read as false
 // Shape (all fields optional at the top level; absent ⇒ false):
 // {
 //   "sourceReachable": boolean,  // source system is reachable and has been inventoried

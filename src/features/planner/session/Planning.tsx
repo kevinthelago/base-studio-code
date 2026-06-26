@@ -1401,7 +1401,7 @@ export function Planning({ visible }: { visible: boolean }) {
         // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
 
         // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
-        // Persists the planner's inferred Data Model as datamodel.json in the project
+        // Persists the planner's inferred Data Model to the project's DuckDB store (#1446)
         // hub (#se-persist). `refined` starts false; the source pane sets it to true
         // once the user confirms/refines the model interactively.
         const dm = parseDataModelTag(bufRef.current);
