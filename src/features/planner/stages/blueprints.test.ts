@@ -143,8 +143,8 @@ describe("blueprints — seed library", () => {
 
 describe("blueprints — computeStatus (dependency locks)", () => {
   it("locks a section whose enabled dependency is disabled", () => {
-    // structure depends on context, repos, ui; disable repos -> structure locked.
-    const secs = [mkSection("discovery"), mkSection("repos", { enabled: false }), mkSection("ui"), mkSection("structure")];
+    // structure depends on discovery, repos, features; disable repos -> structure locked.
+    const secs = [mkSection("discovery"), mkSection("repos", { enabled: false }), mkSection("features"), mkSection("structure")];
     const st = computeStatus(secs);
     expect(st.structure.locked).toBe(true);
     expect(st.structure.unmet).toContain("repos");
@@ -163,6 +163,23 @@ describe("blueprints — computeStatus (dependency locks)", () => {
     const st = computeStatus(secs);
     expect(st.structure.locked).toBe(false);
     expect(st.structure.satisfied).toBe(true);
+  });
+});
+
+describe("blueprints — stage def integrity", () => {
+  it("every stage def's deps reference an existing stage key (no dangling deps)", () => {
+    // Guards against a stage rename that leaves a stale dep pointing at the old key.
+    // computeStatus silently drops an absent dep (a dep this blueprint omits is treated
+    // as met), so a severed prerequisite lock would otherwise pass unnoticed — exactly
+    // what the #1578 context→discovery rename did to 9 stage defs (#1601).
+    const keys = new Set(Object.keys(SECTION_DEFS));
+    const dangling: string[] = [];
+    for (const [key, def] of Object.entries(SECTION_DEFS)) {
+      for (const dep of def.deps ?? []) {
+        if (!keys.has(dep)) dangling.push(`${key} -> ${dep}`);
+      }
+    }
+    expect(dangling).toEqual([]);
   });
 });
 
