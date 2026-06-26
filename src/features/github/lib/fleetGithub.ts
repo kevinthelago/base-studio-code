@@ -5,18 +5,13 @@
 // repoPulseLive. Framework-free + unit-tested; fetch orchestration is in
 // hooks/useFleetGithub.
 import { dayWindow, tallyByDay, mapReviewLatency, medianLatencyH, type GhPull } from "./repoPulseLive";
+import type { GhIssueItem } from "@/shared/lib/github/types";
 
 export type { GhPull };
-
-/** An issue from the `issues` endpoint. Note: that endpoint returns PRs too —
- *  rows with `pull_request` set are PRs and must be excluded from "issues". */
-export interface GhIssueItem {
-  number: number;
-  title: string;
-  closed_at: string | null;
-  state: string;
-  pull_request?: unknown;
-}
+// The issue-row shape (the `issues` endpoint also returns PRs — rows with `pull_request` set are
+// PRs, excluded from "issues"). Canonical now lives in shared/lib/github/types (#1528); re-exported
+// so existing importers (useFleetGithub, the tests) keep their `from "./fleetGithub"` import.
+export type { GhIssueItem };
 
 /** Combined commit status for a PR head (`commits/{sha}/status`). */
 export type GhStatusState = "success" | "pending" | "failure" | "error" | string;
