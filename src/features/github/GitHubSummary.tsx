@@ -5,17 +5,9 @@ import { githubRequest, githubGraphql } from "./lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
 import { languageStats } from "./languageStats";
+import type { GHEvent } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface GHEvent {
-  id: string;
-  type: string;
-  actor: { login: string };
-  repo: { name: string };
-  payload: unknown;
-  created_at: string;
-}
 
 interface GHPRItem {
   number: number;
