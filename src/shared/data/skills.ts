@@ -235,7 +235,6 @@ export const SKILLS: Skill[] = [
   },
 ];
 
-/** Compact number formatter (e.g. 1234 → "1.2k") — mirrors the design's `fmt`. */
-export function fmtCount(n: number): string {
-  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
-}
+/** Compact number formatter (e.g. 1234 → "1.2k"). Single source: re-exports the chart `fmt`
+ *  (#1528) so there's one impl. */
+export { fmt as fmtCount } from "@/shared/ui/charts/primitives";

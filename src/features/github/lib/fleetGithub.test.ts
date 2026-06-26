@@ -10,7 +10,7 @@ function pull(p: Partial<GhPull> = {}): GhPull {
   return { number: 1, title: "p", user: { login: "k" }, created_at: "2026-06-10T00:00:00Z", merged_at: null, draft: false, state: "open", head: { ref: "f" }, ...p };
 }
 function issue(p: Partial<GhIssueItem> = {}): GhIssueItem {
-  return { number: 1, title: "i", closed_at: null, state: "closed", ...p };
+  return { number: 1, title: "i", closed_at: null, state: "closed", created_at: "2026-06-10T00:00:00Z", ...p };
 }
 
 describe("mapThroughput", () => {
