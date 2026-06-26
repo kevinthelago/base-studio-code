@@ -5,8 +5,9 @@
 // session transcript (JSONL, one message per line, each assistant line carrying a
 // per-message `usage` object). The `bsc-tokens` Stop hook records `pane → session_id →
 // transcript_path` to `tokens.log`; `read_token_usage` takes the latest transcript per
-// pane, sums its usage, prices it, and returns one record per pane. Pricing + parsing
-// live in `cost` (testable) rather than in the bash helper.
+// pane, sums its usage, prices it, and returns one record per pane. The pricing engine
+// (price table + usage parser + cost math) lives ONCE in `crates/logs` (`logs::cost`);
+// `cost::read_token_usage` delegates to it and maps the result to the frontend shape (#1686).
 
 mod activity;
 mod cost;
