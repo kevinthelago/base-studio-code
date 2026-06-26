@@ -1,6 +1,7 @@
-// PTY session lifecycle: state registry, process-tree-kill Job Object, the
-// pty_* commands, the session env, and the mobile-tunnel bridge
-// (extracted from lib.rs, #758).
+// PTY session lifecycle: state registry, the pty_* commands, the session env
+// (`wire_bsc_env` + the bsc-* sidecar resolvers), the reader/emitter IO pump,
+// and the mobile-tunnel bridge (extracted from lib.rs, #758). The process-tree
+// kill primitive (`PtyJob`) lives in the `job` submodule (#1660).
 
 use crate::{
     bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
@@ -41,147 +42,13 @@ impl PtyState {
     }
 }
 
-// ── Process tree kill (Windows Job Object) ───────────────────────────────────
+// ── Process tree kill (Windows Job Object / Unix process group) ──────────────
 
-/// RAII wrapper around a Windows Job Object configured to kill every assigned
-/// process when the last handle closes. We give each PTY shell its own job and
-/// assign the shell's PID right after spawn, so dropping the session on
-/// `pty_kill` / app exit terminates the whole tree (shell → `claude` → any
-/// `gh`/`git`/MCP child). Without this, `portable_pty::Child::kill()` only
-/// reaches the immediate shell — observed in the field as ~28 orphan
-/// `bash`/`claude`/WebView children holding cwd locks after app exit.
-#[cfg(windows)]
-struct PtyJob {
-    handle: windows_sys::Win32::Foundation::HANDLE,
-}
-
-/// Unix counterpart of the Job Object: the process-group id of the PTY shell.
-/// `portable_pty` runs `setsid()` in the spawned shell, so the shell leads a new
-/// session and a process group whose pgid equals the shell's pid. Every child it
-/// spawns (`claude`, `gh`, `git`, MCP servers) stays in that group unless it
-/// re-`setsid`s, so `killpg(pgid, SIGKILL)` on drop terminates the whole tree —
-/// the same orphan-leak fix the Windows job provides. Stored in an atomic so
-/// `assign_pid(&self, …)` can record the pid through the shared `new()`/
-/// `assign_pid` call site without `&mut`; `PtyJob` stays `Send + Sync`.
-#[cfg(not(windows))]
-struct PtyJob {
-    pgid: std::sync::atomic::AtomicI32,
-}
-
-#[cfg(windows)]
-impl PtyJob {
-    /// Create a kill-on-close job. Returns `Err` if the kernel refuses; the
-    /// caller logs and proceeds without tree-kill rather than failing the spawn.
-    fn new() -> std::io::Result<Self> {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::JobObjects::{
-            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        };
-        // SAFETY: NULL attributes + NULL name is the documented anonymous-job
-        // form; the call returns a valid HANDLE or NULL on failure.
-        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if handle.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-        // Zero-init is the documented way to start an EXTENDED_LIMIT_INFORMATION
-        // and then set only the flags we care about.
-        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // SAFETY: pointer + size match the JobObjectExtendedLimitInformation
-        // information class.
-        let ok = unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                &info as *const _ as *const _,
-                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        };
-        if ok == 0 {
-            let err = std::io::Error::last_os_error();
-            // Don't leak the handle when configuration fails.
-            unsafe { CloseHandle(handle); }
-            return Err(err);
-        }
-        Ok(Self { handle })
-    }
-
-    /// Assign the process identified by `pid` to this job. The process's later
-    /// descendants inherit job membership (modern Windows nested-job default),
-    /// so the whole tree shares the job's kill-on-close fate. Opens a transient
-    /// process handle with `PROCESS_SET_QUOTA | PROCESS_TERMINATE` — the minimum
-    /// access `AssignProcessToJobObject` requires.
-    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
-        use windows_sys::Win32::System::Threading::{
-            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
-        };
-        // SAFETY: OpenProcess returns a valid HANDLE or NULL on failure.
-        let proc = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
-        if proc.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: both handles are valid until we close `proc` below.
-        let ok = unsafe { AssignProcessToJobObject(self.handle, proc) };
-        let err = if ok == 0 { Some(std::io::Error::last_os_error()) } else { None };
-        unsafe { CloseHandle(proc); }
-        match err { Some(e) => Err(e), None => Ok(()) }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for PtyJob {
-    fn drop(&mut self) {
-        // Closing the last handle on a KILL_ON_JOB_CLOSE job terminates every
-        // process still in the job — that's the actual tree kill.
-        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle); }
-    }
-}
-
-// SAFETY: a job HANDLE is an opaque OS-side reference; the kernel handles
-// cross-thread access. We never expose the raw handle outside this module.
-#[cfg(windows)]
-unsafe impl Send for PtyJob {}
-#[cfg(windows)]
-unsafe impl Sync for PtyJob {}
-
-#[cfg(not(windows))]
-impl PtyJob {
-    /// Create an unbound job. The shell's process group isn't known until after
-    /// spawn, so `pgid` starts at 0 (no-op on drop) and is filled by `assign_pid`.
-    /// Infallible — the `Result` mirrors the Windows signature for a shared call
-    /// site.
-    fn new() -> std::io::Result<Self> {
-        Ok(Self { pgid: std::sync::atomic::AtomicI32::new(0) })
-    }
-
-    /// Record the shell's pid as the group to reap. Because `portable_pty`
-    /// `setsid`s the child, the shell IS its group leader, so pgid == pid — no
-    /// `getpgid` round-trip (which could race the child's `setsid`). Infallible;
-    /// the `Result` mirrors the Windows signature.
-    fn assign_pid(&self, pid: u32) -> std::io::Result<()> {
-        self.pgid.store(pid as i32, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-}
-
-#[cfg(not(windows))]
-impl Drop for PtyJob {
-    fn drop(&mut self) {
-        let pgid = self.pgid.load(std::sync::atomic::Ordering::Relaxed);
-        if pgid > 0 {
-            // SAFETY: `killpg` takes a pgid + signal and has no memory effects.
-            // A negative-or-zero pgid is excluded above; ESRCH (group already
-            // gone — every member exited and was reaped) is the benign no-op
-            // case, so we ignore the return value. SIGKILL (not SIGTERM) matches
-            // the Windows job's unconditional kill-on-close and can't be trapped,
-            // guaranteeing no surviving `claude`/`gh`/`git` descendants.
-            unsafe { libc::killpg(pgid, libc::SIGKILL); }
-        }
-    }
-}
+/// Per-session process-tree kill primitive — a Windows Job Object or a Unix
+/// process-group id. Lives in [`job`]; `PtySession` owns one (`_job`) so dropping
+/// the session reaps the shell and its whole descendant tree.
+mod job;
+use job::PtyJob;
 
 /// Drain every active PTY session, killing each shell (which on Windows kills
 /// its whole tree via the per-session Job Object that drops with the session).
@@ -283,61 +150,31 @@ fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
 }
 
-/// The absolute path of the `bsc-plan` CLI — the binary sitting beside the running app exe (the
-/// cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there (#plan-db).
-/// Exposed to sessions as `$BSC_PLAN_BIN` for the `bsc-plan` shell helper to exec — no PATH change.
-fn bsc_plan_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-plan.exe" } else { "bsc-plan" };
+/// The absolute path of a bundled `bsc-*` sidecar binary (CLI or MCP server) named `stem` — the
+/// binary sitting beside the running app exe (the cargo target dir in dev; a bundled sidecar in a
+/// release), or None if it isn't there. `stem` is the bare name without the platform extension
+/// (`.exe` is appended on Windows). Sessions get the resolved paths as `$BSC_*_BIN` env vars for the
+/// shell helpers to exec — no PATH change; the two MCP servers are rewritten into `.mcp.json`
+/// (which Claude Code spawns directly, no shell-rc) via the `pub(crate)` wrappers below.
+fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
     let p = std::env::current_exe().ok()?.with_file_name(exe);
     p.exists().then_some(p)
 }
 
-/// The absolute path of the `bsc-agent` runtime — the sidecar beside the running app exe (cargo
-/// target dir in dev; bundled sidecar in a release), or None if absent. Exposed as `$BSC_AGENT_BIN`
-/// for the `bsc-agent` shell helper to exec when a session runs on the bsc-agent harness (#1078 P3).
-fn bsc_agent_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-agent.exe" } else { "bsc-agent" };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
-}
-
-/// The absolute path of the `bsc-skill` CLI — the sidecar beside the running app exe (cargo target
-/// dir in dev; bundled sidecar in a release), or None if absent (#1338). Exposed as `$BSC_SKILL_BIN`
-/// for the `bsc-skill` shell helper to exec when invoked WITH a subcommand (`list`/`add`/`group`/
-/// `resolve`); the helper falls back to the #406 telemetry log when fired as a no-arg hook. No PATH
-/// change — same pattern as `$BSC_PLAN_BIN` / `$BSC_AGENT_BIN`.
-fn bsc_skill_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-skill.exe" } else { "bsc-skill" };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
-}
-
-/// The absolute path of the bundled `bsc-data` CLI beside the app exe — the planner's accessor to
-/// the per-project Data Model + PlatformScan store (#1446), or None if absent.
-fn bsc_data_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-data.exe" } else { "bsc-data" };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
-}
-
-/// The absolute path of the bundled `bsc-research-mcp` server — the sidecar beside the running app
-/// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1196). Used to
-/// rewrite the Research server's `.mcp.json` command to the real binary path, since Claude Code
-/// spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the `$BSC_*_BIN` shell helpers.
+/// The absolute path of the bundled `bsc-research-mcp` server (#1196), or None if absent. Used by
+/// `extensions/mcp.rs` to rewrite the Research server's `.mcp.json` command to the real binary path,
+/// since Claude Code spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the
+/// `$BSC_*_BIN` shell helpers. Thin wrapper over [`sidecar_bin_path`].
 pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-research-mcp.exe" } else { "bsc-research-mcp" };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
+    sidecar_bin_path("bsc-research-mcp")
 }
 
-/// The absolute path of the bundled `bsc-compliance-mcp` server — the sidecar beside the running app
-/// exe (cargo target dir in dev; bundled sidecar in a release), or None if absent (#1005). Used to
-/// rewrite the built-in Compliance server's `.mcp.json` command to the real binary path, since Claude
-/// Code spawns `.mcp.json` commands directly (no PATH/shell-rc), like `bsc_research_mcp_bin_path`.
+/// The absolute path of the bundled `bsc-compliance-mcp` server (#1005), or None if absent. Used by
+/// `extensions/mcp.rs` to rewrite the built-in Compliance server's `.mcp.json` command to the real
+/// binary path, like [`bsc_research_mcp_bin_path`]. Thin wrapper over [`sidecar_bin_path`].
 pub(crate) fn bsc_compliance_mcp_bin_path() -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { "bsc-compliance-mcp.exe" } else { "bsc-compliance-mcp" };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
+    sidecar_bin_path("bsc-compliance-mcp")
 }
 
 /// Build the environment for a session shell.
@@ -394,6 +231,250 @@ pub(crate) fn plan_launch(
             None => LaunchPlan::None,
         },
     }
+}
+
+/// Wire the per-session `BSC_*` environment the `bsc-*` shell helpers read into `cmd`, and write the
+/// rc file that defines them. Covers: the triage checkpoint doc, the `BASH_ENV` rc (which installs the
+/// helpers into the agent's non-interactive `bash -c` subshells), the app-wide analytics logs
+/// (audit / skill / hook / mcp / tokens / activity / done / coord), the FS-confinement repo root,
+/// the per-project plan + data stores and their CLIs, the global skills store + CLI, the planner's
+/// per-project session skill group, and the `bsc-agent` sidecar + per-cwd session file. `cwd` is the
+/// already-native session cwd; `pane_id` tags the logs; `provider_id` gates the bsc-agent vars.
+///
+/// Returns the bash-style path of the rc file so the caller can `source` it into the interactive
+/// shell too (BASH_ENV only covers non-interactive subshells).
+fn wire_bsc_env(
+    cmd: &mut CommandBuilder,
+    pane_id: &str,
+    cwd: &str,
+    checkpoint_doc: Option<&str>,
+    provider_id: Option<&str>,
+) -> String {
+    // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
+    // agent's non-interactive `bash -c` subshells get them) and sourced into the
+    // interactive shell by the caller. The rc is universal — bsc-checkpoint (triage) and
+    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
+    // don't use them. Per-session doc paths the helpers read are exposed as env
+    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
+    let base = bsc_base_dir();
+    let _ = std::fs::create_dir_all(&base);
+    // Expose the triage checkpoint doc (resolved to an absolute, bash-style path) so the
+    // `bsc-checkpoint` helper can write "where we left off" to it. The helper itself is installed via
+    // the rc below; it must be reachable from the agent's OWN bash subprocesses (Claude's Bash tool
+    // runs a non-interactive `bash -c`, which sources BASH_ENV at startup), and the hyphenated name
+    // can't be `export -f`'d (bash won't import non-identifier function names).
+    if let Some(rel) = checkpoint_doc.filter(|s| !s.is_empty()) {
+        let abs = base.join(rel);
+        cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
+    }
+    let rc = base.join("bsc-env.sh");
+    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_DONE_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_DATA_RC}{BSC_LEARNED_RC}"));
+    let rc_bash = to_bash_path(&rc.to_string_lossy());
+    cmd.env("BASH_ENV", &rc_bash);
+    // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
+    // settings.json by the frontend) appends one redacted TSV line per tool attempt to
+    // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
+    // panes whose settings install the hook actually write).
+    cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
+    cmd.env("BSC_AUDIT_PANE", pane_id);
+    // Skill usage log (#406): the `bsc-skill` Skill-tool hook (added to gated panes'
+    // settings.json by the frontend) appends one TSV line per skill invocation to this
+    // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
+    // (harmless — only panes whose settings install the hook actually write).
+    cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
+    // Hook-fire log (#867 follow-up): the `bsc-hook` wrapper around each USER hook (the
+    // frontend wraps the command in toHookPayload) appends one TSV line per fire to this
+    // app-wide log, for the Hook Analytics tab. Set for every pane (harmless — only panes
+    // whose settings install wrapped user hooks write).
+    cmd.env("BSC_HOOK_LOG", to_bash_path(&base.join("hooks.log").to_string_lossy()));
+    // MCP-call log (#879 PR 2): the `bsc-mcp` PreToolUse+PostToolUse hook pair (added to gated
+    // panes' settings.json by the frontend) appends one TSV line per MCP call — round-trip
+    // latency + outcome — to this app-wide log, for the MCP Analytics tab. Set for every pane
+    // (harmless — only panes whose settings install the hooks actually write).
+    cmd.env("BSC_MCP_LOG", to_bash_path(&base.join("mcp.log").to_string_lossy()));
+    // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook (added to
+    // gated panes' settings.json by the frontend) pipes Claude Code's hook JSON — which
+    // carries `session_id` + `transcript_path` — into this; it appends one TSV line
+    // (`ts \t pane \t session_id \t transcript_path`) to this app-wide log, tagged with
+    // the pane id via BSC_AUDIT_PANE. The transcript itself holds the per-message usage;
+    // `read_token_usage` parses + prices it. Set for every pane (harmless — only panes
+    // whose settings install the hook actually write). Claude Code hooks don't expose
+    // token usage as a field, so the transcript is the only per-session source.
+    cmd.env("BSC_TOKENS_LOG", to_bash_path(&base.join("tokens.log").to_string_lossy()));
+    // Turn-activity log (#1184): the `bsc-activity` UserPromptSubmit/Stop/SubagentStop hooks (added
+    // to claude-launching panes' settings.json by the frontend) append one TSV line per turn boundary
+    // — `ts \t pane \t run|idle` — to this app-wide log, tagged with the pane id via BSC_AUDIT_PANE.
+    // The frontend polls the latest state per pane (`read_pane_activity`) and gates the status dot's
+    // silence timer so a worker that's working-but-silent doesn't false-idle. Set for every pane
+    // (harmless — only panes whose settings install the hooks actually write).
+    cmd.env("BSC_ACTIVITY_LOG", to_bash_path(&base.join("activity.log").to_string_lossy()));
+    // Worker self-close log (#1379): a finished WORKER calls `bsc-done`, which appends `ts \t pane`
+    // here. The frontend polls it (`read_done_panes`) and reaps the pane — classify the resting
+    // state from plan.db, `markPaneEnded`, and `pty_kill`. Set for every pane (harmless — only a
+    // worker told to self-close ever writes).
+    cmd.env("BSC_DONE_LOG", to_bash_path(&base.join("done.log").to_string_lossy()));
+    // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
+    // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
+    // merge/close append satisfy events later. Set for every pane; only --on writes.
+    cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
+    // FS confinement (#158): the session's repo root (bash-style), against which the
+    // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
+    // the repo root. Set for every pane; only gated panes install the hook.
+    if !cwd.is_empty() {
+        cmd.env("BSC_REPO_ROOT", to_bash_path(cwd));
+    }
+    // bsc-plan (#plan-db): point this session at its project's canonical plan store. Both vars feed
+    // the `bsc-plan` shell helper (installed via the rc above, like every other bsc-*): $BSC_PLAN_DB
+    // is the plan.db it reads/writes, $BSC_PLAN_BIN the absolute path of the CLI it execs — no PATH
+    // changes, no copies. The DB is derived from the cwd — every project session runs under
+    // `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
+    // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
+    // console in some repo) get no BSC_PLAN_DB and never call bsc-plan.
+    if let Some(db) = plan_db_for_cwd(cwd) {
+        cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    if let Some(bin) = sidecar_bin_path("bsc-plan") {
+        cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group
+    // authored anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB
+    // is the shared store the `bsc-skill` helper reads/writes; $BSC_SKILL_BIN the CLI it execs when
+    // invoked with a subcommand (a no-arg fire stays the #406 telemetry hook). Unlike BSC_PLAN_DB
+    // (per-project, cwd-derived), this is global — set unconditionally for every pane.
+    cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
+    if let Some(bin) = sidecar_bin_path("bsc-skill") {
+        cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
+    // PlatformScan the planner reads at the UI-kickoff stage via the `bsc-data` CLI. $BSC_DATA_DB is
+    // the project's .duckdb (cwd-derived, like BSC_PLAN_DB); $BSC_DATA_BIN the CLI the shell helper execs.
+    if let Some(db) = data_db_for_cwd(cwd) {
+        cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    if let Some(bin) = sidecar_bin_path("bsc-data") {
+        cmd.env("BSC_DATA_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
+    // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
+    // this group, which the Planning pane resolves + highlights as "authored this session". The id is
+    // deterministic from the (already-sanitized) key so the pane and the CLI agree; the app names the
+    // group after the project. Persistent — reopening the planner keeps collecting into it.
+    if let Some(group) = session_skill_group_for_pane(pane_id) {
+        cmd.env("BSC_SESSION_SKILL_GROUP", group);
+    }
+    // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
+    if let Some(bin) = sidecar_bin_path("bsc-agent") {
+        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
+    // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
+    // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
+    if provider_id == Some("bsc-agent") {
+        if let Some(p) = crate::bsc_agent_session_path(cwd) {
+            cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
+        }
+    }
+    rc_bash
+}
+
+/// Reader thread: decode PTY bytes and forward complete UTF-8 chunks over `tx`. The `leftover` buffer
+/// holds any trailing incomplete multi-byte sequence (e.g. ✓, →, box-drawing) so we never split a
+/// character across reads. Exits on EOF/error or when the emitter is gone; flushes any tail first so
+/// `tx` dropping signals the emitter (Disconnected) to finish.
+fn spawn_reader(
+    pane_id: String,
+    mut reader: Box<dyn Read + Send>,
+    tx: std::sync::mpsc::Sender<String>,
+) {
+    std::thread::spawn(move || {
+        let mut buf = vec![0u8; 8192];
+        let mut leftover: Vec<u8> = Vec::new();
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => { log::info!("pty[{pane_id}] reader EOF"); break; }
+                Err(e) => { log::warn!("pty[{pane_id}] reader error: {e}"); break; }
+                Ok(n) => {
+                    leftover.extend_from_slice(&buf[..n]);
+                    let (text, keep) = split_utf8_at_boundary(&leftover);
+                    leftover = keep;
+                    if !text.is_empty() && tx.send(text).is_err() {
+                        break; // emitter gone
+                    }
+                }
+            }
+        }
+        if !leftover.is_empty() {
+            let _ = tx.send(String::from_utf8_lossy(&leftover).into_owned());
+        }
+        // tx drops here → emitter sees Disconnected and finishes.
+    });
+}
+
+/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
+/// to the mobile tunnel when paired). Coalescing collapses per-read emits — the dominant UI-lag source
+/// when many sessions stream at once — into one event per frame per session. Emits `pty_exit_<pane>`
+/// when the reader's `tx` disconnects.
+fn spawn_emitter(
+    pane_id: String,
+    app: AppHandle,
+    rx: std::sync::mpsc::Receiver<String>,
+) {
+    std::thread::spawn(move || {
+        use std::sync::mpsc::RecvTimeoutError;
+        use std::time::{Duration, Instant};
+        const FLUSH: Duration = Duration::from_millis(16);
+        const MAX_PENDING: usize = 64 * 1024;
+        let evt = format!("pty_data_{}", pane_id);
+        // Tee PTY output to the mobile tunnel (#242) when a client is connected.
+        // Looked up once; `broadcast_output` is a no-op while nobody is paired.
+        let tunnel_state = app.try_state::<tunnel::TunnelState>();
+        let mut pending = String::new();
+        let mut last_emit = Instant::now();
+        let mut total: u64 = 0;
+        // Rolling window to flag sustained output floods.
+        let mut win_start = Instant::now();
+        let mut win_bytes: u64 = 0;
+        let mut win_emits: u64 = 0;
+        let mut done = false;
+        while !done {
+            let mut flush_now = false;
+            match rx.recv_timeout(FLUSH) {
+                Ok(chunk) => {
+                    total += chunk.len() as u64;
+                    win_bytes += chunk.len() as u64;
+                    pending.push_str(&chunk);
+                    if pending.len() >= MAX_PENDING || last_emit.elapsed() >= FLUSH {
+                        flush_now = true;
+                    }
+                }
+                // Idle for a frame — flush trailing output (e.g. the prompt) now.
+                Err(RecvTimeoutError::Timeout) => flush_now = true,
+                Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
+            }
+            if flush_now && !pending.is_empty() {
+                let data = std::mem::take(&mut pending);
+                if let Some(ts) = &tunnel_state {
+                    ts.broadcast_output(&pane_id, &data);
+                }
+                let _ = app.emit(&evt, data);
+                win_emits += 1;
+                last_emit = Instant::now();
+            }
+            let secs = win_start.elapsed().as_secs_f64();
+            if secs >= 2.0 {
+                let eps = win_emits as f64 / secs;
+                let bps = win_bytes as f64 / secs;
+                if eps > 60.0 || bps > 128_000.0 {
+                    log::warn!("pty[{pane_id}] high output: {eps:.0} emits/s, {bps:.0} B/s");
+                }
+                win_start = Instant::now();
+                win_bytes = 0;
+                win_emits = 0;
+            }
+        }
+        let _ = app.emit(&format!("pty_exit_{}", pane_id), ());
+        log::info!("pty[{pane_id}] session ended ({total} bytes)");
+    });
 }
 
 /// Returns `true` when a new session is created, `false` when reconnecting to
@@ -484,133 +565,11 @@ pub(crate) async fn pty_create(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
-    // Expose the triage checkpoint doc (resolved to an absolute, bash-style path)
-    // so the `bsc-checkpoint` helper can write "where we left off" to it, and install
-    // the helper itself. It must be reachable from the agent's OWN bash subprocesses:
-    // Claude's Bash tool runs a non-interactive `bash -c`, a child that never saw the
-    // interactive shell's functions, and the hyphenated name can't be `export -f`'d
-    // (bash won't import non-identifier function names). So we drop the helper in a
-    // stable rc file and point BASH_ENV at it — every non-interactive bash sources
-    // BASH_ENV at startup — then source the same file in the interactive shell below.
-    // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
-    // agent's non-interactive `bash -c` subshells get them) and sourced into the
-    // interactive shell below. The rc is universal — bsc-checkpoint (triage) and
-    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
-    // don't use them. Per-session doc paths the helpers read are exposed as env
-    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
-    let base = bsc_base_dir();
-    let _ = std::fs::create_dir_all(&base);
-    if let Some(rel) = checkpoint_doc.as_deref().filter(|s| !s.is_empty()) {
-        let abs = base.join(rel);
-        cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-    }
-    let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, format!("{BSC_CHECKPOINT_RC}{BSC_DECISIONS_RC}{BSC_AUDIT_RC}{BSC_SKILL_RC}{BSC_HOOK_RC}{BSC_MCP_RC}{BSC_TOKENS_RC}{BSC_ACTIVITY_RC}{BSC_DONE_RC}{BSC_CONFINE_RC}{BSC_SCOPE_RC}{BSC_TAINT_RC}{BSC_COORD_EMIT_RC}{BSC_DEFER_RC}{BSC_FLEET_RC}{BSC_PLAN_RC}{BSC_DATA_RC}{BSC_LEARNED_RC}"));
-    let rc_bash = to_bash_path(&rc.to_string_lossy());
-    cmd.env("BASH_ENV", &rc_bash);
-    // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
-    // settings.json by the frontend) appends one redacted TSV line per tool attempt to
-    // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
-    // panes whose settings install the hook actually write).
-    cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
-    cmd.env("BSC_AUDIT_PANE", &pane_id);
-    // Skill usage log (#406): the `bsc-skill` Skill-tool hook (added to gated panes'
-    // settings.json by the frontend) appends one TSV line per skill invocation to this
-    // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
-    // (harmless — only panes whose settings install the hook actually write).
-    cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
-    // Hook-fire log (#867 follow-up): the `bsc-hook` wrapper around each USER hook (the
-    // frontend wraps the command in toHookPayload) appends one TSV line per fire to this
-    // app-wide log, for the Hook Analytics tab. Set for every pane (harmless — only panes
-    // whose settings install wrapped user hooks write).
-    cmd.env("BSC_HOOK_LOG", to_bash_path(&base.join("hooks.log").to_string_lossy()));
-    // MCP-call log (#879 PR 2): the `bsc-mcp` PreToolUse+PostToolUse hook pair (added to gated
-    // panes' settings.json by the frontend) appends one TSV line per MCP call — round-trip
-    // latency + outcome — to this app-wide log, for the MCP Analytics tab. Set for every pane
-    // (harmless — only panes whose settings install the hooks actually write).
-    cmd.env("BSC_MCP_LOG", to_bash_path(&base.join("mcp.log").to_string_lossy()));
-    // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook (added to
-    // gated panes' settings.json by the frontend) pipes Claude Code's hook JSON — which
-    // carries `session_id` + `transcript_path` — into this; it appends one TSV line
-    // (`ts \t pane \t session_id \t transcript_path`) to this app-wide log, tagged with
-    // the pane id via BSC_AUDIT_PANE. The transcript itself holds the per-message usage;
-    // `read_token_usage` parses + prices it. Set for every pane (harmless — only panes
-    // whose settings install the hook actually write). Claude Code hooks don't expose
-    // token usage as a field, so the transcript is the only per-session source.
-    cmd.env("BSC_TOKENS_LOG", to_bash_path(&base.join("tokens.log").to_string_lossy()));
-    // Turn-activity log (#1184): the `bsc-activity` UserPromptSubmit/Stop/SubagentStop hooks (added
-    // to claude-launching panes' settings.json by the frontend) append one TSV line per turn boundary
-    // — `ts \t pane \t run|idle` — to this app-wide log, tagged with the pane id via BSC_AUDIT_PANE.
-    // The frontend polls the latest state per pane (`read_pane_activity`) and gates the status dot's
-    // silence timer so a worker that's working-but-silent doesn't false-idle. Set for every pane
-    // (harmless — only panes whose settings install the hooks actually write).
-    cmd.env("BSC_ACTIVITY_LOG", to_bash_path(&base.join("activity.log").to_string_lossy()));
-    // Worker self-close log (#1379): a finished WORKER calls `bsc-done`, which appends `ts \t pane`
-    // here. The frontend polls it (`read_done_panes`) and reaps the pane — classify the resting
-    // state from plan.db, `markPaneEnded`, and `pty_kill`. Set for every pane (harmless — only a
-    // worker told to self-close ever writes).
-    cmd.env("BSC_DONE_LOG", to_bash_path(&base.join("done.log").to_string_lossy()));
-    // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
-    // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
-    // merge/close append satisfy events later. Set for every pane; only --on writes.
-    cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
-    // FS confinement (#158): the session's repo root (bash-style), against which the
-    // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
-    // the repo root. Set for every pane; only gated panes install the hook.
-    if !cwd.is_empty() {
-        cmd.env("BSC_REPO_ROOT", to_bash_path(&cwd));
-    }
-    // bsc-plan (#plan-db): point this session at its project's canonical plan store. Both vars feed
-    // the `bsc-plan` shell helper (installed via the rc above, like every other bsc-*): $BSC_PLAN_DB
-    // is the plan.db it reads/writes, $BSC_PLAN_BIN the absolute path of the CLI it execs — no PATH
-    // changes, no copies. The DB is derived from the cwd — every project session runs under
-    // `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
-    // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
-    // console in some repo) get no BSC_PLAN_DB and never call bsc-plan.
-    if let Some(db) = plan_db_for_cwd(&cwd) {
-        cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
-    }
-    if let Some(bin) = bsc_plan_bin_path() {
-        cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group
-    // authored anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB
-    // is the shared store the `bsc-skill` helper reads/writes; $BSC_SKILL_BIN the CLI it execs when
-    // invoked with a subcommand (a no-arg fire stays the #406 telemetry hook). Unlike BSC_PLAN_DB
-    // (per-project, cwd-derived), this is global — set unconditionally for every pane.
-    cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
-    if let Some(bin) = bsc_skill_bin_path() {
-        cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
-    // PlatformScan the planner reads at the UI-kickoff stage via the `bsc-data` CLI. $BSC_DATA_DB is
-    // the project's .duckdb (cwd-derived, like BSC_PLAN_DB); $BSC_DATA_BIN the CLI the shell helper execs.
-    if let Some(db) = data_db_for_cwd(&cwd) {
-        cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
-    }
-    if let Some(bin) = bsc_data_bin_path() {
-        cmd.env("BSC_DATA_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
-    // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
-    // this group, which the Planning pane resolves + highlights as "authored this session". The id is
-    // deterministic from the (already-sanitized) key so the pane and the CLI agree; the app names the
-    // group after the project. Persistent — reopening the planner keeps collecting into it.
-    if let Some(group) = session_skill_group_for_pane(&pane_id) {
-        cmd.env("BSC_SESSION_SKILL_GROUP", group);
-    }
-    // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
-    if let Some(bin) = bsc_agent_bin_path() {
-        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
-    // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
-    // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
-    if provider_id.as_deref() == Some("bsc-agent") {
-        if let Some(p) = crate::bsc_agent_session_path(&cwd) {
-            cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
-        }
-    }
+    // Wire every per-session BSC_* env var the bsc-* shell helpers read (checkpoint doc, the
+    // BASH_ENV rc, the analytics logs, the plan/skill/data stores + their CLIs, the planner skill
+    // group, and the bsc-agent sidecar/session). Returns the bash-style rc path so the interactive
+    // shell below can source the same helpers.
+    let rc_bash = wire_bsc_env(&mut cmd, &pane_id, &cwd, checkpoint_doc.as_deref(), provider_id.as_deref());
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -644,7 +603,7 @@ pub(crate) async fn pty_create(
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
-    let mut reader = pair.master.try_clone_reader()
+    let reader = pair.master.try_clone_reader()
         .map_err(|e| { log::error!("pty[{pane_id}] clone_reader failed: {e}"); e.to_string() })?;
 
     // Inject bash helpers into every new session.
@@ -736,88 +695,8 @@ pub(crate) async fn pty_create(
     // The `leftover` buffer holds any trailing incomplete multi-byte sequence
     // (e.g. ✓, →, box-drawing) so we never split a character across reads.
     let (tx, rx) = std::sync::mpsc::channel::<String>();
-    let pane_id_rd = pane_id.clone();
-    std::thread::spawn(move || {
-        let mut buf = vec![0u8; 8192];
-        let mut leftover: Vec<u8> = Vec::new();
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => { log::info!("pty[{pane_id_rd}] reader EOF"); break; }
-                Err(e) => { log::warn!("pty[{pane_id_rd}] reader error: {e}"); break; }
-                Ok(n) => {
-                    leftover.extend_from_slice(&buf[..n]);
-                    let (text, keep) = split_utf8_at_boundary(&leftover);
-                    leftover = keep;
-                    if !text.is_empty() && tx.send(text).is_err() {
-                        break; // emitter gone
-                    }
-                }
-            }
-        }
-        if !leftover.is_empty() {
-            let _ = tx.send(String::from_utf8_lossy(&leftover).into_owned());
-        }
-        // tx drops here → emitter sees Disconnected and finishes.
-    });
-
-    let pane_id_em = pane_id.clone();
-    let app_em = app.clone();
-    std::thread::spawn(move || {
-        use std::sync::mpsc::RecvTimeoutError;
-        use std::time::{Duration, Instant};
-        const FLUSH: Duration = Duration::from_millis(16);
-        const MAX_PENDING: usize = 64 * 1024;
-        let evt = format!("pty_data_{}", pane_id_em);
-        // Tee PTY output to the mobile tunnel (#242) when a client is connected.
-        // Looked up once; `broadcast_output` is a no-op while nobody is paired.
-        let tunnel_state = app_em.try_state::<tunnel::TunnelState>();
-        let mut pending = String::new();
-        let mut last_emit = Instant::now();
-        let mut total: u64 = 0;
-        // Rolling window to flag sustained output floods.
-        let mut win_start = Instant::now();
-        let mut win_bytes: u64 = 0;
-        let mut win_emits: u64 = 0;
-        let mut done = false;
-        while !done {
-            let mut flush_now = false;
-            match rx.recv_timeout(FLUSH) {
-                Ok(chunk) => {
-                    total += chunk.len() as u64;
-                    win_bytes += chunk.len() as u64;
-                    pending.push_str(&chunk);
-                    if pending.len() >= MAX_PENDING || last_emit.elapsed() >= FLUSH {
-                        flush_now = true;
-                    }
-                }
-                // Idle for a frame — flush trailing output (e.g. the prompt) now.
-                Err(RecvTimeoutError::Timeout) => flush_now = true,
-                Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
-            }
-            if flush_now && !pending.is_empty() {
-                let data = std::mem::take(&mut pending);
-                if let Some(ts) = &tunnel_state {
-                    ts.broadcast_output(&pane_id_em, &data);
-                }
-                let _ = app_em.emit(&evt, data);
-                win_emits += 1;
-                last_emit = Instant::now();
-            }
-            let secs = win_start.elapsed().as_secs_f64();
-            if secs >= 2.0 {
-                let eps = win_emits as f64 / secs;
-                let bps = win_bytes as f64 / secs;
-                if eps > 60.0 || bps > 128_000.0 {
-                    log::warn!("pty[{pane_id_em}] high output: {eps:.0} emits/s, {bps:.0} B/s");
-                }
-                win_start = Instant::now();
-                win_bytes = 0;
-                win_emits = 0;
-            }
-        }
-        let _ = app_em.emit(&format!("pty_exit_{}", pane_id_em), ());
-        log::info!("pty[{pane_id_em}] session ended ({total} bytes)");
-    });
+    spawn_reader(pane_id.clone(), reader, tx);
+    spawn_emitter(pane_id.clone(), app.clone(), rx);
 
     log::info!(
         "pty[{}] created · {}x{} · provider={} · shell={} · cwd={} · init={}",
@@ -1052,129 +931,10 @@ mod tests {
         assert_eq!(plan_launch(Some(""), None, false, false, true), LaunchPlan::None);
     }
     use crate::bsc_base_dir;
-    #[cfg(any(windows, unix))]
-    use super::PtyJob;
     use std::collections::HashMap;
 
-    /// Loadbearing claim of the orphan-kill fix: dropping the job handle kills
-    /// every assigned process (and its descendants). Spawn a ~30 s `ping` —
-    /// without the kill we'd hit the deadline; with it the process exits in
-    /// milliseconds. Windows-only; the Unix tree-kill is covered by
-    /// `pty_job_drop_kills_process_group` below.
-    #[cfg(windows)]
-    #[test]
-    fn pty_job_drop_kills_assigned_process() {
-        use std::process::{Command, Stdio};
-        use std::time::{Duration, Instant};
-
-        let mut child = Command::new("cmd")
-            .args(["/c", "ping", "-n", "30", "127.0.0.1"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn ping for job-kill test");
-
-        let job = PtyJob::new().expect("create job object");
-        job.assign_pid(child.id()).expect("assign ping pid to job");
-
-        // Closing the only handle on a KILL_ON_JOB_CLOSE job must terminate
-        // every assigned process — that's the orphan kill.
-        drop(job);
-
-        let mut exited = false;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    exited = true;
-                    break;
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
-                Err(e) => panic!("try_wait failed: {e}"),
-            }
-        }
-        // Always reap before asserting so the test never leaks a Child handle
-        // (satisfies clippy::zombie_processes); kill() is a harmless no-op once
-        // the job already terminated it.
-        let _ = child.kill();
-        let _ = child.wait();
-        assert!(
-            exited,
-            "ping survived 2s after job drop — kill-on-close not effective"
-        );
-    }
-
-    /// Loadbearing claim of the Unix orphan-kill fix (#118): dropping the job
-    /// must reap the shell's WHOLE process group, not just the immediate child —
-    /// otherwise `claude`/`gh`/`git` grandchildren leak and hold cwd locks. Mimic
-    /// the real spawn: a shell that `setsid`s (so pgid == its pid, exactly what
-    /// `portable_pty` does) and backgrounds a 30 s `sleep` GRANDCHILD in that same
-    /// group. After `assign_pid` + drop, the grandchild — which `Child::kill()`
-    /// alone would never reach — must be gone well inside its 30 s sleep.
-    #[cfg(unix)]
-    #[test]
-    fn pty_job_drop_kills_process_group() {
-        use std::io::{BufRead, BufReader};
-        use std::os::unix::process::CommandExt;
-        use std::process::{Command, Stdio};
-        use std::time::{Duration, Instant};
-
-        // `echo $!` prints the backgrounded sleep's pid (the grandchild), then the
-        // shell `wait`s so it stays group leader while we operate on the group.
-        let mut child = {
-            let mut c = Command::new("sh");
-            c.args(["-c", "sleep 30 & echo $!; wait"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null());
-            // SAFETY: pre_exec runs in the forked child before exec; `setsid` only
-            // creates a new session/process group and has no async-signal-unsafe
-            // allocation. This reproduces portable_pty's child setup so pgid == pid.
-            unsafe {
-                c.pre_exec(|| {
-                    if libc::setsid() == -1 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
-            c.spawn().expect("spawn sh for group-kill test")
-        };
-
-        let grandchild: i32 = {
-            let stdout = child.stdout.take().expect("piped stdout");
-            let mut line = String::new();
-            BufReader::new(stdout)
-                .read_line(&mut line)
-                .expect("read grandchild pid");
-            line.trim().parse().expect("parse grandchild pid")
-        };
-
-        let job = PtyJob::new().expect("create job");
-        job.assign_pid(child.id()).expect("assign shell pid to job");
-
-        // Drop must `killpg(pgid, SIGKILL)` the whole group — shell AND the
-        // backgrounded sleep grandchild.
-        drop(job);
-        // Reap the direct child so it doesn't linger as a zombie; the grandchild
-        // is reparented to init, which reaps it once SIGKILL lands.
-        let _ = child.wait();
-
-        // SAFETY: `kill(pid, 0)` performs only an existence/permission check, no
-        // signal delivery; returns 0 while the process exists (incl. zombie) and
-        // -1/ESRCH once it's gone. Poll until the grandchild disappears.
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
-            if unsafe { libc::kill(grandchild, 0) } == -1
-                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-            {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-        // Best-effort cleanup before failing so we don't leak a 30 s sleep.
-        unsafe { libc::kill(grandchild, libc::SIGKILL); }
-        panic!("grandchild {grandchild} survived job drop — process-group kill not effective");
-    }
+    // The PtyJob process-tree-kill tests (`pty_job_drop_kills_assigned_process` /
+    // `pty_job_drop_kills_process_group`) live with the type they exercise, in `job.rs`.
 
     #[test]
     fn session_env_sets_xterm_term_by_default() {
