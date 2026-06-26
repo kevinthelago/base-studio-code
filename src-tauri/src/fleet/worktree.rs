@@ -16,7 +16,7 @@ use crate::*;
 /// branch left over from a prior run is reused. Returns the worktree's absolute path
 /// (native form — mirrors `agentWorktreeCwd` so the launched pane's cwd matches).
 #[tauri::command]
-pub(crate) async fn ensure_worktree(project_key: String, repo: String, agent_id: String, scope_md: Option<String>) -> Result<String, String> {
+pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: String, scope_md: Option<String>) -> Result<String, String> {
     let _perf = PerfSpan::new("ensure_worktree");
     let clone = repo_dir(&project_key, &repo);
     if !clone.join(".git").exists() {

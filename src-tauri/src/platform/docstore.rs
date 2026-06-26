@@ -36,7 +36,7 @@ fn resolve_store_path(relpath: &str) -> Result<std::path::PathBuf, String> {
 /// `documents/` or `projects/` and must not contain `..` (see
 /// [`resolve_store_path`]).
 #[tauri::command]
-pub(crate) async fn read_document(relpath: String) -> Result<String, String> {
+pub(crate) fn read_document(relpath: String) -> Result<String, String> {
     let path = resolve_store_path(&relpath)?;
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
@@ -54,15 +54,13 @@ mod tests {
 
         // A document placed under documents/ reads back by base-relative path.
         write_file(&base.join("documents").join("note.md"), "hello world");
-        let got = tauri::async_runtime::block_on(
-            read_document("documents/note.md".to_string())
-        ).expect("read succeeds");
+        let got = read_document("documents/note.md".to_string()).expect("read succeeds");
         assert_eq!(got, "hello world");
 
         // Documents under projects/ read too.
         write_file(&base.join("projects").join("p1").join("goal.md"), "the goal");
         assert_eq!(
-            tauri::async_runtime::block_on(read_document("projects/p1/goal.md".to_string()))
+            read_document("projects/p1/goal.md".to_string())
                 .expect("project read succeeds"),
             "the goal",
         );
@@ -71,25 +69,19 @@ mod tests {
         // component-based, not an over-broad `..` substring match (#1664).
         write_file(&base.join("documents").join("a..b.md"), "dotted name");
         assert_eq!(
-            tauri::async_runtime::block_on(read_document("documents/a..b.md".to_string()))
+            read_document("documents/a..b.md".to_string())
                 .expect("dotted-name read succeeds"),
             "dotted name",
         );
 
         // Traversal is rejected.
-        assert!(tauri::async_runtime::block_on(
-            read_document("documents/../secret.md".to_string())
-        ).is_err(), "`..` rejected on read");
+        assert!(read_document("documents/../secret.md".to_string()).is_err(), "`..` rejected on read");
 
         // Out-of-store roots are rejected.
-        assert!(tauri::async_runtime::block_on(
-            read_document("repos/x.md".to_string())
-        ).is_err(), "non documents/projects root rejected");
+        assert!(read_document("repos/x.md".to_string()).is_err(), "non documents/projects root rejected");
 
         // Absolute paths are rejected.
-        assert!(tauri::async_runtime::block_on(
-            read_document("/etc/passwd".to_string())
-        ).is_err(), "absolute path rejected");
+        assert!(read_document("/etc/passwd".to_string()).is_err(), "absolute path rejected");
 
         std::fs::remove_dir_all(&home).ok();
     }

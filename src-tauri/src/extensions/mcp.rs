@@ -9,7 +9,7 @@ pub(crate) fn mcp_install_dir(name: &str) -> Result<std::path::PathBuf, String> 
     Ok(bsc_base_dir().join("mcp").join(safe))
 }
 #[tauri::command]
-pub(crate) async fn mcp_clone(name: String, url: String) -> Result<String, String> {
+pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
     let _perf = PerfSpan::new("mcp_clone");
     let dir = mcp_install_dir(&name)?;
     let dir_str = dir.to_string_lossy().into_owned();
@@ -67,7 +67,7 @@ pub(crate) struct McpBuildResult {
 /// a failed build so the panel can surface stdout/stderr; only setup problems (missing dir,
 /// unknown toolchain) are `Err`.
 #[tauri::command]
-pub(crate) async fn mcp_build(name: String) -> Result<McpBuildResult, String> {
+pub(crate) fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let _perf = PerfSpan::new("mcp_build");
     let dir = mcp_install_dir(&name)?;
     if !dir.exists() {
@@ -115,7 +115,7 @@ pub(crate) struct McpStatusResult {
 /// Report whether a catalog MCP server has been downloaded and built, so the planning page's
 /// MCP panel can open with real install status instead of assuming "not installed".
 #[tauri::command]
-pub(crate) async fn mcp_status(name: String) -> Result<McpStatusResult, String> {
+pub(crate) fn mcp_status(name: String) -> Result<McpStatusResult, String> {
     let dir = mcp_install_dir(&name)?;
     let (downloaded, built) = mcp_status_of(&dir);
     Ok(McpStatusResult { downloaded, built })
@@ -139,7 +139,7 @@ pub(crate) struct McpUpdateStatus {
 /// only — no object download). Also reports downloaded/built so an un-built clone surfaces a
 /// "build" action. `update_available` is false for a non-git / not-downloaded server.
 #[tauri::command]
-pub(crate) async fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> {
+pub(crate) fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> {
     let _perf = PerfSpan::new("mcp_check_update");
     let dir = mcp_install_dir(&name)?;
     let (downloaded, built) = mcp_status_of(&dir);

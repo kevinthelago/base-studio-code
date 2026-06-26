@@ -97,7 +97,7 @@ pub(crate) fn clear_project_plan_files(project_key: String) -> Result<u32, Strin
 /// is non-empty. Callers poll this on a short interval to pick up sections that
 /// Claude writes via its Write tool (more reliable than parsing PTY output).
 #[tauri::command]
-pub(crate) async fn read_plan_sections(project_key: String) -> Result<std::collections::HashMap<String, String>, String> {
+pub(crate) fn read_plan_sections(project_key: String) -> Result<std::collections::HashMap<String, String>, String> {
     let _perf = PerfSpan::new("read_plan_sections");
     let safe_key  = sanitize_project_key(&project_key);
     if safe_key.is_empty() {
