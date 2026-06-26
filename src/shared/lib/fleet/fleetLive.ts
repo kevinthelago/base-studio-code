@@ -7,6 +7,7 @@
 //
 // Framework-free + unit-tested; the store/coord wiring lives in hooks/useFleetLive.
 
+import { hashString } from "@/shared/lib/core/format";
 import type { CoordState } from "./coordination";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { WorkerStatus } from "@/shared/data/fleet";
@@ -35,9 +36,7 @@ export interface LiveWorker {
 
 /** Stable color from a string (profile id), matching the loginColor convention. */
 function hashColor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return `oklch(0.72 0.13 ${h % 360})`;
+  return `oklch(0.72 0.13 ${hashString(s) % 360})`;
 }
 
 /** Parse the tab index out of a pane id ("t{tab}p{pane}"), or -1. */
