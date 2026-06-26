@@ -12,6 +12,7 @@ import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneK
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "@/app/console/lib/tabReorder";
 import { newTabId } from "../helpers";
+import { setMapEntry, deleteMapEntry, updateArrayItem } from "../updateHelpers";
 
 type ConsoleSlice = Pick<AppStore,
   "activeScreen" | "setScreen" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneReferenceDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
@@ -81,13 +82,9 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       setAccent: (id) => set({ accent: id }),
       keybindings: {},
       setKeybinding: (id, chord) =>
-        set((s) => ({ keybindings: { ...s.keybindings, [id]: chord } })),
+        set((s) => ({ keybindings: setMapEntry(s.keybindings, id, chord) })),
       resetKeybinding: (id) =>
-        set((s) => {
-          const next = { ...s.keybindings };
-          delete next[id];
-          return { keybindings: next };
-        }),
+        set((s) => ({ keybindings: deleteMapEntry(s.keybindings, id) })),
       resetAllKeybindings: () => set({ keybindings: {} }),
       paneViews: [],
       paneNames: {},
@@ -142,7 +139,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
               // be re-opened on crash-restore; its ended state is persisted + recovery-gated here.
               if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId] || st.endedPanes[paneId]) return {};
               return {
-                restoreRequested: { ...st.restoreRequested, [paneId]: true },
+                restoreRequested: setMapEntry(st.restoreRequested, paneId, true),
                 tabs: st.tabs.map((t, idx) => (idx === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
               };
             });
@@ -151,17 +148,17 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         return scheduled;
       },
       setPaneCwd: (paneId, cwd) =>
-        set((s) => ({ paneCwds: { ...s.paneCwds, [paneId]: cwd } })),
+        set((s) => ({ paneCwds: setMapEntry(s.paneCwds, paneId, cwd) })),
       paneStatus: {},
       setPaneStatus: (paneId, status) =>
         set((s) => {
           if (s.paneStatus[paneId] === status) return {}; // no-op — same status
-          const paneStatus = { ...s.paneStatus, [paneId]: status };
+          const paneStatus = setMapEntry(s.paneStatus, paneId, status);
           // Stamp last-activity on every status CHANGE (#849): a run↔idle transition is the
           // idle-reaper's clock — for an idle pane this records the moment it went idle, which
           // is exactly what the reaper ages from. (Same-status pings early-return above, so an
           // idle pane that stays idle keeps aging correctly.)
-          const paneLastActivity = { ...s.paneLastActivity, [paneId]: Date.now() };
+          const paneLastActivity = setMapEntry(s.paneLastActivity, paneId, Date.now());
           const parsed = parsePaneKey(paneId);
           const tab = parsed ? s.tabs[parsed.tabIdx] : undefined;
           if (!parsed || !tab) return { paneStatus, paneLastActivity };
@@ -172,7 +169,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           return {
             paneStatus,
             paneLastActivity,
-            tabs: s.tabs.map((t, i) => (i === parsed.tabIdx ? { ...t, state: nextState } : t)),
+            tabs: updateArrayItem(s.tabs, parsed.tabIdx, { state: nextState }),
           };
         }),
       // ── Warden quarantine (#1102) ────────────────────────────────────────────
@@ -180,13 +177,11 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       markQuarantine: (paneId, info) =>
         set((s) => (s.quarantinedPanes[paneId]
           ? {} // already quarantined — never re-mark (the warden's planWarden also dedupes)
-          : { quarantinedPanes: { ...s.quarantinedPanes, [paneId]: info } })),
+          : { quarantinedPanes: setMapEntry(s.quarantinedPanes, paneId, info) })),
       clearQuarantine: (paneId) =>
         set((s) => {
           if (!s.quarantinedPanes[paneId]) return {};
-          const next = { ...s.quarantinedPanes };
-          delete next[paneId];
-          return { quarantinedPanes: next };
+          return { quarantinedPanes: deleteMapEntry(s.quarantinedPanes, paneId) };
         }),
       // ── Auto-end finished workers (#920) ─────────────────────────────────────
       endedPanes: {},
@@ -194,16 +189,12 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         set((s) => {
           if (s.endedPanes[paneId]) return {}; // already ended — never re-mark
           // Drop the live status so the pane reads as not-running (its PTY has exited).
-          const paneStatus = { ...s.paneStatus };
-          delete paneStatus[paneId];
-          return { endedPanes: { ...s.endedPanes, [paneId]: info }, paneStatus };
+          return { endedPanes: setMapEntry(s.endedPanes, paneId, info), paneStatus: deleteMapEntry(s.paneStatus, paneId) };
         }),
       reopenPane: (paneId) =>
         set((s) => {
           if (!s.endedPanes[paneId]) return {};
-          const endedPanes = { ...s.endedPanes };
-          delete endedPanes[paneId];
-          return { endedPanes, paneLastActivity: { ...s.paneLastActivity, [paneId]: Date.now() } };
+          return { endedPanes: deleteMapEntry(s.endedPanes, paneId), paneLastActivity: setMapEntry(s.paneLastActivity, paneId, Date.now()) };
         }),
       // ── Idle session reaping (#849) ──────────────────────────────────────────
       dormantPanes: {},
@@ -214,16 +205,12 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           if (s.dormantPanes[paneId]) return {};
           // Mark dormant + drop the live status so the pane reads as not-running while its
           // PTY is gone (the hook fires pty_kill alongside this).
-          const paneStatus = { ...s.paneStatus };
-          delete paneStatus[paneId];
-          return { dormantPanes: { ...s.dormantPanes, [paneId]: true }, paneStatus };
+          return { dormantPanes: setMapEntry(s.dormantPanes, paneId, true), paneStatus: deleteMapEntry(s.paneStatus, paneId) };
         }),
       resumePane: (paneId) =>
         set((s) => {
           if (!s.dormantPanes[paneId]) return {};
-          const dormantPanes = { ...s.dormantPanes };
-          delete dormantPanes[paneId];
-          return { dormantPanes, paneLastActivity: { ...s.paneLastActivity, [paneId]: Date.now() } };
+          return { dormantPanes: deleteMapEntry(s.dormantPanes, paneId), paneLastActivity: setMapEntry(s.paneLastActivity, paneId, Date.now()) };
         }),
       setIdleReaperConfig: (cfg) =>
         set((s) => ({ idleReaper: { ...s.idleReaper, ...cfg } })),
@@ -234,7 +221,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           const state = aggregateTabState(tabIdx, tab.layout, s.paneStatus, s.disabledPanes);
           return state === tab.state
             ? {}
-            : { tabs: s.tabs.map((t, i) => (i === tabIdx ? { ...t, state } : t)) };
+            : { tabs: updateArrayItem(s.tabs, tabIdx, { state }) };
         }),
       clearTabStatuses: (tabIdx) =>
         set((s) => {
@@ -250,7 +237,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         }),
       paneInitCmds: {},
       setPaneInitCmd: (paneId, cmd) =>
-        set((s) => ({ paneInitCmds: { ...s.paneInitCmds, [paneId]: cmd } })),
+        set((s) => ({ paneInitCmds: setMapEntry(s.paneInitCmds, paneId, cmd) })),
       paneStartupPromptDocs: {},
       paneReferenceDocs: {},
       paneCheckpointDocs: {},
@@ -277,7 +264,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
     paneDirectorMode: {},
     paneStream: {},
       setPaneRole: (paneId, role) =>
-        set((s) => ({ paneRoles: { ...s.paneRoles, [paneId]: role } })),
+        set((s) => ({ paneRoles: setMapEntry(s.paneRoles, paneId, role) })),
 
       // Agents (#255): seed the editable profiles from the built-in defaults; persisted
       // edits replace this on rehydrate. Deep-cloned so edits never mutate the defaults.
@@ -300,25 +287,23 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       clearPanePermsStale: (paneId) =>
         set((s) => {
           if (!s.panePermsStale[paneId]) return {};
-          const next = { ...s.panePermsStale };
-          delete next[paneId];
-          return { panePermsStale: next };
+          return { panePermsStale: deleteMapEntry(s.panePermsStale, paneId) };
         }),
       paneRedrawNonce: {},
       requestPaneRedraw: (paneId) =>
-        set((s) => ({ paneRedrawNonce: { ...s.paneRedrawNonce, [paneId]: (s.paneRedrawNonce[paneId] ?? 0) + 1 } })),
+        set((s) => ({ paneRedrawNonce: setMapEntry(s.paneRedrawNonce, paneId, (s.paneRedrawNonce[paneId] ?? 0) + 1) })),
       paneProfiles: {},
       paneRoleGlobs: {},
       paneRepos: {},
       paneFlows: {},
       paneProviders: {},
       setPaneProvider: (paneId, providerId) =>
-        set((s) => ({ paneProviders: { ...s.paneProviders, [paneId]: providerId } })),
+        set((s) => ({ paneProviders: setMapEntry(s.paneProviders, paneId, providerId) })),
       paneClaudeActive: {},
       setPaneClaudeActive: (paneId, active) =>
         set((s) => (!!s.paneClaudeActive[paneId] === active
           ? s
-          : { paneClaudeActive: { ...s.paneClaudeActive, [paneId]: active } })),
+          : { paneClaudeActive: setMapEntry(s.paneClaudeActive, paneId, active) })),
       setPaneProfile: (paneId, profileId) =>
         set((s) => {
           const next = { ...s.paneProfiles };
@@ -371,17 +356,9 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           };
         }),
       renameTab: (idx, name) =>
-        set((s) => {
-          const tabs = [...s.tabs];
-          tabs[idx] = { ...tabs[idx], name };
-          return { tabs };
-        }),
+        set((s) => ({ tabs: updateArrayItem(s.tabs, idx, { name }) })),
       setTabState: (tabIdx, state) =>
-        set((s) => {
-          const tabs = [...s.tabs];
-          tabs[tabIdx] = { ...tabs[tabIdx], state };
-          return { tabs };
-        }),
+        set((s) => ({ tabs: updateArrayItem(s.tabs, tabIdx, { state }) })),
       setTabLayout: (tabIdx, layout) =>
         set((s) => {
           const [newCols, newRows] = layout.split("×").map(Number);
@@ -405,7 +382,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           tabs[tabIdx] = { ...tabs[tabIdx], state: aggregateTabState(tabIdx, layout, s.paneStatus, s.disabledPanes) };
           return {
             tabs,
-            paneNames: { ...s.paneNames, [tabIdx]: tabPaneNames },
+            paneNames: setMapEntry(s.paneNames, tabIdx, tabPaneNames),
             paneCwds,
           };
         }),
@@ -429,9 +406,6 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         }),
       setPaneName: (tabIdx, paneIdx, name) =>
         set((s) => ({
-          paneNames: {
-            ...s.paneNames,
-            [tabIdx]: { ...s.paneNames[tabIdx], [paneIdx]: name },
-          },
+          paneNames: setMapEntry(s.paneNames, tabIdx, { ...s.paneNames[tabIdx], [paneIdx]: name }),
         })),
 });

@@ -4,6 +4,7 @@
 // projects) in a later pass. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
+import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 
 type CoreSlice = Pick<AppStore,
   "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
@@ -43,14 +44,14 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
           // real data, not the empty node-id key. Frozen on first sighting so a
           // later GitHub rename can't clobber a working alias.
           projectKeyAlias: id && name && !s.projectKeyAlias[id]
-            ? { ...s.projectKeyAlias, [id]: name }
+            ? setMapEntry(s.projectKeyAlias, id, name)
             : s.projectKeyAlias,
         })),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
       addDraftProject: (key, draft) =>
-        set((s) => ({ localDraftProjects: { ...s.localDraftProjects, [key]: draft } })),
+        set((s) => ({ localDraftProjects: setMapEntry(s.localDraftProjects, key, draft) })),
       // Patch a draft record in place (#1222) — used to persist a title edit so it survives a
       // reopen. Keyed by the FROZEN key (not re-derived from the new title), so the on-disk folder
       // stays put. No-ops if the draft is gone.
@@ -58,12 +59,8 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
         set((s) => {
           const cur = s.localDraftProjects[key];
           if (!cur) return {};
-          return { localDraftProjects: { ...s.localDraftProjects, [key]: { ...cur, ...patch } } };
+          return { localDraftProjects: setMapEntry(s.localDraftProjects, key, { ...cur, ...patch }) };
         }),
       removeDraftProject: (key) =>
-        set((s) => {
-          const next = { ...s.localDraftProjects };
-          delete next[key];
-          return { localDraftProjects: next };
-        }),
+        set((s) => ({ localDraftProjects: deleteMapEntry(s.localDraftProjects, key) })),
 });
