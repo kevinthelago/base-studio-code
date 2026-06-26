@@ -154,7 +154,7 @@ pub(crate) struct ClaudeConfigData {
 }
 
 #[tauri::command]
-pub(crate) async fn read_claude_config(local_path: String) -> Result<ClaudeConfigData, String> {
+pub(crate) fn read_claude_config(local_path: String) -> Result<ClaudeConfigData, String> {
     let (md_path, settings_path) = claude_paths(&local_path);
 
     let instructions = std::fs::read_to_string(&md_path).unwrap_or_default();
@@ -176,7 +176,7 @@ pub(crate) async fn read_claude_config(local_path: String) -> Result<ClaudeConfi
 }
 
 #[tauri::command]
-pub(crate) async fn write_claude_config(
+pub(crate) fn write_claude_config(
     local_path: String,
     instructions: String,
     allow: Vec<String>,

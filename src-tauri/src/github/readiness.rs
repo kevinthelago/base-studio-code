@@ -29,7 +29,7 @@ pub(crate) fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
 /// returns all-false on spawn failure rather than erroring, so the caller can still
 /// surface an actionable warning. Field names match the frontend `GithubProbe`.
 #[tauri::command]
-pub(crate) async fn github_readiness(
+pub(crate) fn github_readiness(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<serde_json::Value, String> {
@@ -181,7 +181,7 @@ pub(crate) fn detect_git_bash() -> GitBashProbe {
 /// agent subshells (login shell, so profile PATH additions count). Best-effort: a
 /// spawn failure reports the CLI tools as missing rather than erroring.
 #[tauri::command]
-pub(crate) async fn preflight(
+pub(crate) fn preflight(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<PrereqStatus>, String> {

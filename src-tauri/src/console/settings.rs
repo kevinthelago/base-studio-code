@@ -51,7 +51,7 @@ pub(crate) const DEFAULT_DENY: &[&str] = &[
 ];
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn ensure_session_settings(
+pub(crate) fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
     denied_commands: Vec<String>,

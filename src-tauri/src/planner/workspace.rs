@@ -15,7 +15,7 @@ pub(crate) struct WorkspacePaths {
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn setup_workspaces(
+pub(crate) fn setup_workspaces(
     repo_full_names: Vec<String>,
     automations: Vec<AutomationData>,
     is_existing: bool,
