@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "@/store";
+import { timeAgo, loginColor } from "@/shared/lib/core/format";
 import { githubRequest, githubGraphql } from "@/features/github/lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
@@ -46,21 +47,6 @@ interface GHEvent {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function loginColor(login: string): string {
-  let h = 0;
-  for (let i = 0; i < login.length; i++) h = (h * 31 + login.charCodeAt(i)) >>> 0;
-  return `oklch(0.68 0.12 ${h % 360})`;
-}
 
 const PROJECT_COLORS = [
   "oklch(0.78 0.14 70)",
