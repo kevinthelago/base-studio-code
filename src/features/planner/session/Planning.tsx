@@ -51,7 +51,7 @@ import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintM
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "@/features/extensions/lib/mcpInstall";
 import { resolveAllInstalledMcp } from "@/features/extensions/lib/mcpServers";
-import { toSessionPayloads } from "@/shared/lib/session/sessionConfig";
+import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
 import { writeProjectMcpContext } from "../shared/mcpContext";
 import { McpDownloadModal, type McpDownloadItem } from "../shared/McpDownloadModal";
 import { type McpInstallState } from "../shared/mcpPaneData";
@@ -663,7 +663,10 @@ export function Planning({ visible }: { visible: boolean }) {
       deniedCommands:  roleDeniedCommands(cap),
       mcpServers:      mcp,
       hooks:           null,
-      allowToolRules:  [...write.allow, "Read", "WebFetch"],
+      // Auto-approve every MCP server the planner is given (Research included) so calling them
+      // while planning never hits a per-tool prompt — replacePermissions:true here would otherwise
+      // drop the launch-time rules, so this refresh must re-assert them too.
+      allowToolRules:  [...write.allow, "Read", "WebFetch", ...mcpAllowRules(mcp)],
       denyToolRules:   write.deny,
       replacePermissions: true,
     }).catch((e: unknown) => console.warn("planner mcp refresh failed:", e));
@@ -1486,7 +1489,10 @@ export function Planning({ visible }: { visible: boolean }) {
         deniedCommands:  roleDeniedCommands(plannerCap),
         mcpServers:      plannerMcp,
         hooks:           null,
-        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch"],
+        // Auto-approve every MCP server the planner sees (Research/Compliance + any downloaded one)
+        // so it can call them while planning — e.g. the Research MCP when grounding a skill — without
+        // a per-tool permission prompt. `enabledMcpjsonServers` only trusts the server to LOAD.
+        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch", ...mcpAllowRules(plannerMcp)],
         denyToolRules:   plannerWrite.deny,
         replacePermissions: true,
       }).catch((e: unknown) => console.error("planner session settings failed:", e));
