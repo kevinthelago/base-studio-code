@@ -55,13 +55,6 @@ describe("SkillsScreen — CRUD", () => {
     expect(useAppStore.getState().skills.find((s) => s.id === "s1")!.name).toBe("Open a tidy PR");
   });
 
-  it("Catalog tab 'add to library' appends the catalog skill", () => {
-    render(<SkillsScreen sectionOverride="catalog" />);
-    const before = useAppStore.getState().skills.length;
-    fireEvent.click(screen.getAllByText("add to library")[0]);
-    expect(useAppStore.getState().skills).toHaveLength(before + 1);
-  });
-
   it("drawer 'remove' deletes the skill", () => {
     const { container } = render(<SkillsScreen />);
     fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);

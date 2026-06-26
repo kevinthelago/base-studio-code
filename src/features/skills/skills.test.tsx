@@ -68,10 +68,4 @@ describe("SkillsScreen — library at scale (#skills-groups)", () => {
     expect(container.querySelectorAll(ROW).length).toBe(0);
   });
 
-  it("the Catalog view has a search box and add buttons", () => {
-    render(<SkillsScreen />);
-    fireEvent.click(screen.getByText("Catalog"));
-    expect(screen.getByPlaceholderText("Search the catalog…")).toBeTruthy();
-    expect(screen.getAllByText("add to library").length).toBeGreaterThan(0);
-  });
 });

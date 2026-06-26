@@ -8,7 +8,7 @@
 // lib/mcpServers.ts.
 
 import {
-  SKILLS, SKILL_CATALOG, KIND, PROFILE_COLOR,
+  SKILLS, KIND, PROFILE_COLOR,
   type Skill, type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
 
@@ -322,41 +322,6 @@ export function toSkillCfgs(defs: SkillDef[]): SkillCfg[] {
 /** Directory-safe slug for a skill name (matches the Rust slugger). */
 export function skillSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-// ── Catalog templates ─────────────────────────────────────────────────────────
-
-/** A ready-to-add SkillDef (minus id) for a catalog entry — disabled + global by
- *  default; the caller assigns the id and the user fills the prompt/tools. */
-export function defFromCatalog(name: string): Omit<SkillDef, "id"> {
-  // A packaged skill (re-)added from the catalog restores its full def — body,
-  // tools, kind, profiles — not just the one-line description.
-  const packaged = SKILLS.find(s => s.name === name);
-  if (packaged) {
-    const { id: _id, ...rest } = fromSample(packaged);
-    return { ...rest, enabled: false };
-  }
-  const c = SKILL_CATALOG.find(x => x.name === name);
-  const kind = c ? kindForGlyph(c.glyph) : "workflow";
-  return {
-    name,
-    kind,
-    source: c?.by === "first-party" ? "first-party" : c?.by === "team" ? "team" : "community",
-    desc: c?.desc ?? "",
-    prompt: c?.desc ?? "",
-    tools: [],
-    profiles: ["build"],
-    projects: [],
-    enabled: false,
-    pinned: false,
-    invocations: 0, success: 0, avgTokensK: 0, trend: [],
-  };
-}
-
-/** Map a catalog glyph back to a kind (the catalog reuses the KIND glyphs). */
-function kindForGlyph(glyph: string): SkillKind {
-  const hit = KIND_KEYS.find(k => KIND[k].glyph === glyph);
-  return hit ?? "workflow";
 }
 
 /** A blank custom skill, ready for the new-skill form. */
