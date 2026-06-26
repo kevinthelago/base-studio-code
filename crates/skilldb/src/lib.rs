@@ -13,9 +13,18 @@
 //! a busy_timeout are set on open so the two front-ends don't block/corrupt each other.
 
 use bsc_sqlite_util::{arr_to_json, json_to_arr};
+use include_dir::{include_dir, Dir};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+/// The packaged built-in skills (compliance & standards procedures: SOC 2, GDPR, WCAG, …) live as one
+/// JSON file per skill under `src-tauri/prompts/skills/` — the SINGLE source of truth, shared with the
+/// frontend (which reads the same files via `import.meta.glob`). Embedded at compile time so a fresh
+/// `skills.db` seeds the library on first open, giving the `bsc-skill` CLI + planner parity without a
+/// UI boot (#1715). The path reaches out of this crate (its manifest dir is `crates/skilldb`) to the
+/// backend-owned `src-tauri/prompts/skills` tree — the same dir the Vite `@prompts` alias points at.
+static PACKAGED_SKILLS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/prompts/skills");
 
 /// How long (ms) a connection waits on a locked db before erroring (the #1325 concurrency
 /// requirement, alongside WAL). Generous so a quick CLI write never loses to the live app.
@@ -51,8 +60,10 @@ pub struct Skill {
     /// One-line description — the SKILL.md frontmatter `description` + the card.
     #[serde(default)]
     pub desc: String,
-    /// The reusable procedure, written as the SKILL.md body.
-    #[serde(default)]
+    /// The reusable procedure, written as the SKILL.md body. The `body` alias lets the packaged-skill
+    /// JSON data files (which use the frontend `Skill`'s `body` key) deserialize straight into this
+    /// field when seeding (#1715) — serialization still emits `prompt` (the frontend `SkillDef` shape).
+    #[serde(default, alias = "body")]
     pub prompt: String,
     /// Tool names bundled with the skill → the SKILL.md `allowed-tools`.
     #[serde(default)]
@@ -112,7 +123,27 @@ impl Store {
         let conn = Connection::open(path)?;
         conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
         migrate(&conn)?;
-        Ok(Store { conn })
+        let store = Store { conn };
+        // First-run seed (#1715): an on-disk store with no skills yet gets the packaged set from the
+        // embedded JSON, so a fresh machine has the built-in library without a UI boot. Seed-on-empty
+        // only — an existing db (incl. one the frontend has reconciled, or with user edits) is untouched.
+        store.seed_packaged_if_empty()?;
+        Ok(store)
+    }
+
+    /// Seed the packaged built-in skills into an EMPTY db (first run). A no-op the moment the `skills`
+    /// table has any row, so it never double-seeds, clobbers user edits, or fights the frontend's
+    /// `refreshPackagedSkills` reconciliation. Returns whether it seeded. NOT called by
+    /// `open_in_memory` (tests want a blank store). (#1715)
+    pub fn seed_packaged_if_empty(&self) -> rusqlite::Result<bool> {
+        let count: i64 = self.conn.query_row("SELECT COUNT(*) FROM skills", [], |r| r.get(0))?;
+        if count > 0 {
+            return Ok(false);
+        }
+        for skill in packaged_skills() {
+            self.upsert(&skill)?;
+        }
+        Ok(true)
     }
 
     /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
@@ -262,6 +293,29 @@ impl Store {
         }
         Ok(out)
     }
+}
+
+// ── packaged-skill seed (#1715) ────────────────────────────────────────────────────
+
+/// Parse the embedded packaged-skill JSON into seedable `Skill`s, in a stable order (by filename).
+/// Each file carries the frontend `Skill` shape (camelCase; `body` → our `prompt` via the field
+/// alias); seeded skills are forced `enabled` + `packaged` (the JSON omits both, matching the
+/// frontend `fromSample`). A malformed file is skipped rather than poisoning the whole seed.
+fn packaged_skills() -> Vec<Skill> {
+    let mut files: Vec<_> = PACKAGED_SKILLS_DIR
+        .files()
+        .filter(|f| f.path().extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort_by_key(|f| f.path().to_path_buf());
+    files
+        .into_iter()
+        .filter_map(|f| {
+            let mut skill: Skill = serde_json::from_slice(f.contents()).ok()?;
+            skill.enabled = true;
+            skill.packaged = true;
+            Some(skill)
+        })
+        .collect()
 }
 
 // ── schema ───────────────────────────────────────────────────────────────────────
@@ -529,6 +583,70 @@ mod tests {
         // The member id stays recorded, but resolve filters it out (no live skill).
         assert_eq!(s.group_get("g").unwrap().unwrap().skill_ids, vec!["a", "b"]);
         assert_eq!(s.resolve("g").unwrap().iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["b"]);
+    }
+
+    // ── packaged-skill seed (#1715) ──────────────────────────────────────────────
+
+    #[test]
+    fn packaged_skills_parse_from_embedded_json() {
+        // The embedded src-tauri/prompts/skills/*.json must parse into seedable Skills with the
+        // body→prompt alias applied and enabled/packaged forced on. Pins the known built-in ids.
+        let skills = packaged_skills();
+        let ids: std::collections::BTreeSet<&str> = skills.iter().map(|s| s.id.as_str()).collect();
+        let expected: std::collections::BTreeSet<&str> = [
+            "soc2-readiness", "gdpr-review", "wcag-audit", "hipaa-safeguards", "pci-dss-review",
+            "i18n-extract", "compliance-docs", "audit-consent-scaffold", "web-seo",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(ids, expected, "packaged skill id set drifted from the built-in library");
+        for s in &skills {
+            assert!(s.enabled && s.packaged, "seeded packaged skills are enabled + packaged: {}", s.id);
+            assert!(!s.name.is_empty(), "skill '{}' has a name", s.id);
+            assert!(!s.prompt.is_empty(), "skill '{}' body→prompt populated via the alias", s.id);
+        }
+        let seo = skills.iter().find(|s| s.id == "web-seo").unwrap();
+        assert!(seo.pinned, "web-seo ships pinned");
+        assert_eq!(seo.kind, "workflow");
+    }
+
+    #[test]
+    fn open_seeds_packaged_skills_into_a_fresh_db_once() {
+        let dir = std::env::temp_dir().join(format!("skilldb-seed-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("skills.db");
+        let _ = std::fs::remove_file(&path);
+
+        // Fresh db: open seeds the packaged library.
+        let a = Store::open(&path).unwrap();
+        let n = a.list().unwrap().len();
+        assert_eq!(n, packaged_skills().len(), "a fresh db seeds exactly the packaged set");
+        assert!(a.get("soc2-readiness").unwrap().is_some(), "a known packaged skill is present");
+
+        // Re-opening does NOT double-seed (seed-on-empty).
+        drop(a);
+        let b = Store::open(&path).unwrap();
+        assert_eq!(b.list().unwrap().len(), n, "re-open is a no-op — no double seed");
+
+        // A user edit survives a re-open (seed never clobbers a non-empty db).
+        b.remove("soc2-readiness").unwrap();
+        drop(b);
+        let c = Store::open(&path).unwrap();
+        assert!(c.get("soc2-readiness").unwrap().is_none(), "seed-on-empty doesn't re-add removed skills");
+        assert_eq!(c.list().unwrap().len(), n - 1);
+
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seed_packaged_if_empty_is_a_noop_when_rows_exist() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.seed_packaged_if_empty().unwrap(), "empty store seeds");
+        let n = s.list().unwrap().len();
+        assert_eq!(n, packaged_skills().len());
+        assert!(!s.seed_packaged_if_empty().unwrap(), "a populated store does not re-seed");
+        assert_eq!(s.list().unwrap().len(), n, "no duplicates on a second call");
     }
 
     // ── WAL / concurrency smoke (the #1325 crux) ─────────────────────────────────
