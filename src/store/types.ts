@@ -17,7 +17,7 @@ import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import type { FleetPlan, AgentStream } from "@/features/planner/stages/planSections";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
-import type { StageRunState } from "@/features/planner/grading/stageRun";
+import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintSection } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/shared/deployConfig";
 import type { SourceConfig } from "@/features/planner/shared/sourceConfig";

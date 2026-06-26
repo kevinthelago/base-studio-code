@@ -3,7 +3,7 @@
 // the plan seeds the fleet. Acknowledge-to-clear by default; the hard-gate setting turns the ack off
 // and demands the flagged content be removed.
 
-import { type InjectionGate, injectionSignature } from "../grading/planInjection";
+import { type InjectionGate, injectionSignature } from "../lib/planInjection";
 
 const MONO = "var(--mono)";
 const CAT_LABEL: Record<string, string> = {

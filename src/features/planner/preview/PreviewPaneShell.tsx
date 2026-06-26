@@ -9,13 +9,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../../store';
-import { StageScreenFrame } from '../grading/StageScreenFrame';
+import { StageScreenFrame } from './StageScreenFrame';
 import { dispatchRenderPreview, RENDER_PREVIEW_ID } from './renderPreview';
 import { buildClaudeDesignBrief } from './claudeDesignBrief';
 import { getRenderer } from './registry';
 import type { RendererHandle } from './registry';
 import type { RenderableChunk, RenderableKind, PreviewStatus } from './types';
-import type { StageScreenProps } from '../grading/stageScreens';
+import type { StageScreenProps } from './stageScreens';
 
 const EMPTY: string[] = [];
 

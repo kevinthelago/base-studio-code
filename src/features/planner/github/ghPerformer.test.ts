@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { tauriPerformer, publishViaTauri } from "./ghPerformer";
-import { personalProfile } from "../grading/capabilityMapping";
+import { personalProfile } from "./capabilityMapping";
 import { STRATEGY_PRESETS } from "../fleet/executionTopology";
 import type { PublishInput } from "./publishAdapter";
 
