@@ -31,4 +31,4 @@ roxmltree = "0.20"
 # grounding is fast/offline-friendly and respects upstream rate limits. `bundled` matches plandb.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Native PDF text extraction (no Docker/GROBID) for arXiv/PMC-OA/publisher full text.
-pdf-extract = "0.7"
+pdf-extract = "0.12"
