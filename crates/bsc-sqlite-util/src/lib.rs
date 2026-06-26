@@ -66,7 +66,7 @@ pub fn read_stdin_json<T: DeserializeOwned>(noun: &str) -> Result<Vec<T>, String
 fn parse_json_items<T: DeserializeOwned>(buf: &str, noun: &str) -> Result<Vec<T>, String> {
     let buf = buf.trim();
     if buf.is_empty() {
-        return Err(format!("expected a {noun} (or array of {noun}s) as JSON on stdin"));
+        return Err(format!("expected {noun} (or array of {noun}s) as JSON on stdin"));
     }
     if buf.starts_with('[') {
         serde_json::from_str(buf).map_err(|e| format!("parsing {noun} array: {e}"))
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(one, vec![42]);
         let many: Vec<i64> = parse_json_items("[1, 2, 3]", "n").unwrap();
         assert_eq!(many, vec![1, 2, 3]);
-        assert!(parse_json_items::<i64>("   ", "n").unwrap_err().contains("expected a n"));
+        assert!(parse_json_items::<i64>("   ", "n").unwrap_err().contains("expected n"));
         assert!(parse_json_items::<i64>("nope", "n").unwrap_err().contains("parsing n"));
         assert!(parse_json_items::<i64>("[nope", "n").unwrap_err().contains("parsing n array"));
     }
