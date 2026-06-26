@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:plan": "cargo build --bin bsc-plan --bin bsc-skill --bin bsc-data --bin bsc-agent --bin bsc-research-mcp --bin bsc-compliance-mcp",
+    "build:plan": "cargo build --bin bsc-plan --bin bsc-skill --bin bsc-data --bin bsc-agent --bin bsc-research-mcp --bin bsc-compliance-mcp --bin bsc-compliance",
     "stage:sidecar": "node scripts/stage-sidecar.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
