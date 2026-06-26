@@ -11,30 +11,21 @@ import {
 
 describe("deriveLifecycleState (#458 lifecycle state)", () => {
   const active   = (overrides?: Partial<LifecycleSignals>): LifecycleSignals =>
-    ({ isExisting: true, totalIssues: 10, closedIssues: 0, planGradeScore: 0.8, ...overrides });
+    ({ isExisting: true, totalIssues: 10, closedIssues: 0, ...overrides });
 
   it("returns 'new' when the project is not yet published", () => {
     expect(deriveLifecycleState({ isExisting: false, totalIssues: 20, closedIssues: 15 })).toBe("new");
   });
 
-  it("returns 'active' for an existing project with < 50% closure", () => {
+  it("returns 'active' for an existing project below the near-complete threshold", () => {
     expect(deriveLifecycleState(active({ closedIssues: 4 }))).toBe("active"); // 40%
+    expect(deriveLifecycleState(active({ closedIssues: 7, totalIssues: 10 }))).toBe("active"); // 70%
   });
 
   it("returns 'near-complete' when ≥75% of issues are closed", () => {
     expect(deriveLifecycleState(active({ closedIssues: 8 }))).toBe("near-complete");  // 80%
     expect(deriveLifecycleState(active({ closedIssues: 7, totalIssues: 9 }))).toBe("near-complete"); // ~78%
     expect(deriveLifecycleState(active({ closedIssues: 75, totalIssues: 100 }))).toBe("near-complete"); // 75%
-  });
-
-  it("returns 'near-complete' at 50%+ closure when the plan grade is B or better (≥0.75)", () => {
-    expect(deriveLifecycleState(active({ closedIssues: 6, planGradeScore: 0.80 }))).toBe("near-complete"); // 60%+B
-    expect(deriveLifecycleState(active({ closedIssues: 5, planGradeScore: 0.75 }))).toBe("near-complete"); // 50%+B
-  });
-
-  it("remains 'active' at 50%+ closure when the grade is below B", () => {
-    expect(deriveLifecycleState(active({ closedIssues: 6, planGradeScore: 0.60 }))).toBe("active"); // 60%+C
-    expect(deriveLifecycleState(active({ closedIssues: 5, planGradeScore: 0.74 }))).toBe("active"); // 50%+C
   });
 
   it("returns 'active' for a plan with no issues (ratio = 0)", () => {

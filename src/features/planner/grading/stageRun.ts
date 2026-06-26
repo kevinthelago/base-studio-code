@@ -1,4 +1,4 @@
-// Stage-run types for the in-app stage helpers (render-preview, grade-plan, lint-plan).
+// Stage-run types for the in-app stage helpers (render-preview, file-intake).
 //
 // The generic "stage engine" (handler registry + runner + trigger dispatch + gate
 // predicate) was removed in #897 Phase 4c — there was never a production trigger pump,

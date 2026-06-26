@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { verifyFindings, findingsToGrade, type VerifiedFinding } from "./deadcodeVerify";
+import { verifyFindings } from "./deadcodeVerify";
 import { type DeadCodeFinding } from "./deadcode";
 
 const f = (over: Partial<DeadCodeFinding>): DeadCodeFinding => ({
@@ -36,38 +36,5 @@ describe("verifyFindings (#626 slice b)", () => {
   it("normalizes an unknown verdict string to uncertain", async () => {
     const out = await verifyFindings([f({})], async () => JSON.stringify([{ verdict: "definitely", reason: "" }]));
     expect(out[0].verdict).toBe("uncertain");
-  });
-});
-
-describe("findingsToGrade (#626 slice b)", () => {
-  const v = (verdict: VerifiedFinding["verdict"], over: Partial<DeadCodeFinding> = {}): VerifiedFinding => ({ ...f(over), verdict, reason: "" });
-
-  it("empty (scan ran, nothing found) ⇒ score 100 / letter A", () => {
-    const g = findingsToGrade([], "cleanup");
-    expect(g.graderId).toBe("cleanup");
-    expect(g.score).toBe(100);
-    expect(g.letter).toBe("A");
-  });
-
-  it("uncertain candidates ding the score (not a free A) and are surfaced for review (#688)", () => {
-    const g = findingsToGrade([v("false-positive"), v("uncertain")], "cleanup");
-    expect(g.score).toBe(95);            // one uncertain → −5 (was a misleading 100)
-    expect(g.dimensions[0].note).toMatch(/1 to review/);
-    // false-positives aren't surfaced as findings; the uncertain one is (info)
-    expect(g.findings).toHaveLength(1);
-    expect(g.findings[0].severity).toBe("info");
-  });
-
-  it("many uncertain candidates pull the score well below A", () => {
-    const many = Array.from({ length: 12 }, () => v("uncertain"));
-    expect(findingsToGrade(many, "cleanup").score).toBe(40); // 100 − 12*5
-  });
-
-  it("confirmed dead code lowers the score + surfaces removable findings", () => {
-    const g = findingsToGrade([v("confirmed", { symbol: "lodash" }), v("confirmed", { kind: "unused-export", symbol: "Foo", path: "src/a.ts" })], "cleanup");
-    expect(g.score).toBeLessThan(100);
-    const removable = g.findings.filter((x) => x.fix === "safe to remove");
-    expect(removable).toHaveLength(2);
-    expect(g.dimensions.map((d) => d.label)).toContain("Unused dependencies");
   });
 });

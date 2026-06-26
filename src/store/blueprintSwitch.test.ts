@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import type { GradeResult } from "@/features/planner/grading/grading";
 
 describe("blueprint-per-project + reset (#647)", () => {
   beforeEach(() => {
     useAppStore.setState({
       projectBlueprintId: {},
-      sectionGrades: { p: { ui: [{ graderId: "x" } as unknown as GradeResult] } },
       uiScreens: { p: ["Home"] },
       uiApproved: { p: ["Home"] },
       planStageConfig: {},
@@ -33,7 +31,6 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
-    expect(s.sectionGrades["p"]).toBeUndefined();
     expect(s.uiScreens["p"]).toBeUndefined();
     expect(s.uiApproved["p"]).toBeUndefined();
     // section state + confirmations + automations also cleared so nothing reads complete (#664)
@@ -58,7 +55,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     useAppStore.getState().applyBlueprintToProject("p", "nope");
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBeUndefined();
-    expect(s.sectionGrades["p"]).toBeTruthy(); // untouched
+    expect(s.uiScreens["p"]).toBeTruthy(); // untouched
   });
 
   it("won't switch a project locked to the blueprint-author lifecycle (#923)", () => {
@@ -68,7 +65,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     const s = useAppStore.getState();
     // the switch is refused — the authoring blueprint overrides + locks the project
     expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
-    expect(s.sectionGrades["p"]).toBeTruthy();      // progress NOT wiped
+    expect(s.uiScreens["p"]).toBeTruthy();          // progress NOT wiped
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 
@@ -77,7 +74,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     useAppStore.getState().setProjectBlueprintId("p", "default");
     useAppStore.getState().applyBlueprintToProject("p", "data-migration");
     expect(useAppStore.getState().projectBlueprintId["p"]).toBe("data-migration"); // switched
-    expect(useAppStore.getState().sectionGrades["p"]).toBeUndefined();             // progress wiped on switch
+    expect(useAppStore.getState().uiScreens["p"]).toBeUndefined();                 // progress wiped on switch
     // a transform-origin project can switch too — the soft-lock is gone (#1281)
     useAppStore.getState().setProjectBlueprintId("p", "refactor");
     useAppStore.getState().applyBlueprintToProject("p", "harden");
@@ -89,7 +86,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     useAppStore.getState().applyBlueprintToProject("p", "default");
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBe("default");
-    expect(s.sectionGrades["p"]).toBeTruthy();                 // progress NOT wiped (refused no-op)
+    expect(s.uiScreens["p"]).toBeTruthy();                     // progress NOT wiped (refused no-op)
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 });
