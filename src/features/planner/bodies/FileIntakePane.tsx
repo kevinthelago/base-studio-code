@@ -11,9 +11,9 @@ import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
   INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
-} from "../shared/fileIntake";
+} from "../lib/fileIntake";
 import type { StageScreenProps } from "../preview/stageScreens";
-import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../shared/dropFiles";
+import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../lib/dropFiles";
 
 const KIND_COLOR: Record<IntakeKind, string> = {
   image: "var(--violet, oklch(0.72 0.12 300))", vector: "var(--violet, oklch(0.72 0.12 300))",

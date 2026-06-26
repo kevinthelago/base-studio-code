@@ -24,7 +24,7 @@ import { parseFeaturesFile, featuresSummary, featuresAwaitingConfirm, featuresTo
 import { parseDependencyManifest, depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
-import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../shared/repoScaffold";
+import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../lib/repoScaffold";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile, renderIssueBody, resolvePhaseIndex, subIssueLinks, type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "../fleet/streamCompletion";
@@ -44,9 +44,9 @@ import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../bluepri
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
 import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
 import { McpDownloadModal } from "../pane/McpDownloadModal";
-import { type McpInstallState } from "../shared/mcpPaneData";
+import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
-import { normalizeDeployConfig } from "../shared/deployConfig";
+import { normalizeDeployConfig } from "../lib/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.

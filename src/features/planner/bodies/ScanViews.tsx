@@ -11,7 +11,7 @@ import {
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, downstreamImpact,
   type SourceConfig, type ScanViewEntity, type ScanViewField,
   type ScanAutomation, type ScanAutomationKind,
-} from "../shared/sourceConfig";
+} from "../lib/sourceConfig";
 
 const MONO = "var(--mono)";
 type View = "graph" | "list" | "process";

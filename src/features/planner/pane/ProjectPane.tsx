@@ -14,7 +14,7 @@ import {
   PhaseFooter as FocusedPhaseFooter,
 } from "./FocusedShell";
 import type { StagePrompt } from "../session/plannerConductor";
-import type { DeployConfig } from "../shared/deployConfig";
+import type { DeployConfig } from "../lib/deployConfig";
 import { type Topology } from "../relationship/relationshipGraph";
 import { type DirectorDrive } from "../fleet/directorDrive";
 import { KindDot, FocusedPhaseBody, type AuthoringWiring } from "./FocusedBodies";

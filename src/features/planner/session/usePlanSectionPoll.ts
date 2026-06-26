@@ -12,8 +12,8 @@ import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY, FEATURES_KEY, canonicalSectionKey } from "../stages/planSections";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
-import { parseDeployConfigTag } from "../shared/deployConfig";
-import { applyMcpAssign } from "../shared/planExtensions";
+import { parseDeployConfigTag } from "../lib/deployConfig";
+import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp/lib/mcpInstall";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
 

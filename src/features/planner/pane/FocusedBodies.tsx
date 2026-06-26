@@ -13,7 +13,7 @@ import type { Phase } from "../stages/focusedPlan";
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FocusedDeployBody } from "../bodies/DeployView";
 import { FocusedReposDeployBody } from "../bodies/ReposDeployView";
-import type { DeployConfig } from "../shared/deployConfig";
+import type { DeployConfig } from "../lib/deployConfig";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "../blueprints/BlueprintAuthorViews";
 import type { BlueprintSkillItem } from "../blueprints/blueprintSkills";
 import type { McpLibraryItem } from "../blueprints/blueprintMcp";

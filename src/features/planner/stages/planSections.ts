@@ -2,7 +2,7 @@ import type { AgentFlow } from "../fleet/agentFlow";
 import { flowOrUndefined } from "../fleet/agentFlow";
 import type { ModelId } from "@/app/console/lib/models";
 import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "../fleet/directorDrive";
-import { type IntegrationStrategy, normalizeStrategy } from "../shared/integrationStrategy";
+import { type IntegrationStrategy, normalizeStrategy } from "../lib/integrationStrategy";
 import {
   type Topology, type RelationshipArtifact, type AgentRelationship,
   type EdgeKind, type Hardness, type Via, type ArtifactKind,
