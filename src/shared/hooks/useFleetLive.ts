@@ -2,10 +2,9 @@
 // (`fleetPaneStreams` roster + live `paneStatus`) and polls the coordination log
 // (`read_coord_log` → `ingestCoordLog`) for blocked/asking/waiting, then assembles
 // the worker roster via the pure mappers in lib/fleetLive.
-import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useMemo } from "react";
 import { useAppStore } from "@/store";
-import { ingestCoordLog, emptyCoordState, type CoordState } from "@/shared/lib/fleet/coordination";
+import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { buildLiveWorkers, deriveFleetKpis, statusCounts, type LiveWorker, type FleetKpis } from "@/shared/lib/fleet/fleetLive";
 
 export interface UseFleetLive {
@@ -24,18 +23,7 @@ export function useFleetLive(): UseFleetLive {
 
   // The coordination log is the fleet's own activity feed (blocked/asking/waiting,
   // landed/merged). Polled while the screen is mounted — no store wiring needed.
-  const [coord, setCoord] = useState<CoordState>(emptyCoordState());
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => [] as string[]);
-      if (cancelled) return;
-      setCoord(ingestCoordLog(lines ?? [], emptyCoordState()).state);
-    };
-    load();
-    const id = setInterval(load, 4000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  const { state: coord } = useCoordLog({ limit: 1000, ms: 4000 });
 
   const workers = useMemo(
     () => buildLiveWorkers({ fleetPaneStreams, paneStatus, coord, tabCount: tabs.length, disabledPanes, profiles }),
