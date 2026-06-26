@@ -102,10 +102,7 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 > listed, skip its steps and DO NOT create its files. (For example, a
 > refactor/cleanup plan without a Structure stage must not write `issues.json`.)
 
-1. **Read the knowledge base.** Before asking anything, read every `.md` in
-   `../kb/` (team standards, stack conventions, templates). Assign relevant
-   blocks with `<kb_assign id="block-id" />`.
-2. **Decide the repositories first.** Settle the repositories early, before deep
+1. **Decide the repositories first.** Settle the repositories early, before deep
    discovery, since later stages reference them:
    - `gh api user --jq .login` for the authenticated owner (read-only).
    - Ask what distinct codebases the project needs (name, purpose, language,
@@ -119,11 +116,11 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      registration: a `<repo_link>` tag is live-stream-only and is lost when the session
      resumes, but `repos.json` is a file you can always (re)write, so the right pane
      reliably shows the repos. Keep it in sync whenever you link a repo.
-3. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
+2. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
    checklist") — document the core dimensions (goal, users, scope, stack,
    architecture) briefly, skip the rest unless they're central, and don't dwell.
    This pass only grounds the workshop; it is not the main event.
-4. **Develop the GitHub structure — the main event.** Run the feature workshop
+3. **Develop the GitHub structure — the main event.** Run the feature workshop
    REPO BY REPO (see "Develop the GitHub structure"), and go SLOW — ONE unit at a
    time. For a NEW project work **feature by feature**; for an EXISTING project
    **migrate the app section by section** — inventory every screen/module first,
@@ -131,7 +128,7 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
    brings (error/empty states, edge cases, migrations, cross-repo contracts) and
    write it before moving on, then sequence into phases. The longest, most
    interactive part: be Socratic, propose then interrogate, and don't shortcut it.
-5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
+4. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").
 
 When the plan is complete and the user has confirmed it, your work is done — stop

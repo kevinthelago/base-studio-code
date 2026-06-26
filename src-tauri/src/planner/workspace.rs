@@ -1,13 +1,12 @@
 use super::templates::*;
 use super::directives::*;
-use crate::{PerfSpan, KB_CLAUDE_MD, documents_dir, sanitize_project_key, project_dir, repo_dir};
+use crate::{PerfSpan, documents_dir, sanitize_project_key, project_dir, repo_dir};
 
+/// Only the `id` is read now (it feeds the context signature); the rest of the legacy KB-block
+/// payload the frontend still sends is ignored by serde. Full removal tracked in #1460.
 #[derive(serde::Deserialize)]
 pub(crate) struct KbBlockData {
-    id:      String,
-    title:   String,
-    tags:    Vec<String>,
-    content: String,
+    id: String,
 }
 #[derive(serde::Deserialize)]
 pub(crate) struct AutomationData {
@@ -82,9 +81,6 @@ pub(crate) async fn setup_workspaces(
     // instead of a hardcoded literal that drifts from the role. The `.claude` dir is
     // created above; the role-launch call populates the file before the PTY starts.
 
-    std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
-        .map_err(|e| e.to_string())?;
-
     // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
     // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
     // <blueprint> tag spec, and the software-planning process block is omitted entirely.
@@ -135,43 +131,6 @@ pub(crate) async fn setup_workspaces(
     }
 
     std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
-        .map_err(|e| e.to_string())?;
-
-    // Sync every KB block to disk as a markdown file (overwrite on each call)
-    for block in &kb_blocks {
-        let content = format!(
-            "---\nid: {}\ntitle: {}\ntags: [{}]\n---\n\n{}",
-            block.id,
-            block.title,
-            block.tags.join(", "),
-            block.content,
-        );
-        std::fs::write(kb_dir.join(format!("{}.md", block.id)), content)
-            .map_err(|e| e.to_string())?;
-    }
-
-    // Write a KB index so Claude can quickly see what's available without
-    // reading every individual block file. The planner's session CWD is this
-    // project hub (`projects/<key>`), and reusable KB blocks live in the flat
-    // library (`documents/`), so the relative reference is `../../documents/{id}.md`.
-    let mut kb_index = String::from(
-        "# Knowledge Base Index\n\n\
-         Read any block file at `../../documents/{id}.md` for full content.\n\
-         Assign a block to this project with: `<kb_assign id=\"{id}\" />`\n\n"
-    );
-    if kb_blocks.is_empty() {
-        kb_index.push_str("_No knowledge blocks in the store yet._\n");
-    } else {
-        for block in &kb_blocks {
-            kb_index.push_str(&format!(
-                "- `{}` — **{}** (tags: {})\n",
-                block.id,
-                block.title,
-                if block.tags.is_empty() { "none".to_string() } else { block.tags.join(", ") },
-            ));
-        }
-    }
-    std::fs::write(planning_dir.join("kb_index.md"), kb_index)
         .map_err(|e| e.to_string())?;
 
     // Write automations catalogue so Claude can reference and assign them.

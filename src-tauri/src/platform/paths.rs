@@ -20,9 +20,8 @@ pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
 }
 
 /// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
-/// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
-/// and `.claude/settings.json`. These are reusable across every project — they
-/// are referenced from a project's `kb_index.md` via a relative path.
+/// Holds standalone markdown blocks (`*.md`) plus the library's own
+/// `.claude/settings.json`. These are reusable across every project.
 pub(crate) fn documents_dir() -> std::path::PathBuf {
     bsc_base_dir().join("documents")
 }
@@ -84,7 +83,7 @@ pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
 
 /// Absolute on-disk location of a project's plan section files, which live FLAT
 /// in the project hub: `~/.base-studio-code/projects/<sanitized-project-key>`.
-/// Plan sections sit alongside the control files (CLAUDE.md, kb_index.md, …) in
+/// Plan sections sit alongside the control files (CLAUDE.md, automations.md, …) in
 /// the planner's CWD.
 pub(crate) fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
