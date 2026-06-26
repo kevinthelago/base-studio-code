@@ -10,7 +10,6 @@
 // part of the global library. The persisted copy is just a fast first-paint cache; hydrate reconciles.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
-import type { KbBlock } from "@/shared/data/mock";
 import type { SkillPayload } from "@/features/planner/blueprints/blueprintSkills";
 import {
   seedSkills, refreshPackagedSkills, skillFromPayload, applySessionSkillChoice, skillSlug,
@@ -32,7 +31,7 @@ export interface SkillsSlice {
    *  runs, so skills the planner authors via `bsc-skill add` (and their session-group membership)
    *  appear live. No-op when the bridge is unreachable. */
   refreshSkills: () => Promise<void>;
-  /** Reconstitute a shared blueprint's embedded skills/KB into the libraries (#897 Phase 5b). */
+  /** Reconstitute a shared blueprint's embedded skills into the library (#897 Phase 5b). */
   installBundledSkills: (payloads: SkillPayload[]) => void;
   addSkill: (def: Omit<SkillDef, "id">) => string;
   updateSkill: (id: string, patch: Partial<SkillDef>) => void;
@@ -96,24 +95,16 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
   installBundledSkills: (payloads) =>
     set((s) => {
       const haveSkill = new Set(s.skills.map((x) => x.id));
-      const haveKb = new Set(s.kbBlocks.map((x) => x.id));
       const newSkills: SkillDef[] = [];
-      const newKb: KbBlock[] = [];
       for (const p of payloads) {
-        if (p.kind === "kb") {
-          if (haveKb.has(p.id) || !p.id) continue;
-          haveKb.add(p.id);
-          newKb.push({ id: p.id, title: p.name, tags: p.tags ?? [], updated: "imported", lines: (p.content ?? "").split("\n").length, content: p.content });
-        } else {
-          if (haveSkill.has(p.id) || !p.id) continue;
-          haveSkill.add(p.id);
-          const def = skillFromPayload(p);
-          newSkills.push(def);
-          void pushSkill(def);
-        }
+        if (haveSkill.has(p.id) || !p.id) continue;
+        haveSkill.add(p.id);
+        const def = skillFromPayload(p);
+        newSkills.push(def);
+        void pushSkill(def);
       }
-      if (newSkills.length === 0 && newKb.length === 0) return {};
-      return { skills: [...s.skills, ...newSkills], kbBlocks: [...s.kbBlocks, ...newKb] };
+      if (newSkills.length === 0) return {};
+      return { skills: [...s.skills, ...newSkills] };
     }),
   updateSkill: (id, patch) => {
     set((s) => ({ skills: s.skills.map((sk) => (sk.id === id ? { ...sk, ...patch } : sk)) }));

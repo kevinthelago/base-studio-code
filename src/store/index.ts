@@ -81,7 +81,6 @@ export const useAppStore = create<AppStore>()(
         paneRoleGlobs:   s.paneRoleGlobs,
         paneRepos:       s.paneRepos,
         paneFlows:       s.paneFlows,
-        kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         llmProvider:     s.llmProvider,
         llmModel:        s.llmModel,
@@ -128,7 +127,6 @@ export const useAppStore = create<AppStore>()(
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedSections:   s.planSkippedSections,
-        planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
         projectBlueprintId:    s.projectBlueprintId,
@@ -176,9 +174,6 @@ export const useAppStore = create<AppStore>()(
         // Migrate the legacy unified `extensions` list → split `mcpServers` / `hooks` slices and
         // the renamed MCP route key (#mcp-hooks-split). One-time; no-op once migrated.
         migrateLegacyExtensions(state);
-        // The Knowledge Store screen was removed; send a user whose last screen was it
-        // back to the console rather than a blank canvas.
-        if (state && (state.activeScreen as string) === "knowledge") state.activeScreen = "console";
         // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
         // a user whose last mode was it would otherwise land on a blank canvas.
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";

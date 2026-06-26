@@ -19,13 +19,6 @@ pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
     home_dir().join(".base-studio-code")
 }
 
-/// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
-/// Holds standalone markdown blocks (`*.md`) plus the library's own
-/// `.claude/settings.json`. These are reusable across every project.
-pub(crate) fn documents_dir() -> std::path::PathBuf {
-    bsc_base_dir().join("documents")
-}
-
 /// The project hub directory and the planner session's CWD: `~/.base-studio-code/projects/<key>`.
 /// Holds the project's `CLAUDE.md` (ancestor-loaded context for repo sessions), plan sections
 /// (`goal.md`…), control files, `prompts/`, and the cloned repos as subdirectories.

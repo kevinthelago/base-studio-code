@@ -95,19 +95,11 @@ describe("resolveTargetPane", () => {
 });
 
 describe("dispatchPayload", () => {
-  const blocks = [{ id: "blk_1", content: "# policy\nrules" }, { id: "blk_empty", content: "  " }];
   it("returns the trimmed command for a command action", () => {
-    expect(dispatchPayload(mkAuto({ action: "command", command: "  ls -la  " }), blocks)).toBe("ls -la");
+    expect(dispatchPayload(mkAuto({ action: "command", command: "  ls -la  " }))).toBe("ls -la");
   });
   it("returns null for an empty command", () => {
-    expect(dispatchPayload(mkAuto({ action: "command", command: "   " }), blocks)).toBeNull();
-  });
-  it("returns the block content for a knowledge action", () => {
-    expect(dispatchPayload(mkAuto({ action: "knowledge", blockId: "blk_1" }), blocks)).toBe("# policy\nrules");
-  });
-  it("returns null when the block is missing or empty", () => {
-    expect(dispatchPayload(mkAuto({ action: "knowledge", blockId: "nope" }), blocks)).toBeNull();
-    expect(dispatchPayload(mkAuto({ action: "knowledge", blockId: "blk_empty" }), blocks)).toBeNull();
+    expect(dispatchPayload(mkAuto({ action: "command", command: "   " }))).toBeNull();
   });
 });
 
