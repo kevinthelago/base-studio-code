@@ -8,9 +8,10 @@
 // telemetry (the plan, the git diff, the bsc-audit log), never the worker-ingested prose, so it
 // can't itself be steered by an injection. Mount once at the app root so it runs on any screen.
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "../core/safeInvoke";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
@@ -95,40 +96,34 @@ export function useWarden(): void {
   const judgeCursor = useRef(0);   // round-robin cursor for sampling
   const judging = useRef(false);   // one judge call in flight at a time
 
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      const st = useAppStore.getState();
-      const panes = Object.keys(st.fleetPaneStreams);
-      if (panes.length === 0) return;
+  usePoll(async (isCancelled) => {
+    if (isCancelled()) return;
+    const st = useAppStore.getState();
+    const panes = Object.keys(st.fleetPaneStreams);
+    if (panes.length === 0) return;
 
-      const quarantined = new Set([...Object.keys(st.quarantinedPanes), ...inFlight.current]);
-      const sessions = (await Promise.all(panes.map(buildSession))).filter((s): s is WardenSession => s !== null);
-      if (cancelled) return;
+    const quarantined = new Set([...Object.keys(st.quarantinedPanes), ...inFlight.current]);
+    const sessions = (await Promise.all(panes.map(buildSession))).filter((s): s is WardenSession => s !== null);
+    if (isCancelled()) return;
 
-      // Layer 1 — deterministic hard-pause (every tick, free).
-      for (const trip of planWarden(sessions, quarantined)) {
-        void quarantinePane(trip.paneId, trip.streamId, trip.summary, inFlight);
-      }
+    // Layer 1 — deterministic hard-pause (every tick, free).
+    for (const trip of planWarden(sessions, quarantined)) {
+      void quarantinePane(trip.paneId, trip.streamId, trip.summary, inFlight);
+    }
 
-      // Layer 2 — LLM-judge spot-check (sampled, gated on an API key, one call at a time).
-      tickCount.current += 1;
-      if (tickCount.current % JUDGE_EVERY === 0 && !judging.current) {
-        const cfg = resolveLlmConfig(st);
-        if (hasLlmKey(cfg)) {
-          const skip = new Set([...quarantined, ...Object.keys(useAppStore.getState().quarantinedPanes)]);
-          const pick = selectForJudging(sessions.map((s) => s.paneId), judgeCursor.current++, skip);
-          const session = pick ? sessions.find((s) => s.paneId === pick) : undefined;
-          if (session) {
-            judging.current = true;
-            void judgeAndMaybeQuarantine(session, cfg, inFlight).finally(() => { judging.current = false; });
-          }
+    // Layer 2 — LLM-judge spot-check (sampled, gated on an API key, one call at a time).
+    tickCount.current += 1;
+    if (tickCount.current % JUDGE_EVERY === 0 && !judging.current) {
+      const cfg = resolveLlmConfig(st);
+      if (hasLlmKey(cfg)) {
+        const skip = new Set([...quarantined, ...Object.keys(useAppStore.getState().quarantinedPanes)]);
+        const pick = selectForJudging(sessions.map((s) => s.paneId), judgeCursor.current++, skip);
+        const session = pick ? sessions.find((s) => s.paneId === pick) : undefined;
+        if (session) {
+          judging.current = true;
+          void judgeAndMaybeQuarantine(session, cfg, inFlight).finally(() => { judging.current = false; });
         }
       }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+    }
+  }, POLL_MS, []);
 }
