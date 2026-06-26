@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import {
   KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount,
@@ -123,16 +124,10 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
 
   // Real telemetry, merged over the library.
   const [stats, setStats] = useState<Record<string, SkillStats>>({});
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const lines = await safeInvoke<string[]>("read_skill_log", { limit: 4000 }, []);
-      if (!cancelled) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
-    };
-    load();
-    const id = setInterval(load, 5000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  usePoll(async (isCancelled) => {
+    const lines = await safeInvoke<string[]>("read_skill_log", { limit: 4000 }, []);
+    if (!isCancelled()) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
+  }, 5000);
 
   const merged = useMemo<SkillDef[]>(() => skills.map((s) => {
     const st = stats[skillSlug(s.name)];

@@ -5,9 +5,10 @@
 // external event no one can push -- something has to watch it; doing it here means the worker
 // stops (no idle tokens) and is resumed only when there is something to do. Mounted once in
 // ConsoleScreen. Pure rollup/prompts live in ciStatus.ts; this is the Tauri/React actuator.
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import {
   rollupChecks, isTerminalCi, ciWorkerPrompt, ciDirectorMergePrompt, ciDevelopRedPrompt,
@@ -26,10 +27,8 @@ export function useCiWatcher(): void {
   // Per (repo@developSha) last CI state for the watchdog path (#378): a new develop head
   // re-arms the alert, so we inject the red prompt at most once per failing head.
   const lastDevelop = useRef<Map<string, CiState>>(new Map());
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
+  usePoll(async (isCancelled) => {
+      if (isCancelled()) return;
       const token = useAppStore.getState().githubToken;
       const streams = useAppStore.getState().paneStream;
       const directorModes = useAppStore.getState().paneDirectorMode;
@@ -54,7 +53,7 @@ export function useCiWatcher(): void {
       }
       for (const [repo, directorPane] of developRepos) {
         const checks = await invoke<{ check_runs: CheckRun[] }>("github_request", { token, path: `repos/${repo}/commits/develop/check-runs` }).catch(() => null);
-        if (cancelled || !checks) continue;
+        if (isCancelled() || !checks) continue;
         const runs = checks.check_runs ?? [];
         const sha = runs[0]?.head_sha ?? "";
         if (!sha) continue;
@@ -81,14 +80,14 @@ export function useCiWatcher(): void {
 
       for (const repo of repos) {
         const prs = await invoke<Pr[]>("github_request", { token, path: `repos/${repo}/pulls?state=open&per_page=100` }).catch(() => null);
-        if (cancelled || !prs) continue;
+        if (isCancelled() || !prs) continue;
         for (const pr of prs) {
           const paneId = paneByRepoBranch.get(repo + "#" + pr.head.ref);
           if (!paneId) continue; // a PR from a branch we do not own
           const prKey = `${repo}#${pr.number}@${pr.head.sha}`;
           if (inFlight.current.has(prKey)) continue;
           const checks = await invoke<{ check_runs: CheckRun[] }>("github_request", { token, path: `repos/${repo}/commits/${pr.head.sha}/check-runs` }).catch(() => null);
-          if (cancelled || !checks) continue;
+          if (isCancelled() || !checks) continue;
           const { state, failing } = rollupChecks(checks.check_runs ?? []);
           if (state === lastState.current.get(prKey)) continue;
           lastState.current.set(prKey, state);
@@ -108,9 +107,5 @@ export function useCiWatcher(): void {
           void Promise.all(writes).finally(() => inFlight.current.delete(prKey));
         }
       }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, POLL_MS);
 }
