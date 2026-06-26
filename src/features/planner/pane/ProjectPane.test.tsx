@@ -7,7 +7,7 @@ const ph = (key: string, name: string, status: Phase["status"], index: number, t
   ({ key, name, glyph: "•", blurb: `${name} blurb`, gate: "gate", index, total, status, fraction: 0 });
 
 const baseFocus = (over: Partial<Parameters<typeof ProjectPane>[0]["focus"] & object> = {}) => ({
-  phases: [ph("context", "Context", "active", 0, 3), ph("structure", "Structure", "upcoming", 1, 3), ph("permissions", "Permissions", "locked", 2, 3)],
+  phases: [ph("discovery", "Discovery", "active", 0, 3), ph("structure", "Structure", "upcoming", 1, 3), ph("permissions", "Permissions", "locked", 2, 3)],
   selectedIdx: 0,
   activeIdx: 0,
   onSelect: vi.fn(),
@@ -22,7 +22,7 @@ describe("ProjectPane focused mode (#652)", () => {
   it("renders the stepper + the selected phase, and selects on step click", () => {
     const onSelect = vi.fn();
     render(<ProjectPane focus={baseFocus({ onSelect })} />);
-    expect(screen.getByRole("heading", { name: "Context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Discovery" })).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("Permissions"));
     expect(onSelect).toHaveBeenCalledWith(2);
   });

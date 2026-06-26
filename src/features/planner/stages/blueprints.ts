@@ -66,7 +66,7 @@ export interface SectionDef {
   optional?: boolean;
   /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
    *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with
-   *  `bsc-plan context require/unrequire`. Absent ⇒ the universal {@link CONTEXT_BASELINE}. */
+   *  `bsc-plan context require/unrequire`. Absent ⇒ the universal {@link DISCOVERY_BASELINE}. */
   requires?: string[];
   /** Output disposition (#609) — what happens to this stage's artifact (a key into
    *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).

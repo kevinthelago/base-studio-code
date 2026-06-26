@@ -51,11 +51,17 @@ pub(crate) async fn setup_workspaces(
     ] {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    // Context-stage discovery sections get their own subdir (#807) — created ONLY when the
-    // blueprint actually carries a context stage. The planner writes `context/<topic>.md`
-    // there; read_plan_sections ingests it alongside the hub root.
-    if enabled_stages.iter().any(|s| s == "context") {
-        std::fs::create_dir_all(planning_dir.join("context")).map_err(|e| e.to_string())?;
+    // Discovery-stage sections get their own subdir (#807) — created ONLY when the blueprint
+    // actually carries a discovery stage. The planner writes `discovery/<topic>.md` there;
+    // read_plan_sections ingests it alongside the hub root.
+    // Migration (#1578: Context stage → Discovery): an in-flight project may have a `context/`
+    // dir from before the rename — move it in place so its prose carries forward.
+    let (legacy, current) = (planning_dir.join("context"), planning_dir.join("discovery"));
+    if legacy.is_dir() && !current.exists() {
+        std::fs::rename(&legacy, &current).map_err(|e| e.to_string())?;
+    }
+    if enabled_stages.iter().any(|s| s == "discovery") {
+        std::fs::create_dir_all(&current).map_err(|e| e.to_string())?;
     }
 
     // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the

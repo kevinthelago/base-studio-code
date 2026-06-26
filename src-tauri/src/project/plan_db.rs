@@ -196,17 +196,17 @@ pub fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Valu
 }
 
 // ── Context required-set (#1019/#1028) — the dynamic set of topics this project requires. The poll
-//    reads it (`plan_list_context`); the blueprint seed / planner shapes it (`plan_require_context`).
+//    reads it (`plan_list_discovery`); the blueprint seed / planner shapes it (`plan_require_discovery`).
 //    Context files gate on GENERATION (the file exists), not confirmation — there is no confirm. ──
 
 #[tauri::command]
-pub fn plan_list_context(project_key: String) -> Result<Vec<String>, String> {
-    open(&project_key)?.context_list().map_err(|e| e.to_string())
+pub fn plan_list_discovery(project_key: String) -> Result<Vec<String>, String> {
+    open(&project_key)?.discovery_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn plan_require_context(project_key: String, topic: String, required: bool) -> Result<(), String> {
-    open(&project_key)?.context_require(&topic, required).map_err(|e| e.to_string())
+pub fn plan_require_discovery(project_key: String, topic: String, required: bool) -> Result<(), String> {
+    open(&project_key)?.discovery_require(&topic, required).map_err(|e| e.to_string())
 }
 
 // ── triage runs (#1004) — per-repo "last triage launch" timestamp + the since-T delta, so a re-run

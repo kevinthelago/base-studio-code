@@ -40,9 +40,9 @@ describe("activeSubstep", () => {
 
 describe("authored substeps (built-in sections)", () => {
   it("Context exposes the baseline required substeps + a topics loop", () => {
-    const keys = (SECTION_DEFS.context.substeps ?? []).map((s) => s.key);
+    const keys = (SECTION_DEFS.discovery.substeps ?? []).map((s) => s.key);
     expect(keys).toEqual(["goal", "scope", "stack", "architecture", "users", "release", "dimensions"]);
-    const loop = SECTION_DEFS.context.substeps?.find((s) => s.key === "dimensions");
+    const loop = SECTION_DEFS.discovery.substeps?.find((s) => s.key === "dimensions");
     expect(loop?.loop).toBe("topics");
   });
   it("Features exposes a propose step then a per-feature loop", () => {
@@ -62,7 +62,7 @@ describe("authored substeps (built-in sections)", () => {
     }
   });
   it("substeps carry onto a built section instance via mkSection", () => {
-    expect(mkSection("context").substeps?.length).toBe(7);
+    expect(mkSection("discovery").substeps?.length).toBe(7);
   });
 });
 
@@ -81,7 +81,7 @@ describe("Features stage (Phase 1)", () => {
 
   it("derive → signals surfaces the features count + confirmation", () => {
     const base = {
-      sections: [], contextRequired: [], repoCount: 0, issueCount: 0, fleetStreams: 0, fleetProfilesComplete: false,
+      sections: [], discoveryRequired: [], repoCount: 0, issueCount: 0, fleetStreams: 0, fleetProfilesComplete: false,
       automationsAck: false, skillsAck: false, requiresUi: false, ui: { approved: 0, total: 0 },
     };
     const open = planStateToSignals(derivePlanStageState({ ...base, features: { count: 2, allConfirmed: false } }));

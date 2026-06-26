@@ -637,7 +637,7 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
   /** Seed a NEW project with the dynamic-stages baseline (#1395): Discovery (`context`) only,
    *  every other stage off + lighting up additively from classification signals. Idempotent —
    *  a no-op once the project has a stage config, so it never clobbers an existing plan. */
-  seedContextOnlyStages: (projectId: string) => void;
+  seedDiscoveryOnlyStages: (projectId: string) => void;
   // Blueprints (#513/#514): named, reusable configs — an ordered list of planning
   // sections, each owning its prompt module + pipelines. The active one seeds new
   // projects. Seeded with the starter library; persisted. Section/pipeline edits go

@@ -69,7 +69,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
       parseIssuesFile(sections.find(s => s.k === "issues")?.content ?? "").length + featureIssues.length;
     return derivePlanStageState({
       sections: sections.map(s => ({ k: s.k, state: s.state })),
-      contextRequired: ctxRequired,
+      discoveryRequired: ctxRequired,
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,

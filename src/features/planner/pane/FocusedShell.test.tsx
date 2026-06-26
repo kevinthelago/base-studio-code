@@ -4,7 +4,7 @@ import { Stepper, PhaseHeader, PhaseFooter, LockBanner, DoneBanner } from "./Foc
 import type { Phase } from "../stages/focusedPlan";
 
 const phase = (over: Partial<Phase> = {}): Phase => ({
-  key: "context", name: "Context", glyph: "◆", blurb: "Discovery", gate: "all topics resolved",
+  key: "discovery", name: "Discovery", glyph: "◆", blurb: "Discovery", gate: "all topics resolved",
   index: 0, total: 3, status: "active", fraction: 0.5, ...over,
 });
 

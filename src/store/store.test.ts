@@ -1657,13 +1657,13 @@ describe("plan stage config (#512)", () => {
     const cfg = useAppStore.getState().planStageConfig["proj"];
     expect(cfg.enabled.automations).toBe(false);
     // other stages keep their default-on value
-    expect(cfg.enabled.context).toBe(true);
+    expect(cfg.enabled.discovery).toBe(true);
     expect(cfg.enabled.structure).toBe(true);
   });
 
   it("reorderStages stores the new order without touching enabled flags", () => {
     useAppStore.getState().setStageEnabled("proj", "ui", false);
-    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["repos", "discovery", "ui", "structure", "permissions", "automations", "skills"] as const;
     useAppStore.getState().reorderStages("proj", [...order]);
     const cfg = useAppStore.getState().planStageConfig["proj"];
     expect(cfg.order).toEqual([...order]);
@@ -1678,7 +1678,7 @@ describe("plan stage config (#512)", () => {
 
   it("setProjectStageConfig wholesale-seeds a project's config", () => {
     const d = defaultStageConfig();
-    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["repos", "discovery", "ui", "structure", "permissions", "automations", "skills"] as const;
     useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
     expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
   });
@@ -1754,11 +1754,11 @@ describe("blueprints library (#513/#514)", () => {
 
   it("setBlueprintSections persists the new sections for that blueprint only", () => {
     const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
-    const flipped = def.sections.map((s) => (s.key === "context" ? { ...s, enabled: false } : s));
+    const flipped = def.sections.map((s) => (s.key === "discovery" ? { ...s, enabled: false } : s));
     useAppStore.getState().setBlueprintSections("default", flipped);
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(false);
     // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {
