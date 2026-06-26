@@ -8,7 +8,7 @@
 
 import { useStageJson } from "./useStageJson";
 import { type Licensing, type ClearStatus } from "./dataCollection";
-import { Card, ModeChip, SourceHead, Readiness } from "./DataCollectionPrimitives";
+import { Card, ModeChip, SourceHead, Readiness } from "./bodyPrimitives";
 
 const mono = "var(--mono)";
 

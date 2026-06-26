@@ -8,7 +8,7 @@
 
 import { useStageJson } from "./useStageJson";
 import { type LoadPlan, type LoadEntity } from "./dataCollection";
-import { Card, Readiness } from "./DataCollectionPrimitives";
+import { Card, Readiness } from "./bodyPrimitives";
 
 const mono = "var(--mono)";
 

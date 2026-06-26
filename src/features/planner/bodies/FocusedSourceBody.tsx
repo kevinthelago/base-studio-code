@@ -27,8 +27,7 @@ import {
   type Connector, type ConnectorCatalogEntry,
 } from "../lib/sourceConfig";
 import { ScanViews } from "./ScanViews";
-
-const MONO = "var(--mono)";
+import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",
@@ -36,11 +35,6 @@ const STATUS_DOT: Record<SourceStatus, string> = {
   scanning: "var(--accent)",
   scanned: "var(--success)",
   error: "var(--danger)",
-};
-
-const monoSm: React.CSSProperties = { fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)" };
-const grpLabel: React.CSSProperties = {
-  fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em",
 };
 
 /** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance. */
