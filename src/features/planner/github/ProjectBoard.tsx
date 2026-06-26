@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
+import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
 import type { GhLabel } from "@/shared/lib/github/types";
@@ -273,93 +274,84 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 
 export function ProjectBoard() {
   const {
-    githubToken,
     activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
     projectsDrawerIssue, setProjectsDrawerIssue, setActiveProjectRepos,
   } = useAppStore();
 
-  const [columns, setColumns] = useState<BoardColumn[]>([]);
-  const [byColumn, setByColumn] = useState<Record<string, BoardIssue[]>>({});
-  const [allItems, setAllItems] = useState<BoardIssue[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!githubToken || !activeProjectId) return;
-    setLoading(true);
-    setError(null);
-
-    invoke<{ node: Record<string, unknown> }>("github_graphql", {
-      token: githubToken,
+  const { data, loading, error } = useGithubQuery<{ node: Record<string, unknown> }>(
+    (token) => invoke("github_graphql", {
+      token,
       query: BOARD_QUERY,
       variables: { id: activeProjectId },
-    })
-      .then(data => {
-        const node = data.node as {
-          fields: { nodes: Array<{ id?: string; name?: string; options?: Array<{ id: string; name: string; color: string }> }> };
-          items: { nodes: Array<{
-            id: string;
-            fieldValues: { nodes: Array<{ name?: string; optionId?: string; field?: { name: string } }> };
-            content?: {
-              number: number; title: string; body: string; state: string;
-              repository: { nameWithOwner: string };
-              labels: { nodes: GhLabel[] };
-              assignees: { nodes: GhUser[] };
-              comments: { totalCount: number };
-              milestone?: { title: string } | null;
-            };
-          }> };
+    }),
+    [activeProjectId],
+    !!activeProjectId,
+  );
+
+  const { columns, byColumn, allItems, repos } = useMemo(() => {
+    if (!data) return { columns: [] as BoardColumn[], byColumn: {} as Record<string, BoardIssue[]>, allItems: [] as BoardIssue[], repos: [] as string[] };
+    const node = data.node as {
+      fields: { nodes: Array<{ id?: string; name?: string; options?: Array<{ id: string; name: string; color: string }> }> };
+      items: { nodes: Array<{
+        id: string;
+        fieldValues: { nodes: Array<{ name?: string; optionId?: string; field?: { name: string } }> };
+        content?: {
+          number: number; title: string; body: string; state: string;
+          repository: { nameWithOwner: string };
+          labels: { nodes: GhLabel[] };
+          assignees: { nodes: GhUser[] };
+          comments: { totalCount: number };
+          milestone?: { title: string } | null;
         };
+      }> };
+    };
 
-        // Find the Status single-select field
-        const statusField = node.fields.nodes.find(f => f.name === "Status" && f.options);
-        const cols: BoardColumn[] = statusField?.options?.map(o => ({
-          id: o.id,
-          name: o.name,
-          color: GH_OPTION_COLORS[o.color] ?? "var(--fg-dim)",
-        })) ?? [{ id: "all", name: "All items", color: "var(--fg-dim)" }];
+    // Find the Status single-select field
+    const statusField = node.fields.nodes.find(f => f.name === "Status" && f.options);
+    const cols: BoardColumn[] = statusField?.options?.map(o => ({
+      id: o.id,
+      name: o.name,
+      color: GH_OPTION_COLORS[o.color] ?? "var(--fg-dim)",
+    })) ?? [{ id: "all", name: "All items", color: "var(--fg-dim)" }];
 
-        // Map items to BoardIssue
-        const grouped: Record<string, BoardIssue[]> = {};
-        const flat: BoardIssue[] = [];
-        cols.forEach(c => { grouped[c.id] = []; });
+    // Map items to BoardIssue
+    const grouped: Record<string, BoardIssue[]> = {};
+    const flat: BoardIssue[] = [];
+    cols.forEach(c => { grouped[c.id] = []; });
 
-        for (const item of node.items.nodes) {
-          const typename = (item.content as { __typename?: string } | undefined)?.__typename;
-          if (!item.content || typename !== "Issue") continue;
-          const c = item.content;
-          const issue: BoardIssue = {
-            id: item.id,
-            number: c.number,
-            title: c.title,
-            body: c.body ?? "",
-            labels: c.labels.nodes,
-            assignees: c.assignees.nodes,
-            comments: c.comments.totalCount,
-            milestone: c.milestone?.title ?? null,
-            state: c.state,
-          };
-          flat.push(issue);
+    for (const item of node.items.nodes) {
+      const typename = (item.content as { __typename?: string } | undefined)?.__typename;
+      if (!item.content || typename !== "Issue") continue;
+      const c = item.content;
+      const issue: BoardIssue = {
+        id: item.id,
+        number: c.number,
+        title: c.title,
+        body: c.body ?? "",
+        labels: c.labels.nodes,
+        assignees: c.assignees.nodes,
+        comments: c.comments.totalCount,
+        milestone: c.milestone?.title ?? null,
+        state: c.state,
+      };
+      flat.push(issue);
 
-          // Find which Status option this item has
-          const statusValue = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
-          const colId = statusValue?.optionId ?? (cols[0]?.id ?? "all");
-          if (grouped[colId]) grouped[colId].push(issue);
-          else grouped[cols[0]?.id ?? "all"] = [...(grouped[cols[0]?.id ?? "all"] ?? []), issue];
-        }
+      // Find which Status option this item has
+      const statusValue = item.fieldValues.nodes.find(fv => fv.field?.name === "Status");
+      const colId = statusValue?.optionId ?? (cols[0]?.id ?? "all");
+      if (grouped[colId]) grouped[colId].push(issue);
+      else grouped[cols[0]?.id ?? "all"] = [...(grouped[cols[0]?.id ?? "all"] ?? []), issue];
+    }
 
-        // Derive repos from the issues themselves — more reliable than the
-        // project-level repositories field, which requires explicit linking in GitHub UI.
-        const repos = reposFromItems(node.items.nodes);
-        if (repos.length > 0) setActiveProjectRepos(repos);
+    // Derive repos from the issues themselves — more reliable than the
+    // project-level repositories field, which requires explicit linking in GitHub UI.
+    return { columns: cols, byColumn: grouped, allItems: flat, repos: reposFromItems(node.items.nodes) };
+  }, [data]);
 
-        setColumns(cols);
-        setByColumn(grouped);
-        setAllItems(flat);
-      })
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [githubToken, activeProjectId]);
+  // Sync the derived repos to the store (a side effect, so it can't live in the parse memo).
+  useEffect(() => {
+    if (repos.length > 0) setActiveProjectRepos(repos);
+  }, [repos, setActiveProjectRepos]);
 
   const project: ActiveProjectInfo = {
     id: activeProjectId ?? "",
