@@ -246,9 +246,10 @@ describe("roleWriteRules (write-tool guard)", () => {
     // planner: code:write scoped to plan files — plan files writable, arbitrary .ts not.
     const planner = ROLE_DEFAULTS.planner;
     expect(canWritePath(planner, "goal.md")).toBe(true);
-    // Context-stage discovery sections live under context/ (#807) — still planner-writable.
-    expect(canWritePath(planner, "context/goal.md")).toBe(true);
-    expect(canWritePath(planner, "context/_skipped.md")).toBe(true);
+    // Discovery-stage sections live under discovery/ (#807, renamed from context/ in #1578) —
+    // still planner-writable.
+    expect(canWritePath(planner, "discovery/goal.md")).toBe(true);
+    expect(canWritePath(planner, "discovery/_skipped.md")).toBe(true);
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
     // Section-file globs auto-approve; the DB-owned plan-state file forms are denied (#1070).
     expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
