@@ -218,7 +218,7 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
 /// `tokens`): the newest `limit` non-blank lines. `newest_first` matches each stream's convention —
 /// the audit/skill/hook/mcp readers replay newest-first; the coord log replays oldest-first. Empty
 /// for an unknown key or a missing/unreadable file. The single body behind the per-stream
-/// `read_*_log` command wrappers in `observability::audit`.
+/// `read_*_log` command wrappers in `observability::worktree_inspect`.
 pub(crate) fn read_tsv_log(stream: &str, limit: usize, newest_first: bool) -> Vec<String> {
     let Some((_, file, _)) = TSV_STREAMS.iter().find(|(k, _, _)| *k == stream) else {
         return Vec::new();

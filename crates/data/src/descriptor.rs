@@ -17,7 +17,7 @@
 //! [`SourceAuth`]); the crate never touches HTTP or the keychain (#1194).
 
 use crate::connector::{Connector, FetchFn};
-use crate::registry::{LiveSupport, SourceAuth};
+use crate::source_meta::{LiveSupport, SourceAuth};
 use crate::rest::{RestConnector, RestResource};
 
 /// One declarative REST resource: `(object name, request path/segment, array_key envelope)` — the
