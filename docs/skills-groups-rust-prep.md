@@ -40,13 +40,16 @@ isolation (per #1325's "one domain end-to-end first"). Lands the store + CLI; wi
   get,remove,member}` · `resolve <group-id>`. JSON to stdout (like `bsc-plan`). Db located via
   `--db <path>`, `BSC_SKILL_DB`, else the default global path.
 
-### Slice 2 — app integration (next)
-- Thin `#[tauri::command]` wrappers over `crates/skilldb` (unchanged behavior; existing tests green).
-- `console/pty.rs`: inject `BSC_SKILL_DB` + `bsc-skill` on PATH for **every** session (runtime access).
-- Frontend store-source swap: read the library from the skilldb bridge (persist = cache).
-- `AgentStream.groupIds?: string[]` (parallel to `mcp?`); `fleetStartProject` already merges
-  `stream.groupIds ∪ sessionSkillGroups[key]` → `expandGroups`.
-- `planner/directives.rs` authors groups via `bsc-skill group …`; `planner/templates.rs` documents the verbs.
+### Slice 2 — app integration (DONE)
+- Thin `#[tauri::command]` wrappers over `crates/skilldb` — `src-tauri/src/extensions/skill_store.rs`
+  (`skill_store_{list,upsert,remove}`, `skill_group_{list,upsert,remove,resolve}`).
+- `console/pty.rs`: injects `BSC_SKILL_DB` + `bsc-skill` on PATH for **every** session (runtime access).
+- `AgentStream.groupIds?: string[]` (parallel to `mcp?`); `fleetStartProject` merges
+  `stream.groupIds ∪ sessionSkillGroups[key]` → `expandGroups` (`src/store/slices/projects.ts`,
+  `src/features/planner/stages/planSections.ts`, `src/features/skills/streamGroupIds.test.ts`).
+- The planner authors skills + groups via `bsc-skill add` / `bsc-skill group …`, driven by the
+  **externalized planner prompts** (`src-tauri/prompts/stages/skills.json`,
+  `src-tauri/prompts/planner/process.md`) — not hardcoded Rust.
 
 ### Slice 3 — hot-apply (optional follow-up)
 A running session toggles a group → `write_session_skills` re-materializes its `.claude/skills/`
