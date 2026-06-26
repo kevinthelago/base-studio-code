@@ -10,6 +10,7 @@ import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
+import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
  *  the repo-scoped convention used elsewhere (e.g. repoStartupPromptDoc). */
 export function repoVisibilityKey(projectKey: string, repoId: string): string {
@@ -66,7 +67,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
   ) => {
     const next = updater(get().planFleet[projectId]);
     if (next === null) return;
-    set({ planFleet: { ...get().planFleet, [projectId]: next } });
+    set({ planFleet: setMapEntry(get().planFleet, projectId, next) });
     fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
   };
   return ({
@@ -90,61 +91,60 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planSections: {},
       setPlanSection: (projectId, key, content) =>
         set((s) => ({
-          planSections: {
-            ...s.planSections,
-            [projectId]: { ...(s.planSections[projectId] ?? {}), [key]: content },
-          },
+          planSections: setMapEntry(s.planSections, projectId, { ...(s.planSections[projectId] ?? {}), [key]: content }),
         })),
       planConfirmedSections: {},
       confirmPlanSection: (projectId, key) =>
         set((s) => {
           const existing = s.planConfirmedSections[projectId] ?? [];
           if (existing.includes(key)) return {};
-          return { planConfirmedSections: { ...s.planConfirmedSections, [projectId]: [...existing, key] } };
+          return { planConfirmedSections: setMapEntry(s.planConfirmedSections, projectId, [...existing, key]) };
         }),
       unconfirmPlanSection: (projectId, key) =>
         set((s) => ({
-          planConfirmedSections: {
-            ...s.planConfirmedSections,
-            [projectId]: (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
-          },
+          planConfirmedSections: setMapEntry(
+            s.planConfirmedSections,
+            projectId,
+            (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
+          ),
         })),
       planAuthoredBlueprint: {},
       setAuthoredBlueprint: (projectId, bp) =>
-        set((s) => ({ planAuthoredBlueprint: { ...s.planAuthoredBlueprint, [projectId]: bp } })),
+        set((s) => ({ planAuthoredBlueprint: setMapEntry(s.planAuthoredBlueprint, projectId, bp) })),
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
-        set((s) => ({ planDeployConfig: { ...s.planDeployConfig, [projectId]: cfg } })),
+        set((s) => ({ planDeployConfig: setMapEntry(s.planDeployConfig, projectId, cfg) })),
       planSourceConfig: {},
       setPlanSourceConfig: (projectId, cfg) =>
-        set((s) => ({ planSourceConfig: { ...s.planSourceConfig, [projectId]: cfg } })),
+        set((s) => ({ planSourceConfig: setMapEntry(s.planSourceConfig, projectId, cfg) })),
       planIntegrationConfig: {},
       setPlanIntegrationConfig: (projectId, cfg) =>
-        set((s) => ({ planIntegrationConfig: { ...s.planIntegrationConfig, [projectId]: cfg } })),
+        set((s) => ({ planIntegrationConfig: setMapEntry(s.planIntegrationConfig, projectId, cfg) })),
       reposPublic: {},
       setReposPublic: (projectId, isPublic) =>
-        set((s) => ({ reposPublic: { ...s.reposPublic, [projectId]: isPublic } })),
+        set((s) => ({ reposPublic: setMapEntry(s.reposPublic, projectId, isPublic) })),
       repoPublic: {},
       setRepoPublic: (projectKey, repoId, isPublic) =>
-        set((s) => ({ repoPublic: { ...s.repoPublic, [repoVisibilityKey(projectKey, repoId)]: isPublic } })),
+        set((s) => ({ repoPublic: setMapEntry(s.repoPublic, repoVisibilityKey(projectKey, repoId), isPublic) })),
       // #1107: the injection-finding signature the user acknowledged for a project (acknowledge-to-
       // clear). A signature mismatch (new findings) re-gates; the hard-gate setting ignores this.
       planInjectionAck: {},
       acknowledgePlanInjections: (projectId, signature) =>
-        set((s) => ({ planInjectionAck: { ...s.planInjectionAck, [projectId]: signature } })),
+        set((s) => ({ planInjectionAck: setMapEntry(s.planInjectionAck, projectId, signature) })),
       planSkippedSections: {},
       skipPlanSection: (projectId, key) =>
         set((s) => {
           const existing = s.planSkippedSections[projectId] ?? [];
           if (existing.includes(key)) return {};
-          return { planSkippedSections: { ...s.planSkippedSections, [projectId]: [...existing, key] } };
+          return { planSkippedSections: setMapEntry(s.planSkippedSections, projectId, [...existing, key]) };
         }),
       unskipPlanSection: (projectId, key) =>
         set((s) => ({
-          planSkippedSections: {
-            ...s.planSkippedSections,
-            [projectId]: (s.planSkippedSections[projectId] ?? []).filter((k) => k !== key),
-          },
+          planSkippedSections: setMapEntry(
+            s.planSkippedSections,
+            projectId,
+            (s.planSkippedSections[projectId] ?? []).filter((k) => k !== key),
+          ),
         })),
       canonicalizePlanSections: (projectId) =>
         set((s) => {
@@ -169,9 +169,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           }
           if (!changed) return {};
           return {
-            planSections: { ...s.planSections, [projectId]: nextSections },
+            planSections: setMapEntry(s.planSections, projectId, nextSections),
             ...(nextConfirmed !== confirmed
-              ? { planConfirmedSections: { ...s.planConfirmedSections, [projectId]: nextConfirmed } }
+              ? { planConfirmedSections: setMapEntry(s.planConfirmedSections, projectId, nextConfirmed) }
               : {}),
           };
         }),
@@ -180,31 +180,28 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) => {
           const existing = s.planAutomations[projectId] ?? [];
           if (existing.some((x) => x.name === a.name && x.command === a.command)) return {};
-          return { planAutomations: { ...s.planAutomations, [projectId]: [...existing, a] } };
+          return { planAutomations: setMapEntry(s.planAutomations, projectId, [...existing, a]) };
         }),
       clearPlanAutomations: (projectId) =>
-        set((s) => ({ planAutomations: { ...s.planAutomations, [projectId]: [] } })),
+        set((s) => ({ planAutomations: setMapEntry(s.planAutomations, projectId, []) })),
 
       planStageConfig: {},
       setStageEnabled: (projectId, stageId, enabled) =>
         set((s) => {
           const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
           return {
-            planStageConfig: {
-              ...s.planStageConfig,
-              [projectId]: { ...cur, enabled: { ...cur.enabled, [stageId]: enabled } },
-            },
+            planStageConfig: setMapEntry(s.planStageConfig, projectId, { ...cur, enabled: { ...cur.enabled, [stageId]: enabled } }),
           };
         }),
       reorderStages: (projectId, order) =>
         set((s) => {
           const cur = s.planStageConfig[projectId] ?? defaultStageConfig();
           return {
-            planStageConfig: { ...s.planStageConfig, [projectId]: { ...cur, order } },
+            planStageConfig: setMapEntry(s.planStageConfig, projectId, { ...cur, order }),
           };
         }),
       setProjectStageConfig: (projectId, config) =>
-        set((s) => ({ planStageConfig: { ...s.planStageConfig, [projectId]: config } })),
+        set((s) => ({ planStageConfig: setMapEntry(s.planStageConfig, projectId, config) })),
       // #1395 phase 1: seed a NEW project with the dynamic-stages baseline (Discovery only).
       // Idempotent — a no-op once the project has a stage config, so it never clobbers a plan
       // (or a blueprint-seeded config) that already exists.
@@ -212,7 +209,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) =>
           s.planStageConfig[projectId]
             ? {}
-            : { planStageConfig: { ...s.planStageConfig, [projectId]: discoveryOnlyStageConfig() } },
+            : { planStageConfig: setMapEntry(s.planStageConfig, projectId, discoveryOnlyStageConfig()) },
         ),
 
       blueprints: makeBlueprints(),
@@ -238,14 +235,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       loadVerified: {},
       setLoadVerified: (projectKey, entity, verified) =>
         set((s) => ({
-          loadVerified: {
-            ...s.loadVerified,
-            [projectKey]: { ...(s.loadVerified[projectKey] ?? {}), [entity]: verified },
-          },
+          loadVerified: setMapEntry(s.loadVerified, projectKey, { ...(s.loadVerified[projectKey] ?? {}), [entity]: verified }),
         })),
       projectBlueprintId: {},
       setProjectBlueprintId: (projectId, blueprintId) =>
-        set((s) => ({ projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId } })),
+        set((s) => ({ projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId) })),
       applyBlueprintToProject: (projectId, blueprintId) =>
         set((s) => {
           const bp = s.blueprints.find((b) => b.id === blueprintId);
@@ -254,9 +248,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           // every other origin/target (incl. the locked blueprint-author) is refused.
           const current = s.blueprints.find((b) => b.id === s.projectBlueprintId[projectId]);
           if (!canSwitchBlueprint(current, bp)) return {};
-          const drop = <T,>(m: Record<string, T>): Record<string, T> => {
-            const n = { ...m }; delete n[projectId]; return n;
-          };
+          const drop = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, projectId);
           // Full reset: wipe ALL of the project's planning state (everything clearPlan
           // drops) so no section reads as completed afterwards, then re-seed the stage
           // config from the new blueprint + record it (#664).
@@ -280,8 +272,8 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             stageRuns:     drop(s.stageRuns),
             pinnedContext:         drop(s.pinnedContext),
             projectLocalRepos:     drop(s.projectLocalRepos),
-            planStageConfig:    { ...s.planStageConfig, [projectId]: blueprintToStageConfig(bp) },
-            projectBlueprintId: { ...s.projectBlueprintId, [projectId]: blueprintId },
+            planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
+            projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
           };
         }),
       addBlueprint: () => {
@@ -337,27 +329,24 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       stageRuns: {},
       setStageRun: (projectKey, stageUid, state) =>
         set((s) => ({
-          stageRuns: {
-            ...s.stageRuns,
-            [projectKey]: { ...(s.stageRuns[projectKey] ?? {}), [stageUid]: state },
-          },
+          stageRuns: setMapEntry(s.stageRuns, projectKey, { ...(s.stageRuns[projectKey] ?? {}), [stageUid]: state }),
         })),
       stagePreview: {},
       setStagePreview: (projectKey, value) =>
-        set((s) => ({ stagePreview: { ...s.stagePreview, [projectKey]: value } })),
+        set((s) => ({ stagePreview: setMapEntry(s.stagePreview, projectKey, value) })),
       uiScreens: {},
       addUiScreen: (projectKey, screen) =>
         set((s) => {
           const cur = s.uiScreens[projectKey] ?? [];
           if (cur.includes(screen)) return {} as Partial<typeof s>;
-          return { uiScreens: { ...s.uiScreens, [projectKey]: [...cur, screen] } };
+          return { uiScreens: setMapEntry(s.uiScreens, projectKey, [...cur, screen]) };
         }),
       uiApproved: {},
       setUiScreenApproved: (projectKey, screen, approved) =>
         set((s) => {
           const cur = s.uiApproved[projectKey] ?? [];
           const next = approved ? (cur.includes(screen) ? cur : [...cur, screen]) : cur.filter((x) => x !== screen);
-          return { uiApproved: { ...s.uiApproved, [projectKey]: next } };
+          return { uiApproved: setMapEntry(s.uiApproved, projectKey, next) };
         }),
 
       planFleet: {},
@@ -366,16 +355,16 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) => {
           const cur = s.pinnedContext[projectId] ?? [];
           const next = cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name];
-          return { pinnedContext: { ...s.pinnedContext, [projectId]: next } };
+          return { pinnedContext: setMapEntry(s.pinnedContext, projectId, next) };
         }),
       setPlanFleet: (projectId, fleet) =>
-        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: fleet } })),
+        set((s) => ({ planFleet: setMapEntry(s.planFleet, projectId, fleet) })),
       planFleetTopology: {},
       setPlanFleetTopology: (projectId, topology) =>
-        set((s) => ({ planFleetTopology: { ...s.planFleetTopology, [projectId]: topology } })),
+        set((s) => ({ planFleetTopology: setMapEntry(s.planFleetTopology, projectId, topology) })),
       planFleetDirectorDrive: {},
       setPlanFleetDirectorDrive: (projectId, drive) =>
-        set((s) => ({ planFleetDirectorDrive: { ...s.planFleetDirectorDrive, [projectId]: drive } })),
+        set((s) => ({ planFleetDirectorDrive: setMapEntry(s.planFleetDirectorDrive, projectId, drive) })),
       addPlanAgentStream: (projectId, stream) =>
         mutateFleet(projectId, (raw) => {
           const cur = raw ?? emptyFleet();
@@ -452,7 +441,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...stream, profile: id };
         });
         const next = { ...fleet, streams };
-        set({ agentProfiles: profiles, planFleet: { ...get().planFleet, [projectId]: next } });
+        set({ agentProfiles: profiles, planFleet: setMapEntry(get().planFleet, projectId, next) });
         fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
       },
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
@@ -471,12 +460,10 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...cur, director: { ...cur.director, drive } };
         }),
       clearPlanFleet: (projectId) =>
-        set((s) => ({ planFleet: { ...s.planFleet, [projectId]: emptyFleet() } })),
+        set((s) => ({ planFleet: setMapEntry(s.planFleet, projectId, emptyFleet()) })),
       clearPlan: (key) =>
         set((s) => {
-          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => {
-            const n = { ...m }; delete n[key]; return n;
-          };
+          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, key);
           return {
           planSections:          omitKey(s.planSections),
           planConfirmedSections: omitKey(s.planConfirmedSections),
