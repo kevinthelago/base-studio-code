@@ -45,7 +45,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // not a hardcoded stage list.
 import { stageConfirmKeys, DISCOVERY_BASELINE } from "../stages/planStageDerive";
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkStage, blueprintCategory, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
+import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { Ic } from "../blueprints/blueprintIcons";
 import { clampIndex, gatePill, footerAction, resolveFooter, shouldAutoCompleteGate } from "../stages/focusedPlan";
@@ -61,6 +61,8 @@ import { usePlanMcpManagement } from "./usePlanMcpManagement";
 import { usePlanPublish } from "./usePlanPublish";
 import { usePlannerBlueprint } from "./usePlannerBlueprint";
 import { usePlanGates } from "./usePlanGates";
+import { usePlanningModals } from "./usePlanningModals";
+import { usePlanningSession } from "./usePlanningSession";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -709,8 +711,9 @@ export function Planning({ visible }: { visible: boolean }) {
     () => stagePrompts(planSecs.find(s => s.key === focusSelPhase?.key)),
     [planSecs, focusSelPhase]);
 
-  const [restarting, setRestarting] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false); // clear-plan confirmation modal (#…)
+  // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
+  // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
+  // they read (and the blueprint hook's `setSwitchOpen`) is in scope.
 
   // Publish / triage / recovery state + callbacks live in usePlanPublish (#1490) — the hook is
   // called below, once all the plan data it reads is in scope.
@@ -790,26 +793,11 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => { refreshSetupSig(); }, [refreshSetupSig]);
   const contextStale = !!currentSig && !!lastSetupSig && currentSig !== lastSetupSig;
 
-  // Blueprint-update modal (#827): when a project is opened whose blueprint/planner-template
-  // VERSION differs from the one it was seeded with AND it already has a plan, surface a modal so
-  // the user explicitly chooses go-back / restart / keep — rather than the old silent refresh,
-  // which restarted the planner into a destructive reconciliation that deleted plan files.
-  //
-  // #1296: gate the auto-open on a true template-version mismatch (`shouldAutoOpenBlueprintModal`,
-  // which compares only the `v{version}` prefix of the two signatures), NOT the broad `contextStale`
-  // flag. `contextStale` also flips on benign setup tweaks (link a repo, enable/
-  // disable a stage) — those must keep driving only the quiet "context updated · refresh" badge
-  // below, never this destructive restart dialog.
-  const [showBlueprintModal, setShowBlueprintModal] = useState(false);
-  const [bpModalAutoShown, setBpModalAutoShown] = useState(false);
+  // Modal open/close state (#1642, usePlanningModals): the clear-plan confirmation + the
+  // blueprint-update modal and its version-mismatch auto-open state machine (#827/#1296).
   const hasExistingPlan = Object.keys(savedSections).length > 0;
-  useEffect(() => { setBpModalAutoShown(false); setShowBlueprintModal(false); }, [effectiveProjectId]);
-  useEffect(() => {
-    if (shouldAutoOpenBlueprintModal({ currentSig, baselineSig: lastSetupSig, hasExistingPlan, alreadyShown: bpModalAutoShown })) {
-      setShowBlueprintModal(true);
-      setBpModalAutoShown(true);
-    }
-  }, [currentSig, lastSetupSig, hasExistingPlan, bpModalAutoShown]);
+  const { showClearConfirm, setShowClearConfirm, showBlueprintModal, setShowBlueprintModal } =
+    usePlanningModals({ effectiveProjectId, currentSig, lastSetupSig, hasExistingPlan });
 
   const autopilotDeps: AutopilotDeps = {
     pitch: planningPitch,
@@ -1073,102 +1061,15 @@ export function Planning({ visible }: { visible: boolean }) {
   }, [linkedRepos]);
 
 
-  // Regenerate the on-disk workspace (CLAUDE.md + the context baseline) for the CURRENT blueprint
-  // version, WITHOUT touching the plan section files. Shared by the restart flow and the "keep
-  // files" choice of the blueprint-update modal (#827). refreshSetupSig() rebaselines the
-  // signature so the staleness clears.
-  async function regenerateWorkspace(): Promise<{ planning_dir: string } | null> {
-    const store = useAppStore.getState();
-    const currentAutomations = [
-      ...store.commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
-      ...store.schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
-    ];
-    const paths = await invoke<{ planning_dir: string }>(
-      "setup_workspaces",
-      {
-        repoFullNames: linkedRepos,
-        automations: currentAutomations,
-        isExisting: treatAsExisting,
-        projectName: activeProjectName,
-        projectNumber: activeProjectNumber,
-        pitch: planningPitch,
-        projectKey: effectiveProjectId,
-        githubLogin: store.githubUser?.login ?? "",
-        githubName:  store.githubUser?.name  ?? "",
-        enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
-        authoring:   isAuthoring,                       // use the blueprint-author intro (#923)
-      },
-    ).catch((e: unknown) => { console.error("workspace setup failed:", e); return null; });
-    refreshSetupSig(); // baseline updated (#756)
-    return paths;
-  }
-
-  async function handleRestart() {
-    const term = termRef.current;
-    if (!term || restarting) return;
-    setRestarting(true);
-    bufRef.current = "";
-    term.clear();
-    await invoke("pty_kill", { paneId: paneId }).catch(console.error);
-    const paths = await regenerateWorkspace();
-    const token = useAppStore.getState().githubToken;
-    const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
-    // A deliberate restart launches a brand-new `claude` — re-greet with the intro (#1240). No
-    // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
-    const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
-    const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
-      .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
-    const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "") || undefined;
-    await invoke("pty_create", {
-      paneId: paneId,
-      cols: term.cols,
-      rows: term.rows,
-      cwd: paths?.planning_dir ?? "",
-      initCmd: "claude",
-      startupPrompt,
-      env: ghEnv,
-    }).catch(console.error);
-    setRestarting(false);
-  }
-
-  // "Keep the previous plan files" (#827): adopt the new blueprint/template version on disk and
-  // clear the staleness, WITHOUT wiping plan files and WITHOUT restarting the planner into a
-  // destructive reconciliation (the prior silent refresh let a fresh planner delete plan files).
-  async function keepPlanFiles() {
-    setShowBlueprintModal(false);
-    await regenerateWorkspace();
-  }
-
-  // Clear/reset the plan (#664/#B) — delete the on-disk plan files FIRST (awaited, so the 2s
-  // file poll can't re-read + re-populate the store), wipe the store, unlink the repos, then
-  // restart the planner with a blank slate. (Restored: the refactor dropped this flow.)
-  // Confirmation is the Dialog below (#…), not a native window.confirm.
-  async function doClearPlan() {
-    setShowClearConfirm(false);
-    const store = useAppStore.getState();
-    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
-    store.clearPlan(effectiveProjectId);
-    store.setActiveProjectRepos([]);
-    setRepoLinkFullNames([]);
-    store.setPlanningContext(planningPitch, "");
-    void handleRestart();
-  }
-
-  // Switch the project to another blueprint (#1281 — any → any other project blueprint, confirmed via
-  // the switch modal; applyBlueprintToProject re-seeds the stage config + clears the old progress).
-  // Wipe the on-disk plan files for the old stages, then restart the planner on the new blueprint.
-  async function doSwitchBlueprint(targetId: string) {
-    setSwitchOpen(false);
-    const store = useAppStore.getState();
-    const before = store.projectBlueprintId[effectiveProjectId];
-    store.applyBlueprintToProject(effectiveProjectId, targetId);
-    if (store.projectBlueprintId[effectiveProjectId] === before) return; // switch was refused — leave as-is
-    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
-    store.setActiveProjectRepos([]);
-    setRepoLinkFullNames([]);
-    store.setPlanningContext(planningPitch, "");
-    void handleRestart();
-  }
+  // Session lifecycle (#1642, usePlanningSession): the `restarting` flag + the regenerate /
+  // restart / "keep files" / clear-plan / switch-blueprint operations, moved verbatim. The
+  // workspace mount/re-sync effects above stay here (they own the terminal + PTY).
+  const { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint } = usePlanningSession({
+    termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
+    activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
+    stageIdsFor, refreshSetupSig, setRepoLinkFullNames,
+    setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
+  });
 
   // ── Publish / triage / recovery (#1490) ─────────────────────────────────────
   const {
