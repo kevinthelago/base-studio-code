@@ -5,6 +5,7 @@ import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "@/shared/lib/core/projectPaths";
 import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
+import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, CATEGORY_META, uid, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintSection } from "../stages/blueprints";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
@@ -1114,7 +1115,7 @@ export function ProjectsList() {
           position: "fixed", inset: 0, zIndex: 200,
           background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={e => { if (e.target === e.currentTarget && !deleting) closeDeleteModal(); }}>
+        }} onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
           <div style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
@@ -1219,7 +1220,7 @@ export function ProjectsList() {
           position: "fixed", inset: 0, zIndex: 200,
           background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={e => { if (e.target === e.currentTarget) setDraftDeleteTarget(null); }}>
+        }} onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
           <div style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
