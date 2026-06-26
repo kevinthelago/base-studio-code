@@ -54,7 +54,7 @@ pub(crate) use extensions::mcp::write_mcp_json;
 pub(crate) use extensions::hooks::write_session_hooks;
 pub(crate) use extensions::skills::write_session_skills;
 pub(crate) use extensions::cfg::{McpServerCfg, HookCfg, SkillCfg};
-pub(crate) use fleet::director::{FLEET_PROTOCOL_MD, INJECTION_RESISTANCE_MD, INJECTION_RESISTANCE_MARKER};
+pub(crate) use fleet::protocols::{FLEET_PROTOCOL_MD, INJECTION_RESISTANCE_MD, INJECTION_RESISTANCE_MARKER};
 
 #[cfg(test)]
 pub(crate) mod testutil;
