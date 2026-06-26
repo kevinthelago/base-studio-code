@@ -170,13 +170,13 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 ## Project Planning
 
-The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/screens/projects/` (Planning.tsx, ProjectsList.tsx); backend setup: `src-tauri/src/planner/workspace.rs` (`setup_workspaces`).
+The flagship feature. A **dedicated, app-owned planning session** turns a pitch (new project) or an existing repo set into a complete, executable plan: the feature breakdown, the GitHub structure (milestones + granular issues), the parallel-agent fleet, and the context files every downstream session runs under. The user steers the conversation; the planner produces everything. Entry: `src/features/planner/` (`session/Planning.tsx`, `list/ProjectsList.tsx`); backend setup: `src-tauri/src/planner/workspace.rs` (`setup_workspaces`).
 
 ### The right pane — focused plan view (#652)
 The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project/blueprint switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
 
 ### Blueprints — the lifecycle library (#609 / #645 / #636 / #647)
-A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/screens/projects/blueprints.ts`; UI: `BlueprintsPage.tsx` (library + drag-reorder editor + Design-with-Claude assistant).
+A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`; UI: `blueprints/BlueprintEditor.tsx` (drag-reorder editor + Design-with-Claude assistant) + the library rail in `list/ProjectsList.tsx`.
 - **Category + mode (#645):** every blueprint carries a lifecycle `category` — **greenfield** (create from a pitch), **transform** (restructure existing repos), **harden** (improve in place), **maintain** — and a `mode` (`create` vs `operate`, which selects the planner intro). The Library groups/filters/searches by category. Built-ins: Default / Full-stack / Mobile / API (greenfield) + Refactor & Cleanup, Split / Combine microservices, Migrate (transform) + Harden security (harden). Domain greenfields (CAD, simulation) stay out of the packaged app — catalog later (#649).
 - **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills / knowledge** — the KB blocks + Skills library, unified (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`). The assistant can author + attach new ones.
 - **Switching (#647):** `projectBlueprintId` records which blueprint seeded a project; opening one whose blueprint differs from the selected one prompts to **reset** (re-seed + clear progress + restart, `applyBlueprintToProject`), **keep**, or export files first.
@@ -206,8 +206,8 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
 
 ### Per-agent configuration set during planning
-- **Profiles** (#289, `src/screens/agents/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
-- **Flows** (#297, `src/screens/projects/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
+- **Profiles** (#289, `src/features/agents/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
+- **Flows** (#297, `src/features/planner/fleet/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
 
 ### Session roles + the CLAUDE.md model (and a known issue)
 Three kinds of session live around a project, each needing **different** context:
@@ -221,9 +221,9 @@ Three kinds of session live around a project, each needing **different** context
 
 ## Console — the execution surface
 
-Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty.rs`; launch wiring: `src/components/pane/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
+Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty.rs`; launch wiring: `src/app/console/panes/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
 
-### Session roles + the role gate (#219, `src/lib/sessionRoles.ts`)
+### Session roles + the role gate (#219, `src/shared/lib/session/sessionRoles.ts`)
 Every session has a role bounding its capabilities (least privilege), applied at launch via `ensure_session_settings` to `.claude/settings.json`:
 
 | Role | git | github | code |
@@ -244,7 +244,7 @@ One click fills a build tab:
 ### Per-agent flow at launch (#297)
 Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a hard push-confirm gate) vs deny; the autonomy + push paragraph in the kickoff; and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the **authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly those two (#304) — so an `auto-pr` worker can open its own PR while `gh pr merge` / repo-delete stay role-denied.
 
-### Coordination (#199, `src/lib/coordination.ts`)
+### Coordination (#199, `src/shared/lib/fleet/coordination.ts`)
 Agents emit structured events to an app-wide `coord.log`: `bsc-blocked --on <ref>` (waiting on a dependency), `bsc-wait` (paused for the user, #297), and the satisfy emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) shows blocked / paused / ready sessions; one whose deps land (or that the user resumes) is **woken** — relaunched fresh with a token-aware wake prompt. Auto-wake is opt-in (`useCoordinator`).
 
 ### bsc-* shell helpers
