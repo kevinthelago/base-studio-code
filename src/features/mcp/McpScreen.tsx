@@ -1,13 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { resolveMcpInstallDir, repoNameFromLink, catalogLink, mcpRepoName } from "./lib/mcpInstall";
+import { useState, useMemo } from "react";
+import { resolveMcpInstallDir, catalogLink } from "./lib/mcpInstall";
+import { useMcpInstallStatus } from "./useMcpInstallStatus";
+import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "./lib/mcpCatalogView";
 import { useAppStore } from "@/store";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { MCP_CATALOG, SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
+import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, BUILTIN_MCP_SERVERS, type McpServer, type McpTransport } from "./lib/mcpServers";
+import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "./lib/mcpServers";
 import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, DrawerSlideOver, InstalledRow, CatalogCard, type Scope,
@@ -19,14 +20,6 @@ import "./mcp.css";
 // update-check) that only servers have. Reads/mutates the store's `mcpServers` slice; every drawer
 // edit is live. Hooks live separately in the Automations Hooks view (HooksView, below).
 // ════════════════════════════════════════════════════════════════════════════════════════════
-
-/** Install/version status of a downloadable MCP server (#885). */
-type McpStat = "checking" | "current" | "outdated" | "needs-build" | "downloading" | "building" | "updating" | "error";
-
-/** Catalog entries for the built-in servers (#1196) — shown as always-available, never downloadable. */
-const builtInCatalog: CatalogItem[] = MCP_CATALOG.filter(
-  c => c.builtIn || BUILTIN_MCP_SERVERS.some(b => b.name.toLowerCase() === c.name.toLowerCase()),
-);
 
 /** The free-text label shown on a server row / drawer header. */
 function mcpLabel(e: McpServer): string {
@@ -47,40 +40,18 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  // Per-server install/version status (#885), keyed by server NAME. Refreshed on page open via
-  // mcp_check_update; advanced by the download (catalog) and update (installed) actions.
-  const [mcpStatus, setMcpStatus] = useState<Record<string, McpStat>>({});
-  const setStat = (name: string, s: McpStat) => setMcpStatus(m => ({ ...m, [name]: s }));
 
   const projects = useGhProjects(githubToken);
 
-  // Version check on every page open (#885): for each installed downloadable server, ask the
-  // backend whether its clone is behind its remote (and whether it's built). Best-effort + async;
-  // an in-flight download/update is left alone.
-  useEffect(() => {
-    const servers = mcpServers.filter(e => catalogLink(e.name)).map(e => e.name);
-    if (servers.length === 0) return;
-    let cancelled = false;
-    for (const name of servers) {
-      setMcpStatus(m => (m[name] ? m : { ...m, [name]: "checking" }));
-      invoke<{ downloaded: boolean; built: boolean; updateAvailable: boolean }>("mcp_check_update", { name: mcpRepoName(name) })
-        .then(r => {
-          if (cancelled) return;
-          const next: McpStat = !r.downloaded ? "needs-build" : r.updateAvailable ? "outdated" : !r.built ? "needs-build" : "current";
-          setMcpStatus(m => (m[name] === "downloading" || m[name] === "building" || m[name] === "updating" ? m : { ...m, [name]: next }));
-        })
-        .catch(() => {});
-    }
-    return () => { cancelled = true; };
-    // Re-check when the set of installed downloadable servers changes (and on mount).
-  }, [mcpServers.filter(e => catalogLink(e.name)).map(e => e.name).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Install/version machinery (#885): the per-server status map, the version check on page open,
+  // and the download/update flows (see useMcpInstallStatus).
+  const { mcpStatus, downloadFromCatalog, updateInstalled } = useMcpInstallStatus(mcpServers);
 
   const tabDefs: TabItem[] = useMemo(() => {
     const installed = mcpServers.filter(e => e.enabled).length;
-    const installedNames = new Set(mcpServers.map(e => e.name.toLowerCase()));
     return [
       { id: "installed", label: "Installed", count: installed, hint: "· active capabilities" },
-      { id: "catalog", label: "Catalog", count: MCP_CATALOG.filter(c => !installedNames.has(c.name.toLowerCase())).length },
+      { id: "catalog", label: "Catalog", count: catalogTabCount(mcpServers) },
       { id: "analytics", label: "Analytics" },
     ];
   }, [mcpServers]);
@@ -97,43 +68,6 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
       const created = useAppStore.getState().mcpServers;
       const last = created[created.length - 1];
       if (last) setSelectedId(last.id);
-    }
-  }
-
-  /** One-click install (#885): clone → add to Installed silently → build. */
-  async function downloadFromCatalog(item: CatalogItem) {
-    if (!item.link) return;
-    const repo = repoNameFromLink(item.link);
-    setStat(item.name, "downloading");
-    try {
-      await invoke<string>("mcp_clone", { name: repo, url: item.link });
-    } catch {
-      setStat(item.name, "error");
-      return;
-    }
-    addFromCatalog(item, false);
-    setStat(item.name, "building");
-    try {
-      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
-      setStat(item.name, r.ok ? "current" : "needs-build");
-    } catch {
-      setStat(item.name, "needs-build");
-    }
-  }
-
-  /** Update (or finish building) an installed downloadable server (#885): pull then rebuild. */
-  async function updateInstalled(e: McpServer) {
-    const link = catalogLink(e.name);
-    if (!link) return;
-    const repo = repoNameFromLink(link);
-    setStat(e.name, "updating");
-    try {
-      await invoke("mcp_clone", { name: repo, url: link });
-      setStat(e.name, "building");
-      const r = await invoke<{ ok: boolean }>("mcp_build", { name: repo });
-      setStat(e.name, r.ok ? "current" : "needs-build");
-    } catch {
-      setStat(e.name, "error");
     }
   }
 
@@ -225,11 +159,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   }
 
   function catalogView() {
-    const q = search.trim().toLowerCase();
-    const installedNames = new Set(mcpServers.map(e => e.name.toLowerCase()));
     // Built-in servers (#1196) live in the "Built-in tools" section, not the downloadable browse list.
-    const available = MCP_CATALOG.filter(c => !c.builtIn && !installedNames.has(c.name.toLowerCase()));
-    const items = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : available;
+    const items = filterCatalog(browsableCatalog(mcpServers), search);
     return (
       <>
         <div className="sec-head">
@@ -244,7 +175,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
               c.link ? (
                 <button className="btn primary" style={{ height: 22, fontSize: 10, padding: "0 10px" }}
                   disabled={mcpStatus[c.name] === "downloading" || mcpStatus[c.name] === "building"}
-                  onClick={() => downloadFromCatalog(c)}>
+                  onClick={() => downloadFromCatalog(c, item => addFromCatalog(item, false))}>
                   {mcpStatus[c.name] === "downloading" ? "downloading…" : mcpStatus[c.name] === "building" ? "building…" : mcpStatus[c.name] === "error" ? "retry ↻" : "download"}
                 </button>
               ) : (
