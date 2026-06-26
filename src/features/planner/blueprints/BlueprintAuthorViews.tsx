@@ -364,7 +364,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
 }
 
 /* ── 4 · REVIEW & PUBLISH ────────────────────────────────────────────────── */
-export interface PublishCheck { id: string; label: string; ok: boolean; detail: string }
+interface PublishCheck { id: string; label: string; ok: boolean; detail: string }
 
 export function authoringChecks(bp: Blueprint): PublishCheck[] {
   const stages = bp.sections ?? [];

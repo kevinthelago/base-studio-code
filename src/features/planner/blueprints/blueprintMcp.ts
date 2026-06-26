@@ -40,23 +40,6 @@ export function buildMcpLibrary(servers: McpServer[], catalog = MCP_CATALOG): Mc
   return out;
 }
 
-export interface ResolvedMcp { found: McpLibraryItem[]; missing: string[] }
-
-/** Resolve attached server names against the library: `found` for display, `missing` to warn
- *  (a referenced server not in the catalog/installed — the distribution gap). Order preserved,
- *  case-insensitive match. */
-export function resolveBlueprintMcp(names: string[], library: McpLibraryItem[]): ResolvedMcp {
-  const byId = new Map(library.map((i) => [i.id.toLowerCase(), i]));
-  const found: McpLibraryItem[] = [];
-  const missing: string[] = [];
-  for (const name of names) {
-    const item = byId.get(name.toLowerCase());
-    if (item) found.push(item);
-    else missing.push(name);
-  }
-  return { found, missing };
-}
-
 /**
  * Every MCP server name a blueprint attaches — blueprint-wide plus every section — deduped
  * (case-insensitive) and order-preserving. The launch path feeds these to `applyMcpAssign` so the
