@@ -76,7 +76,7 @@ impl RuntimePreset {
         if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return Err(format!("id '{id}' must be [A-Za-z0-9_-]"));
         }
-        if crate::presets::find(id).is_some() || crate::registry::source_connector(id).is_some() {
+        if crate::presets::find(id).is_some() || crate::descriptor::find(id).is_some() {
             return Err(format!("id '{id}' collides with a built-in connector"));
         }
         if self.label.trim().is_empty() {
