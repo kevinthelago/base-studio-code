@@ -2,14 +2,7 @@ import { RefreshCw, Pin, FolderInput, Unlink2, X, GitBranch } from "lucide-react
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 import { listProviders } from "@/app/console/lib/providers";
-
-export type ModelId = "haiku-4.5" | "sonnet-4.5" | "opus-4.5";
-
-const MODELS: Array<{ id: ModelId; tone: string; price: string }> = [
-  { id: "haiku-4.5",  tone: "fast",     price: "$"   },
-  { id: "sonnet-4.5", tone: "balanced", price: "$$"  },
-  { id: "opus-4.5",   tone: "deep",     price: "$$$" },
-];
+import { MODELS, type ModelId } from "@/app/console/lib/models";
 
 interface HamburgerMenuProps {
   agent: string;

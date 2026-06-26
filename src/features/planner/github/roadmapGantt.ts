@@ -4,19 +4,12 @@
 // tested in isolation. The Roadmap view feeds it GitHub milestones plus a
 // selected time window; it returns positioned rows and the axis scale.
 
-const WEEK_MS = 7 * 24 * 3600 * 1000;
+// The milestone shape is the canonical one in shared/lib/github/types (#1528); re-exported here so
+// existing importers (Roadmap.tsx, the tests) keep their `from "./roadmapGantt"` import.
+import type { GhMilestone } from "@/shared/lib/github/types";
+export type { GhMilestone };
 
-export interface GhMilestone {
-  number: number;
-  title: string;
-  description: string | null;
-  state: "open" | "closed";
-  due_on: string | null;
-  created_at: string;
-  open_issues: number;
-  closed_issues: number;
-  creator: { login: string } | null;
-}
+const WEEK_MS = 7 * 24 * 3600 * 1000;
 
 export interface GanttRow {
   id: string;
