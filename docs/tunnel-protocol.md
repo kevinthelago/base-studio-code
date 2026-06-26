@@ -3,14 +3,14 @@
 The tunnel lets **mobile-studio-code** connect to the desktop and mirror its terminal
 panes (view + input) **from anywhere**, over a **zero-knowledge Cloudflare relay**.
 This document is the shared reference for the wire schema; the machine-readable fixture
-is [`src/lib/tunnel/tunnelProtocol.fixtures.json`](../src/lib/tunnel/tunnelProtocol.fixtures.json).
+is [`src/features/tunnel/lib/tunnelProtocol.fixtures.json`](../src/features/tunnel/lib/tunnelProtocol.fixtures.json).
 
 ## Source of truth
 
 The application schema is owned by the **mobile** client —
 `mobile-studio-code/src/lib/types.ts` (`TunnelClientMessage` / `TunnelServerMessage`).
 That client already ships, so the desktop (`src-tauri/src/mobile/tunnel/`) and frontend
-(`src/lib/tunnel/tunnel.ts`) **conform to it**. The TS tests (`src/lib/tunnel/tunnel.test.ts`)
+(`src/features/tunnel/lib/tunnel.ts`) **conform to it**. The TS tests (`src/features/tunnel/lib/tunnel.test.ts`)
 and (once it lands) the Rust transport assert against the shared fixture, so a drift
 fails CI on the base side; a breaking change requires **coordinated PRs in both repos**.
 
@@ -161,7 +161,7 @@ the contract — render an empty list gracefully.
 
 The relay session only reaches a phone whose app is **foregrounded** — when MSC is
 backgrounded or quit, it drops its relay connection. To reach the phone anyway, the desktop
-pushes out-of-band via **Firebase Cloud Messaging** (#846, `src-tauri/src/fcm.rs`).
+pushes out-of-band via **Firebase Cloud Messaging** (#846, `src-tauri/src/mobile/push.rs`).
 
 Three FCM message types are currently sent:
 
@@ -202,7 +202,7 @@ private key*, and place it at the path above).
 
 Pane *metadata* (names, cwds, statuses) lives in the frontend Zustand store; the pure
 transform that maps it into `pane_list` / `session_state` shapes is
-[`buildPanePayload`](../src/lib/tunnel/tunnel.ts). PTY bytes are teed from the existing emitter
+[`buildPanePayload`](../src/features/tunnel/lib/tunnel.ts). PTY bytes are teed from the existing emitter
 thread in `src-tauri/src/console/pty.rs` into the tunnel's in-process bus (a no-op while nobody
 is connected) and drained by the relay transport (#242). Inbound input/resize is routed
 back into the PTY.
@@ -251,7 +251,7 @@ receives a close frame with reason `"room idle timeout"` or `"room lifetime exce
 - **T5** added relay idle/TTL close detection: `tunnel://room-expired` event and clean-exit
   reconnect so the backoff resets after a normal room expiry.
 - **T6** added FCM out-of-band push for `user_request` transitions so a backgrounded phone
-  receives the notification even when off the relay (`src-tauri/src/fcm.rs`).
+  receives the notification even when off the relay (`src-tauri/src/mobile/push.rs`).
 - **T2b** wired all Rust commands into `tunnelClient.ts`, including the previously missing
   `tunnelAckPlanPush`.
 - **T1b / #928** asserts the desktop's snow responder against a **frozen shared Noise IK
@@ -267,7 +267,7 @@ receives a close frame with reason `"room idle timeout"` or `"room lifetime exce
   `PlanAdvance` + `PlanConfirm` + `PlanChat` ClientMsg (`src-tauri/src/mobile/tunnel/`); `plan_state` /
   `plan_status` are replayed on connect, `plan_event` is fire-and-forget. `messages` come from
   `tokens::read_pane_messages` (the Claude transcript). The TS frame types + fixtures moved under
-  `src/lib/tunnel/`. Mobile counterpart: #1245.
+  `src/features/tunnel/lib/`. Mobile counterpart: #1245.
 - **PT2** wired plan_sync message flow: `tunnel_set_plan_state`, `tunnel_ack_plan_push`,
   `tunnelSetPlanState`, `tunnelAckPlanPush` TS bindings; `PlanSyncManifest`, `PlanSyncFiles`,
   `PlanSyncAck` ServerMsg; `PlanSyncManifestRequest`, `PlanSyncPull`, `PlanSyncPush`

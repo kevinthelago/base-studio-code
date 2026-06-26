@@ -7,7 +7,7 @@ interfaces it calls) and **Produces** (the frozen surface it must expose); they 
 seams between components. Everything else supports them.
 
 The structured form is `FeatureContract` in
-`src/screens/projects/featureContract.ts`; `renderFeatureContract` emits this exact shape
+`src/features/planner/issues/featureContract.ts`; `renderFeatureContract` emits this exact shape
 as an issue body, and `validateContracts` checks the seams line up across a set (every
 `consumes` resolves to a `produces`, no duplicate owners, no dangling `dependsOn`).
 

@@ -10,7 +10,7 @@ is the third axis of the least-privilege model — **repo × role ([session-role
   **Settings → GitHub → Repo credentials**. It's stored in the persisted app store
   (Tauri store), masked in the UI, and never logged — exactly like the global PAT.
 - Every GitHub REST call goes through `githubRequest(path)`, which now resolves the
-  token via [`resolveGithubToken`](../src/lib/repoCredentials.ts):
+  token via [`resolveGithubToken`](../src/features/github/lib/repoCredentials.ts):
   - `repoFromGitHubPath(path)` extracts the `owner/name` a path targets
     (`repos/{owner}/{name}/…`); non-repo paths (`user/repos`, `users/x/events`) return
     `null`.
@@ -29,8 +29,8 @@ The proxy axis above covers the desktop UI's own REST calls. A **Claude session*
 use the proxy — it runs `gh` and `git` in its PTY, authenticated by the **`GH_TOKEN`**
 env var the pane is launched with. So session isolation hinges on *which* token that is.
 
-- At launch, [`TerminalView`](../src/components/pane/views/TerminalView.tsx) resolves the
-  pane's token via [`tokenForRepo`](../src/lib/repoCredentials.ts): the pane is bound to
+- At launch, [`TerminalView`](../src/app/console/panes/views/TerminalView.tsx) resolves the
+  pane's token via [`tokenForRepo`](../src/features/github/lib/repoCredentials.ts): the pane is bound to
   an `owner/name` repo (`paneRepos[paneId]`, set at fleet/triage launch — a worker to its
   stream's repo, a triage pane to its repo), and if that repo has an assigned credential
   the session gets **that** token, otherwise the global PAT.
@@ -60,7 +60,7 @@ PreToolUse hook** that blocks Claude's file tools (`Read`/`Edit`/`Write`/`MultiE
 `NotebookEdit`) when their target path **escapes the session's repo root**
 (`$BSC_REPO_ROOT`, the pane's cwd): any `..` segment, or an absolute path not under the
 root, is denied (exit 2 + a reason on stderr). The decision is the unit-tested
-[`isPathConfined`](../src/lib/fsConfine.ts); the hook mirrors it in portable shell
+[`isPathConfined`](../src/shared/lib/session/fsConfine.ts); the hook mirrors it in portable shell
 (string-based, no `realpath`). So a session for repo A can't read or write files in
 sibling repos via its tools.
 

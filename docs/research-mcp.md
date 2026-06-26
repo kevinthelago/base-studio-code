@@ -32,9 +32,9 @@ A stdio MCP server exposing five tools:
   `[[bin]] bsc-research-mcp` is the server.
 - **Bundling** — listed in `tauri.conf.json` `externalBin`, staged by `scripts/stage-sidecar.mjs`
   (`BINS`) and `npm run build:plan`, resolved at runtime via `current_exe().with_file_name(...)`
-  (`bsc_research_mcp_bin_path` in `src-tauri/src/pty.rs`) — exactly like `bsc-plan`/`bsc-agent`.
+  (`bsc_research_mcp_bin_path` in `src-tauri/src/console/pty.rs`) — exactly like `bsc-plan`/`bsc-agent`.
 - **Registration** — the frontend marks Research a built-in server (`BUILTIN_MCP_SERVERS` in
-  `src/lib/session/mcpServers.ts`, command marker `bsc-research-mcp`); it's merged into
+  `src/features/mcp/lib/mcpServers.ts`, command marker `bsc-research-mcp`); it's merged into
   `resolveMcpServers` / `resolveAllInstalledMcp` so the planner, director, and every worker get it by
   default, and it stays assignable per-worker via a stream's `mcp` list. When writing `.mcp.json`,
   `mcp_server_value` (`src-tauri/src/extensions/mcp.rs`) rewrites the marker to the bundled binary's absolute
