@@ -1,4 +1,5 @@
 {
+  "directive": "**Automations** — propose cron automations (emit `<automation_assign>`).",
   "name": "Automations",
   "glyph": "⚡",
   "gate": "≥1 automation armed",

@@ -1,4 +1,5 @@
 {
+  "directive": "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
   "name": "Security hardening",
   "glyph": "⛨",
   "gate": "threats triaged",

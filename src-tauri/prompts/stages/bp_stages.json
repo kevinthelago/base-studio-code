@@ -1,4 +1,5 @@
 {
+  "directive": "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-run `bsc-plan blueprint set` with the full blueprint JSON as the sections array grows.",
   "name": "Stages",
   "glyph": "❑",
   "gate": "flow-check",

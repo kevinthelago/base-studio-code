@@ -1,4 +1,5 @@
 {
+  "directive": "**Structure** — the features are a dependency DAG (`bsc-plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc-plan add`). Two writes: (1) define the ordered phases — `bsc-plan phase add \"<name>\" \"<done-when>\"`, foundations first (`bsc-plan phase list` numbers them); (2) assign EVERY feature its phase NUMBER via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add` (merges in place). When every feature is phased, present the roadmap + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
   "name": "Plan",
   "glyph": "⊞",
   "gate": "every feature sequenced into a phase",

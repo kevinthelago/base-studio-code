@@ -1,4 +1,5 @@
 {
+  "directive": "**Service boundaries** — map the bounded contexts and the seams to split the monolith along.",
   "name": "Service boundaries",
   "glyph": "⧉",
   "gate": "boundaries mapped",
