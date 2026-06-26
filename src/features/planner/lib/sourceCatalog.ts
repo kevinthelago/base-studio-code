@@ -2,7 +2,8 @@
 // planner's Source stage: the first-party connectors, the packaged vendor presets (#1288), the
 // per-connector resolver/colors, the sample scan inventory, the pitch→proposal keyword scan, and the
 // redacted handle the planner is allowed to see. Split out of sourceConfig.ts (#1638); the type
-// model lives in sourceSpecs.ts and the validation/derivation in sourceValidate.ts.
+// model lives in sourceSpecs.ts and the gate/derivation helpers in sourceGate.ts /
+// dataModelDerivation.ts / sourceScanViews.ts.
 
 import type {
   ConnectionSpec, Connector, ConnectorCatalogEntry, DeclaredSource, DiscoveredObject, SourceBehavior,
