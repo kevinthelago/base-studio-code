@@ -62,8 +62,8 @@ import { destinationDefined, syncDefined } from "../shared/integrationConfig";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { derivePlanStageState, planStateToSignals, stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
-import { findPlanGaps } from "../grading/lintPlan";
-import { findPlanInjections, injectionGate } from "../grading/planInjection";
+import { findPlanGaps } from "../lib/lintPlan";
+import { findPlanInjections, injectionGate } from "../lib/planInjection";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkSection, planSectionsComplete, isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, blueprintCategory, skippedSignal, confirmedSignal, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro, plannerTreatAsExisting } from "./plannerIntro";
