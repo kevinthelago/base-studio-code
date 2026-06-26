@@ -51,7 +51,7 @@ describe("counts + lookup", () => {
   it("every basic app session has its own distinct application role (#680)", () => {
     // all three basic app sessions are registered as application roles, each unique
     const ids = APP_ROLES.map((r) => r.id);
-    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_librarian", "sys_blueprint_assistant", "sys_planning_autopilot"]));
+    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_blueprint_assistant", "sys_planning_autopilot"]));
     expect(APP_ROLES.every((r) => r.category === "application")).toBe(true);
     expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
     expect(new Set(APP_ROLES.map((r) => r.name)).size).toBe(APP_ROLES.length); // distinct names

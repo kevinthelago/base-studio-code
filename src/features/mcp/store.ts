@@ -1,11 +1,11 @@
-// Extensions feature store slice (#1309) — MCP servers + hooks, extracted from the former `session`
+// MCP feature store slice (#1309) — MCP servers + hooks, extracted from the former `session`
 // grab-bag slice. Composed into the single app store by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { McpServer } from "./lib/mcpServers";
 import type { Hook } from "./lib/hooks";
 
-export interface ExtensionsSlice {
+export interface McpSlice {
   // MCP servers the user configures, each scoped via `projects` ([] = global). Written into a
   // launched session's .mcp.json. Persisted.
   mcpServers: McpServer[];
@@ -26,7 +26,7 @@ export interface ExtensionsSlice {
   paneHooks: Record<string, Hook[]>;
 }
 
-export const createExtensionsSlice: StateCreator<AppStore, [], [], ExtensionsSlice> = (set) => ({
+export const createMcpSlice: StateCreator<AppStore, [], [], McpSlice> = (set) => ({
   mcpServers: [],
   addMcpServer: (def) =>
     set((s) => ({ mcpServers: [...s.mcpServers, { ...def, id: `mcp_${Math.random().toString(36).slice(2, 8)}` }] })),
