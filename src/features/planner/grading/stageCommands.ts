@@ -3,13 +3,9 @@
 // result keying/accumulation, navigation, and persistence (it calls writeProjectFile
 // inside its own save/confirm). The framework owns nothing here but the routing.
 //
-// Claude drives stage modules only through the standardized command surface (the
-// <pipeline cmd="…"> wire tags, phase c) — never a module's internals. This module is what
-// those tags dispatch into. Pure + framework-free so it's unit-testable in isolation.
-//
-// Naming (#917): the in-app system was renamed "pipeline*" → "stage*". The on-the-wire DSL
-// keyword stays `<pipeline cmd="…">` (a cross-repo contract with mobile-studio-code, parsed
-// in stageTag.ts) — only the desktop-side identifiers changed.
+// A stage module registers itself here (registerStageModule) and the framework routes the
+// standardized commands into it — never a module's internals. Pure + framework-free so it's
+// unit-testable in isolation. (The render-preview module is the live consumer.)
 
 export type StageCommand =
   | "run" | "save" | "confirm" | "restart" | "prev" | "next" | "goto" | "delete";
