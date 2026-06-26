@@ -339,9 +339,15 @@ fn persist_scan(project_key: &str, scan: &bsc_data::PlatformScan) {
 
 /// Load the reconciled canonical data artifact into the project's DuckDB store.
 ///
-/// **Stub** — the load-stream (#se-persist) owns the real implementation. This stub
-/// defines the command surface early so the load-stream can depend on it without
-/// waiting for this crate's full build. Returns a zeroed report until replaced.
+/// **Not yet implemented** — the load-stream (#se-persist) owns the real reconcile-and-load.
+/// Until it lands this command must NOT fabricate a success-shaped report: a zeroed
+/// `ReconcileReport` reads in the UI as a real (empty) result. It instead returns an explicit
+/// "unavailable" error so the frontend's existing error path surfaces an honest
+/// "not yet available" state rather than a zero-count table.
+//
+// FOLLOW-UP (#se-persist): replace this body with the real reconcile-and-load — resolve the
+// persisted model from the DuckDB MetaStore, reconcile the sources by identity + precedence,
+// load the canonical result with per-field lineage, and return a populated `ReconcileReport`.
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_load_reconciled(
@@ -351,10 +357,8 @@ pub fn data_load_reconciled(
     precedence: Vec<String>,
     loaded_at: String,
 ) -> Result<ReconcileReport, String> {
-    // Resolve the persisted model from the DuckDB MetaStore so the interface is testable
-    // even as a stub. Load-stream replaces this body with the real reconcile-and-load.
     let _ = (project_key, entity, sources, precedence, loaded_at);
-    Ok(ReconcileReport { entity: String::new(), records: 0, conflicts: 0, field_lineage: 0, sources: 0 })
+    Err("Reconciled load is not yet available — the load-and-reconcile pipeline (#se-persist) is not implemented yet.".to_string())
 }
 
 // ── live platform scan (#1197 source-pane wiring) ──────────────────────────
@@ -1040,6 +1044,22 @@ mod tests {
         assert_eq!(vals, vec!["Green", "Red", "Yellow"]);
         // High-cardinality / unique text stays string (not enum).
         assert_eq!(infer_typed(&["Acme", "Globex", "Initech", "Umbrella", "Stark"]).0, "string");
+    }
+
+    #[cfg(feature = "source-stage")]
+    #[test]
+    fn data_load_reconciled_reports_unavailable_not_a_fabricated_report() {
+        // The real reconcile-and-load belongs to the load-stream (#se-persist). Until it lands the
+        // command must NOT return a success-shaped zeroed report (the UI would render it as a real,
+        // empty result) — it must signal "unavailable" so the frontend shows an honest state.
+        let result = super::data_load_reconciled(
+            "proj".into(),
+            "account".into(),
+            vec![],
+            vec![],
+            "2026-06-13T00:00:00Z".into(),
+        );
+        assert!(result.is_err(), "stub must report unavailable, not a fabricated Ok report");
     }
 
     #[cfg(feature = "source-stage")]
