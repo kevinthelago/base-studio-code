@@ -204,14 +204,14 @@ export function PaneShell({
           title="Model, screens & pane options"
           onClick={onMenuToggle}
           style={{
-            display: "flex", alignItems: "center", gap: 3, height: 21, padding: "0 5px",
-            border: "1px solid " + (menuOpen ? "var(--accent)" : "var(--border)"), borderRadius: 6,
-            background: menuOpen ? "var(--bg-canvas)" : "var(--bg-panel)",
+            display: "flex", alignItems: "center", gap: 4, height: 21, padding: "0 7px",
+            border: "1px solid " + (menuOpen ? "var(--accent)" : "var(--border-soft)"), borderRadius: 6,
+            background: menuOpen ? "var(--bg-canvas)" : "var(--bg-elev2)",
             cursor: "pointer", flex: "0 0 auto",
           }}
         >
           <ViewIcon
-            size={13}
+            size={12}
             style={{
               color: triggerColor,
               animation: running && sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none",
