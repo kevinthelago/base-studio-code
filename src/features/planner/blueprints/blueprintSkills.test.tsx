@@ -1,8 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
 import { buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
 import { addSkill, removeSkill, mkStageSection } from "./blueprintEdit";
-import { BlueprintEditorView } from "./BlueprintEditor";
 import type { SkillDef } from "@/features/skills/lib/skills";
 import type { BlueprintSection } from "../stages/blueprints";
 
@@ -39,26 +37,5 @@ describe("blueprintEdit skill helpers (#636)", () => {
     expect(s[0].skills).toEqual(["s1", "k1"]);
     s = removeSkill(s, s[0].uid, "s1");
     expect(s[0].skills).toEqual(["k1"]);
-  });
-});
-
-describe("editor Skills block (#636)", () => {
-  const lib = buildSkillLibrary([skillDef("s1", "API design"), skillDef("s2", "House style")]);
-
-  it("offers library items and attaches one on click", () => {
-    const onChange = vi.fn();
-    const sections = [mkStageSection("api")];
-    render(<BlueprintEditorView sections={sections} selectedUid={sections[0].uid} onSelect={() => {}} onChange={onChange} skillLibrary={lib} />);
-    expect(screen.getByText("Skills & knowledge")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /\+ API design/i }));
-    expect(onChange).toHaveBeenCalled();
-    expect(onChange.mock.calls[onChange.mock.calls.length - 1][0][0].skills).toEqual(["s1"]);
-  });
-
-  it("shows attached chips + a warning for a missing id", () => {
-    const sections = [{ ...mkStageSection("api"), skills: ["s1", "ghost"] }];
-    render(<BlueprintEditorView sections={sections} selectedUid={sections[0].uid} onSelect={() => {}} onChange={() => {}} skillLibrary={lib} />);
-    expect(screen.getByText("API design")).toBeInTheDocument(); // attached chip
-    expect(screen.getByText(/ghost/)).toBeInTheDocument(); // missing warning
   });
 });

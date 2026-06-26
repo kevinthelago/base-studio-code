@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  mkStageSection, reorderStages, addStage, duplicateStage, deleteStage,
+  mkStageSection, reorderStages, addStage, deleteStage,
   toggleDep, setOutput, setStageField, depCandidates,
 } from "./blueprintEdit";
 import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "./blueprintCatalog";
@@ -47,14 +47,6 @@ describe("blueprintEdit — stage ops (#609)", () => {
 
   it("addStage appends a fresh stage", () => {
     expect(addStage(base(), "permissions").map((s) => s.key)).toEqual(["context", "ui", "structure", "permissions"]);
-  });
-
-  it("duplicateStage inserts a fresh-uid copy after the original", () => {
-    const a = base();
-    const out = duplicateStage(a, a[1].uid);
-    expect(out.map((s) => s.key)).toEqual(["context", "ui", "ui", "structure"]);
-    expect(out[2].uid).not.toBe(a[1].uid);
-    expect(out[2].name).toBe(a[1].name + " copy");
   });
 
   it("deleteStage removes it and scrubs deps by key when no twin remains", () => {

@@ -43,17 +43,6 @@ export function addStage(sections: BlueprintSection[], kind: string): BlueprintS
   return [...sections, mkStageSection(kind)];
 }
 
-/** Duplicate a stage (fresh uids), inserted right after the original. */
-export function duplicateStage(sections: BlueprintSection[], u: string): BlueprintSection[] {
-  const i = sections.findIndex((s) => s.uid === u);
-  if (i < 0) return sections;
-  const src = sections[i];
-  const copy: BlueprintSection = { ...src, uid: uid("sec"), name: src.name + " copy" };
-  const a = [...sections];
-  a.splice(i + 1, 0, copy);
-  return a;
-}
-
 /** Delete a stage and scrub it from other stages' deps (deps are section keys). */
 export function deleteStage(sections: BlueprintSection[], u: string): BlueprintSection[] {
   const victim = sections.find((s) => s.uid === u);

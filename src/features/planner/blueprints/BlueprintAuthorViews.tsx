@@ -5,6 +5,7 @@
 // <blueprint> tag, so editing and the live session stay in sync. Styling reuses blueprints.css.
 
 import { useState, type CSSProperties } from "react";
+import { Sparkles } from "lucide-react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import {
@@ -315,7 +316,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                   })}
                 </div>
 
-                <Lbl style={{ marginTop: 18 }} hint="injected context for this stage">Skills &amp; knowledge</Lbl>
+                <Lbl style={{ marginTop: 18 }} hint="injected context for this stage"><Sparkles size={12} style={{ verticalAlign: "-2px", marginRight: 5, opacity: 0.85 }} />Skills &amp; knowledge</Lbl>
                 {attachedSkills.length === 0 && <div className="hint" style={{ marginBottom: 8 }}>No skills attached.</div>}
                 {attachedSkills.length > 0 && (
                   <div className="dep-row" style={{ marginBottom: 8 }}>
