@@ -1,8 +1,8 @@
 // tabReorder -- pure helpers for moving a tab within the strip (#461).
 //
 // Tabs are identified by ARRAY INDEX, and a lot of state keys off that index
-// (paneNames by tabIdx; paneCwds/paneStatus/disabledPanes/paneMcpServers/paneHooks/
-// paneAllowedCommands by "t{tab}p{pane}"; focusQueue entries by {tab,pane}).
+// (paneNames by tabIdx; paneCwds/paneStatus/disabledPanes/paneMcpServers/paneHooks
+// by "t{tab}p{pane}"; focusQueue entries by {tab,pane}).
 // Reordering the tabs array therefore has to remap every one of those keys or
 // state bleeds onto the wrong tab. These functions are pure (no React/Tauri) so
 // the remap is unit-testable; the store's `moveTab` action composes them.

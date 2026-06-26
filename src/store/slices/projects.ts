@@ -16,7 +16,6 @@ import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, ca
 import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
-import { resolveAllowedCommands } from "@/shared/lib/session/allowedCommands";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
 import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
@@ -83,10 +82,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
-            projectAllowedCommands: byKey(s.projectAllowedCommands),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
-            repoAllowedCommands:    byRepoKey(s.repoAllowedCommands),
             refContextProject:      byKey(s.refContextProject),
             refContextRepo:         byRepoKey(s.refContextRepo),
             ...(clearActive
@@ -98,8 +95,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         set({
           planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {}, planKbAssignments: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
-          projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
-          projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          projectLocalRepos: {}, localDraftProjects: {},
+          projectKeyAlias: {}, issueLinks: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           refContextDefault: [], refContextProject: {}, refContextRepo: {},
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
@@ -267,7 +264,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneMcpServers        = { ...s.paneMcpServers };
           const newPaneHooks             = { ...s.paneHooks };
           const newPaneSkills            = { ...s.paneSkills };
@@ -320,11 +316,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               // — which use the same key — resolve here.
               const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" });
               if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-              newPaneAllowedCommands[key] = resolveAllowedCommands(
-                s.allowedCommands,
-                s.projectAllowedCommands[projectId],
-                s.repoAllowedCommands[repoPromptKey(projectId, fullName ?? "")],
-              );
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.
               newPaneContinue[key] = true;
@@ -369,7 +360,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneReferenceDocs: newPaneReferenceDocs,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
-            paneAllowedCommands: newPaneAllowedCommands,
             paneMcpServers: newPaneMcpServers,
             paneHooks: newPaneHooks,
             paneSkills: newPaneSkills,
@@ -436,7 +426,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneMcpServers        = { ...s.paneMcpServers };
           const newPaneHooks             = { ...s.paneHooks };
           const newPaneSkills            = { ...s.paneSkills };
@@ -453,7 +442,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           let   newPaneStatus               = { ...s.paneStatus };
 
           const safeKey = sanitizeProjectKey(projectKey);
-          const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
           // MCP exposure is role-aware (#1054): the director sees every installed server (it
           // coordinates the whole fleet), while each worker gets the global servers plus only the
           // servers its stream was assigned. Hooks/skills still share the project scope.
@@ -528,7 +516,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId);
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
-                  newPaneAllowedCommands[key] = projectCmds;
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
                   // Project-level reference context for the director (no repo
                   // scope). Keyed by the sanitized project key (safeKey) to match
@@ -557,11 +544,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   } else {
                     newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, plan.strategy));
                   }
-                  newPaneAllowedCommands[key] = resolveAllowedCommands(
-                    s.allowedCommands,
-                    s.projectAllowedCommands[projectKey],
-                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
-                  );
                   // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
@@ -644,7 +626,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneReferenceDocs: newPaneReferenceDocs,
             paneContinue: newPaneContinue,
             paneCheckpointDocs: newPaneCheckpointDocs,
-            paneAllowedCommands: newPaneAllowedCommands,
             paneMcpServers: newPaneMcpServers,
             paneHooks: newPaneHooks,
             paneSkills: newPaneSkills,

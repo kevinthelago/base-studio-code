@@ -36,7 +36,6 @@ const RESET = {
   paneCwds: {} as Record<string, string>,
   paneInitCmds: {} as Record<string, string>,
   disabledPanes: {} as Record<string, boolean>,
-  paneAllowedCommands: {} as Record<string, string[]>,
   paneStartupPromptText: {} as Record<string, string>,
   paneStartupPromptDocs: {} as Record<string, string>,
   paneCheckpointDocs: {} as Record<string, string>,

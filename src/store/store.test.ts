@@ -35,11 +35,7 @@ const RESET_STATE = {
   kbBlocks: [],
   schedules: [],
   commands: [],
-  allowedCommands: [] as string[],
   deniedCommands: [] as string[],
-  projectAllowedCommands: {} as Record<string, string[]>,
-  repoAllowedCommands: {} as Record<string, string[]>,
-  paneAllowedCommands: {} as Record<string, string[]>,
   autoAdvanceOnReply: true,
   terminalFontSize: 12,
   focusedAgentName: "",
@@ -291,7 +287,6 @@ describe("deleteLocalProject", () => {
       projectLocalRepos: { "My App": ["o/a"] },
       repoStartupPromptDoc: { "My App::o/a": "d", "Other::o/b": "e" },
       repoTriagePromptDoc: { "My App::o/a": "t" },
-      repoAllowedCommands: { "My App::o/a": ["gh"] },
       activeProjectId: "PVT_id1",
       activeProjectName: "My App",
       projectsView: "planning",
@@ -308,7 +303,6 @@ describe("deleteLocalProject", () => {
     expect(s.repoStartupPromptDoc["My App::o/a"]).toBeUndefined();
     expect(s.repoStartupPromptDoc["Other::o/b"]).toBe("e"); // other project's repo kept
     expect(s.repoTriagePromptDoc["My App::o/a"]).toBeUndefined();
-    expect(s.repoAllowedCommands["My App::o/a"]).toBeUndefined();
     // Active project meta cleared and view sent back to the list.
     expect(s.activeProjectId).toBeNull();
     expect(s.activeProjectName).toBe("");
@@ -604,55 +598,15 @@ describe("pane state", () => {
 
 // ── Knowledge blocks ──────────────────────────────────────────────────────────
 
-// ── Allowed commands ──────────────────────────────────────────────────────────
+// ── Denied commands (the global block-list; allow-scope retired in #1457) ──────
 
-describe("allowed commands", () => {
-  it("addAllowedCommand appends a command", () => {
-    useAppStore.getState().addAllowedCommand("git status");
-    expect(useAppStore.getState().allowedCommands).toContain("git status");
-  });
-
-  it("addAllowedCommand ignores duplicates", () => {
-    useAppStore.getState().addAllowedCommand("cargo test");
-    useAppStore.getState().addAllowedCommand("cargo test");
-    expect(useAppStore.getState().allowedCommands).toHaveLength(1);
-  });
-
-  it("removeAllowedCommand removes a specific command", () => {
-    useAppStore.getState().addAllowedCommand("npm run dev");
-    useAppStore.getState().addAllowedCommand("cargo build");
-    useAppStore.getState().removeAllowedCommand("npm run dev");
-    const { allowedCommands } = useAppStore.getState();
-    expect(allowedCommands).not.toContain("npm run dev");
-    expect(allowedCommands).toContain("cargo build");
-  });
-
-  it("setAllowedCommands replaces the full list", () => {
-    useAppStore.getState().addAllowedCommand("old");
-    useAppStore.getState().setAllowedCommands(["new-a", "new-b"]);
-    expect(useAppStore.getState().allowedCommands).toEqual(["new-a", "new-b"]);
-  });
-
+describe("denied commands", () => {
   it("add/removeDeniedCommand manages the global block list (lowercased, deduped)", () => {
     useAppStore.getState().addDeniedCommand("SCP");
     useAppStore.getState().addDeniedCommand("scp"); // dup ignored
     expect(useAppStore.getState().deniedCommands).toEqual(["scp"]);
     useAppStore.getState().removeDeniedCommand("scp");
     expect(useAppStore.getState().deniedCommands).toEqual([]);
-  });
-
-  it("add/removeProjectAllowedCommand scopes to a project and lowercases", () => {
-    useAppStore.getState().addProjectAllowedCommand("P1", "Cargo");
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
-    useAppStore.getState().addProjectAllowedCommand("P1", "cargo"); // dup ignored
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
-    useAppStore.getState().removeProjectAllowedCommand("P1", "cargo");
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual([]);
-  });
-
-  it("addRepoAllowedCommand scopes to a project::repo key", () => {
-    useAppStore.getState().addRepoAllowedCommand("P1", "acme/web", "npm");
-    expect(useAppStore.getState().repoAllowedCommands["P1::acme/web"]).toEqual(["npm"]);
   });
 });
 
@@ -935,18 +889,6 @@ describe("triageStartProject", () => {
     expect(paneStartupPromptText[tri("proj", "o/b")]).toBeUndefined();
   });
 
-  it("resolves each triage pane's allowed commands as global ∪ project ∪ repo", () => {
-    useAppStore.setState({
-      allowedCommands: ["docker"],
-      projectAllowedCommands: { P1: ["cargo"] },
-      repoAllowedCommands: { "P1::o/b": ["npm"] },
-    });
-    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
-    const { paneAllowedCommands } = useAppStore.getState();
-    // o/a: global + project; o/b: global + project + its own repo command.
-    expect(paneAllowedCommands[tri("proj", "o/a")]).toEqual(["docker", "cargo"]);
-    expect(paneAllowedCommands[tri("proj", "o/b")]).toEqual(["docker", "cargo", "npm"]);
-  });
 });
 
 describe("startup prompt assignment setters", () => {

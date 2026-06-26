@@ -498,8 +498,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         return Object.keys(e).length > 0 ? e : undefined;
       })();
       if (launchesClaude && (initialCwd ?? "") !== "") {
-        const cmds = useAppStore.getState().paneAllowedCommands[paneId]
-          ?? useAppStore.getState().allowedCommands;
         // Role gate (#219): a planner/worker/triage session has its mutating git/gh
         // commands denied at launch (deny > the broad gh/git allow), plus a write-tool
         // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
@@ -511,8 +509,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const roleGlobs = useAppStore.getState().paneRoleGlobs[paneId] ?? [];
         const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
         const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
-        // Agents gate (#255): the profile assigned to this pane adds its command
-        // allowlist + per-tool/path rules on top of the role gate (deny wins for both).
+        // Agents gate (#255): the profile assigned to this pane is the SOLE source of
+        // auto-approved commands (#1457), plus its per-tool/path rules, on top of the role
+        // gate (deny wins for both). gh/git/bsc-plan are guaranteed by the backend.
         const profileId = useAppStore.getState().paneProfiles[paneId];
         const profile = profileId
           ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
@@ -523,7 +522,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
         const paneFlow = useAppStore.getState().paneFlows[paneId];
         const flowRules = flowPermissionRules(paneFlow);
-        const allowedCommands = prof ? [...cmds, ...prof.allowedCommands] : cmds;
+        const allowedCommands = prof?.allowedCommands ?? [];
         // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
         // writes, so lift them from the role denies when the flow permits pushing/PRing
         // (a worker is github:read and would otherwise be blocked from opening its PR).
