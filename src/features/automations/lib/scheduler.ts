@@ -6,7 +6,7 @@
 import { nextCronRun } from "./cron";
 
 export type Every = "minute" | "hour" | "day" | "weekday";
-export type AutomationActionKind = "command" | "knowledge";
+export type AutomationActionKind = "command";
 export type RunStatus = "ok" | "skipped" | "fail";
 
 export interface SimpleWhen {
@@ -38,7 +38,6 @@ export interface Automation {
   targetPaneIdx: number;
   action: AutomationActionKind;
   command?: string;   // action === "command"
-  blockId?: string;   // action === "knowledge"
   lastRunAt: number | null;
   nextRunAt: number | null;
   runs: AutomationRun[];
@@ -134,21 +133,13 @@ export function resolveTargetPane(
   return paneId;
 }
 
-export interface BlockLike { id: string; content?: string }
-
 /**
  * The text payload to write into the target pane for an automation, or null if
- * the action is incomplete (no command / missing knowledge block). A trailing
- * carriage return is the caller's responsibility.
+ * the command is empty. A trailing carriage return is the caller's responsibility.
  */
-export function dispatchPayload(a: Automation, blocks: BlockLike[]): string | null {
-  if (a.action === "command") {
-    const cmd = (a.command ?? "").trim();
-    return cmd.length > 0 ? cmd : null;
-  }
-  const block = blocks.find(b => b.id === a.blockId);
-  const content = block?.content?.trim();
-  return content && content.length > 0 ? content : null;
+export function dispatchPayload(a: Automation): string | null {
+  const cmd = (a.command ?? "").trim();
+  return cmd.length > 0 ? cmd : null;
 }
 
 /** Armed automations whose nextRunAt is due (non-null and ≤ now). */

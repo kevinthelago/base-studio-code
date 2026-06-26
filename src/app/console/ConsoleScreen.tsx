@@ -218,7 +218,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
   useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
-  // anywhere else in the store (kbBlocks, GitHub cache, settings, planning data)
+  // anywhere else in the store (GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this
   // screen actually reads. Was a meaningful source of render churn on multi-pane
   // grids per #52.

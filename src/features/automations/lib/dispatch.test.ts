@@ -17,7 +17,6 @@ function deps(over: Partial<DispatchDeps> = {}): DispatchDeps {
   return {
     tabs: [{ name: "build", layout: "2×2" }],
     disabledPanes: {},
-    kbBlocks: [],
     write: vi.fn().mockResolvedValue(undefined),
     recordRun: vi.fn(),
     now: () => 1000,
@@ -33,13 +32,6 @@ describe("dispatchAutomation (#937)", () => {
     expect(d.recordRun).toHaveBeenCalledWith("a1", expect.objectContaining({ at: 1000, status: "ok" }));
   });
 
-  it("loads a knowledge block's content when the action is knowledge", async () => {
-    const d = deps({ kbBlocks: [{ id: "b1", content: "# Guide" }] });
-    await dispatchAutomation(auto({ action: "knowledge", blockId: "b1", command: undefined }), d);
-    expect(d.write).toHaveBeenCalledWith("t0p0", "# Guide\r");
-    expect(d.recordRun).toHaveBeenCalledWith("a1", expect.objectContaining({ status: "ok" }));
-  });
-
   it("skips (no write) when the target pane isn't open", async () => {
     const d = deps({ tabs: [] });
     await dispatchAutomation(auto(), d);
@@ -52,13 +44,6 @@ describe("dispatchAutomation (#937)", () => {
     await dispatchAutomation(auto({ command: "   " }), d);
     expect(d.write).not.toHaveBeenCalled();
     expect(d.recordRun).toHaveBeenCalledWith("a1", expect.objectContaining({ status: "fail", note: "empty command" }));
-  });
-
-  it("fails when a missing knowledge block leaves no payload", async () => {
-    const d = deps();
-    await dispatchAutomation(auto({ action: "knowledge", blockId: "nope", command: undefined }), d);
-    expect(d.write).not.toHaveBeenCalled();
-    expect(d.recordRun).toHaveBeenCalledWith("a1", expect.objectContaining({ status: "fail", note: "knowledge block missing or empty" }));
   });
 
   it("records a failed run (never throws) when the write rejects", async () => {

@@ -27,7 +27,6 @@ export function useScheduler() {
       const deps = {
         tabs: s.tabs,
         disabledPanes: s.disabledPanes,
-        kbBlocks: s.kbBlocks,
         write: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),
         recordRun: s.recordAutomationRun,
         now: () => Date.now(),

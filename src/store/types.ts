@@ -6,7 +6,6 @@ import type { Screen } from "@/app/chrome/Rail";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { ViewKey } from "@/app/console/panes/ViewTabs";
 import type { ModelId } from "@/app/console/panes/PaneMenu";
-import type { KbBlock } from "@/shared/data/mock";
 import type { LlmProvider } from "@/shared/lib/core/llmConfig";
 import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget, ConsoleAutoFocusMode } from "@/app/console/lib/focusQueue";
@@ -81,7 +80,6 @@ export interface ConfigProfile {
   name: string;
   instructions: string;
   tools: ToolPermissions;
-  kbBlockIds: string[];
 }
 
 export interface AutomationSuggestion {
@@ -400,8 +398,6 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
   // Mobile tunnel connection state lives in the Tunnel feature slice (`TunnelSlice`,
   // `@/features/tunnel/store`, #1309) — merged via `extends`.
 
-  // Knowledge blocks (KB)
-  kbBlocks: KbBlock[];
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
 
@@ -627,9 +623,6 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */
   canonicalizePlanSections: (projectId: string) => void;
-  planKbAssignments:    Record<string, string[]>;
-  addPlanKbAssignment:  (projectId: string, blockId: string) => void;
-  removePlanKbAssignment: (projectId: string, blockId: string) => void;
   planAutomations:    Record<string, AutomationSuggestion[]>;
   addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
   clearPlanAutomations: (projectId: string) => void;

@@ -7,7 +7,6 @@ import { makeBlueprints } from "../stages/blueprints";
 import { useAppStore } from "@/store";
 import type { Blueprint } from "../stages/blueprints";
 import type { SkillDef } from "@/features/skills/lib/skills";
-import type { KbBlock } from "@/shared/data/mock";
 
 const sample = () => makeBlueprints().find((b) => b.id === "default")!;
 
@@ -120,22 +119,24 @@ describe("blueprintShare (#598)", () => {
     const skills: SkillDef[] = [{
       id: "sk1", name: "Rust HMAC", kind: "workflow", source: "team", desc: "hmac mw", prompt: "## procedure\nverify hmac",
       tools: ["Edit"], profiles: [], projects: [], enabled: true, pinned: false, invocations: 0, success: 0, avgTokensK: 0, trend: [],
+    }, {
+      id: "sk2", name: "Retry policy", kind: "review", source: "team", desc: "reliability", prompt: "backoff + jitter",
+      tools: ["Read"], profiles: [], projects: [], enabled: true, pinned: false, invocations: 0, success: 0, avgTokensK: 0, trend: [],
     }];
-    const kb: KbBlock[] = [{ id: "kb1", title: "Retry policy", tags: ["reliability"], updated: "now", lines: 3, content: "backoff + jitter" }];
     const bp = {
-      id: "x", name: "BP", desc: "", skills: ["kb1"],
+      id: "x", name: "BP", desc: "", skills: ["sk2"],
       sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
     } as unknown as Blueprint;
 
-    const bundled = resolveBlueprintSkillPayloads(bp, skills, kb);
-    expect(bundled.map((p) => p.id).sort()).toEqual(["kb1", "sk1"]);
+    const bundled = resolveBlueprintSkillPayloads(bp, skills);
+    expect(bundled.map((p) => p.id).sort()).toEqual(["sk1", "sk2"]);
     expect(bundled.find((p) => p.id === "sk1")).toMatchObject({ kind: "skill", content: "## procedure\nverify hmac", skillKind: "workflow", tools: ["Edit"] });
-    expect(bundled.find((p) => p.id === "kb1")).toMatchObject({ kind: "kb", content: "backoff + jitter", tags: ["reliability"] });
+    expect(bundled.find((p) => p.id === "sk2")).toMatchObject({ kind: "skill", content: "backoff + jitter", skillKind: "review" });
 
     // The content survives a manifest round-trip (the share envelope).
     const out = bundledSkillsFromManifest(blueprintToManifest(bp, bundled));
     expect(out.find((p) => p.id === "sk1")!.content).toBe("## procedure\nverify hmac");
-    expect(out.find((p) => p.id === "kb1")!.tags).toEqual(["reliability"]);
+    expect(out.find((p) => p.id === "sk2")!.content).toBe("backoff + jitter");
     // A share with no bundled skills carries none (old shares / nothing attached).
     expect(bundledSkillsFromManifest(blueprintToManifest(bp))).toEqual([]);
   });
