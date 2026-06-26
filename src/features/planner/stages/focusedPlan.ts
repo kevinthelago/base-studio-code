@@ -1,12 +1,12 @@
 // Focused planner pane (#652) — the pure model behind the one-phase-at-a-time right
-// pane. It wraps the EXISTING blueprint/signal/gate logic (sectionStatus / currentSection
+// pane. It wraps the EXISTING blueprint/signal/gate logic (stageStatus / currentStage
 // / evalGate) into a navigable "phase" view: which phases are visible, each one's status
 // (complete / active / locked / upcoming), the gate pill, and the advance-bar action.
 // Pure + serializable so it's fully unit-testable; no React/Tauri.
 
 import {
-  enabledSections, currentSection, sectionStatus, sectionSkipped,
-  type BlueprintSection,
+  enabledStages, currentStage, stageStatus, stageSkipped,
+  type BlueprintStage,
 } from "./blueprints";
 import { evalGate, gateReasons, type PlanSignals } from "./stageGate";
 
@@ -47,18 +47,18 @@ export interface Phase {
  * its status — complete (gate passed), active (the current reached phase), locked (a
  * dependency is unmet), or upcoming (reachable but not yet current).
  */
-export function phasesFrom(sections: BlueprintSection[], signals: PlanSignals): Phase[] {
-  const current = currentSection(sections, signals);
-  const visible = enabledSections(sections)
-    .map((s) => ({ s, st: sectionStatus(s, sections, signals) }))
+export function phasesFrom(sections: BlueprintStage[], signals: PlanSignals): Phase[] {
+  const current = currentStage(sections, signals);
+  const visible = enabledStages(sections)
+    .map((s) => ({ s, st: stageStatus(s, sections, signals) }))
     .filter(({ st }) => st.status !== "na");
   // The current position among visible phases; everything complete PAST it is "ahead".
   const activeIdx = current ? visible.findIndex(({ s }) => s.key === current.key) : visible.length;
   return visible.map(({ s, st }, i) => {
     let status: PhaseStatus;
     // A deliberately user-skipped optional stage reads as "skipped", not "complete" — even though
-    // it counts as resolved for the frontier/gate (`sectionDone`). Check this first (#921).
-    if (sectionSkipped(s, signals)) status = "skipped";
+    // it counts as resolved for the frontier/gate (`stageDone`). Check this first (#921).
+    if (stageSkipped(s, signals)) status = "skipped";
     else if (st.status === "complete") status = i > activeIdx ? "ahead" : "complete";
     else if (st.status === "locked") status = "locked";
     else status = current && s.key === current.key ? "active" : "upcoming";
@@ -176,8 +176,8 @@ export function resolveFooter(raw: FooterAction, pendingCount: number, allowOver
 }
 
 /** Whether the active phase's gate is satisfied — enables "approve & continue". */
-export function currentGateReady(sections: BlueprintSection[], signals: PlanSignals): boolean {
-  const cur = currentSection(sections, signals);
+export function currentGateReady(sections: BlueprintStage[], signals: PlanSignals): boolean {
+  const cur = currentStage(sections, signals);
   return !!cur && evalGate(cur.gateRule, signals).done;
 }
 

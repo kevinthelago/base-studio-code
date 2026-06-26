@@ -3,17 +3,17 @@ import {
   phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
   sectionForPhase, shouldAutoCompleteGate, type Phase, type PhaseStatus,
 } from "./focusedPlan";
-import { confirmedSignal, skippedSignal, type BlueprintSection } from "./blueprints";
+import { confirmedSignal, skippedSignal, type BlueprintStage } from "./blueprints";
 import type { PlanSignals } from "./stageGate";
 
-const sec = (key: string, over: Partial<BlueprintSection> = {}): BlueprintSection => ({
+const sec = (key: string, over: Partial<BlueprintStage> = {}): BlueprintStage => ({
   uid: key, key, name: key.toUpperCase(), glyph: "•", icon: "category", hue: 250, gate: `${key} gate`,
   deps: [], blurb: `${key} blurb`, prompt: "", enabled: true, expanded: false,
   ...over,
 });
 
 // A → B (deps A) → C (only applies when showC)
-const SECTIONS: BlueprintSection[] = [
+const SECTIONS: BlueprintStage[] = [
   sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }),
   sec("b", { deps: ["a"], gateRule: { require: [{ signal: "b", target: true }] } }),
   sec("c", { appliesWhen: { signal: "showC", target: true } }),
@@ -66,7 +66,7 @@ describe("ahead (banked) + connectorKind (#668)", () => {
   });
 
   it("STOPS on a reached optional stage (active); only a USER-skip renders it 'skipped' (#921)", () => {
-    const secs: BlueprintSection[] = [
+    const secs: BlueprintStage[] = [
       sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }),
       sec("opt", { optional: true, gateRule: { require: [{ signal: "opt", target: true }] } }),
       sec("b", { deps: ["a"], gateRule: { require: [{ signal: "b", target: true }] } }),
@@ -188,7 +188,7 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
   // An IMPORTED blueprint loses its gateRules on import, so EVERY stage is gateless and completes
   // only via its own confirmed:<key> signal. This mirrors the real "Feature Add" blueprint:
   // context → architecture → structure → testing → docs(optional).
-  const IMPORTED: BlueprintSection[] = [
+  const IMPORTED: BlueprintStage[] = [
     sec("discovery"),
     sec("architecture", { deps: ["discovery"] }),
     sec("structure", { deps: ["architecture"] }),

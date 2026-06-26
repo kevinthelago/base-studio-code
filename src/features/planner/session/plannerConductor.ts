@@ -4,7 +4,7 @@
 // through the items one by one as each completes. This file is the pure decision ("what to
 // inject next"); the wiring (pty_write + idle timing + the injected-once guard + building the
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
-import type { BlueprintSection } from "../stages/blueprints";
+import type { BlueprintStage } from "../stages/blueprints";
 
 export interface StagePrompt {
   /** Human label for the picker row (the stage name, or a substep's label/key). */
@@ -18,7 +18,7 @@ export interface StagePrompt {
  * pick what to inject (the app no longer auto-injects). The stage's own overview prompt comes
  * first, then each substep's prompt in order. Prompts that are empty/whitespace are skipped.
  */
-export function stagePrompts(section: BlueprintSection | undefined): StagePrompt[] {
+export function stagePrompts(section: BlueprintStage | undefined): StagePrompt[] {
   if (!section) return [];
   const out: StagePrompt[] = [];
   if (section.prompt?.trim()) out.push({ label: `${section.name} — overview`, text: section.prompt });
@@ -60,7 +60,7 @@ export interface ConductorState {
  * before advancing. `injected` is the set of ids already sent, so each step fires exactly once.
  */
 export function nextInjection(
-  section: BlueprintSection | undefined,
+  section: BlueprintStage | undefined,
   injected: Set<string>,
   state: ConductorState,
 ): Injection | null {

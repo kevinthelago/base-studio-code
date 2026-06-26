@@ -10,8 +10,8 @@
 
 import { useMemo } from "react";
 import type { Section } from "../github/ghStructure";
-import type { BlueprintSection } from "../stages/blueprints";
-import { skippedSignal, confirmedSignal, planSectionsComplete, authoringSignals } from "../stages/blueprints";
+import type { BlueprintStage } from "../stages/blueprints";
+import { skippedSignal, confirmedSignal, planStagesComplete, authoringSignals } from "../stages/blueprints";
 import { derivePlanStageState, planStateToSignals } from "../stages/planStageDerive";
 import { FEATURES_KEY } from "../stages/planSections";
 import { parseIssuesFile } from "../issues/planIssues";
@@ -28,7 +28,7 @@ import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 interface PlanGatesDeps {
   sections: Section[];
   /** The active blueprint's sections (stays in Planning; passed in as gate input). */
-  planSecs: BlueprintSection[];
+  planSecs: BlueprintStage[];
   ctxRequired: string[];
   publishRepos: string[];
   planFleet: Record<string, { streams: Parameters<typeof fleetProfilesComplete>[0] }>;
@@ -118,13 +118,13 @@ export function usePlanGates(deps: PlanGatesDeps) {
     return injectionGate(findPlanInjections(written), { hardGate: injectionHardGate, ackSig: planInjectionAck[effectiveProjectId] });
   }, [sections, planSecs, injectionHardGate, planInjectionAck, effectiveProjectId]);
   // User-skipped optional stages (#921) surface as `skipped:<key>` signals so the data-driven
-  // gate model (`sectionDone`) treats them as resolved.
+  // gate model (`stageDone`) treats them as resolved.
   const skipSignals = useMemo(() => {
     const out: Record<string, boolean> = {};
     for (const k of skippedSet) out[skippedSignal(k)] = true;
     return out;
   }, [skippedSet]);
-  // A gateless ("informational") section is done only once CONFIRMED (#664) — `sectionDone` reads a
+  // A gateless ("informational") section is done only once CONFIRMED (#664) — `stageDone` reads a
   // `confirmed:<key>` signal. Surface those so a confirmed gateless stage (testing, cleanup, the data
   // stages, a user-authored stage, …) reads as complete and the frontier advances (#954).
   const confirmSignals = useMemo(() => {
@@ -146,7 +146,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
   const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
   const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
   const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
-  const planComplete = useMemo(() => planSectionsComplete(planSecs, signals), [planSecs, signals]);
+  const planComplete = useMemo(() => planStagesComplete(planSecs, signals), [planSecs, signals]);
   const currentStage = phases[focusActiveIdx]?.key ?? "";
   const planStatusLabel = planComplete ? "complete" : currentStage ? "in_progress" : "starting";
   // Legacy alias kept for the publish/recovery readers (#854): the dynamic blueprint gate IS the

@@ -4,7 +4,7 @@ import {
   toggleDep, setOutput, setStageField, depCandidates,
 } from "./blueprintEdit";
 import { STAGE_KINDS, DISPOSITIONS, defaultDisposition } from "./blueprintCatalog";
-import { SECTION_DEFS } from "../stages/blueprints";
+import { STAGE_DEFS } from "../stages/blueprints";
 
 describe("blueprintCatalog (#609)", () => {
   it("uses our `ui` key (not the design's `ux`)", () => {
@@ -21,10 +21,10 @@ describe("blueprintCatalog (#609)", () => {
 });
 
 describe("blueprintEdit — mkStageSection (#609)", () => {
-  it("known kind keeps its runtime gate (from SECTION_DEFS) + gets a default output", () => {
+  it("known kind keeps its runtime gate (from STAGE_DEFS) + gets a default output", () => {
     const s = mkStageSection("structure");
     expect(s.key).toBe("structure");
-    expect(s.gateRule).toEqual(SECTION_DEFS.structure.gateRule); // runtime preserved
+    expect(s.gateRule).toEqual(STAGE_DEFS.structure.gateRule); // runtime preserved
     expect(s.output).toBe("issues");
   });
   it("unknown kind is synthesized as an informational stage", () => {
@@ -50,7 +50,7 @@ describe("blueprintEdit — stage ops (#609)", () => {
   });
 
   it("deleteStage removes it and scrubs deps by key when no twin remains", () => {
-    // informational kinds start with empty deps (known kinds carry SECTION_DEFS deps).
+    // informational kinds start with empty deps (known kinds carry STAGE_DEFS deps).
     let a = [mkStageSection("discovery"), mkStageSection("stack"), mkStageSection("docs")];
     a = toggleDep(a, a[2].uid, "stack"); // docs depends on stack
     expect(a[2].deps).toContain("stack");

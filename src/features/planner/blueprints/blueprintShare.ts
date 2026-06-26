@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintSection, uid } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, uid } from "../stages/blueprints";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 
@@ -13,7 +13,7 @@ const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is 
 const BP_CATEGORIES = ["greenfield", "transform", "harden", "maintain", "data"] as const;
 const BP_MODES = ["create", "operate"] as const;
 
-function coerceSection(v: unknown): BlueprintSection | null {
+function coerceSection(v: unknown): BlueprintStage | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
   const key = str(o.key);
@@ -60,7 +60,7 @@ export function coerceBlueprint(
   // STAGES, one per project pane. (NOT the per-stage context files, which a stage like Context
   // produces itself.) The internal model keeps the field name `sections`.
   const rawStages = Array.isArray(o.stages) ? o.stages : Array.isArray(o.sections) ? o.sections : [];
-  const sections = rawStages.map(coerceSection).filter(Boolean) as BlueprintSection[];
+  const sections = rawStages.map(coerceSection).filter(Boolean) as BlueprintStage[];
   if (sections.length === 0 && !allowEmptySections) return null;
   const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
     ? (str(o.category) as Blueprint["category"]) : undefined;

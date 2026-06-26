@@ -6,7 +6,7 @@
 // clipping strip, so only their top rounded half shows.
 
 import { Fragment, type CSSProperties } from "react";
-import { sectionStatus, type BlueprintSection } from "../stages/blueprints";
+import { stageStatus, type BlueprintStage } from "../stages/blueprints";
 import type { PlanSignals } from "../stages/stageGate";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { Ic } from "../blueprints/blueprintIcons";
@@ -21,7 +21,7 @@ function fillColor(status: string): string {
 }
 
 export function PlanStageBar({ sections, signals, blocked, highlight }: {
-  sections: BlueprintSection[];
+  sections: BlueprintStage[];
   signals: PlanSignals;
   /** Section keys with an unpassed gate pipeline (#532). */
   blocked?: Set<string>;
@@ -31,7 +31,7 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
   // N/A sections (e.g. UI when the project needs no UI) are hidden entirely.
   const segments = sections
     .filter((s) => s.enabled)
-    .map((section) => ({ section, ...sectionStatus(section, sections, signals) }))
+    .map((section) => ({ section, ...stageStatus(section, sections, signals) }))
     .filter((s) => s.status !== "na");
 
   return (
@@ -91,12 +91,12 @@ function nodeStyle(status: string): CSSProperties {
  * stage and a `category` fallback otherwise — never a blank or a stray literal character.
  */
 export function PlanGateRow({ sections, signals }: {
-  sections: BlueprintSection[];
+  sections: BlueprintStage[];
   signals: PlanSignals;
 }) {
   const segments = sections
     .filter((s) => s.enabled)
-    .map((section) => ({ section, ...sectionStatus(section, sections, signals) }))
+    .map((section) => ({ section, ...stageStatus(section, sections, signals) }))
     .filter((s) => s.status !== "na");
   if (segments.length === 0) return null;
   return (
