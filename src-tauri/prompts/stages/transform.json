@@ -1,0 +1,9 @@
+{
+  "directive": "**Transform** — plan the migration to a new pattern, version, or framework; write migration issues in strict dependency order.",
+  "name": "Transform",
+  "glyph": "⇄",
+  "gate": "migration sequenced",
+  "blurb": "Plan the migration; issues in strict dependency order.",
+  "icon": "sync",
+  "hue": 50
+}

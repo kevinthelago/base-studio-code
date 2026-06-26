@@ -22,26 +22,14 @@ pub(crate) fn planner_intro_prompt(mode: String) -> String {
 /// section. Unknown ids fall back to a generic line.
 pub(crate) fn stage_directive(id: &str) -> String {
     // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
+    // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
+    // Every stage directive — including the composed/lifecycle ids (`repos_deploy`, `streams`,
+    // `refactor`, `transform`) — now resolves from its `prompts/stages/<id>.json` `directive` field;
+    // an unknown id gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
     let key = if id == "testing-informational" { "testing" } else { id };
-    if let Some(d) = embedded_directive(key) {
-        if !d.trim().is_empty() {
-            return d;
-        }
-    }
-    let line = match id {
-        // Merged stages (#1383/#1392): a blueprint can fold two stages into ONE — Deploy folds into
-        // Repos ("Deployment") and Permissions folds into Structure ("Streams"). The overview names
-        // the merged stage and covers BOTH halves; the app still delivers each half's working
-        // instructions as its substep activates.
-        "repos_deploy" => "**Deployment** — ONE stage, two parts. (1) **Link** the repositories this project spans: emit `<repo_link owner/repo>` for each (clones into the hub + records the link in plan.db; `bsc-plan repo add owner/repo`, `bsc-plan repo list`). (2) **Ship**: define how each service DEPLOYS, recorded in plan.db — `bsc-plan deploy set` (config JSON: `services`, ONE per repo — each a self-contained deployable unit carrying its OWN `platform`+`workload`, ≥2 `environments`, a staged `pipeline`, `secrets`, and a `release.strategy`). The gate needs BOTH: ≥1 repo linked AND every repo's service deploy-ready. `bsc-plan deploy get` shows the stored config. (Dependencies are locked in the **Streams** stage now, #1429 — not here.)",
-        "streams"     => "**Streams** — ONE stage, two parts. (1) **Plan the roadmap**: the features are a dependency DAG (`bsc-plan feature list`). Sequence them into ordered phases IN PLAN.DB — `bsc-plan phase add \"<name>\" \"<done-when>\"` (foundations first), then assign EVERY feature its phase number (`echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add`). (2) **Plan the fleet**: pipe a FleetPlan JSON (non-overlapping streams with least-privilege profiles + per-stream perms/flows, plus recommended/director/topology; a stream may carry `mcp`/`groupIds`) to `bsc-plan fleet set`. (3) **Lock shared dependencies** (#1429): for any repo that 2+ streams build, each stream declares its libraries and you reconcile them ONCE into the repo's lock — `bsc-plan deps set` (manifest JSON: a `dependencies` array, each `{repo, ecosystem: npm|cargo, name, version, dev?, why, source?, stream}` — tag the declaring `stream` — plus a `registries` map for any non-public `source`: `url`, `scope`, `auth` = the token's SECRET NAME). A repo with a SINGLE owning stream needs no pre-lock — its deps stay agent-managed. `bsc-plan deps get` shows the manifest. The gate needs: the roadmap sequenced, the fleet streams scoped/profiled, AND every multi-stream repo's deps locked (`sharedDepsLocked`). The fleet + deps live ONLY in plan.db.",
-        // refactor/transform (#666): transform-lifecycle directive ids with NO frontend section-def
-        // (no stage JSON, like the merged stages) — kept Rust-side to avoid polluting SECTION_DEFS.
-        "refactor"     => "**Refactor** — identify improvement opportunities (dead code, simplification, performance); write one targeted cleanup issue per area. Do NOT produce `phases.json` or `issues.json`.",
-        "transform"    => "**Transform** — plan the migration to a new pattern, version, or framework; write migration issues in strict dependency order.",
-        other         => return format!("**{other}** — configured stage."),
-    };
-    line.to_string()
+    embedded_directive(key)
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| format!("**{id}** — configured stage."))
 }
 /// Read the `directive` field of the embedded `prompts/stages/<id>.json`, if present + a string.
 fn embedded_directive(id: &str) -> Option<String> {
@@ -131,7 +119,9 @@ mod tests {
         let migrated = ["discovery","repos","deploy","ui","features","structure","permissions",
             "automations","skills","cleanup","testing","testing-informational",
             "boundaries","extraction","consolidation","migration","hardening","purpose","bp_stages",
-            "bp_capabilities","bp_review"];
+            "bp_capabilities","bp_review",
+            // #1610: the formerly-inline composed/lifecycle directives now resolve from JSON too.
+            "repos_deploy","streams","refactor","transform"];
         for id in migrated {
             let d = stage_directive(id);
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
@@ -144,9 +134,10 @@ mod tests {
     }
 
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
-    /// EXACTLY the migrated set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
+    /// EXACTLY the expected set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
     /// the SAME `prompts/stages/` dir, so a directive can't drift between them; this pins the set.
-    /// `repos_deploy`/`streams` are composed Rust-side and intentionally have NO stage JSON.
+    /// #1610: the composed/lifecycle ids (`repos_deploy`/`streams`/`refactor`/`transform`) are now
+    /// plain stage JSONs too — no Rust-side prose, no special carve-out.
     #[test]
     fn embedded_directive_key_set_matches_the_migrated_set() {
         use std::collections::BTreeSet;
@@ -161,12 +152,7 @@ mod tests {
         let expected: BTreeSet<String> = ["discovery","repos","deploy","ui","features","structure",
             "permissions","automations","skills","cleanup","testing","boundaries",
             "extraction","consolidation","migration","hardening","purpose","bp_stages","bp_capabilities",
-            "bp_review"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(with_directive, expected, "stage `directive` set drifted from the migrated set");
-        // These ids carry a Rust-side directive but NO stage JSON (composed/lifecycle ids with no
-        // frontend section-def — keeping a JSON would pollute SECTION_DEFS + the icon-coverage gate).
-        for id in ["repos_deploy", "streams", "refactor", "transform"] {
-            assert!(STAGES_DIR.get_file(format!("{id}.json")).is_none(), "{id} stays Rust-side, no stage JSON");
-        }
+            "bp_review","repos_deploy","streams","refactor","transform"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }
