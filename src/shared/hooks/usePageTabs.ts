@@ -5,8 +5,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { moveInArray } from "@/app/console/lib/tabReorder";
-import { openDetachedSection } from "@/app/console/lib/detachWindow";
+import { moveInArray } from "@/shared/lib/core/arrayMove";
+import { openDetachedSection } from "@/shared/lib/core/detachSection";
 import type { TabItem } from "@/app/chrome/TabBar";
 
 const EMPTY: string[] = [];
