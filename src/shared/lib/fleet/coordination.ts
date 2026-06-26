@@ -11,110 +11,37 @@
 // parked pane -- lands on top of it in later slices. `failed` is deliberately NOT a
 // satisfy: dependents stay blocked and surface as a stalled chain (finished != succeeded).
 import { matchGlob } from "../session/sessionRoles";
+import type {
+  CoordRef,
+  SatisfySource,
+  Waiter,
+  CoordState,
+  AssignedWork,
+  AnsweredWake,
+  WaitingSession,
+  CoordEvent,
+  WakeAction,
+  BlockedView,
+  Predicate,
+  PredicateEvaluator,
+  CoordNotificationKind,
+  CoordNotification,
+  ProducerOf,
+  SessionProduces,
+  Deadlock,
+  LandingSignals,
+  TriageDecision,
+  TriageConfig,
+  JurorVerdict,
+  AggregationRule,
+  JuryStrictness,
+  JuryAggregate,
+  JuryAction,
+} from "./coordination.types";
 
-/** A structured dependency target -- what a session is blocked *on*, or what landed. */
-export type CoordRef =
-  | { kind: "issue"; number: number }   // #42
-  | { kind: "contract"; name: string }  // contract:TunnelState
-  | { kind: "file"; path: string }      // file:src/lib/x.ts
-  | { kind: "predicate"; expr: string } // predicate:tests-pass
-  | { kind: "session"; id: string };    // session:t0p2 -- "blocked until pane X finishes"
-
-/** The authoritative signal that satisfied a latch (most->least authoritative). */
-export type SatisfySource = "merged" | "closed" | "landed";
-
-/** Per-ref latch status. `satisfied` wakes dependents; `failed` holds them (a stalled
- *  chain the director is alerted to) -- the two are distinct on purpose. */
-export type LatchStatus =
-  | { state: "satisfied"; source: SatisfySource; at: number }
-  | { state: "failed"; reason: string; at: number };
-
-/** A parked session waiting on every ref in `deps`. `checkpoint` is the compact resume
- *  seed (a `bsc-checkpoint` ref) carried into the wake prompt. */
-export interface Waiter {
-  /** The parked session/pane id. Unique key -- re-registering replaces the entry. */
-  session: string;
-  /** All of these must be satisfied for the waiter to wake. */
-  deps: CoordRef[];
-  /** Resume seed (e.g. a checkpoint doc relpath); carried into the wake prompt. */
-  checkpoint?: string;
-  /** When the block was declared (ms epoch), passed in by the caller. */
-  registeredAt: number;
-}
-
-/** The coordinator's persistable state: the latch table + the waiter table. */
-export interface CoordState {
-  latches: Record<string, LatchStatus>;
-  waiters: Waiter[];
-  /** Sessions paused for the user (#297 checkpoint/confirm flow) — woken manually. */
-  waiting: WaitingSession[];
-  /** Sessions that asked the DIRECTOR a question (#369) — woken when it answers. */
-  asking: AskingSession[];
-  /** New work the ISSUER captured (#376), pending the director's routing decision. */
-  issues: PendingIssue[];
-}
-
-/** A shaped issue the issuer captured, awaiting the director's `bsc-assign` (#376). The
- *  issuer does intake only; the director picks the owning worker by `owns`/stream. */
-export interface PendingIssue {
-  /** Stable key — the wire id, else `<session>@<at>`. Dedupes + lets `assign` clear it. */
-  id: string;
-  /** The issuer session that captured it. */
-  session: string;
-  /** Well-formed issue title. */
-  title: string;
-  /** Issue body (acceptance criteria, etc.); may be empty. */
-  body?: string;
-  /** The issuer's suggested repo or stream, from the plan (the director may override). */
-  suggested?: string;
-  /** When captured (ms epoch). */
-  at: number;
-}
-
-/** A pending injection produced when the director assigns an issue to a worker (#376).
- *  Carries the issue into the target worker's fresh session, like {@link AnsweredWake}. */
-export interface AssignedWork {
-  /** The target worker session/pane id. */
-  session: string;
-  /** The issue title (when known). */
-  title?: string;
-  /** The issue body / instructions to start on. */
-  body: string;
-  /** Resume seed, if the target was parked with one. */
-  checkpoint?: string;
-  /** When assigned (ms epoch). */
-  at: number;
-}
-
-/** A session paused for the USER, not blocked on a dependency latch (#297). It carries
- *  no deps, never participates in auto-wake, and is resumed only from the inbox. */
-export interface WaitingSession {
-  /** The parked session/pane id. Unique key — a newer wait replaces the entry. */
-  session: string;
-  /** Why it paused (the `bsc-wait` note); may be empty. */
-  reason: string;
-  /** Resume seed (e.g. a checkpoint doc relpath); carried into the wake prompt. */
-  checkpoint?: string;
-  /** When the pause was declared (ms epoch), passed in by the caller. */
-  at: number;
-}
-
-/** A session parked on a `bsc-ask` question to the director (#369). Unlike a user-wait,
- *  it is resumed automatically when the director answers via `bsc-answer <session>`. */
-export interface AskingSession {
-  session: string;
-  question: string;
-  checkpoint?: string;
-  at: number;
-}
-
-/** A pending wake produced when the director answers an asking session (#369). */
-export interface AnsweredWake {
-  session: string;
-  answer: string;
-  checkpoint?: string;
-  at: number;
-}
+// Re-export the coordination types (split into ./coordination.types.ts, #1633) so the
+// public import surface `@/shared/lib/fleet/coordination` is unchanged for every importer.
+export type * from "./coordination.types";
 
 export function emptyCoordState(): CoordState {
   return { latches: {}, waiters: [], waiting: [], asking: [], issues: [] };
@@ -231,24 +158,6 @@ export function fail(
 // merge/close will append satisfy lines later. `parseCoordLine` turns one line into a
 // typed event, `applyCoordEvent` folds it into the latch state, and `ingestCoordLog`
 // replays a whole log -- so the coordinator is just "read the log -> CoordState".
-
-/** A structured coordination event (one per `$BSC_COORD_LOG` line). */
-export type CoordEvent =
-  | { type: "blocked"; session: string; deps: CoordRef[]; checkpoint?: string; at: number }
-  | { type: "landed"; ref: CoordRef; at: number }
-  | { type: "merged"; ref: CoordRef; at: number }
-  | { type: "closed"; ref: CoordRef; at: number }
-  | { type: "failed"; ref: CoordRef; reason: string; at: number }
-  | { type: "woke"; session: string; at: number }
-  | { type: "waiting"; session: string; reason: string; checkpoint?: string; at: number }
-  | { type: "ask"; session: string; question: string; checkpoint?: string; at: number }
-  | { type: "answer"; target: string; answer: string; at: number }
-  // Issuer flow (#376): the issuer captures new work; the director routes it to a worker.
-  | { type: "issue"; session: string; id: string; title: string; body?: string; suggested?: string; at: number }
-  | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }
-  // Verification jury (#394): a juror reports a structured verdict on a landing; the
-  // foreman tallies them and, on reject, drives the existing revert+ping reflex.
-  | { type: "verdict"; juror: string; target: string; verdict: JuryVerdict; reason?: string; relevant?: boolean; at: number };
 
 /**
  * Parse one TSV `$BSC_COORD_LOG` line into an event, or null if unrecognized.
@@ -460,15 +369,6 @@ export function ingestCoordLog(lines: string[], initial: CoordState = emptyCoord
 // prompt) and what the inbox/health view shows. The store/PTY execution (relaunch the
 // pane, render the panel) is a thin layer on top of these in a later slice.
 
-export interface WakeAction {
-  /** The parked session/pane to relaunch. */
-  session: string;
-  /** The token-aware wake prompt seeded into the fresh session. */
-  prompt: string;
-  /** The deps that gated this waiter (now all satisfied). */
-  deps: CoordRef[];
-}
-
 /** A ref's latch status as a short label (for prompts + the inbox view). */
 function statusOf(s: CoordState, ref: CoordRef): "satisfied" | "failed" | "pending" {
   const l = s.latches[refKey(ref)];
@@ -553,18 +453,6 @@ export function planWakes(woken: Waiter[], s: CoordState): WakeAction[] {
   return woken.map((w) => ({ session: w.session, deps: w.deps, prompt: wakePromptFor(w, s) }));
 }
 
-/** One blocked session as the inbox / blocked-chain health view would show it. */
-export interface BlockedView {
-  session: string;
-  checkpoint?: string;
-  deps: { ref: string; status: "satisfied" | "failed" | "pending" }[];
-  /** True when any dep has failed -- a stalled chain to escalate. */
-  stalled: boolean;
-  /** True when this session is part of a wait-for cycle -- a deadlock to escalate
-   *  (no producer will ever satisfy it, so it would otherwise hang forever). */
-  deadlocked: boolean;
-}
-
 /** Derive the inbox/health view from latch state: every still-parked waiter, each dep's
  *  status, whether the chain is stalled (a failed dep), and whether it sits in a wait-for
  *  cycle (a deadlock). `producerOf` resolves which session satisfies a dep (defaults to
@@ -613,17 +501,6 @@ export function isFreshlyReady(w: Waiter, s: CoordState, now: number, windowMs: 
 // (the third satisfy path). Kept pure -- the actual repo-checking lives in the injected
 // `evaluate`, so the readiness logic stays exhaustively unit-testable.
 
-/** A parsed `predicate:` expression -- the readiness checks the host evaluates against
- *  the repo. The inner expr (after the `predicate:` prefix) carries an optional kind
- *  prefix: `tests-pass`, `symbol:<Name>`, `file-exists:<path>`, `stub:<name>`; anything
- *  else is a `custom` expr the host interprets. Lets the evaluator dispatch on kind. */
-export type Predicate =
-  | { kind: "tests-pass" }
-  | { kind: "symbol"; name: string }       // symbol:TunnelState -- a symbol exists in the tree
-  | { kind: "file-exists"; path: string }  // file-exists:src/lib/x.ts
-  | { kind: "stub"; name: string }         // stub:handleFoo -- a stub/impl landed
-  | { kind: "custom"; expr: string };      // anything else -- host-defined
-
 /** Parse a predicate's inner expr (the part after `predicate:`) into a typed {@link
  *  Predicate}. Never throws -- an unrecognized/headless expr becomes `custom`. Pure. */
 export function parsePredicate(expr: string): Predicate {
@@ -641,13 +518,6 @@ export function parsePredicate(expr: string): Predicate {
   }
   return { kind: "custom", expr: e };
 }
-
-/** Evaluates whether a predicate expression currently holds against the repo. Injected by
- *  the runtime (the host runs the actual check); pure here so it's testable. Returns
- *  `true` (holds -> satisfy), `false` (does not hold), or `undefined` (not yet evaluable
- *  -- left pending, retried on the next poll). The arg is the predicate's inner expr (the
- *  part after `predicate:`) -- feed it through {@link parsePredicate} to dispatch on kind. */
-export type PredicateEvaluator = (expr: string) => boolean | undefined;
 
 /**
  * Evaluate every UNSATISFIED `predicate:` dep currently gating a parked waiter and satisfy
@@ -726,22 +596,6 @@ export function pendingPredicateExprs(s: CoordState): string[] {
 // deadlocked > stalled (both are "stuck"); `ready` comes from a disjoint set (the
 // newly-woken waiters, which are no longer parked) so it never collides.
 
-export type CoordNotificationKind = "ready" | "stalled" | "deadlocked";
-
-/** A push-worthy coordination event for one session: what happened and a mobile-facing
- *  one-liner. `refs` are the involved dep keys (for the inbox / notification body). */
-export interface CoordNotification {
-  kind: CoordNotificationKind;
-  /** The parked/woken session (pane id) the notification is about. */
-  session: string;
-  /** A short human/mobile-facing summary -- used as the `user_request` prompt. */
-  summary: string;
-  /** The dep keys involved (landed deps for `ready`; the stuck deps otherwise). */
-  refs: string[];
-  /** A stable de-dupe key (`<kind>:<session>`) so a poll loop fires each alert once. */
-  key: string;
-}
-
 function notificationSummary(kind: CoordNotificationKind, session: string, refs: string[]): string {
   const list = refs.join(", ");
   switch (kind) {
@@ -806,30 +660,10 @@ export function coordNotifications(
 // and the same algorithm lights up for contract/issue/file cycles too (#199 AC#7). Pure (no
 // IO) so it's fully testable.
 
-/** Resolves which session is expected to satisfy a dep ref, or undefined if unknown. */
-export type ProducerOf = (ref: CoordRef) => string | undefined;
-
 /** The default resolver: only a `session:<id>` dep yields a producer (itself). All other
  *  kinds are unknown until plan-derived Produces/Consumes is supplied (#199 AC#7). */
 export function defaultProducerOf(ref: CoordRef): string | undefined {
   return ref.kind === "session" ? ref.id : undefined;
-}
-
-/** One session's declared outputs -- the plan-derived data a {@link ProducerOf} is built
- *  from. The fields mirror what the planner already carries: `contracts` are
- *  `FeatureContract.produces[].name`, `issues` are `AgentStream.issues`, and `owns` are
- *  `AgentStream.owns` (file globs). `session` is the producing session id -- the SAME id
- *  space as a waiter's `session` and a `session:<id>` ref (the launched pane id), so the
- *  resolved edges land on real parked waiters. */
-export interface SessionProduces {
-  /** Producing session id (pane id) -- must match the waiter ids edges connect to. */
-  session: string;
-  /** Contract names it produces (resolves `contract:<name>` deps). */
-  contracts?: string[];
-  /** Issue refs it owns -- `#42`, `42`, or a number (resolves `#issue` deps). */
-  issues?: (string | number)[];
-  /** File globs it owns -- `src/lib/**` (resolves `file:<path>` deps via glob match). */
-  owns?: string[];
 }
 
 /** Parse an issue ref (`#42`, `42`, or `42`) into its number, or undefined if not one. */
@@ -892,12 +726,6 @@ export function producesFromPaneStreams(
     issues: s.issues,
     contracts: s.contracts,
   }));
-}
-
-/** A detected wait-for cycle: the parked sessions that mutually block, in ring order.
- *  A single-element cycle is a session waiting (transitively) on its own output. */
-export interface Deadlock {
-  cycle: string[];
 }
 
 /**
@@ -979,30 +807,6 @@ function tarjanCycles(adj: Map<string, Set<string>>): Deadlock[] {
 // juror's reason as a fix-forward instruction. Pure + testable; the foreman/strategy
 // wiring lands on top.
 
-/** Cheap, risk-triage signals about a landing — decide fast-path vs convene a panel. */
-export interface LandingSignals {
-  /** The change touched a shared / contract file (high blast radius). */
-  touchesSharedOrContract?: boolean;
-  /** The change touched a security-sensitive path. */
-  securitySensitive?: boolean;
-  /** A region that was reverted before (repeat-offender). */
-  revertedBefore?: boolean;
-  /** Lines changed in the diff. */
-  diffLines?: number;
-  /** Coverage delta (negative = a drop). */
-  coverageDelta?: number;
-}
-
-export type TriageDecision = "fast-path" | "panel";
-
-/** Risk-triage thresholds (overridable). */
-export interface TriageConfig {
-  /** Diffs at/above this many lines convene a panel. */
-  maxDiffLines: number;
-  /** Coverage drops at/below this delta convene a panel. */
-  minCoverageDelta: number;
-}
-
 export const DEFAULT_TRIAGE_CONFIG: TriageConfig = { maxDiffLines: 150, minCoverageDelta: -1 };
 
 /**
@@ -1016,35 +820,6 @@ export function triageLanding(sig: LandingSignals, cfg: TriageConfig = DEFAULT_T
   if ((sig.diffLines ?? 0) >= cfg.maxDiffLines) return "panel";
   if (sig.coverageDelta !== undefined && sig.coverageDelta <= cfg.minCoverageDelta) return "panel";
   return "fast-path";
-}
-
-export type JuryVerdict = "pass" | "reject";
-
-/** One juror's structured verdict on a landing. `relevant` (default true) marks whether
- *  the change touches this juror's slice — used by the quorum rule. */
-export interface JurorVerdict {
-  juror: string;
-  verdict: JuryVerdict;
-  reason?: string;
-  location?: string;
-  relevant?: boolean;
-}
-
-/** How the foreman tallies the panel. veto: any reject fails. majority: >half reject.
- *  quorum: only jurors whose slice the change touches vote, majority of those. */
-export type AggregationRule = "veto" | "majority" | "quorum";
-
-/** Strictness when a juror is uncertain. pass-unless-concrete (default for a merge gate):
- *  only a reject WITH a concrete reason counts — keeps the fleet flowing. reject-on-doubt:
- *  every reject counts (safety over speed; for bug-hunts). */
-export type JuryStrictness = "pass-unless-concrete" | "reject-on-doubt";
-
-export interface JuryAggregate {
-  verdict: JuryVerdict;
-  /** The jurors whose rejection counted toward the outcome. */
-  rejecters: string[];
-  /** The first counted rejecter's reason — the fix-forward instruction. */
-  reason?: string;
 }
 
 /**
@@ -1087,19 +862,6 @@ export function tallyVerdicts(events: CoordEvent[]): Map<string, JurorVerdict[]>
   const out = new Map<string, JurorVerdict[]>();
   for (const [target, jurors] of byTarget) out.set(target, [...jurors.values()]);
   return out;
-}
-
-/** What the foreman does with a tallied landing: pass, or revert + ping the owner. The
- *  `ref` is the landing parsed as a coord ref (an issue #, a `session:` id, …), ready to
- *  feed into {@link fail} — the SAME revert reflex the watchdog runs (#382). */
-export interface JuryAction {
-  target: string;
-  action: "pass" | "revert";
-  ref: CoordRef | null;
-  /** The fix-forward reason (a counted rejecter's reason), present on a revert. */
-  reason?: string;
-  /** The owner-facing ping message, present on a revert. */
-  ping?: string;
 }
 
 /** Compose the owner-facing ping for a rejected landing — the fix-forward instruction. */
