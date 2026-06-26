@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
+import { usePoll } from "@/shared/hooks/usePoll";
 
 export function usePlanSkillsManagement(sessionGroupId: string, projectTitle: string): void {
   const ensureSessionGroup = useAppStore(s => s.ensureSessionGroup);
@@ -20,9 +21,5 @@ export function usePlanSkillsManagement(sessionGroupId: string, projectTitle: st
   // Re-read the global skills.db while planning so skills the planner authors with `bsc-skill add`
   // (and their session-group membership) surface live in the pane — the skills.json file-poll that
   // used to do this was retired (#1417/#1419). Cheap (no push-back); 2.5s ≈ the section-poll cadence.
-  useEffect(() => {
-    void refreshSkills();
-    const t = setInterval(() => void refreshSkills(), 2500);
-    return () => clearInterval(t);
-  }, [refreshSkills]);
+  usePoll(() => { void refreshSkills(); }, 2500, [refreshSkills]);
 }

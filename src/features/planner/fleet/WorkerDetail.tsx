@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { CardHead, StatCard, Avatar } from "@/shared/ui/charts";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
@@ -75,19 +76,13 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   // Real per-worker activity from the bsc-audit log (#257): tool attempts tagged
   // with this pane id, polled while the page is open, newest first.
   const [audit, setAudit] = useState<AuditRecord[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => invoke<string[]>("read_audit_log", { limit: 4000 })
-      .then((lines) => {
-        if (cancelled) return;
-        const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
-        setAudit(rows.slice(-12).reverse());
-      })
-      .catch(() => {});
-    load();
-    const t = setInterval(load, 4000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, [worker.id]);
+  usePoll((isCancelled) => invoke<string[]>("read_audit_log", { limit: 4000 })
+    .then((lines) => {
+      if (isCancelled()) return;
+      const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
+      setAudit(rows.slice(-12).reverse());
+    })
+    .catch(() => {}), 4000, [worker.id]);
 
   // Done-time audit snapshot (#920): the worker's concrete output — branch, commits, changed
   // files, PR, and the transcript path — read from the worktree at view time. Reloads when the
