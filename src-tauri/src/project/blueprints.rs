@@ -2,13 +2,8 @@ use crate::*;
 
 /// A user blueprint's on-disk path; the id is slugified so it can't escape the dir.
 pub(crate) fn blueprint_file(id: &str) -> Result<std::path::PathBuf, String> {
-    let safe: String = id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-        .collect();
-    if safe.is_empty() || safe == "." || safe == ".." {
-        return Err("blueprint id is empty/invalid".into());
-    }
+    let safe = crate::platform::fsx::safe_dir_segment(id, |c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        .map_err(|_| "blueprint id is empty/invalid".to_string())?;
     Ok(bsc_base_dir().join("blueprints").join(format!("{safe}.json")))
 }
 /// The JSON of every user blueprint on disk (the library hydrates from this + the bundled built-ins).
