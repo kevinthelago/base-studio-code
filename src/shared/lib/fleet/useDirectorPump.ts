@@ -14,8 +14,9 @@
 //
 // Mounted once in ConsoleScreen (which stays mounted across screens). Pure logic lives in
 // directorDrive.ts + coordination.ts; this is the thin Tauri/React actuator.
-import { useEffect, useRef, type RefObject } from "react";
+import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/store";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { injectPrompt } from "./paneInject";
 import { readCoordState } from "./useCoordLog";
 import {
@@ -33,72 +34,66 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
   // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending — so a
   // question is injected exactly once (not re-queued every 3s) until it is answered.
   const surfaced = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      const drives = useAppStore.getState().paneDirectorDrive;
-      const paneIds = Object.keys(drives);
-      if (paneIds.length === 0) return;
-      const res = await readCoordState(2000);
-      if (cancelled || !res) return;
-      const now = Date.now();
-      const statuses = paneStatusesRef.current ?? {};
+  usePoll(async (isCancelled) => {
+    if (isCancelled()) return;
+    const drives = useAppStore.getState().paneDirectorDrive;
+    const paneIds = Object.keys(drives);
+    if (paneIds.length === 0) return;
+    const res = await readCoordState(2000);
+    if (isCancelled() || !res) return;
+    const now = Date.now();
+    const statuses = paneStatusesRef.current ?? {};
 
-      // Pending unanswered questions, re-derived from the whole log (restart-safe).
-      const { lines, state } = res;
-      const pendingAsks = state.asking;
-      const pendingKeys = new Set(pendingAsks.map(askKey));
-      for (const k of [...surfaced.current]) {
-        const bar = k.indexOf("|");
-        if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
-      }
+    // Pending unanswered questions, re-derived from the whole log (restart-safe).
+    const { lines, state } = res;
+    const pendingAsks = state.asking;
+    const pendingKeys = new Set(pendingAsks.map(askKey));
+    for (const k of [...surfaced.current]) {
+      const bar = k.indexOf("|");
+      if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
+    }
 
-      for (const paneId of paneIds) {
-        if (inFlight.current.has(paneId)) continue;
-        const drive = resolveDirectorDrive(drives[paneId]);
-        const idle = statuses[paneId] === "idle";
+    for (const paneId of paneIds) {
+      if (inFlight.current.has(paneId)) continue;
+      const drive = resolveDirectorDrive(drives[paneId]);
+      const idle = statuses[paneId] === "idle";
 
-        // 1) Deliver pending worker questions immediately -- the must-not-drop case. No idle
-        // gate: Claude Code queues input typed mid-turn, so the question lands as the
-        // director's next message. The surfaced set keeps it to exactly one injection per ask.
-        if (drive === "event" || drive === "heartbeat") {
-          const fresh = pendingAsks.filter((a) => !surfaced.current.has(paneId + "|" + askKey(a)));
-          if (fresh.length > 0) {
-            for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
-            inFlight.current.add(paneId);
-            void injectPrompt(paneId, pendingAskPrompt(fresh))
-              .catch(() => {})
-              .finally(() => inFlight.current.delete(paneId));
-            continue; // one injection per pane per tick
-          }
-        }
-
-        // 2) Notifications + heartbeat (cursor-based). First sight seeds the cursor at the
-        // current end so we only NOTIFY on activity after launch (asks are handled above).
-        let prev = cursors.current.get(paneId);
-        if (!prev) { prev = { cursor: lines.length, lastInjectAt: now }; cursors.current.set(paneId, prev); }
-        const res = decideDirectorAction({
-          lines,
-          cursor: prev.cursor,
-          drive,
-          idle,
-          now,
-          lastInjectAt: prev.lastInjectAt,
-          heartbeatMs: DEFAULT_HEARTBEAT_MS,
-          cooldownMs: INJECT_COOLDOWN_MS,
-        });
-        cursors.current.set(paneId, { cursor: res.cursor, lastInjectAt: res.lastInjectAt });
-        if (res.inject) {
+      // 1) Deliver pending worker questions immediately -- the must-not-drop case. No idle
+      // gate: Claude Code queues input typed mid-turn, so the question lands as the
+      // director's next message. The surfaced set keeps it to exactly one injection per ask.
+      if (drive === "event" || drive === "heartbeat") {
+        const fresh = pendingAsks.filter((a) => !surfaced.current.has(paneId + "|" + askKey(a)));
+        if (fresh.length > 0) {
+          for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
           inFlight.current.add(paneId);
-          void injectPrompt(paneId, res.inject)
+          void injectPrompt(paneId, pendingAskPrompt(fresh))
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
+          continue; // one injection per pane per tick
         }
       }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [paneStatusesRef]);
+
+      // 2) Notifications + heartbeat (cursor-based). First sight seeds the cursor at the
+      // current end so we only NOTIFY on activity after launch (asks are handled above).
+      let prev = cursors.current.get(paneId);
+      if (!prev) { prev = { cursor: lines.length, lastInjectAt: now }; cursors.current.set(paneId, prev); }
+      const action = decideDirectorAction({
+        lines,
+        cursor: prev.cursor,
+        drive,
+        idle,
+        now,
+        lastInjectAt: prev.lastInjectAt,
+        heartbeatMs: DEFAULT_HEARTBEAT_MS,
+        cooldownMs: INJECT_COOLDOWN_MS,
+      });
+      cursors.current.set(paneId, { cursor: action.cursor, lastInjectAt: action.lastInjectAt });
+      if (action.inject) {
+        inFlight.current.add(paneId);
+        void injectPrompt(paneId, action.inject)
+          .catch(() => {})
+          .finally(() => inFlight.current.delete(paneId));
+      }
+    }
+  }, POLL_MS, [paneStatusesRef]);
 }
