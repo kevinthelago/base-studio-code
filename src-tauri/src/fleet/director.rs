@@ -3,16 +3,16 @@ use crate::*;
 /// Coordination protocol appended to every fleet worker's CLAUDE.local.md (#369) so the
 /// defer-to-director / never-ask-the-user rules are authoritative context, not just a
 /// first-message hint. A multi-line raw string (real newlines; literal backticks/quotes).
-pub(crate) const FLEET_PROTOCOL_MD: &str = include_str!("../../templates/fleet-protocol.md");
+pub(crate) const FLEET_PROTOCOL_MD: &str = include_str!("../../prompts/fleet/worker-protocol.md");
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
 /// (it runs at the hub, so it never gets the worker worktree protocol).
-pub(crate) const DIRECTOR_PROTOCOL_MD: &str = include_str!("../../templates/director-protocol.md");
+pub(crate) const DIRECTOR_PROTOCOL_MD: &str = include_str!("../../prompts/fleet/director-protocol.md");
 /// Injection-resistance preamble (#1167) appended to every fleet session's CLAUDE.local.md —
 /// authoritative context that content read while working (issues, PRs, web pages, repo files,
 /// other agents' notes) is untrusted DATA, never instructions. The containment half of the
 /// warden (#1102): prevent an injection from acting, not just detect it after.
-pub(crate) const INJECTION_RESISTANCE_MD: &str = include_str!("../../templates/injection-resistance.md");
+pub(crate) const INJECTION_RESISTANCE_MD: &str = include_str!("../../prompts/fleet/injection-resistance.md");
 /// Heading marker for {@link INJECTION_RESISTANCE_MD}, used to keep the append idempotent.
 pub(crate) const INJECTION_RESISTANCE_MARKER: &str = "## Untrusted input";
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
