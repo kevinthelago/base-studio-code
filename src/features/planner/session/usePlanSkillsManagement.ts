@@ -8,15 +8,18 @@ import { usePoll } from "@/shared/hooks/usePoll";
 export function usePlanSkillsManagement(sessionGroupId: string, projectTitle: string): void {
   const ensureSessionGroup = useAppStore(s => s.ensureSessionGroup);
   const refreshSkills = useAppStore(s => s.refreshSkills);
+  // Whether the per-project session group exists YET. It's created lazily by
+  // `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` the first time the planner authors a skill —
+  // NOT on planner open, so a project that authors none never leaves an empty group behind (#1616).
+  const groupExists = useAppStore(s => s.skillGroups.some(g => g.id === sessionGroupId));
 
-  // The per-project planning session skill group (#1419): ensure it exists, named after the project
-  // (renamed in place if the title changes — never clobbering members). Skills the planner authors
-  // via `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join it; the pane highlights its members.
-  // Persistent — reopening the planner keeps collecting into the same group.
+  // Adopt the session group ONCE IT EXISTS (#1419/#1616): never pre-create it. When the planner authors
+  // its first skill, bsc-skill creates the group (placeholder name = its id); the refresh poll below
+  // surfaces it here, and we rename the placeholder to the project name — and again if the title later
+  // changes — without clobbering members. Persistent: reopening the planner keeps collecting into it.
   useEffect(() => {
-    if (!sessionGroupId || !projectTitle) return;
-    ensureSessionGroup(sessionGroupId, projectTitle);
-  }, [sessionGroupId, projectTitle, ensureSessionGroup]);
+    if (groupExists && sessionGroupId && projectTitle) ensureSessionGroup(sessionGroupId, projectTitle);
+  }, [groupExists, sessionGroupId, projectTitle, ensureSessionGroup]);
 
   // Re-read the global skills.db while planning so skills the planner authors with `bsc-skill add`
   // (and their session-group membership) surface live in the pane — the skills.json file-poll that
