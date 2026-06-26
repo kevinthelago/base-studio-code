@@ -86,8 +86,10 @@ pub use runtime::{
     save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
     RUNTIME_AUTH_KINDS,
 };
-pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
-pub use descriptor::{BuildFn, ConnectorDescriptor, ConnectorKind, FetchFn, ResourceDef};
+pub use registry::{LiveSupport, SourceAuth};
+pub use descriptor::{
+    find as source_connector, ConnectorDescriptor, ConnectorKind, FetchFn, ResourceDef, BUILTINS,
+};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};
