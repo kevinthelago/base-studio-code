@@ -4,11 +4,9 @@
 // `sourceLicensing.json`). The panes read those files back via `read_plan_sections`
 // (which returns every .md/.json section keyed by file stem) and render them.
 //
-// Pure types + a tolerant parser + a tiny fetch hook. Mirrors the contract the
-// design prototype's data.jsx uses (collection/data.jsx).
-
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+// Pure types + a tolerant parser. The React fetch hook (`useStageJson`) lives in
+// `useStageJson.ts` so this module stays React-free. Mirrors the contract the design
+// prototype's data.jsx uses (collection/data.jsx).
 
 export type CollectMode = "scrape" | "fetch";
 
@@ -143,31 +141,8 @@ export function parseStageJson<T>(raw: string | undefined): T | null {
   }
 }
 
-interface StageJson<T> { data: T | null; loading: boolean; error: string | null }
-
-/**
- * Load a single planner-written JSON section by file stem (e.g. "collectTargets")
- * for `projectId`. Re-reads when either changes. A project with no such file yields
- * `{ data: null }` — the pane shows its empty state.
- */
-export function useStageJson<T>(projectId: string | undefined, stem: string): StageJson<T> {
-  const [state, setState] = useState<StageJson<T>>({ data: null, loading: !!projectId, error: null });
-
-  useEffect(() => {
-    if (!projectId) { setState({ data: null, loading: false, error: null }); return; }
-    let live = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
-    invoke<Record<string, string>>("read_plan_sections", { projectKey: projectId })
-      .then((sections) => {
-        if (!live) return;
-        setState({ data: parseStageJson<T>(sections?.[stem]), loading: false, error: null });
-      })
-      .catch((e) => { if (live) setState({ data: null, loading: false, error: String(e) }); });
-    return () => { live = false; };
-  }, [projectId, stem]);
-
-  return state;
-}
+/** The `useStageJson` hook's result (also its return type — kept here as a pure type). */
+export interface StageJson<T> { data: T | null; loading: boolean; error: string | null }
 
 /** "2 sources (1 scrape · 1 fetch)" — the source-count summary used in pane headers. */
 export function modeSummary(sources: CollectSource[]): string {

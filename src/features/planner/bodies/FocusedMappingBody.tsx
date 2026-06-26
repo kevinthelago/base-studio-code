@@ -6,7 +6,8 @@
 // when nothing in scope is left ambiguous. Transcribed from source/sections.jsx
 // (MappingCard).
 
-import { useStageJson, type MappingPlan } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type MappingPlan } from "./dataCollection";
 import { Card, Readiness } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";

@@ -5,7 +5,8 @@
 // paging), the capture state (staged / estimate), and a live-run progress bar when
 // a crawl is running. Transcribed from collection/panes.jsx · AcquirePane.
 
-import { useStageJson, type AcquirePlan, type AcquireSource } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type AcquirePlan, type AcquireSource } from "./dataCollection";
 import { Card, ModeChip, Readiness, Kv } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";

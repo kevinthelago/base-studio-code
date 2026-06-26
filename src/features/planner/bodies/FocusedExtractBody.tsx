@@ -5,7 +5,8 @@
 // extraction preview, and coverage — plus a readiness gate. Transcribed from
 // collection/panes.jsx · ExtractPane.
 
-import { useStageJson, type ExtractPlan, type ExtractSource } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type ExtractPlan, type ExtractSource } from "./dataCollection";
 import { Card, ModeChip, EntityChip, Readiness } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";
