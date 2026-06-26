@@ -79,45 +79,11 @@ export const SKIPPED_KEY = "_skipped";
  *  shown in its own Fleet card. See {@link parseFleetFile}. */
 export const FLEET_KEY = "fleet";
 
-/** The linked-repositories file (JSON: `repos.json` — an array of `"owner/repo"`).
- *  The persistent, resume-safe complement to the live `<repo_link>` tag: a resumed
- *  planner can't replay a stream-only tag, but it CAN write this file, so the right
- *  pane reliably shows the repos. Surfaced by the poll like `fleet.json`; not rendered
- *  as a plan section. See {@link parseReposFile}. */
-export const REPOS_KEY = "repos";
-
-/** Legacy reusable-skills file (`skills.json`). The planner used to write it as its CRUD
- *  channel into the global Skills library, but now authors skills with `bsc-skill add`
- *  straight into the skills.db (#1412), and the file-poll → library sync was retired (#1417).
- *  This key is kept only so a stray `skills.json` left on disk by a pre-#1412 project is still
- *  skipped by the section parser (never rendered as a raw-JSON plan section). */
-export const SKILLS_KEY = "skills";
-
 /** The feature list file (JSON: `features.json` — an array of feature objects). The
  *  authoritative artifact of the Features stage (#…): each entry is a user-facing capability
  *  and a fleet stream. Surfaced by the poll like `fleet.json`; not rendered as a plan section —
  *  it drives the Features board. See {@link parseFeaturesFile} in featureList. */
 export const FEATURES_KEY = "features";
-
-/** Parse `repos.json` into a deduped list of `owner/repo` full names. Accepts a bare
- *  JSON array of strings, or `{ "repos": [...] }`. Returns [] on blank/malformed. */
-export function parseReposFile(raw: string): string[] {
-  const t = raw.trim();
-  if (!t) return [];
-  try {
-    const j: unknown = JSON.parse(t);
-    const arr: unknown[] = Array.isArray(j)
-      ? j
-      : (j && typeof j === "object" && Array.isArray((j as { repos?: unknown }).repos))
-        ? (j as { repos: unknown[] }).repos
-        : [];
-    return [...new Set(
-      arr.filter((x): x is string => typeof x === "string" && x.includes("/")).map((x) => x.trim()),
-    )];
-  } catch {
-    return [];
-  }
-}
 
 /**
  * One parallel work stream — a single Claude session with a focused role, a repo,
@@ -207,7 +173,7 @@ export function emptyFleet(): FleetPlan {
 export const ANCHOR_KEYS = ["goal", "phases"] as const;
 
 /** Section keys for the per-repo tier are namespaced `repo__{short}__{topic}`. */
-export const REPO_PREFIX = "repo__";
+const REPO_PREFIX = "repo__";
 
 /**
  * The curated checklist of dimensions covering modern application development,
@@ -348,7 +314,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY || key === FEATURES_KEY) continue;
+    if (key === SKIPPED_KEY || key === FLEET_KEY || key === FEATURES_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];
