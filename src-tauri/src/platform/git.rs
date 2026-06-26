@@ -7,7 +7,9 @@ use crate::platform::process::no_window;
 /// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
 /// failure (non-zero exit, git missing).
 pub(crate) fn git_lines(cwd: &str, args: &[&str]) -> Vec<String> {
-    match std::process::Command::new("git").arg("-C").arg(cwd).args(args).output() {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(cwd).args(args);
+    match no_window(&mut cmd).output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
             .lines()
             .map(|l| l.trim().to_string())
@@ -33,11 +35,9 @@ pub(crate) fn git_output(args: &[&str]) -> String {
 /// `repo_root/.git/info/exclude` is simply wrong there. Returns None when git is unavailable or
 /// `repo_root` is not a repo.
 pub(crate) fn git_path(repo_root: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C").arg(repo_root)
-        .args(["rev-parse", "--git-path", rel])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(repo_root).args(["rev-parse", "--git-path", rel]);
+    let out = no_window(&mut cmd).output().ok()?;
     if !out.status.success() { return None; }
     let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if p.is_empty() { return None; }
