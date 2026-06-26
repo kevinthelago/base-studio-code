@@ -128,6 +128,50 @@ pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::co
     }
 }
 
+/// Atomically write `bytes` to `path`: write a sibling temp file, then rename over the
+/// target (atomic on the same volume). A direct `fs::write` can be observed half-written or
+/// interleaved with another process's write — the failure mode that left trailing bytes after
+/// valid JSON and corrupted `~/.claude.json` when many sessions launched at once (#1683). The
+/// single atomic writer shared by every config writer (`~/.claude.json`, `.claude/settings.json`,
+/// `.mcp.json`, `CLAUDE.md`). The parent directory must already exist.
+pub(crate) fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Pretty-serialize `value` and [`atomic_write`] it to `path`. Produces exactly the bytes
+/// `serde_json::to_string_pretty` does (no trailing newline) so routing a writer through this
+/// helper does not churn the on-disk file. A serialization failure surfaces as an `io::Error`.
+pub(crate) fn atomic_write_json(path: &std::path::Path, value: &serde_json::Value) -> std::io::Result<()> {
+    let s = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
+    atomic_write(path, s.as_bytes())
+}
+
+/// Read `path` and parse it as JSON, coercing the result to a JSON object: a missing/unreadable
+/// file, unparseable contents, or a non-object value (array/string/number/null) all yield an
+/// empty object `{}`. The shared replacement for the read-or-default-then-`if !is_object`
+/// idiom the config writers used to inline before a read-modify-write (#1683).
+pub(crate) fn read_json_object_or_default(path: &std::path::Path) -> serde_json::Value {
+    let mut v: serde_json::Value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    ensure_object(&mut v);
+    v
+}
+
+/// Coerce `v` to a JSON object in place: if it is not already an object (array, scalar, null),
+/// replace it with an empty object `{}`. Absorbs the `if !x.is_object() { *x = json!({}) }`
+/// guard the config writers repeat before treating a nested value as a map (#1683).
+pub(crate) fn ensure_object(v: &mut serde_json::Value) {
+    if !v.is_object() {
+        *v = serde_json::json!({});
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +191,78 @@ mod tests {
         {
             std::os::unix::fs::symlink(target, link).is_ok()
         }
+    }
+
+    /// A unique scratch path under the OS temp dir (no file created).
+    fn scratch_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "bsc_fsx_{tag}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ))
+    }
+
+    #[test]
+    fn atomic_write_json_roundtrips_through_read_json_object_or_default() {
+        let path = scratch_path("roundtrip").with_extension("json");
+        let _ = std::fs::remove_file(&path);
+
+        let value = serde_json::json!({
+            "permissions": { "allow": ["Bash(git *)"], "deny": [] },
+            "n": 7,
+            "nested": { "a": [1, 2, 3] }
+        });
+        atomic_write_json(&path, &value).unwrap();
+
+        // On-disk bytes are exactly to_string_pretty (no trailing newline) so files don't churn.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(on_disk, serde_json::to_string_pretty(&value).unwrap());
+
+        // Round-trips back to the same value as an object.
+        let read_back = read_json_object_or_default(&path);
+        assert_eq!(read_back, value);
+
+        // No leftover temp sibling after the rename.
+        assert!(!path.with_extension("json.tmp").exists());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_json_object_or_default_defaults_for_missing_unparseable_and_non_object() {
+        let empty = serde_json::json!({});
+
+        // Missing file → {}.
+        let missing = scratch_path("missing").with_extension("json");
+        let _ = std::fs::remove_file(&missing);
+        assert_eq!(read_json_object_or_default(&missing), empty);
+
+        // Unparseable contents → {}.
+        let junk = scratch_path("junk").with_extension("json");
+        std::fs::write(&junk, "not json at all").unwrap();
+        assert_eq!(read_json_object_or_default(&junk), empty);
+
+        // A valid but non-object value (array) → {}.
+        let arr = scratch_path("arr").with_extension("json");
+        std::fs::write(&arr, "[1, 2, 3]").unwrap();
+        assert_eq!(read_json_object_or_default(&arr), empty);
+
+        for p in [&junk, &arr] { let _ = std::fs::remove_file(p); }
+    }
+
+    #[test]
+    fn ensure_object_coerces_non_objects_and_preserves_objects() {
+        let mut arr = serde_json::json!([1, 2]);
+        ensure_object(&mut arr);
+        assert_eq!(arr, serde_json::json!({}));
+
+        let mut scalar = serde_json::json!(5);
+        ensure_object(&mut scalar);
+        assert_eq!(scalar, serde_json::json!({}));
+
+        let mut obj = serde_json::json!({ "keep": true });
+        ensure_object(&mut obj);
+        assert_eq!(obj, serde_json::json!({ "keep": true }));
     }
 
     #[test]
