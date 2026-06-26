@@ -8,14 +8,10 @@ import { useAppStore } from "@/store";
 import { resolveRepoPublic } from "@/store/slices/plan";
 import { Dialog } from "@/shared/ui/Dialog";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "../github/ghStructure";
 import type { Section, SectionState } from "../github/ghStructure";
 import {
-  parsePlanFocus, stripPlanFocus,
-  parseStartupScripts, stripStartupScripts, scriptDocRelpath,
-  parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
   buildSectionConfirmMessage, buildSectionSkipMessage,
 } from "./planningSession";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
@@ -76,6 +72,7 @@ import { phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFoo
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
+import { usePlannerTagStream } from "./usePlannerTagStream";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -83,8 +80,7 @@ import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
 import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/features/github/lib/issueProvenance";
-import { parseDataModelTag, stripDataModelTags } from "./planningParse";
-import { TERM_THEME, stripAnsi, terminalShows } from "./planningTerminal";
+import { TERM_THEME, terminalShows } from "./planningTerminal";
 import { GitHubStructureCard, type GhStatusMap, type GhItemState } from "./GitHubStructureCard";
 
 export function Planning({ visible }: { visible: boolean }) {
@@ -1047,11 +1043,14 @@ export function Planning({ visible }: { visible: boolean }) {
   const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
   const unlistenData   = useRef<UnlistenFn | null>(null);
   const unlistenExit   = useRef<UnlistenFn | null>(null);
-  // Accumulated stripped output used to scan for complete <plan_update> tags
-  const bufRef         = useRef("");
-  // Autopilot (#746): an un-consumed copy of the planner's raw output (bufRef is drained by
-  // the tag parsers), for idle-detection + the user-sim.
-  const autopilotTxRef = useRef("");
+  // The planner's PTY tag-parse stream (#1474): owns bufRef + autopilotTxRef and a `processChunk`
+  // that parses + dispatches every structured <tag> the planner emits. bufRef is the tag-scan
+  // buffer (cleared on restart); autopilotTxRef is the un-consumed copy the autopilot reads.
+  const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream({
+    projectId: effectiveProjectId,
+    setActiveSection,
+    setRepoLinkFullNames,
+  });
   const apLastSnapLen  = useRef(0);
   const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
@@ -1238,155 +1237,8 @@ export function Planning({ visible }: { visible: boolean }) {
       // Subscribe before creating the PTY so we never miss early output.
       unlistenData.current = await listen<string>(`pty_data_${paneId}`, ev => {
         term.write(ev.payload);
-
-        // Parse structured tags out of the stripped output stream.
-        bufRef.current += stripAnsi(ev.payload);
-        autopilotTxRef.current += stripAnsi(ev.payload); // un-consumed copy for the autopilot (#746)
-
-        // Quote-flexible helper: matches " U+0022, " U+201C, " U+201D so LLM
-        // smart-quote output doesn't silently break tag detection.
-        // q(s) wraps a string in a char-class that matches any of those three.
-        const Q = '["“”]';
-
-        let m: RegExpExecArray | null;
-
-        // Discovery/context section CONTENT now lives in `context/<topic>.md` files the planner
-        // writes (read by the section poll + by workers) — the single channel (#1019). The redundant
-        // `<plan_update section>` stream tag is retired; its required-set + confirm state moved to the
-        // plan.db context manifest (`bsc-plan context` + the manifest poll above).
-
-        // ── <plan_focus section="key" /> ─────────────────────────────────────
-        // Marks the section Claude is currently discussing. The last focus tag
-        // in this chunk wins (Claude emits one per section as it advances). Any
-        // key is accepted — the focused section may not exist as a card yet.
-        const focusKeys = parsePlanFocus(bufRef.current);
-        if (focusKeys.length > 0) {
-          setActiveSection(focusKeys[focusKeys.length - 1]);
-          bufRef.current = stripPlanFocus(bufRef.current);
-        }
-
-        // ── <repo_link full_name="owner/repo" /> ─────────────────────────────
-        const repoLinkRe = new RegExp(
-          `<repo_link\\s+full_name=${Q}([^\\u0022\\u201c\\u201d]+)${Q}\\s*\\/>`,'g'
-        );
-        let foundLink = false;
-        while ((m = repoLinkRe.exec(bufRef.current)) !== null) {
-          const fullName = m[1];
-          setRepoLinkFullNames(prev =>
-            prev.includes(fullName) ? prev : [...prev, fullName]
-          );
-          // The headless auto-clone effect clones repos as repoLinkFullNames grows — no action needed here.
-          foundLink = true;
-        }
-        if (foundLink) {
-          bufRef.current = bufRef.current.replace(
-            new RegExp(`<repo_link\\s+full_name=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'),
-            ""
-          );
-        }
-
-        // ── <automation_assign name="..." command="..." … /> ──────────────────
-        const autoAssignRe = /<automation_assign([^/]*)\s*\/>/g;
-        let foundAuto = false;
-        while ((m = autoAssignRe.exec(bufRef.current)) !== null) {
-          const attrs  = m[1];
-          // Each attr value may use straight or curly quotes
-          const attrRe = (k: string) => new RegExp(`\\b${k}=${Q}([^\\u0022\\u201c\\u201d]*)${Q}`);
-          const nameM  = attrRe("name").exec(attrs);
-          const cmdM   = attrRe("command").exec(attrs);
-          const schedM = attrRe("schedule").exec(attrs);
-          const descM  = attrRe("description").exec(attrs);
-          if (nameM && cmdM) {
-            useAppStore.getState().addPlanAutomation(projIdSnap, {
-              name:        nameM[1],
-              command:     cmdM[1],
-              schedule:    schedM?.[1],
-              description: descM?.[1],
-            });
-          }
-          foundAuto = true;
-        }
-        if (foundAuto) {
-          bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
-        }
-
-        // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
-        // Registers a per-repo starting script the planner wrote to prompts/.
-        // The path is relative to the project dir; resolve it to a unified-store
-        // relpath and auto-assign so opening that repo's console (dev) or triage
-        // pane uses it. projectId = the planning session key (matches what the
-        // board passes to quick start / triage for existing projects).
-        const scripts = parseStartupScripts(bufRef.current);
-        if (scripts.length > 0) {
-          const key = sanitizeProjectKey(projIdSnap);
-          const store = useAppStore.getState();
-          for (const sc of scripts) {
-            const relpath = scriptDocRelpath(key, sc.path);
-            if (sc.mode === "triage") store.setRepoTriagePromptDoc(projIdSnap, sc.repo, relpath);
-            else                      store.setRepoStartupPromptDoc(projIdSnap, sc.repo, relpath);
-          }
-          bufRef.current = stripStartupScripts(bufRef.current);
-        }
-
-        // <allow_command> retired (#1457): command auto-approval is a per-agent profile property
-        // now, not a planner-declared project/repo allowlist.
-
-        // ── <fleet_plan recommended="N" reasoning="…" director="true" … /> ─────
-        // The fleet-level header: optimal concurrent session count + reasoning +
-        // whether a director session is recommended. fleet.json is authoritative;
-        // this is the fast path for immediate display before the next poll.
-        const fleetMeta = parseFleetPlan(bufRef.current);
-        if (fleetMeta) {
-          const store = useAppStore.getState();
-          store.setPlanFleetMeta(projIdSnap, fleetMeta.recommended, fleetMeta.reasoning, fleetMeta.strategy); // #C
-          store.setPlanDirector(projIdSnap, fleetMeta.director, fleetMeta.directorRole);
-          bufRef.current = stripFleetPlan(bufRef.current);
-        }
-
-        // ── <agent_assign id="…" repo="…" owns="…" issues="…" … /> ────────────
-        // One per work stream. Merged by id so a re-emitted tag refines in place.
-        const agentStreams = parseAgentAssigns(bufRef.current);
-        if (agentStreams.length > 0) {
-          const store = useAppStore.getState();
-          for (const st of agentStreams) store.addPlanAgentStream(projIdSnap, st);
-          bufRef.current = stripAgentAssigns(bufRef.current);
-        }
-
-        // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
-        // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
-
-        // Authored blueprint moved to plan.db (#1022) — the planner now records it with `bsc-plan
-        // blueprint set`, and the DB poll below coerces it into the authored blueprint + pins the
-        // authoring binding. (Was a <blueprint> stream tag + a blueprint.json file.)
-
-        // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
-        // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
-
-        // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
-        // Persists the planner's inferred Data Model to the project's DuckDB store (#1446)
-        // hub (#se-persist). `refined` starts false; the source pane sets it to true
-        // once the user confirms/refines the model interactively.
-        const dm = parseDataModelTag(bufRef.current);
-        if (dm) {
-          invoke("data_persist_model", {
-            projectKey: projIdSnap,
-            model: dm,
-            refined: false,
-          }).catch((e: unknown) => console.warn("data_persist_model failed:", e));
-          bufRef.current = stripDataModelTags(bufRef.current);
-        }
-
-        // Cap buffer to prevent unbounded growth while preserving any partial
-        // in-progress tag that hasn't received its closing counterpart yet.
-        const MAX_BUF = 120_000;
-        if (bufRef.current.length > MAX_BUF) {
-          const lastTagStart = bufRef.current.lastIndexOf("<");
-          bufRef.current = bufRef.current.slice(
-            lastTagStart > 0 && lastTagStart > bufRef.current.length - MAX_BUF
-              ? lastTagStart
-              : bufRef.current.length - MAX_BUF
-          );
-        }
+        // Parse structured tags out of the stripped output stream (#1474, usePlannerTagStream).
+        processChunk(ev.payload);
       });
 
       unlistenExit.current = await listen<unknown>(`pty_exit_${paneId}`, () => {
