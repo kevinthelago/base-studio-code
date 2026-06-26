@@ -15,14 +15,12 @@ import type { Section, SectionState } from "../github/ghStructure";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
-  parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
   buildSectionConfirmMessage, buildSectionSkipMessage,
 } from "./planningSession";
-import { parseCommandsFile } from "@/shared/lib/session/allowedCommands";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, COMMANDS_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
+  ANCHOR_KEYS, SKIPPED_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
   parseFleetFile, canonicalSectionKey,
 } from "../stages/planSections";
 import { resolveSkills } from "@/features/skills/lib/skills";
@@ -284,7 +282,7 @@ export function Planning({ visible }: { visible: boolean }) {
     for (const k of Object.keys(savedSections)) {
       // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
       // `dependencies` is the locked manifest JSON (#1111) — gate-driving, not a prose card.
-      if (k !== SKIPPED_KEY && k !== COMMANDS_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
+      if (k !== SKIPPED_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
     }
     const { project, repos } = groupSections([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -295,21 +293,8 @@ export function Planning({ visible }: { visible: boolean }) {
     });
   }, [savedSections, confirmedSet]);
 
-  // Sync the planner's commands.json (the reliable channel — surfaced by the file
-  // poll like plan sections, so it can't be lost in the PTY stream) into the
-  // per-project/repo command store. Additive: file commands merge in; manual
-  // edits and inline-tag adds are preserved. Runs only when the file changes.
-  const commandsSyncedRef = useRef("");
-  useEffect(() => {
-    const raw = savedSections[COMMANDS_KEY] ?? "";
-    if (raw === commandsSyncedRef.current) return;
-    commandsSyncedRef.current = raw;
-    const { project, repos } = parseCommandsFile(raw);
-    const store = useAppStore.getState();
-    for (const c of project) store.addProjectAllowedCommand(effectiveProjectId, c);
-    for (const [repo, list] of Object.entries(repos))
-      for (const c of list) store.addRepoAllowedCommand(effectiveProjectId, repo, c);
-  }, [savedSections, effectiveProjectId]);
+  // (#1457) Command auto-approval is owned by per-agent profiles now — the planner's legacy
+  // `commands.json` channel + the per-project/repo allowlist store it fed were retired.
 
   // (#1412/#1417) The planner now authors skills with `bsc-skill add` (straight into the global
   // skills.db), so there is no skills.json file-poll → library sync here anymore. The Skills-page
@@ -429,7 +414,7 @@ export function Planning({ visible }: { visible: boolean }) {
       else if (k === FLEET_KEY) fleetJson = v;
       else if (k === "repos") reposJson = v;
       else if (k === SKIPPED_KEY) skippedContent = v;
-      else if (k === COMMANDS_KEY || k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;
+      else if (k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;
       else md[k] = v;
     }
     return hubToCanonical({
@@ -1359,18 +1344,8 @@ export function Planning({ visible }: { visible: boolean }) {
           bufRef.current = stripStartupScripts(bufRef.current);
         }
 
-        // ── <allow_command cmd="cargo" [repo="owner/repo"] /> ─────────────────
-        // Adds a shell command to the project's (or a repo's) auto-approve list,
-        // so the repo's console/triage sessions can run it without a prompt.
-        const allowCmds = parseAllowCommands(bufRef.current);
-        if (allowCmds.length > 0) {
-          const store = useAppStore.getState();
-          for (const a of allowCmds) {
-            if (a.repo) store.addRepoAllowedCommand(projIdSnap, a.repo, a.cmd);
-            else        store.addProjectAllowedCommand(projIdSnap, a.cmd);
-          }
-          bufRef.current = stripAllowCommands(bufRef.current);
-        }
+        // <allow_command> retired (#1457): command auto-approval is a per-agent profile property
+        // now, not a planner-declared project/repo allowlist.
 
         // ── <fleet_plan recommended="N" reasoning="…" director="true" … /> ─────
         // The fleet-level header: optimal concurrent session count + reasoning +

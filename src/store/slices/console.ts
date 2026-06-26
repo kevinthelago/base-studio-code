@@ -367,7 +367,6 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
             disabledPanes: rekeyByPaneId(s.disabledPanes, map),
             paneMcpServers: rekeyByPaneId(s.paneMcpServers, map),
             paneHooks: rekeyByPaneId(s.paneHooks, map),
-            paneAllowedCommands: rekeyByPaneId(s.paneAllowedCommands, map),
             focusQueue: remapFocusQueue(s.focusQueue, map),
           };
         }),
