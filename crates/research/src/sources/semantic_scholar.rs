@@ -35,8 +35,7 @@ pub fn search(http: &Http, query: &SearchQuery) -> Result<Vec<Paper>, String> {
     Ok(papers)
 }
 
-/// Fetch one paper by canonical id (`s2:<paperId>`); also accepts `DOI:<doi>` / `ARXIV:<id>` forms
-/// passed straight through to the Graph API.
+/// Fetch one paper by canonical id (`s2:<paperId>`).
 pub fn fetch(http: &Http, id: &str) -> Result<Option<Paper>, String> {
     let pid = id.strip_prefix("s2:").unwrap_or(id);
     let url = format!("{API}/{}?fields={}", encode(pid), FIELDS);
