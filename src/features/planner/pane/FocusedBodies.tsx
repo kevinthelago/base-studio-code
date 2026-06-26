@@ -1,13 +1,15 @@
 // FocusedBodies — the planner ProjectPane phase bodies (#1332 split out of ProjectPane.tsx).
 // Constants, shared helper components, the per-phase Focused*Body components, and the
 // FocusedPhaseBody dispatcher. ProjectPane.tsx is the thin shell that renders the dispatcher.
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import "./projectPane.css";
 import type {
-  Posture, Perm, Flow, Agent, Repo, Issue, Milestone, ContextFile,
+  Perm, Flow, Repo, Issue, Milestone, ContextFile,
   ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPaneData";
-import { type ModelId, modelTier, tierToModelId } from "@/app/console/lib/models";
+import { type ModelId } from "@/app/console/lib/models";
+import { Tile, Avatar, KindDot } from "./focusedPrimitives";
+import { AgentsA } from "./agentEditor";
 import { featureDefined, type PlanFeature } from "../issues/featureList";
 import type { Phase } from "../stages/focusedPlan";
 import { FileIntakePane } from "../bodies/FileIntakePane";
@@ -37,6 +39,9 @@ import {
 } from "../relationship/relationshipGraph";
 import { DIRECTOR_DRIVES, type DirectorDrive } from "../fleet/directorDrive";
 
+// KindDot lives in focusedPrimitives now (#1560); re-export so ProjectPane's import path is unchanged.
+export { KindDot };
+
 /** The three coordination topologies + their one-line explainers (Permissions control). */
 const TOPOLOGY_OPTS: { id: Topology; label: string; hint: string }[] = [
   { id: "director", label: "Director", hint: "hub-and-spoke — every relationship routes through the director" },
@@ -52,135 +57,16 @@ const DRIVE_HINTS: Record<DirectorDrive, string> = {
   off:       "the director is never driven (a static session)",
 };
 
-/* =================================================================
-   types
-   ================================================================= */
-interface Role { c: string; label: string }
-interface Cap { k: string; g: string; label: string }
-
-/* =================================================================
-   role palette + caps
-   ================================================================= */
-const ROLES: Record<string, Role> = {
-  planner:  { c: "oklch(0.72 0.10 230)", label: "planner" },
-  worker:   { c: "oklch(0.80 0.14 70)",  label: "worker" },
-  reviewer: { c: "oklch(0.70 0.12 300)", label: "reviewer" },
-  triage:   { c: "oklch(0.72 0.10 195)", label: "triage" },
-  tester:   { c: "oklch(0.72 0.13 145)", label: "tester" },
-  director: { c: "oklch(0.70 0.14 350)", label: "director" },
-};
-
-const CAPS: Cap[] = [
-  { k: "read",   g: "R", label: "read files" },
-  { k: "edit",   g: "E", label: "edit files" },
-  { k: "create", g: "C", label: "create & delete" },
-  { k: "run",    g: "$", label: "run commands" },
-  { k: "net",    g: "N", label: "network" },
-  { k: "push",   g: "⇡", label: "commit & push" },
-  { k: "pkg",    g: "P", label: "install packages" },
-];
-
-const PRESETS: Record<string, Perm> = {
-  Plan:   { read: "allow", edit: "deny",  create: "deny",  run: "ask",   net: "ask",   push: "deny",  pkg: "deny" },
-  Build:  { read: "allow", edit: "allow", create: "allow", run: "allow", net: "ask",   push: "ask",   pkg: "ask" },
-  Review: { read: "allow", edit: "deny",  create: "deny",  run: "allow", net: "deny",  push: "deny",  pkg: "deny" },
-  Triage: { read: "allow", edit: "deny",  create: "ask",   run: "deny",  net: "allow", push: "deny",  pkg: "deny" },
-  Full:   { read: "allow", edit: "allow", create: "allow", run: "allow", net: "allow", push: "allow", pkg: "allow" },
-};
-
 function structFor(repoId: string, structure: Milestone[] = []): Milestone[] {
   return structure.filter((m) => m.repo === repoId);
 }
 
-const CTX_KIND: Record<string, string> = {
-  spec:   "oklch(0.72 0.10 230)",
-  claude: "oklch(0.80 0.14 70)",
-  kb:     "oklch(0.70 0.12 300)",
-  doc:    "oklch(0.66 0.06 200)",
-};
-
-/* =================================================================
-   primitives
-   ================================================================= */
-function Dot({ s }: { s: string }) {
-  return <span className={"sdot " + s} />;
-}
-
-function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
-  const R = ROLES[role] || { c: "var(--fg-dim)", label: role };
-  return (
-    <span className="role" style={{
-      background: `color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`,
-      color: R.c, border: `1px solid color-mix(in oklch, ${R.c}, transparent 72%)`,
-    }}>
-      <i style={{ background: R.c }} />{R.label}
-    </span>
-  );
-}
-
-function Avatar({ id, sz = 17, agents = [] }: { id: string; sz?: number; agents?: Agent[] }) {
-  const a = agents.find((x) => x.id === id);
-  const color = a ? a.color : "var(--fg-dim)";
-  const initial = a ? a.initial : "?";
-  return <span className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</span>;
-}
-
-function PostureBar({ perm }: { perm: Perm }) {
-  return (
-    <span className="posture" title="read · edit · create · run · net · push · pkg">
-      {CAPS.map((c) => (
-        <i key={c.k} className={perm[c.k]} title={`${c.label}: ${perm[c.k]}`} />
-      ))}
-    </span>
-  );
-}
-
-function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => void }) {
-  return (
-    <span className="tri">
-      {(["allow", "ask", "deny"] as Posture[]).map((v) => (
-        <button key={v} className={(value === v ? "on " : "") + v}
-          onClick={() => onChange && onChange(v)}>
-          {v === "allow" ? "allow" : v === "ask" ? "ask" : "deny"}
-        </button>
-      ))}
-    </span>
-  );
-}
-
-function FlowBadges({ flow }: { flow: Flow }) {
-  return (
-    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-      <span className="fbadge" title="autonomy">{flow.autonomy}</span>
-      <span className="fbadge" title="push policy">{flow.push}</span>
-      <span className={"fbadge" + (flow.gate === "hard" ? " hard" : "")} title="enforcement gate">
-        {flow.gate} gate
-      </span>
-    </span>
-  );
-}
-
 export type SyncState = "idle" | "running" | "done" | "error";
-function Tile({ v, k }: { v: number | string; k: string }) {
-  return (
-    <div className="tile">
-      <div className="v">{v}</div>
-      <div className="k">{k}</div>
-    </div>
-  );
-}
 
 /** Branch-chip color by lifecycle state (matches the design): review → success,
  *  draft → dim, anything else (active) → info. */
 function branchStateColor(state: string): string {
   return state === "review" ? "var(--success)" : state === "draft" ? "var(--fg-dim)" : "var(--info)";
-}
-
-export function KindDot({ kind }: { kind: string }) {
-  return <span style={{
-    width: 6, height: 6, borderRadius: 2, flex: "0 0 6px",
-    background: CTX_KIND[kind] || "var(--fg-dim)",
-  }} />;
 }
 
 function repoRollup(repoId: string, structure: Milestone[] = []): { ms: Milestone[]; iss: Issue[]; pct: number } {
@@ -190,216 +76,8 @@ function repoRollup(repoId: string, structure: Milestone[] = []): { ms: Mileston
   return { ms, iss, pct };
 }
 
-function Seg({ options, value, onChange, tiny }: {
-  options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
-}) {
-  return (
-    <span style={{
-      display: "inline-flex", border: "1px solid var(--border-soft)",
-      borderRadius: 5, overflow: "hidden", fontFamily: "var(--mono)",
-      fontSize: tiny ? 9 : 9.5,
-    }}>
-      {options.map((o, i) => {
-        const on = o === value;
-        return (
-          <button key={o} onClick={() => onChange && onChange(o)} style={{
-            border: 0, borderRight: i < options.length - 1 ? "1px solid var(--border-soft)" : 0,
-            background: on ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",
-            color: on ? "var(--accent)" : "var(--fg-dim)",
-            padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap",
-          }}>{o}</button>
-        );
-      })}
-    </span>
-  );
-}
-
-function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
-  a: Agent;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
-  onFlow?: (streamId: string, flow: Flow) => void;
-  onModel?: (streamId: string, model: ModelId | undefined) => void;
-}) {
-  const [perm, setPerm] = useState<Perm>(a.perm);
-  const [preset, setPreset] = useState(a.preset);
-  const [flow, setFlow] = useState<Flow>(a.flow);
-  const [model, setModel] = useState<ModelId | undefined>(a.model);
-  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (k: string, v: Posture) => {
-    const next = { ...perm, [k]: v };
-    setPerm(next); setPreset("custom");
-    onPerm?.(a.id, next);
-  };
-  const applyPreset = (p: string) => {
-    const next = { ...PRESETS[p] };
-    setPreset(p); setPerm(next);
-    onPreset?.(a.id, p, next);
-  };
-  return (
-    <>
-      <div style={{ padding: "9px 12px", borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
-          <span className="ulabel">preset</span>
-          <span style={{ flex: 1 }} />
-          {preset === "custom" && <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>● customized</span>}
-        </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-          {Object.keys(PRESETS).map((p) => (
-            <span key={p} className={"preset" + (preset === p ? " on" : "")}
-              onClick={() => applyPreset(p)}>{p}</span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: "6px 12px 10px", borderTop: "1px solid var(--border-soft)" }}>
-        <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {CAPS.map((c) => (
-            <div key={c.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 16, textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>{c.g}</span>
-              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.label}</span>
-              <Tri value={perm[c.k]} onChange={(v) => set(c.k, v)} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {onModel && (
-        <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
-          <div className="ulabel" style={{ marginBottom: 8 }}>model</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
-              onChange={(v) => { const m = v === "default" ? undefined : tierToModelId(v); setModel(m); onModel(a.id, m); }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-              {model ? `claude --model ${modelTier(model)}` : "uses the global default"}
-            </span>
-          </div>
-        </div>
-      )}
-
-      <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
-        <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
-            <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}
-              onChange={(v) => { const next = { ...flow, autonomy: v }; setFlow(next); onFlow?.(a.id, next); }} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
-            <Seg options={["auto-PR", "push-confirm", "commit-only", "none"]} value={flow.push}
-              onChange={(v) => { const next = { ...flow, push: v }; setFlow(next); onFlow?.(a.id, next); }} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
-            <Seg options={["soft", "hard"]} value={flow.gate}
-              onChange={(v) => { const next = { ...flow, gate: v }; setFlow(next); onFlow?.(a.id, next); }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
-              {flow.gate === "hard" ? "blocks on violation" : "warns, continues"}
-            </span>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel, focusedStream, onSelect }: {
-  agents?: Agent[];
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
-  onFlow?: (streamId: string, flow: Flow) => void;
-  onModel?: (streamId: string, model: ModelId | undefined) => void;
-  /** #1392 streams-link: the stream the Streams graph has focused — expand its editor here. */
-  focusedStream?: string;
-  /** Notify the parent which stream's editor opened/closed, so the graph spotlights it too. */
-  onSelect?: (id: string | null) => void;
-}) {
-  const [open, setOpen] = useState<string | null>((agents.find((a) => a.focus) ?? agents[0])?.id ?? null);
-  // When the graph focuses a stream, expand its editor here. Adjusted DURING render (React's
-  // recommended alternative to a sync effect) so it's instant + avoids set-state-in-effect.
-  const [lastFocused, setLastFocused] = useState(focusedStream);
-  if (focusedStream !== lastFocused) {
-    setLastFocused(focusedStream);
-    if (focusedStream) setOpen(focusedStream);
-  }
-  const running = agents.filter((a) => a.status === "run").length;
-  return (
-    <div style={{ padding: "4px 0" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "0 2px 8px",
-        fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
-      }}>
-        <span>{agents.length} agents · {running} running</span>
-        <span style={{ flex: 1 }} />
-        <span className="mini">+ agent</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {agents.map((a) => {
-          const on = open === a.id;
-          return (
-            <div key={a.id} style={{
-              borderRadius: 6, overflow: "hidden",
-              background: "var(--bg-canvas)",
-              border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
-            }}>
-              <div onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }} style={{
-                display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
-                alignItems: "center", padding: "7px 8px", cursor: "pointer",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <Dot s={a.status} />
-                  <Avatar id={a.id} sz={18} agents={agents} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
-                    <RoleChip role={a.role} mute />
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                    <PostureBar perm={a.perm} />
-                    <span style={{
-                      fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>
-                      {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
-                  <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
-                </div>
-              </div>
-
-              {on && (
-                <>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-                    padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
-                    fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)",
-                  }}>
-                    <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
-                    <span style={{ color: "var(--fg-dim)" }}>·</span>
-                    <span>owns</span>
-                    {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
-                    {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
-                  </div>
-                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Silence unused-variable warnings for repoRollup and FlowBadges.
+// Silence the unused-variable warning for repoRollup (kept for a future rollup surface).
 void repoRollup;
-void FlowBadges;
 
 /* =================================================================
    stage-specific body components (#652 / #674)
