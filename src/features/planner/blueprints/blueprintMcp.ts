@@ -9,7 +9,7 @@
 import { type McpServer } from "@/features/mcp/lib/mcpServers";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { catalogLink } from "@/features/mcp/lib/mcpInstall";
-import { applyMcpAssign, type McpStoreLike } from "../shared/planExtensions";
+import { applyMcpAssign, type McpStoreLike } from "../lib/planExtensions";
 import { type Blueprint } from "../stages/blueprints";
 
 /** One pickable MCP server. `id` is the server NAME (the portable ref stored in a blueprint). */

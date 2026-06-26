@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileIntakePane } from "./FileIntakePane";
-import { ROUTE_PROMPT } from "../shared/fileIntake";
+import { ROUTE_PROMPT } from "../lib/fileIntake";
 import { useAppStore } from "@/store";
 
 describe("FileIntakePane (#604)", () => {
