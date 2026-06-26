@@ -3069,6 +3069,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "logs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lopdf"
 version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
