@@ -6,7 +6,8 @@
 // blocked source raises a hard-stop banner — acquisition can't proceed until it's
 // cleared or dropped. Transcribed from collection/panes.jsx · LegitimacyPane.
 
-import { useStageJson, type Licensing, type ClearStatus } from "./dataCollection";
+import { useStageJson } from "./useStageJson";
+import { type Licensing, type ClearStatus } from "./dataCollection";
 import { Card, ModeChip, SourceHead, Readiness } from "./DataCollectionPrimitives";
 
 const mono = "var(--mono)";

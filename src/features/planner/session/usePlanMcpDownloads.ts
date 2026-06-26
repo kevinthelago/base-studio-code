@@ -8,7 +8,7 @@
 import { useCallback, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { catalogLink, repoNameFromLink } from "@/features/mcp/lib/mcpInstall";
-import { type McpDownloadItem } from "../shared/McpDownloadModal";
+import { type McpDownloadItem } from "../pane/McpDownloadModal";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 
 export interface PlanMcpDownloads {

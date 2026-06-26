@@ -43,7 +43,7 @@ import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
 import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
-import { McpDownloadModal } from "../shared/McpDownloadModal";
+import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../shared/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { normalizeDeployConfig } from "../shared/deployConfig";
