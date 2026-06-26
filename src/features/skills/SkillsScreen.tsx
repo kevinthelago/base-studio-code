@@ -22,6 +22,7 @@ import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 import "./skills.css";
 
 type Mode = "library" | "lessons" | "runs";
@@ -35,7 +36,6 @@ const SORTS: SortKey[] = ["Most invoked", "Name (A–Z)", "Success rate", "Recen
 const GROUP_HUES = ["var(--accent)", "var(--danger)", "var(--info)", "var(--violet)", "var(--success)", "var(--fg-muted)"];
 const DRAFT_ID = "__draft__";
 
-interface GhProject { id: string; number: number; title: string }
 const PROJECTS_QUERY = `{ viewer { projectsV2(first: 50) { nodes { id title number } } } }`;
 
 const MODES: Array<{ k: Mode; label: string }> = [

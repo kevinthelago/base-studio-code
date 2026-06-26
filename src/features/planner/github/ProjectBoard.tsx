@@ -4,6 +4,7 @@ import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { reposFromItems } from "../list/projectScan";
+import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 
 // ── GitHub data types ─────────────────────────────────────────────────────────
 
@@ -29,33 +30,6 @@ interface BoardColumn {
   color: string;
 }
 
-// ── Color helpers ─────────────────────────────────────────────────────────────
-
-const GH_OPTION_COLORS: Record<string, string> = {
-  GRAY:   "var(--fg-dim)",
-  BLUE:   "var(--info)",
-  GREEN:  "var(--success)",
-  YELLOW: "oklch(0.78 0.14 70)",
-  ORANGE: "var(--accent)",
-  RED:    "var(--danger)",
-  PINK:   "oklch(0.7 0.18 340)",
-  PURPLE: "oklch(0.68 0.13 290)",
-};
-
-const AVATAR_PALETTE = [
-  "oklch(0.7 0.13 30)",
-  "oklch(0.7 0.10 220)",
-  "oklch(0.68 0.13 145)",
-  "oklch(0.7 0.12 290)",
-  "oklch(0.7 0.14 50)",
-  "oklch(0.65 0.08 195)",
-];
-
-function loginColor(login: string): string {
-  let h = 0;
-  for (const c of login) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
-}
 
 // ── GraphQL query ─────────────────────────────────────────────────────────────
 
@@ -123,7 +97,7 @@ function Avatar({ login, size = 18, ml = 0 }: { login: string; size?: number; ml
   return (
     <span title={"@" + login} style={{
       width: size, height: size, borderRadius: "50%",
-      background: loginColor(login), color: "#1a120a",
+      background: avatarColor(login), color: "#1a120a",
       fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.56,
       display: "flex", alignItems: "center", justifyContent: "center",
       marginLeft: ml,

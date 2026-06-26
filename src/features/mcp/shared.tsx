@@ -6,15 +6,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
+import type { GhProjectRef } from "@/shared/lib/github/types";
 
 export type Scope = "global" | "project";
 
 /** A GitHub Project (subset of the GraphQL `projectsV2` node). */
-export interface GhProject {
-  id: string;
-  number: number;
-  title: string;
-}
+export type GhProject = GhProjectRef;
 
 /** The minimal shape the shared chrome needs from a managed item (server or hook). */
 export interface ManagedItem {

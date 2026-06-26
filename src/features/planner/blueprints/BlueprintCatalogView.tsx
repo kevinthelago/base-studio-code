@@ -7,6 +7,7 @@ import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import { hue, tint, DEFAULT_GIST_SOURCE, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
+import { timeAgo, hueFor } from "@/shared/lib/core/format";
 
 export interface CatalogViewProps {
   /** GitHub account to pull blueprint gists from (defaults to the maintainer's). */
@@ -23,19 +24,6 @@ export interface CatalogViewProps {
   onBack: () => void;
   onManualImport: () => void;
 }
-
-function timeAgo(iso: string): string {
-  if (!iso) return "";
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (!isFinite(s) || s < 0) return "";
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24); if (d < 30) return `${d}d ago`;
-  return `${Math.floor(d / 30)}mo ago`;
-}
-
-const hueFor = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
 
 export function CatalogView({ source = DEFAULT_GIST_SOURCE, token = "", importedById = {}, onImport, onBack, onManualImport }: CatalogViewProps) {
   const [q, setQ] = useState("");

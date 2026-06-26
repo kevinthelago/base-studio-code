@@ -5,6 +5,7 @@ import { githubRequest, githubGraphql } from "@/features/github/lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { openDetachedSection } from "@/app/console/lib/detachWindow";
+import type { GHEvent } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,15 +35,6 @@ interface GhIssue {
   created_at: string;
   closed_at: string | null;
   pull_request?: unknown;
-}
-
-interface GHEvent {
-  id: string;
-  type: string;
-  actor: { login: string };
-  repo: { name: string };
-  payload: unknown;
-  created_at: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
