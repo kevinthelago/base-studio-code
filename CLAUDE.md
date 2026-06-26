@@ -318,11 +318,27 @@ are the full set it needs end to end.
 **1 · Set up the worktree** (branch off the latest `develop`):
 ```bash
 git fetch origin develop
-git checkout -b {issue}-{short-description} origin/develop
-npm install            # only if node_modules is absent — a fresh worktree needs a REAL install.
-                       # NEVER reuse a junctioned node_modules: the junction breaks esbuild (wasm
-                       # fs-deny) and `git worktree remove` will follow it and wipe the main install.
+git worktree add .claude/worktrees/{issue}-{short-description} -b {issue}-{short-description} origin/develop
 ```
+
+**`node_modules` — nested worktrees need NO install.** A worktree created *nested under the repo
+root* (the convention: `.claude/worktrees/<branch>/`) resolves every dependency from the repo-root
+`node_modules` via Node/npm's normal upward directory walk — `tsc`, `vitest`, `eslint`, and the app's
+imports all find it, and `npm run <script>` prepends every ancestor `node_modules/.bin` to PATH. So a
+nested worktree is **zero-install**: 0 MB, 0 install time, and **safe to delete** (no local
+`node_modules`, no junction → `git worktree remove` cannot wipe the shared install). This is enabled by
+`server.fs.strict: false` in `vitest.config.ts`, which lets the install-free worktree read esbuild-wasm
+from the shared ancestor `node_modules` (#1669).
+
+> Two exceptions still need a **real** `npm install` in the worktree:
+> - A **sibling / out-of-repo** worktree (e.g. `../bsc-1474-planning`) — it is not on the repo-root
+>   resolution path.
+> - You need `npx vite build` (the optional gate step) — Vite's dep pre-bundling wants deps physically
+>   present; `typecheck` / `lint` / `test` do not.
+>
+> **NEVER** share `node_modules` via a junction/symlink: the junction breaks esbuild (wasm fs-deny) and
+> `git worktree remove` follows it and wipes the main install. Use the nested zero-install pattern (or a
+> real install), never a link.
 
 **2 · Implement** the minimum change to close the issue, **with its tests in the same branch** (never after).
 
