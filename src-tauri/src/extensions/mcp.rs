@@ -160,20 +160,15 @@ pub(crate) fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> 
 pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Result<(), String> {
     let path = root.join(".mcp.json");
     if mcp_servers.is_empty() && !path.exists() { return Ok(()); }
-    let mut doc: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !doc.is_object() { doc = serde_json::json!({}); }
+    let mut doc = crate::platform::fsx::read_json_object_or_default(&path);
     let servers = doc.as_object_mut().unwrap()
         .entry("mcpServers").or_insert_with(|| serde_json::json!({}));
-    if !servers.is_object() { *servers = serde_json::json!({}); }
+    crate::platform::fsx::ensure_object(servers);
     let smap = servers.as_object_mut().unwrap();
     for m in mcp_servers {
         smap.insert(m.name.clone(), mcp_server_value(m));
     }
-    std::fs::write(&path, serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    crate::platform::fsx::atomic_write_json(&path, &doc).map_err(|e| e.to_string())
 }
 /// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
