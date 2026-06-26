@@ -6,9 +6,8 @@
 
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { ingestCoordLog, emptyCoordState } from "@/shared/lib/fleet/coordination";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { actuateWake, injectWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { planMobileResume, type CoordControlKind } from "./coordControl";
 import { log } from "@/shared/lib/core/log";
@@ -18,9 +17,9 @@ export function useTunnelCoordControl(): void {
     let cancelled = false;
 
     const handle = async (kind: CoordControlKind, session: string): Promise<void> => {
-      const lines = await invoke<string[]>("read_coord_log", { limit: 1000 }).catch(() => null);
-      if (cancelled || !lines) return;
-      const { state, ready } = ingestCoordLog(lines, emptyCoordState());
+      const res = await readCoordState(1000);
+      if (cancelled || !res) return;
+      const { state, ready } = res;
       const plan = planMobileResume(kind, session, state, ready);
       if (!plan) {
         // The phone named a session that isn't parked — ignore rather than wake blindly.
