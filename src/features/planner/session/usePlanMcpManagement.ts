@@ -11,14 +11,14 @@ import { useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } f
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
-import { writeProjectMcpContext } from "../shared/mcpContext";
+import { writeProjectMcpContext } from "../lib/mcpContext";
 import { catalogLink, repoNameFromLink, mcpRepoName } from "@/features/mcp/lib/mcpInstall";
-import { applyMcpAssign } from "../shared/planExtensions";
+import { applyMcpAssign } from "../lib/planExtensions";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { roleCapability, roleWriteRules, roleDeniedCommands } from "@/shared/lib/session/sessionRoles";
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
 import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
-import { type McpInstallState } from "../shared/mcpPaneData";
+import { type McpInstallState } from "../lib/mcpPaneData";
 import { type Blueprint } from "../stages/blueprints";
 
 type StoreMcpServers = Parameters<typeof resolveAllInstalledMcp>[0];

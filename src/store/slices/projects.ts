@@ -23,7 +23,7 @@ import { resolveHooks } from "@/features/mcp/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/mcp/lib/mcpServers";
 import { resolveReferenceContext, resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
-import { resolveStrategy, strategySettings } from "@/features/planner/shared/integrationStrategy";
+import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 
 type ProjectsSlice = Pick<AppStore,

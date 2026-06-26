@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ScanViews } from "./ScanViews";
-import type { SourceConfig } from "../shared/sourceConfig";
+import type { SourceConfig } from "../lib/sourceConfig";
 
 // A two-source scanned config: Salesforce (Account, Contact→Account) + Quickbase (Project→Account),
 // with business processes, an automation, and a formula — exercises all three views.
