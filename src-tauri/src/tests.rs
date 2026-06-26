@@ -1,7 +1,7 @@
 use crate::*;
-use crate::project::{hub::*, plan_files::*, blueprints::*, inspect::*};
-use crate::fleet::{staging::*, worktree::*, director::*};
-use crate::observability::audit::*;
+use crate::project::{hub::*, plan_files::*, blueprints::*, inspect::*, files::*};
+use crate::fleet::{worktree::*, director::*};
+use crate::observability::worktree_inspect::*;
 use crate::github::readiness::*;
 use crate::extensions::{mcp::*, cfg::*};
 use crate::console::settings::*;

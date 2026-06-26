@@ -3,4 +3,4 @@
 pub mod logs;
 pub mod perf;
 pub mod tokens;
-pub mod audit;
+pub mod worktree_inspect;
