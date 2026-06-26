@@ -4,7 +4,7 @@
 // surfaced for the user to act on (S3). Manual scratch shells are flagged reap-only (never
 // restored, per #1176).
 import { invoke } from "@tauri-apps/api/core";
-import { paneIdFor, parsePaneIdentity, type PaneIdentityKind } from "./paneIdentity";
+import { paneIdFor, parsePaneIdentity, isPlanningPaneId, type PaneIdentityKind } from "./paneIdentity";
 
 /** A session reconstructed by the backend from durable sources (#1266 S2 `discover_sessions`). */
 export interface DiscoveredSession {
@@ -70,13 +70,15 @@ export function openPaneIds(tabs: ReconcileTab[]): Set<string> {
  * Reconcile the backend's discovered sessions against the open tabs (#1266 S3): keep only the
  * sessions NOT currently represented by an open pane, each enriched with its parsed `kind` and a
  * `reapOnly` flag. Reap-only sessions are killed, never restored: manual scratch shells (#1176)
- * and `orphaned` shells of a deleted project (unrestorable — no plan, no project, #1279). This is
- * the gap the recovery UI presents for the user to decide on.
+ * and `orphaned` shells of a deleted project (unrestorable — no plan, no project, #1279). The
+ * dedicated PLANNER pane (`planning_<key>`) is dropped entirely — a planning session is re-entered
+ * from the Projects page, not the recovery banner (#1579). This is the gap the recovery UI presents
+ * for the user to decide on.
  */
 export function reconcileSessions(discovered: DiscoveredSession[], tabs: ReconcileTab[]): RecoverableSession[] {
   const open = openPaneIds(tabs);
   return discovered
-    .filter((d) => !open.has(d.paneId))
+    .filter((d) => !open.has(d.paneId) && !isPlanningPaneId(d.paneId))
     .map((d) => {
       const kind = parsePaneIdentity(d.paneId)?.kind ?? "unknown";
       return { ...d, kind, reapOnly: kind === "manual" || d.status === "orphaned" };
