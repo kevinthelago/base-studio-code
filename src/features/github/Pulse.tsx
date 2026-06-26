@@ -12,7 +12,7 @@ import {
 } from "@/shared/ui/charts";
 import type { GithubRepo } from "@/store";
 import { BranchGraph } from "./BranchGraph";
-import { useRepoPulse, type RepoPulseLive } from "@/shared/hooks/useRepoPulse";
+import { useRepoPulse, type RepoPulseLive } from "./lib/useRepoPulse";
 import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "@/shared/data/repoPulse";
 import type { CiHealth, PulseKpis } from "./lib/repoPulseLive";
 import { BRANCH_STATUS } from "@/shared/data/repoPulse";

@@ -35,7 +35,7 @@ import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
-import { toSessionPayloads, mcpAllowRules } from "@/shared/lib/session/sessionConfig";
+import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";

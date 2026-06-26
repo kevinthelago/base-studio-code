@@ -8,7 +8,7 @@ import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar,
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
-import { useFleetGithub, type FleetGithub } from "@/shared/hooks/useFleetGithub";
+import { useFleetGithub, type FleetGithub } from "./useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
