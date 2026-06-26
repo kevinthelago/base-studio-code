@@ -7,7 +7,7 @@
 // unit-tested; the Rust side (`write_worker_context`) writes it as the lead of the
 // worktree's CLAUDE.local.md, ahead of the per-repo context, protocol, and skills.
 
-import type { AgentStream } from "../stages/planSections";
+import type { AgentStream } from "./planFleet";
 import { buildWorkerDependencyBlock, type PlanDependency } from "../issues/dependencies";
 import { COMMONS_STREAM_ID } from "./commonsGate";
 

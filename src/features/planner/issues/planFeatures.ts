@@ -14,7 +14,7 @@
 // Pure (no React/Tauri) so the parsing is unit-testable and shared between Planning.tsx
 // and its tests.
 
-import { parseSectionKey } from "../stages/planSections";
+import { parseTopicKey } from "../stages/planTopics";
 import type { PlanIssue } from "./planIssues";
 
 /** The repo-tier topic prefix that marks a section as a feature (`feat__{slug}`). */
@@ -25,7 +25,7 @@ export const FEATURE_LABEL = "type:feature";
 
 /** True when a section key is a per-repo feature section (`repo__{short}__feat__{slug}`). */
 export function isFeatureKey(key: string): boolean {
-  const info = parseSectionKey(key);
+  const info = parseTopicKey(key);
   return info.tier === "repo" && info.repo !== null && info.topic.startsWith(FEATURE_PREFIX)
     && info.topic.length > FEATURE_PREFIX.length;
 }
@@ -33,7 +33,7 @@ export function isFeatureKey(key: string): boolean {
 /** The feature slug for a feature key, or null when the key isn't a feature section. */
 export function featureSlug(key: string): string | null {
   if (!isFeatureKey(key)) return null;
-  return parseSectionKey(key).topic.slice(FEATURE_PREFIX.length);
+  return parseTopicKey(key).topic.slice(FEATURE_PREFIX.length);
 }
 
 /** Title-case a slug (`login-form` → "Login form") as the fallback feature title. */
@@ -171,7 +171,7 @@ export function featureSectionsToIssues(sections: FeatureSectionInput[], repos: 
   for (const s of sections) {
     const slug = featureSlug(s.k);
     if (!slug) continue;
-    const short = parseSectionKey(s.k).repo as string; // isFeatureKey guarantees non-null
+    const short = parseTopicKey(s.k).repo as string; // isFeatureKey guarantees non-null
     const parsed = parseFeatureSection(s.content, slug);
     // Hard gate: no issues for features that haven't completed behavior discovery.
     if (!featureDiscoveryComplete(parsed).complete) continue;

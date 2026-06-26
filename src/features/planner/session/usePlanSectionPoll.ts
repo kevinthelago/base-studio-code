@@ -9,7 +9,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
-import { FLEET_KEY, FEATURES_KEY, canonicalSectionKey } from "../stages/planSections";
+import { FLEET_KEY } from "../fleet/planFleet";
+import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
@@ -184,7 +185,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         for (const [rawKey, content] of entries) {
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
-          const key = canonicalSectionKey(rawKey);
+          const key = canonicalTopicKey(rawKey);
           if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1017/#1018/#1022) — sourced from plan.db above, not a file
           // Dependencies are DB-owned (#1191): once plan.db has supplied the manifest, the DB blob wins
           // over any lingering legacy `dependencies.json`. Until then, let the file through so the

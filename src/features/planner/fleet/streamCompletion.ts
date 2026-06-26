@@ -2,7 +2,7 @@
 // must NOT restart a worker whose work is already done. These pure helpers decide, from the current
 // issue statuses, which streams have finished and which still have outstanding work to (re)launch.
 
-import type { AgentStream } from "../stages/planSections";
+import type { AgentStream } from "./planFleet";
 import type { PlanIssue } from "../issues/planIssues";
 
 /** Refs of issues a worker has nothing left to do on — `complete` (landed) or `verified` (accepted). */
