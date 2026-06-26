@@ -20,7 +20,7 @@ into the existing code, and a phased issue breakdown.
 
 | Object | Kind | Lives next to | What it is |
 |---|---|---|---|
-| **Data Model** | data artifact | Knowledge Block | The canonical, versioned schema that everything maps *into* and the build side generates *over*. The single source of truth. |
+| **Data Model** | data artifact | Skill | The canonical, versioned schema that everything maps *into* and the build side generates *over*. The single source of truth. |
 | **`data-migration-blueprint`** | process template (blueprint) | existing blueprints | Move data from a system the user controls (SAP, Salesforce, a DB, exports) into a Data Model. |
 | **`data-collection-blueprint`** | process template (blueprint) | existing blueprints | Acquire net-new external data — **web scrape** or **dataset fetch** (mode) — into a Data Model. |
 
@@ -53,7 +53,7 @@ category surfaces with no UI work beyond the metadata entry.
 
 ## 3. The Data Model (the substrate)
 
-A first-class, versioned artifact — **sibling to the Knowledge Block, not a blueprint**.
+A first-class, versioned artifact — **sibling to a Skill, not a blueprint**.
 A blueprint references a Data Model by id; the runtime resolves it.
 
 ### 3.1 Shape (proposed)
