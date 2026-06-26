@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, buildPlanStageState,
+  PLAN_STAGES, STAGE_BY_ID, defaultStageConfig, contextOnlyStageConfig, buildPlanStageState,
   stageStatus, enabledOrderedStages, currentStage, BUILT_IN_BLUEPRINTS, resolveEnabledStages,
   type StageConfig, type StageId,
 } from "./planStages";
@@ -17,6 +17,16 @@ describe("planStages — registry", () => {
     const d = defaultStageConfig();
     expect(d.order).toEqual(PLAN_STAGES.map((s) => s.id));
     expect(Object.values(d.enabled).every(Boolean)).toBe(true);
+  });
+
+  it("contextOnlyStageConfig enables only Discovery (context), preserving registry order (#1395)", () => {
+    const c = contextOnlyStageConfig();
+    expect(c.order).toEqual(PLAN_STAGES.map((s) => s.id));
+    expect(c.enabled.context).toBe(true);
+    // every non-context stage starts OFF — they light up additively from discovery signals.
+    expect(PLAN_STAGES.filter((s) => s.id !== "context").every((s) => c.enabled[s.id] === false)).toBe(true);
+    // only Discovery renders in the bar.
+    expect(enabledOrderedStages(c).map((s) => s.id)).toEqual(["context"]);
   });
 
   it("default order puts ui before structure (#510)", () => {
