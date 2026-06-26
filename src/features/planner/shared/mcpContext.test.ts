@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildMcpContext } from "./mcpContext";
-import { type McpServer } from "@/features/extensions/lib/mcpServers";
+import { type McpServer } from "@/features/mcp/lib/mcpServers";
 import { type CatalogItem } from "@/shared/data/mcpCatalog";
 
 const mk = (name: string): McpServer => ({ id: name, name, enabled: true, projects: [], transport: "stdio", command: "x" });

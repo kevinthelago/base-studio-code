@@ -34,7 +34,7 @@ import { accentVars } from "@/features/settings/lib/appearance";
 // startup path — both the dev transform and the production bundle.
 const GitHubScreen      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubScreen })));
 const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
-const McpScreen         = lazy(() => import("@/features/extensions").then((m) => ({ default: m.McpScreen })));
+const McpScreen         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpScreen })));
 const SettingsScreen    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsScreen })));
 const ProjectsScreen    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsScreen })));
 const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));

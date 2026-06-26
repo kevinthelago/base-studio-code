@@ -1,6 +1,6 @@
 // Shared helpers for downloadable (first-party) MCP servers — the bridge between a
 // catalog entry's GitHub download link and the on-disk install path its run config
-// points at. Pure (no React/Tauri) so the Extensions screen, the planner-assign path,
+// points at. Pure (no React/Tauri) so the MCP screen, the planner-assign path,
 // and the planning-page panel all resolve `{dir}` the same way.
 
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
