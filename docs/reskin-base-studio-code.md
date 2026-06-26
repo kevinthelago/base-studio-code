@@ -37,5 +37,5 @@ while doubling as the flagship demo of the blueprint-authoring + gist-distributi
 The gist is published verbatim from the canonical source above. To update it, edit
 `docs/blueprints/bsc-reskin/extension.json`, bump the manifest `version`, and update the gist
 (`gh gist edit <id> docs/blueprints/bsc-reskin/extension.json`, or re-publish from the planner's
-blueprint-authoring flow). A CI test (`src/screens/planner/blueprints/bscReskinGist.test.ts`) keeps
+blueprint-authoring flow). A CI test (`src/features/planner/blueprints/bscReskinGist.test.ts`) keeps
 the source valid against the same envelope + blueprint coercion the in-app import runs.
