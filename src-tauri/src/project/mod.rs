@@ -5,4 +5,5 @@ pub mod files;
 pub mod hub;
 pub mod plan_files;
 pub mod blueprints;
-pub mod inspect;
+pub mod dead_code;
+pub mod ui_skeleton;
