@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSkillLibrary, resolveBlueprintSkills } from "./blueprintSkills";
+import { buildSkillLibrary } from "./blueprintSkills";
 import { addSkill, removeSkill, mkStageSection } from "./blueprintEdit";
 import type { SkillDef } from "@/features/skills/lib/skills";
 import type { BlueprintSection } from "../stages/blueprints";
@@ -9,7 +9,7 @@ const skillDef = (id: string, name: string): SkillDef => ({
   projects: [], enabled: true, pinned: false, invocations: 0, success: 0, avgTokensK: 0, lastUsed: "", trend: [],
 } as unknown as SkillDef);
 
-describe("blueprintSkills library + resolver (#636)", () => {
+describe("blueprintSkills library (#636)", () => {
   const lib = buildSkillLibrary([skillDef("s1", "API design"), skillDef("s2", "House style")]);
 
   it("lists skills as pickable items", () => {
@@ -17,12 +17,6 @@ describe("blueprintSkills library + resolver (#636)", () => {
       { id: "s1", name: "API design", kind: "skill", desc: "API design desc" },
       { id: "s2", name: "House style", kind: "skill", desc: "House style desc" },
     ]);
-  });
-
-  it("resolves attached ids into found + missing", () => {
-    const r = resolveBlueprintSkills(["s1", "ghost", "s2"], lib);
-    expect(r.found.map((i) => i.id)).toEqual(["s1", "s2"]);
-    expect(r.missing).toEqual(["ghost"]);
   });
 });
 

@@ -9,7 +9,7 @@ export const hue = (h: number): string => `oklch(0.74 0.11 ${h})`;
 export const tint = (h: number, a: number): string => `oklch(0.74 0.11 ${h} / ${a})`;
 
 // ── stage kinds: the palette of stages a blueprint can contain ────────────────
-export interface StageKindMeta { title: string; glyph: string; h: number; blurb: string }
+interface StageKindMeta { title: string; glyph: string; h: number; blurb: string }
 
 export const STAGE_KINDS: Record<string, StageKindMeta> = {
   discovery:     { title: "Discovery",        glyph: "flag",            h: 70,  blurb: "Pitch, goals & house rules the agents read first." },
@@ -79,7 +79,7 @@ export const STAGE_KIND_KEYS = [
 ];
 
 // ── output dispositions: what happens to a stage's artifact ───────────────────
-export interface DispositionMeta { title: string; glyph: string; h: number; desc: string }
+interface DispositionMeta { title: string; glyph: string; h: number; desc: string }
 
 export const DISPOSITIONS: Record<string, DispositionMeta> = {
   "plan-file":  { title: "Plan file",       glyph: "description", h: 70,  desc: "Written to the plan directory." },
