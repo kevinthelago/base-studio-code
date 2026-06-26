@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { useModalDismiss } from "@/shared/hooks/useModalDismiss";
 import { createPortal } from "react-dom";
 
 export interface TabItem {
@@ -65,11 +66,10 @@ export function TabBar({
   useEffect(() => {
     if (!menu) return;
     const down = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
     document.addEventListener("mousedown", down);
-    document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+    return () => document.removeEventListener("mousedown", down);
   }, [menu]);
+  useModalDismiss(useCallback(() => setMenu(null), []), { enabled: !!menu });
 
   const commitRename = useCallback(() => {
     if (editingId === null) return;
