@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "@/store";
-import { timeAgo, loginColor } from "@/shared/lib/core/format";
+import { timeAgo } from "@/shared/lib/core/format";
+import { Avatar } from "@/shared/ui/Avatar";
 import { githubRequest, githubGraphql } from "@/features/github/lib/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
@@ -200,20 +201,6 @@ export function ProjectsPageModeStrip() {
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
-function Avatar({ login, size = 20 }: { login: string; size?: number }) {
-  const color = loginColor(login);
-  return (
-    <span style={{
-      width: size, height: size, borderRadius: "50%",
-      background: color, color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.5,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      flexShrink: 0,
-    }}>
-      {login[0]?.toUpperCase() ?? "?"}
-    </span>
-  );
-}
 
 function ProjectSparkline({ data, color, w = 80, h = 18 }: { data: number[]; color: string; w?: number; h?: number }) {
   if (data.length < 2 || data.every(v => v === 0)) return null;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
-import { timeAgo, loginColor } from "@/shared/lib/core/format";
+import { timeAgo } from "@/shared/lib/core/format";
+import { Avatar } from "@/shared/ui/Avatar";
 import { githubRequest, githubGraphql } from "./lib/github";
 import { heatFill } from "./heatFill";
 import { quartileScale } from "./heatScale";
@@ -243,20 +244,6 @@ export function GitHubPageModeStrip() {
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
-function Avatar({ login, size = 20 }: { login: string; size?: number }) {
-  const color = loginColor(login);
-  return (
-    <span style={{
-      width: size, height: size, borderRadius: "50%",
-      background: color, color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.5,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      flexShrink: 0,
-    }}>
-      {login[0]?.toUpperCase() ?? "?"}
-    </span>
-  );
-}
 
 function Sparkline({ data, w = 90, h = 22, color = "var(--accent)" }: { data: number[]; w?: number; h?: number; color?: string }) {
   if (data.length < 2) return null;
