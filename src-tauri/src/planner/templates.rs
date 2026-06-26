@@ -1,7 +1,7 @@
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-pub(crate) const PLANNING_TEMPLATE_VERSION: u8 = 12;
+pub(crate) const PLANNING_TEMPLATE_VERSION: u8 = 13;
 pub(crate) const PLANNING_NEW_INTRO: &str = include_str!("../../prompts/planner/intro.new.md");
 pub(crate) const PLANNING_EXISTING_INTRO: &str = include_str!("../../prompts/planner/intro.existing.md");
 pub(crate) const PLANNING_PROCESS_MD: &str = include_str!("../../prompts/planner/process.md");

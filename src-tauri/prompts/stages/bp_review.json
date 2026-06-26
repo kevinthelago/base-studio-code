@@ -1,4 +1,5 @@
 {
+  "directive": "**Review & publish** — review the assembled blueprint with the user, record the FINAL blueprint with `bsc-plan blueprint set`, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
   "name": "Review & publish",
   "glyph": "⎙",
   "gate": "lint",

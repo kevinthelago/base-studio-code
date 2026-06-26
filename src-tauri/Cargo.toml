@@ -32,6 +32,7 @@ log = "0.4"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+include_dir = "0.7"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 # FCM push to the paired mobile app (#846): service-account OAuth2 needs an RS256-signed
 # JWT assertion. `jsonwebtoken` reads the service-account PEM private key directly and

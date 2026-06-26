@@ -1,4 +1,5 @@
 {
+  "directive": "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
   "name": "Dead & legacy code",
   "glyph": "♻",
   "gate": "findings triaged",
