@@ -35,14 +35,14 @@ function runsTable(runs: Automation["runs"]) {
 
 /** The Schedules tab — list of real automations + a live editor for the selected one. */
 export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistory }: SchedulesTabProps) {
-  const { automations, updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames, kbBlocks } = useAppStore();
+  const { automations, updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames } = useAppStore();
 
   if (automations.length === 0) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
         <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>No automations yet</div>
         <div className="hint" style={{ maxWidth: 380, textAlign: "center", lineHeight: 1.6 }}>
-          Schedule a command or a knowledge block to fire into a console pane on a cadence.
+          Schedule a command to fire into a console pane on a cadence.
         </div>
         <button className="btn primary" onClick={onNew}>+ New automation</button>
       </div>
@@ -80,7 +80,7 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
               <div className="l1">
                 <span className={"dot" + (a.armed ? "" : " off")} />
                 <span className="spacer" />
-                <span className={"tag" + (a.action === "knowledge" ? " info" : "")} style={{ fontSize: 9.5 }}>{a.action}</span>
+                <span className="tag" style={{ fontSize: 9.5 }}>{a.action}</span>
               </div>
               <div className="name">{a.name}</div>
               <div className="meta">
@@ -179,23 +179,8 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
         <div className="es"><div className="es-row">
           <div className="es-lbl success">action</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div className="pill-group">
-              <div className={"pill" + (sel.action === "command" ? " on" : "")} onClick={() => updateAutomation(sel.id, { action: "command" })}>run command</div>
-              <div className={"pill" + (sel.action === "knowledge" ? " on" : "")} onClick={() => updateAutomation(sel.id, { action: "knowledge" })}>load knowledge block</div>
-            </div>
-            {sel.action === "command" ? (
-              <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
-            ) : (
-              <select className="input" value={sel.blockId ?? ""} onChange={e => updateAutomation(sel.id, { blockId: e.target.value })}>
-                <option value="">— pick a knowledge block —</option>
-                {kbBlocks.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
-              </select>
-            )}
-            <span className="hint">
-              {sel.action === "command"
-                ? "Typed into the target pane's session, then submitted."
-                : "The block's content is injected into the target pane as a message."}
-            </span>
+            <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
+            <span className="hint">Typed into the target pane's session, then submitted.</span>
           </div>
         </div></div>
 

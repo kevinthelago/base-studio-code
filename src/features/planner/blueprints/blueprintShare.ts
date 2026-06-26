@@ -105,9 +105,9 @@ export function bundledSkillsFromManifest(m: ExtensionManifest): SkillPayload[] 
     const id = str(o.id);
     const name = str(o.name);
     if (!id || !name) continue;
-    const kind = o.kind === "kb" ? "kb" : "skill";
+    // KB blocks were retired (#1460); a legacy "kb" payload reconstitutes as a skill.
     out.push({
-      id, name, kind, content: str(o.content), desc: str(o.desc) || undefined,
+      id, name, kind: "skill", content: str(o.content), desc: str(o.desc) || undefined,
       ...(Array.isArray(o.tags) ? { tags: strArr(o.tags) } : {}),
       ...(str(o.skillKind) ? { skillKind: str(o.skillKind) as SkillPayload["skillKind"] } : {}),
       ...(Array.isArray(o.tools) ? { tools: strArr(o.tools) } : {}),

@@ -1,16 +1,15 @@
 // CoreSlice — the residual of the former `automations` grab-bag after the automations CRUD moved
-// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: Knowledge
-// Base blocks, the API-tier LLM provider config, and active-project / draft state. A candidate for
-// a further split (settings vs projects) in a later pass. Typed Pick<AppStore, …>.
+// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: the API-tier
+// LLM provider config and active-project / draft state. A candidate for a further split (settings vs
+// projects) in a later pass. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 
 type CoreSlice = Pick<AppStore,
-  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
-      kbBlocks: [],
       claudeApiKey: "",
       setClaudeApiKey: (key) => set({ claudeApiKey: key }),
 

@@ -1,13 +1,7 @@
 use super::templates::*;
 use super::directives::*;
-use crate::{PerfSpan, documents_dir, sanitize_project_key, project_dir, repo_dir};
+use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
 
-/// Only the `id` is read now (it feeds the context signature); the rest of the legacy KB-block
-/// payload the frontend still sends is ignored by serde. Full removal tracked in #1460.
-#[derive(serde::Deserialize)]
-pub(crate) struct KbBlockData {
-    id: String,
-}
 #[derive(serde::Deserialize)]
 pub(crate) struct AutomationData {
     id:       String,
@@ -17,13 +11,11 @@ pub(crate) struct AutomationData {
 }
 #[derive(serde::Serialize)]
 pub(crate) struct WorkspacePaths {
-    kb_dir:       String,
     planning_dir: String,
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn setup_workspaces(
-    kb_blocks: Vec<KbBlockData>,
     repo_full_names: Vec<String>,
     automations: Vec<AutomationData>,
     is_existing: bool,
@@ -40,10 +32,8 @@ pub(crate) async fn setup_workspaces(
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
     crate::config::sanitize_claude_config();
-    // KB session CWD = the flat reusable document library (`documents/`).
     // Planner session CWD = the project hub (`projects/<key>`), holding plan
     // sections + control files FLAT alongside the project's CLAUDE.md.
-    let kb_dir       = documents_dir();
     let safe_key     = sanitize_project_key(&project_key);
     // A blank key would resolve the project dir to `projects/` itself and scatter
     // `.claude/` and the plan sections across the parent — refuse it instead.
@@ -53,7 +43,6 @@ pub(crate) async fn setup_workspaces(
     let planning_dir = project_dir(&project_key);
 
     for dir in &[
-        kb_dir.join(".claude"),
         planning_dir.join(".claude"),
         planning_dir.join("prompts"),
         // Integration contracts (#…): the Plan stage writes one doc per feature seam here;
@@ -68,12 +57,6 @@ pub(crate) async fn setup_workspaces(
     if enabled_stages.iter().any(|s| s == "context") {
         std::fs::create_dir_all(planning_dir.join("context")).map_err(|e| e.to_string())?;
     }
-
-    // KB: read + write/edit markdown only; no web access or shell
-    std::fs::write(
-        kb_dir.join(".claude").join("settings.json"),
-        r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","MultiEdit","WebFetch","WebSearch"]}}"#,
-    ).map_err(|e| e.to_string())?;
 
     // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the
     // `planner` role gate (sessionRoles.ts) and written by `ensure_session_settings` at
@@ -198,33 +181,30 @@ pub(crate) async fn setup_workspaces(
     // Write a deterministic context signature so Planning.tsx can surface a
     // "context updated · refresh" badge when inputs diverge from this baseline (#175).
     {
-        let kb_ids: Vec<String> = kb_blocks.iter().map(|b| b.id.clone()).collect();
-        let sig = context_signature(&repo_full_names, &kb_ids, &enabled_stages);
+        let sig = context_signature(&repo_full_names, &enabled_stages);
         std::fs::write(planning_dir.join("context_signature.txt"), sig)
             .map_err(|e| e.to_string())?;
     }
 
     Ok(WorkspacePaths {
-        kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
 }
 /// The single source of truth for the planning context signature (#175/#756): the template
-/// version + the sorted inputs (repos, KB block ids, enabled stages). Used by BOTH
-/// `setup_workspaces` (to record the baseline) and `compute_context_signature` (the live
-/// value Planning.tsx compares against) so the two can never disagree on format/version.
-pub(crate) fn context_signature(repos: &[String], kb_ids: &[String], stages: &[String]) -> String {
+/// version + the sorted inputs (repos, enabled stages). Used by BOTH `setup_workspaces` (to
+/// record the baseline) and `compute_context_signature` (the live value Planning.tsx compares
+/// against) so the two can never disagree on format/version.
+pub(crate) fn context_signature(repos: &[String], stages: &[String]) -> String {
     let mut r = repos.to_vec(); r.sort();
-    let mut k = kb_ids.to_vec(); k.sort();
     let mut s = stages.to_vec(); s.sort();
-    format!("v{}|{}|{}|{}", PLANNING_TEMPLATE_VERSION, r.join(","), k.join(","), s.join(","))
+    format!("v{}|{}|{}", PLANNING_TEMPLATE_VERSION, r.join(","), s.join(","))
 }
 /// Compute the CURRENT context signature for the given live inputs, the same way
 /// `setup_workspaces` recorded the baseline — Planning.tsx compares the two to show the
 /// "context updated · refresh" badge. (#756 — fixes the old v1-vs-v{version} mismatch.)
 #[tauri::command]
-pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, kb_ids: Vec<String>, enabled_stages: Vec<String>) -> String {
-    context_signature(&repo_full_names, &kb_ids, &enabled_stages)
+pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, enabled_stages: Vec<String>) -> String {
+    context_signature(&repo_full_names, &enabled_stages)
 }
 /// Read back the context signature that `setup_workspaces` last wrote (#175).
 /// Returns an empty string when the file doesn't exist yet.

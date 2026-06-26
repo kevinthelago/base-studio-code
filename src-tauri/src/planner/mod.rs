@@ -226,11 +226,11 @@ mod tests {
         // One source of truth (#756): setup_workspaces (baseline) + compute_context_signature
         // (live) call this, so they can never disagree on format/version.
         let a = context_signature(
-            &["b".into(), "a".into()], &["k2".into(), "k1".into()], &["s2".into(), "s1".into()]);
+            &["b".into(), "a".into()], &["s2".into(), "s1".into()]);
         let b = context_signature(
-            &["a".into(), "b".into()], &["k1".into(), "k2".into()], &["s1".into(), "s2".into()]);
+            &["a".into(), "b".into()], &["s1".into(), "s2".into()]);
         assert_eq!(a, b, "order-independent (inputs are sorted)");
-        assert_eq!(a, format!("v{}|a,b|k1,k2|s1,s2", PLANNING_TEMPLATE_VERSION));
+        assert_eq!(a, format!("v{}|a,b|s1,s2", PLANNING_TEMPLATE_VERSION));
         // carries the real template version, not a hardcoded constant — fixes the v1/v{N} mismatch.
         assert!(a.starts_with(&format!("v{}|", PLANNING_TEMPLATE_VERSION)));
     }
