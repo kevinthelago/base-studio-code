@@ -79,6 +79,30 @@ function repoRollup(repoId: string, structure: Milestone[] = []): { ms: Mileston
 // Silence the unused-variable warning for repoRollup (kept for a future rollup surface).
 void repoRollup;
 
+/** The least-privilege fleet/permissions handler set (#1640). Shared by the Permissions body and
+ *  the merged Streams body that embeds it, and assembled once by the dispatcher so each case spreads
+ *  it instead of re-threading the seven handlers by name. */
+export interface FleetHandlers {
+  onPerm?: (streamId: string, perm: Perm) => void;
+  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onGenerateProfiles?: () => void;
+  /** Set the project's coordination topology (#…). */
+  onTopology?: (t: Topology) => void;
+  /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */
+  onDirectorDrive?: (d: DirectorDrive) => void;
+}
+
+/** The MCP-stage handler set (#1640). Assembled once by the dispatcher (mapping the on*Mcp props to
+ *  the body's verb names) so the `mcp` case spreads it instead of threading four handlers by name. */
+export interface McpHandlers {
+  onToggle?: (id: string) => void;
+  onBuild?: (s: McpServer) => void;
+  onAdd?: (input: string) => void;
+  onRemove?: (id: string) => void;
+}
+
 /* =================================================================
    stage-specific body components (#652 / #674)
    ================================================================= */
@@ -435,12 +459,8 @@ const MCP_STATUS: Record<McpServer["status"], { c: string; dot: string; label: s
   error:       { c: "var(--danger)",  dot: "",     label: "build failed" },
 };
 
-function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: {
+function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHandlers & {
   servers?: McpServer[];
-  onToggle?: (id: string) => void;
-  onBuild?: (s: McpServer) => void;
-  onAdd?: (input: string) => void;
-  onRemove?: (id: string) => void;
 }) {
   const list = servers ?? [];
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -863,17 +883,8 @@ function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
 // (posture bar + per-stream editor), plus the "generate profiles" action that materializes the
 // profiles the stage's `profilesComplete` gate requires. Previously a hardcoded "No agents yet"
 // stub that never rendered the fleet — so the stage looked empty even with streams planned.
-function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, focusedStream, onSelectStream }: {
+function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, focusedStream, onSelectStream }: FleetHandlers & {
   data?: ProjectPaneData;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
-  onFlow?: (streamId: string, flow: Flow) => void;
-  onModel?: (streamId: string, model: ModelId | undefined) => void;
-  onGenerateProfiles?: () => void;
-  /** Set the project's coordination topology (#…). */
-  onTopology?: (t: Topology) => void;
-  /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */
-  onDirectorDrive?: (d: DirectorDrive) => void;
   /** #1392 streams-link: the graph-focused stream → expand its editor; report row open/close back. */
   focusedStream?: string;
   onSelectStream?: (id: string | null) => void;
@@ -974,16 +985,9 @@ function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGen
 // fleet in) the coordination + per-stream permissions, sharing ONE focus: spotlight a stream in the
 // graph and its permissions editor expands below (and clicking a permissions row spotlights it in the
 // graph). Owns the shared `focus` so the two halves stay in sync.
-function StreamsBody({ data, fleet, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive }: {
+function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
   data?: ProjectPaneData;
   fleet?: boolean;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
-  onFlow?: (streamId: string, flow: Flow) => void;
-  onModel?: (streamId: string, model: ModelId | undefined) => void;
-  onGenerateProfiles?: () => void;
-  onTopology?: (t: Topology) => void;
-  onDirectorDrive?: (d: DirectorDrive) => void;
 }) {
   const [focus, setFocus] = useState<RelFocus>(null);
   const focusedStream = focus?.type === "agent" ? focus.id : undefined;
@@ -993,8 +997,7 @@ function StreamsBody({ data, fleet, onPerm, onPreset, onFlow, onModel, onGenerat
       {fleet && (
         <div style={{ marginTop: 18 }}>
           <FocusedPermissionsBody
-            data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel}
-            onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            data={data} {...handlers}
             focusedStream={focusedStream}
             onSelectStream={(id) => setFocus(id ? { type: "agent", id } : null)}
           />
@@ -1040,6 +1043,10 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
   onAddMcp?: (input: string) => void;
   onRemoveMcp?: (id: string) => void;
 }) {
+  // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
+  // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
+  const fleetHandlers: FleetHandlers = { onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive };
+  const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
   switch (phase.key) {
     case "source":
       return <FocusedSourceBody projectId={projectId} />;
@@ -1095,11 +1102,11 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
       // (coordination + per-stream permissions) folds in below it when the blueprint opted into fleet
       // (phase.fleet). A blueprint that still lists Permissions as its own stage uses `case
       // "permissions"` below (refactor — permissions without a structure stage to fold into).
-      return <StreamsBody data={data} fleet={phase.fleet} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
+      return <StreamsBody data={data} fleet={phase.fleet} {...fleetHandlers} />;
     case "permissions":
-      return <FocusedPermissionsBody data={data} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive} />;
+      return <FocusedPermissionsBody data={data} {...fleetHandlers} />;
     case "mcp":
-      return <FocusedMcpBody servers={data?.mcpServers} onToggle={onToggleMcp} onBuild={onBuildMcp} onAdd={onAddMcp} onRemove={onRemoveMcp} />;
+      return <FocusedMcpBody servers={data?.mcpServers} {...mcpHandlers} />;
     case "automations":
       return <FocusedAutomationsBody automations={data?.automations} />;
     case "skills":
