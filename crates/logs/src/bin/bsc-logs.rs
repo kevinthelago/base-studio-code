@@ -10,6 +10,7 @@
 //!   bsc-logs session <id>                   # one session's full, time-merged story
 //!   bsc-logs <stream> [--session <id>]      # one category (audit|skill|mcp|hook|coord|activity|done)
 //!   bsc-logs cost [--session <id>]          # token + cost rollup
+//!   bsc-logs perf [--session <id>]          # recent perf.db samples (rss/cpu/threads)
 //!   bsc-logs summary --session <id>         # a one-line recap
 //!   flags: --session <id> --stream <name> --since <epochMs> --limit N --json --pretty --dir <path>
 
@@ -17,7 +18,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use bsc_sqlite_util::print_json;
-use logs::{canonical_stream, cost, query, role_of, sessions, LogEvent, SessionRow};
+use logs::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
 
 struct Args {
     positional: Vec<String>,
@@ -66,6 +67,7 @@ bsc-logs — query a console session's logs (#1607)
   session <id>              one session's full, time-merged story
   <stream> [--session <id>] one category: audit|skill|mcp|hook|coord|activity|done
   cost [--session <id>]     token + cost rollup
+  perf [--session <id>]     recent perf.db samples (rss/cpu/threads)
   summary --session <id>    a one-line recap
 
 flags: --session <id> --stream <name> --since <epochMs> --limit N --json --pretty --dir <path>
@@ -132,6 +134,22 @@ fn run() -> Result<(), String> {
                 println!("session\tmodel\tin\tout\tcache\tcost");
                 for c in &rows {
                     println!("{}\t{}\t{}\t{}\t{}\t${:.4}", c.session, c.model, c.input, c.output, c.cache_creation + c.cache_read, c.cost_usd);
+                }
+            }
+        }
+        // Recent perf.db samples (rss/cpu/threads), the one binary-SQLite stream (#1716). perf.db
+        // sits in the same log dir; read-only. Honors --session / --since / --limit like every verb.
+        "perf" => {
+            let samples = perf::perf_samples(&dir.join("perf.db"), a.session.as_deref(), a.since, a.limit);
+            if a.json {
+                print_json(&samples, a.pretty);
+            } else {
+                let dash = |v: Option<i64>| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into());
+                println!("time\tsession\tpid\trss_mb\tcpu%\tthreads");
+                for s in &samples {
+                    let rss = s.rss_bytes.map(|b| format!("{:.1}", b as f64 / 1_048_576.0)).unwrap_or_else(|| "-".into());
+                    let cpu = s.cpu_pct.map(|c| format!("{c:.1}")).unwrap_or_else(|| "-".into());
+                    println!("{}\t{}\t{}\t{}\t{}\t{}", hms(s.ts), s.session, dash(s.pid), rss, cpu, dash(s.threads));
                 }
             }
         }
