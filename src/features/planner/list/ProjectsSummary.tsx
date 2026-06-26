@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
-import { githubRequest, githubGraphql } from "@/features/github/lib/github";
+import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { openDetachedSection } from "@/app/console/lib/detachWindow";

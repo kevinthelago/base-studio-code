@@ -27,7 +27,7 @@ import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "@/shared/lib/core/diagnostics";
 import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
 import { SessionFailure } from "@/app/SessionFailure";
-import { tokenForRepo } from "@/features/github/lib/repoCredentials";
+import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
 import { type PaneActivity, isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
 

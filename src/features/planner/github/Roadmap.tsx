@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { githubRequest } from "@/features/github/lib/github";
+import { githubRequest } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";

@@ -2,7 +2,7 @@
 // aggregated across the fleet's repos via the ETag-cached githubRequest. Pure
 // mapping is in lib/fleetGithub; this is the fetch orchestration.
 import { useState, useEffect } from "react";
-import { githubRequest, isGithubAuthError } from "@/features/github/lib/github";
+import { githubRequest, isGithubAuthError } from "@/shared/lib/github/github";
 import { useAppStore } from "@/store";
 import {
   mapThroughput, mapMergeQueue, mapTimeToLand, deriveThroughputKpis,

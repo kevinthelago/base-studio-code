@@ -35,7 +35,7 @@ import { hubToCanonical } from "@/features/planner/lib/plannerSync";
 import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "@/features/tunnel/lib/tunnelClient";
 import type { PlanMessage } from "@/features/tunnel/lib/tunnel";
 import { canLaunchTriage, triageLockReason, publishBlockReason } from "@/features/github/lib/projectSync";
-import { githubGraphql } from "@/features/github/lib/github";
+import { githubGraphql } from "@/shared/lib/github/github";
 import { planRename, applyRename } from "./renameProject";
 import { planDraftCommit } from "./draftTitle";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
