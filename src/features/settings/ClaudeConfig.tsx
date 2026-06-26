@@ -3,63 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { ConfigProfile } from "@/store";
 import { projectRepoCwd, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
-
-const TOOL_PRESETS: Array<{ label: string; allow: string[]; deny: string[] }> = [
-  { label: "read-only",  allow: ["Read", "Glob", "Grep"],                        deny: ["Write", "Edit", "MultiEdit", "Bash", "WebFetch", "WebSearch"] },
-  { label: "no-bash",    allow: [],                                               deny: ["Bash"] },
-  { label: "no-web",     allow: [],                                               deny: ["WebFetch", "WebSearch"] },
-  { label: "full",       allow: [],                                               deny: [] },
-];
-
-const COMMON_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"];
-
-function ToolChip({
-  label, onRemove,
-}: { label: string; onRemove: () => void }) {
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "2px 8px", borderRadius: 4,
-      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-      fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-    }}>
-      {label}
-      <span
-        onClick={onRemove}
-        style={{ color: "var(--fg-dim)", cursor: "pointer", lineHeight: 1 }}
-      >×</span>
-    </span>
-  );
-}
-
-function ChipInput({
-  value, onChange, onAdd, placeholder,
-}: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {
-  return (
-    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-      <input
-        className="input"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
-        placeholder={placeholder}
-        list="tool-suggestions"
-        style={{ width: 130, height: 24, padding: "0 8px", fontFamily: "var(--mono)", fontSize: 10.5 }}
-      />
-      <datalist id="tool-suggestions">
-        {COMMON_TOOLS.map((t) => <option key={t} value={t} />)}
-      </datalist>
-      <span
-        onClick={onAdd}
-        style={{
-          padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-        }}
-      >+ add</span>
-    </div>
-  );
-}
+import { TOOL_PRESETS } from "./lib/toolPresets";
+import { ToolChip, ChipInput } from "./ToolPermissionInputs";
 
 export function ClaudeConfigSettings() {
   const {
