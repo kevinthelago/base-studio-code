@@ -5,7 +5,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "@/shared/lib/core/log";
-import { resolveLlmConfig, bscAgentEnv } from "@/shared/lib/core/llmConfig";
 import { recordPtyData, bumpTerminals } from "@/shared/lib/core/perf";
 import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib/terminal";
@@ -13,18 +12,11 @@ import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { composeReferenceContext } from "@/shared/lib/session/assignments";
-import { resolveMcpServers, toBscAgentMcp } from "@/features/mcp/lib/mcpServers";
-import { resolveHooks } from "@/features/mcp/lib/hooks";
-import { toSessionPayloads } from "@/features/mcp/lib/sessionConfig";
-import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills/lib/skills";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
-import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
-import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
-import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
-import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
+import { useTerminalSession } from "@/app/console/useTerminalSession";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
-import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus, type SessionVerdict } from "@/shared/lib/core/diagnostics";
+import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
 import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
 import { SessionFailure } from "@/app/SessionFailure";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
@@ -81,9 +73,9 @@ interface TerminalViewProps {
 
 export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Session readiness verdict (#564). Set after the preflight probe runs in the
-  // mount effect (after the GH token is resolved so gh-auth uses the right env).
-  const [readinessVerdict, setReadinessVerdict] = useState<SessionVerdict | null>(null);
+  // Session readiness (#564): verdict-derived critical/warning lists + the manual retry. The mount
+  // effect's preflight probe sets the verdict via setReadinessVerdict (after the GH token resolves).
+  const { setReadinessVerdict, criticalChecks, warningChecks, retryReadiness } = useTerminalSession(paneId, initialCwd);
   const [warnDismissed, setWarnDismissed] = useState(false);
   // #799 — true when this console's assigned profile was edited while it's running, so it
   // shows a "relaunch to apply" nudge (settings.json is read at session start).
@@ -461,163 +453,17 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         useAppStore.getState().githubToken,
       );
       // Base session env (GH_TOKEN for gh/git). For a bsc-agent session, also inject the selected
-      // LLM provider/model/key (+ base URL for local) so the runtime talks to the chosen model;
-      // bsc-agent reads these from BSC_AGENT_* env (#1078 P3b). Permissions (BSC_AGENT_PERMS from
-      // the session role) are a follow-up — bsc-agent runs permissive without them.
-      const agentEnv: Record<string, string> | undefined = (() => {
-        const e: Record<string, string> = {};
-        if (ghToken) e.GH_TOKEN = ghToken;
-        // Write-scope gate (#1297): hand the session its allowed write globs so the `bsc-scope`
-        // PreToolUse hook hard-blocks any write outside them — the hard deny the role gate's
-        // allow-only rules lack (e.g. the planner can't be coaxed into writing UI/code). Applies to
-        // every gated pane (Claude reads it via the hook; bsc-agent already enforces natively).
-        const scopeRole = useAppStore.getState().paneRoles[paneId];
-        if (scopeRole) {
-          const sg = scopeWriteGlobs(scopeRole, useAppStore.getState().paneRoleGlobs[paneId] ?? []);
-          if (sg.length > 0) e.BSC_SCOPE_GLOBS = sg.join(" ");
-        }
-        if (providerId === "bsc-agent") {
-          const st = useAppStore.getState();
-          Object.assign(e, bscAgentEnv(resolveLlmConfig(st)));
-          // Gate the runtime by the pane's role (same least-privilege model as Claude); bsc-agent
-          // enforces this natively from $BSC_AGENT_PERMS. No role ⇒ permissive (unset).
-          const bscRole = st.paneRoles[paneId];
-          if (bscRole) {
-            const cap = roleCapability(bscRole, { writeGlobs: st.paneRoleGlobs[paneId] ?? [] });
-            // Reconcile role ↔ flow (#304, parity with the Claude path): the pane's flow owns
-            // git push / gh pr create, so lift them from the role denies when it permits pushing/
-            // PRing — otherwise an auto-pr worker (github:read) couldn't open its own PR.
-            const granted = flowGrantedPushCommands(st.paneFlows[paneId]);
-            e.BSC_AGENT_PERMS = JSON.stringify(bscAgentPerms(cap, granted));
-          }
-          // MCP: pass the resolved stdio servers so bsc-agent's client connects them ($BSC_AGENT_MCP).
-          const { mcp } = toSessionPayloads(st.paneMcpServers[paneId] ?? resolveMcpServers(st.mcpServers, ""), []);
-          const bscMcp = toBscAgentMcp(mcp);
-          if (bscMcp.length > 0) e.BSC_AGENT_MCP = JSON.stringify(bscMcp);
-        }
-        return Object.keys(e).length > 0 ? e : undefined;
-      })();
+      // LLM provider/model/key, role-derived perms, and resolved MCP servers (BSC_AGENT_* env, #1078
+      // P3b). Composed in sessionLaunch.buildAgentEnv from the current store snapshot.
+      const agentEnv = buildAgentEnv(useAppStore.getState(), paneId, providerId, ghToken);
       if (launchesClaude && (initialCwd ?? "") !== "") {
-        // Role gate (#219): a planner/worker/triage session has its mutating git/gh
-        // commands denied at launch (deny > the broad gh/git allow), plus a write-tool
-        // guard (#238) that denies Write/Edit for no-code roles and scopes a worker to
-        // its boundary globs. Absent role ⇒ unrestricted.
-        const role = useAppStore.getState().paneRoles[paneId];
-        // The worker's write boundary (its owned globs, set at fleet launch) makes
-        // roleWriteRules auto-approve Edit/Write within its lane; without it a
-        // worker (code:write, empty writeGlobs) prompts on every edit.
-        const roleGlobs = useAppStore.getState().paneRoleGlobs[paneId] ?? [];
-        const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
-        const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
-        // Agents gate (#255): the profile assigned to this pane is the SOLE source of
-        // auto-approved commands (#1457), plus its per-tool/path rules, on top of the role
-        // gate (deny wins for both). gh/git/bsc-plan are guaranteed by the backend.
-        const profileId = useAppStore.getState().paneProfiles[paneId];
-        const profile = profileId
-          ? useAppStore.getState().agentProfiles.find((p) => p.id === profileId)
-          : undefined;
-        const prof = profile ? resolveProfileSettings(profile) : null;
-        // Per-agent flow (#297): narrow the GitHub-propagation writes per the
-        // stream's push policy + gate — a hard push-confirm asks before push/PR,
-        // commit-only/none deny them, auto-pr adds nothing (broad allow permits).
-        const paneFlow = useAppStore.getState().paneFlows[paneId];
-        const flowRules = flowPermissionRules(paneFlow);
-        const allowedCommands = prof?.allowedCommands ?? [];
-        // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve
-        // baseline (a bare `Bash` allow isn't honored by Claude Code). A worker (bash:allow)
-        // gets the read-only + build baselines so cargo/ls/npm never prompt; a director/reviewer
-        // (bash:ask) gets read-only only. No profile ⇒ the broad default ("allow").
-        const bashPosture = prof?.bashPosture ?? "allow";
-        // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
-        // writes, so lift them from the role denies when the flow permits pushing/PRing
-        // (a worker is github:read and would otherwise be blocked from opening its PR).
-        // Everything else the role denies (gh pr merge, repo delete, …) stays denied.
-        const granted = flowGrantedPushCommands(paneFlow);
-        const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
-        const denied = [
-          ...useAppStore.getState().deniedCommands,
-          ...roleDenies,
-          ...(prof?.deniedCommands ?? []),
-        ];
-        const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
-        // Worker sub-agent block (#1036): deny the Task tool for workers so they can't spin up their
-        // own sub-agents (which floods the coordinator with wake requests). Deny wins over any
-        // profile allow.
-        const denyToolRules = [...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
-        const askToolRules = flowRules.askToolRules;
-        // MCP servers + hooks resolved for this session — pre-resolved per pane at tab
-        // creation; fall back to globals for ad-hoc consoles.
-        const mcpServers = useAppStore.getState().paneMcpServers[paneId]
-          ?? resolveMcpServers(useAppStore.getState().mcpServers, "");
-        const hookDefs = useAppStore.getState().paneHooks[paneId]
-          ?? resolveHooks(useAppStore.getState().hooks, "");
-        const { mcp, hooks } = toSessionPayloads(mcpServers, hookDefs);
-        // Skills (reusable capability bundles) resolved for this session — like
-        // extensions, pre-resolved per pane at tab creation (the fleet/triage snapshot,
-        // already override-aware). Fall back to the global set for an ad-hoc console, still
-        // honoring this pane's per-session override (#1056). Written as .claude/skills/<slug>/SKILL.md.
-        const skillState = useAppStore.getState();
-        const skillDefs = skillState.paneSkills[paneId]
-          ?? effectiveSessionSkills(
-               skillState.skills, "", skillState.sessionSkillOverrides[paneId],
-               new Set(expandGroups(skillState.sessionSkillGroups[paneId] ?? [], skillState.skillGroups)),
-             );
-        const skills = toSkillCfgs(skillDefs);
-        // Agents audit (#257): on a gated pane (role or profile assigned), install a
-        // PreToolUse hooks: log each tool attempt for the Activity feed (bsc-audit),
-        // and confine the file tools to the session's repo root (bsc-confine, #158).
-        const gatedHooks = (cap || prof)
-          ? [...hooks,
-             { event: "PreToolUse", matcher: "", command: "bsc-audit" },
-             // MCP-call telemetry (#879 PR 2): time each MCP tool call (Pre stamps start,
-             // Post logs round-trip ms + outcome) → mcp.log for the MCP Analytics tab.
-             { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
-             { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
-             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
-             // Write-scope gate (#1297): hard-block a file WRITE whose path is outside the pane's
-             // write globs ($BSC_SCOPE_GLOBS) — the hard deny the role gate's allow-only rules lack.
-             // Self-gates on $BSC_SCOPE_GLOBS being set; excludes Read (the planner reads for context).
-             { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
-             // Tainted-turn gate (#1167): marks the session tainted after it ingests untrusted
-             // input (WebFetch / curl / gh view) and blocks an outward/destructive command (exfil,
-             // force-push, repo-delete) that runs within the taint window — injection can't act in
-             // the turn it was read. Conservative: only the dangerous set is gated; normal work passes.
-             { event: "PreToolUse", matcher: "", command: "bsc-taint" },
-             // Worker-only Stop hook (#369): when a worker tries to end its turn, bounce it
-             // once toward continuing / deferring to the director via bsc-ask instead of
-             // stopping to ask the user. `stop_hook_active` prevents an infinite loop.
-             ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
-          : hooks;
-        // Skill telemetry (#406) follows the SKILLS, not the role gate: any session that has
-        // skills written invokes them, so install the bsc-skill Pre/Post hooks whenever skills
-        // are present — incl. an ungated console with a per-session skill (#1056). Without this,
-        // skill runs on a non-role/profile pane were never tallied in the Skills "Runs" view.
-        const skillHooks = skills.length > 0
-          ? [...gatedHooks,
-             // one PreToolUse line per invocation + one PostToolUse line per success → skills.log
-             { event: "PreToolUse", matcher: "Skill", command: "bsc-skill" },
-             { event: "PostToolUse", matcher: "Skill", command: "bsc-skill" }]
-          : gatedHooks;
-        // Turn-activity hooks (#1184): authoritative turn boundaries for the status dot. Installed on
-        // EVERY claude-launching pane (this whole block is already Claude-gated) — the false-idle bug
-        // hits ungated consoles too, not just gated workers. `bsc-activity run` on UserPromptSubmit
-        // (turn opens) + `bsc-activity idle` on Stop/SubagentStop (turn closes) → activity.log, which
-        // `read_pane_activity` reads and the silence-timer gate above consults. The helper self-gates
-        // on $BSC_ACTIVITY_LOG (always set by pty_create) and is bash-only, so non-bash sessions
-        // cleanly fall back to the silence timer. Listed AFTER bsc-defer so a worker's Stop records
-        // idle even though bsc-defer blocks the stop — the next turn's UserPromptSubmit reopens run
-        // (and the gate's re-arm debounces the brief flicker).
-        const sessionHooks = [
-          ...skillHooks,
-          { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
-          { event: "Stop", matcher: "", command: "bsc-activity idle" },
-          { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
-        ];
+        // Compose the role gate (#219) + profile (#255) + flow (#297/#304) + MCP/hooks + skills (#636)
+        // + audit/confine/scope/taint/defer/skill/activity hooks into the permission payload. Pure
+        // composition lives in sessionLaunch.buildSessionSettings; read from the current snapshot.
+        const settings = buildSessionSettings(useAppStore.getState(), paneId);
         await invoke("ensure_session_settings", {
-          cwd: initialCwd, allowedCommands, deniedCommands: denied,
-          mcpServers: mcp, hooks: sessionHooks,
-          allowToolRules, denyToolRules, askToolRules,
-          skills, bashPosture,
+          cwd: initialCwd,
+          ...settings,
           // Replace (not merge) the permission block so a relaunch reflects the CURRENT
           // role+profile exactly — incl. permissions the user removed from the profile (#799).
           replacePermissions: true,
@@ -639,28 +485,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         if (destroyed) return;
       }
 
-      // Resolve the effective init_cmd.
-      // For Claude panes: explicit initCmd wins, then the startup-prompt baking
-      // path (pty_create handles it — don't also inject an init_cmd), then ad-hoc
-      // auto-resume (`claude --continue` when the pane previously ran Claude).
-      // For non-Claude providers: explicit initCmd wins; otherwise fall back to the
-      // provider's own launch command so the CLI auto-starts on mount.
+      // Resolve the effective init_cmd (Claude resume logic / non-Claude launch cmd) from the current
+      // snapshot — see sessionLaunch.resolveEffectiveInitCmd.
       const st = useAppStore.getState();
-      // Manual consoles are never auto-recovered (#1176): suppress the crash-resume signals so a
-      // fresh "+" pane can't inherit a prior session's `claude --continue` even with auto-resume on.
-      const manual = isManualPaneId(paneId);
-      const effectiveInitCmd = isClaudeProvider
-        ? resolveInitCmd({
-            explicit: initCmd,
-            startupPrompt,
-            paneWasClaude: !!st.paneWasClaude[paneId],
-            autoResumeClaude: manual ? false : st.autoResumeClaude,
-            // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or
-            // a banner "restore" click — never on a clean restart, and never for a manual console.
-            wasUncleanShutdown: st.uncleanShutdown,
-            restoreRequested: manual ? false : !!st.restoreRequested[paneId],
-          })
-        : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
+      const effectiveInitCmd = resolveEffectiveInitCmd(st, paneId, isClaudeProvider, initCmd, startupPrompt, provider);
       // The model new claude launches use (per-pane override, else the global
       // default). The backend maps it to `claude --model <alias>`; an unknown id
       // is a no-op (Claude Code's own default). Only meaningful when this pane
@@ -883,24 +711,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     nudgeResize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [redrawNonce]);
-
-  // Derive critical + warning lists from the verdict for rendering.
-  const criticalChecks = readinessVerdict?.failed.filter((c) => c.severity === "critical") ?? [];
-  const warningChecks  = readinessVerdict?.failed.filter((c) => c.severity === "warning")  ?? [];
-
-  function retryReadiness() {
-    const cwd = initialCwd ?? "";
-    if (!cwd) return;
-    const ghToken = tokenForRepo(
-      useAppStore.getState().paneRepos[paneId],
-      useAppStore.getState().repoGithubTokens,
-      useAppStore.getState().githubToken,
-    );
-    const env = ghToken ? { GH_TOKEN: ghToken } : null;
-    invoke<PrereqStatus[]>("preflight", { cwd, env })
-      .then((prereqs) => setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs))))
-      .catch((e) => log.error(`console[${paneId}] preflight retry failed: ${e}`));
-  }
 
   return (
     <div
