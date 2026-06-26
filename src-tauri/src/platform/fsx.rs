@@ -72,7 +72,7 @@ pub(crate) fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
 /// file stem, into `sections` — skipping the workspace control files. Used to read the hub
 /// root + the `context/` subdir; a later call overrides earlier keys (context/ wins, #807).
 pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
-    const CONTROL: &[&str] = &["CLAUDE.md", "kb_index.md", "automations.md", "extensions.md", "github_context.md"];
+    const CONTROL: &[&str] = &["CLAUDE.md", "automations.md", "extensions.md", "github_context.md"];
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();

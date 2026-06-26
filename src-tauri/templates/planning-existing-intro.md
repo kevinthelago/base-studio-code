@@ -119,11 +119,9 @@ right mode:
      `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
      present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
      emit `<repo_link>` for each confirmed repo (the app clones them).
-2. **Read the knowledge base.** Read `kb_index.md`, read blocks whose tags match
-   the stack, and assign relevant ones with `<kb_assign id="block-id" />`. Read
-   `automations.md` and `extensions.md`, and run the **Automations & extensions**
-   step (see that section) — assign the MCP servers + automations the project's
-   agents need.
+2. **Set up automations & extensions.** Read `automations.md` and `extensions.md`,
+   and run the **Automations & extensions** step (see that section) — assign the MCP
+   servers + automations the project's agents need.
 3. **Walk the discovery checklist as a QUICK orientation** using the
    scan→propose→confirm loop (see "The discovery checklist") — open with a 3–5
    sentence read of what you found, document the core dimensions (goal, users,
