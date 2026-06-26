@@ -375,6 +375,13 @@ fn wire_bsc_env(
     if let Some(bin) = sidecar_bin_path("bsc-compliance") {
         cmd.env("BSC_COMPLIANCE_BIN", to_bash_path(&bin.to_string_lossy()));
     }
+    // bsc-blueprint (#1719): the user-blueprint-store CLI sidecar the `bsc-blueprint` shell helper
+    // execs, so a live session can list/get/set/remove the user blueprint library
+    // (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
+    // No store-dir env: the CLI defaults to ~/.base-studio-code/blueprints via the shared home-dir
+    // resolver. Staged for every pane; the helper falls back to a PATH `bsc-blueprint` if unset.
+    if let Some(bin) = sidecar_bin_path("bsc-blueprint") {
+        cmd.env("BSC_BLUEPRINT_BIN", to_bash_path(&bin.to_string_lossy()));
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
     // this group, which the Planning pane resolves + highlights as "authored this session". The id is
