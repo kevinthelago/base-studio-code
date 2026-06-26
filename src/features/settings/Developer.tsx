@@ -1,30 +1,6 @@
-import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-
-// A two-step confirm button: the first click arms it (turns red), the second
-// click within the same focus fires. Blur disarms, so a stray click is safe.
-function ConfirmButton({ label, armedLabel, onConfirm }: {
-  label: string; armedLabel: string; onConfirm: () => void | Promise<void>;
-}) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <button
-      onClick={() => { if (armed) { setArmed(false); void onConfirm(); } else { setArmed(true); } }}
-      onBlur={() => setArmed(false)}
-      style={{
-        alignSelf: "flex-start",
-        padding: "8px 14px", borderRadius: 6, cursor: "pointer",
-        fontFamily: "var(--mono)", fontSize: 11.5,
-        background: armed ? "var(--danger)" : "var(--bg-elev)",
-        color: armed ? "var(--bg-canvas)" : "var(--danger)",
-        border: "1px solid " + (armed
-          ? "var(--danger)"
-          : "color-mix(in oklch, var(--danger), transparent 55%)"),
-      }}
-    >{armed ? armedLabel : label}</button>
-  );
-}
+import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 
 function ResetCard({ title, desc, children }: {
   title: string; desc: string; children: React.ReactNode;
