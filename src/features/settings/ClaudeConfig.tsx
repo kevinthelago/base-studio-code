@@ -385,7 +385,7 @@ export function ClaudeConfigSettings() {
             </div>
             {kbBlocks.length === 0 ? (
               <div style={{ padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>
-                No knowledge blocks yet. Create some in the Knowledge Store.
+                No knowledge blocks yet.
               </div>
             ) : (
               <div style={{ padding: "6px 0" }}>

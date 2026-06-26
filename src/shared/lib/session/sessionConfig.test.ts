@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { toSessionPayloads, mcpAllowRules } from "./sessionConfig";
-import { type McpServer } from "@/features/extensions/lib/mcpServers";
-import { type Hook } from "@/features/extensions/lib/hooks";
+import { type McpServer } from "@/features/mcp/lib/mcpServers";
+import { type Hook } from "@/features/mcp/lib/hooks";
 
 const mcp = (over: Partial<McpServer>): McpServer => ({
   id: "m", name: over.id ?? "m", enabled: true, projects: [], transport: "stdio", ...over,

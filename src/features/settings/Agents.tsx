@@ -19,7 +19,7 @@ export function AgentsSettings() {
           auto-approves exactly its assigned profile's command list. <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>gh</code>,{" "}
           <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>git</code>, and{" "}
           <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>bsc-plan</code> are always enabled by
-          the backend. Dangerous commands are blocked globally in Knowledge Base → Commands.
+          the backend. A curated set of dangerous commands is always blocked.
         </p>
       </div>
 

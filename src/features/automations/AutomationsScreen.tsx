@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { SchedulesTab } from "./Schedules";
 import { HistoryTab } from "./History";
-import { HooksView } from "@/features/extensions";
+import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "./HookAnalytics";
 import { fmtClock } from "./format";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";

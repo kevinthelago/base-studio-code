@@ -26,7 +26,7 @@ import type { DataModel } from "@/features/planner/data/dataModel";
 import type { TunnelSlice } from "@/features/tunnel/store";
 import type { DirectorMode, IntegrationStrategy } from "@/features/planner/shared/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
-import type { ExtensionsSlice } from "@/features/extensions/store";
+import type { McpSlice } from "@/features/mcp/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { AutomationsSlice } from "@/features/automations/store";
 import type { GithubSlice } from "@/features/github/store";
@@ -130,7 +130,7 @@ export interface EndedInfo {
   at: number;
 }
 
-export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice, GithubSlice, TunnelSlice {
+export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, GithubSlice, TunnelSlice {
   // Navigation
   activeScreen: Screen;
   setScreen: (screen: Screen) => void;
@@ -400,7 +400,7 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   // Mobile tunnel connection state lives in the Tunnel feature slice (`TunnelSlice`,
   // `@/features/tunnel/store`, #1309) — merged via `extends`.
 
-  // Knowledge Store
+  // Knowledge blocks (KB)
   kbBlocks: KbBlock[];
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
@@ -486,9 +486,6 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   // to the verbatim TRIAGE_PROMPT when unset. Keyed by repoPromptKey.
   repoTriagePromptDoc: Record<string, string | null>;
   setRepoTriagePromptDoc: (projectId: string, repo: string, doc: string | null) => void;
-  // When set, the Knowledge Base screen shows only this project's documents
-  // (its `keys` are the candidate folder keys — title- and id-derived). Set when
-  // navigating from a project's "documents" button. Transient — NOT persisted.
   // The GitHub page's active top tab (summary | projects | repos), store-controlled
   // so other screens can deep-link to it (e.g. the Projects list signpost → projects).
   githubTab: string;
@@ -747,8 +744,8 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   clearPlanFleet:        (projectId: string) => void;
   clearPlan:             (key: string) => void;
 
-  // MCP servers + hooks live in the Extensions feature slice (`ExtensionsSlice`,
-  // `@/features/extensions/store`, #1309) — merged into AppStore via `extends`.
+  // MCP servers + hooks live in the MCP feature slice (`McpSlice`,
+  // `@/features/mcp/store`, #1309) — merged into AppStore via `extends`.
 
   // Skills (library, per-session overrides, task groups) live in the Skills feature slice
   // (`SkillsSlice`, `@/features/skills/store`, #1309) — merged into AppStore via `extends`.
@@ -760,7 +757,7 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
 
   // Blocked shell commands. Sessions allow Bash broadly (start-and-go); the
   // backend always denies a curated dangerous set, and these are the user's
-  // additional global denies (edited in Knowledge Base → Commands). Deny wins
+  // additional global denies. Deny wins
   // over allow.
   deniedCommands: string[];
   addDeniedCommand: (cmd: string) => void;

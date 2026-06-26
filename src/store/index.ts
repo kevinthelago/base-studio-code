@@ -4,8 +4,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
-import { migrateLegacyExtensions } from "@/features/extensions/lib/migrateExtensions";
-import { createExtensionsSlice } from "@/features/extensions/store";
+import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
+import { createMcpSlice } from "@/features/mcp/store";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -41,7 +41,7 @@ export const useAppStore = create<AppStore>()(
       ...createPlanSlice(set, get, store),
       ...createSessionSlice(set, get, store),
       ...createSkillsSlice(set, get, store),
-      ...createExtensionsSlice(set, get, store),
+      ...createMcpSlice(set, get, store),
     }),
     {
       name: "app-state",

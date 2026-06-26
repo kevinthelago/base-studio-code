@@ -32,7 +32,7 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
     githubTab, setGithubTab,
   } = useAppStore();
 
-  // Drag-resizable repo sidebar (mirrors the Knowledge Store / planning splitters).
+  // Drag-resizable repo sidebar (mirrors the planning splitters).
   const sidebar = useDragResize({ initial: 220, min: 160, max: 460, axis: "x" });
   // Store-controlled active tab so other screens can deep-link to it (#499).
   const { tabs: ghTabs, activeId, select, reorder, tearOff } =
