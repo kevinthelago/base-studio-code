@@ -74,10 +74,6 @@ function parseEdges(raw: unknown): AgentRelationship[] {
 /** The coverage record: topics considered but deliberately not documented. */
 export const SKIPPED_KEY = "_skipped";
 
-/** The allowed-commands config file (JSON). Surfaced by the poll, not rendered
- *  as a plan section — synced into the per-project/repo command store instead. */
-export const COMMANDS_KEY = "commands";
-
 /** The agent-fleet config file (JSON: `fleet.json`). Surfaced by the poll like
  *  `commands.json` — not a rendered plan section; parsed into the fleet store and
  *  shown in its own Fleet card. See {@link parseFleetFile}. */
@@ -347,7 +343,7 @@ export function groupSections(keys: string[]): {
   const project: string[] = [];
   const byRepo = new Map<string, string[]>();
   for (const key of keys) {
-    if (key === SKIPPED_KEY || key === COMMANDS_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY || key === FEATURES_KEY) continue;
+    if (key === SKIPPED_KEY || key === FLEET_KEY || key === REPOS_KEY || key === SKILLS_KEY || key === FEATURES_KEY) continue;
     const info = parseSectionKey(key);
     if (info.tier === "repo" && info.repo) {
       const list = byRepo.get(info.repo) ?? [];

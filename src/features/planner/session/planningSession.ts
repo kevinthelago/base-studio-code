@@ -105,43 +105,6 @@ export function scriptDocRelpath(sanitizedKey: string, path: string): string {
   return `projects/${sanitizedKey}/${clean}`;
 }
 
-export interface AllowCommandTag {
-  /** The shell command prefix to auto-approve (e.g. "cargo", "npm run"). */
-  cmd: string;
-  /** Repo full_name to scope it to, or null for the whole project. */
-  repo: string | null;
-}
-
-// Tolerant of an optional self-closing slash (`/>` or `>`) so a missing slash
-// doesn't drop the tag silently.
-const ALLOW_COMMAND_RE = () => /<allow_command\s+([^>]*?)\/?>/g;
-
-/**
- * Parse every `<allow_command cmd="cargo" [repo="owner/repo"] />` tag the planner
- * emits to add a command to the project's (or a repo's) allowlist. Attributes may
- * use straight or curly quotes and any order; `command=` is accepted as an alias
- * for `cmd=`. Tags missing the command are skipped; a missing/blank `repo` means
- * project scope.
- */
-export function parseAllowCommands(text: string): AllowCommandTag[] {
-  const re = ALLOW_COMMAND_RE();
-  const out: AllowCommandTag[] = [];
-  const attr = (attrs: string, k: string) =>
-    new RegExp(`\\b${k}=${Q}([^\\u0022\\u201c\\u201d]*)${Q}`).exec(attrs)?.[1];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const cmd = (attr(m[1], "cmd") ?? attr(m[1], "command"))?.trim();
-    const repo = attr(m[1], "repo")?.trim();
-    if (cmd) out.push({ cmd, repo: repo || null });
-  }
-  return out;
-}
-
-/** Remove every `<allow_command>` tag so it never prints in the terminal. */
-export function stripAllowCommands(text: string): string {
-  return text.replace(ALLOW_COMMAND_RE(), "");
-}
-
 // ── Agent fleet tags ──────────────────────────────────────────────────────────
 //
 // The planner designs how multiple Claude sessions run in parallel. `fleet.json`

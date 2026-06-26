@@ -1,8 +1,8 @@
 // Agents page (#236) — permission-profile data model, ported from design/Agents.html.
 //
-// A profile adds, on top of the additive shell-command allowlist (global → project →
-// repo, see lib/allowedCommands.ts; gh/git guaranteed by the backend), a base policy +
-// per-tool tri-states + filesystem/network scope, and is assigned to console panes.
+// A profile is the per-agent permission unit (#1457): its own shell-command allowlist
+// (gh/git/bsc-plan guaranteed by the backend), a base policy + per-tool tri-states +
+// filesystem/network scope. Assigned to console panes and applied at launch.
 // Application roles (Project Planner, Librarian) are always-present singleton sessions.
 //
 // Pure — free of React/Tauri imports so the resolution logic is unit-testable.
@@ -47,7 +47,7 @@ export const APP_ROLES: AgentProfile[] = [
     name: "Project Planner",
     color: "oklch(0.7 0.12 290)",
     category: "application",
-    desc: "Always-present terminal session that runs project planning — turns pitches into issues, maintains the plan, and declares each project's command allowlist.",
+    desc: "Always-present terminal session that runs project planning — turns pitches into issues and maintains the plan.",
     surface: "Project planning",
     surfaceGlyph: "P",
     session: "sys/planner",
@@ -55,7 +55,7 @@ export const APP_ROLES: AgentProfile[] = [
     mode: "ask",
     commands: ["gh"],
     tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
-    paths: { allow: [".studio/plan/**", "commands.json", "docs/plan/**"], deny: ["src/**"] },
+    paths: { allow: [".studio/plan/**", "docs/plan/**"], deny: ["src/**"] },
     net: { allow: ["api.github.com"] },
   },
   {

@@ -688,7 +688,7 @@ export function appSessionOpenLabel(p: AgentProfile): string {
 export function appReachNote(p: AgentProfile): string {
   const first = p.name.split(" ")[0];
   switch (p.id) {
-    case "sys_planner":   return `Other agents reach ${first} through the Plan surface and commands.json — not by being assigned this role.`;
+    case "sys_planner":   return `Other agents reach ${first} through the Plan surface — not by being assigned this role.`;
     case "sys_librarian": return `Other agents reach ${first} through pinned Knowledge blocks — not by being assigned this role.`;
     default:              return `${first} runs on demand as a one-shot helper — it isn't reached by other agents, and can't be assigned to a pane.`;
   }

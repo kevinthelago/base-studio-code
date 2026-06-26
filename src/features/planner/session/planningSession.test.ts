@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage, buildSectionSkipMessage,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
-  parseAllowCommands, stripAllowCommands,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
 
@@ -127,53 +126,6 @@ describe("scriptDocRelpath", () => {
   });
 });
 
-describe("parseAllowCommands", () => {
-  it("parses a project-scoped command (no repo)", () => {
-    expect(parseAllowCommands('<allow_command cmd="cargo" />')).toEqual([
-      { cmd: "cargo", repo: null },
-    ]);
-  });
-
-  it("parses a repo-scoped command", () => {
-    expect(parseAllowCommands('<allow_command repo="acme/web" cmd="npm run" />')).toEqual([
-      { cmd: "npm run", repo: "acme/web" },
-    ]);
-  });
-
-  it("parses several tags and tolerates curly quotes", () => {
-    const text = '<allow_command cmd="cargo" />\n<allow_command cmd=“pytest” repo=“acme/api” />';
-    expect(parseAllowCommands(text)).toEqual([
-      { cmd: "cargo", repo: null },
-      { cmd: "pytest", repo: "acme/api" },
-    ]);
-  });
-
-  it("accepts `command=` as an alias for `cmd=`", () => {
-    expect(parseAllowCommands('<allow_command command="cargo" />')).toEqual([
-      { cmd: "cargo", repo: null },
-    ]);
-  });
-
-  it("tolerates a missing self-closing slash", () => {
-    expect(parseAllowCommands('<allow_command cmd="cargo">')).toEqual([
-      { cmd: "cargo", repo: null },
-    ]);
-  });
-
-  it("skips tags missing cmd", () => {
-    expect(parseAllowCommands('<allow_command repo="acme/web" />')).toEqual([]);
-  });
-
-  it("returns [] when no tag is present", () => {
-    expect(parseAllowCommands("plain output")).toEqual([]);
-  });
-});
-
-describe("stripAllowCommands", () => {
-  it("removes allow_command tags", () => {
-    expect(stripAllowCommands('a <allow_command cmd="gh" /> b')).toBe("a  b");
-  });
-});
 
 describe("parseAgentAssigns", () => {
   it("parses a stream with comma-separated list attributes", () => {

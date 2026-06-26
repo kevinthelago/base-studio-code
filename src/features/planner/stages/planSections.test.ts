@@ -10,6 +10,7 @@ import {
   KNOWN_DIMENSIONS,
   SKIPPED_KEY,
   FLEET_KEY,
+  FEATURES_KEY,
   parseReposFile,
 } from "./planSections";
 
@@ -87,8 +88,8 @@ describe("groupSections", () => {
     ]);
   });
 
-  it("excludes the skipped record and the commands config from both tiers", () => {
-    const { project, repos } = groupSections(["goal", SKIPPED_KEY, "commands"]);
+  it("excludes the skipped record and the DB-owned config keys from both tiers", () => {
+    const { project, repos } = groupSections(["goal", SKIPPED_KEY, FLEET_KEY, FEATURES_KEY]);
     expect(project).toEqual(["goal"]);
     expect(repos).toEqual([]);
   });
