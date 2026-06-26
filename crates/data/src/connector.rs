@@ -64,6 +64,12 @@ impl RowSet {
     }
 }
 
+/// A path/URL/query → parsed-JSON fetch closure that owns a source's transport **and** auth — the
+/// connector never stores or sees the credentials it carries (#782 / #1194). The host supplies it
+/// (built per the source's auth); tests pass a fixture closure in place of the network. Shared by
+/// every native API connector so the type is defined exactly once.
+pub type FetchFn = Box<dyn Fn(&str) -> Result<Value> + Send + Sync>;
+
 /// Render a JSON value as a flat cell: scalars as plain text, nested objects/arrays as compact
 /// JSON. Shared by the native API connectors (#1197).
 pub fn cell_to_string(v: &Value) -> String {
@@ -76,11 +82,45 @@ pub fn cell_to_string(v: &Value) -> String {
     }
 }
 
+/// A JSON `id` field rendered as a string, accepting either a JSON string or integer. Source APIs
+/// disagree on the JSON type of an id (monday boards and Quickbase tables arrive as strings *or*
+/// numbers depending on the endpoint), so connectors normalize through this single helper. Returns
+/// `None` when the value is absent or is neither a string nor an integer.
+pub fn json_id_as_string(v: &Value) -> Option<String> {
+    v.as_str().map(str::to_string).or_else(|| v.as_i64().map(|n| n.to_string()))
+}
+
 /// Sorted top-level field names of a JSON object (empty if `rec` isn't an object). Connectors
-/// that derive columns from a sample record use this for a stable, deterministic column order.
+/// that derive columns from a single sample record use this for a stable, deterministic column order.
 pub fn sorted_record_columns(rec: &Value) -> Vec<String> {
     let mut cols: Vec<String> =
         rec.as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+    cols.sort();
+    cols
+}
+
+/// Columns derived from a *set* of records: the sorted **union** of every record's top-level field
+/// names, keeping only keys that pass `keep` (e.g. `|k| !k.starts_with('@')` drops OData's
+/// `@odata.*` control annotations; `|_| true` keeps everything).
+///
+/// Standardized across the read paths of the API connectors (#1620): unlike first-record
+/// derivation, the union never silently drops a column that only appears on a later record —
+/// heterogeneous sources (sparse JSON, optional fields omitted when empty) are the common case.
+/// The final `sort` keeps the column order deterministic regardless of record order.
+pub fn union_record_columns<'a>(
+    records: impl IntoIterator<Item = &'a Value>,
+    keep: impl Fn(&str) -> bool,
+) -> Vec<String> {
+    let mut cols: Vec<String> = Vec::new();
+    for rec in records {
+        if let Some(map) = rec.as_object() {
+            for k in map.keys() {
+                if keep(k.as_str()) && !cols.iter().any(|c| c == k) {
+                    cols.push(k.clone());
+                }
+            }
+        }
+    }
     cols.sort();
     cols
 }
@@ -159,6 +199,36 @@ mod tests {
         assert_eq!(rs.rows.len(), 2);
         assert_eq!(rs.rows[0], vec!["1", "Acme", "1200.50"]);
         assert_eq!(rs.rows[1], vec!["2", "Globex", ""]); // empty trailing cell preserved
+    }
+
+    #[test]
+    fn json_id_as_string_accepts_string_or_integer() {
+        use serde_json::json;
+        assert_eq!(json_id_as_string(&json!("bqr2x")), Some("bqr2x".to_string()));
+        assert_eq!(json_id_as_string(&json!(101)), Some("101".to_string()));
+        assert_eq!(json_id_as_string(&json!(null)), None);
+        assert_eq!(json_id_as_string(&json!(1.5)), None); // not an integer id
+        assert_eq!(json_id_as_string(&Value::Null), None);
+    }
+
+    #[test]
+    fn union_record_columns_is_the_sorted_union_across_records() {
+        use serde_json::json;
+        let records = vec![
+            json!({ "id": 1, "name": "Acme" }),
+            json!({ "id": 2, "city": "Reno" }), // `city` only on the second record
+        ];
+        // First-record derivation would drop `city`; the union keeps it, sorted.
+        let cols = union_record_columns(&records, |_| true);
+        assert_eq!(cols, vec!["city", "id", "name"]);
+    }
+
+    #[test]
+    fn union_record_columns_applies_the_key_filter() {
+        use serde_json::json;
+        let records = vec![json!({ "@odata.etag": "W/\"1\"", "CustomerID": "ACME", "Country": "US" })];
+        let cols = union_record_columns(&records, |k| !k.starts_with('@'));
+        assert_eq!(cols, vec!["Country", "CustomerID"]); // @odata.etag dropped
     }
 
     #[test]

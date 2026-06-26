@@ -190,18 +190,19 @@ pub(crate) fn write_worker_context(
             md.push('\n');
         }
     }
-    let wt_local = wt.join("CLAUDE.local.md");
-    let _ = std::fs::write(&wt_local, &md);
+    // Assemble the protocol sections in memory and write once (no read-modify-write per section,
+    // #1623). The marker checks mirror the prior disk-based appends exactly (the just-built `md`
+    // is the file content), so the written file is byte-identical.
     // Coordination protocol (#369): the defer-to-director / never-ask-the-user rules.
-    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
-    if !cur.contains("## Fleet coordination protocol") {
-        let _ = std::fs::write(&wt_local, format!("{cur}{FLEET_PROTOCOL_MD}"));
+    if !md.contains("## Fleet coordination protocol") {
+        md.push_str(FLEET_PROTOCOL_MD);
     }
     // Injection-resistance preamble (#1167): untrusted-input rules as authoritative worker context.
-    let cur = std::fs::read_to_string(&wt_local).unwrap_or_default();
-    if !cur.contains(INJECTION_RESISTANCE_MARKER) {
-        let _ = std::fs::write(&wt_local, format!("{cur}{INJECTION_RESISTANCE_MD}"));
+    if !md.contains(INJECTION_RESISTANCE_MARKER) {
+        md.push_str(INJECTION_RESISTANCE_MD);
     }
+    let wt_local = wt.join("CLAUDE.local.md");
+    let _ = std::fs::write(&wt_local, &md);
     // Inline the blueprint's attached skills (#636) so each worker carries the same skill
     // context the planner had. skills.md lives at the hub (not in the worktree), so the
     // planner's "read skills.md" note doesn't help a worker — inline it instead.
