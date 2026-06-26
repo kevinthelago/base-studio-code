@@ -55,11 +55,16 @@ pub(crate) fn sanitize_claude_config() {
     log::warn!("sanitize_claude_config: ~/.claude.json {what}");
 }
 
-/// Normalises a filesystem path to the form Claude Code uses as a key in the
+/// Normalises a filesystem path to the form Claude Code uses as a *key* in the
 /// `projects` map of `~/.claude.json`: forward slashes, an upper-case Windows
 /// drive letter, no `\\?\` verbatim prefix, and no trailing slash (e.g.
 /// `C:\Users\Kevin\proj` → `C:/Users/Kevin/proj`). The key must match exactly
 /// or Claude Code treats the directory as unseen and re-shows the trust prompt.
+///
+/// NOT to be confused with [`crate::agent::launch::claude_project_dir_name`] (`launch.rs`): that maps
+/// the same cwd to the *directory name* under `~/.claude/projects/` (every non-alnum char → `-`,
+/// `C:/Users/Kevin/proj` → `C--Users-Kevin-proj`). Two deliberately distinct cwd→identifier transforms
+/// for two distinct Claude Code on-disk contracts (the `~/.claude.json` map key vs. the projects dir).
 fn claude_project_key(path: &str) -> String {
     let mut s = path.replace('\\', "/");
     if let Some(rest) = s.strip_prefix("//?/") {

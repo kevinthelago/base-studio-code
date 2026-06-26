@@ -326,10 +326,12 @@ pub enum ClientMsg {
 }
 
 /// One PTY output chunk fanned out to the relay transport (which filters per pane).
-/// The fields are read by that transport (#242b).
+/// The fields are read by that transport (#242b). Internal bus type only — distinct from
+/// the `ServerMsg::PaneOutput` wire variant (the mobile contract); this name must NOT leak
+/// to the wire, hence the `Chunk` suffix to avoid colliding with that variant.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub struct PaneOutput {
+pub struct PaneOutputChunk {
     pub pane_id: String,
     pub data: String,
 }

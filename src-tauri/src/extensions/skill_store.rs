@@ -23,32 +23,32 @@ fn open() -> Result<Store, String> {
 }
 
 #[tauri::command]
-pub fn skill_store_list() -> Result<Vec<Skill>, String> {
+pub(crate) fn skill_store_list() -> Result<Vec<Skill>, String> {
     open()?.list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn skill_store_upsert(skill: Skill) -> Result<(), String> {
+pub(crate) fn skill_store_upsert(skill: Skill) -> Result<(), String> {
     open()?.upsert(&skill).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn skill_store_remove(id: String) -> Result<(), String> {
+pub(crate) fn skill_store_remove(id: String) -> Result<(), String> {
     open()?.remove(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn skill_group_list() -> Result<Vec<SkillGroup>, String> {
+pub(crate) fn skill_group_list() -> Result<Vec<SkillGroup>, String> {
     open()?.group_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn skill_group_upsert(group: SkillGroup) -> Result<(), String> {
+pub(crate) fn skill_group_upsert(group: SkillGroup) -> Result<(), String> {
     open()?.group_upsert(&group).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn skill_group_remove(id: String) -> Result<(), String> {
+pub(crate) fn skill_group_remove(id: String) -> Result<(), String> {
     open()?.group_remove(&id).map_err(|e| e.to_string())
 }
 
@@ -56,6 +56,6 @@ pub fn skill_group_remove(id: String) -> Result<(), String> {
 /// resolution the `bsc-skill resolve <group>` CLI and `fleetStartProject`'s group expansion use,
 /// so the UI preview of a group matches what a launched session will actually receive.
 #[tauri::command]
-pub fn skill_group_resolve(group_id: String) -> Result<Vec<Skill>, String> {
+pub(crate) fn skill_group_resolve(group_id: String) -> Result<Vec<Skill>, String> {
     open()?.resolve(&group_id).map_err(|e| e.to_string())
 }

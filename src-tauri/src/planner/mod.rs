@@ -172,10 +172,10 @@ mod tests {
     #[test]
     fn planner_intro_prompt_selects_by_mode() {
         // mode → matching template; unknown ⇒ the new-project intro (default).
-        assert_eq!(planner_intro_prompt("new".into()), PLANNING_INTRO_NEW);
-        assert_eq!(planner_intro_prompt("existing".into()), PLANNING_INTRO_EXISTING);
-        assert_eq!(planner_intro_prompt("blueprint".into()), PLANNING_INTRO_BLUEPRINT);
-        assert_eq!(planner_intro_prompt("garbage".into()), PLANNING_INTRO_NEW);
+        assert_eq!(planner_intro_prompt("new".into()), PLANNING_GREETING_NEW);
+        assert_eq!(planner_intro_prompt("existing".into()), PLANNING_GREETING_EXISTING);
+        assert_eq!(planner_intro_prompt("blueprint".into()), PLANNING_GREETING_BLUEPRINT);
+        assert_eq!(planner_intro_prompt("garbage".into()), PLANNING_GREETING_NEW);
     }
 
     #[test]
