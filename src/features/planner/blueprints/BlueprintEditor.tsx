@@ -6,6 +6,7 @@
 // untouched.
 
 import { useState } from "react";
+import { Sparkles } from "lucide-react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
 import {
@@ -215,7 +216,7 @@ function StageDetail({ sections, section, onSelect, onChange, skillLibrary = [],
 
         {/* skills / knowledge attached to this stage (#636) */}
         <div className="d-block">
-          <div className="lbl">Skills &amp; knowledge <span className="ln" /><span className="lhint">paired context Claude gets in this stage</span></div>
+          <div className="lbl"><Sparkles size={12} style={{ verticalAlign: "-2px", marginRight: 5, opacity: 0.85 }} />Skills &amp; knowledge <span className="ln" /><span className="lhint">paired context Claude gets in this stage</span></div>
           {attachedSkills.length === 0 && missingSkills.length === 0 && (
             <div className="hint" style={{ marginBottom: 8 }}>No skills attached. Add reusable knowledge / skills below — they're injected into the agent's context for this stage.</div>
           )}
