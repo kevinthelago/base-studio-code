@@ -1,5 +1,5 @@
 // API-tier LLM provider config (#1085 / epic #1078) — which provider + model + key
-// powers kb_chat-backed (planning / assistant) calls: the planning autopilot, the
+// powers llm_complete-backed (planning / assistant) calls: the planning autopilot, the
 // LLM grader, the cleanup-scan verifier. This is DISTINCT from the per-pane runtime
 // model (ModelId / defaultModel / paneModels → `claude --model`), which the harness
 // adapter owns (P0/P2) — do not conflate them.

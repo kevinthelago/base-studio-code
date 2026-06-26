@@ -84,7 +84,7 @@ plandb = { path = "../crates/plandb" }
 skilldb = { path = "../crates/skilldb" }
 
 # Model-agnostic LLM provider layer (#1097) — shared with the future lean `bsc-agent`
-# binary so neither has to depend on the other. `kb_chat` dispatches through it.
+# binary so neither has to depend on the other. `llm_complete` dispatches through it.
 llm = { path = "../crates/llm", package = "bsc-llm" }
 
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any

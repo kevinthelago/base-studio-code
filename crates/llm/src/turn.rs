@@ -1,6 +1,6 @@
 //! Model-agnostic tool-use *turn* API (#1098 / epic #1078, P2).
 //!
-//! `complete` (the single-shot text path) powers kb_chat; `turn` adds the
+//! `complete` (the single-shot text path) powers llm_complete; `turn` adds the
 //! multi-turn, tool-using conversation the `bsc-agent` runtime loop drives. The
 //! types here are provider-neutral; each provider maps them onto its own wire
 //! format (Anthropic `tool_use`/`tool_result`, OpenAI `tool_calls`/role:tool,

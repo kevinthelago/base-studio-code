@@ -9,7 +9,7 @@ mod console;
 mod agent;
 mod github;
 mod sources;
-mod knowledge;
+mod llm;
 mod observability;
 mod mobile;
 mod project;
@@ -23,7 +23,7 @@ pub(crate) use console::{pty, ledger as pty_ledger, discovery as session_discove
 pub(crate) use agent::{harness, claude_config as config};
 pub(crate) use github::{oauth, git_hooks as githooks};
 pub(crate) use sources::{data, oauth as source_oauth, credentials};
-pub(crate) use knowledge::docstore;
+pub(crate) use platform::docstore;
 pub(crate) use observability::{logs, perf, tokens};
 pub(crate) use mobile::{push as fcm, tunnel};
 pub(crate) use project::plan_db;

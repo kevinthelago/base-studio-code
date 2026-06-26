@@ -1,4 +1,4 @@
-use super::templates::*;
+use super::prompts::*;
 use super::directives::*;
 use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
 

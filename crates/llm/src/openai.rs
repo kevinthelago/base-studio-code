@@ -1,7 +1,7 @@
 //! OpenAI Chat Completions provider (api.openai.com). Maps OpenAI's request/response
 //! onto the normalized shape: the system prompt is folded in as a leading
 //! `{role:"system"}` message, and `choices[0].message.content` becomes a single
-//! `{type:"text", text}` block so kb_chat's consumers read it unchanged.
+//! `{type:"text", text}` block so llm_complete's consumers read it unchanged.
 
 use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 

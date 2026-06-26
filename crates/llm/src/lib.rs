@@ -1,8 +1,8 @@
 //! Model-agnostic LLM provider layer (#1079 / epic #1078).
 //!
-//! `kb_chat` builds a normalized [`LlmRequest`] and dispatches to a provider; each
+//! `llm_complete` builds a normalized [`LlmRequest`] and dispatches to a provider; each
 //! provider returns the existing `{ "content": [...], "usage": {...} }` response
-//! shape, so kb_chat's consumers (`oneShotComplete`, `gradeLLM`) are unchanged
+//! shape, so llm_complete's consumers (`oneShotComplete`, `gradeLLM`) are unchanged
 //! across providers. This is the same provider abstraction `bsc-agent` will reuse.
 
 mod anthropic;
