@@ -2,28 +2,17 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
-// to the Extensions feature slice (@/features/extensions/store) (#1309). This slice keeps the
-// command tiers and the session-wide flags/models.
+// to the Extensions feature slice (@/features/extensions/store) (#1309). The standalone
+// allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
+// keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
-      allowedCommands: [],
-      addAllowedCommand: (cmd) =>
-        set((s) => ({
-          allowedCommands: s.allowedCommands.includes(cmd)
-            ? s.allowedCommands
-            : [...s.allowedCommands, cmd],
-        })),
-      removeAllowedCommand: (cmd) =>
-        set((s) => ({ allowedCommands: s.allowedCommands.filter((c) => c !== cmd) })),
-      setAllowedCommands: (commands) => set({ allowedCommands: commands }),
-
       deniedCommands: [],
       addDeniedCommand: (cmd) =>
         set((s) => {
@@ -34,42 +23,6 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       removeDeniedCommand: (cmd) =>
         set((s) => ({ deniedCommands: s.deniedCommands.filter((c) => c !== cmd) })),
       setDeniedCommands: (commands) => set({ deniedCommands: commands }),
-
-      projectAllowedCommands: {},
-      addProjectAllowedCommand: (projectId, cmd) =>
-        set((s) => {
-          const c = cmd.trim().toLowerCase();
-          const cur = s.projectAllowedCommands[projectId] ?? [];
-          if (!c || cur.includes(c)) return {};
-          return { projectAllowedCommands: { ...s.projectAllowedCommands, [projectId]: [...cur, c] } };
-        }),
-      removeProjectAllowedCommand: (projectId, cmd) =>
-        set((s) => ({
-          projectAllowedCommands: {
-            ...s.projectAllowedCommands,
-            [projectId]: (s.projectAllowedCommands[projectId] ?? []).filter((x) => x !== cmd),
-          },
-        })),
-      repoAllowedCommands: {},
-      addRepoAllowedCommand: (projectId, repo, cmd) =>
-        set((s) => {
-          const key = repoPromptKey(projectId, repo);
-          const c = cmd.trim().toLowerCase();
-          const cur = s.repoAllowedCommands[key] ?? [];
-          if (!c || cur.includes(c)) return {};
-          return { repoAllowedCommands: { ...s.repoAllowedCommands, [key]: [...cur, c] } };
-        }),
-      removeRepoAllowedCommand: (projectId, repo, cmd) =>
-        set((s) => {
-          const key = repoPromptKey(projectId, repo);
-          return {
-            repoAllowedCommands: {
-              ...s.repoAllowedCommands,
-              [key]: (s.repoAllowedCommands[key] ?? []).filter((x) => x !== cmd),
-            },
-          };
-        }),
-      paneAllowedCommands: {},
 
       autoFocusMode: DEFAULT_AUTO_FOCUS_MODE,
       setAutoFocusMode: (mode) => set({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" }),

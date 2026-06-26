@@ -4,9 +4,9 @@
 // escalated to an explicit user confirmation) rather than run freely.
 //
 // This is the pure enforcement core (command classification + path scoping); the
-// gates that USE it are the per-pane command allowlist (resolveAllowedCommands) and a
-// write-path guard on the write tool. Free of React / xterm / Tauri imports so it's
-// unit-testable in isolation (matches allowedCommands.ts).
+// gate that USES it is the role's denied-command set plus a write-path guard on the
+// write tool, applied alongside the per-agent profile (#1457). Free of React / xterm /
+// Tauri imports so it's unit-testable in isolation.
 
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"

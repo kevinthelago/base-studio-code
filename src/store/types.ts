@@ -759,25 +759,10 @@ export interface AppStore extends SkillsSlice, ExtensionsSlice, AutomationsSlice
   // Skills (library, per-session overrides, task groups) live in the Skills feature slice
   // (`SkillsSlice`, `@/features/skills/store`, #1309) — merged into AppStore via `extends`.
 
-  // Agent settings — the GLOBAL allowed-command tier (auto-approved in every
-  // session). Per-project / per-repo tiers below combine additively with it.
-  allowedCommands: string[];
-  addAllowedCommand: (cmd: string) => void;
-  removeAllowedCommand: (cmd: string) => void;
-  setAllowedCommands: (commands: string[]) => void;
-
-  // Per-project / per-repo allowed-command lists, configured during planning and
-  // combined additively with the global list (see resolveAllowedCommands). gh/git
-  // are always added by the backend, so they need not be listed here.
-  projectAllowedCommands: Record<string, string[]>;
-  addProjectAllowedCommand: (projectId: string, cmd: string) => void;
-  removeProjectAllowedCommand: (projectId: string, cmd: string) => void;
-  repoAllowedCommands: Record<string, string[]>;
-  addRepoAllowedCommand: (projectId: string, repo: string, cmd: string) => void;
-  removeRepoAllowedCommand: (projectId: string, repo: string, cmd: string) => void;
-  // Resolved per-pane allowlist (transient): set when a project/triage tab is
-  // created; TerminalView passes it to ensure_session_settings before launch.
-  paneAllowedCommands: Record<string, string[]>;
+  // Command auto-approval is owned by the per-agent AgentProfile (#1457): a profile
+  // carries its own `commands` allowlist (alongside its tool/path posture), applied
+  // at launch via resolveProfileSettings. The old standalone allowed-command tiers
+  // (global/project/repo/pane) were retired — profiles are the single source.
 
   // Blocked shell commands. Sessions allow Bash broadly (start-and-go); the
   // backend always denies a curated dangerous set, and these are the user's

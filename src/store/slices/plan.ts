@@ -9,11 +9,8 @@ import { defaultStageConfig } from "@/features/planner/stages/planStages";
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
-import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
-import { resolveAllowedCommands } from "@/shared/lib/session/allowedCommands";
-
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
- *  the repo-scoped convention used elsewhere (e.g. repoAllowedCommands). */
+ *  the repo-scoped convention used elsewhere (e.g. repoStartupPromptDoc). */
 export function repoVisibilityKey(projectKey: string, repoId: string): string {
   return `${projectKey}::${repoId}`;
 }
@@ -458,12 +455,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           // dangling reference (the planner assigned an id we never created) is
           // materialized here, keeping the assigned id so the reference stays stable.
           if (stream.profile && byId.has(stream.profile)) return stream;
-          const commands = resolveAllowedCommands(
-            get().allowedCommands,
-            get().projectAllowedCommands[projectId],
-            get().repoAllowedCommands[repoPromptKey(projectId, stream.repo)],
-          );
-          const gen = generateAgentProfile(stream, "worker", commands);
+          // Commands are a per-stream PROFILE property now (#1457), not a project-wide union. A
+          // generated profile starts with no auto-approved prefixes — the broad Bash allow +
+          // MANDATORY_BASH (gh/git/bsc-plan) still cover execution — and is refined per stream in
+          // the Permissions pane (its `commands` list is the single source).
+          const gen = generateAgentProfile(stream, "worker", []);
           const id = stream.profile || gen.id;
           if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
           return { ...stream, profile: id };
