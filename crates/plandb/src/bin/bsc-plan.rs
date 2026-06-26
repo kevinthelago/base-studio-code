@@ -23,6 +23,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout (full)
 //! Global flags: --db <path>, --json, --pretty
 
+use bsc_sqlite_util::{print_json, read_stdin_json};
 use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use std::io::Read;
 use std::path::PathBuf;
@@ -131,7 +132,7 @@ fn run() -> Result<(), String> {
             match s.get(r).map_err(|e| e.to_string())? {
                 // The single-issue read is the full record by design (an agent escalates here for the
                 // detail the lean list omits) — `--json` is compact by default, `--pretty` re-indents.
-                Some(issue) if args.json => print_blob(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
+                Some(issue) if args.json => print_json(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
                 Some(issue) => print!("{}", render_issue(&issue)),
                 None => return Err(format!("no issue with ref '{r}'")),
             }
@@ -144,7 +145,7 @@ fn run() -> Result<(), String> {
             let phases = s.phase_list().map_err(|e| e.to_string())?;
             let o = compute_overview(&rows, &phases);
             if args.json {
-                print_blob(&overview_json(&o), args.pretty);
+                print_json(&overview_json(&o), args.pretty);
             } else {
                 print!("{}", render_overview_text(&o));
             }
@@ -161,7 +162,7 @@ fn run() -> Result<(), String> {
             } else if args.full {
                 let issues = s.list_filtered(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
                 if args.json {
-                    print_blob(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
+                    print_json(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
                 } else if issues.is_empty() {
                     println!("(no matching issues)");
                 } else {
@@ -173,7 +174,7 @@ fn run() -> Result<(), String> {
                 // Lean by default (#1562): body omitted at the SQL layer, value-lists as counts.
                 let rows = s.list_summary(status, stream, args.limit, args.since).map_err(|e| e.to_string())?;
                 if args.json {
-                    print_blob(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
+                    print_json(&serde_json::to_value(&rows).unwrap_or_default(), args.pretty);
                 } else if rows.is_empty() {
                     println!("(no matching issues)");
                 } else {
@@ -254,7 +255,7 @@ fn run() -> Result<(), String> {
                 "get" => {
                     let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
                     match s.feature_get(slug).map_err(|e| e.to_string())? {
-                        Some(f) if args.json => print_blob(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
+                        Some(f) if args.json => print_json(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
                         Some(f) => print!("{}", render_feature(&f)),
                         None => return Err(format!("no feature with slug '{slug}'")),
                     }
@@ -386,14 +387,14 @@ fn run() -> Result<(), String> {
                                 .and_then(|v| v.as_array())
                                 .and_then(|arr| arr.iter().find(|st| st.get("id").and_then(|i| i.as_str()) == Some(id.as_str())));
                             match stream {
-                                Some(st) => print_blob(st, args.pretty),
+                                Some(st) => print_json(st, args.pretty),
                                 None => return Err(format!("no stream with id '{id}' in the fleet")),
                             }
                         } else if args.full {
-                            print_blob(&f, args.pretty);
+                            print_json(&f, args.pretty);
                         } else {
                             // Lean default: id/name/dependsOn per stream; `--full` for the permissions/flows.
-                            print_blob(&fleet_lean(&f), args.pretty);
+                            print_json(&fleet_lean(&f), args.pretty);
                         }
                         Ok(())
                     }
@@ -428,7 +429,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.deploy_get().map_err(|e| e.to_string())? {
-                        Some(c) => print_blob(&c, args.pretty),
+                        Some(c) => print_json(&c, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no deploy config)" }),
                     }
                     Ok(())
@@ -455,7 +456,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.deps_get().map_err(|e| e.to_string())? {
-                        Some(m) => print_blob(&m, args.pretty),
+                        Some(m) => print_json(&m, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no dependency manifest)" }),
                     }
                     Ok(())
@@ -529,7 +530,7 @@ fn run() -> Result<(), String> {
                 }
                 "get" => {
                     match s.blueprint_get().map_err(|e| e.to_string())? {
-                        Some(b) => print_blob(&b, args.pretty),
+                        Some(b) => print_json(&b, args.pretty),
                         None => println!("{}", if args.json { "null" } else { "(no blueprint)" }),
                     }
                     Ok(())
@@ -618,7 +619,7 @@ fn run() -> Result<(), String> {
                 "get" => {
                     let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
                     match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
-                        Some(p) => print_blob(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
+                        Some(p) => print_json(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
                         None if args.json => println!("null"),
                         None => println!("(no integration '{id}')"),
                     }
@@ -658,7 +659,7 @@ fn run() -> Result<(), String> {
                 // `lesson list [--status pending|confirmed|discarded]` — JSON array (the review queue).
                 "list" => {
                     let lessons = s.lesson_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
-                    print_blob(&serde_json::to_value(&lessons).unwrap_or_default(), args.pretty);
+                    print_json(&serde_json::to_value(&lessons).unwrap_or_default(), args.pretty);
                     Ok(())
                 }
                 "confirm" | "discard" => {
@@ -700,17 +701,7 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
 
 /// Read JSON from stdin (one issue object or an array), upsert each, return the assigned refs.
 fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
-    let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-    let buf = buf.trim();
-    if buf.is_empty() {
-        return Err("add: expected an issue (or array of issues) as JSON on stdin".into());
-    }
-    let issues: Vec<PlanIssue> = if buf.starts_with('[') {
-        serde_json::from_str(buf).map_err(|e| format!("parsing issue array: {e}"))?
-    } else {
-        vec![serde_json::from_str(buf).map_err(|e| format!("parsing issue: {e}"))?]
-    };
+    let issues: Vec<PlanIssue> = read_stdin_json("issue")?;
     let mut refs = Vec::new();
     for issue in &issues {
         if issue.r#ref.trim().is_empty() {
@@ -723,18 +714,6 @@ fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
         refs.push(issue.r#ref.clone());
     }
     Ok(refs)
-}
-
-/// Print a JSON value compact by default — the agent-facing reads are token-budget-sensitive (#1562),
-/// so an embedded `plan.db` read shouldn't cost an extra newline+indent per field. `--pretty` restores
-/// the indented form for human inspection.
-fn print_blob(v: &serde_json::Value, pretty: bool) {
-    let s = if pretty {
-        serde_json::to_string_pretty(v).unwrap_or_default()
-    } else {
-        serde_json::to_string(v).unwrap_or_default()
-    };
-    println!("{s}");
 }
 
 /// Sanitize one cell for TSV output: collapse the delimiters (tab / newline / CR) to a single space
@@ -930,17 +909,7 @@ fn overview_json(o: &PlanOverview) -> serde_json::Value {
 /// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
 /// Used for the detail-fill phase (`{"slug":"…","behavior":…}`) — title rows are added by name.
 fn cmd_feature_add(s: &Store) -> Result<Vec<String>, String> {
-    let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-    let buf = buf.trim();
-    if buf.is_empty() {
-        return Err("feature add: pass title name(s) as args, or a feature object/array as JSON on stdin".into());
-    }
-    let feats: Vec<PlanFeature> = if buf.starts_with('[') {
-        serde_json::from_str(buf).map_err(|e| format!("parsing feature array: {e}"))?
-    } else {
-        vec![serde_json::from_str(buf).map_err(|e| format!("parsing feature: {e}"))?]
-    };
+    let feats: Vec<PlanFeature> = read_stdin_json("feature")?;
     let mut slugs = Vec::new();
     for f in &feats {
         if f.slug.trim().is_empty() && f.name.trim().is_empty() {

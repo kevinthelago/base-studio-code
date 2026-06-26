@@ -12,6 +12,7 @@
 //! Concurrency (the #1325 crux — the CLI and the live app touch the same db at once): WAL mode +
 //! a busy_timeout are set on open so the two front-ends don't block/corrupt each other.
 
+use bsc_sqlite_util::{arr_to_json, json_to_arr};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -296,13 +297,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 // ── JSON (de)serialization for the value-list columns ─────────────────────────────
-
-fn arr_to_json(v: &[String]) -> String {
-    serde_json::to_string(v).unwrap_or_else(|_| "[]".into())
-}
-fn json_to_arr(s: &str) -> Vec<String> {
-    serde_json::from_str(s).unwrap_or_default()
-}
+// `arr_to_json` / `json_to_arr` are shared with plandb via `bsc_sqlite_util` (#1621).
 
 const SKILL_COLS: &str =
     "SELECT id, name, kind, source, desc, prompt, tools, profiles, projects, enabled, pinned, packaged FROM skills";

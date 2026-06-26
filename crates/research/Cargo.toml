@@ -18,6 +18,9 @@ path = "src/bin/bsc-research-mcp.rs"
 [dependencies]
 # Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
 bsc-util = { path = "../bsc-util" }
+# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, and run-loop. This crate
+# supplies its own `tool_schemas` + `call_tool` + arg parsers via the `ToolServer` trait.
+mcp-rpc = { path = "../mcp-rpc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Blocking HTTP for the source clients — keeps the server a simple synchronous stdin loop (no tokio).
