@@ -11,6 +11,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../core/safeInvoke";
 import { useAppStore } from "@/store";
 import { emptyCoordState } from "./coordination";
 import { readCoordState } from "./useCoordLog";
@@ -99,7 +100,7 @@ export function useWorkerAutoEnd(): void {
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
-      const done = await invoke<string[]>("read_done_panes").catch(() => [] as string[]);
+      const done = await safeInvoke<string[]>("read_done_panes", undefined, []);
       if (cancelled || !Array.isArray(done)) return;
       const s = useAppStore.getState();
       for (const paneId of done) {
@@ -122,7 +123,7 @@ export function useWorkerAutoEnd(): void {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const activity = await invoke<ActivityRow[]>("read_pane_activity").catch(() => [] as ActivityRow[]);
+      const activity = await safeInvoke<ActivityRow[]>("read_pane_activity", undefined, []);
       const coordRes = await readCoordState(5000);
       if (cancelled || !Array.isArray(activity)) return;
       const coord = coordRes?.state ?? emptyCoordState();
