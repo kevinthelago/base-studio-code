@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMcpLibrary, resolveBlueprintMcp, collectBlueprintMcp, applyBlueprintMcp } from "./blueprintMcp";
+import { buildMcpLibrary, collectBlueprintMcp, applyBlueprintMcp } from "./blueprintMcp";
 import { addMcpServer, removeMcpServer } from "./blueprintEdit";
 import { type McpStoreLike } from "../lib/planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
@@ -33,15 +33,6 @@ describe("buildMcpLibrary", () => {
     const lib = buildMcpLibrary(servers);
     expect(lib.filter((i) => i.name === "Compliance")).toHaveLength(1); // deduped
     expect(lib.some((i) => i.name === "Custom Server")).toBe(true);
-  });
-});
-
-describe("resolveBlueprintMcp", () => {
-  it("splits attached names into found (library) and missing (warn), case-insensitive, order-preserved", () => {
-    const lib = buildMcpLibrary([]);
-    const { found, missing } = resolveBlueprintMcp(["compliance", "Nonexistent", "Dependency Graph"], lib);
-    expect(found.map((i) => i.name)).toEqual(["Compliance", "Dependency Graph"]);
-    expect(missing).toEqual(["Nonexistent"]);
   });
 });
 

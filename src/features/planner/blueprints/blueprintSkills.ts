@@ -21,22 +21,6 @@ export function buildSkillLibrary(skills: SkillDef[]): BlueprintSkillItem[] {
   return skills.map((s): BlueprintSkillItem => ({ id: s.id, name: s.name, kind: "skill", desc: s.desc }));
 }
 
-export interface ResolvedSkills { found: BlueprintSkillItem[]; missing: string[] }
-
-/** Resolve attached ids against the library: `found` for display, `missing` to warn
- *  (a referenced item that isn't installed — the distribution gap). Order preserved. */
-export function resolveBlueprintSkills(ids: string[], library: BlueprintSkillItem[]): ResolvedSkills {
-  const byId = new Map(library.map((i) => [i.id, i]));
-  const found: BlueprintSkillItem[] = [];
-  const missing: string[] = [];
-  for (const id of ids) {
-    const item = byId.get(id);
-    if (item) found.push(item);
-    else missing.push(id);
-  }
-  return { found, missing };
-}
-
 // ── injection (#636 slice b): resolve attached skills to content + write the context ──
 
 export interface SkillContentItem { name: string; kind: "skill"; content: string }
