@@ -2,7 +2,8 @@
 // the per-connector connection contract (auth + form fields), the discovered inventory shape a scan
 // returns, the structured behavior scan, and the per-project SourceConfig the Source pane edits.
 // Split out of sourceConfig.ts (#1638); the connector catalog lives in sourceCatalog.ts and the
-// validation/derivation helpers in sourceValidate.ts. sourceConfig.ts re-exports all three.
+// gate/derivation/scan-view helpers in sourceGate.ts / dataModelDerivation.ts / sourceScanViews.ts.
+// sourceConfig.ts re-exports them all.
 //
 // SECURITY BOUNDARY: a connector's SECRET field values NEVER live in this config (they go to the OS
 // keychain on the device and are never persisted here or shared with the planning agent). The config
