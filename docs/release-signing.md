@@ -4,16 +4,20 @@ How `base-studio-code` desktop installers are signed and notarized so they insta
 without "Unknown publisher" (Windows) or Gatekeeper (macOS) warnings, and how the
 credentials are wired into CI.
 
-> **Status:** CI is wired to *consume* signing credentials, but the credentials
-> themselves are **maintainer-gated, long-lead procurement** (days–weeks). Until
-> the secrets below are populated, `release.yml` still builds and attaches
-> **unsigned** artifacts — every signing step is a no-op when its secret is empty,
-> so the pipeline never fails for lack of a cert. Populate the secrets to flip
-> signing on; no code change required.
+> **Status:** the app ships **unsigned** on all platforms today (v1.0.0–v1.0.4 were
+> all released unsigned). Signing is **maintainer-gated, long-lead procurement**
+> (days–weeks) and not yet enabled. The two platforms differ:
+> - **macOS** — `release.yml` consumes the `APPLE_*` secrets when present (it builds
+>   ad-hoc-signed with `APPLE_SIGNING_IDENTITY: '-'` otherwise). Enabling is mostly
+>   populate-the-secrets + swap `APPLE_SIGNING_IDENTITY` (`RELEASE_HANDOFF.md` Step 1).
+> - **Windows** — **not yet wired.** `release.yml` carries a commented-out Azure
+>   Trusted Signing block and `scripts/sign-windows.ps1` is a ready shim, but
+>   `tauri.conf.json`'s `bundle.windows` is empty (`{}`) — so enabling needs a small
+>   workflow/config change *and* the secrets (`RELEASE_HANDOFF.md` Step 0).
 >
 > Tracking: **#108** (Windows), **#119** (macOS), `B-macos-procure` (Apple
 > enrollment + credential wiring). The human PURCHASE/ENROLL steps are flagged
-> `⛔ MAINTAINER` below and surfaced via `bsc-blocked`.
+> `⛔ MAINTAINER` below.
 
 ---
 
@@ -110,15 +114,20 @@ signer's API.
 | `TRUSTED_SIGNING_ACCOUNT` | Trusted Signing account name |
 | `TRUSTED_SIGNING_PROFILE` | certificate profile name |
 
-### Config (already wired — auto-activates when secrets are present)
+### Config (not yet wired — enable on procurement)
 
-`tauri.conf.json` has `bundle.windows.signCommand` pointing to
-`scripts/sign-windows.ps1`. That script exits 0 when `AZURE_CLIENT_ID` is absent,
-so unsigned CI builds pass without a cert. When all six secrets are added,
-`release.yml` installs `trusted-signing-cli` automatically and the script signs
-each artifact — no code change required.
+Windows signing is **not active**. Two pieces are staged but not connected:
+`release.yml` carries a commented-out `azure/trusted-signing-action` block (on the
+`windows-2022` leg), and `scripts/sign-windows.ps1` is a ready shim that exits 0 when
+`AZURE_CLIENT_ID` is absent. But `tauri.conf.json`'s `bundle.windows` is empty (`{}`)
+— there is **no `signCommand`** — so nothing calls the shim today.
 
-`bundle.publisher` is already set in `tauri.conf.json` (cosmetic publisher
+To turn signing on once the secrets exist, pick one approach (see `RELEASE_HANDOFF.md`
+Step 0): add `bundle.windows.signCommand` → `scripts/sign-windows.ps1` in
+`tauri.conf.json` plus the CLI-install + env steps in `release.yml`, **or** uncomment
+the `azure/trusted-signing-action` block.
+
+`bundle.publisher` *is* already set in `tauri.conf.json` (cosmetic publisher
 metadata — independent of the cert).
 
 ### Verifying a signed build
