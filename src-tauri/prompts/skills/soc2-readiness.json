@@ -1,0 +1,11 @@
+{
+  "id": "soc2-readiness",
+  "name": "SOC 2 readiness review",
+  "kind": "review",
+  "source": "first-party",
+  "desc": "Audits code + config against the SOC 2 Trust Services Criteria (security, availability, confidentiality) and reports each gap with a remediation.",
+  "body": "Read-only audit of the codebase and infrastructure config against the SOC 2 Trust Services Criteria. Do not change code — produce a findings report.\n1. Inventory the controls in scope: access control (authn/authz, RBAC, MFA), change management (PR review, CI gates, branch protection), encryption (at rest + in transit), logging & monitoring, backup/DR, and incident response.\n2. For each criterion, locate the implementing code/config (or its absence). Cite file:line.\n3. Map each finding to the criterion (CC6 logical access, CC7 monitoring, CC8 change mgmt, A1 availability, C1 confidentiality).\n4. Rate severity (blocker / gap / observation) and give a concrete remediation per finding.\n5. Output a table: criterion · status (met/partial/missing) · evidence · remediation. Flag any secret material committed to the repo as a blocker.",
+  "tools": ["git_diff", "rank_files", "repo_map", "get_pr"],
+  "profiles": ["review"],
+  "pinned": true
+}

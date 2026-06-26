@@ -1,0 +1,11 @@
+{
+  "id": "audit-consent-scaffold",
+  "name": "Scaffold audit logging + consent gate",
+  "kind": "scaffold",
+  "source": "first-party",
+  "desc": "Scaffolds tamper-evident audit logging and a consent/preferences gate — the cross-cutting plumbing SOC 2, HIPAA, and GDPR all require.",
+  "body": "Scaffold the cross-cutting compliance plumbing. Make code changes on a branch and stub tests.\n1. Audit log: an append-only, tamper-evident record (actor, action, resource, timestamp, request id) for every access/mutation of sensitive data. Add a single choke-point helper and wire it into the data-access layer; never log the sensitive payload itself.\n2. Consent gate: a consent/preferences store (purpose-scoped, opt-in, withdrawable, versioned) plus a guard the UI and API call before any non-essential processing.\n3. Data-subject hooks: stub export and erasure entry points that enumerate a user's data across stores.\n4. Add tests for the audit-write path and the consent guard's allow/deny. Document the new surfaces in /docs.",
+  "tools": ["write_file", "edit", "repo_map", "run_tests"],
+  "profiles": ["build", "auto"],
+  "pinned": false
+}
