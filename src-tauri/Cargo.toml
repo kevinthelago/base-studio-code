@@ -92,6 +92,13 @@ skilldb = { path = "../crates/skilldb" }
 # binary so neither has to depend on the other. `llm_complete` dispatches through it.
 llm = { path = "../crates/llm", package = "bsc-llm" }
 
+# Unified log-query + cost engine (#1607) — shared with the `bsc-logs` CLI. The desktop
+# token-cost reader (`observability::tokens::cost::read_token_usage`) delegates pricing to
+# this crate's `cost::all_costs` so the price table lives in ONE place (#1686). Aliased to
+# `bsc_logs` to avoid colliding with the in-crate `observability::logs` module (glob-imported
+# via `crate::*`).
+bsc_logs = { path = "../crates/logs", package = "logs" }
+
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls
 # `setsid()` in the spawned shell, so the shell leads a process group whose pgid ==
