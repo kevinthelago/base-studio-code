@@ -24,7 +24,7 @@ describe("gist revisions (#598 follow-up)", () => {
   });
 
   it("installFromGistRevision pulls the manifest at a revision", async () => {
-    const manifest = { manifest: 1, kind: "blueprint", id: "x", name: "X", version: "1.0.0", payload: { id: "x", name: "X", sections: [{ key: "context", name: "Context" }] } };
+    const manifest = { manifest: 1, kind: "blueprint", id: "x", name: "X", version: "1.0.0", payload: { id: "x", name: "X", sections: [{ key: "discovery", name: "Discovery" }] } };
     vi.mocked(invoke).mockResolvedValueOnce({ files: { "extension.json": { content: JSON.stringify(manifest) } } });
     const res = await installFromGistRevision("gid", "sha", "tok");
     expect(res.ok).toBe(true);

@@ -10,7 +10,7 @@
   "mode": "operate",
   "sections": [
     {
-      "key": "context"
+      "key": "discovery"
     },
     {
       "key": "repos"

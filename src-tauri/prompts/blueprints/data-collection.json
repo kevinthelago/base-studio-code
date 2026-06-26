@@ -10,7 +10,7 @@
   "mode": "create",
   "sections": [
     {
-      "key": "context"
+      "key": "discovery"
     },
     {
       "key": "collectTargets"

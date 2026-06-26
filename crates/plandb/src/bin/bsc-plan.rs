@@ -537,21 +537,21 @@ fn run() -> Result<(), String> {
                 other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
             }
         }
-        "context" => {
+        "discovery" => {
             let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
             let s = store()?;
             match sub {
-                // `context require/unrequire <topic>...` shape the DYNAMIC required set as the project
-                // clarifies. Context files gate on GENERATION (the gate checks each required
-                // `context/<topic>.md` exists) — they are not confirmed (#1028).
+                // `discovery require/unrequire <topic>...` shape the DYNAMIC required set as the project
+                // clarifies. Discovery files gate on GENERATION (the gate checks each required
+                // `discovery/<topic>.md` exists) — they are not confirmed (#1028).
                 "require" | "unrequire" => {
                     let topics: Vec<&String> = args.positional.iter().skip(2).collect();
                     if topics.is_empty() {
-                        return Err(format!("usage: bsc-plan context {sub} <topic>..."));
+                        return Err(format!("usage: bsc-plan discovery {sub} <topic>..."));
                     }
                     let required = sub == "require";
                     for t in &topics {
-                        s.context_require(t, required).map_err(|e| e.to_string())?;
+                        s.discovery_require(t, required).map_err(|e| e.to_string())?;
                     }
                     if args.json {
                         println!("{}", serde_json::to_string(&topics).unwrap_or_else(|_| "[]".into()));
@@ -564,11 +564,11 @@ fn run() -> Result<(), String> {
                     Ok(())
                 }
                 "list" => {
-                    let required = s.context_list().map_err(|e| e.to_string())?;
+                    let required = s.discovery_list().map_err(|e| e.to_string())?;
                     if args.json {
                         println!("{}", serde_json::to_string(&required).unwrap_or_else(|_| "[]".into()));
                     } else if required.is_empty() {
-                        println!("(no required context topics)");
+                        println!("(no required discovery topics)");
                     } else {
                         for t in &required {
                             println!("{t}");
@@ -576,7 +576,7 @@ fn run() -> Result<(), String> {
                     }
                     Ok(())
                 }
-                other => Err(format!("unknown context command '{other}'\n\n{USAGE}")),
+                other => Err(format!("unknown discovery command '{other}'\n\n{USAGE}")),
             }
         }
         "integration" => {
@@ -1108,11 +1108,11 @@ BLUEPRINT (the blueprint an authoring project is designing — one blob):
   blueprint set             replace the blueprint from a Blueprint JSON on stdin
   blueprint get             print the blueprint (Blueprint JSON)
 
-CONTEXT (the Context stage's DYNAMIC required-set — prose lives in context/<topic>.md files):
-  context require <topic>...    mark topic(s) required for this project
-  context unrequire <topic>...  drop topic(s) from the required set
-  context list                  show the required topic set
-  (context files gate on GENERATION — written, not confirmed)
+DISCOVERY (the Discovery stage's DYNAMIC required-set — prose lives in discovery/<topic>.md files):
+  discovery require <topic>...    mark topic(s) required for this project
+  discovery unrequire <topic>...  drop topic(s) from the required set
+  discovery list                  show the required topic set
+  (discovery files gate on GENERATION — written, not confirmed)
 
 INTEGRATION (native REST connectors authored at planning time — app-wide, NOT plan.db; #1235):
   integration add               upsert a RuntimePreset JSON on stdin (validated, secret-free)

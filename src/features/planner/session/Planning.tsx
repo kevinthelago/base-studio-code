@@ -43,7 +43,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
-import { stageConfirmKeys, CONTEXT_BASELINE } from "../stages/planStageDerive";
+import { stageConfirmKeys, DISCOVERY_BASELINE } from "../stages/planStageDerive";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkSection, blueprintCategory, shouldAutoOpenBlueprintModal, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintSection, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
@@ -660,16 +660,16 @@ export function Planning({ visible }: { visible: boolean }) {
     let alive = true;
     const tick = async () => {
       try {
-        const m = await invoke<string[]>("plan_list_context", { projectKey: effectiveProjectId });
+        const m = await invoke<string[]>("plan_list_discovery", { projectKey: effectiveProjectId });
         if (!alive) return;
         // Seed the baseline once per project/session if the set is empty — a deterministic floor before
         // the planner runs `bsc-plan context require`. The blueprint's context section `requires`
         // overrides the universal baseline (blueprint seeding).
         if ((m?.length ?? 0) === 0 && !ctxSeededRef.current.has(effectiveProjectId)) {
           ctxSeededRef.current.add(effectiveProjectId);
-          const requires = planSecs.find(s => s.key === "context")?.requires ?? CONTEXT_BASELINE;
+          const requires = planSecs.find(s => s.key === "discovery")?.requires ?? DISCOVERY_BASELINE;
           for (const t of requires) {
-            await invoke("plan_require_context", { projectKey: effectiveProjectId, topic: t, required: true }).catch(() => {});
+            await invoke("plan_require_discovery", { projectKey: effectiveProjectId, topic: t, required: true }).catch(() => {});
           }
           return; // next tick reads the seeded set
         }

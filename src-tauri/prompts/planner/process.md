@@ -28,12 +28,12 @@ or the colloquial name**. For example the technology-stack topic is `stack.md`,
 read by the workers too; the app polls these files every 2 seconds and updates the
 right panel. Overwrite to refine — each write replaces the previous version.
 
-- **Context-stage file: `context/{topic}.md`** — e.g. `context/goal.md`,
-  `context/stack.md`, `context/security.md`, `context/observability.md`, or a custom
-  `context/feature_flags.md`. Every topic you document during the **Context** stage
-  lives in the `context/` subdir; the file stem is the bare canonical key. Shape which
-  topics are REQUIRED with `bsc-plan context require <topic>` / `bsc-plan context
-  unrequire <topic>` (`bsc-plan context list` shows the manifest).
+- **Discovery-stage file: `discovery/{topic}.md`** — e.g. `discovery/goal.md`,
+  `discovery/stack.md`, `discovery/security.md`, `discovery/observability.md`, or a custom
+  `discovery/feature_flags.md`. Every topic you document during the **Discovery** stage
+  lives in the `discovery/` subdir; the file stem is the bare canonical key. Shape which
+  topics are REQUIRED with `bsc-plan discovery require <topic>` / `bsc-plan discovery
+  unrequire <topic>` (`bsc-plan discovery list` shows the manifest).
 - Other project-tier files (repo-tier sections) stay at the hub root: `repo__web__api.md`, etc.
 - Structured plan state is the plan DB, not files — repos (`bsc-plan repo`), the roadmap
   (`bsc-plan phase`), features (`bsc-plan feature`), the fleet (`bsc-plan fleet`), deploy
@@ -52,15 +52,15 @@ Mark the topic you are actively discussing so the UI highlights it:
 
 ## Coverage — record what you skip
 
-**Each context file you create is a gate item** — the stage completes once every required
-section is **written** (context files are generated, not confirmed). So create a file **only**
+**Each discovery file you create is a gate item** — the stage completes once every required
+section is **written** (discovery files are generated, not confirmed). So create a file **only**
 for a dimension that genuinely applies; don't spin up tangential files (they just block the
 gate). Use the **canonical key** as the file stem so the section maps to the right gate signal —
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
-`goal`, `scope`, `stack`, `architecture`, `users`, `release` (each `context/<topic>.md`, in the
-`context/` subdir) — which you shape with `bsc-plan context require <topic>` /
-`bsc-plan context unrequire <topic>` (`bsc-plan context list` shows it). Just write the
+`goal`, `scope`, `stack`, `architecture`, `users`, `release` (each `discovery/<topic>.md`, in the
+`discovery/` subdir) — which you shape with `bsc-plan discovery require <topic>` /
+`bsc-plan discovery unrequire <topic>` (`bsc-plan discovery list` shows it). Just write the
 required files; they don't need confirmation.
 
 **Finish each section** — never leave a deliberate fill-in marker (`TODO`, `TBD`, `FIXME`,
@@ -72,7 +72,7 @@ let the user review and approve** before moving on — you'll receive a `[The us
 …]` message when a section is approved. Do **not** jump ahead and produce a later stage's
 artifacts (issues, fleet, …) before the current stage is approved.
 
-Maintain `context/_skipped.md`: one line per checklist dimension you deliberately did
+Maintain `discovery/_skipped.md`: one line per checklist dimension you deliberately did
 **not** document, each with a short reason. Keep it current as you decide to skip
 things. The UI shows it as a collapsed "considered & skipped" list so the user
 can see the whole surface was weighed.
@@ -336,7 +336,7 @@ into milestones is different from scoping the solution down.)
 production or enterprise target, **weigh each of these and APPLY the ones that matter** — as the
 relevant feature's acceptance criteria, an architecture decision, a reusable Skill, or a short
 section. Don't run them as a dozen set-piece context chats; fold each into the
-feature/issue that carries it, and record any you deliberately skip in `context/_skipped.md`:
+feature/issue that carries it, and record any you deliberately skip in `discovery/_skipped.md`:
 - **Observability & SLOs** — structured logging, metrics, distributed tracing (OpenTelemetry),
   dashboards, and explicit SLIs/SLOs with alerting. ("Can you see it in prod, and know when it breaks?")
 - **Reliability & resilience** — timeouts, retries with backoff, idempotency, circuit breakers,
@@ -380,17 +380,17 @@ and `risks` apply to almost every project.
 **Core orientation — document these, briefly (each line is the template).**
 
 > **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
-> `context/goal.md`, `context/scope.md`, `context/stack.md`, `context/architecture.md`,
-> `context/users.md`, and `context/release.md`.** Write each; shape the set for THIS project with `bsc-plan context
-> require <topic>` / `bsc-plan context unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
-> platform requires `schema`; `bsc-plan context list` shows the required set). The Context stage
-> completes once every required topic's file exists — context files are generated, not confirmed.
+> `discovery/goal.md`, `discovery/scope.md`, `discovery/stack.md`, `discovery/architecture.md`,
+> `discovery/users.md`, and `discovery/release.md`.** Write each; shape the set for THIS project with `bsc-plan discovery
+> require <topic>` / `bsc-plan discovery unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
+> platform requires `schema`; `bsc-plan discovery list` shows the required set). The Discovery stage
+> completes once every required topic's file exists — discovery files are generated, not confirmed.
 
 - `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
   success (2–4 sentences). Drives the GitHub project title and description.
 - `users` **(gate-required)** — primary personas, their jobs-to-be-done, and the one workflow each
   cares most about. One tight paragraph. (Unrequire it for a project with no distinct users — a pure
-  CLI or library — with `bsc-plan context unrequire users`.)
+  CLI or library — with `bsc-plan discovery unrequire users`.)
 - `scope` **(gate-required)** — two lists: **In scope** (concrete deliverables) and **Out of
   scope** (explicit exclusions that prevent scope creep).
 - `stack` **(gate-required)** — one line per layer (runtime, framework, datastore, auth,
@@ -427,12 +427,12 @@ shared contract many features depend on.
 `data_lifecycle`, `performance`, `docs`, `cost`** — are the "done" bars enumerated under
 "Aim for the most complete, production-grade solution" above. For a production/enterprise target,
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
-section) and record any you skip in `context/_skipped.md` — don't silently drop them.
+section) and record any you skip in `discovery/_skipped.md` — don't silently drop them.
 **`accessibility` and other compliance** (GDPR / SOC 2 / HIPAA / PCI) are owned by the **Compliance
 MCP server** (`bsc-plan mcp add Compliance`, which generates the compliance/accessibility
 Skills) — never a hand-authored context section.
 
-**Genuinely optional — one line in `context/_skipped.md` unless the product is centrally about
+**Genuinely optional — one line in `discovery/_skipped.md` unless the product is centrally about
 it:** `ux`, `infra`, `analytics`. Document one only when it is a first-class concern (e.g. `ux`
 for a design tool).
 

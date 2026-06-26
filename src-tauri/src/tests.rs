@@ -622,12 +622,12 @@ use crate::console::settings::*;
     }
 
     #[test]
-    fn ingest_section_files_reads_both_dirs_and_context_wins() {
+    fn ingest_section_files_reads_both_dirs_and_discovery_wins() {
         use std::collections::HashMap;
         let root = std::env::temp_dir().join(format!("bsc-ingest-{}", std::process::id()));
-        let context = root.join("context");
+        let discovery = root.join("discovery");
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&context).unwrap();
+        std::fs::create_dir_all(&discovery).unwrap();
 
         // Hub root: a manifest (json) + a stale flat copy of `stack` + a control file.
         std::fs::write(root.join("phases.json"), r#"{"phases":[]}"#).unwrap();
@@ -635,18 +635,18 @@ use crate::console::settings::*;
         std::fs::write(root.join("CLAUDE.md"), "the planner spec").unwrap();
         // An empty section is a created-but-unwritten ghost and must be dropped.
         std::fs::write(root.join("empty.md"), "   \n").unwrap();
-        // context/: the discovery sections (one shadows the stale root `stack`).
-        std::fs::write(context.join("goal.md"), "ship it").unwrap();
-        std::fs::write(context.join("stack.md"), "NEW context stack").unwrap();
+        // discovery/: the discovery sections (one shadows the stale root `stack`).
+        std::fs::write(discovery.join("goal.md"), "ship it").unwrap();
+        std::fs::write(discovery.join("stack.md"), "NEW discovery stack").unwrap();
 
         let mut sections: HashMap<String, String> = HashMap::new();
         ingest_section_files(&root, &mut sections);
-        ingest_section_files(&context, &mut sections);
+        ingest_section_files(&discovery, &mut sections);
 
         assert_eq!(sections.get("phases").map(String::as_str), Some(r#"{"phases":[]}"#));
         assert_eq!(sections.get("goal").map(String::as_str), Some("ship it"));
-        // context/ is ingested last, so its section wins over the stale flat copy.
-        assert_eq!(sections.get("stack").map(String::as_str), Some("NEW context stack"));
+        // discovery/ is ingested last, so its section wins over the stale flat copy.
+        assert_eq!(sections.get("stack").map(String::as_str), Some("NEW discovery stack"));
         // Control files and empty sections never become sections.
         assert!(!sections.contains_key("CLAUDE"));
         assert!(!sections.contains_key("empty"));

@@ -11,7 +11,7 @@ const state = (over: Partial<ConductorState> = {}): ConductorState => ({ doneSub
 
 describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
   it("lists the stage overview prompt first, then each substep prompt", () => {
-    const context = mkSection("context");
+    const context = mkSection("discovery");
     const list = stagePrompts(context);
     expect(list.length).toBeGreaterThanOrEqual(2);
     expect(list[0].label).toContain("overview");
@@ -28,21 +28,21 @@ describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
 });
 
 describe("nextInjection — stage + static substeps", () => {
-  const context = mkSection("context"); // _stage + goal/scope/stack/architecture + dimensions(loop)
+  const context = mkSection("discovery"); // _stage + goal/scope/stack/architecture + dimensions(loop)
 
   it("returns null when there is no active section", () => {
     expect(nextInjection(undefined, new Set(), emptyState())).toBeNull();
   });
 
   it("injects the stage prompt first, then the first substep", () => {
-    expect(nextInjection(context, new Set(), emptyState())?.id).toBe("context:_stage");
-    expect(nextInjection(context, new Set(["context:_stage"]), emptyState())?.id).toBe("context:goal");
+    expect(nextInjection(context, new Set(), emptyState())?.id).toBe("discovery:_stage");
+    expect(nextInjection(context, new Set(["discovery:_stage"]), emptyState())?.id).toBe("discovery:goal");
   });
 
   it("waits on an injected-but-not-done substep, and advances once it's done", () => {
-    const injected = new Set(["context:_stage", "context:goal"]);
+    const injected = new Set(["discovery:_stage", "discovery:goal"]);
     expect(nextInjection(context, injected, emptyState())).toBeNull();
-    expect(nextInjection(context, injected, state({ doneSubsteps: new Set(["goal"]) }))?.id).toBe("context:scope");
+    expect(nextInjection(context, injected, state({ doneSubsteps: new Set(["goal"]) }))?.id).toBe("discovery:scope");
   });
 
   it("a substep-less stage injects only its stage prompt, once", () => {
@@ -105,8 +105,8 @@ describe("flattenPrompt — single-line so the CLI submits it", () => {
 
 describe("isStepDelivered — artifact signal with output-grew fallback", () => {
   it("a discovery substep is delivered when its file appears", () => {
-    expect(isStepDelivered("context:stack", sig({ sectionKeys: new Set(["stack"]) }))).toBe(true);
-    expect(isStepDelivered("context:stack", sig())).toBe(false); // no file, no output
+    expect(isStepDelivered("discovery:stack", sig({ sectionKeys: new Set(["stack"]) }))).toBe(true);
+    expect(isStepDelivered("discovery:stack", sig())).toBe(false); // no file, no output
   });
   it("the propose step is delivered once features.json has entries", () => {
     expect(isStepDelivered("features:propose", sig({ featuresExist: true }))).toBe(true);
@@ -118,9 +118,9 @@ describe("isStepDelivered — artifact signal with output-grew fallback", () => 
   });
   it("falls back to output-grew for steps with no measurable artifact", () => {
     // a stage orientation prompt has no artifact — only the fallback can mark it delivered
-    expect(isStepDelivered("context:_stage", sig())).toBe(false);
-    expect(isStepDelivered("context:_stage", sig({ outputGrew: true }))).toBe(true);
+    expect(isStepDelivered("discovery:_stage", sig())).toBe(false);
+    expect(isStepDelivered("discovery:_stage", sig({ outputGrew: true }))).toBe(true);
     // the fallback delivers ANY step when the planner responded
-    expect(isStepDelivered("context:stack", sig({ outputGrew: true }))).toBe(true);
+    expect(isStepDelivered("discovery:stack", sig({ outputGrew: true }))).toBe(true);
   });
 });

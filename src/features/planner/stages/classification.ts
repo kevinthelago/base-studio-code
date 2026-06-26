@@ -64,7 +64,7 @@ export const buildsCode = (s: ClassificationSignals): boolean => s.surfaces.some
  */
 export function stageApplies(id: StageId, s: ClassificationSignals): boolean {
   switch (id) {
-    case "context":     return true;                                          // Discovery — always on
+    case "discovery":     return true;                                          // Discovery — always on
     case "repos":       return buildsCode(s);                                 // software surfaces
     case "source":      return s.migration || s.dataModel;                    // a migration source / data model
     case "features":    return s.lifecycle === "greenfield";

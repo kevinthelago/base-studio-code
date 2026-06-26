@@ -12,7 +12,7 @@ export const tint = (h: number, a: number): string => `oklch(0.74 0.11 ${h} / ${
 export interface StageKindMeta { title: string; glyph: string; h: number; blurb: string }
 
 export const STAGE_KINDS: Record<string, StageKindMeta> = {
-  context:       { title: "Context",          glyph: "flag",            h: 70,  blurb: "Pitch, goals & house rules the agents read first." },
+  discovery:     { title: "Discovery",        glyph: "flag",            h: 70,  blurb: "Pitch, goals & house rules the agents read first." },
   repos:         { title: "Repositories",     glyph: "account_tree",    h: 230, blurb: "Which repos this project spans + linking." },
   users:         { title: "Users & personas", glyph: "group",           h: 295, blurb: "Who it's for and the jobs they need done." },
   ui:            { title: "UI design",        glyph: "design_services", h: 350, blurb: "Claude Design kickoff + route the user's design files." },
@@ -73,7 +73,7 @@ export function stageKind(key: string): StageKindMeta {
  *  seeded by their category's built-in, and the blueprint-authoring meta-stages), so an imported
  *  blueprint resolves a real icon for every stage without those flooding the palette. */
 export const STAGE_KIND_KEYS = [
-  "context", "repos", "users", "ui", "stack", "architecture", "schema", "api",
+  "discovery", "repos", "users", "ui", "stack", "architecture", "schema", "api",
   "structure", "permissions", "automations", "skills", "testing", "security",
   "observability", "infra", "cicd", "docs", "cleanup",
 ];
@@ -95,7 +95,7 @@ export const DISPOSITION_KEYS = Object.keys(DISPOSITIONS);
 export function defaultDisposition(key: string): string {
   if (key === "structure") return "issues";
   if (key === "skills") return "skill-index";
-  if (key === "permissions" || key === "context") return "knowledge";
+  if (key === "permissions" || key === "discovery") return "knowledge";
   return "plan-file";
 }
 
