@@ -4,7 +4,7 @@
   "glyph": "▣",
   "gate": "design routed",
   "deps": [
-    "context",
+    "discovery",
     "features"
   ],
   "appliesWhen": {

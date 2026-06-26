@@ -4,7 +4,7 @@
   "glyph": "⊞",
   "gate": "every feature sequenced into a phase",
   "deps": [
-    "context",
+    "discovery",
     "repos",
     "features"
   ],

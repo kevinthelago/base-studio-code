@@ -3,7 +3,7 @@
   "glyph": "⇲",
   "gate": "every declared source connected",
   "deps": [
-    "context",
+    "discovery",
     "repos"
   ],
   "optional": true,
