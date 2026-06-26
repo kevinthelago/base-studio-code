@@ -6,7 +6,7 @@
 // anchor + the recent diff + the recent commands, never the worker-ingested prose) — for a fuzzy
 // "on-task or drifted?" second opinion, off the deterministic hot path.
 //
-// Pure: prompt building + verdict parsing + sampling. The useWarden loop owns the kb_chat call and
+// Pure: prompt building + verdict parsing + sampling. The useWarden loop owns the llm_complete call and
 // the quarantine actuation. Fail-OPEN by design — a parse failure or model wobble must NOT pause a
 // legit worker (the deterministic check is the trustworthy gate); the judge only ADDS coverage.
 

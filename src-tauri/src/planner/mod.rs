@@ -1,10 +1,10 @@
-pub(crate) mod templates;
+pub(crate) mod prompts;
 pub(crate) mod directives;
 pub(crate) mod workspace;
 
 #[cfg(test)]
 mod tests {
-    use super::templates::*;
+    use super::prompts::*;
     use super::directives::*;
     use super::workspace::*;
 

@@ -1,7 +1,7 @@
 //! Google Gemini (Generative Language API) provider. Maps the normalized request
 //! onto Gemini's `contents` / `systemInstruction` shape, and folds the response's
 //! `candidates[0].content.parts[].text` back into the normalized `{content,usage}`
-//! so kb_chat's consumers read it unchanged.
+//! so llm_complete's consumers read it unchanged.
 
 use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 

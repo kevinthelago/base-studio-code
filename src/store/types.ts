@@ -401,7 +401,7 @@ export interface AppStore extends SkillsSlice, McpSlice, AutomationsSlice, Githu
   claudeApiKey: string;
   setClaudeApiKey: (key: string) => void;
 
-  // API-tier LLM provider config (#1085) — powers kb_chat-backed calls (planning
+  // API-tier LLM provider config (#1085) — powers llm_complete-backed calls (planning
   // autopilot, grader, cleanup verifier). `claudeApiKey` doubles as the anthropic key.
   // Distinct from the per-pane runtime model (defaultModel/paneModels).
   llmProvider: LlmProvider;
