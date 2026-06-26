@@ -3,7 +3,7 @@ import {
   DEFAULT_FLOW, normalizeFlow, flowOrUndefined, resolveFlow,
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
 } from "./agentFlow";
-import { parseFleetFile } from "../stages/planSections";
+import { parseFleetFile } from "./planFleet";
 import { parseAgentAssigns } from "../session/planningSession";
 
 describe("agentFlow model", () => {

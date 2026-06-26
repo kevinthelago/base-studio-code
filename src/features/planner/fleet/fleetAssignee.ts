@@ -4,7 +4,7 @@
 // `stream:<id>` label stays as the agent-ownership marker; this drives the first-class
 // GitHub assignee field. Pure + unit-tested; the publish flow applies it best-effort.
 
-import type { AgentStream } from "../stages/planSections";
+import type { AgentStream } from "./planFleet";
 
 /**
  * The GitHub login to assign an issue to, given its owning stream id.

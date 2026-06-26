@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { doneIssueRefs, streamComplete, pruneCompletedStreams } from "./streamCompletion";
-import type { AgentStream } from "../stages/planSections";
+import type { AgentStream } from "./planFleet";
 import type { PlanIssue } from "../issues/planIssues";
 
 const issue = (ref: string, status?: PlanIssue["status"]): PlanIssue => ({

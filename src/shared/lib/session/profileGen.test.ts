@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateAgentProfile, fleetProfilesComplete } from "./profileGen";
-import type { AgentStream } from "@/features/planner/stages/planSections";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
 describe("fleetProfilesComplete — the permissions gate (#696)", () => {
   const s = (id: string, profile?: string): AgentStream =>

@@ -4,7 +4,7 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Screen } from "@/app/chrome/Rail";
-import type { AgentStream } from "@/features/planner/stages/planSections";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
 import { startRun } from "@/shared/lib/fleet/conductor";
 import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
