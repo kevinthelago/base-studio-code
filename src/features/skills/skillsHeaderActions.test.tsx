@@ -40,9 +40,9 @@ describe("SkillsScreen — page-header actions (import + '+ skill')", () => {
     expect(within(head).getByText("● github sync")).toBeTruthy();
   });
 
-  it("the header buttons do NOT appear on the Catalog tab", () => {
+  it("the header buttons do NOT appear off the Library tab", () => {
     const { container } = render(<SkillsScreen />);
-    fireEvent.click(screen.getByText("Catalog"));
+    fireEvent.click(screen.getByText("Runs"));
     const head = header(container);
     expect(within(head).queryByText("import")).toBeNull();
     expect(within(head).queryByText("+ skill")).toBeNull();

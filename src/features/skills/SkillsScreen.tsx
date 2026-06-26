@@ -9,11 +9,11 @@ import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import {
-  KIND, PROFILE_COLOR, SOURCE_TAG, skillCatalog, fmtCount,
+  KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount,
   type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
 import {
-  blankSkill, defFromCatalog, deriveSkillKpis, parseSkillsFile, skillSlug,
+  blankSkill, deriveSkillKpis, parseSkillsFile, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
@@ -24,7 +24,7 @@ import { LessonsTab } from "./LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import "./skills.css";
 
-type Mode = "library" | "lessons" | "runs" | "catalog";
+type Mode = "library" | "lessons" | "runs";
 type Density = "list" | "cards" | "grouped" | "kind";
 type SortKey = "Most invoked" | "Name (A–Z)" | "Success rate" | "Recently used" | "Recently added";
 
@@ -39,7 +39,7 @@ interface GhProject { id: string; number: number; title: string }
 const PROJECTS_QUERY = `{ viewer { projectsV2(first: 50) { nodes { id title number } } } }`;
 
 const MODES: Array<{ k: Mode; label: string }> = [
-  { k: "library", label: "Library" }, { k: "lessons", label: "Lessons" }, { k: "runs", label: "Runs" }, { k: "catalog", label: "Catalog" },
+  { k: "library", label: "Library" }, { k: "lessons", label: "Lessons" }, { k: "runs", label: "Runs" },
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
@@ -106,7 +106,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const [facetSel, setFacetSel] = useState<Record<string, Set<string>>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SkillDef | null>(null);
-  const [catalogQuery, setCatalogQuery] = useState("");
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -295,13 +294,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   // section; surface a hint to create groups rather than reading as a broken single bucket.
   const groupedNoGroups = density === "grouped" && skillGroups.length === 0;
 
-  // ── catalog ─────────────────────────────────────────────────────────────────
-  const existingNames = useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
-  const availableCatalog = useMemo(() => skillCatalog().filter((c) => !existingNames.has(c.name)), [existingNames]);
-  const catalogList = useMemo(() => {
-    const q = catalogQuery.trim().toLowerCase();
-    return q ? availableCatalog.filter((c) => (c.name + " " + c.desc + " " + c.by).toLowerCase().includes(q)) : availableCatalog;
-  }, [catalogQuery, availableCatalog]);
 
   // ── runs ──────────────────────────────────────────────────────────────────────
   const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
@@ -550,28 +542,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                   <span style={{ display: "flex", justifyContent: "flex-end" }}>{s.trend.length > 1 ? <Spark data={s.trend} color={KIND[s.kind].color} /> : <span className="hint">—</span>}</span>
                 </div>
               ); })}
-            </div>
-          )}
-        </div></section>
-      )}
-
-      {mode === "catalog" && (
-        <section className="an-page"><div className="an-wrap">
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <input className="input" placeholder="Search the catalog…" value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} style={{ maxWidth: 320 }} />
-            <span className="hint">{catalogList.length} of {availableCatalog.length}</span>
-          </div>
-          {catalogList.length === 0 ? (
-            <div className="empty"><h3 style={{ margin: 0 }}>{availableCatalog.length === 0 ? "Library complete" : "No matches"}</h3></div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              {catalogList.map((c) => (
-                <div key={c.name} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", gap: 11 }}><span style={{ width: 30, height: 30, borderRadius: 7, background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 15, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.glyph}</span><div style={{ minWidth: 0 }}><div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", fontWeight: 600 }}>{c.name}</div><div className="hint" style={{ fontSize: 9.5 }}>by {c.by}</div></div></div>
-                  <p style={{ margin: 0, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, flex: 1 }}>{c.desc}</p>
-                  <button className="btn" onClick={() => setSelectedId(addSkill(defFromCatalog(c.name)))}>add to library</button>
-                </div>
-              ))}
             </div>
           )}
         </div></section>
