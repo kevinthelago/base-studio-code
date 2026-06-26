@@ -9,6 +9,7 @@
 // `services.length > 0 && services.every(serviceReady)`; the pane shows "N of M repos deploy-ready".
 
 import { repoShortName } from "@/shared/lib/core/projectPaths";
+import type { ReadinessCheck } from "./readiness";
 
 /** Workload kind a service deploys as. */
 export type Workload = "static" | "serverless" | "container" | "service";
@@ -297,10 +298,8 @@ export function finalStageName(s: DeployService | undefined): "deploy" | "publis
   return "deploy";
 }
 
-export interface DeployCheck { id: string; label: string; ok: boolean; detail: string }
-
 /** The readiness checks for ONE service (repo) — every one `ok` ⇒ this repo is deploy-ready. */
-export function serviceChecks(s: DeployService): DeployCheck[] {
+export function serviceChecks(s: DeployService): ReadinessCheck[] {
   const prodSecrets = s.config.secrets.length === 0 || s.config.secrets.every((row) => !!row.prod);
   return [
     { id: "target",   label: "Deploy target set",          ok: serviceTargetDefined(s),     detail: serviceMode(s) === "local" ? (s.localKind ?? "local") : (platform(s.platform).name || "—") },

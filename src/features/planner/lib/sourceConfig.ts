@@ -12,6 +12,7 @@
 // keeps only non-secret fields, a redacted `handle`, and the discovered (not extracted) inventory.
 
 import type { DataModel, Entity, Field, FieldType } from "@/features/planner/data/dataModel";
+import type { ReadinessCheck } from "./readiness";
 
 /** How a connector authenticates — drives which card the per-source ConnectionSpec renders. */
 export type AuthMethod = "oauth" | "token" | "password" | "basic" | "apiKey" | "open" | "upload";
@@ -297,10 +298,8 @@ export function allSourcesConnected(cfg: SourceConfig | undefined): boolean {
   return !!cfg && cfg.sources.length > 0 && cfg.sources.every((s) => s.status === "scanned");
 }
 
-export interface SourceCheck { id: string; label: string; ok: boolean; detail: string }
-
 /** Readiness checks driving the in-pane banner: every declared source scanned, none errored. */
-export function sourceChecks(cfg: SourceConfig): SourceCheck[] {
+export function sourceChecks(cfg: SourceConfig): ReadinessCheck[] {
   const total = cfg.sources.length;
   const scanned = cfg.sources.filter((s) => s.status === "scanned").length;
   const errored = cfg.sources.filter((s) => s.status === "error").length;

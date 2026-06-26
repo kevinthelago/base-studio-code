@@ -31,11 +31,25 @@ export function timeAgoMs(ms: number): string {
   return ms > 0 ? timeAgo(new Date(ms).toISOString()) : "—";
 }
 
+/**
+ * A stable 32-bit unsigned hash of a string (`h = h*31 + charCode`, truncated to
+ * uint32 each step). Deterministic, so the same string always hashes the same — the
+ * shared core behind the continuous-hue color helpers ({@link loginColor} + the fleet
+ * board's profile color). Callers map the hash to their own space (e.g. `% 360` for a hue).
+ *
+ * Note: `hueFor` (per-step `% 360`) and the discrete `avatarColor` (per-step `& 0xffff`)
+ * use *different* reductions and are intentionally NOT built on this — they'd produce
+ * different colors.
+ */
+export function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
 /** A stable oklch color hashed from a login, so the same user always renders the same hue. */
 export function loginColor(login: string): string {
-  let h = 0;
-  for (let i = 0; i < login.length; i++) h = (h * 31 + login.charCodeAt(i)) >>> 0;
-  return `oklch(0.68 0.12 ${h % 360})`;
+  return `oklch(0.68 0.12 ${hashString(login) % 360})`;
 }
 
 /** A deterministic hue (0–359) hashed from a string — a tile/category accent. */
