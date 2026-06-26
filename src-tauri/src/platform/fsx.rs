@@ -67,7 +67,7 @@ pub(crate) fn is_safe_relpath(rel: &std::path::Path) -> bool {
 /// relpaths are forward-slashed and relative to `root`; the result is sorted by relpath.
 ///
 /// This is the one shared walker behind [`read_files_dir`] (accept-all) and
-/// `inspect::read_skeleton_dir` (extension-filtered) — the size cap, slash-normalize, and sort
+/// `ui_skeleton::read_skeleton_dir` (extension-filtered) — the size cap, slash-normalize, and sort
 /// live here in one place. **Symlinks and junctions are skipped** (never recursed into or read):
 /// each entry's `symlink_metadata().file_type().is_symlink()` is checked first, closing the
 /// node_modules junction-traversal hazard (#1650).
