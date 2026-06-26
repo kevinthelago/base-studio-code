@@ -200,7 +200,11 @@ describe("FocusedModelBody", () => {
   });
 
   it("renders entities, fields, identity, enum + drop hint", async () => {
-    routeSections({ datamodel: DATAMODEL });
+    // #1446: FocusedModelBody reads the model from the DuckDB store via data_get_model
+    // ({ model, refined }), not the retired datamodel.json stage file.
+    vi.mocked(invoke).mockImplementation(((cmd: string) =>
+      cmd === "data_get_model" ? Promise.resolve({ model: JSON.parse(DATAMODEL), refined: true }) : Promise.resolve(null)
+    ) as unknown as typeof invoke);
     render(<FocusedModelBody projectId="proj" />);
     await screen.findByText(/CRM Core/);
     expect(screen.getByText("identity: [domain]")).toBeTruthy();

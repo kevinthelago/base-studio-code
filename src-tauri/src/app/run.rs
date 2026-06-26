@@ -132,6 +132,7 @@ pub fn run() {
             data::data_source_sample,
             data::data_infer_model,
             data::data_persist_model,
+            data::data_get_model,
             data::data_load_reconciled,
             data::data_platform_scan,
             data::data_connector_catalog,
