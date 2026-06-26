@@ -11,7 +11,10 @@ mod mcp;
 mod permissions;
 mod telemetry;
 
-use agent::{bash_tool, edit_file_tool, read_file_tool, run_agent, write_file_tool};
+use agent::{
+    bash_tool, edit_file_tool, glob_tool, grep_tool, read_file_tool, run_agent, webfetch_tool,
+    write_file_tool,
+};
 use std::io::Read;
 use std::path::Path;
 
@@ -93,7 +96,15 @@ async fn main() {
     // System prompt = the CLAUDE.md chain (ancestors + cwd) + CLAUDE.local.md (the plan),
     // matching Claude Code's context loading so a bsc-agent worker sees the same context.
     let system = compose_system(&std::env::current_dir().unwrap_or_default());
-    let mut tools = vec![read_file_tool(), write_file_tool(), edit_file_tool(), bash_tool()];
+    let mut tools = vec![
+        read_file_tool(),
+        write_file_tool(),
+        edit_file_tool(),
+        bash_tool(),
+        grep_tool(),
+        glob_tool(),
+        webfetch_tool(),
+    ];
     // MCP tools ($BSC_AGENT_MCP, a JSON array of server cfgs) — connect each (best-effort: a
     // failed server is logged + skipped), add its tools (namespaced mcp__<server>__<tool>), and
     // keep the clients alive for the session so the child processes aren't dropped.

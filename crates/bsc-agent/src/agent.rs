@@ -158,8 +158,8 @@ pub fn load_conversation(path: &Path) -> Vec<Msg> {
         .unwrap_or_default()
 }
 
-/// The `read_file` tool: read a UTF-8 text file at `args.path`. The first of the
-/// core tools (P2a); more (write/edit/bash/grep/glob) follow in later P2 slices.
+/// The `read_file` tool: read a UTF-8 text file at `args.path`. One of the core
+/// tools alongside write/edit/bash/grep/glob/webfetch (Claude Code tool-set parity).
 pub fn read_file_tool() -> Tool {
     Tool {
         def: ToolDef {
@@ -266,6 +266,170 @@ pub fn bash_tool() -> Tool {
                 out.push_str(&format!("\n[exit {code}]"));
             }
             Ok(out)
+        }),
+    }
+}
+
+/// Recursively collect the files under `root` (a directory), or just `root` itself
+/// when it is a file. Best-effort: unreadable entries are skipped. Used by `grep`.
+fn collect_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    if root.is_file() {
+        out.push(root.to_path_buf());
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(root) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Skip the usual heavy / noise directories so a repo-root grep stays useful.
+        if path.is_dir() {
+            let skip = matches!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some(".git" | "node_modules" | "target" | "dist" | ".vite")
+            );
+            if !skip {
+                collect_files(&path, out);
+            }
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+}
+
+/// The `grep` tool: search file contents for a regular expression and return the
+/// matching lines as `path:line:text`. Mirrors Claude Code's Grep so weak models get
+/// a first-class search verb instead of improvising `bash` pipelines (#1442).
+pub fn grep_tool() -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "grep".into(),
+            description: "Search file contents for a regular expression. Returns matching lines as `path:line:text`. `path` defaults to the current directory and may be a file or a directory (searched recursively, skipping .git/node_modules/target/dist).".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "the regular expression to search for" },
+                    "path": { "type": "string", "description": "file or directory to search (default: current directory)" }
+                },
+                "required": ["pattern"]
+            }),
+        },
+        run: Box::new(|args| {
+            let pattern = args["pattern"].as_str().ok_or("missing 'pattern' argument")?;
+            let path = args["path"].as_str().unwrap_or(".");
+            let re = regex::Regex::new(pattern).map_err(|e| format!("grep: invalid pattern: {e}"))?;
+            let mut files = Vec::new();
+            collect_files(std::path::Path::new(path), &mut files);
+            const MAX_MATCHES: usize = 500;
+            let mut matches = Vec::new();
+            let mut truncated = false;
+            'outer: for file in files {
+                // Non-UTF-8 / binary files are skipped silently (read_to_string fails).
+                let Ok(body) = std::fs::read_to_string(&file) else { continue };
+                for (i, line) in body.lines().enumerate() {
+                    if re.is_match(line) {
+                        if matches.len() >= MAX_MATCHES {
+                            truncated = true;
+                            break 'outer;
+                        }
+                        matches.push(format!("{}:{}:{}", file.display(), i + 1, line));
+                    }
+                }
+            }
+            if matches.is_empty() {
+                return Ok("no matches".into());
+            }
+            let mut out = matches.join("\n");
+            if truncated {
+                out.push_str(&format!("\n[truncated at {MAX_MATCHES} matches]"));
+            }
+            Ok(out)
+        }),
+    }
+}
+
+/// The `glob` tool: list filesystem paths matching a glob pattern (e.g. `src/**/*.rs`),
+/// newest first is not guaranteed — paths are returned in glob order. Gives weak models
+/// a first-class file-discovery verb (#1442).
+pub fn glob_tool() -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "glob".into(),
+            description: "List files matching a glob pattern (e.g. `src/**/*.rs`). Returns one path per line.".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "the glob pattern, e.g. `**/*.toml`" }
+                },
+                "required": ["pattern"]
+            }),
+        },
+        run: Box::new(|args| {
+            let pattern = args["pattern"].as_str().ok_or("missing 'pattern' argument")?;
+            let paths = glob::glob(pattern).map_err(|e| format!("glob: invalid pattern: {e}"))?;
+            const MAX: usize = 1000;
+            let mut out = Vec::new();
+            let mut truncated = false;
+            for p in paths.flatten() {
+                if out.len() >= MAX {
+                    truncated = true;
+                    break;
+                }
+                out.push(p.display().to_string());
+            }
+            if out.is_empty() {
+                return Ok("no matches".into());
+            }
+            let mut joined = out.join("\n");
+            if truncated {
+                joined.push_str(&format!("\n[truncated at {MAX} paths]"));
+            }
+            Ok(joined)
+        }),
+    }
+}
+
+/// The `webfetch` tool: HTTP GET a URL and return the response body as text. Runs the
+/// blocking request on a dedicated OS thread because the agent loop executes tools
+/// inline on a tokio worker, and reqwest::blocking panics if started inside a runtime.
+pub fn webfetch_tool() -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "webfetch".into(),
+            description: "HTTP GET a URL and return the response body as text. Output is capped; non-2xx responses are returned with an `[http N]` prefix.".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "the absolute http(s) URL to fetch" }
+                },
+                "required": ["url"]
+            }),
+        },
+        run: Box::new(|args| {
+            let url = args["url"].as_str().ok_or("missing 'url' argument")?.to_string();
+            let body = std::thread::spawn(move || -> Result<String, String> {
+                let client = reqwest::blocking::Client::builder()
+                    .user_agent("bsc-agent")
+                    .build()
+                    .map_err(|e| format!("webfetch: client: {e}"))?;
+                let resp = client.get(&url).send().map_err(|e| format!("webfetch {url}: {e}"))?;
+                let status = resp.status();
+                let text = resp.text().map_err(|e| format!("webfetch {url}: {e}"))?;
+                if status.is_success() {
+                    Ok(text)
+                } else {
+                    Ok(format!("[http {}]\n{text}", status.as_u16()))
+                }
+            })
+            .join()
+            .map_err(|_| "webfetch: worker thread panicked".to_string())??;
+            // Char-safe cap (never split a UTF-8 boundary).
+            const MAX_CHARS: usize = 100_000;
+            if body.chars().count() > MAX_CHARS {
+                let mut capped: String = body.chars().take(MAX_CHARS).collect();
+                capped.push_str("\n[truncated]");
+                Ok(capped)
+            } else {
+                Ok(body)
+            }
         }),
     }
 }
@@ -594,5 +758,56 @@ mod tests {
             Ok(out) => eprintln!("skipping bash assert (bash misconfigured here): {out:?}"),
             Err(e) => eprintln!("skipping bash test (bash unavailable): {e}"),
         }
+    }
+
+    #[test]
+    fn grep_finds_matching_lines_with_path_and_line() {
+        let dir = std::env::temp_dir().join(format!("bsc_grep_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("a.txt"), "alpha\nNEEDLE here\nbeta").unwrap();
+        std::fs::write(dir.join("b.txt"), "nothing relevant").unwrap();
+        let out = (grep_tool().run)(&serde_json::json!({
+            "pattern": "NEEDLE",
+            "path": dir.to_string_lossy(),
+        }))
+        .unwrap();
+        assert!(out.contains("a.txt"), "names the matching file: {out}");
+        assert!(out.contains(":2:"), "reports the 1-based line number: {out}");
+        assert!(out.contains("NEEDLE here"));
+        // A pattern that matches nothing returns the sentinel, not an error.
+        let none = (grep_tool().run)(&serde_json::json!({
+            "pattern": "zzz_absent",
+            "path": dir.to_string_lossy(),
+        }))
+        .unwrap();
+        assert_eq!(none, "no matches");
+        // An invalid regex is an Err fed back to the model, not a crash.
+        assert!((grep_tool().run)(&serde_json::json!({ "pattern": "[", "path": "." })).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn glob_lists_matching_paths() {
+        let dir = std::env::temp_dir().join(format!("bsc_glob_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("keep.rs"), "").unwrap();
+        std::fs::write(dir.join("skip.txt"), "").unwrap();
+        let pat = format!("{}/*.rs", dir.to_string_lossy());
+        let out = (glob_tool().run)(&serde_json::json!({ "pattern": pat })).unwrap();
+        assert!(out.contains("keep.rs"));
+        assert!(!out.contains("skip.txt"));
+        let none = (glob_tool().run)(&serde_json::json!({
+            "pattern": format!("{}/*.never", dir.to_string_lossy()),
+        }))
+        .unwrap();
+        assert_eq!(none, "no matches");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn webfetch_validates_args_without_network() {
+        // Missing `url` is a clean Err (no thread spawn / no network), so this stays
+        // offline-safe in CI. The happy path is exercised by the parity smoke (#1444).
+        assert!((webfetch_tool().run)(&serde_json::json!({})).is_err());
     }
 }
