@@ -9,7 +9,7 @@ import type { McpServer as McpServerDef } from "@/features/mcp/lib/mcpServers";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { catalogLink } from "@/features/mcp/lib/mcpInstall";
 import type { McpServer } from "../pane/projectPane.types";
-import type { FleetPlan } from "../stages/planSections";
+import type { FleetPlan } from "../fleet/planFleet";
 
 /** Per-server install lifecycle the pane tracks (seeded by a disk probe, advanced by the
  *  download/build buttons). Keyed by server id. */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildMcpServers } from "./mcpPaneData";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
-import type { FleetPlan } from "../stages/planSections";
+import type { FleetPlan } from "../fleet/planFleet";
 
 const mcp = (over: Partial<McpServer>): McpServer => ({
   id: "e", name: "x", enabled: true, projects: [], transport: "stdio", command: "", args: "", env: [], ...over,

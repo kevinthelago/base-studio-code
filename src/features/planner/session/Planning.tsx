@@ -15,9 +15,9 @@ import {
 } from "./planningSession";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
-  ANCHOR_KEYS, SKIPPED_KEY, FLEET_KEY, FEATURES_KEY, titleForKey, groupSections,
-  parseFleetFile,
+  ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForKey, groupSections,
 } from "../stages/planSections";
+import { FLEET_KEY, parseFleetFile } from "../fleet/planFleet";
 import { resolveSkills } from "@/features/skills/lib/skills";
 import { parseFeaturesFile, featuresSummary, featuresAwaitingConfirm, featureDependencyCycle } from "../issues/featureList";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";

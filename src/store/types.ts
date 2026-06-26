@@ -13,7 +13,7 @@ import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
 import type { WorkflowRun } from "@/shared/lib/fleet/conductor";
 import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
-import type { FleetPlan, AgentStream } from "@/features/planner/stages/planSections";
+import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { StageConfig, StageId } from "@/features/planner/stages/planStages";
 import type { StageRunState } from "@/features/planner/preview/stageRun";

@@ -4,7 +4,7 @@ import { useAppStore, TRIAGE_PROMPT } from "./";
 import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 import type { ViewKey } from "@/app/console/panes/ViewTabs";
 import type { QueuedPane } from "@/app/console/lib/focusQueue";
-import type { FleetPlan } from "@/features/planner/stages/planSections";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
 import { defaultStageConfig } from "@/features/planner/stages/planStages";
