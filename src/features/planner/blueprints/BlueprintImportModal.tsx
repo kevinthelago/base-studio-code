@@ -3,7 +3,7 @@
 // (the user's own) and imports one into the library, with the manual "by URL / ID" paste as a
 // fallback. States: loading (skeletons) · list (per-row import / Imported / Update / importing) ·
 // empty · error. Pure-ish presentational shell over `listBlueprintGists`; CRUD is the parent's
-// `onImport` (resolve + dedupe-by-gist-id). Replaces the page-oriented CatalogView in a modal.
+// `onImport` (resolve + dedupe-by-gist-id). The page-oriented gist catalog, in a modal.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye, FileJson } from "lucide-react";
