@@ -12,6 +12,7 @@ import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { buildDrafts, type DraftRow } from "./drafts";
 
 // A published project's lifecycle, derived from GitHub state: open ⇒ active, closed ⇒ shipped.
 // (Local, not-yet-on-GitHub work lives in the separate Drafts section.)
@@ -260,8 +261,6 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
     </div>
   );
 }
-
-interface DraftRow { key: string; title: string; pitch: string; sort: number }
 
 /** A compact blueprint card for the right rail — hued icon tile + name + ⋯ menu, then a
  *  category / stages / visibility meta row and an optional gist link. */
@@ -670,22 +669,17 @@ export function ProjectsList() {
   }, [visibleProjects, workers]);
 
   // ── Local drafts (durable on-disk truth ∪ store draft map), dropping anything already published.
-  const allDrafts = useMemo<DraftRow[]>(() => {
-    const publishedKeys = new Set<string>([
-      ...Object.values(projectKeyAlias),
-      ...visibleProjects.map(p => sanitizeProjectKey(p.title)),
-    ]);
-    const byKey = new Map<string, DraftRow>();
-    for (const lp of Array.isArray(localProjects) ? localProjects : []) {
-      if (!lp?.hasPlan) continue; // skip bare scaffold dirs
-      byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
-    }
-    for (const [key, d] of Object.entries(localDraftProjects)) {
-      const ex = byKey.get(key);
-      byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
-    }
-    return [...byKey.values()].filter(d => !publishedKeys.has(d.key));
-  }, [localProjects, localDraftProjects, projectKeyAlias, visibleProjects]);
+  // Dedup keys off the authoritative `.published` marker (#922 / #1449), so a hub whose folder key
+  // differs in case from its GitHub board title can't leak into BOTH lists. See `buildDrafts`.
+  const allDrafts = useMemo<DraftRow[]>(
+    () => buildDrafts(
+      localProjects,
+      localDraftProjects,
+      projectKeyAlias,
+      visibleProjects.map(p => sanitizeProjectKey(p.title)),
+    ),
+    [localProjects, localDraftProjects, projectKeyAlias, visibleProjects],
+  );
 
   // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
   // Blueprints section, not the normal Drafts list (#923 / Projects-tab redesign).
