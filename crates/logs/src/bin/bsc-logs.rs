@@ -16,6 +16,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use bsc_sqlite_util::print_json;
 use logs::{canonical_stream, cost, query, role_of, sessions, LogEvent, SessionRow};
 
 struct Args {
@@ -74,15 +75,6 @@ flags: --session <id> --stream <name> --since <epochMs> --limit N --json --prett
 fn hms(ms: i64) -> String {
     let s = (ms / 1000).rem_euclid(86_400);
     format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
-}
-
-fn print_json<T: serde::Serialize>(v: &T, pretty: bool) {
-    let s = if pretty {
-        serde_json::to_string_pretty(v).unwrap_or_default()
-    } else {
-        serde_json::to_string(v).unwrap_or_default()
-    };
-    println!("{s}");
 }
 
 fn run() -> Result<(), String> {
