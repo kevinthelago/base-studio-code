@@ -259,6 +259,7 @@ use crate::console::settings::*;
             &[],
             &[],
             false,
+            "allow",
         ).unwrap();
 
         let v: serde_json::Value =
@@ -285,6 +286,40 @@ use crate::console::settings::*;
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #1572: bash_posture scales the auto-approve set — `allow` doers get the read-only AND
+    /// build baselines + the bare `Bash`; `ask` coordinators get read-only only (build/unlisted
+    /// prompt); `deny` gets neither baseline. The mandatory + per-stream granted commands are
+    /// always present.
+    #[test]
+    fn write_session_settings_bash_posture_scales_the_baseline() {
+        use crate::console::settings::write_session_settings;
+        let base = std::env::temp_dir().join(format!("bsc-ess-posture-{}", std::process::id()));
+        let read_allow = |dir: &std::path::Path| -> Vec<String> {
+            let v: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+            v["permissions"]["allow"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        };
+        for (posture, want_ro, want_build, want_bare) in [
+            ("allow", true, true, true),
+            ("ask",   true, false, false),
+            ("deny",  false, false, false),
+        ] {
+            let dir = base.join(posture);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join(".claude")).unwrap();
+            // Grant a project-specific command in every posture — it must ALWAYS be present.
+            write_session_settings(&dir.to_string_lossy(), &["terraform".into()], &[],
+                &[], &[], &[], &[], &[], &[], false, posture).unwrap();
+            let allow = read_allow(&dir);
+            assert_eq!(allow.contains(&"Bash(ls *)".to_string()), want_ro, "{posture}: read-only baseline");
+            assert_eq!(allow.contains(&"Bash(cargo *)".to_string()), want_build, "{posture}: build baseline");
+            assert_eq!(allow.contains(&"Bash".to_string()), want_bare, "{posture}: bare Bash");
+            assert!(allow.contains(&"Bash(terraform *)".to_string()), "{posture}: granted command always present");
+            assert!(allow.contains(&"Bash(git *)".to_string()), "{posture}: mandatory git always present");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
         use crate::console::settings::write_session_settings;
@@ -305,6 +340,7 @@ use crate::console::settings::*;
             &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
             &[],
             false,
+            "allow",
         ).unwrap();
 
         let v: serde_json::Value =
@@ -340,6 +376,7 @@ use crate::console::settings::*;
             &[],
             &[],
             false,
+            "allow",
         ).unwrap();
 
         let v: serde_json::Value =
@@ -372,14 +409,15 @@ use crate::console::settings::*;
             v["permissions"]["allow"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
         };
 
-        // First pass grants a custom command (merge mode).
-        write_session_settings(&cwd, &["cargo".into()], &[], &[], &[], &[], &[], &[], &[], false).unwrap();
-        assert!(read().contains(&"Bash(cargo *)".to_string()));
+        // First pass grants a custom command (merge mode). Use a command NOT in the baselines
+        // (`terraform`) so the drop is observable — a baseline command would be re-added anyway.
+        write_session_settings(&cwd, &["terraform".into()], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        assert!(read().contains(&"Bash(terraform *)".to_string()));
 
         // Re-apply with the command REMOVED — replace mode must drop it (merge would keep it).
-        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true).unwrap();
+        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true, "allow").unwrap();
         let allow = read();
-        assert!(!allow.contains(&"Bash(cargo *)".to_string()), "replace must drop the removed command (#799)");
+        assert!(!allow.contains(&"Bash(terraform *)".to_string()), "replace must drop the removed command (#799)");
         assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -405,7 +443,7 @@ use crate::console::settings::*;
         let hooks = vec![HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false).unwrap();
+        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false, "allow").unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =

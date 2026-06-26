@@ -523,6 +523,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         const paneFlow = useAppStore.getState().paneFlows[paneId];
         const flowRules = flowPermissionRules(paneFlow);
         const allowedCommands = prof?.allowedCommands ?? [];
+        // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve
+        // baseline (a bare `Bash` allow isn't honored by Claude Code). A worker (bash:allow)
+        // gets the read-only + build baselines so cargo/ls/npm never prompt; a director/reviewer
+        // (bash:ask) gets read-only only. No profile ⇒ the broad default ("allow").
+        const bashPosture = prof?.bashPosture ?? "allow";
         // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation
         // writes, so lift them from the role denies when the flow permits pushing/PRing
         // (a worker is github:read and would otherwise be blocked from opening its PR).
@@ -612,7 +617,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           cwd: initialCwd, allowedCommands, deniedCommands: denied,
           mcpServers: mcp, hooks: sessionHooks,
           allowToolRules, denyToolRules, askToolRules,
-          skills,
+          skills, bashPosture,
           // Replace (not merge) the permission block so a relaunch reflects the CURRENT
           // role+profile exactly — incl. permissions the user removed from the profile (#799).
           replacePermissions: true,

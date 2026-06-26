@@ -134,6 +134,11 @@ export interface AgentStream {
   issues: string[];
   /** Ids of streams that must land before this one starts. */
   dependsOn: string[];
+  /** Shell commands this stream's session may auto-run without prompting (#1572) — the
+   *  toolchain the planner grants it (e.g. `["cargo", "wasm-pack"]`), on top of the
+   *  posture-scaled safe baseline. Seeds the generated profile's `commands`; written as
+   *  `Bash(<cmd> *)` allow rules at launch. Unset/empty ⇒ baseline + mandatory only. */
+  commands?: string[];
   /** Relpath of the kickoff script the fleet launch seeds this session with. */
   prompt?: string;
   /** Id of the AgentProfile this stream's session launches under (#289). */
@@ -455,6 +460,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       owns:      toStringArray(so.owns),
       issues:    toStringArray(so.issues),
       dependsOn: toStringArray(so.dependsOn ?? so.depends_on),
+      commands:  ((cs) => cs.length ? cs : undefined)(toStringArray(so.commands)),
       prompt,
       mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
