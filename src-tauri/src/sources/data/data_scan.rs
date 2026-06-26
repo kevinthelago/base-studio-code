@@ -9,7 +9,7 @@
 //! Also hosts the packaged connector catalog (#1288) and the per-project scan-persist hook (#786).
 
 #[cfg(feature = "source-stage")]
-use bsc_data::{Connector, FieldType};
+use bsc_data::{Connector, FieldType, RestPreset};
 #[cfg(feature = "source-stage")]
 use super::data_csv::{infer_field_type, store_path};
 
@@ -410,7 +410,7 @@ fn scan_static_preset(
         .ok_or("missing base URL — set baseUrl")?;
     let base = base.trim_end_matches('/').to_string();
     let fetch = bearer_fetch(base.clone(), secret.to_string());
-    run_scan(&preset.connector(host_of(&base), fetch), host_of(&base))
+    run_scan(&preset.connector(host_of(&base), Box::new(fetch)), host_of(&base))
 }
 
 /// Build + scan the generic REST connector for a runtime preset, applying its declared auth. The
@@ -437,10 +437,10 @@ fn scan_rest_preset(
     if preset.auth == "basic" {
         let user = fields.get("user").cloned().unwrap_or_default();
         let fetch = basic_fetch(base, user, secret.to_string());
-        run_scan(&preset.connector(host.clone(), fetch), host)
+        run_scan(&preset.connector(host.clone(), Box::new(fetch)), host)
     } else {
         let fetch = bearer_fetch(base, secret.to_string());
-        run_scan(&preset.connector(host.clone(), fetch), host)
+        run_scan(&preset.connector(host.clone(), Box::new(fetch)), host)
     }
 }
 
