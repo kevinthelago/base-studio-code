@@ -14,7 +14,7 @@ const coreDrafted: S[] = [
 describe("pendingStageConfirms — one-click stage approval (#807-followup)", () => {
   it("context: nothing to confirm — context files gate on GENERATION, not confirmation (#1028)", () => {
     const sections = [...coreDrafted, sec("api", "drafted"), sec("schema", "confirmed")];
-    expect(pendingStageConfirms("context", sections)).toEqual([]);
+    expect(pendingStageConfirms("discovery", sections)).toEqual([]);
   });
 
   it("structure: confirms the phases roadmap anchor when it's drafted", () => {
@@ -48,13 +48,13 @@ describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
     // structure (gated) → the phases anchor
     expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual(["phases"]);
     // context (gated) → no confirm step; the files are done once written (#1028)
-    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ true, false)).toEqual([]);
+    expect(stageConfirmKeys("discovery", coreDrafted, /*activeHasGate*/ true, false)).toEqual([]);
   });
 
   it("a GATELESS context/structure (e.g. an IMPORTED blueprint) confirms ITS OWN key, not the anchors", () => {
     // Imported blueprints lose their gateRules, so even a `context`/`structure` stage is gateless and
     // completes via confirmed:<its-key>.
-    expect(stageConfirmKeys("context", coreDrafted, /*activeHasGate*/ false, false)).toEqual(["context"]);
+    expect(stageConfirmKeys("discovery", coreDrafted, /*activeHasGate*/ false, false)).toEqual(["discovery"]);
     expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ false, false)).toEqual(["structure"]);
   });
 

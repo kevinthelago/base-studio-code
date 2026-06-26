@@ -189,8 +189,8 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
   // only via its own confirmed:<key> signal. This mirrors the real "Feature Add" blueprint:
   // context → architecture → structure → testing → docs(optional).
   const IMPORTED: BlueprintSection[] = [
-    sec("context"),
-    sec("architecture", { deps: ["context"] }),
+    sec("discovery"),
+    sec("architecture", { deps: ["discovery"] }),
     sec("structure", { deps: ["architecture"] }),
     sec("testing", { deps: ["structure"] }),
     sec("docs", { deps: ["structure"], optional: true }),
@@ -206,8 +206,8 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
 
   it("confirming each stage advances the frontier through the whole blueprint", () => {
     const sig: PlanSignals = {};
-    expect(active(sig)).toBe("context");
-    sig[confirmedSignal("context")] = true;
+    expect(active(sig)).toBe("discovery");
+    sig[confirmedSignal("discovery")] = true;
     expect(active(sig)).toBe("architecture");           // ← was stuck on context before #954
     sig[confirmedSignal("architecture")] = true;
     expect(active(sig)).toBe("structure");

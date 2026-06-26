@@ -13,14 +13,14 @@ mod tests {
         // Empty → omitted (all-stages default, no behavior change).
         assert_eq!(build_active_stages_md(&[]), "");
 
-        let md = build_active_stages_md(&["context".into(), "structure".into()]);
+        let md = build_active_stages_md(&["discovery".into(), "structure".into()]);
         assert!(md.contains("Active planning stages"));
         assert!(md.contains("OUT OF SCOPE"), "must declare unlisted stages out of scope");
-        assert!(md.contains("**Context**") && md.contains("**Structure**"));
+        assert!(md.contains("**Discovery**") && md.contains("**Structure**"));
         // a stage not in the enabled list is absent
         assert!(!md.contains("**UI**"), "disabled stage must not be instructed");
         // ordered + numbered
-        assert!(md.find("**Context**").unwrap() < md.find("**Structure**").unwrap());
+        assert!(md.find("**Discovery**").unwrap() < md.find("**Structure**").unwrap());
 
         // unknown id → generic line, never panics
         assert!(build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
@@ -30,13 +30,13 @@ mod tests {
     /// doesn't create tangential sections that block the gate (#672).
     #[test]
     fn stage_directive_context_seeds_baseline_and_uses_bsc_plan() {
-        let d = stage_directive("context");
+        let d = stage_directive("discovery");
         // Names the baseline required topics — the DYNAMIC set seeded for the project (#1019).
         for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(d.contains(t), "context directive names baseline topic {t}");
         }
         // The required-set is shaped via bsc-plan context; non-applicable dimensions go to _skipped.
-        assert!(d.contains("bsc-plan context"), "directive shapes the required-set via bsc-plan context");
+        assert!(d.contains("bsc-plan discovery"), "directive shapes the required-set via bsc-plan context");
         assert!(d.contains("_skipped.md"),      "must mention _skipped.md fallback");
         // Context files gate on GENERATION, not confirmation (#1028).
         assert!(d.to_lowercase().contains("written"), "directive states required files are done once written");
@@ -72,7 +72,7 @@ mod tests {
     /// Context directive points technique grounding at the planning guide's Research workflow (#1433).
     #[test]
     fn stage_directive_context_points_to_research_workflow() {
-        let d = stage_directive("context");
+        let d = stage_directive("discovery");
         assert!(d.to_lowercase().contains("research workflow"), "context directive must point technique grounding at the planning guide's Research workflow");
         assert!(!d.contains("semantic_search"), "the Research tool how-to belongs in the planning guide, not the directive (#1433)");
     }
@@ -93,8 +93,8 @@ mod tests {
     /// Context directive surfaces SEO as a web-conditional production-readiness dimension (#1293).
     #[test]
     fn stage_directive_context_includes_web_seo() {
-        let d = stage_directive("context");
-        assert!(d.contains("context/seo.md"), "context directive must name the seo dimension file");
+        let d = stage_directive("discovery");
+        assert!(d.contains("discovery/seo.md"), "context directive must name the seo dimension file");
         assert!(d.contains("Web SEO"), "context directive must point at the Web SEO skill");
     }
 
@@ -245,7 +245,7 @@ mod tests {
         // The active-stages section for a refactor-like set (no `structure`) doesn't list
         // Structure — so its issues.json step is out of scope.
         let md = build_active_stages_md(&[
-            "context".to_string(), "repos".to_string(), "cleanup".to_string(),
+            "discovery".to_string(), "repos".to_string(), "cleanup".to_string(),
             "testing".to_string(), "permissions".to_string(),
         ]);
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
@@ -253,11 +253,11 @@ mod tests {
         assert!(PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
         // The context directive names the baseline required topics + the bsc-plan context channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
-        let ctx = stage_directive("context");
+        let ctx = stage_directive("discovery");
         for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(ctx.contains(t), "context directive names baseline topic {t}");
         }
-        assert!(ctx.contains("bsc-plan context"), "context directive shapes the dynamic required-set");
+        assert!(ctx.contains("bsc-plan discovery"), "context directive shapes the dynamic required-set");
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
         assert!(PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
         // The discovery checklist itself flags the four files as gate-required and tells the

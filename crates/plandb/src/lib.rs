@@ -347,7 +347,7 @@ impl Store {
         self.conn.execute_batch(
             "DELETE FROM issues; DELETE FROM features; DELETE FROM repos; DELETE FROM phases; \
              DELETE FROM fleet_streams; DELETE FROM fleet_meta; DELETE FROM deploy; DELETE FROM deps; \
-             DELETE FROM mcp; DELETE FROM blueprint; DELETE FROM context; DELETE FROM triage_runs;",
+             DELETE FROM mcp; DELETE FROM blueprint; DELETE FROM discovery; DELETE FROM triage_runs;",
         )
     }
 
@@ -610,7 +610,7 @@ impl Store {
 
     /// Add (`required` = true) or drop (`required` = false) `topic` from the required set. The
     /// planner shapes the set as the project clarifies; a blueprint seeds it.
-    pub fn context_require(&self, topic: &str, required: bool) -> rusqlite::Result<()> {
+    pub fn discovery_require(&self, topic: &str, required: bool) -> rusqlite::Result<()> {
         let t = topic.trim();
         if t.is_empty() {
             return Ok(());
@@ -618,21 +618,21 @@ impl Store {
         if required {
             let pos: i64 = self
                 .conn
-                .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM context", [], |r| r.get(0))?;
+                .query_row("SELECT COALESCE(MAX(position), 0) + 1 FROM discovery", [], |r| r.get(0))?;
             self.conn.execute(
-                "INSERT INTO context (topic, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
+                "INSERT INTO discovery (topic, position, updated_at) VALUES (?1, ?2, strftime('%s','now'))
                  ON CONFLICT(topic) DO NOTHING",
                 params![t, pos],
             )?;
         } else {
-            self.conn.execute("DELETE FROM context WHERE topic = ?1", params![t])?;
+            self.conn.execute("DELETE FROM discovery WHERE topic = ?1", params![t])?;
         }
         Ok(())
     }
 
     /// The required topic set, in declaration order — the gate checks each has a `context/<topic>.md`.
-    pub fn context_list(&self) -> rusqlite::Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT topic FROM context ORDER BY position, topic")?;
+    pub fn discovery_list(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT topic FROM discovery ORDER BY position, topic")?;
         let out: rusqlite::Result<Vec<String>> = stmt.query_map([], |r| r.get(0))?.collect();
         out
     }
@@ -687,6 +687,11 @@ impl Store {
 // ── schema ───────────────────────────────────────────────────────────────────────
 
 fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    // Pre-create rename (#1578: the Context stage became Discovery). Carry an existing project's
+    // required-set forward by renaming the old `context` table in place. Must run BEFORE the
+    // `CREATE TABLE IF NOT EXISTS discovery` below — otherwise the new empty table would block the
+    // rename. Errors (no `context` table, or `discovery` already present) are expected and ignored.
+    let _ = conn.execute("ALTER TABLE context RENAME TO discovery", []);
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          CREATE TABLE IF NOT EXISTS issues (
@@ -757,7 +762,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
          );
-         CREATE TABLE IF NOT EXISTS context (
+         CREATE TABLE IF NOT EXISTS discovery (
             topic       TEXT PRIMARY KEY,
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
@@ -1252,11 +1257,11 @@ mod tests {
     fn blueprint_set_get_round_trips_and_clears() {
         let s = Store::open_in_memory().unwrap();
         assert!(s.blueprint_get().unwrap().is_none());
-        let bp = serde_json::json!({ "id": "bp1", "name": "API service", "category": "greenfield", "sections": [{ "key": "context" }] });
+        let bp = serde_json::json!({ "id": "bp1", "name": "API service", "category": "greenfield", "sections": [{ "key": "discovery" }] });
         s.blueprint_set(&bp).unwrap();
         let got = s.blueprint_get().unwrap().unwrap();
         assert_eq!(got["name"], serde_json::json!("API service"));
-        assert_eq!(got["sections"][0]["key"], serde_json::json!("context"));
+        assert_eq!(got["sections"][0]["key"], serde_json::json!("discovery"));
         // a fresh set replaces the whole blob (single row)
         s.blueprint_set(&serde_json::json!({ "id": "bp1", "name": "renamed" })).unwrap();
         assert_eq!(s.blueprint_get().unwrap().unwrap()["name"], serde_json::json!("renamed"));
@@ -1265,22 +1270,48 @@ mod tests {
     }
 
     #[test]
-    fn context_required_set_add_remove_and_clear() {
+    fn discovery_required_set_add_remove_and_clear() {
         let s = Store::open_in_memory().unwrap();
-        assert!(s.context_list().unwrap().is_empty());
+        assert!(s.discovery_list().unwrap().is_empty());
         // seed a baseline required set (declaration order preserved)
         for t in ["goal", "scope", "stack", "architecture", "users"] {
-            s.context_require(t, true).unwrap();
+            s.discovery_require(t, true).unwrap();
         }
-        assert_eq!(s.context_list().unwrap(), vec!["goal", "scope", "stack", "architecture", "users"]);
-        s.context_require("goal", true).unwrap(); // idempotent re-require
-        assert_eq!(s.context_list().unwrap().len(), 5);
-        // unrequire drops the topic from the set (context gates on generation, not confirmation)
-        s.context_require("users", false).unwrap();
-        assert!(!s.context_list().unwrap().contains(&"users".to_string()));
+        assert_eq!(s.discovery_list().unwrap(), vec!["goal", "scope", "stack", "architecture", "users"]);
+        s.discovery_require("goal", true).unwrap(); // idempotent re-require
+        assert_eq!(s.discovery_list().unwrap().len(), 5);
+        // unrequire drops the topic from the set (discovery gates on generation, not confirmation)
+        s.discovery_require("users", false).unwrap();
+        assert!(!s.discovery_list().unwrap().contains(&"users".to_string()));
         // clear() wipes the set
         s.clear().unwrap();
-        assert!(s.context_list().unwrap().is_empty());
+        assert!(s.discovery_list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn discovery_table_migrates_from_legacy_context_table() {
+        // A pre-#1578 plan.db has the old `context` table; migrate() renames it in place so the
+        // project's required-set carries forward (data preserved, no separate copy step).
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE context (topic TEXT PRIMARY KEY, position INTEGER NOT NULL DEFAULT 0, \
+             updated_at INTEGER NOT NULL DEFAULT 0); \
+             INSERT INTO context (topic, position) VALUES ('goal', 1), ('scope', 2);",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let topics: Vec<String> = conn
+            .prepare("SELECT topic FROM discovery ORDER BY position")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(topics, vec!["goal".to_string(), "scope".to_string()]);
+        // Idempotent: re-running migrate on the already-migrated db is a no-op (no `context` table).
+        migrate(&conn).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM discovery", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
     }
 
     #[test]

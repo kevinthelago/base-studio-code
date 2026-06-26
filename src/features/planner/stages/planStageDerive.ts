@@ -1,6 +1,6 @@
 // Map the live plan data into the normalized PlanStageState the stage gates read
 // (#512). Pure + isolated from the giant Planning component so the categorization
-// (which sections are "context" vs the structure anchor, core-topic confirmation)
+// (which sections are "discovery" vs the structure anchor, core-topic confirmation)
 // is unit-testable. The call site supplies the simpler primitives (repo/issue/fleet
 // counts); this function owns the section categorization.
 
@@ -11,7 +11,7 @@ import type { PlanSignals } from "./stageGate";
 /** The universal baseline context topics a project requires when nothing else seeds the manifest
  *  (#1019). A blueprint may seed a different set via its context section's `requires`; the planner
  *  then adjusts it with `bsc-plan context require/unrequire`. */
-export const CONTEXT_BASELINE = ["goal", "scope", "stack", "architecture", "users", "release"];
+export const DISCOVERY_BASELINE = ["goal", "scope", "stack", "architecture", "users", "release"];
 
 // Data-model gate signals (#1446: the model itself now lives in the project's DuckDB store, not a
 // datamodel.json file). These boolean SIGNALS are derived from the live frontend SourceConfig
@@ -32,7 +32,7 @@ export interface DerivePlanStageInput {
   sections: { k: string; state: SectionState }[];
   /** The project's required context topics (#1019) — the dynamic required-set from plan.db. The
    *  Context gate (#1028) passes once every required topic's `context/<topic>.md` has been written. */
-  contextRequired: string[];
+  discoveryRequired: string[];
   repoCount: number;
   issueCount: number;
   fleetStreams: number;
@@ -115,15 +115,15 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     const st = byKey.get(topic);
     return st !== undefined && st !== "pending";
   };
-  const total = input.contextRequired.length;
-  const resolved = input.contextRequired.filter(present).length;
-  const requiredContextReady = total > 0 && resolved >= total;
+  const total = input.discoveryRequired.length;
+  const resolved = input.discoveryRequired.filter(present).length;
+  const requiredDiscoveryReady = total > 0 && resolved >= total;
 
   const phasesConfirmed = byKey.get("phases") === "confirmed";
 
   const art = input.datamodelArtifact ?? {};
   return buildPlanStageState({
-    context: { resolved, total, requiredContextReady },
+    discovery: { resolved, total, requiredDiscoveryReady },
     repoCount: input.repoCount,
     requiresUi: input.requiresUi,
     ui: { ...input.ui, routed: input.uiRouted ?? false },
@@ -153,9 +153,9 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
  */
 export function planStateToSignals(s: PlanStageState): PlanSignals {
   return {
-    requiredContextReady: s.context.requiredContextReady,
-    topicsResolved: s.context.resolved,
-    topicsTotal: s.context.total,
+    requiredDiscoveryReady: s.discovery.requiredDiscoveryReady,
+    topicsResolved: s.discovery.resolved,
+    topicsTotal: s.discovery.total,
     repoCount: s.repoCount,
     requiresUi: s.requiresUi,
     screensApproved: s.ui.approved,

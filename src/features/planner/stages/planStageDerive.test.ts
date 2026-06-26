@@ -3,7 +3,7 @@ import { derivePlanStageState, planStateToSignals, type DerivePlanStageInput } f
 
 const BASE_INPUT: DerivePlanStageInput = {
   sections: [],
-  contextRequired: [],
+  discoveryRequired: [],
   repoCount: 0,
   issueCount: 0,
   fleetStreams: 0,
@@ -67,35 +67,35 @@ describe("derivePlanStageState — context generation gate (#1019/#1028)", () =>
 
   it("does NOT pass with an empty required set (stage can't auto-pass before seeding)", () => {
     const s = derivePlanStageState({ ...BASE_INPUT, sections: [written("goal")] });
-    expect(s.context.requiredContextReady).toBe(false);
-    expect(s.context.total).toBe(0);
+    expect(s.discovery.requiredDiscoveryReady).toBe(false);
+    expect(s.discovery.total).toBe(0);
   });
 
   it("passes once every required topic's file is WRITTEN — no confirmation needed", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      contextRequired: ["goal", "scope"],
+      discoveryRequired: ["goal", "scope"],
       sections: [written("goal"), written("scope")], // drafted (written), not confirmed
     });
-    expect(s.context.total).toBe(2);
-    expect(s.context.resolved).toBe(2);
-    expect(s.context.requiredContextReady).toBe(true);
-    expect(planStateToSignals(s).requiredContextReady).toBe(true);
+    expect(s.discovery.total).toBe(2);
+    expect(s.discovery.resolved).toBe(2);
+    expect(s.discovery.requiredDiscoveryReady).toBe(true);
+    expect(planStateToSignals(s).requiredDiscoveryReady).toBe(true);
   });
 
   it("blocks while a required topic is unwritten; ignores optional (non-required) files", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      contextRequired: ["goal", "users"],
+      discoveryRequired: ["goal", "users"],
       sections: [written("goal"), written("ux")], // users not written; ux isn't required
     });
-    expect(s.context.resolved).toBe(1);
-    expect(s.context.requiredContextReady).toBe(false);
+    expect(s.discovery.resolved).toBe(1);
+    expect(s.discovery.requiredDiscoveryReady).toBe(false);
   });
 
   it("a required topic with no file does NOT pass (file must exist)", () => {
-    const s = derivePlanStageState({ ...BASE_INPUT, contextRequired: ["goal"], sections: [] });
-    expect(s.context.requiredContextReady).toBe(false);
+    const s = derivePlanStageState({ ...BASE_INPUT, discoveryRequired: ["goal"], sections: [] });
+    expect(s.discovery.requiredDiscoveryReady).toBe(false);
   });
 });
 

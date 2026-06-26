@@ -128,7 +128,7 @@ mod tests {
     /// This, with the substring tests above, proves the prose survived the move byte-for-byte.
     #[test]
     fn migrated_stage_directives_resolve_from_embedded_json() {
-        let migrated = ["context","repos","deploy","ui","features","structure","permissions",
+        let migrated = ["discovery","repos","deploy","ui","features","structure","permissions",
             "automations","skills","cleanup","testing","testing-informational",
             "boundaries","extraction","consolidation","migration","hardening","purpose","bp_stages",
             "bp_capabilities","bp_review"];
@@ -158,7 +158,7 @@ mod tests {
                 Some(f.path().file_stem()?.to_string_lossy().into_owned())
             })
             .collect();
-        let expected: BTreeSet<String> = ["context","repos","deploy","ui","features","structure",
+        let expected: BTreeSet<String> = ["discovery","repos","deploy","ui","features","structure",
             "permissions","automations","skills","cleanup","testing","boundaries",
             "extraction","consolidation","migration","hardening","purpose","bp_stages","bp_capabilities",
             "bp_review"].iter().map(|s| s.to_string()).collect();

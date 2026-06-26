@@ -82,12 +82,12 @@ pub(crate) fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
 }
 
-/// The Context-stage discovery sections live in their own subdir of the hub (#807):
-/// `projects/<sanitized-key>/context/`. Keeps the discovery topics easy to find (and the
+/// The Discovery-stage sections live in their own subdir of the hub (#807):
+/// `projects/<sanitized-key>/discovery/`. Keeps the discovery topics easy to find (and the
 /// hub uncluttered) for larger / off-script plans. Created only when the blueprint has a
-/// context stage; read alongside the flat root so pre-existing projects still resolve.
-pub(crate) fn context_dir_for(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join("context")
+/// discovery stage; read alongside the flat root so pre-existing projects still resolve.
+pub(crate) fn discovery_dir_for(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("discovery")
 }
 
 /// The nearest existing ancestor directory of `path` (native form), or "" if none

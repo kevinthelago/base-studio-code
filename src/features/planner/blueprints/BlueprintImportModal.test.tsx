@@ -8,7 +8,7 @@ import { type Blueprint, type BlueprintSection } from "../stages/blueprints";
 vi.mock("@/features/planner/lib/gist/gist", () => ({ listBlueprintGists: vi.fn() }));
 
 const SECTIONS = [
-  { uid: "u1", key: "context", name: "Context", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "Establish the goal, users, and scope.", enabled: true, expanded: false },
+  { uid: "u1", key: "discovery", name: "Discovery", glyph: "◆", gate: "", deps: [], blurb: "", prompt: "Establish the goal, users, and scope.", enabled: true, expanded: false },
   { uid: "u2", key: "repos", name: "Repos", glyph: "▦", gate: "", deps: [], blurb: "", prompt: "Decide the repositories the project needs.", enabled: true, expanded: false },
 ] as BlueprintSection[];
 const PREVIEW: PreviewBlueprint = {
@@ -67,7 +67,7 @@ describe("BlueprintImportModal", () => {
     // Each row has a Preview button; expanding the first resolves + renders its blueprint.
     fireEvent.click(screen.getAllByRole("button", { name: /^preview$/i })[0]);
     expect(onPreview).toHaveBeenCalledWith("g-fresh");
-    expect(await screen.findByText("Context")).toBeTruthy(); // the blueprint's stages render
+    expect(await screen.findByText("Discovery")).toBeTruthy(); // the blueprint's stages render
     expect(screen.getByText("Repos")).toBeTruthy();
     expect(screen.getByText("Establish the goal, users, and scope.")).toBeTruthy(); // the stage PROMPT, under its row (#1268)
     expect(screen.getByText(/view raw JSON/i)).toBeTruthy();  // the literal file is one click away

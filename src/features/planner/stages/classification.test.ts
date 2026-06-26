@@ -10,12 +10,12 @@ const on = (over = {}): StageId[] => {
 
 describe("proposeStages — signal-driven stage selection (#1395)", () => {
   it("Discovery (context) is always proposed", () => {
-    expect(on({ lifecycle: "maintain", surfaces: [] })).toContain("context");
+    expect(on({ lifecycle: "maintain", surfaces: [] })).toContain("discovery");
   });
 
   it("greenfield UI app → context, repos, features, ui, structure, permissions", () => {
     const got = on({ lifecycle: "greenfield", surfaces: ["ui", "api"], featureCount: 3, repoCount: 1 });
-    expect(new Set(got)).toEqual(new Set(["context", "repos", "features", "ui", "structure", "permissions"]));
+    expect(new Set(got)).toEqual(new Set(["discovery", "repos", "features", "ui", "structure", "permissions"]));
     // opt-in + irrelevant stages stay off
     expect(got).not.toContain("source");
     expect(got).not.toContain("automations");
@@ -24,7 +24,7 @@ describe("proposeStages — signal-driven stage selection (#1395)", () => {
 
   it("transform (refactor) of a service → context, repos, permissions; no greenfield-only stages", () => {
     const got = on({ lifecycle: "transform", surfaces: ["service"], provenance: "existing", repoCount: 1 });
-    expect(new Set(got)).toEqual(new Set(["context", "repos", "permissions"]));
+    expect(new Set(got)).toEqual(new Set(["discovery", "repos", "permissions"]));
     expect(got).not.toContain("features"); // greenfield-only
     expect(got).not.toContain("structure");
     expect(got).not.toContain("ui");
@@ -33,14 +33,14 @@ describe("proposeStages — signal-driven stage selection (#1395)", () => {
   it("data migration → source lights up; repos/permissions follow the software surface", () => {
     const got = on({ lifecycle: "transform", migration: true, dataModel: true, surfaces: ["api", "data"] });
     expect(got).toContain("source");
-    expect(got).toContain("context");
+    expect(got).toContain("discovery");
     expect(got).toContain("repos");        // api is a software surface
     expect(got).not.toContain("features"); // not greenfield
   });
 
   it("a pure data project (surfaces=[data]) proposes no software stages", () => {
     const got = on({ lifecycle: "transform", migration: true, surfaces: ["data"] });
-    expect(new Set(got)).toEqual(new Set(["context", "source"]));
+    expect(new Set(got)).toEqual(new Set(["discovery", "source"]));
     expect(got).not.toContain("repos");
     expect(got).not.toContain("permissions");
   });
@@ -65,6 +65,6 @@ describe("proposeStages — signal-driven stage selection (#1395)", () => {
 
   it("preserves the registry order in the proposed config", () => {
     const cfg = proposeStages(defaultSignals({ surfaces: ["ui"] }));
-    expect(cfg.order).toEqual(["context", "repos", "source", "features", "ui", "structure", "permissions", "automations", "skills"]);
+    expect(cfg.order).toEqual(["discovery", "repos", "source", "features", "ui", "structure", "permissions", "automations", "skills"]);
   });
 });

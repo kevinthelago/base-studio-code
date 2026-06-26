@@ -11,7 +11,7 @@
  *  `load` is signal-only — it has no PLAN_STAGES entry and is never shown in the bar,
  *  but exists in the union so other stages and signal consumers can reference it by name. */
 export type StageId =
-  | "context"
+  | "discovery"
   | "repos"
   | "source"
   | "features"
@@ -29,9 +29,9 @@ export type StageId =
  * construct one with safe defaults for any field not yet known.
  */
 export interface PlanStageState {
-  /** Context progress (#1019/#1028): required topics written (`resolved`) vs required total, plus
-   *  `requiredContextReady` — every REQUIRED topic's file generated (≥1 required). No confirmation. */
-  context: { resolved: number; total: number; requiredContextReady: boolean };
+  /** Discovery progress (#1019/#1028): required topics written (`resolved`) vs required total, plus
+   *  `requiredDiscoveryReady` — every REQUIRED topic's file generated (≥1 required). No confirmation. */
+  discovery: { resolved: number; total: number; requiredDiscoveryReady: boolean };
   /** Repositories linked to the project. */
   repoCount: number;
   /** Whether the project needs a UI at all — drives the UI stage's applicability. */
@@ -108,16 +108,16 @@ export interface StageConfig {
 // dependency is treated as satisfied, turning any stage off never deadlocks others.
 export const PLAN_STAGES: Stage[] = [
   {
-    id: "context",
-    label: "Context",
-    description: "Goal, users, scope, stack, and architecture discovery",
+    id: "discovery",
+    label: "Discovery",
+    description: "Goal, users, scope, stack, and architecture — the discovery checklist",
     optional: false,
     hasOutputFile: false,
     dependsOn: [],
     defaultEnabled: true,
     gate: (s) => ({
-      done: s.context.requiredContextReady,
-      fraction: s.context.total > 0 ? s.context.resolved / s.context.total : 0,
+      done: s.discovery.requiredDiscoveryReady,
+      fraction: s.discovery.total > 0 ? s.discovery.resolved / s.discovery.total : 0,
     }),
   },
   {
@@ -138,7 +138,7 @@ export const PLAN_STAGES: Stage[] = [
     description: "Migration source — inventory it, infer the data model, confirm the schema",
     optional: true,
     hasOutputFile: false,  // the Data Model lives in the project's DuckDB store now (#1446), not a file
-    dependsOn: ["context", "repos"],
+    dependsOn: ["discovery", "repos"],
     defaultEnabled: true,
     // Only applicable when the project has an active data migration source pipeline.
     applies: (s) => s.migrationSourceEnabled,
@@ -154,7 +154,7 @@ export const PLAN_STAGES: Stage[] = [
     description: "Define the user-facing capabilities, one at a time — each becomes a stream",
     optional: true,
     hasOutputFile: true,  // features.json
-    dependsOn: ["context"],
+    dependsOn: ["discovery"],
     defaultEnabled: true,
     gate: (s) => ({
       done: s.features.count > 0 && s.features.allConfirmed,
@@ -169,7 +169,7 @@ export const PLAN_STAGES: Stage[] = [
     hasOutputFile: false,
     // Features come FIRST so the UI stage can author a Claude Design kickoff from the defined
     // capabilities (the planner plans the UI — it does not design/generate the screens) (#825/#1404).
-    dependsOn: ["context", "features"],
+    dependsOn: ["discovery", "features"],
     defaultEnabled: true,
     applies: (s) => s.requiresUi,
     // Done when the design is routed to the project OR every screen preview is approved (#837).
@@ -186,7 +186,7 @@ export const PLAN_STAGES: Stage[] = [
     // plan synthesis (they produce targeted issues only, not a roadmap) (#666).
     optional: true,
     hasOutputFile: true,  // phases.json + issues.json
-    dependsOn: ["context", "repos", "features"],
+    dependsOn: ["discovery", "repos", "features"],
     defaultEnabled: true,
     gate: (s) => ({
       done: s.phasesConfirmed && s.issueCount > 0,
@@ -247,9 +247,9 @@ export function defaultStageConfig(): StageConfig {
  * Distinct from {@link defaultStageConfig} (all-on), which reproduces the legacy blueprint behavior;
  * this is the source-of-truth seed a new project gets once blueprints stop hand-picking the set.
  */
-export function contextOnlyStageConfig(): StageConfig {
+export function discoveryOnlyStageConfig(): StageConfig {
   return {
-    enabled: Object.fromEntries(PLAN_STAGES.map((s) => [s.id, s.id === "context"])) as Record<StageId, boolean>,
+    enabled: Object.fromEntries(PLAN_STAGES.map((s) => [s.id, s.id === "discovery"])) as Record<StageId, boolean>,
     order: PLAN_STAGES.map((s) => s.id),
   };
 }
@@ -257,7 +257,7 @@ export function contextOnlyStageConfig(): StageConfig {
 /** Fill a partial snapshot with safe defaults so callers needn't specify every field. */
 export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageState {
   return {
-    context: p.context ?? { resolved: 0, total: 0, requiredContextReady: false },
+    discovery: p.discovery ?? { resolved: 0, total: 0, requiredDiscoveryReady: false },
     repoCount: p.repoCount ?? 0,
     requiresUi: p.requiresUi ?? false,
     ui: p.ui ?? { approved: 0, total: 0, routed: false },
@@ -337,7 +337,7 @@ export function stageById(id: StageId): Stage | undefined {
 // ── Per-stage options (#514) ──────────────────────────────────────────────────
 // Each stage may carry stage-specific options that a Blueprint can set.
 
-/** Options for the "context" stage. */
+/** Options for the "discovery" stage. */
 export interface ContextStageOptions {
   /** Which discovery dimensions to enable. Empty ⇒ all. */
   dimensions?: string[];
@@ -410,14 +410,14 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     name: "Quick context",
     description: "Context and structure only — fastest path to agent-ready issues",
     // Structure depends on `features`, so the features stage rides along (#815).
-    enabledStages: ["context", "repos", "features", "structure"],
+    enabledStages: ["discovery", "repos", "features", "structure"],
     custom: false,
   },
   {
     id: "existing-project",
     name: "Existing project",
     description: "Section-by-section migration of an existing codebase into the plan",
-    enabledStages: ["context", "repos", "features", "structure", "permissions"],
+    enabledStages: ["discovery", "repos", "features", "structure", "permissions"],
     stageOptions: {
       structure: { workshopMode: "section" },
     },
@@ -427,7 +427,7 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "ui-first",
     name: "UI first",
     description: "Context → UI design brief → structure → fleet",
-    enabledStages: ["context", "repos", "ui", "features", "structure", "permissions"],
+    enabledStages: ["discovery", "repos", "ui", "features", "structure", "permissions"],
     custom: false,
   },
   {
@@ -436,7 +436,7 @@ export const BUILT_IN_BLUEPRINTS: Blueprint[] = [
     id: "refactor",
     name: "Refactor / cleanup",
     description: "Identify improvement opportunities and write targeted cleanup issues — no new feature roadmap",
-    enabledStages: ["context", "repos", "permissions"],
+    enabledStages: ["discovery", "repos", "permissions"],
     custom: false,
   },
 ];
