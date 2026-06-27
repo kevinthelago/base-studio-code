@@ -13,7 +13,7 @@ The core value proposition: run many AI coding agents in parallel across multipl
 | Layer | Choice |
 |---|---|
 | Desktop shell | Tauri v2 (Rust backend + WebView) |
-| Frontend | React 18 + TypeScript, bundled with Vite |
+| Frontend | React 19 + TypeScript, bundled with Vite |
 | State management | Zustand |
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
 | Fonts | Inter (sans) · JetBrains Mono (mono) via Google Fonts |
@@ -62,7 +62,7 @@ base-studio-code/
 │       ├── app/             #   Tauri shell: run(), state, recovery, dialog
 │       ├── console/         #   interactive PTY surface: pty, ledger, discovery, settings, shell_rc
 │       ├── agent/           #   agent launch/config: harness, launch, claude_config
-│       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, inspect
+│       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, files, dead_code, ui_skeleton
 │       ├── planner/         #   planning session: prompts, directives, workspace
 │       ├── fleet/           #   worker fleet: worktree, director, staging
 │       ├── github/          #   GitHub integration: api, oauth, repos, readiness, git_hooks
@@ -140,7 +140,7 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   `src-tauri/src/mobile/tunnel/mod.rs`), so moving a feature slice does **not** break Rust CI — but
   **renaming a fixture file** means updating the Rust `find_fixture("…")` call (and mobile-studio-code)
   in lockstep. (This is the one place Rust reaches into the frontend tree; everything else it reads is
-  backend-owned — `src-tauri/templates/`, `src-tauri/tests/`.) Colocating the fixture with its feature
+  backend-owned — `src-tauri/data/`, `src-tauri/tests/`.) Colocating the fixture with its feature
   is **deliberate** (the feature owns its contract; #1335 weighed a shared `contracts/` dir and chose
   not to, since that fights feature-ownership) — so `find_fixture` requires **exactly one** name match
   under `src/` (it panics on zero or a name collision) rather than silently taking the first.
@@ -200,7 +200,7 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 - `CLAUDE.md` — *currently* the planner spec (see "Session roles + the CLAUDE.md model")
 - `.claude/settings.json` — planner permissions (read/write md + WebFetch + git/gh)
 - plan **section files**, flat: `goal.md`, `scope.md`, `stack.md`, `architecture.md`, …
-- `phases.json` (milestones), `issues.json` (granular issues), `fleet.json` (streams)
+- `phases.json` (milestones) + `plan.db` — the per-project SQLite working store holding the granular issues, fleet streams + per-stream permissions, and context required-set. #1805 made plan.db the **sole fleet store** (the legacy `fleet.json`/`issues.json` files are no longer authored — `issues.json` is a projection rendered from plan.db; any stray `fleet.json` is migrated in once by `migrate_stray_fleet_json`)
 - `prompts/` — kickoff scripts the planner authors (`<stream>-kickoff.md`, `director-kickoff.md`)
 - `automations.md`, `github_context.md`
 - linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees live **outside** the hub at `~/.base-studio-code/worktrees/<key>/<repo>--<slug>/` (#844, so the planner `CLAUDE.md` is not their ancestor — `worktrees_dir` in `platform/paths.rs`)
@@ -212,8 +212,8 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 1. Link repositories.
 2. **Discovery checklist** (goal, users, scope, ux, stack, architecture, schema, api, security, testing, …) — scan, propose, confirm, one topic at a time. Each becomes a section file + a `<plan_update>` tag (the right panel reveals it live).
 3. **Develop the GitHub structure — the feature workshop** (#318, the deep interactive core): map the features, drive each down (behavior + acceptance / build approach / tools / data + deps), propose-then-interrogate, one feature at a time, then sequence into phases.
-4. **Granular, agent-ready issues** (#311, `issues.json`): each `PlanIssue` carries acceptance criteria, owned files, dependencies, labels, milestone, owning stream — enough that an agent finishes without asking.
-5. **Plan the agent fleet** (`fleet.json`): non-overlapping streams (owns globs, issues, dependsOn), recommended session count, optional director.
+4. **Granular, agent-ready issues** (#311, in `plan.db`): each `PlanIssue` carries acceptance criteria, owned files, dependencies, labels, milestone, owning stream — enough that an agent finishes without asking.
+5. **Plan the agent fleet** (`plan.db` `fleet_stream` rows): non-overlapping streams (owns globs, issues, dependsOn), recommended session count, optional director.
 6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
 
 ### Per-agent configuration set during planning
@@ -244,8 +244,10 @@ Every session has a role bounding its capabilities (least privilege), applied at
 | director | write | write | none |
 | triage | none | write | none |
 | tester / reviewer / conductor | read | read | none |
+| issuer | read | write | none |
+| juror | read | read | none |
 
-`roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**.
+(`tester`/`reviewer`/`conductor` are the pipeline-stage roles, #220; `issuer` is intake-only — shapes a request into a GitHub issue and hands off, #376; `juror` independently judges a landing against its acceptance criteria, #394.) `roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**.
 
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
@@ -296,11 +298,18 @@ are **Planned**.
 |---|---|---|
 | v1.0.3 | Complete | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
 | **v1.0.4** | **Current** | **Enterprise integration & migration** — connect **read-only** to an existing system (CRM/ERP/BPM, Salesforce first) and **scan the whole platform**: data types *and* configurations *and* behaviors. The planner produces a **Platform Behavior Summary** — objects/fields, automations (validation rules, workflows, Flows/Process Builder), business processes (approval processes), and derived logic (formula fields, Apex) — so **automations, business processes, and data are all migratable**: reproduced as the generated app's schema and logic via canonical **data models** + MCP connectors, with a compliance layer baked into the planner. |
+| *Codebase refactor & consolidation* | In progress (on the v1.0.4 line, before v1.0.5) | A no-user-facing-feature refactor sweep clearing the runway for the UI release. **Feature-first frontend** vertical slices (#1309) — `app/` shell · `features/` (UI + pure `lib/` + slice + `index.ts` barrel) · `shared/` · `store/` — with a `@/…` path alias replacing deep relatives. **Shared UI primitives + a consistency sweep**: `BackButton`, `IconButton` (one close glyph), `StatusDot`, `ModalScrim`/`Dialog` (the one centered-overlay every modal builds on), `Toggle` tone, plus promise-returning `usePromptDialog`/`useConfirmDialog` replacing native `window.prompt`/`confirm`. **Decomposition & dedup**: the ~3k-line `Planning.tsx` and `FocusedBodies.tsx` split into colocated hooks/per-body files, `handlePublish`→React-free `publishSteps.ts`, and reusable `usePoll`/`useGithubQuery`/`useCoordLog` + `safeInvoke`/`fireInvoke` over hand-rolled boilerplate. **Rust consolidation**: a shared `bsc-cli-util` crate, blueprint + published-marker delegated to the Tauri-free `bsc-blueprint`/`bsc-project` crates, `src-tauri/prompts`→`src-tauri/data`, **plan.db as the sole fleet store** (legacy `fleet.json`/`issues.json` readers removed, stray files migrated in), and the orphaned **reference-context** subsystem removed. Plus tests for the session security surfaces (env/permission builders, role-table drift guard). |
 | v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code). |
 
 The agent-shell track shipped alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
 ("Run on any model"). v1.0.3 is now **Complete** and **v1.0.4** is **Current**. When v1.0.4 is complete,
 move it to **Complete** and promote **v1.0.5** to **Current**.
+
+The *codebase refactor & consolidation* row is not a separate version — it's an ongoing,
+no-feature refactor sweep running on the v1.0.4 line that pays down structural debt (the frontend
+feature-first reorg, shared UI primitives, large-file decomposition, and Rust crate consolidation)
+to clear the runway for the v1.0.5 UI release. It ships continuously to `develop` under the
+`[Unreleased]` CHANGELOG section; fold it away once its work is absorbed.
 
 ## GitHub Workflow
 

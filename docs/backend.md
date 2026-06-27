@@ -132,7 +132,7 @@ Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** 
 `&&` chains run without prompts — "start and go") but layer a curated `DEFAULT_DENY` (sudo, `rm -rf /`,
 `dd`, force-push, `curl … | sh`, …) plus any per-session `denied_commands` on top. `MANDATORY_BASH`
 (`gh`, `git`, `bsc-plan`) is always auto-approved. Claude Code precedence is **deny > ask > allow**.
-The role gate (planner / worker / director / triage / tester / reviewer / conductor) maps to the
+The role gate (planner / worker / director / triage / tester / reviewer / conductor / issuer / juror) maps to the
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard
 push-confirm gate.
 
@@ -264,7 +264,7 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
   queued for the user to confirm/discard — never an auto-committed skill.
 
 > The `bsc-blocked` dependency-wait helper was **removed** (#1039): workers build against the planned
-> contract in parallel rather than parking on an upstream. CLAUDE.md's older copy still mentions it.
+> contract in parallel rather than parking on an upstream.
 
 ---
 

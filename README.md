@@ -40,18 +40,32 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 - **Skills** — reusable markdown blocks (the Skills library), attachable per blueprint/section and written into each agent's `.claude/skills/` as injectable context
 - **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, webhook management, and a richer publish (repo description, stack topics, a plan-driven README)
 - **Extensions (MCP)** — attach Model Context Protocol servers per project, pre-trusted into every agent session
+- **Live state, reachable from any session** — every app store (the plan, skills, the canonical data model, logs, compliance, blueprints, projects) is exposed to a running agent through bundled `bsc-*` CLIs, so an agent can read or drive project state directly from its own shell
 - **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
 - **Automations** — cron-scheduled commands dispatched across panes
 - **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
 - **Data models** *(landing — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
+### The app, screen by screen
+
+Eight surfaces, reached from the left rail:
+
+- **Console** — the execution surface where planned work runs. Tabbed workspaces, each a configurable grid of terminal panes; every pane is a real PTY running an agent, with swappable views for the terminal, files, branches, diffs, the session log, and live tokens/cost
+- **Projects** — the flagship planner: pitch → staged plan → live UI preview → publish to GitHub → launch the fleet, alongside a live **Fleet** board (one worker per stream, coordinated by a director) and the canonical **Data Models** editor
+- **Skills** — the injectable-context library: searchable skills and task groups, attachable per session, with invocation telemetry and per-project lessons
+- **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
+- **Permissions** — the least-privilege control room: a role and profile per session (tool allowlists, write-path scope, network), enforced at launch, with a live audit feed of every tool attempt
+- **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
+- **Automations** — cron-scheduled commands dispatched into console panes, with armed status and run history
+- **Settings** — providers/keys, mobile-tunnel pairing, appearance, diagnostics, performance, logs, and storage
+
 ## Tech Stack
 
 | Layer | Choice |
 |---|---|
 | Desktop shell | Tauri v2 (Rust + WebView2 / WebKit) |
-| Frontend | React 18 + TypeScript, bundled with Vite |
+| Frontend | React 19 + TypeScript, bundled with Vite |
 | State | Zustand v5 with `persist` middleware |
 | Terminal | xterm.js v5 + portable-pty (ConPTY on Windows) |
 | Styling | CSS custom properties (`src/styles/tokens.css`) |
@@ -161,6 +175,16 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
 - **Research** — a **built-in** literature MCP server (arXiv · Semantic Scholar · PubMed/PMC · Crossref, native PDF extraction, citation-grounded search), so the planner can ground plans and skills in the latest real sources with no download, build, or Docker
 - **Console polish** — native copy/paste (hotkeys scoped to the Console page) and Claude's own TUI input restored, with auto-redraw nudges for the CLI's jumbled-text bug
+
+**🔧 In progress — codebase refactor & consolidation** *(on the `1.0.4` line, before `1.0.5`)*
+
+> A refactor sweep with **no user-facing feature change** — paying down structural debt so the UI release builds on solid ground. Ships continuously to `develop`.
+
+- **Feature-first frontend** — the React tree reorganized into vertical slices: `app/` (the shell) · `features/` (one folder per feature: UI + a pure React-free `lib/` + its store slice + a public `index.ts` barrel) · `shared/` (feature-agnostic) · `store/`, with a `@/…` path alias replacing deep relative imports
+- **Shared UI primitives & a consistency sweep** — scattered, copy-pasted UI consolidated onto shared atoms: `BackButton`, `IconButton` (one close glyph), `StatusDot`, `ModalScrim`/`Dialog` (the single centered-overlay every modal builds on), `Toggle`, `Avatar`, `LabelChip`, the analytics charts, and promise-returning prompt/confirm dialogs replacing native `window.prompt`/`window.confirm`
+- **Decomposition & dedup** — the ~3k-line `Planning.tsx` and `FocusedBodies.tsx` split into focused, colocated hooks and per-body files; `handlePublish` extracted into a React-free `publishSteps.ts`; reusable hooks (`usePoll`, `useGithubQuery`, `useCoordLog`) and `safeInvoke`/`fireInvoke` replacing hand-rolled boilerplate across the app
+- **Rust consolidation** — a shared `bsc-cli-util` crate (CLI scaffolding for every `bsc-*` binary); blueprint + published-marker logic delegated to the Tauri-free `bsc-blueprint`/`bsc-project` crates; `src-tauri/prompts` renamed to `src-tauri/data`; **plan.db is now the sole fleet store** (the legacy `fleet.json` reader removed, stray files migrated in); the orphaned reference-context subsystem removed
+- **Tests for security-critical surfaces** — coverage for the session env/permission builders and a role-table consistency guard that fails CI on drift
 
 **🔜 Next — `1.0.5` · the UI release**
 - An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview
