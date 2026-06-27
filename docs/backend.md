@@ -44,17 +44,17 @@ that block is the canonical index of the backend's command surface.
 
 | Folder | Owns | Key files |
 |---|---|---|
-| [`platform/`](../src-tauri/src/platform/) | OS primitives shared by every domain; no domain deps | `paths.rs` (every `~/.base-studio-code` location), `git.rs` (`git_lines`/`git_output`), `shell.rs` (shell resolution + bash⇄native path/quote conversion), `process.rs` (`no_window` — suppress console flashes), `fsx.rs` (`sanitize_project_key`, `worktree_slug`, safe-relpath, section-file ingest), `docstore.rs` (document library) |
+| [`platform/`](../src-tauri/src/platform/) | OS primitives shared by every domain; no domain deps | `paths.rs` (every `~/.base-studio-code` location), `git.rs` (`git_lines`/`git_output`), `shell.rs` (shell resolution + bash⇄native path/quote conversion), `process.rs` (`no_window` — suppress console flashes), `fsx.rs` (`sanitize_project_key`/`worktree_slug`/`map_slug`, `atomic_write`(`_json`), `read_json_object_or_default`, `read_text_files` section-file ingest, `clear_readonly_recursive`, safe-relpath), `docstore.rs` (document library) |
 | [`app/`](../src-tauri/src/app/) | The Tauri shell + lifecycle | `run.rs` (`run()` — plugins, state, the invoke handler, exit cleanup), `state.rs`, `recovery.rs` (`.session-lock` crash detection, #1041), `single_instance.rs` (#1303), `dialog.rs` (native pickers) |
-| [`console/`](../src-tauri/src/console/) | The interactive PTY execution surface | `pty.rs` (`pty_create` + the `pty_*` commands, process-tree kill, the session env), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `settings.rs` (`ensure_session_settings` → `.claude/settings.json`, the role gate, `DEFAULT_DENY`/`MANDATORY_BASH`), `shell_rc.rs` (the `bsc-*` shell-helper rc constants) |
+| [`console/`](../src-tauri/src/console/) | The interactive PTY execution surface | `pty/` (dir-module, #1660 — `pty/mod.rs`: `pty_create` + the `pty_*` commands, the session env; `pty/job.rs`: the Windows Job Object / Unix process-group tree kill), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `settings.rs` (`ensure_session_settings` → `.claude/settings.json`, the role gate, `DEFAULT_DENY`/`MANDATORY_BASH`), `shell_rc.rs` (the `bsc-*` shell-helper rc constants) |
 | [`agent/`](../src-tauri/src/agent/) | How an agent runtime is launched/resumed in a PTY | `harness.rs` (`HarnessAdapter` seam — `ClaudeCodeAdapter` vs `BscAgentAdapter`), `launch.rs` (`claude_launch`, model flags, history probes), `claude_config.rs` (read/write + self-heal `~/.claude.json` trust state) |
-| [`project/`](../src-tauri/src/project/) | The on-disk project hub + plan store | `hub.rs` (hub lifecycle, `list_local_projects`, `mark_published`, `delete_project_dir`), `plan_db.rs` (the `plan_*` command wrappers over `crates/plandb`), `plan_files.rs` (read/clear plan sections), `blueprints.rs` (list/write/delete), `inspect.rs` (dead-code scan, UI skeleton) |
+| [`project/`](../src-tauri/src/project/) | The on-disk project hub + plan store | `hub.rs` (hub lifecycle, `list_local_projects`, `mark_published`, `delete_project_dir`), `plan_db.rs` (the `plan_*` command wrappers over `crates/plandb`), `plan_files.rs` (read/clear plan sections), `files.rs` (the path-safe hub-file write primitive pipelines call — relocated from `fleet/staging.rs`, #1667), `blueprints.rs` (list/write/delete — now delegates to the Tauri-free `bsc-blueprint` crate, #1761), `dead_code.rs` + `ui_skeleton.rs` (the dead-code scan / UI-skeleton collect, split out of the old `inspect.rs`, #1690) |
 | [`planner/`](../src-tauri/src/planner/) | The planning session | `workspace.rs` (`setup_workspaces` — builds the hub), `prompts.rs` (the planner CLAUDE.md template + `PLANNING_*` intros), `directives.rs` (`planner_intro_prompt`, per-stage directives) |
-| [`fleet/`](../src-tauri/src/fleet/) | The parallel worker fleet | `worktree.rs` (`ensure_worktree` — per-agent git worktree + `CLAUDE.local.md`), `teardown.rs` (`teardown_worktree`, `reclaim_worktrees`, build-artifact excludes), `director.rs` (`ensure_director_protocol`), `protocols.rs` (the injected worker/injection-resistance MD consts + the idempotent `append_section_once` helper), `staging.rs` (read/write project files) |
+| [`fleet/`](../src-tauri/src/fleet/) | The parallel worker fleet | `worktree.rs` (`ensure_worktree` — per-agent git worktree + `CLAUDE.local.md`), `teardown.rs` (`teardown_worktree`, `reclaim_worktrees`, build-artifact excludes), `director.rs` (`ensure_director_protocol`), `protocols.rs` (the injected worker/injection-resistance MD consts + the idempotent `append_section_once` helper), `inspect.rs` (the per-worker worktree audit — uncommitted changes, branch, recent commits, the `WorktreeCommit` struct; fleet owns worktrees so the audit lives here) |
 | [`github/`](../src-tauri/src/github/) | GitHub integration & auth | `api.rs` (REST/GraphQL/gist proxy — `github_request`, `github_graphql`, `github_post/put/patch`), `oauth.rs` (device flow), `repos.rs` (`clone_repo`), `readiness.rs` (`gh`/`git`/`gh auth` preflight probe), `git_hooks.rs` (hook inspection) |
-| [`sources/`](../src-tauri/src/sources/) | Migration data sources / the "Source pane" | `data.rs` (CSV + platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
+| [`sources/`](../src-tauri/src/sources/) | Migration data sources / the "Source pane" | `data/` (dir-module split #1661 — `data/data_csv.rs`: CSV ingest; `data/data_scan.rs`: platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
 | [`extensions/`](../src-tauri/src/extensions/) | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `skill_store.rs` (the `skill_store_*`/`skill_group_*` commands over `crates/skilldb`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) |
-| [`observability/`](../src-tauri/src/observability/) | Logs, metrics, accounting | `logs.rs` (managed log streams, caps), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens.rs` (`read_token_usage` — parses + prices the transcript), `audit.rs` (read the app-wide TSV logs — audit/skill/hook/mcp/coord; worktree changes/commits/branch) |
+| [`observability/`](../src-tauri/src/observability/) | Logs, metrics, accounting | `logs.rs` (managed log streams + caps, and the readers for the app-wide `bsc-*` TSVs — audit/skill/hook/mcp/coord, #1689), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens/` (dir-module #1659 — `tokens/cost.rs`: `read_token_usage`, delegating pricing to `crates/logs`; `tokens/activity.rs` · `tokens/messages.rs`). The worktree-changes/commits/branch audit moved to `fleet/inspect.rs` (#1667). |
 | [`mobile/`](../src-tauri/src/mobile/) | The paired mobile companion | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands + wire protocol), `tunnel/protocol.rs` (serde wire types — matches mobile's `types.ts`), `tunnel/noise.rs` (Noise IK handshake), `tunnel/transport.rs` (relay dial-out + pump) |
 | [`llm.rs`](../src-tauri/src/llm.rs) | The single `llm_complete` command | provider-agnostic one-shot completion, dispatches through `crates/llm` |
 | [`tests.rs`](../src-tauri/src/tests.rs) / `testutil.rs` | Cross-cutting integration tests + the shared test harness (`temp_home`, `ENV_LOCK`, `write_file`) | — |
@@ -73,22 +73,31 @@ of these crates and exposes thin command wrappers over them.
 | Crate | Lib | Binary | Purpose |
 |---|---|---|---|
 | [`plandb`](../crates/plandb/) | `plandb` | **`bsc-plan`** | Per-project plan store (SQLite). The single source of truth for issues, features, phases, repos, the fleet, deps, deploy, MCP, context required-set, triage runs, and self-correction "lessons". The desktop's `plan_*` commands and the session-side `bsc-plan` CLI share it; sessions point at their project's DB via `$BSC_PLAN_DB`. |
-| [`data`](../crates/data/) (`bsc-data`) | `bsc_data` | **`bsc-data`** (needs `duckdb-store`) | Canonical Data Model store (DuckDB) + the connector framework + runtime REST presets (#1235). Schema/DDL/connector/coercion logic compiles under `--no-default-features` (no DuckDB); the planner reads the per-project model/scan via `bsc-data model get` / `bsc-data scan get`. |
+| [`data`](../crates/data/) (`bsc-data`) | `bsc_data` | **`bsc-data`** (needs `duckdb-store`) | Canonical Data Model store (DuckDB) + the connector framework + runtime REST presets (#1235). Schema/DDL/connector/coercion logic compiles under `--no-default-features` (no DuckDB); the planner reads the per-project model/scan via `bsc-data model get` / `bsc-data scan get`, and authors runtime REST presets via `bsc-data connector` (which **replaced** the deprecated `bsc-plan integration`, #1721). |
 | [`llm`](../crates/llm/) (`bsc-llm`) | `llm` | — | The model-agnostic `LlmProvider` abstraction (Anthropic / OpenAI / Gemini / Local-Ollama). Shared by `llm_complete` and `bsc-agent` so neither depends on the other. |
-| [`skilldb`](../crates/skilldb/) | `skilldb` | **`bsc-skill`** | Global skills + task-groups store (SQLite, #1338). ONE global `skills.db` (`$BSC_SKILL_DB`, default `~/.base-studio-code/skills.db`) shared by the desktop Skills library and every live session. |
+| [`skilldb`](../crates/skilldb/) | `skilldb` | **`bsc-skill`** | Global skills + task-groups store (SQLite, #1338). ONE global `skills.db` (`$BSC_SKILL_DB`, default `~/.base-studio-code/skills.db`) shared by the desktop Skills library and every live session; the CLI reads with `bsc-skill get` and prunes with `bsc-skill remove` (with-args; no-args is the Skill-tool telemetry hook). |
 | [`research`](../crates/research/) | `research` | **`bsc-research-mcp`** | Literature research (arXiv · Semantic Scholar · PubMed/PMC · Crossref) + native PDF extraction + citation-grounded semantic search, with an on-disk SQLite cache. Shipped as a bundled stdio MCP server (Tauri `externalBin`) so the planner can ground plans/skills in real sources with no download/build/Docker. |
-| [`compliance`](../crates/compliance/) | `compliance` | **`bsc-compliance-mcp`** | User-updatable store of current compliance standards (WCAG 2.2, GDPR, CCPA, SOC 2, …) in SQLite. Bundled stdio MCP server so the planner bakes the right requirements in, refreshable without an app release. |
+| [`compliance`](../crates/compliance/) | `compliance` | **`bsc-compliance-mcp`** + **`bsc-compliance`** | User-updatable store of current compliance standards (WCAG 2.2, GDPR, CCPA, SOC 2, …) in SQLite. Two bins: the bundled stdio MCP server (`bsc-compliance-mcp`, so the planner bakes the right requirements in) and the session-side state CLI (`bsc-compliance standards list/get`), refreshable without an app release. |
+| [`logs`](../crates/logs/) | `logs` | **`bsc-logs`** | The unified log/perf/cost engine (epic #1607): one place for the `bsc-*` TSV readers, the `perf.db` series, and the token price table + usage parser + cost math (`logs::cost`, which `observability/tokens` delegates to, #1686). The session-side `bsc-logs` CLI reads logs + perf from a live shell. |
+| [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc-blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). Shared by the desktop's `project/blueprints.rs` and the session-side `bsc-blueprint` CLI. |
+| [`bsc-project`](../crates/bsc-project/) | `bsc_project` | **`bsc-project`** | Project-hub enumeration store: `bsc-project list` (every local hub) and `bsc-project published` (a hub's `.published` marker), so a live session can introspect the project set. |
+| [`mcp-rpc`](../crates/mcp-rpc/) | `mcp_rpc` | — | The shared stdio JSON-RPC scaffold the bundled MCP servers (`research`, `compliance`) build on. |
+| [`bsc-util`](../crates/bsc-util/) · [`bsc-sqlite-util`](../crates/bsc-sqlite-util/) · [`bsc-cli-util`](../crates/bsc-cli-util/) | `bsc_util` · `bsc_sqlite_util` · `bsc_cli_util` | — | Shared internal libraries (no bins): base-dir/path helpers, the common `rusqlite` open/migrate helpers, and the shared CLI arg-parsing used across the `bsc-*` binaries. |
 | [`bsc-agent`](../crates/bsc-agent/) | — | **`bsc-agent`** | The model-agnostic agent *runtime* (epic #1078, P2): a lean tokio binary over the `llm` crate. The alternative harness to Claude Code, selected per-console by provider id; runs the agent loop + tools (incl. a `webfetch` on a dedicated thread). |
 
-> The MCP-server crates (`research`, `compliance`) and the CLI crates (`plandb`/`bsc-plan`,
-> `skilldb`/`bsc-skill`, `data`/`bsc-data`) are the two extra crates and several extra binaries that
-> CLAUDE.md's structure tree does not enumerate — see [Gotchas](#8-gotchas).
+> **The runtime state-CLI surface (#1325):** every persistent app store is reachable from a live
+> session via its own `bsc-*` sidecar — `bsc-plan` (plan.db), `bsc-skill` (skills.db), `bsc-data`
+> (DuckDB model/scan + `connector`), `bsc-logs` (logs/perf/cost), `bsc-compliance` (standards),
+> `bsc-blueprint` (user blueprints), `bsc-project` (project hubs) — plus the bundled stdio MCP
+> servers `bsc-research-mcp` / `bsc-compliance-mcp`. These bins (and the internal `bsc-util` /
+> `bsc-sqlite-util` / `bsc-cli-util` / `mcp-rpc` libs) are what CLAUDE.md's structure tree has
+> historically under-enumerated — see [Gotchas](#8-gotchas).
 
 ---
 
 ## 4. Key flows, end to end
 
-### Console / PTY launch — `pty_create` ([`console/pty.rs`](../src-tauri/src/console/pty.rs))
+### Console / PTY launch — `pty_create` ([`console/pty/mod.rs`](../src-tauri/src/console/pty/mod.rs))
 
 1. **Reconnect-or-create:** if a `PtySession` already exists for the `pane_id` (tab switch), return
    `Ok(false)` instead of respawning.
@@ -192,7 +201,7 @@ plain serializable value; errors are typically mapped with `.map_err(|e| e.to_st
 So a struct with plain Rust fields serializes as snake_case and the frontend must read snake_case —
 e.g. `WorkspacePaths { planning_dir }` ([`planner/workspace.rs`](../src-tauri/src/planner/workspace.rs))
 and `WorktreeCommit { hash, subject, author, date }`
-([`observability/audit.rs`](../src-tauri/src/observability/audit.rs)) are read as `planning_dir`,
+([`fleet/inspect.rs`](../src-tauri/src/fleet/inspect.rs)) are read as `planning_dir`,
 `hash`, … on the frontend. When a struct should present camelCase to the frontend, it carries
 `#[serde(rename_all = "camelCase")]` explicitly — this is widespread (the tunnel protocol, source
 data, perf/log configs, …). **Mismatched casing reads `undefined` silently** (#789), so match the
@@ -212,10 +221,14 @@ no PATH changes; bundled with the app and rebuilt with `npm run build:plan`):
 |---|---|---|---|
 | `bsc-plan` | `plandb` | `$BSC_PLAN_DB` (per-project), `$BSC_PLAN_BIN` | The plan store CLI — planner writes; workers/director read + drive issue status. |
 | `bsc-skill` | `skilldb` | `$BSC_SKILL_DB` (global), `$BSC_SKILL_BIN` | The global skills/task-groups CLI (with a subcommand). With *no* args it's the Skill-tool telemetry hook instead — argc is the discriminator. |
-| `bsc-data` | `data` | `$BSC_DATA_BIN` | Read the per-project Data Model + PlatformScan (`bsc-data model get` / `bsc-data scan get`). |
+| `bsc-data` | `data` | `$BSC_DATA_BIN` | Read the per-project Data Model + PlatformScan (`bsc-data model get` / `bsc-data scan get`) and author runtime REST presets (`bsc-data connector`, which replaced the deprecated `bsc-plan integration`, #1721). |
+| `bsc-logs` | `logs` | `$BSC_LOGS_BIN` | Read the unified logs + perf/cost from a live shell (#1607). |
+| `bsc-compliance` | `compliance` | `$BSC_COMPLIANCE_BIN` | The state CLI for compliance standards (`bsc-compliance standards list/get`) — the non-MCP companion to `bsc-compliance-mcp`. |
+| `bsc-blueprint` | `bsc-blueprint` | `$BSC_BLUEPRINT_BIN` | List/read/write the user blueprint store. |
+| `bsc-project` | `bsc-project` | `$BSC_PROJECT_BIN` | Enumerate local project hubs (`bsc-project list`) + their published marker (`bsc-project published`). |
 | `bsc-research-mcp` | `research` | (stdio MCP) | Literature research tools for the planner/fleet. |
 | `bsc-compliance-mcp` | `compliance` | (stdio MCP) | Current compliance standards for the planner. |
-| `bsc-agent` | `bsc-agent` | (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. |
+| `bsc-agent` | `bsc-agent` | `$BSC_AGENT_BIN` (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. |
 
 **Pure-shell helpers** ([`console/shell_rc.rs`](../src-tauri/src/console/shell_rc.rs)) — rc-file
 fragments concatenated into `~/.base-studio-code/bsc-env.sh` and sourced via `BASH_ENV`. They have
@@ -280,12 +293,13 @@ regression test in the same branch.
 
 ## 8. Gotchas
 
-- **Worktrees moved out of the hub (#844).** They live at `~/.base-studio-code/worktrees/<key>/…`,
-  **not** `projects/<key>/.worktrees/` as CLAUDE.md's "Workspace layout" still says. Trust
-  `worktrees_dir` in [`platform/paths.rs`](../src-tauri/src/platform/paths.rs).
-- **Two crates / several binaries CLAUDE.md's tree omits:** `crates/compliance` (`bsc-compliance-mcp`)
-  and `crates/skilldb` (`bsc-skill`), plus the `bsc-data` binary. The full set is in
-  [`crates/`](../crates/) and section [3](#3-workspace-crates) above.
+- **Worktrees live out of the hub (#844).** They're at `~/.base-studio-code/worktrees/<key>/<repo>--<slug>`,
+  **not** `projects/<key>/.worktrees/`. Trust `worktrees_dir` in
+  [`platform/paths.rs`](../src-tauri/src/platform/paths.rs).
+- **The crate set is larger than the headline four.** Beyond `plandb`/`data`/`llm`/`research`, the
+  workspace also has `skilldb`, `logs`, `compliance`, `mcp-rpc`, `bsc-blueprint`, `bsc-project`, and the
+  internal `bsc-util`/`bsc-sqlite-util`/`bsc-cli-util` libs — the full set with package/binary names is
+  section [3](#3-workspace-crates) above (and now in CLAUDE.md's structure tree).
 - **rc constants must end with a trailing newline.** In `shell_rc.rs`, every helper constant ends in
   `"\n"` (or `concat!(…, "\n")`) — otherwise the concatenated functions glue together and the whole
   `bsc-env.sh` breaks with a bash syntax error (#296). The `full_bsc_rc_is_syntactically_valid_bash`
@@ -296,7 +310,7 @@ regression test in the same branch.
   any TLS, or the relay dial's first handshake panics the tunnel thread (rustls 0.23 can't
   auto-select one at runtime).
 - **Process-tree cleanup is load-bearing.** The Windows Job Object / Unix process-group reaping in
-  `pty.rs` (and the `RunEvent::Exit` drain in `run.rs`) is what stops orphaned `claude`/`gh`/`git`
+  `console/pty/job.rs` (and the `RunEvent::Exit` drain in `run.rs`) is what stops orphaned `claude`/`gh`/`git`
   children from holding cwd locks on `~/.base-studio-code`.
 - **Windows release toolchain:** the DuckDB/SQLite `bundled` C/C++ builds pin the Windows CI leg to a
   specific MSVC image — see the project's release notes if a bundled-store build fails.
