@@ -531,8 +531,10 @@ name = "base-studio-code"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bsc-blueprint",
  "bsc-data",
  "bsc-llm",
+ "bsc-project",
  "bsc-util",
  "futures-util",
  "include_dir",

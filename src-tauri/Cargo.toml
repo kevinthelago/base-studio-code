@@ -83,6 +83,16 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }
 
+# User blueprint store (#1719) — shared with the `bsc-blueprint` session CLI. The blueprint
+# Tauri commands (`list/write/delete_blueprint`) are a thin wrapper over this crate's `Store`,
+# so the path-traversal slug guard lives in ONE place (#1761).
+bsc-blueprint = { path = "../crates/bsc-blueprint" }
+
+# Cross-project hub lifecycle (#1720) — shared with the `bsc-project` session CLI. The
+# published-marker helpers (`mark_published`/`is_published`/`published_marker`) delegate here so
+# the `.published` marker logic lives in ONE place (#1761).
+bsc-project = { path = "../crates/bsc-project" }
+
 # Global skills + task-groups store (#1338, instance of #1325) — shared with the `bsc-skill`
 # session CLI. The `skill_store_*` Tauri commands are a thin wrapper over this crate's `Store`,
 # so the desktop Skills library and every live console session read/write ONE global skills.db.

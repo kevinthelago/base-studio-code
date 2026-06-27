@@ -3,16 +3,18 @@ use crate::*;
 /// Mark a project published (#922): write `projects/<key>/.published`. Unlike the old promote-rename,
 /// this is a file-create INSIDE the hub — allowed even while the planner holds the hub as its cwd,
 /// instant, and the cwd never changes so Claude's `--continue` history survives. Idempotent.
+///
+/// The create-dir + marker-write is delegated to `bsc_project::mark_published` (#1761) so the
+/// `.published` logic lives in ONE place, shared with the `bsc-project` session CLI. The key is
+/// sanitized here (the app boundary) before delegating, since the crate treats it as opaque.
 #[tauri::command]
 pub(crate) fn mark_published(project_key: String) -> Result<(), String> {
-    if sanitize_project_key(&project_key).is_empty() {
+    let key = sanitize_project_key(&project_key);
+    if key.is_empty() {
         return Err("mark_published: empty project_key".into());
     }
-    let dir = project_dir(&project_key);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mark_published: {e}"))?;
-    std::fs::write(published_marker(&project_key), b"published\n")
-        .map_err(|e| format!("mark_published: {e}"))?;
-    log::info!("marked project published: {:?}", dir);
+    bsc_project::mark_published(&key)?;
+    log::info!("marked project published: {:?}", project_dir(&project_key));
     Ok(())
 }
 /// Delete a project's on-disk hub (`projects/<sanitized-key>`) and everything in

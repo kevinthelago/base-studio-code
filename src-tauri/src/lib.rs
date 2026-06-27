@@ -32,7 +32,7 @@ pub(crate) use project::plan_db;
 pub(crate) use platform::shell;
 pub(crate) use platform::paths::{
     home_dir, bsc_base_dir, project_dir, repo_dir, worktrees_dir,
-    plan_dir_for, discovery_dir_for, published_marker, is_published, legacy_draft_dir,
+    plan_dir_for, discovery_dir_for, is_published, legacy_draft_dir,
     nearest_existing_ancestor,
 };
 pub(crate) use platform::git::{git_lines, git_output, git_exclude};
