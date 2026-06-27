@@ -7,6 +7,7 @@ import {
   resolveReferenceContext,
   resolveAssignments,
   composeReferenceContext,
+  isDiscoveryContextDoc,
   REFERENCE_CONTEXT_HEADING,
   type DocAssignments,
 } from "./assignments";
@@ -20,6 +21,23 @@ describe("scopeKey", () => {
   it("scopes a repo to its project so the same repo never collides across projects", () => {
     expect(scopeKey(P1, WEB)).toBe("proj-one::acme/web");
     expect(scopeKey("proj-two", WEB)).not.toBe(scopeKey(P1, WEB));
+  });
+});
+
+describe("isDiscoveryContextDoc", () => {
+  it("flags the planner's discovery/context plan-section files (#1807)", () => {
+    expect(isDiscoveryContextDoc("projects/p1/context/goal.md")).toBe(true);
+    expect(isDiscoveryContextDoc("projects/p1/discovery/scope.md")).toBe(true);
+    expect(isDiscoveryContextDoc("context/goal.md")).toBe(true);
+    expect(isDiscoveryContextDoc("discovery/goal.md")).toBe(true);
+  });
+
+  it("leaves genuine assigned-knowledge docs alone", () => {
+    expect(isDiscoveryContextDoc("documents/global.md")).toBe(false);
+    expect(isDiscoveryContextDoc("documents/proj.md")).toBe(false);
+    expect(isDiscoveryContextDoc("projects/p1/prompts/web-triage.md")).toBe(false);
+    // a top-level/legit file whose NAME merely contains the word is not matched
+    expect(isDiscoveryContextDoc("documents/context-notes.md")).toBe(false);
   });
 });
 
