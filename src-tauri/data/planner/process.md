@@ -736,12 +736,25 @@ stream's `owns`/role — the build, test, run, and package-manager binaries (a R
 `["python","pytest"]`; plus any project-specific tool the stream runs unattended:
 `wasm-pack`, `docker`, a repo script, …) — and set them on the stream's **`commands`** array
 in the fleet plan (`bsc-plan fleet set`). They become that worker's auto-approved
-`Bash(<cmd> *)` rules at launch, so it runs its own toolchain without a permission prompt. A
-safe baseline is ALWAYS allowed — read-only inspection (`ls`/`cat`/`grep`/`find`/`cd`/…) for
-every agent, and the common build toolchains for doer (worker) streams — so `commands` only
-needs the project-specific extras. `gh`/`git`/`bsc-plan` are always allowed; don't list them.
-**Required, not optional**, for anything outside that baseline: without it the worker
-blocks on a permission prompt for that command.
+`Bash(<cmd> *)` rules at launch, so it runs its own toolchain without a permission prompt.
+
+**Every worker is automatically granted this baseline — do NOT list any of these in a
+stream's `commands`** (the app pre-approves them at launch; mirrors `BASELINE_READONLY` /
+`BASELINE_BUILD` / `MANDATORY_BASH` in `console/settings.rs`):
+- **Navigation / inspection / text** (every agent): `ls`, `cat`, `head`, `tail`, `grep`,
+  `rg`, `find`, `fd`, `pwd`, `cd`, `echo`, `wc`, `sort`, `uniq`, `diff`, `tree`, `which`,
+  `env`, `date`, `file`, `stat`, `basename`, `dirname`, `cut`, `sleep`, `printf`, `test`,
+  `sed`, `awk`, `jq`, `tr`, `mkdir`, `touch`
+- **Build / test toolchains** (doer/worker streams): `cargo`, `rustc`, `rustup`, `npm`,
+  `pnpm`, `yarn`, `npx`, `node`, `deno`, `bun`, `python`, `python3`, `pip`, `pip3`,
+  `pytest`, `make`, `go`, `tsc`, `vite`, `eslint`, `prettier`, `vitest`, `jest`, `docker`,
+  `mvn`, `gradle`, `dotnet`
+- **Always** (every agent): `gh`, `git`, `bsc-plan`
+
+So a stream's `commands` lists ONLY the tools its stack needs that are NOT in the baseline
+(e.g. `terraform`, `psql`, `protoc`, `wasm-pack`, `kubectl`, a repo script) — don't re-list
+the basics. **Required, not optional**, for anything outside that baseline: without it the
+worker blocks on a permission prompt for that command.
 
 > **Structural caveat — pipelines may still prompt.** An auto-approve rule is
 > `Bash(<cmd> *)` and matches against the WHOLE command string, so a piped/compound command
