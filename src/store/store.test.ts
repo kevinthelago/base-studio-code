@@ -9,7 +9,7 @@ import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
 import { defaultStageConfig } from "@/features/planner/stages/planStages";
 import { makeBlueprints } from "@/features/planner/stages/blueprints";
-import { directorPaneId, fleetPaneId, triagePaneId } from "@/app/console/lib/paneIdentity";
+import { directorPaneId, fleetPaneId, triagePaneId, paneIdFor } from "@/app/console/lib/paneIdentity";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 
 // Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
@@ -1428,20 +1428,24 @@ describe("agent fleet store", () => {
 });
 
 describe("pane status — store single source of truth (#435)", () => {
+  // addTab mints a stable tab id, so its panes are keyed `man:<id>:p<n>` (paneIdFor),
+  // NOT positional `t{idx}p{n}` (#1176). Derive the real ids the way the app does.
+  const pid = (idx: number, p: number) => paneIdFor(useAppStore.getState().tabs[idx], idx, p);
+
   it("setPaneStatus records the status and rolls it up to tab.state", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-a", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx); // isolate from shared-store state
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "on");
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("on");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "on");
+    expect(useAppStore.getState().paneStatus[pid(idx, 0)]).toBe("on");
     expect(useAppStore.getState().tabs[idx].state).toBe("on");
     // Any running pane dominates the rollup.
-    useAppStore.getState().setPaneStatus(`t${idx}p1`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 1), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
     // Back to idle when every live pane is idle.
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "idle");
-    useAppStore.getState().setPaneStatus(`t${idx}p1`, "idle");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "idle");
+    useAppStore.getState().setPaneStatus(pid(idx, 1), "idle");
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1450,9 +1454,9 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().addTab({ name: "ps-dis", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
-    useAppStore.getState().setPaneDisabled(`t${idx}p0`, true);
+    useAppStore.getState().setPaneDisabled(pid(idx, 0), true);
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1461,7 +1465,7 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().addTab({ name: "ps-layout", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(`t${idx}p3`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 3), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
     useAppStore.getState().setTabLayout(idx, "1×1"); // trims pane 3 out of the grid
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
@@ -1471,9 +1475,9 @@ describe("pane status — store single source of truth (#435)", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-clear", layout: "2×2" });
     const idx = before;
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "run");
     useAppStore.getState().clearTabStatuses(idx);
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().paneStatus[pid(idx, 0)]).toBeUndefined();
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1481,10 +1485,11 @@ describe("pane status — store single source of truth (#435)", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-close", layout: "2×2" });
     const idx = before;
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("run");
+    const key = pid(idx, 0);
+    useAppStore.getState().setPaneStatus(key, "run");
+    expect(useAppStore.getState().paneStatus[key]).toBe("run");
     useAppStore.getState().closeTab(idx);
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().paneStatus[key]).toBeUndefined();
   });
 });
 

@@ -72,6 +72,41 @@ export function paneIdFor(tab: PaneIdentityTab | undefined, tabIdx: number, pane
   return positionalPaneId(tabIdx, paneIdx);
 }
 
+/**
+ * Whether `paneId` is one of the cells `tab` (at grid index `tabIdx`) owns — the inverse of
+ * `paneIdFor`. A minted id matches when it is in the tab's `paneIds[]`; a `man:<tabId>:…` id
+ * matches when the tab's stable `id` matches; a legacy positional `t<idx>p…` id matches when
+ * the tab index matches. Director / worker / triage identity ids only ever belong via `paneIds`.
+ *
+ * This is the identity-aware replacement for parsing a positional key out of a pane id: a status
+ * rollup or a stale-status clear must work for manual (`man:`) and minted fleet/triage ids too,
+ * not just the legacy positional shape (#1176).
+ */
+export function paneBelongsToTab(paneId: string, tab: PaneIdentityTab, tabIdx: number): boolean {
+  if (tab.paneIds?.includes(paneId)) return true;
+  const parsed = parsePaneIdentity(paneId);
+  if (!parsed) return false;
+  if (parsed.kind === "manual") return !!tab.id && parsed.tabId === tab.id;
+  if (parsed.kind === "positional") return parsed.tabIdx === tabIdx;
+  return false;
+}
+
+/**
+ * Find the tab that owns `paneId` (and its index), or null. Scans by identity (`paneBelongsToTab`)
+ * so a manual (`man:…`) or minted fleet/triage id resolves to its real tab — the positional
+ * `parsePaneKey` could only ever resolve legacy `t<idx>p…` ids, which silently dropped the rollup
+ * for every identity-keyed pane (#1176).
+ */
+export function findPaneOwnerTab<T extends PaneIdentityTab>(
+  tabs: readonly T[],
+  paneId: string,
+): { tab: T; tabIdx: number } | null {
+  for (let i = 0; i < tabs.length; i++) {
+    if (paneBelongsToTab(paneId, tabs[i], i)) return { tab: tabs[i], tabIdx: i };
+  }
+  return null;
+}
+
 // ── Parsing identity ids back into meaning (#1266) ──────────────────────────────
 //
 // The id grammar is self-describing, so a session can be recovered from its NAME alone —

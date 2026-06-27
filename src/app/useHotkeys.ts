@@ -7,6 +7,7 @@ import { nextFullscreen } from "@/app/console/lib/consoleFocus";
 import { CLEAR_INPUT_BYTES } from "@/app/console/lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "@/app/console/lib/paneSelect";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
+import { paneCountForLayout } from "@/app/console/lib/paneStatus";
 import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
@@ -184,11 +185,14 @@ export function useHotkeys() {
         if (consoleBroadcast) {
           const activeTab = tabs[activeTabIdx];
           if (!activeTab) return;
-          const [c, r] = activeTab.layout.split("×").map(Number);
-          const paneIds = Array.from({ length: (c || 1) * (r || 1) }, (_, i) => `t${activeTabIdx}p${i}`);
+          // Key off the tab's STABLE pane ids (paneIdFor) — a manual tab's PTYs are
+          // `man:<tabId>:p<n>`, so positional ids would clear nothing (#1176).
+          const paneIds = Array.from({ length: paneCountForLayout(activeTab.layout) },
+            (_, i) => paneIdFor(activeTab, activeTabIdx, i));
           invoke("pty_broadcast", { paneIds, data: CLEAR_INPUT_BYTES });
         } else if (focusedPaneIdx >= 0) {
-          invoke("pty_write", { paneId: `t${activeTabIdx}p${focusedPaneIdx}`, data: CLEAR_INPUT_BYTES });
+          const activeTab = tabs[activeTabIdx];
+          if (activeTab) invoke("pty_write", { paneId: paneIdFor(activeTab, activeTabIdx, focusedPaneIdx), data: CLEAR_INPUT_BYTES });
         }
         return;
       }
@@ -242,9 +246,8 @@ export function useHotkeys() {
         if (bytes !== null) {
           const activeTab = tabs[activeTabIdx];
           if (activeTab) {
-            const [cols, rows] = activeTab.layout.split("×").map(Number);
             const { paneIds, suppressDefault } =
-              computeBroadcastTargets(activeTabIdx, cols * rows, focusedPaneIdx);
+              computeBroadcastTargets(activeTab, activeTabIdx, focusedPaneIdx);
             if (paneIds.length > 0) {
               invoke("pty_broadcast", { paneIds, data: bytes });
             }
@@ -304,9 +307,9 @@ export function useHotkeys() {
         e.stopPropagation();
         const activeTab = tabs[activeTabIdx];
         if (!activeTab) return;
-        const [cols, rows] = activeTab.layout.split("×").map(Number);
-        const paneIds: string[] = [];
-        for (let i = 0; i < cols * rows; i++) paneIds.push(`t${activeTabIdx}p${i}`);
+        // Stable pane ids (paneIdFor) so a manual tab's `man:` PTYs are actually hit (#1176).
+        const paneIds = Array.from({ length: paneCountForLayout(activeTab.layout) },
+          (_, i) => paneIdFor(activeTab, activeTabIdx, i));
         invoke("pty_broadcast", { paneIds, data: "\r" });
         return;
       }
