@@ -177,14 +177,28 @@ pub(crate) fn normalize_response(raw: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-impl LlmProvider for GeminiProvider {
-    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-            req.model
-        );
+/// Base URL for the Gemini Generative Language API. Production passes this; tests point
+/// the `*_at` helpers at a localhost mock so the real send path is exercised offline.
+pub(crate) const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com";
+
+/// The `:generateContent` endpoint for a base URL + model.
+fn generate_content_url(base_url: &str, model: &str) -> String {
+    format!("{base_url}/v1beta/models/{model}:generateContent")
+}
+
+impl GeminiProvider {
+    /// `complete` against an arbitrary base URL (production passes [`GEMINI_BASE_URL`];
+    /// tests point it at a localhost mock). Threading the base-url here lets the real
+    /// send path (`post_json` + status/error handling) be exercised end-to-end without
+    /// the network — the trait method below just supplies the production host.
+    pub(crate) async fn complete_at(
+        &self,
+        base_url: &str,
+        req: &LlmRequest,
+        api_key: &str,
+    ) -> Result<serde_json::Value, String> {
         let json = post_json(
-            &url,
+            &generate_content_url(base_url, &req.model),
             &[("x-goog-api-key", api_key.to_string())],
             &build_request_body(req),
         )
@@ -192,18 +206,30 @@ impl LlmProvider for GeminiProvider {
         Ok(normalize_response(&json))
     }
 
-    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-            t.model
-        );
+    /// `turn` against an arbitrary base URL (see [`Self::complete_at`]).
+    pub(crate) async fn turn_at(
+        &self,
+        base_url: &str,
+        t: &Turn,
+        api_key: &str,
+    ) -> Result<TurnResult, String> {
         let json = post_json(
-            &url,
+            &generate_content_url(base_url, &t.model),
             &[("x-goog-api-key", api_key.to_string())],
             &turn_request_body(t),
         )
         .await?;
         Ok(parse_turn_response(&json))
+    }
+}
+
+impl LlmProvider for GeminiProvider {
+    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+        self.complete_at(GEMINI_BASE_URL, req, api_key).await
+    }
+
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        self.turn_at(GEMINI_BASE_URL, t, api_key).await
     }
 }
 

@@ -11,6 +11,9 @@ mod local;
 mod openai;
 mod turn;
 
+#[cfg(test)]
+mod http_it;
+
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
