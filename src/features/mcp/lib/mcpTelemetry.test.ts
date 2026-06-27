@@ -26,6 +26,24 @@ describe("parseMcpLog", () => {
     expect(c.outcome).toBe("ok");
     expect(c.ms).toBe(0);
   });
+
+  it("parses the #1743 pane-prefixed shape and reads past the pane column", () => {
+    // New writer line: ts \t pane \t server \t tool \t outcome \t ms \t detail (7 fields).
+    const paneLine = [day(0), "k:web", "GitHub", "list_issues", "fail", 412, "rate-limited"].join("\t");
+    const [c] = parseMcpLog(paneLine);
+    expect(c).toMatchObject({ server: "GitHub", tool: "list_issues", outcome: "fail", ms: 412, detail: "rate-limited" });
+  });
+
+  it("parses a mix of legacy (no pane) and new (pane) lines in one log", () => {
+    const text = [
+      line(day(0), "GitHub", "a", "ok", 100),                                  // legacy, 5 fields
+      [day(0), "k:web", "Playwright", "navigate", "fail", 30, "ENOENT"].join("\t"), // new, 7 fields
+    ].join("\n");
+    const calls = parseMcpLog(text);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ server: "GitHub", tool: "a", outcome: "ok", ms: 100 });
+    expect(calls[1]).toMatchObject({ server: "Playwright", tool: "navigate", outcome: "fail", ms: 30, detail: "ENOENT" });
+  });
 });
 
 describe("aggregateMcpTelemetry", () => {

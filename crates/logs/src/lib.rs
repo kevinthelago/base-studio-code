@@ -6,9 +6,11 @@
 //! per-session queries — the engine behind the `bsc-logs` CLI (and, later, the desktop
 //! observability commands). Pure: reads files, no Tauri, no network.
 //!
-//! Slice 1 reads the streams that already carry a pane column (audit / skills / tokens-cost /
-//! activity / done / coord). `mcp.log` and `hooks.log` have no pane column yet, so their events
-//! carry session `"?"` and are excluded from a `--session` query until slice 2 adds the column.
+//! Every stream now carries a leading pane column (`$BSC_AUDIT_PANE`): slice 1 read audit / skills
+//! / tokens-cost / activity / done / coord, and slice 2 (#1743) added it to `mcp.log` + `hooks.log`,
+//! so their events attribute to a session too. The parser stays backward-compatible with the legacy
+//! column-less `mcp.log`/`hooks.log` lines already on disk — detected by column count, those resolve
+//! to the unattributed session `"?"` (excluded from a `--session` query and the `sessions` rollup).
 
 use std::path::{Path, PathBuf};
 
@@ -19,8 +21,8 @@ pub mod perf;
 pub use perf::PerfSample;
 
 /// One normalized event from any stream. `ts_ms` is epoch milliseconds (normalized from the
-/// stream's native ISO-8601 or epoch-ms timestamp); `session` is the pane id (or `"?"` for the
-/// not-yet-pane-tagged mcp/hooks streams); `summary` is a one-line human rendering.
+/// stream's native ISO-8601 or epoch-ms timestamp); `session` is the pane id (or `"?"` for a legacy
+/// column-less mcp/hooks line written before #1743); `summary` is a one-line human rendering.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct LogEvent {
     pub ts_ms: i64,
@@ -104,10 +106,18 @@ fn parse_line(stream: &'static str, line: &str) -> Option<LogEvent> {
         "done" => mk(f[1].into(), "done".into(), vec![]),
         // ts·pane·kind·a·b
         "coord" => mk(f[1].into(), format!("{} {} {}", f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&""), f.get(4).unwrap_or(&"")).trim().into(), f[2..].to_vec()),
-        // ts·server·tool·outcome·ms·detail  (no pane column yet → session "?")
-        "mcp" => mk("?".into(), format!("{}/{} {} {}ms", f.get(1).unwrap_or(&""), f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&""), f.get(4).unwrap_or(&"")), f[1..].to_vec()),
-        // ts·event·name·outcome  (no pane column yet → session "?")
-        "hook" => mk("?".into(), format!("{} {} {}", f.get(1).unwrap_or(&""), f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&"")).trim().into(), f[1..].to_vec()),
+        // #1743: new lines are ts·pane·server·tool·outcome·ms·detail (7 cols); legacy lines have no
+        // pane (ts·server·tool·outcome·ms·detail, 6 cols → unattributed "?"). Detect by column count.
+        "mcp" => {
+            let (session, b) = if f.len() >= 7 { (f[1].to_string(), 2) } else { ("?".to_string(), 1) };
+            mk(session, format!("{}/{} {} {}ms", f.get(b).unwrap_or(&""), f.get(b + 1).unwrap_or(&""), f.get(b + 2).unwrap_or(&""), f.get(b + 3).unwrap_or(&"")), f[b..].to_vec())
+        }
+        // #1743: new lines are ts·pane·event·name·outcome (5 cols); legacy lines have no pane
+        // (ts·event·name·outcome, 4 cols → unattributed "?"). Detect by column count.
+        "hook" => {
+            let (session, b) = if f.len() >= 5 { (f[1].to_string(), 2) } else { ("?".to_string(), 1) };
+            mk(session, format!("{} {} {}", f.get(b).unwrap_or(&""), f.get(b + 1).unwrap_or(&""), f.get(b + 2).unwrap_or(&"")).trim().into(), f[b..].to_vec())
+        }
         _ => return None,
     })
 }
@@ -181,7 +191,8 @@ pub struct SessionRow {
     pub role: &'static str,
     pub tools: usize,
     pub skills: usize,
-    /// MCP calls attributed to this session. 0 until slice 2 adds a pane column to `mcp.log`.
+    /// MCP calls attributed to this session (#1743 added the pane column to `mcp.log`). Legacy
+    /// column-less lines stay unattributed (`"?"`) and don't count toward any session.
     pub mcp: usize,
     pub coord: usize,
     pub cost_usd: f64,
@@ -212,6 +223,9 @@ pub fn sessions(dir: &Path) -> Vec<SessionRow> {
     for e in read_stream(dir, "skill").into_iter().filter(|e| e.session != "?") {
         ensure(&mut rows, &e.session).skills += 1;
     }
+    for e in read_stream(dir, "mcp").into_iter().filter(|e| e.session != "?") {
+        ensure(&mut rows, &e.session).mcp += 1;
+    }
     for e in read_stream(dir, "coord").into_iter().filter(|e| e.session != "?") {
         ensure(&mut rows, &e.session).coord += 1;
     }
@@ -233,7 +247,7 @@ pub fn sessions(dir: &Path) -> Vec<SessionRow> {
         last_act_ts
             .get(&b.session)
             .cmp(&last_act_ts.get(&a.session))
-            .then((b.tools + b.skills + b.coord).cmp(&(a.tools + a.skills + a.coord)))
+            .then((b.tools + b.skills + b.mcp + b.coord).cmp(&(a.tools + a.skills + a.mcp + a.coord)))
             .then(a.session.cmp(&b.session))
     });
     out
@@ -270,15 +284,44 @@ mod tests {
         std::fs::write(d.join("skills.log"), "2026-06-26T10:00:01Z\tk:ui\tPreToolUse\tcompliance-docs\n").unwrap();
         std::fs::write(d.join("coord.log"), "2026-06-26T10:00:02Z\tk:ui\tlanded\t\t\n").unwrap();
         std::fs::write(d.join("activity.log"), "1782468001000\tk:ui\trun\n").unwrap();
-        std::fs::write(d.join("mcp.log"), "1782468000000\tResearch\tsearch\tok\t240\t-\n").unwrap();
+        // #1743: a new pane-tagged mcp line + a legacy column-less one must BOTH parse.
+        std::fs::write(
+            d.join("mcp.log"),
+            "1782468000000\tk:ui\tResearch\tsearch\tok\t240\t-\n1782468000001\tResearch\tsearch\tok\t99\t-\n",
+        ).unwrap();
 
         let tool = &read_stream(&d, "tool")[0];
         assert_eq!((tool.session.as_str(), tool.stream), ("k:ui", "tool"));
         assert!(tool.summary.starts_with("Read"));
         let skill = &read_stream(&d, "skill")[0];
         assert_eq!(skill.summary, "compliance-docs (PreToolUse)");
-        // mcp has no pane → session "?"
-        assert_eq!(read_stream(&d, "mcp")[0].session, "?");
+        // New line: pane attributes to its session; the summary still renders server/tool/outcome/ms.
+        let mcp = read_stream(&d, "mcp");
+        assert_eq!(mcp[0].session, "k:ui");
+        assert_eq!(mcp[0].summary, "Research/search ok 240ms");
+        // Legacy line (no pane column): unattributed "?", still parsed without a panic.
+        assert_eq!(mcp[1].session, "?");
+        assert_eq!(mcp[1].summary, "Research/search ok 99ms");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn parses_both_hook_line_shapes() {
+        // #1743: hooks.log gained a leading pane column. A new pane-tagged line attributes to its
+        // session; a legacy column-less line stays unattributed ("?"). Both must parse — neither panics.
+        let d = tmp();
+        std::fs::write(
+            d.join("hooks.log"),
+            // new: ts·pane·event·name·outcome  ·  legacy: ts·event·name·outcome
+            "1782468000000\tk:web\tPreToolUse\tBlock PII\tblock\n1782468000001\tPostToolUse\tAuto-format\tok\n",
+        ).unwrap();
+
+        let hooks = read_stream(&d, "hook");
+        assert_eq!(hooks[0].session, "k:web");
+        assert_eq!(hooks[0].summary, "PreToolUse Block PII block");
+        assert_eq!(hooks[0].fields, vec!["PreToolUse", "Block PII", "block"]);
+        assert_eq!(hooks[1].session, "?");
+        assert_eq!(hooks[1].summary, "PostToolUse Auto-format ok");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -314,9 +357,17 @@ mod tests {
         std::fs::write(d.join("audit.log"), "2026-06-26T10:00:00Z\tk:ui\tRead\tx\n2026-06-26T10:00:01Z\tk:ui\tBash\tls\n").unwrap();
         std::fs::write(d.join("skills.log"), "2026-06-26T10:00:02Z\tk:ui\tPreToolUse\tsk\n").unwrap();
         std::fs::write(d.join("activity.log"), "1782468000000\tk:director\tidle\n").unwrap();
+        // #1743: a pane-tagged mcp call attributes to k:ui; a legacy column-less line stays
+        // unattributed and must NOT count toward any session's mcp total.
+        std::fs::write(
+            d.join("mcp.log"),
+            "1782468000000\tk:ui\tGitHub\tlist_issues\tok\t120\t-\n1782468000001\tGitHub\tlist_issues\tok\t80\t-\n",
+        ).unwrap();
         let rows = sessions(&d);
         let ui = rows.iter().find(|r| r.session == "k:ui").unwrap();
-        assert_eq!((ui.tools, ui.skills, ui.role), (2, 1, "worker"));
+        assert_eq!((ui.tools, ui.skills, ui.mcp, ui.role), (2, 1, 1, "worker"));
+        // The legacy "?" mcp line is never rolled into a session row.
+        assert!(rows.iter().all(|r| r.session != "?"), "unattributed mcp must not create a row");
         let dir = rows.iter().find(|r| r.session == "k:director").unwrap();
         assert_eq!((dir.role, dir.activity.as_str()), ("director", "idle"));
         assert_eq!(role_of("planning_demo"), "planner");
