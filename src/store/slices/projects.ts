@@ -22,7 +22,7 @@ import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session
 import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/mcp/lib/mcpServers";
-import { resolveReferenceContext, resolveStartupPrompt } from "@/shared/lib/session/assignments";
+import { resolveReferenceContext, resolveStartupPrompt, isDiscoveryContextDoc } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
@@ -308,8 +308,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               // Reference-context docs (#326): injected as background context for
               // this pane regardless of which startup prompt won above. Keyed by
               // the sanitized project key (projKey) so KB-page project assignments
-              // — which use the same key — resolve here.
-              const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" });
+              // — which use the same key — resolve here. Triage drops the planner's
+              // discovery/context plan-section files (goal.md, scope.md, …) so the
+              // raw `# Goal` doesn't leak into the session (#1807) — those are the
+              // planner's working files, not intended assigned knowledge.
+              const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" })
+                .filter((d) => !isDiscoveryContextDoc(d));
               if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.

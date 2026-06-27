@@ -203,6 +203,22 @@ export function resolveAssignments(
 export const REFERENCE_CONTEXT_HEADING = "# Reference context (assigned knowledge)";
 
 /**
+ * True when a reference-context relpath is one of the planner's discovery/context
+ * plan-section files (`projects/<key>/context/goal.md`, `…/discovery/scope.md`, …)
+ * — identified by a `context/` or `discovery/` path segment.
+ *
+ * These are the planner's internal working files, NOT "assigned knowledge". A
+ * triage session resumes a repo's issue backlog and must not be seeded with the
+ * raw project goal/scope/etc. (#1807): the now-removed KB reference-context
+ * assignment UI (#1460) auto-assigned them at the project level, and that
+ * assignment persists in `refContextProject`, so they leak in as a bare `# Goal`
+ * heading. Triage filters them out of its resolved reference set with this guard.
+ */
+export function isDiscoveryContextDoc(relpath: string): boolean {
+  return /(^|\/)(context|discovery)\//.test(relpath);
+}
+
+/**
  * Folds resolved reference-context document contents onto a session's startup
  * prompt for delivery (#326). Empty/blank blocks are dropped; when nothing is
  * left the `base` is returned unchanged. When there is no base prompt but there
