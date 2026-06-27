@@ -15,6 +15,23 @@ describe("Toggle", () => {
     const { container } = render(<Toggle on size="sm" className="sess-toggle" />);
     expect(container.querySelector("span.sess-toggle")).toBeTruthy();
   });
+
+  it("uses the accent track by default when on", () => {
+    const { container } = render(<Toggle on />);
+    expect(container.querySelector("span")!.style.background).toContain("var(--accent)");
+  });
+
+  it("uses the success track + border when tone='success' and on", () => {
+    const { container } = render(<Toggle on tone="success" size="sm" />);
+    const track = container.querySelector("span")!;
+    expect(track.style.background).toContain("var(--success)");
+    expect(track.style.border).toContain("var(--success)");
+  });
+
+  it("ignores tone in the off state (neutral track)", () => {
+    const { container } = render(<Toggle on={false} tone="success" />);
+    expect(container.querySelector("span")!.style.background).toContain("var(--bg-elev2)");
+  });
 });
 
 describe("ConfirmButton", () => {

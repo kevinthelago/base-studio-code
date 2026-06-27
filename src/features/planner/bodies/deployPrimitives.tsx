@@ -3,6 +3,7 @@
 // inline style objects (prop/chip). Their signatures deliberately differ from the cross-body
 // primitives in bodyPrimitives.tsx (e.g. this Card is numbered/done-aware) and so are NOT merged.
 
+import { Toggle as Switch } from "@/shared/ui/Toggle";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 export const prop: React.CSSProperties = { fontFamily: MONO, fontSize: 9, color: "var(--accent)" };
@@ -79,13 +80,7 @@ export function Field({ label, value, onChange }: { label: string; value: string
 export function Toggle({ on, onClick, label, value }: { on: boolean; onClick: () => void; label: string; value?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <span onClick={onClick} style={{
-        width: 26, height: 15, borderRadius: 99, flexShrink: 0, cursor: "pointer", position: "relative",
-        background: on ? "color-mix(in oklch, var(--success), transparent 50%)" : "var(--bg-elev2)",
-        border: "1px solid " + (on ? "var(--success)" : "var(--border-soft)"), transition: "all .12s",
-      }}>
-        <span style={{ position: "absolute", top: 1, left: on ? 12 : 1, width: 11, height: 11, borderRadius: 99, background: on ? "var(--success)" : "var(--fg-dim)", transition: "all .12s" }} />
-      </span>
+      <Switch on={on} onClick={onClick} size="sm" tone="success" />
       <span style={{ fontFamily: MONO, fontSize: 10, color: on ? "var(--fg)" : "var(--fg-muted)", lineHeight: 1.3 }}>{label}</span>
       <span style={{ flex: 1 }} />
       {value && <span style={{ fontFamily: MONO, fontSize: 9.5, color: on ? "var(--fg-muted)" : "var(--fg-dim)" }}>{value}</span>}
