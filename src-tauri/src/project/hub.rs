@@ -204,3 +204,14 @@ pub(crate) fn migrate_draft_hubs_into_projects() {
 pub(crate) fn project_dir_path(project_key: String) -> String {
     project_dir(&project_key).to_string_lossy().to_string()
 }
+
+/// Absolute on-disk clone path of a repo within its project hub (#1819) —
+/// `projects/<key>/<short-repo-name>`. Triage resolves each repo's cwd through this so the launch
+/// uses a backend-authoritative absolute path instead of the async-loaded `bscBaseDir` mirror
+/// (which is empty at crash-recovery startup → empty cwd → the settings.json writer is skipped →
+/// a permission-less session). Mirrors [`repo_dir`] / the frontend `projectRepoCwd`; the key/repo
+/// are opaque and sanitized downstream.
+#[tauri::command]
+pub(crate) fn repo_dir_path(project_key: String, repo: String) -> String {
+    repo_dir(&project_key, &repo).to_string_lossy().to_string()
+}

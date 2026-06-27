@@ -802,6 +802,31 @@ describe("triageStartProject", () => {
     expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
+  it("uses a Rust-resolved clonePaths cwd even when bscBaseDir is empty (#1819)", () => {
+    // The crash-recovery condition: the async bscBaseDir mirror is still "" when triage launches.
+    // Pre-#1819 that yielded an empty cwd → TerminalView skipped the settings.json writer →
+    // permission-less session. A backend-resolved clonePaths entry must override the mirror.
+    useAppStore.setState({ bscBaseDir: "" });
+    useAppStore.getState().triageStartProject("rp", ["o/web", "o/api"], "rp", undefined, {
+      "o/web": "/abs/clone/web",
+      "o/api": "/abs/clone/api",
+    });
+    const { paneCwds } = useAppStore.getState();
+    expect(paneCwds[tri("rp", "o/web")]).toBe("/abs/clone/web");
+    expect(paneCwds[tri("rp", "o/api")]).toBe("/abs/clone/api");
+  });
+
+  it("falls back to the bscBaseDir mirror when no clonePaths entry is present (#1819)", () => {
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
+    useAppStore.getState().triageStartProject("fb", ["o/web", "o/api"], "fb", undefined, {
+      "o/web": "/abs/clone/web", // provided → wins
+      // o/api omitted → falls back to the mirror-derived path
+    });
+    const { paneCwds } = useAppStore.getState();
+    expect(paneCwds[tri("fb", "o/web")]).toBe("/abs/clone/web");
+    expect(paneCwds[tri("fb", "o/api")]).toBe("/base/projects/fb/api");
+  });
+
   it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
     useAppStore.getState().triageStartProject("cont", ["o/a", "o/b"]);
     const { paneContinue } = useAppStore.getState();
