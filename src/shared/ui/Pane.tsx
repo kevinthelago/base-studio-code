@@ -30,6 +30,9 @@ export interface PaneProps {
   onCommit?: () => void;
   /** Disable the draft "done" button (e.g. a required field is empty). */
   commitDisabled?: boolean;
+  /** Drop the body's default padding — for bodies whose sections supply their own (e.g. full-bleed
+   *  divider rows). */
+  flush?: boolean;
   /** Extra class on the frame element (the drawer aside / the inline section). */
   className?: string;
 }
@@ -52,8 +55,9 @@ function StandardFooter({ isDraft, onClose, onRemove, onCommit, commitDisabled }
 }
 
 export function Pane(props: PaneProps) {
-  const { mode = "drawer", open = true, header, body, children, footer, onClose, className } = props;
+  const { mode = "drawer", open = true, header, body, children, footer, onClose, flush, className } = props;
   const content = body ?? children;
+  const bodyClass = "pane-body" + (flush ? " flush" : "");
   const foot = footer !== undefined
     ? footer
     : mode === "drawer" ? <StandardFooter {...props} /> : null;
@@ -62,7 +66,7 @@ export function Pane(props: PaneProps) {
     return (
       <section className={className ? `pane-inline ${className}` : "pane-inline"}>
         {header != null && <div className="pane-head">{header}</div>}
-        <div className="pane-body">{content}</div>
+        <div className={bodyClass}>{content}</div>
         {foot != null && <div className="pane-foot">{foot}</div>}
       </section>
     );
@@ -78,7 +82,7 @@ export function Pane(props: PaneProps) {
               {header}
               <IconButton aria-label="close" onClick={onClose} />
             </div>
-            <div className="pane-body">{content}</div>
+            <div className={bodyClass}>{content}</div>
             {foot != null && <div className="pane-foot">{foot}</div>}
           </>
         )}

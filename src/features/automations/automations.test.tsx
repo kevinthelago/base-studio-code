@@ -31,7 +31,8 @@ describe("AutomationsScreen (wired to the store)", () => {
     fireEvent.click(screen.getByText("+ New automation"));
     expect(useAppStore.getState().automations.length).toBe(1);
 
-    const nameInput = container.querySelector(".editor .name-input") as HTMLInputElement;
+    // Creating selects the new automation, opening its slide-in editor drawer.
+    const nameInput = container.querySelector(".pane-head .name-input") as HTMLInputElement;
     expect(nameInput.value).toBe("New automation");
     fireEvent.change(nameInput, { target: { value: "Nightly digest" } });
     expect(useAppStore.getState().automations[0].name).toBe("Nightly digest");
@@ -40,8 +41,9 @@ describe("AutomationsScreen (wired to the store)", () => {
   it("arms an automation, which schedules a next run", () => {
     seed();
     const { container } = render(<AutomationsScreen />);
+    fireEvent.click(screen.getByText("X")); // open the editor drawer for the seeded automation
     expect(useAppStore.getState().automations[0].nextRunAt).toBeNull();
-    fireEvent.click(container.querySelector(".editor .head .toggle") as HTMLElement);
+    fireEvent.click(container.querySelector(".pane-head .toggle") as HTMLElement);
     expect(useAppStore.getState().automations[0].armed).toBe(true);
     expect(useAppStore.getState().automations[0].nextRunAt).toBeTypeOf("number");
   });
@@ -49,11 +51,30 @@ describe("AutomationsScreen (wired to the store)", () => {
   it("switches an automation to cron recurrence", () => {
     seed();
     const { container } = render(<AutomationsScreen />);
+    fireEvent.click(screen.getByText("X")); // open the editor drawer for the seeded automation
     fireEvent.click(screen.getByText("cron")); // the "cron" mode pill
     expect(useAppStore.getState().automations[0].when.kind).toBe("cron");
-    const cronInput = Array.from(container.querySelectorAll(".editor input.input"))
+    const cronInput = Array.from(container.querySelectorAll(".pane-drawer input.input"))
       .some(el => (el as HTMLInputElement).value === "0 9 * * *");
     expect(cronInput).toBe(true);
+  });
+
+  it("opens the slide-in editor drawer on select, closes on done, removes on remove", () => {
+    seed();
+    const { container } = render(<AutomationsScreen />);
+    // closed until a schedule is selected
+    expect(container.querySelector(".pane-drawer.on")).toBeNull();
+    fireEvent.click(screen.getByText("X"));
+    expect(container.querySelector(".pane-drawer.on")).toBeTruthy();
+    // "done" closes the drawer without deleting
+    fireEvent.click(screen.getByText("done"));
+    expect(container.querySelector(".pane-drawer.on")).toBeNull();
+    expect(useAppStore.getState().automations.length).toBe(1);
+    // reopen and remove
+    fireEvent.click(screen.getByText("X"));
+    fireEvent.click(screen.getByText("remove"));
+    expect(useAppStore.getState().automations.length).toBe(0);
+    expect(container.querySelector(".pane-drawer.on")).toBeNull();
   });
 
   it("shows recorded runs in History, filterable by status", () => {

@@ -30,9 +30,9 @@
 
 .auto-screen .auto-body { flex:1; overflow:hidden; padding:14px 22px; min-width:0; display:flex; flex-direction:column; }
 
-/* schedules tab — list + editor */
-.auto-screen .sched-layout { display:grid; grid-template-columns:340px 1fr; gap:14px; flex:1; min-height:0; }
-.auto-screen .sched-list { display:flex; flex-direction:column; min-height:0; padding:0; }
+/* schedules tab — full-width list; the editor is the slide-in <Pane> drawer (#1824) */
+.auto-screen .sched-layout { display:flex; flex:1; min-height:0; }
+.auto-screen .sched-list { flex:1; display:flex; flex-direction:column; min-height:0; padding:0; }
 .auto-screen .sched-list .head { padding:12px 14px 8px; border-bottom:1px solid var(--border-soft); }
 .auto-screen .sched-list .head-row { display:flex; align-items:baseline; gap:8px; }
 .auto-screen .sched-list .head-row h3 { margin:0; }
@@ -50,12 +50,10 @@
 .auto-screen .sched-row.on .name { color:var(--fg); }
 .auto-screen .sched-row .meta { margin-top:5px; font-family:var(--mono); font-size:9.5px; color:var(--fg-dim); display:flex; gap:8px; flex-wrap:wrap; }
 
-/* editor */
-.auto-screen .editor { display:flex; flex-direction:column; min-width:0; overflow:auto; padding:0; }
-.auto-screen .editor .head { padding:14px 18px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:10px; background:var(--bg-elev); }
-.auto-screen .editor .head .sid { font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
-.auto-screen .editor .head .name-input { flex:1; height:30px; font-size:14px; font-family:var(--sans); background:transparent; border:1px solid transparent; color:var(--fg); border-radius:var(--r-md); padding:0 8px; }
-.auto-screen .editor .head .name-input:hover, .auto-screen .editor .head .name-input:focus { border-color:var(--border-soft); background:var(--bg-canvas); outline:none; }
+/* editor — the schedule editor lives in the slide-in <Pane> drawer; its sections (.es) are flush
+   (the drawer body is rendered with `flush`). The editable name + armed toggle sit in the pane head. */
+.auto-screen .pane-head .name-input { flex:1; height:30px; font-size:14px; font-family:var(--sans); background:transparent; border:1px solid transparent; color:var(--fg); border-radius:var(--r-md); padding:0 8px; }
+.auto-screen .pane-head .name-input:hover, .auto-screen .pane-head .name-input:focus { border-color:var(--border-soft); background:var(--bg-canvas); outline:none; }
 
 .auto-screen .toggle { width:30px; height:18px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border); position:relative; cursor:pointer; flex:0 0 30px; }
 .auto-screen .toggle::after { content:""; position:absolute; top:1px; left:1px; width:14px; height:14px; border-radius:50%; background:var(--fg-dim); transition:left .15s, background .15s; }

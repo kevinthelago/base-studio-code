@@ -2,15 +2,9 @@ import { useAppStore } from "@/store";
 import { paneCount, type Every, type Automation, type SimpleWhen } from "./lib/scheduler";
 import { isValidCron } from "./lib/cron";
 import { fmtStamp } from "./format";
+import { Pane } from "@/shared/ui/Pane";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
-
-interface SchedulesTabProps {
-  selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
-  onNew: () => void;
-  onViewAllHistory: (id: string) => void;
-}
 
 function runsTable(runs: Automation["runs"]) {
   if (runs.length === 0) {
@@ -33,9 +27,14 @@ function runsTable(runs: Automation["runs"]) {
   );
 }
 
-/** The Schedules tab — list of real automations + a live editor for the selected one. */
-export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistory }: SchedulesTabProps) {
-  const { automations, updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames } = useAppStore();
+/** The Schedules tab — the full-width list of automations. Selecting one opens the slide-in
+ *  <ScheduleDrawer> (rendered in the screen overlay), matching the MCP + Skills editor drawers (#1824). */
+export function SchedulesTab({ selectedId, setSelectedId, onNew }: {
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  onNew: () => void;
+}) {
+  const automations = useAppStore(s => s.automations);
 
   if (automations.length === 0) {
     return (
@@ -49,22 +48,7 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
     );
   }
 
-  const sel = automations.find(a => a.id === selectedId) ?? automations[0];
   const armedCount = automations.filter(a => a.armed).length;
-  const tabIdx = tabs.findIndex(t => t.name === sel.targetTab);
-  const paneOpts = tabIdx >= 0 ? Array.from({ length: paneCount(tabs[tabIdx].layout) }, (_, i) => i) : [];
-  const isSimple = sel.when.kind === "simple";
-  const patchSimple = (p: Partial<SimpleWhen>) => {
-    if (sel.when.kind !== "simple") return;
-    updateAutomation(sel.id, { when: { ...sel.when, ...p } });
-  };
-  const setMode = (kind: "simple" | "cron") => {
-    if (kind === sel.when.kind) return;
-    updateAutomation(sel.id, {
-      when: kind === "cron" ? { kind: "cron", expr: "0 9 * * *" } : { kind: "simple", every: "day", at: "09:00" },
-    });
-  };
-
   return (
     <div className="sched-layout">
       <div className="card sched-list">
@@ -76,7 +60,7 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
         </div>
         <div className="scroll">
           {automations.map(a => (
-            <div key={a.id} className={"sched-row" + (a.id === sel.id ? " on" : "")} onClick={() => setSelectedId(a.id)}>
+            <div key={a.id} className={"sched-row" + (a.id === selectedId ? " on" : "")} onClick={() => setSelectedId(a.id)}>
               <div className="l1">
                 <span className={"dot" + (a.armed ? "" : " off")} />
                 <span className="spacer" />
@@ -96,107 +80,139 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew, onViewAllHistor
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="card editor">
-        <div className="head">
+/** The slide-in editor for the selected schedule — the unified <Pane> drawer (#1824), the same
+ *  chrome as the MCP server/hook + Skills drawers. Rendered in the AutomationsScreen overlay. */
+export function ScheduleDrawer({ selectedId, setSelectedId, onViewAllHistory }: {
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  onViewAllHistory: (id: string) => void;
+}) {
+  const { automations, updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames } = useAppStore();
+  const sel = selectedId ? automations.find(a => a.id === selectedId) ?? null : null;
+  const close = () => setSelectedId(null);
+
+  const tabIdx = sel ? tabs.findIndex(t => t.name === sel.targetTab) : -1;
+  const paneOpts = tabIdx >= 0 ? Array.from({ length: paneCount(tabs[tabIdx].layout) }, (_, i) => i) : [];
+  const patchSimple = (p: Partial<SimpleWhen>) => {
+    if (sel && sel.when.kind === "simple") updateAutomation(sel.id, { when: { ...sel.when, ...p } });
+  };
+  const setMode = (kind: "simple" | "cron") => {
+    if (!sel || kind === sel.when.kind) return;
+    updateAutomation(sel.id, {
+      when: kind === "cron" ? { kind: "cron", expr: "0 9 * * *" } : { kind: "simple", every: "day", at: "09:00" },
+    });
+  };
+
+  return (
+    <Pane
+      flush
+      open={!!sel}
+      onClose={close}
+      onRemove={() => { if (sel) { removeAutomation(sel.id); close(); } }}
+      header={sel && (
+        <>
           <input className="name-input" value={sel.name} onChange={e => updateAutomation(sel.id, { name: e.target.value })} />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
-            <span className={"toggle" + (sel.armed ? " on" : "")} title="armed" onClick={() => setAutomationArmed(sel.id, !sel.armed)} />
-            <span style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)" }}>{sel.armed ? "armed" : "disarmed"}</span>
-          </div>
-          <button className="btn danger" onClick={() => { removeAutomation(sel.id); setSelectedId(null); }}>delete</button>
-        </div>
-
-        {/* when */}
-        <div className="es"><div className="es-row">
-          <div className="es-lbl accent">when</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className="pill-group">
-              <div className={"pill" + (isSimple ? " on" : "")} onClick={() => setMode("simple")}>simple</div>
-              <div className={"pill" + (!isSimple ? " on" : "")} onClick={() => setMode("cron")}>cron</div>
-            </div>
-            {sel.when.kind === "simple" ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
-                <span>every</span>
-                <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
-                  {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                {sel.when.every !== "minute" && (
-                  <>
-                    <span>at</span>
-                    <input className="input" style={{ width: 90 }} value={sel.when.at}
-                      placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
-                      onChange={e => patchSimple({ at: e.target.value })} />
-                  </>
-                )}
+          <span className={"toggle" + (sel.armed ? " on" : "")} title="armed" onClick={() => setAutomationArmed(sel.id, !sel.armed)} />
+          <span style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11 }}>{sel.armed ? "armed" : "disarmed"}</span>
+        </>
+      )}
+      body={sel && (
+        <>
+          {/* when */}
+          <div className="es"><div className="es-row">
+            <div className="es-lbl accent">when</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="pill-group">
+                <div className={"pill" + (sel.when.kind === "simple" ? " on" : "")} onClick={() => setMode("simple")}>simple</div>
+                <div className={"pill" + (sel.when.kind === "cron" ? " on" : "")} onClick={() => setMode("cron")}>cron</div>
               </div>
+              {sel.when.kind === "simple" ? (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                  <span>every</span>
+                  <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
+                    {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {sel.when.every !== "minute" && (
+                    <>
+                      <span>at</span>
+                      <input className="input" style={{ width: 90 }} value={sel.when.at}
+                        placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
+                        onChange={e => patchSimple({ at: e.target.value })} />
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                  <span>cron</span>
+                  <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
+                    onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
+                  {isValidCron(sel.when.expr)
+                    ? <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>min hour day-of-month month day-of-week</span>
+                    : <span style={{ color: "var(--danger)", fontSize: 10 }}>invalid expression</span>}
+                </div>
+              )}
+              <div className="cron-strip">
+                <span className="label">next run</span>
+                <span className="expr">{sel.armed ? fmtStamp(sel.nextRunAt) : "disarmed"}</span>
+                <span style={{ flex: 1 }} />
+                <span>last · <b>{sel.lastRunAt ? fmtStamp(sel.lastRunAt) : "never"}</b></span>
+              </div>
+            </div>
+          </div></div>
+
+          {/* target */}
+          <div className="es"><div className="es-row">
+            <div className="es-lbl info">target</div>
+            {tabs.length === 0 ? (
+              <div className="hint">No console tabs open — open a console (and a pane) to target.</div>
             ) : (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
-                <span>cron</span>
-                <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
-                  onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
-                {isValidCron(sel.when.expr)
-                  ? <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>min hour day-of-month month day-of-week</span>
-                  : <span style={{ color: "var(--danger)", fontSize: 10 }}>invalid expression</span>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div className="field"><label>console</label>
+                  <select className="input" value={sel.targetTab} onChange={e => updateAutomation(sel.id, { targetTab: e.target.value, targetPaneIdx: 0 })}>
+                    {!tabs.some(t => t.name === sel.targetTab) && <option value={sel.targetTab}>{sel.targetTab || "(pick a console)"}</option>}
+                    {tabs.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="field"><label>pane</label>
+                  <select className="input" value={sel.targetPaneIdx} onChange={e => updateAutomation(sel.id, { targetPaneIdx: Number(e.target.value) })}>
+                    {paneOpts.length === 0 && <option value={0}>Pane 1</option>}
+                    {paneOpts.map(i => {
+                      const nm = paneNames[tabIdx]?.[i];
+                      return <option key={i} value={i}>Pane {i + 1}{nm ? ` · ${nm}` : ""}</option>;
+                    })}
+                  </select>
+                </div>
               </div>
             )}
-            <div className="cron-strip">
-              <span className="label">next run</span>
-              <span className="expr">{sel.armed ? fmtStamp(sel.nextRunAt) : "disarmed"}</span>
-              <span style={{ flex: 1 }} />
-              <span>last · <b>{sel.lastRunAt ? fmtStamp(sel.lastRunAt) : "never"}</b></span>
-            </div>
-          </div>
-        </div></div>
+          </div></div>
 
-        {/* target */}
-        <div className="es"><div className="es-row">
-          <div className="es-lbl info">target</div>
-          {tabs.length === 0 ? (
-            <div className="hint">No console tabs open — open a console (and a pane) to target.</div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div className="field"><label>console</label>
-                <select className="input" value={sel.targetTab} onChange={e => updateAutomation(sel.id, { targetTab: e.target.value, targetPaneIdx: 0 })}>
-                  {!tabs.some(t => t.name === sel.targetTab) && <option value={sel.targetTab}>{sel.targetTab || "(pick a console)"}</option>}
-                  {tabs.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                </select>
+          {/* action */}
+          <div className="es"><div className="es-row">
+            <div className="es-lbl success">action</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
+              <span className="hint">Typed into the target pane's session, then submitted.</span>
+            </div>
+          </div></div>
+
+          {/* history */}
+          <div className="es" style={{ background: "var(--bg-canvas)" }}><div className="es-row">
+            <div className="es-lbl muted">history</div>
+            <div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
+                <span style={{ flex: 1 }} />
+                {sel.runs.length > 0 && <button className="btn ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</button>}
               </div>
-              <div className="field"><label>pane</label>
-                <select className="input" value={sel.targetPaneIdx} onChange={e => updateAutomation(sel.id, { targetPaneIdx: Number(e.target.value) })}>
-                  {paneOpts.length === 0 && <option value={0}>Pane 1</option>}
-                  {paneOpts.map(i => {
-                    const nm = paneNames[tabIdx]?.[i];
-                    return <option key={i} value={i}>Pane {i + 1}{nm ? ` · ${nm}` : ""}</option>;
-                  })}
-                </select>
-              </div>
+              {runsTable(sel.runs)}
             </div>
-          )}
-        </div></div>
-
-        {/* action */}
-        <div className="es"><div className="es-row">
-          <div className="es-lbl success">action</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
-            <span className="hint">Typed into the target pane's session, then submitted.</span>
-          </div>
-        </div></div>
-
-        {/* history */}
-        <div className="es" style={{ background: "var(--bg-canvas)" }}><div className="es-row">
-          <div className="es-lbl muted">history</div>
-          <div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
-              <span style={{ flex: 1 }} />
-              {sel.runs.length > 0 && <button className="btn ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</button>}
-            </div>
-            {runsTable(sel.runs)}
-          </div>
-        </div></div>
-      </div>
-    </div>
+          </div></div>
+        </>
+      )}
+    />
   );
 }
