@@ -5,7 +5,7 @@
 // confirmation. Presentational + self-contained (the parent owns the clone/build + status) so it's
 // unit-testable; styled to match the blueprint modals.
 
-import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { IconButton } from "@/shared/ui/IconButton";
 
 export type McpDownloadStatus = "pending" | "downloading" | "building" | "ready" | "error";
@@ -48,17 +48,14 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
   onCancel: () => void;
 }) {
   const busy = items.some((i) => i.status === "downloading" || i.status === "building");
-  useModalDismiss(onCancel, { enabled: !busy });
 
   const anyActionable = items.some((i) => i.status === "pending" || i.status === "error");
   const allDone = items.length > 0 && items.every((i) => i.status === "ready");
 
   return (
     <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
-      <div className="overlay blur" style={{ padding: 30 }}
-        onMouseDown={overlayDismiss(busy ? undefined : onCancel)}>
-        <div className="modal" role="dialog" aria-label="Download MCP servers" style={{ width: 560, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}
-          onMouseDown={(e) => e.stopPropagation()}>
+      <ModalScrim onDismiss={busy ? undefined : onCancel} blur style={{ padding: 30 }}>
+        <div className="modal" role="dialog" aria-label="Download MCP servers" style={{ width: 560, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <span className="mh-ico" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 15, background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)" }}>↓</span>
             <div>
@@ -101,7 +98,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
             )}
           </div>
         </div>
-      </div>
+      </ModalScrim>
     </div>
   );
 }
