@@ -492,6 +492,21 @@ impl Store {
         self.fleet_meta_set(&serde_json::Value::Object(meta))
     }
 
+    /// Upsert ONE stream by id — granular per-stream edit (no whole-blob replace). An existing id
+    /// keeps its current `position` (stable order across edits); a new id appends at `MAX(position)+1`.
+    /// Lets a live planner change one stream's perm/flow/owns without rewriting the whole fleet.
+    pub fn fleet_stream_set(&self, id: &str, data: &serde_json::Value) -> rusqlite::Result<()> {
+        let pos: i64 = self.conn.query_row(
+            "SELECT COALESCE(
+                 (SELECT position FROM fleet_streams WHERE id = ?1),
+                 (SELECT COALESCE(MAX(position), 0) + 1 FROM fleet_streams)
+             )",
+            params![id.trim()],
+            |r| r.get(0),
+        )?;
+        self.fleet_stream_upsert_at(id, data, pos)
+    }
+
     /// Upsert one stream by id at an explicit position (called by `fleet_set`).
     fn fleet_stream_upsert_at(&self, id: &str, data: &serde_json::Value, pos: i64) -> rusqlite::Result<()> {
         self.conn.execute(
@@ -1226,6 +1241,78 @@ mod tests {
         s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "x", "repo": "o/r" } ] })).unwrap();
         s.clear().unwrap();
         assert!(s.fleet_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn fleet_stream_set_appends_a_new_stream_preserving_order_and_meta() {
+        let s = Store::open_in_memory().unwrap();
+        s.fleet_set(&serde_json::json!({
+            "recommended": 2,
+            "director": { "enabled": true },
+            "streams": [
+                { "id": "kernel", "repo": "o/r", "perm": { "edit": "allow" } },
+                { "id": "ui", "repo": "o/r", "dependsOn": ["kernel"] }
+            ]
+        }))
+        .unwrap();
+        // upsert a brand-new stream — it appends at the end
+        s.fleet_stream_set("docs", &serde_json::json!({ "id": "docs", "repo": "o/r", "flow": { "push": "commit-only" } }))
+            .unwrap();
+        let got = s.fleet_get().unwrap().unwrap();
+        let streams = got["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 3);
+        // existing streams keep their order; the new one is last
+        assert_eq!(streams[0]["id"], serde_json::json!("kernel"));
+        assert_eq!(streams[1]["id"], serde_json::json!("ui"));
+        assert_eq!(streams[2]["id"], serde_json::json!("docs"));
+        assert_eq!(streams[2]["flow"]["push"], serde_json::json!("commit-only"));
+        // siblings + meta untouched
+        assert_eq!(streams[0]["perm"]["edit"], serde_json::json!("allow"));
+        assert_eq!(got["director"]["enabled"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn fleet_stream_set_updates_in_place_keeping_position() {
+        let s = Store::open_in_memory().unwrap();
+        s.fleet_set(&serde_json::json!({
+            "recommended": 2,
+            "streams": [
+                { "id": "kernel", "repo": "o/r", "perm": { "edit": "allow" } },
+                { "id": "ui", "repo": "o/r" }
+            ]
+        }))
+        .unwrap();
+        // update an existing stream's perm/flow — same id keeps its position
+        s.fleet_stream_set("kernel", &serde_json::json!({ "id": "kernel", "repo": "o/r", "perm": { "edit": "deny" }, "flow": { "push": "auto-pr" } }))
+            .unwrap();
+        let got = s.fleet_get().unwrap().unwrap();
+        let streams = got["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 2);
+        // position 0 is still kernel (not appended), with its new perm/flow
+        assert_eq!(streams[0]["id"], serde_json::json!("kernel"));
+        assert_eq!(streams[0]["perm"]["edit"], serde_json::json!("deny"));
+        assert_eq!(streams[0]["flow"]["push"], serde_json::json!("auto-pr"));
+        // sibling untouched
+        assert_eq!(streams[1]["id"], serde_json::json!("ui"));
+    }
+
+    #[test]
+    fn fleet_meta_set_does_not_wipe_streams() {
+        let s = Store::open_in_memory().unwrap();
+        s.fleet_set(&serde_json::json!({
+            "recommended": 1,
+            "streams": [ { "id": "kernel", "repo": "o/r" } ]
+        }))
+        .unwrap();
+        // a granular meta update must leave the stream rows intact
+        s.fleet_meta_set(&serde_json::json!({ "recommended": 3, "director": { "enabled": true, "drive": "checkpoint" }, "topology": "hybrid" }))
+            .unwrap();
+        let got = s.fleet_get().unwrap().unwrap();
+        assert_eq!(got["recommended"], serde_json::json!(3));
+        assert_eq!(got["director"]["drive"], serde_json::json!("checkpoint"));
+        let streams = got["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0]["id"], serde_json::json!("kernel"));
     }
 
     #[test]
