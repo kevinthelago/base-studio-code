@@ -872,11 +872,13 @@ use crate::console::settings::*;
         let after = list_blueprints();
         assert_eq!(after.len(), 1);
         assert!(after.iter().all(|s| !s.contains("Mine")), "deleted blueprint is gone");
-        // A slashy/dotty id is slugified (`.`/`/` → `_`) so it can never escape the blueprints dir,
-        // and an empty id is rejected outright.
-        let escaped = blueprint_file("../../etc/passwd").unwrap();
+        // The slug guard now lives in the `bsc-blueprint` crate (one definition, #1761) — the app
+        // commands delegate to it. A slashy/dotty id is slugified (`.`/`/` → `_`) so it can never
+        // escape the blueprints dir, and an empty id is rejected outright.
+        let store = bsc_blueprint::Store::new(bsc_base_dir().join("blueprints"));
+        let escaped = store.file("../../etc/passwd").unwrap();
         assert!(escaped.starts_with(bsc_base_dir().join("blueprints")), "must stay under blueprints/");
-        assert!(blueprint_file("").is_err());
+        assert!(store.file("").is_err());
         std::fs::remove_dir_all(&home).ok();
     }
 
