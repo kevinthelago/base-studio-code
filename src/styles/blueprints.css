@@ -105,7 +105,6 @@
 
   .seclabel { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); margin: 4px 0 12px; display: flex; align-items: center; gap: 10px; }
   .seclabel .ln { flex: 1; height: 1px; background: var(--border-soft); }
-  .seclabel .seg button { text-transform: none; letter-spacing: 0; }
 
   /* ── blueprint cards grid ── */
   .bp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
@@ -237,11 +236,6 @@
   /* .pipe-add is reused by the Skills + MCP attachment pickers (the pipeline picker itself
      was removed in #897 Phase 4c). */
   .pipe-add { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-
-  .seg { display: inline-flex; border: 1px solid var(--border-soft); border-radius: 99px; overflow: hidden; background: var(--bg-canvas); }
-  .seg button { border: 0; background: transparent; color: var(--fg-dim); font-family: var(--mono); font-size: 9.5px; padding: 3px 9px; cursor: pointer; transition: background .1s, color .1s; }
-  .seg button:hover { color: var(--fg-muted); }
-  .seg button.on { background: var(--bg-elev2); color: var(--fg); }
 
   .disp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   .disp { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--bg-panel); cursor: pointer; transition: border-color .12s, background .12s; }

@@ -122,20 +122,6 @@
 .skills-screen .delta.down { color: var(--danger); }
 .skills-screen .delta.flat { color: var(--fg-dim); }
 
-/* segmented toggle (kind filter) */
-.skills-screen .seg {
-  display: inline-flex; border: 1px solid var(--border-soft);
-  border-radius: var(--r-md); overflow: hidden;
-}
-.skills-screen .seg button {
-  height: 26px; padding: 0 10px; border: 0; background: transparent; cursor: pointer;
-  font-family: var(--mono); font-size: 10.5px; color: var(--fg-muted);
-  border-right: 1px solid var(--border-soft);
-}
-.skills-screen .seg button:last-child { border-right: 0; }
-.skills-screen .seg button:hover { background: var(--bg-elev); color: var(--fg); }
-.skills-screen .seg button.on { background: var(--bg-elev2); color: var(--accent); }
-
 /* small inline meter */
 .skills-screen .meter { height: 6px; border-radius: 99px; background: var(--bg-elev2); overflow: hidden; }
 .skills-screen .meter > i { display: block; height: 100%; border-radius: 99px; }
