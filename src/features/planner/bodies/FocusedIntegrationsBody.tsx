@@ -111,7 +111,7 @@ export function FocusedIntegrationsBody({ projectId }: { projectId?: string }) {
 
       <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", lineHeight: 1.6, paddingTop: 2 }}>
         Need a source with no connector? The planner can author a native integration in-session with{" "}
-        <code style={{ color: "var(--fg-muted)" }}>bsc-plan integration add</code> — it becomes a native connector like the built-ins.
+        <code style={{ color: "var(--fg-muted)" }}>bsc-data connector add</code> — it becomes a native connector like the built-ins.
       </div>
     </div>
   );

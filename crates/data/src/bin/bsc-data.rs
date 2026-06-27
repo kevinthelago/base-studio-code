@@ -18,6 +18,8 @@
 //!   bsc-data count <entity>            # row count for an entity
 //!   bsc-data nulls <entity> [<field>]  # NULL counts (all fields, or one)
 //!   bsc-data lineage <entity>          # per-row + per-field lineage counts
+//!   bsc-data connector list            # runtime REST connector presets (connectors.json; no --db)
+//!   bsc-data connector add             # upsert a RuntimePreset JSON from stdin (validated)
 
 use bsc_data::{DataModel, DataStore, MetaStore, PlatformScan};
 use std::io::Read;
@@ -131,6 +133,11 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    // `connector` reaches the runtime REST connector store (~/.base-studio-code/connectors.json),
+    // NOT the per-project DuckDB — so it must NOT require --db / BSC_DATA_DB. Dispatch it first.
+    if cmd == "connector" {
+        return cmd_connector(&args);
+    }
     let db = resolve_db(&args.db)?;
     match (cmd.as_str(), sub) {
         ("model", "get") => {
@@ -276,6 +283,71 @@ fn run() -> Result<(), String> {
     }
 }
 
+/// `connector` — runtime (planner/user-authored) REST connector presets (#1235, relocated #1721).
+/// These live in the app-wide connectors store (`~/.base-studio-code/connectors.json`, via
+/// [`bsc_data::runtime_store_path`] — `$BSC_CONNECTORS` overrides) — NOT the per-project DuckDB — so
+/// an authored connector becomes a native, app-wide integration like the built-ins. The spec is
+/// validated + **secret-free** on add (credentials go to the keychain, #1194). This is the same store
+/// and semantics the deprecated `bsc-plan integration` reaches.
+fn cmd_connector(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let path = bsc_data::runtime_store_path();
+    match sub {
+        // `connector add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
+        "add" => {
+            let preset: bsc_data::RuntimePreset =
+                serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+            let id = preset.id.clone();
+            bsc_data::upsert_runtime_preset(&path, preset)?;
+            if args.json {
+                println!("{}", serde_json::to_string(&id).unwrap_or_default());
+            } else {
+                println!("connector added: {id}");
+            }
+            Ok(())
+        }
+        "list" => {
+            let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
+            let value = serde_json::to_value(&presets).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
+            emit(args, value, || {
+                if presets.is_empty() {
+                    "(no runtime connectors)".to_string()
+                } else {
+                    presets
+                        .iter()
+                        .map(|p| format!("{}  {} [{}] — {} resource(s)", p.id, p.label, p.auth, p.resources.len()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            });
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-data connector get <id>")?;
+            match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
+                Some(p) => {
+                    let value = serde_json::to_value(&p).unwrap_or(serde_json::Value::Null);
+                    emit(args, value, || {
+                        serde_json::to_string(&p).unwrap_or_else(|_| "null".into())
+                    });
+                }
+                None if args.json => println!("null"),
+                None => println!("(no connector '{id}')"),
+            }
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc-data connector remove <id>")?;
+            let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("{}", if removed { format!("removed {id}") } else { format!("(no connector '{id}')") });
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown connector command '{other}'\n\n{USAGE}")),
+    }
+}
+
 const USAGE: &str = "\
 bsc-data — the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)
 
@@ -296,6 +368,12 @@ DATASTORE (the materialized entity tables + lineage; reading is lean by default)
   count <entity>            row count for an entity
   nulls <entity> [<field>]  NULL counts — all fields, or just <field>
   lineage <entity>          per-row + per-field lineage counts for an entity
+
+CONNECTOR (runtime REST connector presets in ~/.base-studio-code/connectors.json; no --db needed):
+  connector list            list the runtime connectors
+  connector get <id>        print one connector (RuntimePreset JSON)
+  connector add             upsert a RuntimePreset JSON on stdin (validated, secret-free)
+  connector remove <id>     delete a runtime connector
 
 OUTPUT:
   --json                    compact JSON (default is lean TSV)
@@ -347,5 +425,51 @@ mod tests {
     fn limit_requires_a_number() {
         assert!(parse_args(vec!["rows".into(), "--limit".into(), "abc".into()]).is_err());
         assert!(parse_args(vec!["rows".into(), "--limit".into()]).is_err());
+    }
+
+    #[test]
+    fn connector_needs_no_data_db_and_round_trips_the_store() {
+        // `connector` reaches connectors.json (via $BSC_CONNECTORS), never the per-project DuckDB —
+        // so it must work with no --db / BSC_DATA_DB set. Point the store at a unique temp file.
+        let store = std::env::temp_dir().join(format!("bsc-data-conn-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&store);
+        std::env::set_var("BSC_CONNECTORS", &store);
+
+        let conn = |positional: &[&str]| Args {
+            db: None,
+            refined: false,
+            json: false,
+            pretty: false,
+            limit: None,
+            positional: positional.iter().map(|s| s.to_string()).collect(),
+        };
+
+        // list against an absent store: Ok (empty), and crucially no --db required.
+        assert!(cmd_connector(&conn(&["connector", "list"])).is_ok());
+
+        // seed via the same functions the verb calls, then get/remove through the verb.
+        let preset = bsc_data::RuntimePreset {
+            id: "acme-crm".into(),
+            label: "Acme".into(),
+            category: "crm".into(),
+            base_url: Some("https://acme.example.com/api".into()),
+            auth: "token".into(),
+            resources: vec![bsc_data::RuntimeResource {
+                name: "contacts".into(),
+                path: "contacts".into(),
+                array_key: Some("data".into()),
+            }],
+        };
+        bsc_data::upsert_runtime_preset(&store, preset).unwrap();
+
+        assert!(cmd_connector(&conn(&["connector", "get", "acme-crm"])).is_ok());
+        assert!(cmd_connector(&conn(&["connector", "remove", "acme-crm"])).is_ok());
+        assert_eq!(bsc_data::load_runtime_presets(&store).unwrap().len(), 0);
+
+        // an unknown sub is an error.
+        assert!(cmd_connector(&conn(&["connector", "frobnicate"])).is_err());
+
+        std::env::remove_var("BSC_CONNECTORS");
+        let _ = std::fs::remove_file(&store);
     }
 }
