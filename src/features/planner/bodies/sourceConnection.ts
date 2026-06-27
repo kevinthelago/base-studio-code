@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppStore } from "@/store";
@@ -78,7 +79,7 @@ export function useSourceConnection(
     const src = cfg.sources.find((s) => s.uid === uid);
     if (src) {
       for (const f of connector(src.connectorId).spec.fields) {
-        if (f.secret) void invoke("source_delete_secret", { project: pid, sourceUid: uid, field: f.key }).catch(() => {});
+        if (f.secret) fireInvoke("source_delete_secret", { project: pid, sourceUid: uid, field: f.key });
       }
     }
   }
@@ -159,7 +160,7 @@ export function useSourceConnection(
     const draft = secrets[uid] ?? {};
     const saved = Object.entries(draft).filter(([, v]) => v.trim());
     const saves = saved.map(([field, value]) =>
-      invoke("source_save_secret", { project: pid, sourceUid: uid, field, value }).catch(() => {})
+      safeInvoke("source_save_secret", { project: pid, sourceUid: uid, field, value }, undefined)
     );
 
     patchSource(uid, { status: "connecting" });

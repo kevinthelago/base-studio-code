@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
@@ -101,7 +102,7 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
     const sig = JSON.stringify(model);
     if (sig === persistedSig.current) return;
     persistedSig.current = sig;
-    void invoke("data_persist_model", { projectKey: pid, model, refined: true }).catch(() => {});
+    fireInvoke("data_persist_model", { projectKey: pid, model, refined: true });
   }, [ready, pid, cfg]);
 
   // The full catalog (#1288): the dedicated connectors (rich connect specs) + every packaged vendor

@@ -12,7 +12,7 @@
 //    across a transient read failure.
 
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 
@@ -22,7 +22,7 @@ export type CoordResult = ReturnType<typeof ingestCoordLog> & { lines: string[] 
 
 /** Read + replay the coordination log. `null` on a read failure; the replay + raw lines otherwise. */
 export async function readCoordState(limit = 1000): Promise<CoordResult | null> {
-  const lines = await invoke<string[]>("read_coord_log", { limit }).catch(() => null);
+  const lines = await safeInvoke<string[] | null>("read_coord_log", { limit }, null);
   if (!lines) return null;
   return { lines, ...ingestCoordLog(lines, emptyCoordState()) };
 }

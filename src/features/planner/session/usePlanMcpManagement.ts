@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeProjectMcpContext } from "../lib/mcpContext";
@@ -112,7 +113,7 @@ export function usePlanMcpManagement(deps: McpManagementDeps): PlanMcpManagement
     const cap = roleCapability("planner");
     const write = roleWriteRules(cap);
     const mcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
-    void invoke("ensure_session_settings", {
+    fireInvoke("ensure_session_settings", {
       cwd:             planningDir,
       allowedCommands: [],
       deniedCommands:  roleDeniedCommands(cap),
@@ -124,7 +125,7 @@ export function usePlanMcpManagement(deps: McpManagementDeps): PlanMcpManagement
       allowToolRules:  [...write.allow, "Read", "WebFetch", ...mcpAllowRules(mcp)],
       denyToolRules:   write.deny,
       replacePermissions: true,
-    }).catch((e: unknown) => console.warn("planner mcp refresh failed:", e));
+    }, (e: unknown) => console.warn("planner mcp refresh failed:", e));
   }, [installedMcpKey, planningDir]);
 
   // ── MCP stage handlers (#878) ──────────────────────────────────────────────
@@ -138,7 +139,7 @@ export function usePlanMcpManagement(deps: McpManagementDeps): PlanMcpManagement
     if (link || MCP_CATALOG.some(c => c.name.toLowerCase() === input.toLowerCase())) {
       const name = MCP_CATALOG.find(c => c.name.toLowerCase() === input.toLowerCase())?.name ?? input;
       applyMcpAssign(store, name, effectiveProjectId, store.bscBaseDir);
-      if (link) invoke("mcp_clone", { name: repoNameFromLink(link), url: link }).catch(() => {});
+      if (link) fireInvoke("mcp_clone", { name: repoNameFromLink(link), url: link });
       return;
     }
     const isUrl = /^https?:\/\//i.test(input);

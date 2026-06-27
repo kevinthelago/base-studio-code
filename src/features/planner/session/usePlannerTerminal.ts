@@ -10,6 +10,7 @@
 // eslint-disables they require) are reproduced exactly — NO logic change.
 import { useEffect, useRef, type RefObject, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -90,7 +91,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
     fitRef.current  = fitAddon;
 
     term.onData(data => {
-      invoke("pty_write", { paneId: paneId, data }).catch(console.error);
+      fireInvoke("pty_write", { paneId: paneId, data }, console.error);
     });
 
     // Capture state at mount time for workspace sync.
@@ -123,7 +124,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       });
 
       // Create the isolated planning workspace directory with settings.json + CLAUDE.md.
-      const paths = await invoke<{ planning_dir: string }>(
+      const paths = await safeInvoke<{ planning_dir: string } | null>(
         "setup_workspaces",
         {
           repoFullNames: repoSnapshot,
@@ -138,10 +139,9 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
           enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
           authoring:     isAuthoringSnap,         // use the blueprint-author intro (#923)
         },
-      ).catch((e: unknown) => {
-        console.error("workspace setup failed:", e);
-        return null;
-      });
+        null,
+        (e: unknown) => console.error("workspace setup failed:", e),
+      );
       refreshSetupSig(); // baseline updated (#756)
       if (paths) setPlanningDir(paths.planning_dir); // for the relay planner-pane mirror (#801)
 
@@ -164,7 +164,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
       // this single role-launch path fully sources the planner's tools — replacing the
       // hardcoded settings.json literal that setup_workspaces used to write (#799).
-      await invoke("ensure_session_settings", {
+      await safeInvoke("ensure_session_settings", {
         cwd:             paths?.planning_dir ?? "",
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
@@ -176,7 +176,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch", ...mcpAllowRules(plannerMcp)],
         denyToolRules:   plannerWrite.deny,
         replacePermissions: true,
-      }).catch((e: unknown) => console.error("planner session settings failed:", e));
+      }, undefined, (e: unknown) => console.error("planner session settings failed:", e));
       // Planner introduction (#1240): a user-facing kickoff that has the planner OPEN the
       // conversation (introduce itself, sketch the stage journey, summarize capabilities, ask one
       // orienting question) instead of launching into a quiet terminal. Baked into the claude launch
@@ -186,10 +186,10 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       // planner acknowledges it rather than asking what they're building (replaces the old
       // idle-detection pitch-typing). On failure it's undefined → the launch falls back to initCmd.
       const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExistingSnap });
-      const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
-        .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
+      const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
+        (e: unknown) => console.error("planner intro prompt failed:", e));
       const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "") || undefined;
-      await invoke("pty_create", {
+      await safeInvoke("pty_create", {
         paneId:  paneId,
         cols:    term.cols,
         rows:    term.rows,
@@ -198,7 +198,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         startupPrompt,
         startupPromptFreshOnly: true,
         env:     ghEnv,
-      }).catch(console.error);
+      }, undefined, console.error);
     });
 
     const ro = new ResizeObserver(() => {
@@ -209,7 +209,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       const { clientWidth, clientHeight } = el;
       if (clientWidth === 0 || clientHeight === 0) return;
       fitAddon.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      fireInvoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }, console.error);
     });
     ro.observe(el);
 
@@ -220,7 +220,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
-      invoke("pty_kill", { paneId: paneId }).catch(console.error);
+      fireInvoke("pty_kill", { paneId: paneId }, console.error);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -235,7 +235,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       const fit = fitRef.current, term = termRef.current, el = containerRef.current;
       if (!fit || !term || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
       fit.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+      fireInvoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }, console.error);
       if (focusToo) term.focus();
     };
     let cancelled = false;

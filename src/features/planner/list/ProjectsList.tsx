@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -103,8 +104,8 @@ export function ProjectsList() {
     if (toMark.length === 0) return;
     (async () => {
       for (const lp of toMark) {
-        await invoke("mark_published", { projectKey: lp.key })
-          .catch((e) => console.warn(`mark_published ${lp.key} failed:`, e));
+        await safeInvoke("mark_published", { projectKey: lp.key }, undefined,
+          (e) => console.warn(`mark_published ${lp.key} failed:`, e));
       }
       await refreshLocalProjects();
     })();

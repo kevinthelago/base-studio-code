@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -316,7 +317,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     //   • Output silence detection: reset the quiet timer on every byte received
     //   • Re-arm: when user presses Enter while claude is idle, switch back to "run"
     const disposeOnData = term.onData((data) => {
-      invoke("pty_write", { paneId, data }).catch(console.error);
+      fireInvoke("pty_write", { paneId, data }, console.error);
       if (inClaudeRef.current && claudeActiveRef.current === "idle" && data.includes("\r")) {
         claudeActiveRef.current = "run";
         onStatusChangeRef.current?.("run");
@@ -387,7 +388,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           if (doc === "") {
             startupPrompt = PROJECT_INIT_PROMPT;
           } else {
-            const docText = await invoke<string>("read_document", { relpath: doc }).catch(() => PROJECT_INIT_PROMPT);
+            const docText = await safeInvoke<string>("read_document", { relpath: doc }, PROJECT_INIT_PROMPT);
             startupPrompt = docText.trim() || PROJECT_INIT_PROMPT;
           }
         }
@@ -399,7 +400,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       const refRelpaths = useAppStore.getState().paneReferenceDocs[paneId];
       if (refRelpaths && refRelpaths.length > 0) {
         const contents = await Promise.all(
-          refRelpaths.map((rp) => invoke<string>("read_document", { relpath: rp }).catch(() => "")),
+          refRelpaths.map((rp) => safeInvoke<string>("read_document", { relpath: rp }, "")),
         );
         if (destroyed) return;
         startupPrompt = composeReferenceContext(startupPrompt, contents);
@@ -409,7 +410,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // the backend below so the `bsc-checkpoint` helper can update it for next time.
       const checkpointDoc = useAppStore.getState().paneCheckpointDocs[paneId];
       if (startupPrompt !== undefined && checkpointDoc) {
-        const note = await invoke<string>("read_document", { relpath: checkpointDoc }).catch(() => "");
+        const note = await safeInvoke<string>("read_document", { relpath: checkpointDoc }, "");
         startupPrompt = composeStartupPrompt(startupPrompt, note);
       }
       if (destroyed) return;
@@ -462,13 +463,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // + audit/confine/scope/taint/defer/skill/activity hooks into the permission payload. Pure
         // composition lives in sessionLaunch.buildSessionSettings; read from the current snapshot.
         const settings = buildSessionSettings(useAppStore.getState(), paneId);
-        await invoke("ensure_session_settings", {
+        await safeInvoke("ensure_session_settings", {
           cwd: initialCwd,
           ...settings,
           // Replace (not merge) the permission block so a relaunch reflects the CURRENT
           // role+profile exactly — incl. permissions the user removed from the profile (#799).
           replacePermissions: true,
-        }).catch((e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
+        }, undefined, (e) => log.error(`console[${paneId}] ensure_session_settings failed: ${e}`));
         // Launch (re)wrote the current role+profile permissions — clear any "stale" nudge (#799).
         useAppStore.getState().clearPanePermsStale(paneId);
         if (destroyed) return;
@@ -495,7 +496,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // is a no-op (Claude Code's own default). Only meaningful when this pane
       // launches claude.
       const paneModel = st.paneModels[paneId] ?? st.defaultModel;
-      const isNew = await invoke<boolean>("pty_create", {
+      const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
         rows: term.rows,
@@ -511,7 +512,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         checkpointDoc,
         env: agentEnv,
         providerId,
-      }).catch((e) => { log.error(`console[${paneId}] pty_create failed: ${e}`); return true; });
+      }, true, (e) => log.error(`console[${paneId}] pty_create failed: ${e}`));
 
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100
       // "run" signal, which can be missed on a cold start, leaving Claude's own (legacy) input
@@ -533,7 +534,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
       if (!isNew) {
         // Reconnecting — Ctrl+L repaints the prompt without submitting a command
-        invoke("pty_write", { paneId, data: "\x0c" }).catch((e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
+        fireInvoke("pty_write", { paneId, data: "\x0c" }, (e) => log.error(`console[${paneId}] repaint write failed: ${e}`));
         // A reconnected Claude pane is already running its REPL (no fresh OSC-100 "run" to catch),
         // so re-show the native input for it (#1149).
         if (isClaudeProvider && useAppStore.getState().paneWasClaude[paneId]) useAppStore.getState().setPaneClaudeActive(paneId, true);
@@ -553,7 +554,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // (When this call is the one that opened, openIfReady already fit once;
         // a second fit is idempotent, and the resize propagates the dims.)
         fitAddon.fit();
-        invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
+        fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
       }
     });
     ro.observe(el);
@@ -603,7 +604,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
-      const rows = await invoke<PaneActivity[]>("read_pane_activity").catch(() => [] as PaneActivity[]);
+      const rows = await safeInvoke<PaneActivity[]>("read_pane_activity", undefined, []);
       if (cancelled) return;
       turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
     };
@@ -645,7 +646,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Snap to the latest output so a pane returning to view shows the most
         // recent claude response without the user scrolling down (#68).
         t.scrollToBottom();
-        invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(console.error);
+        fireInvoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }, console.error);
         // Don't steal focus on becoming visible — the focused-pane effect below
         // focuses only the active pane. Stealing here made every pane in a grid
         // grab focus on mount.
@@ -695,7 +696,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     fitRef.current?.fit();
     const sizes = nudgeSizes(term.cols, term.rows);
     if (!sizes) return; // nothing safe to shrink
-    invoke("pty_resize", { paneId, ...sizes.transient }).catch(console.error);
+    fireInvoke("pty_resize", { paneId, ...sizes.transient }, console.error);
     nudgeTimerRef.current = setTimeout(() => {
       nudgeTimerRef.current = null;
       const t = termRef.current;

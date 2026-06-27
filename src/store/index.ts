@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
@@ -208,7 +209,7 @@ export const useAppStore = create<AppStore>()(
           }
           for (const b of useAppStore.getState().blueprints) {
             if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
-              void invoke("write_blueprint", { id: b.id, json: JSON.stringify(b) }).catch(() => {});
+              fireInvoke("write_blueprint", { id: b.id, json: JSON.stringify(b) });
             }
           }
         }).catch(() => {});

@@ -5,7 +5,7 @@
 // whole string to the TUI as a single atomic paste (Claude Code shows a "[Pasted text]"
 // chip), after which Enter submits it cleanly. Built from char codes so no literal escape
 // bytes live in the source. Used by the director pump, CI watcher, and coordinator wakes.
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -19,7 +19,7 @@ const PASTE_END = ESC + "[201~";
  * treated as the submit keypress — which left the message sitting in the input box unsent.
  */
 export async function injectPrompt(paneId: string, text: string): Promise<void> {
-  await invoke("pty_write", { paneId, data: PASTE_START + text + PASTE_END }).catch(() => {});
+  await safeInvoke("pty_write", { paneId, data: PASTE_START + text + PASTE_END }, undefined);
   await new Promise((r) => setTimeout(r, 60));
-  await invoke("pty_write", { paneId, data: CR }).catch(() => {});
+  await safeInvoke("pty_write", { paneId, data: CR }, undefined);
 }

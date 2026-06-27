@@ -5,12 +5,12 @@
 // The store builds the rows (it knows the pane keys) but stays Tauri-free; this is the
 // component-side writer the launch callers use.
 
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 
 /** Write the roster rows to `<hub>/fleet.roster.tsv`. No-op on an empty roster. */
 export function publishFleetRoster(projectKey: string, rosterRows: string[]): void {
   if (rosterRows.length === 0) return;
-  invoke("write_project_file", {
+  fireInvoke("write_project_file", {
     projectKey, relpath: "fleet.roster.tsv", contents: rosterRows.join("\n") + "\n",
-  }).catch((e) => console.error("write fleet.roster.tsv failed:", e));
+  }, (e) => console.error("write fleet.roster.tsv failed:", e));
 }

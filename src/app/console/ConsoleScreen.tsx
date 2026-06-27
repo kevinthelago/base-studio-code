@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { PaneShell } from "@/app/console/panes/PaneShell";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { FilesView } from "@/app/console/panes/views/FilesView";
@@ -344,7 +345,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
     setPaneDisabled(pid, next);
     if (next) {
       // Kill the PTY (stops claude/shell) and clear any focus/fullscreen on it.
-      invoke("pty_kill", { paneId: pid }).catch(console.error);
+      fireInvoke("pty_kill", { paneId: pid }, console.error);
       // Re-arm the launch gate so a later batch re-enable is serialized again.
       resetLaunchGate(pid);
       // Disabling kills the PTY; force the pane idle (store re-rolls the tab, excluding

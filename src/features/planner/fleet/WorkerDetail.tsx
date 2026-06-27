@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { BackButton } from "@/shared/ui/BackButton";
 import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { CardHead, StatCard, Avatar } from "@/shared/ui/charts";
@@ -106,7 +107,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   }
   function send(kind: "steer" | "answer") {
     const text = draft.trim();
-    if (text) invoke("pty_write", { paneId: worker.id, data: text + "\r" }).catch(() => {});
+    if (text) fireInvoke("pty_write", { paneId: worker.id, data: text + "\r" });
     setModal(null); setDraft("");
     flash(kind === "answer" ? "Answer sent · worker resuming" : "Message sent to worker");
   }

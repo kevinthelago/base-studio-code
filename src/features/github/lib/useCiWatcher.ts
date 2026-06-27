@@ -6,7 +6,7 @@
 // stops (no idle tokens) and is resumed only when there is something to do. Mounted once in
 // ConsoleScreen. Pure rollup/prompts live in ciStatus.ts; this is the Tauri/React actuator.
 import { useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
@@ -52,7 +52,7 @@ export function useCiWatcher(): void {
         if (!developRepos.has(st.repo)) developRepos.set(st.repo, pref + "0");
       }
       for (const [repo, directorPane] of developRepos) {
-        const checks = await invoke<{ check_runs: CheckRun[] }>("github_request", { token, path: `repos/${repo}/commits/develop/check-runs` }).catch(() => null);
+        const checks = await safeInvoke<{ check_runs: CheckRun[] } | null>("github_request", { token, path: `repos/${repo}/commits/develop/check-runs` }, null);
         if (isCancelled() || !checks) continue;
         const runs = checks.check_runs ?? [];
         const sha = runs[0]?.head_sha ?? "";
@@ -79,14 +79,14 @@ export function useCiWatcher(): void {
       }
 
       for (const repo of repos) {
-        const prs = await invoke<Pr[]>("github_request", { token, path: `repos/${repo}/pulls?state=open&per_page=100` }).catch(() => null);
+        const prs = await safeInvoke<Pr[] | null>("github_request", { token, path: `repos/${repo}/pulls?state=open&per_page=100` }, null);
         if (isCancelled() || !prs) continue;
         for (const pr of prs) {
           const paneId = paneByRepoBranch.get(repo + "#" + pr.head.ref);
           if (!paneId) continue; // a PR from a branch we do not own
           const prKey = `${repo}#${pr.number}@${pr.head.sha}`;
           if (inFlight.current.has(prKey)) continue;
-          const checks = await invoke<{ check_runs: CheckRun[] }>("github_request", { token, path: `repos/${repo}/commits/${pr.head.sha}/check-runs` }).catch(() => null);
+          const checks = await safeInvoke<{ check_runs: CheckRun[] } | null>("github_request", { token, path: `repos/${repo}/commits/${pr.head.sha}/check-runs` }, null);
           if (isCancelled() || !checks) continue;
           const { state, failing } = rollupChecks(checks.check_runs ?? []);
           if (state === lastState.current.get(prKey)) continue;

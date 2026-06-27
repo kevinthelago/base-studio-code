@@ -5,7 +5,7 @@
 // renders what it can. The durable, structured record (tool/coord/decisions) is already shown
 // on the worker page; this is the snapshot it was missing.
 
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 
 export interface WorktreeCommit {
   hash: string;
@@ -42,13 +42,13 @@ export interface DoneAudit {
 export async function loadDoneAudit(cwd: string, repo: string): Promise<DoneAudit> {
   if (!cwd) return { branch: "", commits: [], changedFiles: [], pr: null, transcriptPath: null };
   const [branch, commits, changedFiles, transcriptPath] = await Promise.all([
-    invoke<string>("read_worktree_branch", { cwd }).catch(() => ""),
-    invoke<WorktreeCommit[]>("read_worktree_commits", { cwd, limit: 20 }).catch(() => [] as WorktreeCommit[]),
-    invoke<string[]>("read_worktree_changes", { cwd }).catch(() => [] as string[]),
-    invoke<string | null>("claude_transcript_path", { cwd }).catch(() => null),
+    safeInvoke<string>("read_worktree_branch", { cwd }, ""),
+    safeInvoke<WorktreeCommit[]>("read_worktree_commits", { cwd, limit: 20 }, []),
+    safeInvoke<string[]>("read_worktree_changes", { cwd }, []),
+    safeInvoke<string | null>("claude_transcript_path", { cwd }, null),
   ]);
   const pr = branch && repo
-    ? await invoke<BranchPr | null>("find_branch_pr", { repo, branch }).catch(() => null)
+    ? await safeInvoke<BranchPr | null>("find_branch_pr", { repo, branch }, null)
     : null;
   return { branch, commits, changedFiles, pr, transcriptPath };
 }

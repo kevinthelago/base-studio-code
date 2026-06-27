@@ -6,7 +6,7 @@
 //   • auto-advance effect (#1068) — when the global flag is on, confirm the ready set after a beat.
 //   • onSkipStage (#921) — skip the active optional stage + tell the planner to move on.
 import { useMemo, useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { titleForTopic, FEATURES_KEY } from "../stages/planTopics";
 import { buildSectionConfirmMessage, buildSectionSkipMessage } from "./planningSession";
 import { stageConfirmKeys } from "../stages/planStageDerive";
@@ -60,7 +60,7 @@ export function usePlanConfirmations(opts: {
     if (keys.length === 0) return;
     for (const k of keys) confirmPlanSection(effectiveProjectId, k);
     const name = keys.map((k) => titleForTopic(k)).join(", ") || "section";
-    invoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }).catch(console.error);
+    fireInvoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }, console.error);
   }, [effectiveProjectId, paneId, confirmPlanSection]);
 
   // Auto-advance gates (#1068): when the global flag is on and the ACTIVE stage has drafted sections
@@ -84,7 +84,7 @@ export function usePlanConfirmations(opts: {
     const phase = phases[focusActiveIdx];
     if (!phase) return;
     skipPlanSection(effectiveProjectId, phase.key);
-    invoke("pty_write", { paneId, data: buildSectionSkipMessage(phase.name) + "\r" }).catch(console.error);
+    fireInvoke("pty_write", { paneId, data: buildSectionSkipMessage(phase.name) + "\r" }, console.error);
   }, [phases, focusActiveIdx, skipPlanSection, effectiveProjectId, paneId]);
 
   return { pendingConfirm, confirmStageKeys, onSkipStage };
