@@ -68,21 +68,23 @@ pub(crate) const BSC_SKILL_RC: &str = concat!(
 /// the Hooks UI) is written to settings.json wrapped as `bsc-hook '<name>' '<command>'` (the
 /// frontend `toHookPayload` does the single-quote escaping). It reads Claude Code's hook JSON
 /// from stdin, RUNS the user's command (re-piping that JSON to it), captures its exit code,
-/// and appends one TAB line — `ts \t event \t name \t outcome` — to `$BSC_HOOK_LOG` for the
-/// Hook Analytics tab. `ts` is epoch ms (matches `hookTelemetry.parseHookLog`). `outcome` is
+/// and appends one TAB line — `ts \t pane \t event \t name \t outcome` — to `$BSC_HOOK_LOG` for
+/// the Hook Analytics tab, tagged with `$BSC_AUDIT_PANE` so the fire attributes to its session
+/// (#1743). `ts` is epoch ms (matches `hookTelemetry.parseHookLog`). `outcome` is
 /// "block" when a PreToolUse command exits 2 (Claude Code's deny convention), "allow"
 /// otherwise for PreToolUse, "ok" for other events. The user's exit code is PROPAGATED so a
 /// block still takes effect. Only USER hooks are wrapped; the security hooks (bsc-confine /
 /// bsc-audit) are never routed through here. A raw string keeps the embedded quotes readable.
 pub(crate) const BSC_HOOK_RC: &str = concat!(
-    r#"bsc-hook() { nm="$1"; cmd="$2"; j="$(cat)"; printf '%s' "$j" | sh -c "$cmd"; code=$?; l="${BSC_HOOK_LOG:-}"; if [ -n "$l" ]; then ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-60)"; [ -z "$ev" ] && ev="?"; oc="ok"; if [ "$ev" = "PreToolUse" ]; then if [ "$code" -eq 2 ]; then oc="block"; else oc="allow"; fi; fi; nm="$(printf '%s' "$nm" | tr '\t\n' '  ' | cut -c1-80)"; ts="$(date -u +%s)000"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "$ev" "$nm" "$oc" >> "$l"; fi; exit "$code"; }"#,
+    r#"bsc-hook() { nm="$1"; cmd="$2"; j="$(cat)"; printf '%s' "$j" | sh -c "$cmd"; code=$?; l="${BSC_HOOK_LOG:-}"; if [ -n "$l" ]; then ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-60)"; [ -z "$ev" ] && ev="?"; oc="ok"; if [ "$ev" = "PreToolUse" ]; then if [ "$code" -eq 2 ]; then oc="block"; else oc="allow"; fi; fi; nm="$(printf '%s' "$nm" | tr '\t\n' '  ' | cut -c1-80)"; ts="$(date -u +%s)000"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$nm" "$oc" >> "$l"; fi; exit "$code"; }"#,
     "\n",
 );
 
 /// The `bsc-mcp` helper (#879 PR 2 — MCP-call logging): a PreToolUse + PostToolUse hook on a
 /// gated pane, matched to MCP tools (`mcp__<server>__<tool>`). It measures the round-trip
-/// latency of each MCP call and logs one TAB line — `ts \t server \t tool \t outcome \t ms \t
-/// detail` — to `$BSC_MCP_LOG` for the MCP Analytics tab. `ts` is epoch ms (matches
+/// latency of each MCP call and logs one TAB line — `ts \t pane \t server \t tool \t outcome \t
+/// ms \t detail` — to `$BSC_MCP_LOG` for the MCP Analytics tab, tagged with `$BSC_AUDIT_PANE` so
+/// the call attributes to its session (#1743). `ts` is epoch ms (matches
 /// `mcpTelemetry.parseMcpLog`). PreToolUse stamps a start time keyed by pane+tool under a temp
 /// dir; PostToolUse reads it back, computes `ms = now − start`, derives the outcome (`fail` when
 /// the tool response carries `isError/is_error: true`, `warn` when rate-limited or slower than
@@ -90,7 +92,7 @@ pub(crate) const BSC_HOOK_RC: &str = concat!(
 /// ignored. Best-effort + always returns 0 so it never blocks a tool. A raw string keeps the
 /// embedded quotes/regex readable.
 pub(crate) const BSC_MCP_RC: &str = concat!(
-    r#"bsc-mcp() { l="${BSC_MCP_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; now="$(date +%s%3N 2>/dev/null)"; case "$now" in ''|*[!0-9]*) now="$(( $(date -u +%s) * 1000 ))" ;; esac; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; case "$tn" in mcp__*) ;; *) return 0 ;; esac; ev="$(printf '%s' "$j" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; rest="${tn#mcp__}"; server="${rest%%__*}"; tool="${rest#*__}"; d="${TMPDIR:-/tmp}/bsc-mcp"; mkdir -p "$d" 2>/dev/null; key="$(printf '%s_%s' "${BSC_AUDIT_PANE:-x}" "$tn" | tr -c 'A-Za-z0-9_-' '_' | cut -c1-150)"; if [ "$ev" = "PreToolUse" ]; then printf '%s' "$now" > "$d/$key" 2>/dev/null; return 0; fi; start="$(cat "$d/$key" 2>/dev/null)"; rm -f "$d/$key" 2>/dev/null; ms=0; case "$start" in *[0-9]*) ms=$(( now - start )) ;; esac; [ "$ms" -lt 0 ] && ms=0; oc="ok"; detail=""; if printf '%s' "$j" | grep -qE '"(is_error|isError)"[[:space:]]*:[[:space:]]*true'; then oc="fail"; detail="$(printf '%s' "$j" | grep -oE '"(text|message|error)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-100)"; [ -z "$detail" ] && detail="error"; elif printf '%s' "$j" | grep -qiE 'rate.?limit'; then oc="warn"; detail="rate-limited"; elif [ "$ms" -gt "${BSC_MCP_SLOW_MS:-2000}" ]; then oc="warn"; detail="slow"; fi; server="$(printf '%s' "$server" | cut -c1-60)"; tool="$(printf '%s' "$tool" | cut -c1-60)"; detail="$(printf '%s' "$detail" | cut -c1-120)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$server" "$tool" "$oc" "$ms" "$detail" >> "$l"; return 0; }"#,
+    r#"bsc-mcp() { l="${BSC_MCP_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; now="$(date +%s%3N 2>/dev/null)"; case "$now" in ''|*[!0-9]*) now="$(( $(date -u +%s) * 1000 ))" ;; esac; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; case "$tn" in mcp__*) ;; *) return 0 ;; esac; ev="$(printf '%s' "$j" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; rest="${tn#mcp__}"; server="${rest%%__*}"; tool="${rest#*__}"; d="${TMPDIR:-/tmp}/bsc-mcp"; mkdir -p "$d" 2>/dev/null; key="$(printf '%s_%s' "${BSC_AUDIT_PANE:-x}" "$tn" | tr -c 'A-Za-z0-9_-' '_' | cut -c1-150)"; if [ "$ev" = "PreToolUse" ]; then printf '%s' "$now" > "$d/$key" 2>/dev/null; return 0; fi; start="$(cat "$d/$key" 2>/dev/null)"; rm -f "$d/$key" 2>/dev/null; ms=0; case "$start" in *[0-9]*) ms=$(( now - start )) ;; esac; [ "$ms" -lt 0 ] && ms=0; oc="ok"; detail=""; if printf '%s' "$j" | grep -qE '"(is_error|isError)"[[:space:]]*:[[:space:]]*true'; then oc="fail"; detail="$(printf '%s' "$j" | grep -oE '"(text|message|error)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-100)"; [ -z "$detail" ] && detail="error"; elif printf '%s' "$j" | grep -qiE 'rate.?limit'; then oc="warn"; detail="rate-limited"; elif [ "$ms" -gt "${BSC_MCP_SLOW_MS:-2000}" ]; then oc="warn"; detail="slow"; fi; server="$(printf '%s' "$server" | cut -c1-60)"; tool="$(printf '%s' "$tool" | cut -c1-60)"; detail="$(printf '%s' "$detail" | cut -c1-120)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${BSC_AUDIT_PANE:-?}" "$server" "$tool" "$oc" "$ms" "$detail" >> "$l"; return 0; }"#,
     "\n",
 );
 
@@ -922,9 +924,10 @@ mod tests {
 
     #[test]
     fn bsc_hook_runs_the_command_logs_outcome_and_propagates_exit() {
-        // bsc-hook wraps a USER hook: it runs the command, logs `ts \t event \t name \t
-        // outcome` to $BSC_HOOK_LOG, and propagates the command's exit code so a PreToolUse
-        // block (exit 2) still takes effect. Skips where bash isn't on PATH.
+        // bsc-hook wraps a USER hook: it runs the command, logs `ts \t pane \t event \t name \t
+        // outcome` to $BSC_HOOK_LOG (the pane is $BSC_AUDIT_PANE, #1743), and propagates the
+        // command's exit code so a PreToolUse block (exit 2) still takes effect. Skips where bash
+        // isn't on PATH.
         use std::io::Write;
         use std::process::{Command, Stdio};
 
@@ -950,6 +953,7 @@ mod tests {
                 .arg("-c").arg(format!("bsc-hook 'Block PII' 'exit {code}'"))
                 .env("BASH_ENV", &rc_bash)
                 .env("BSC_HOOK_LOG", &log_bash)
+                .env("BSC_AUDIT_PANE", "t0p1")
                 .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                 .spawn().unwrap();
             child.stdin.take().unwrap()
@@ -969,11 +973,13 @@ mod tests {
         let body = std::fs::read_to_string(&log).unwrap();
         let lines: Vec<Vec<&str>> = body.lines().map(|l| l.split('\t').collect()).collect();
         assert_eq!(lines.len(), 3, "one line per fire: {body:?}");
-        // Each line: ts(epoch-ms) \t event \t name \t outcome.
+        // Each line: ts(epoch-ms) \t pane \t event \t name \t outcome (#1743 added the pane column).
+        assert_eq!(lines[0].len(), 5, "five TAB fields incl. the pane: {body:?}");
         assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
-        assert_eq!((lines[0][1], lines[0][2], lines[0][3]), ("PreToolUse", "Block PII", "block"));
-        assert_eq!(lines[1][3], "allow");
-        assert_eq!(lines[2][3], "ok");
+        assert_eq!(lines[0][1], "t0p1", "pane field is the BSC_AUDIT_PANE tag");
+        assert_eq!((lines[0][2], lines[0][3], lines[0][4]), ("PreToolUse", "Block PII", "block"));
+        assert_eq!(lines[1][4], "allow");
+        assert_eq!(lines[2][4], "ok");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1093,8 +1099,9 @@ mod tests {
     #[test]
     fn bsc_mcp_pairs_pre_post_and_logs_latency_and_outcome() {
         // bsc-mcp logs one line per MCP call: PreToolUse stamps a start; PostToolUse computes
-        // `ms` and the outcome and appends `ts \t server \t tool \t outcome \t ms \t detail`.
-        // Non-MCP tools and a lone PreToolUse write nothing. Skips where bash isn't on PATH.
+        // `ms` and the outcome and appends `ts \t pane \t server \t tool \t outcome \t ms \t detail`
+        // (the pane is $BSC_AUDIT_PANE, #1743). Non-MCP tools and a lone PreToolUse write nothing.
+        // Skips where bash isn't on PATH.
         use std::io::Write;
         use std::process::{Command, Stdio};
 
@@ -1144,16 +1151,18 @@ mod tests {
         let body = std::fs::read_to_string(&log).unwrap();
         let lines: Vec<Vec<&str>> = body.lines().map(|l| l.split('\t').collect()).collect();
         assert_eq!(lines.len(), 2, "only the two completed MCP calls log (lone Pre + non-MCP write nothing): {body:?}");
-        // ts(epoch-ms) \t server \t tool \t outcome \t ms \t detail
+        // ts(epoch-ms) \t pane \t server \t tool \t outcome \t ms \t detail (#1743 added the pane column).
+        assert_eq!(lines[0].len(), 7, "seven TAB fields incl. the pane: {body:?}");
         assert!(lines[0][0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", lines[0][0]);
-        assert_eq!((lines[0][1], lines[0][2]), ("github", "list_issues"));
+        assert_eq!(lines[0][1], "t0p0", "pane field is the BSC_AUDIT_PANE tag");
+        assert_eq!((lines[0][2], lines[0][3]), ("github", "list_issues"));
         // A non-error response is a success — "ok", or "warn" if the measured round-trip (which
         // here includes cold subprocess-spawn overhead in the test harness) crossed the slow
         // threshold. Never "fail" without an error response.
-        assert!(matches!(lines[0][3], "ok" | "warn"), "success outcome: {:?}", lines[0][3]);
-        assert!(lines[0][4].chars().all(|c| c.is_ascii_digit()), "ms is numeric: {:?}", lines[0][4]);
-        assert_eq!((lines[1][1], lines[1][2], lines[1][3]), ("playwright", "navigate", "fail"));
-        assert_eq!(lines[1][5], "spawn npx ENOENT", "fail detail pulled from the response text");
+        assert!(matches!(lines[0][4], "ok" | "warn"), "success outcome: {:?}", lines[0][4]);
+        assert!(lines[0][5].chars().all(|c| c.is_ascii_digit()), "ms is numeric: {:?}", lines[0][5]);
+        assert_eq!((lines[1][2], lines[1][3], lines[1][4]), ("playwright", "navigate", "fail"));
+        assert_eq!(lines[1][6], "spawn npx ENOENT", "fail detail pulled from the response text");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

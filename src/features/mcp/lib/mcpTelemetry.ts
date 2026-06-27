@@ -1,7 +1,9 @@
 // MCP-call telemetry (#879) — parse + aggregate the MCP tool-call log for the MCP Analytics
 // tab. Mirrors hookTelemetry.ts. The log lives at ~/.base-studio-code/mcp.log, one TSV line
-// per call: `ts \t server \t tool \t outcome \t ms [\t detail]`, read newest-first via
-// `read_mcp_log`. `outcome` is "ok" | "warn" | "fail"; `ms` is the round-trip latency of the
+// per call: `ts \t pane \t server \t tool \t outcome \t ms \t detail` (#1743 prepended the pane
+// column). Legacy lines written before #1743 have no pane (`ts \t server \t tool \t outcome \t
+// ms [\t detail]`) and are still tolerated — the parser detects the shape by column count.
+// Read newest-first via `read_mcp_log`. `outcome` is "ok" | "warn" | "fail"; `ms` is the round-trip latency of the
 // call (the agent invoking the MCP tool → the server's response). A "warn" is a successful but
 // slow / rate-limited call, so it counts toward SUCCESS (only "fail" is an error). Pure +
 // unit-tested; the hook pair that EMITS these lines is wired separately (PR 2).
@@ -28,7 +30,12 @@ export function parseMcpLog(text: string): McpCall[] {
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     const parts = line.split("\t");
-    const [tsRaw, server, tool, outcomeRaw, msRaw] = parts;
+    // #1743: new lines carry a leading pane column (7 fields: ts·pane·server·tool·outcome·ms·detail);
+    // legacy lines have none (5–6 fields: ts·server·tool·outcome·ms[·detail]). Detect by column count
+    // and offset the field reads so both shapes parse. The pane isn't surfaced here (the analytics
+    // don't break down by session), so it's read past, not stored.
+    const b = parts.length >= 7 ? 1 : 0;
+    const [tsRaw, server, tool, outcomeRaw, msRaw] = [parts[0], parts[b + 1], parts[b + 2], parts[b + 3], parts[b + 4]];
     const ts = Number(tsRaw);
     if (!Number.isFinite(ts) || !server || !tool) continue;
     const outcome: McpOutcome = outcomeRaw === "fail" ? "fail" : outcomeRaw === "warn" ? "warn" : "ok";
@@ -36,7 +43,7 @@ export function parseMcpLog(text: string): McpCall[] {
     out.push({
       ts, server, tool, outcome,
       ms: Number.isFinite(ms) ? ms : 0,
-      detail: parts.slice(5).join("\t").trim(),
+      detail: parts.slice(b + 5).join("\t").trim(),
     });
   }
   return out;
