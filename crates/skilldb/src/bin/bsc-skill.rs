@@ -4,9 +4,10 @@
 //! session, and queryable from a session's own shell.
 //!
 //! The db is located via `--db <path>` or the `BSC_SKILL_DB` env var (set per-session at launch),
-//! defaulting to `~/.base-studio-code/skills.db`. Output is JSON to stdout (like `bsc-plan`);
-//! `resolve` prints the group's member skills (the SKILL.md-bound shape), de-duped + ordered +
-//! existence-filtered.
+//! defaulting to `~/.base-studio-code/skills.db`. Output is JSON to stdout (like `bsc-plan`) —
+//! **compact by default**, indented with `--pretty` (#1762; it was previously always pretty-printed,
+//! ignoring the flags — the one behavior change). `resolve` prints the group's member skills (the
+//! SKILL.md-bound shape), de-duped + ordered + existence-filtered.
 //!
 //! Commands:
 //!   bsc-skill list                          # every skill, JSON
@@ -19,22 +20,16 @@
 //!   bsc-skill group remove <id>
 //!   bsc-skill group member <group> <skill> [--off]   # toggle membership; prints resulting ids
 //!   bsc-skill resolve <group-id>            # the group's member skills, JSON
-//! Global flag: --db <path>
+//! Global flags: --db <path>, --json, --pretty
 
-use bsc_sqlite_util::read_stdin_json;
+use bsc_sqlite_util::{print_json, read_stdin_json};
 use skilldb::{Skill, SkillGroup, Store};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-skill: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-skill", run)
 }
 
 /// Parsed global flags + leftover positional args.
@@ -43,17 +38,23 @@ struct Args {
     off: bool,
     /// `add --group <id>`: also add each upserted skill to this group (created if missing).
     group: Option<String>,
+    /// Indent the JSON output (#1762). The default is compact, matching every other `bsc-*` CLI;
+    /// `--json` is accepted as an explicit no-op since `bsc-skill`'s output is always JSON.
+    pretty: bool,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, off: false, group: None, positional: Vec::new() };
+    let mut a = Args { db: None, off: false, group: None, pretty: false, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--off" => a.off = true,
             "--group" => a.group = Some(it.next().ok_or("--group needs a group id")?),
+            "--pretty" => a.pretty = true,
+            // Output is always JSON; --json is accepted so callers can be explicit.
+            "--json" => {}
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -82,36 +83,34 @@ fn run() -> Result<(), String> {
         "list" => {
             let s = store()?;
             let skills = s.list().map_err(|e| e.to_string())?;
-            println!("{}", serde_json::to_string_pretty(&skills).unwrap_or_else(|_| "[]".into()));
+            print_json(&skills, args.pretty);
             Ok(())
         }
         "add" => {
             let s = store()?;
             let ids = cmd_add(&s, args.group.as_deref())?;
-            println!("{}", serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
+            print_json(&ids, args.pretty);
             Ok(())
         }
         "get" => {
             let id = args.positional.get(1).ok_or("usage: bsc-skill get <id>")?;
             let s = store()?;
-            match s.get(id).map_err(|e| e.to_string())? {
-                Some(skill) => println!("{}", serde_json::to_string_pretty(&skill).unwrap_or_default()),
-                None => println!("null"),
-            }
+            // `print_json` of the `Option` prints `null` for a miss (the skill JSON for a hit).
+            print_json(&s.get(id).map_err(|e| e.to_string())?, args.pretty);
             Ok(())
         }
         "remove" => {
             let id = args.positional.get(1).ok_or("usage: bsc-skill remove <id>")?;
             let s = store()?;
             s.remove(id).map_err(|e| e.to_string())?;
-            println!("{}", serde_json::to_string(id).unwrap_or_default());
+            print_json(&id, args.pretty);
             Ok(())
         }
         "resolve" => {
             let gid = args.positional.get(1).ok_or("usage: bsc-skill resolve <group-id>")?;
             let s = store()?;
             let skills = s.resolve(gid).map_err(|e| e.to_string())?;
-            println!("{}", serde_json::to_string_pretty(&skills).unwrap_or_else(|_| "[]".into()));
+            print_json(&skills, args.pretty);
             Ok(())
         }
         "group" => {
@@ -132,26 +131,24 @@ fn run() -> Result<(), String> {
                         return Err("group add: the group needs a non-empty \"id\"".into());
                     }
                     let id = s.group_add(&group).map_err(|e| e.to_string())?;
-                    println!("{}", serde_json::to_string(&id).unwrap_or_default());
+                    print_json(&id, args.pretty);
                     Ok(())
                 }
                 "list" => {
                     let groups = s.group_list().map_err(|e| e.to_string())?;
-                    println!("{}", serde_json::to_string_pretty(&groups).unwrap_or_else(|_| "[]".into()));
+                    print_json(&groups, args.pretty);
                     Ok(())
                 }
                 "get" => {
                     let id = args.positional.get(2).ok_or("usage: bsc-skill group get <id>")?;
-                    match s.group_get(id).map_err(|e| e.to_string())? {
-                        Some(g) => println!("{}", serde_json::to_string_pretty(&g).unwrap_or_default()),
-                        None => println!("null"),
-                    }
+                    // `print_json` of the `Option` prints `null` for a miss.
+                    print_json(&s.group_get(id).map_err(|e| e.to_string())?, args.pretty);
                     Ok(())
                 }
                 "remove" => {
                     let id = args.positional.get(2).ok_or("usage: bsc-skill group remove <id>")?;
                     s.group_remove(id).map_err(|e| e.to_string())?;
-                    println!("{}", serde_json::to_string(id).unwrap_or_default());
+                    print_json(&id, args.pretty);
                     Ok(())
                 }
                 // `group member <group> <skill> [--off]` toggles membership; prints the resulting ids.
@@ -162,7 +159,7 @@ fn run() -> Result<(), String> {
                         rusqlite::Error::QueryReturnedNoRows => format!("no group with id '{gid}'"),
                         other => other.to_string(),
                     })?;
-                    println!("{}", serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
+                    print_json(&ids, args.pretty);
                     Ok(())
                 }
                 other => Err(format!("unknown group command '{other}'\n\n{USAGE}")),
@@ -172,18 +169,15 @@ fn run() -> Result<(), String> {
     }
 }
 
-/// Resolve the skills.db path: explicit `--db` wins, then `BSC_SKILL_DB`, else the default global
-/// store at `~/.base-studio-code/skills.db`.
+/// Resolve the skills.db path via the shared `--db` → `$BSC_SKILL_DB` → default precedence
+/// ([`bsc_cli_util::resolve_store_path`]); the default is the global store at
+/// `~/.base-studio-code/skills.db`.
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
-    if let Some(p) = flag {
-        return Ok(PathBuf::from(p));
-    }
-    if let Ok(p) = std::env::var("BSC_SKILL_DB") {
-        return Ok(PathBuf::from(p));
-    }
-    let base = bsc_util::bsc_base_dir()
-        .ok_or("could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB")?;
-    Ok(base.join("skills.db"))
+    bsc_cli_util::resolve_store_path(flag, "BSC_SKILL_DB", || {
+        bsc_util::bsc_base_dir()
+            .map(|base| base.join("skills.db"))
+            .ok_or_else(|| "could not resolve a home directory; pass --db <path> or set BSC_SKILL_DB".to_string())
+    })
 }
 
 /// Read JSON from stdin (one skill object or an array), upsert each, return the ids. When `group`
@@ -223,7 +217,9 @@ const USAGE: &str = "\
 bsc-skill — the global skills + task-groups store (#1338)
 
 USAGE:
-  bsc-skill <command> [args] [--db <path>]
+  bsc-skill <command> [args] [--db <path>] [--json] [--pretty]
+
+Output is JSON — compact by default; --pretty indents it (--json is accepted as an explicit no-op).
 
 SKILLS (the global library):
   list                      print every skill (JSON)

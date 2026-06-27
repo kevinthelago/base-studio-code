@@ -17,18 +17,11 @@
 
 use bsc_blueprint::Store;
 use bsc_sqlite_util::{print_json, read_stdin_json};
-use std::path::PathBuf;
 use std::process::ExitCode;
 use serde_json::Value;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-blueprint: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-blueprint", run)
 }
 
 /// Parsed global flags + leftover positional args.
@@ -108,17 +101,16 @@ fn run() -> Result<(), String> {
 }
 
 /// Resolve the store: explicit `--dir` wins, then `BSC_BLUEPRINT_DIR`, else the default user store at
-/// `~/.base-studio-code/blueprints/`.
+/// `~/.base-studio-code/blueprints/`. The flag→env→default precedence is the shared
+/// [`bsc_cli_util::resolve_store_path`]; the resolved dir is wrapped in a [`Store`] (this CLI keys a
+/// directory, not a single file). The default mirrors [`Store::open_default`].
 fn resolve_store(flag: &Option<String>) -> Result<Store, String> {
-    if let Some(p) = flag {
-        return Ok(Store::new(PathBuf::from(p)));
-    }
-    if let Ok(p) = std::env::var("BSC_BLUEPRINT_DIR") {
-        if !p.is_empty() {
-            return Ok(Store::new(PathBuf::from(p)));
-        }
-    }
-    Store::open_default()
+    let dir = bsc_cli_util::resolve_store_path(flag, "BSC_BLUEPRINT_DIR", || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join("blueprints"))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(Store::new(dir))
 }
 
 /// The `id` of a blueprint Value — required, non-empty (it keys the on-disk file).

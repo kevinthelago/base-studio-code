@@ -23,5 +23,7 @@ bsc-util = { path = "../bsc-util" }
 # Shared CLI helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read every
 # `bsc-* set`-style command takes) shared with `bsc-plan` / `bsc-skill` / `bsc-logs`.
 bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--dir→env→default).
+bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
