@@ -6,6 +6,7 @@
 // acknowledged it.
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
+import { IconButton } from "@/shared/ui/IconButton";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];
@@ -74,22 +75,7 @@ export function SessionReadinessBanner({
           </span>
         ))}
       </div>
-      <button
-        onClick={onDismiss}
-        style={{
-          background: "transparent",
-          border: "none",
-          color: "#e5c07b",
-          cursor: "pointer",
-          fontSize: 14,
-          lineHeight: 1,
-          padding: 2,
-          flexShrink: 0,
-        }}
-        aria-label="Dismiss GitHub warning"
-      >
-        ×
-      </button>
+      <IconButton aria-label="Dismiss GitHub warning" onClick={onDismiss} style={{ color: "#e5c07b", flexShrink: 0 }} />
     </div>
   );
 }
