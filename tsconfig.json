@@ -11,7 +11,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "paths": { "@/*": ["./src/*"], "@prompts/*": ["./src-tauri/prompts/*"] },
+    "paths": { "@/*": ["./src/*"], "@data/*": ["./src-tauri/data/*"] },
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

@@ -19,12 +19,12 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// The packaged built-in skills (compliance & standards procedures: SOC 2, GDPR, WCAG, …) live as one
-/// JSON file per skill under `src-tauri/prompts/skills/` — the SINGLE source of truth, shared with the
+/// JSON file per skill under `src-tauri/data/skills/` — the SINGLE source of truth, shared with the
 /// frontend (which reads the same files via `import.meta.glob`). Embedded at compile time so a fresh
 /// `skills.db` seeds the library on first open, giving the `bsc-skill` CLI + planner parity without a
 /// UI boot (#1715). The path reaches out of this crate (its manifest dir is `crates/skilldb`) to the
-/// backend-owned `src-tauri/prompts/skills` tree — the same dir the Vite `@prompts` alias points at.
-static PACKAGED_SKILLS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/prompts/skills");
+/// backend-owned `src-tauri/data/skills` tree — the same dir the Vite `@data` alias points at.
+static PACKAGED_SKILLS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/data/skills");
 
 /// How long (ms) a connection waits on a locked db before erroring (the #1325 concurrency
 /// requirement, alongside WAL). Generous so a quick CLI write never loses to the live app.
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn packaged_skills_parse_from_embedded_json() {
-        // The embedded src-tauri/prompts/skills/*.json must parse into seedable Skills with the
+        // The embedded src-tauri/data/skills/*.json must parse into seedable Skills with the
         // body→prompt alias applied and enabled/packaged forced on. Pins the known built-in ids.
         let skills = packaged_skills();
         let ids: std::collections::BTreeSet<&str> = skills.iter().map(|s| s.id.as_str()).collect();

@@ -39,13 +39,13 @@ const REPO_PREFIX = "repo__";
  * topics Claude invents sort after these (alphabetically). The title is what the
  * section card shows.
  *
- * Single-sourced from the Discovery stage data (`src-tauri/prompts/stages/discovery.json`,
+ * Single-sourced from the Discovery stage data (`src-tauri/data/stages/discovery.json`,
  * its `dimensions` array) so the dimension vocabulary lives in ONE place — the same data
  * file the planner prompt and gate read (#1591). Loaded directly via `import.meta.glob`
  * (NOT through blueprints.ts `STAGE_DEFS`) to avoid a circular import.
  */
 const discoveryModules = import.meta.glob<{ default: { dimensions?: { key: string; title: string }[] } }>(
-  "@prompts/stages/discovery.json",
+  "@data/stages/discovery.json",
   { eager: true },
 );
 export const KNOWN_DIMENSIONS: { key: string; title: string }[] =
