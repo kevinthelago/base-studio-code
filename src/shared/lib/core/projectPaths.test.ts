@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   sanitizeProjectKey,
+  mintProjectId,
   repoShortName,
   projectRepoCwd,
   isKnownPublishedKey,
@@ -28,6 +29,31 @@ describe("sanitizeProjectKey", () => {
   it("caps the result at 80 characters", () => {
     const long = "a".repeat(120);
     expect(sanitizeProjectKey(long)).toHaveLength(80);
+  });
+});
+
+describe("mintProjectId (#1741)", () => {
+  it("is slug-safe so sanitizeProjectKey is a no-op on it", () => {
+    for (let i = 0; i < 50; i++) {
+      const id = mintProjectId();
+      expect(id).toMatch(/^p-[a-z0-9]+-[a-z0-9]{6}$/);
+      // The backend slugifier must leave a minted id byte-for-byte unchanged.
+      expect(sanitizeProjectKey(id)).toBe(id);
+      expect(id.length).toBeLessThanOrEqual(80);
+    }
+  });
+
+  it("mints a distinct key on every call (two same-titled projects never collide)", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 1000; i++) ids.add(mintProjectId());
+    expect(ids.size).toBe(1000);
+  });
+
+  it("is NOT derived from any title — identical titles yield different keys", () => {
+    // Two projects created with the same display title get independent stable keys.
+    const a = mintProjectId();
+    const b = mintProjectId();
+    expect(a).not.toBe(b);
   });
 });
 
