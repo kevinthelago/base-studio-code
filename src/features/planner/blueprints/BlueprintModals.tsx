@@ -31,7 +31,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   useModalDismiss(onClose);
   return (
     <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
-      <div className="overlay" style={{ position: "fixed", inset: 0, background: "oklch(0.08 0.005 250 / 0.66)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 30 }}
+      <div className="overlay blur" style={{ padding: 30 }}
         onMouseDown={overlayDismiss(onClose)}>
         <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}
           onMouseDown={(e) => e.stopPropagation()}>

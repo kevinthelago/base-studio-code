@@ -34,6 +34,11 @@
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
 
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  /* modal chrome (#1776): one scrim color + z-index for every modal/overlay.
+     --z-modal sits above app chrome + menus (≤3000) and below the achievement toast (9999);
+     --z-modal-float is for a fixed toast that must float above its own modal. */
+  --scrim: oklch(0 0 0 / 0.55);
+  --z-modal: 4000; --z-modal-float: 4010;
 }
 
 /* ===== light theme override ===== */
@@ -256,9 +261,16 @@ html, body {
 .icon-btn.xs{ width:16px; height:16px; border-radius:4px; font-size:11px; }
 .icon-btn:disabled{ opacity:.5; cursor:not-allowed; }
 /* modal */
-.overlay{ position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
+.overlay{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
+.overlay.blur{ backdrop-filter:blur(2px); }
 .modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
   border-radius:var(--r-lg); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+/* shared centered-modal scrim (#1776) — the single overlay wrapper behind <ModalScrim>/<Dialog> */
+.modal-scrim{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
+.modal-scrim.start{ align-items:flex-start; }
+.modal-scrim.blur{ backdrop-filter:blur(2px); }
+/* a fixed toast/floater that must sit above its own open modal */
+.above-modal{ z-index:var(--z-modal-float); }
 /* pulsing status dot */
 @keyframes bp-pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
 .pulse-dot{ width:6px; height:6px; border-radius:50%; background:var(--success); animation:bp-pulse 1.4s ease-in-out infinite; display:inline-block; }
