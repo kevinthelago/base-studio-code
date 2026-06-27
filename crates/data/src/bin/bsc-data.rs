@@ -21,19 +21,14 @@
 //!   bsc-data connector list            # runtime REST connector presets (connectors.json; no --db)
 //!   bsc-data connector add             # upsert a RuntimePreset JSON from stdin (validated)
 
+use bsc_cli_util::emit;
 use bsc_data::{DataModel, DataStore, MetaStore, PlatformScan};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-data: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-data", run)
 }
 
 /// Parsed flags + leftover positional args.
@@ -84,13 +79,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 }
 
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
-    if let Some(p) = flag {
-        return Ok(PathBuf::from(p));
-    }
-    if let Ok(p) = std::env::var("BSC_DATA_DB") {
-        return Ok(PathBuf::from(p));
-    }
-    Err("no data store: pass --db <path> or set BSC_DATA_DB".into())
+    bsc_cli_util::resolve_store_path(flag, "BSC_DATA_DB", || {
+        Err("no data store: pass --db <path> or set BSC_DATA_DB".into())
+    })
 }
 
 fn read_stdin() -> Result<String, String> {
@@ -111,18 +102,6 @@ fn open_data_store(db: &Path) -> Result<DataStore, String> {
             .ok_or("no Data Model in the store — run `bsc-data model set` first")?
     };
     DataStore::open(db, model).map_err(|e| e.to_string())
-}
-
-/// Render a value per the output flags, or fall back to the caller's lean text. `--pretty`
-/// re-indents, `--json` is compact, default is the human-readable `lean` rendering.
-fn emit(args: &Args, value: serde_json::Value, lean: impl FnOnce() -> String) {
-    if args.pretty {
-        println!("{}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".into()));
-    } else if args.json {
-        println!("{}", serde_json::to_string(&value).unwrap_or_else(|_| "null".into()));
-    } else {
-        println!("{}", lean());
-    }
 }
 
 fn run() -> Result<(), String> {
@@ -182,7 +161,7 @@ fn run() -> Result<(), String> {
                     .map(|(k, l, n)| serde_json::json!({ "entity": k, "label": l, "rows": n }))
                     .collect(),
             );
-            emit(&args, value, || {
+            emit(args.pretty, args.json, &value, || {
                 let mut lines = vec!["entity\trows".to_string()];
                 lines.extend(rows.iter().map(|(k, _l, n)| format!("{k}\t{n}")));
                 lines.join("\n")
@@ -208,7 +187,7 @@ fn run() -> Result<(), String> {
                     serde_json::Value::Object(m)
                 })
                 .collect();
-            emit(&args, serde_json::Value::Array(objs), || {
+            emit(args.pretty, args.json, &serde_json::Value::Array(objs), || {
                 let mut lines = vec![cols.join("\t")];
                 lines.extend(data.iter().map(|row| {
                     row.iter().map(|c| c.clone().unwrap_or_default()).collect::<Vec<_>>().join("\t")
@@ -221,7 +200,7 @@ fn run() -> Result<(), String> {
             let entity = args.positional.get(1).ok_or("usage: bsc-data count <entity>")?;
             let store = open_data_store(&db)?;
             let n = store.count(entity).map_err(|e| e.to_string())?;
-            emit(&args, serde_json::json!({ "entity": entity, "rows": n }), || n.to_string());
+            emit(args.pretty, args.json, &serde_json::json!({ "entity": entity, "rows": n }), || n.to_string());
             Ok(())
         }
         ("nulls", _) => {
@@ -231,8 +210,9 @@ fn run() -> Result<(), String> {
                 Some(field) => {
                     let n = store.null_count(entity, field).map_err(|e| e.to_string())?;
                     emit(
-                        &args,
-                        serde_json::json!({ "entity": entity, "field": field, "nulls": n }),
+                        args.pretty,
+                        args.json,
+                        &serde_json::json!({ "entity": entity, "field": field, "nulls": n }),
                         || n.to_string(),
                     );
                 }
@@ -252,7 +232,7 @@ fn run() -> Result<(), String> {
                     let value = serde_json::Value::Array(
                         counts.iter().map(|(k, n)| serde_json::json!({ "field": k, "nulls": n })).collect(),
                     );
-                    emit(&args, value, || {
+                    emit(args.pretty, args.json, &value, || {
                         let mut lines = vec!["field\tnulls".to_string()];
                         lines.extend(counts.iter().map(|(k, n)| format!("{k}\t{n}")));
                         lines.join("\n")
@@ -270,8 +250,9 @@ fn run() -> Result<(), String> {
             let row_lineage = store.entity_lineage_count(entity).map_err(|e| e.to_string())?;
             let field_lineage = store.entity_field_lineage_count(entity).map_err(|e| e.to_string())?;
             emit(
-                &args,
-                serde_json::json!({ "entity": entity, "rowLineage": row_lineage, "fieldLineage": field_lineage }),
+                args.pretty,
+                args.json,
+                &serde_json::json!({ "entity": entity, "rowLineage": row_lineage, "fieldLineage": field_lineage }),
                 || format!("rowLineage\t{row_lineage}\nfieldLineage\t{field_lineage}"),
             );
             Ok(())
@@ -309,7 +290,7 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
         "list" => {
             let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
             let value = serde_json::to_value(&presets).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
-            emit(args, value, || {
+            emit(args.pretty, args.json, &value, || {
                 if presets.is_empty() {
                     "(no runtime connectors)".to_string()
                 } else {
@@ -327,7 +308,7 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
             match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
                 Some(p) => {
                     let value = serde_json::to_value(&p).unwrap_or(serde_json::Value::Null);
-                    emit(args, value, || {
+                    emit(args.pretty, args.json, &value, || {
                         serde_json::to_string(&p).unwrap_or_else(|_| "null".into())
                     });
                 }

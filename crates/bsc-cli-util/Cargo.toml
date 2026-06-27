@@ -1,0 +1,13 @@
+[package]
+name = "bsc-cli-util"
+version = "0.1.0"
+edition = "2021"
+description = "Shared scaffold for the base-studio-code state CLIs (#1762) — the byte-identical `main` wrapper (`cli_main`), the flag→env→default store-path resolver (`resolve_store_path`), and the lean-vs-JSON output dispatch (`emit`). NOT SQLite-specific (bsc-data is DuckDB, bsc-project is fs), so it lives beside `bsc-sqlite-util` rather than inside it. The hyphenated package name maps to the `bsc_cli_util` crate name."
+
+# Lib only — no binaries. The hyphenated package name maps to the `bsc_cli_util` crate name.
+[lib]
+name = "bsc_cli_util"
+
+[dependencies]
+serde = "1"
+serde_json = "1"
