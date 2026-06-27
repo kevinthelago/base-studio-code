@@ -23,10 +23,10 @@ export const SCREENS: ScreenMeta[] = [
   { key: "console",    label: "Console",     Icon: TerminalSquare },
   { key: "projects",   label: "Projects",    Icon: FolderKanban },
   { key: "skills",     label: "Skills",      Icon: Sparkles },
-  { key: "github",     label: "GitHub",      Icon: GitFork },
-  { key: "agents",     label: "Permissions", Icon: ShieldCheck },
-  { key: "mcp",        label: "MCP",         Icon: Server },
   { key: "automation", label: "Automations", Icon: Zap },
+  { key: "mcp",        label: "MCP",         Icon: Server },
+  { key: "github",     label: "GitHub",      Icon: GitFork },
+  { key: "agents",     label: "Security",    Icon: ShieldCheck },
   { key: "settings",   label: "Settings",    Icon: Settings },
 ];
 

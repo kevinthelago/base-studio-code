@@ -54,10 +54,10 @@ Eight surfaces, reached from the left rail:
 - **Console** — the execution surface where planned work runs. Tabbed workspaces, each a configurable grid of terminal panes; every pane is a real PTY running an agent, with swappable views for the terminal, files, branches, diffs, the session log, and live tokens/cost
 - **Projects** — the flagship planner: pitch → staged plan → live UI preview → publish to GitHub → launch the fleet, alongside a live **Fleet** board (one worker per stream, coordinated by a director) and the canonical **Data Models** editor
 - **Skills** — the injectable-context library: searchable skills and task groups, attachable per session, with invocation telemetry and per-project lessons
-- **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
-- **Permissions** — the least-privilege control room: a role and profile per session (tool allowlists, write-path scope, network), enforced at launch, with a live audit feed of every tool attempt
-- **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
 - **Automations** — cron-scheduled commands dispatched into console panes, with armed status and run history
+- **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
+- **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
+- **Security** — the least-privilege control room: a role and profile per session (tool allowlists, write-path scope, network), enforced at launch, with a live audit feed of every tool attempt
 - **Settings** — providers/keys, mobile-tunnel pairing, appearance, diagnostics, performance, logs, and storage
 
 ## Tech Stack
