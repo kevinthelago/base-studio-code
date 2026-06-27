@@ -115,31 +115,61 @@ pub(super) fn build_request_body(req: &LlmRequest) -> serde_json::Value {
     })
 }
 
-impl LlmProvider for AnthropicProvider {
-    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
-        let json = post_json(
-            "https://api.anthropic.com/v1/messages",
-            &[
-                ("x-api-key", api_key.to_string()),
-                ("anthropic-version", "2023-06-01".to_string()),
-            ],
+/// Base URL for the Anthropic Messages API. Production passes this; tests point the
+/// `*_at` helpers at a localhost mock so the real send path is exercised offline.
+pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+
+/// The Anthropic auth/version headers (identical for `complete` and `turn`).
+fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("x-api-key", api_key.to_string()),
+        ("anthropic-version", "2023-06-01".to_string()),
+    ]
+}
+
+impl AnthropicProvider {
+    /// `complete` against an arbitrary base URL (production passes [`ANTHROPIC_BASE_URL`];
+    /// tests point it at a localhost mock). Threading the base-url here lets the real
+    /// send path (`post_json` + status/error handling) be exercised end-to-end without
+    /// the network — the trait method below just supplies the production host.
+    pub(crate) async fn complete_at(
+        &self,
+        base_url: &str,
+        req: &LlmRequest,
+        api_key: &str,
+    ) -> Result<serde_json::Value, String> {
+        post_json(
+            &format!("{base_url}/v1/messages"),
+            &auth_headers(api_key),
             &build_request_body(req),
         )
-        .await?;
-        Ok(json)
+        .await
     }
 
-    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+    /// `turn` against an arbitrary base URL (see [`Self::complete_at`]).
+    pub(crate) async fn turn_at(
+        &self,
+        base_url: &str,
+        t: &Turn,
+        api_key: &str,
+    ) -> Result<TurnResult, String> {
         let json = post_json(
-            "https://api.anthropic.com/v1/messages",
-            &[
-                ("x-api-key", api_key.to_string()),
-                ("anthropic-version", "2023-06-01".to_string()),
-            ],
+            &format!("{base_url}/v1/messages"),
+            &auth_headers(api_key),
             &turn_request_body(t),
         )
         .await?;
         Ok(parse_turn_response(&json))
+    }
+}
+
+impl LlmProvider for AnthropicProvider {
+    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+        self.complete_at(ANTHROPIC_BASE_URL, req, api_key).await
+    }
+
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        self.turn_at(ANTHROPIC_BASE_URL, t, api_key).await
     }
 }
 

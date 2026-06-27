@@ -148,10 +148,23 @@ pub(crate) fn normalize_response(raw: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-impl LlmProvider for OpenAiProvider {
-    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+/// Base URL for the OpenAI Chat Completions API. Production passes this; tests point
+/// the `*_at` helpers at a localhost mock so the real send path is exercised offline.
+pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
+
+impl OpenAiProvider {
+    /// `complete` against an arbitrary base URL (production passes [`OPENAI_BASE_URL`];
+    /// tests point it at a localhost mock). Threading the base-url here lets the real
+    /// send path (`post_json` + status/error handling) be exercised end-to-end without
+    /// the network — the trait method below just supplies the production host.
+    pub(crate) async fn complete_at(
+        &self,
+        base_url: &str,
+        req: &LlmRequest,
+        api_key: &str,
+    ) -> Result<serde_json::Value, String> {
         let json = post_json(
-            "https://api.openai.com/v1/chat/completions",
+            &format!("{base_url}/v1/chat/completions"),
             &[("authorization", format!("Bearer {}", api_key))],
             &build_request_body(req),
         )
@@ -159,14 +172,30 @@ impl LlmProvider for OpenAiProvider {
         Ok(normalize_response(&json))
     }
 
-    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+    /// `turn` against an arbitrary base URL (see [`Self::complete_at`]).
+    pub(crate) async fn turn_at(
+        &self,
+        base_url: &str,
+        t: &Turn,
+        api_key: &str,
+    ) -> Result<TurnResult, String> {
         let json = post_json(
-            "https://api.openai.com/v1/chat/completions",
+            &format!("{base_url}/v1/chat/completions"),
             &[("authorization", format!("Bearer {}", api_key))],
             &turn_request_body(t),
         )
         .await?;
         Ok(parse_turn_response(&json))
+    }
+}
+
+impl LlmProvider for OpenAiProvider {
+    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+        self.complete_at(OPENAI_BASE_URL, req, api_key).await
+    }
+
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        self.turn_at(OPENAI_BASE_URL, t, api_key).await
     }
 }
 
