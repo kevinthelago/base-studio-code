@@ -17,9 +17,9 @@ pub(crate) fn map_slug(s: &str, allow: impl Fn(char) -> bool, fill: char, cap: O
 
 /// Slugify `name` into a single safe directory segment: keep every char `allow` accepts, replace the
 /// rest with `_`, and reject the result if it is empty, `.`, or `..` (so it can never escape its
-/// parent dir). The shared empty/`.`/`..` guard behind [`crate::project::blueprints::blueprint_file`]
-/// and [`crate::extensions::mcp::mcp_install_dir`] (#1663). `Err` carries a generic reason; callers
-/// map it to their own message.
+/// parent dir). The shared empty/`.`/`..` guard behind [`crate::extensions::mcp::mcp_install_dir`]
+/// (#1663). (The blueprint store's slug guard now lives in the `bsc-blueprint` crate, #1761.)
+/// `Err` carries a generic reason; callers map it to their own message.
 pub(crate) fn safe_dir_segment(name: &str, allow: impl Fn(char) -> bool) -> Result<String, String> {
     let safe = map_slug(name, allow, '_', None);
     if safe.is_empty() || safe == "." || safe == ".." {
