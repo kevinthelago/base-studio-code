@@ -483,6 +483,32 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
+        // `fleet stream set <id>` upserts ONE stream's JSON (stdin) — granular per-stream edit, no
+        // whole-blob replace. `fleet meta set` upserts just the meta (director/topology/…), leaving
+        // every stream row intact.
+        "stream" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
+            "set" => {
+                let id = args.positional.get(3).ok_or("usage: bsc-plan fleet stream set <stream-id>")?;
+                let v: serde_json::Value = read_stdin_json_one("stream JSON")?;
+                s.fleet_stream_set(id, &v).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("stream set {id}");
+                }
+                Ok(())
+            }
+            other => Err(format!("unknown fleet stream command '{other}'\n\n{USAGE}")),
+        },
+        "meta" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
+            "set" => {
+                let v: serde_json::Value = read_stdin_json_one("fleet meta JSON")?;
+                s.fleet_meta_set(&v).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("fleet meta set");
+                }
+                Ok(())
+            }
+            other => Err(format!("unknown fleet meta command '{other}'\n\n{USAGE}")),
+        },
         other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
     }
 }
@@ -1179,9 +1205,11 @@ PHASES (the roadmap — features reference a phase by its 1-based order):
   phase remove <name>       delete a phase
 
 FLEET (streams + per-stream permissions/flows + director/topology):
-  fleet set                 replace the fleet from a FleetPlan JSON on stdin
-  fleet get                 print the fleet (FleetPlan JSON)
-  fleet remove <stream-id>  drop one stream
+  fleet set                  replace the fleet from a FleetPlan JSON on stdin
+  fleet get                  print the fleet (FleetPlan JSON)
+  fleet stream set <id>      upsert ONE stream's JSON on stdin (granular; keeps order)
+  fleet meta set             upsert just the meta (director/topology/…) JSON on stdin
+  fleet remove <stream-id>   drop one stream
 
 DEPLOY (the Deploy stage's structured config — one blob):
   deploy set                replace the deploy config from a DeployConfig JSON on stdin
