@@ -1,3 +1,6 @@
+// Import FIRST: self-installs a pure-DOM crash overlay so even module-eval / pre-React failures in
+// this window are visible (a detached window's logs may never reach the Tauri sink — #tab-tearoff).
+import "./fatalOverlay";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
