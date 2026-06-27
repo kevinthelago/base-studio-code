@@ -8,6 +8,7 @@ import {
   defaultIntegrationConfig, destinationChecks, syncChecks,
   type IntegrationConfig, type DestinationConfig, type SyncConfig, type DestinationType, type WriteMode, type SyncMode,
 } from "../lib/integrationConfig";
+import { Toggle as Switch } from "@/shared/ui/Toggle";
 import { MONO, grpLabel } from "./bodyStyles";
 
 function Readiness({ checks, label }: { checks: { ok: boolean }[]; label: string }) {
@@ -56,13 +57,7 @@ function Seg<T extends string>({ value, options, labels, onChange }: { value: T 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <span onClick={onClick} style={{
-        width: 26, height: 15, borderRadius: 99, flexShrink: 0, cursor: "pointer", position: "relative",
-        background: on ? "color-mix(in oklch, var(--success), transparent 50%)" : "var(--bg-elev2)",
-        border: "1px solid " + (on ? "var(--success)" : "var(--border-soft)"),
-      }}>
-        <span style={{ position: "absolute", top: 1, left: on ? 12 : 1, width: 11, height: 11, borderRadius: 99, background: on ? "var(--success)" : "var(--fg-dim)" }} />
-      </span>
+      <Switch on={on} onClick={onClick} size="sm" tone="success" />
       <span style={{ fontFamily: MONO, fontSize: 10.5, color: on ? "var(--fg)" : "var(--fg-muted)" }}>{label}</span>
     </div>
   );
