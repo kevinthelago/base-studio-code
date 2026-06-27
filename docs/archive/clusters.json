@@ -1,0 +1,4 @@
+[
+  {"slug":"knowledge-store","title":"Knowledge Store / Knowledge Base page","desc":"The removed Knowledge Store page — embedded-console block generation, list/search/edit, and the document-assignment model. Superseded by the Skills library; torn out in #1460 (reference-context half removed in #1812).","nums":[7,32,51,140,212,320,321,322,323,324,325]},
+  {"slug":"pipelines","title":"Blueprint pipelines + pipeline runtime","desc":"The dead blueprint stage-pipeline mechanism + its runtime (handler registry, gates, triggers, builtins), replaced by skills + MCP servers. The UI renderer / render-preview path was deliberately KEPT.","nums":[514,528,529,532,533,534,626]}
+]
