@@ -179,11 +179,9 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
 
   return (
     <div
+      className="modal-scrim blur"
       onMouseDown={overlayDismiss(onClose)}
-      style={{
-        position: "fixed", inset: 0, zIndex: 200, background: "oklch(0.08 0.005 250 / .66)",
-        backdropFilter: "blur(2.5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 36,
-      }}
+      style={{ padding: 36 }}
     >
       <div
         role="dialog" aria-modal="true" aria-label="Import blueprint from gist"
@@ -382,8 +380,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
 
       {/* toast */}
       {toast && (
-        <div style={{
-          position: "fixed", left: "50%", bottom: 40, transform: "translateX(-50%)", zIndex: 210,
+        <div className="above-modal" style={{
+          position: "fixed", left: "50%", bottom: 40, transform: "translateX(-50%)",
           display: "flex", alignItems: "center", gap: 9, padding: "9px 15px", background: "var(--bg-elev2)",
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
           fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",

@@ -590,11 +590,7 @@ export function PublishedProjects({
           everything (deliberate, secondary) layers the GitHub project DELETE_MUTATION on top, behind
           an explicit second confirm. */}
       {deleteTarget && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 200,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
+        <div className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
           <div style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { ModalScrim } from "./ModalScrim";
 
 interface DialogProps {
   title: string;
@@ -9,23 +9,8 @@ interface DialogProps {
 }
 
 export function Dialog({ title, children, actions, onDismiss, danger }: DialogProps) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onDismiss();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
-
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 9000,
-        background: "oklch(0 0 0 / 0.55)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-      onMouseDown={onDismiss}
-    >
+    <ModalScrim onDismiss={onDismiss}>
       <div
         className="card"
         style={{
@@ -33,7 +18,6 @@ export function Dialog({ title, children, actions, onDismiss, danger }: DialogPr
           boxShadow: "0 8px 32px oklch(0 0 0 / 0.5)",
           borderColor: danger ? "var(--danger)" : undefined,
         }}
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <h3 style={{
           margin: "0 0 10px", fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600,
@@ -48,6 +32,6 @@ export function Dialog({ title, children, actions, onDismiss, danger }: DialogPr
           {actions}
         </div>
       </div>
-    </div>
+    </ModalScrim>
   );
 }
