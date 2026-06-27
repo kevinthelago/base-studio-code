@@ -30,9 +30,9 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { BackButton } from "@/shared/ui/BackButton";
-import { clampIndex, gatePill, footerAction, resolveFooter } from "../stages/focusedPlan";
+import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
-import { flattenPrompt, stagePrompts } from "./plannerConductor";
+import { flattenPrompt } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
 import { usePlannerTagStream } from "./usePlannerTagStream";
 import { usePlanSectionPoll } from "./usePlanSectionPoll";
@@ -48,6 +48,7 @@ import { usePlanningSession } from "./usePlanningSession";
 import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
 import { usePlanConfirmations } from "./usePlanConfirmations";
+import { usePlanFocusedPane } from "./usePlanFocusedPane";
 import { useSetupSignature } from "./useSetupSignature";
 import { usePlannerTerminal } from "./usePlannerTerminal";
 import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
@@ -432,11 +433,8 @@ export function Planning({ visible }: { visible: boolean }) {
     planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
   });
 
-  // Focused pane (#652): the SELECTION — auto-follows the active phase (`focusSel` null) or pins to a
-  // user pick; reset on project/blueprint switch. `phases`/`focusActiveIdx` come from usePlanGates.
-  const [focusSel, setFocusSel] = useState<number | null>(null);
-  useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
-  const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
+  // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called
+  // below — after usePlanConfirmations, whose `pendingConfirm` the footer reads (#1490).
 
   // Mobile-relay projection of the live planning session (#801/#934/#987, usePlannerTunnelSync):
   // the canonical-plan derivation, the message poll, and every tunnel emit/listen effect (file-sync,
@@ -455,22 +453,12 @@ export function Planning({ visible }: { visible: boolean }) {
     effectiveProjectId, paneId, confirmPlanSection, skipPlanSection,
     autoCompleteGates, autoPlanActive: autoPlanWithClaude && llmHasKey,
   });
-  // The active phase is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
-  // offers a "Skip stage" control beside the primary action (#921).
-  const activeSkippable = phases[focusActiveIdx]?.optional === true && phases[focusActiveIdx]?.status === "active";
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable);
-  // Let "approve & continue" light up as soon as there are drafted sections to confirm (clicking
-  // confirms them, see onPrimary), and — when the user enabled gate override (#1285) — let a blocking
-  // gate be force-advanced as a cautionary "override gate & continue".
-  const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride);
-  const focusSelPhase = phases[focusSelectedIdx];
-  const focusPill = focusSelPhase ? gatePill(focusSelPhase) : "wait";
-  // Injectable prompts for the SELECTED stage — the header "?" helper lists them and the user picks
-  // one to inject (the app no longer auto-injects). Resolve the section BY KEY (phases is a filtered
-  // subset of planSecs, #815).
-  const focusStagePrompts = useMemo(
-    () => stagePrompts(planSecs.find(s => s.key === focusSelPhase?.key)),
-    [planSecs, focusSelPhase]);
+  // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
+  // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
+  const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
+    phases, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
+    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId,
+  });
 
   // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
   // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
