@@ -217,10 +217,11 @@ export function DiagnosticsSettings() {
           borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
         }}>
           {banner && (
-            <span style={{
-              width: 9, height: 9, borderRadius: "50%", flexShrink: 0, background: banner.color,
-              boxShadow: `0 0 0 3px color-mix(in oklch, ${banner.color}, transparent 82%)`,
-            }} />
+            <StatusDot
+              color={banner.color}
+              size={9}
+              style={{ boxShadow: `0 0 0 3px color-mix(in oklch, ${banner.color}, transparent 82%)` }}
+            />
           )}
           <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>
             {banner ? banner.text : running ? "Checking…" : "Not checked yet."}
