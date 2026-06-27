@@ -8,6 +8,7 @@ import { useState, type CSSProperties } from "react";
 import { Sparkles } from "lucide-react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
+import { IconButton } from "@/shared/ui/IconButton";
 import {
   hue, tint, stageKind, STAGE_KIND_KEYS, DISPOSITIONS, DISPOSITION_KEYS,
 } from "./blueprintCatalog";
@@ -197,7 +198,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                 <div style={{ ...rowS(8), marginBottom: 11 }}>
                   <input className="d-name" style={{ fontSize: 13, minWidth: 0, flex: 1, marginLeft: 0 }}
                     value={s.name} onChange={(e) => setSections(setStageField(stages, s.uid, { name: e.target.value }))} />
-                  <button className="iconbtn danger" title="Delete stage" onClick={() => {
+                  <button className="icon-btn danger" title="Delete stage" aria-label="Delete stage" onClick={() => {
                     const next = deleteStage(stages, s.uid);
                     setSections(next);
                     if (next[0]) onSelectStage?.(next[0].uid);
@@ -242,7 +243,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
             <div style={{ ...rowS(0), marginBottom: 6 }}>
               <span style={{ fontFamily: "var(--mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-muted)" }}>Add a stage</span>
               <span style={{ flex: 1 }} />
-              <button className="iconbtn" onClick={() => setAdding(false)}>✕</button>
+              <IconButton aria-label="cancel" onClick={() => setAdding(false)} />
             </div>
             <div className="palette">
               {STAGE_KIND_KEYS.map((kk) => {
