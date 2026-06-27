@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, MoreHorizontal, Trash2, Search } from "lucide-react";
 import { useAppStore } from "@/store";
-import { sanitizeProjectKey, isKnownPublishedKey, findByTitle } from "@/shared/lib/core/projectPaths";
+import { mintProjectId, findByTitle } from "@/shared/lib/core/projectPaths";
 import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
 import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { DEFAULT_BLUEPRINT_ID } from "../stages/blueprints";
@@ -246,7 +246,7 @@ export function PublishedProjects({
   const {
     githubToken, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
     setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, dismissProject,
-    addDraftProject, removeDraftProject, projectKeyAlias, setProjectBlueprintId, activeBlueprintId,
+    addDraftProject, projectKeyAlias, setProjectBlueprintId, activeBlueprintId,
   } = useAppStore();
   const [title, setTitle]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
@@ -289,10 +289,13 @@ export function PublishedProjects({
     const repo     = allRepos[0] ?? "";
     setActiveProjectMeta(p.id, p.title, repo, p.number, allRepos);
     setPlanningContext(p.shortDescription ?? p.title, repo);
-    // Key the session by the project name so the working directory is stable and
-    // human-readable, and matches a from-scratch session of the same name. The
-    // GitHub node id stays in activeProjectId for API calls only.
-    setPlanningSession(p.title);
+    // Resolve the session key through the node-id alias set at publish (#1741): a project
+    // created with a stable id lives under that id on disk, so reopening it from the board must
+    // key the session to `projectKeyAlias[p.id]`, not the (display-only, freely-renamed) title.
+    // Grandfathered/title-keyed projects have no such alias (or it maps back to the title), so
+    // the fallback preserves their existing behavior exactly. The node id stays in
+    // activeProjectId for API calls only.
+    setPlanningSession(projectKeyAlias[p.id] ?? p.title);
     setProjectsView("planning");
   }
 
@@ -361,24 +364,18 @@ export function PublishedProjects({
   // re-typed existing-project name agrees with everywhere else "title already taken" is judged.
   const titleConflict = findByTitle(visibleProjects, titleTrimmed, p => p.title);
 
-  async function handleStartPlanning() {
-    // Never start over — or delete the folder of — an existing project. The button is disabled
-    // on titleConflict, but the Enter-key handler isn't, so this guard is what actually stops a
-    // re-typed published-project name from wiping its plan (#380).
+  function handleStartPlanning() {
+    // Never start over an existing published project. The button is disabled on titleConflict,
+    // but the Enter-key handler isn't, so this guard is what actually stops a re-typed
+    // published-project name from forking a confusing duplicate (#380).
     if (!titleTrimmed || titleConflict) return;
-    // New project starts as a DRAFT (#379). The planning-dir id is the sanitized title — a
-    // clean, stable folder name (no random suffix), so the folder and the project resolve the
-    // same regardless of how it is later reopened or published. Re-using a title replaces an
-    // earlier *unpublished* draft, so clear that draft's folder FIRST for a stale-free start.
-    const draftKey = sanitizeProjectKey(titleTrimmed);
-    removeDraftProject(draftKey);
-    deleteLocalProject([draftKey]);
-    // Belt-and-suspenders: never delete a folder that belongs to a project already published
-    // to GitHub (its node id is aliased to this name) — even if titleConflict missed it because
-    // the project list hadn't loaded. Only a genuinely unpublished draft's folder is cleared.
-    if (!isKnownPublishedKey(draftKey, projectKeyAlias)) {
-      await invoke("delete_project_dir", { projectKey: draftKey }).catch(() => {});
-    }
+    // New project starts as a DRAFT (#379). Its workspace key is a freshly minted STABLE id
+    // (#1741) — opaque, not title-derived — so the on-disk hub never moves on a rename and two
+    // same-titled projects get distinct keys. The title is display-only from here. (A fresh id
+    // can't collide with an existing folder, so the old title-key path's stale-folder cleanup —
+    // remove/delete the prior same-named draft — is no longer needed: same-named drafts now
+    // simply coexist as distinct projects.)
+    const draftKey = mintProjectId();
     setPlanningTitle(titleTrimmed);
     // The pitch is described in the planning conversation now — creation only needs the title (#…).
     setPlanningContext("", "");
