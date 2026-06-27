@@ -4,36 +4,7 @@ import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{label}</div>
-        {hint && <div style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{hint}</div>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Select({ value, options, onChange }: {
-  value: number; options: { label: string; value: number }[]; onChange: (v: number) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      style={{ fontFamily: "var(--mono)", fontSize: 11.5, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", cursor: "pointer" }}
-    >
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function btn(extra: React.CSSProperties = {}): React.CSSProperties {
-  return { padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5, background: "var(--bg-elev)", color: "var(--fg-muted)", border: "1px solid var(--border)", ...extra };
-}
+import { SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "./SettingsControls";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -184,7 +155,7 @@ export function LogsSettings() {
               { label: "50,000", value: 50000 },
               { label: "Unlimited", value: 0 },
             ]}
-            onChange={(v) => update({ maxLines: v })}
+            onChange={(v) => update({ maxLines: v as number })}
           />
         </Row>
         <Row label="Max size per log" hint="If a log still exceeds this after the line cap, its oldest lines are dropped until it fits. 0 = no limit.">
@@ -196,7 +167,7 @@ export function LogsSettings() {
               { label: "100 MB", value: 100 },
               { label: "No limit", value: 0 },
             ]}
-            onChange={(v) => update({ maxSizeMb: v })}
+            onChange={(v) => update({ maxSizeMb: v as number })}
           />
         </Row>
         <Row label="Trim logs now" hint="Apply the caps to every telemetry log immediately, instead of waiting for the next startup.">
