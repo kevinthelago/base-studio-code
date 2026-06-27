@@ -20,10 +20,13 @@ export interface ScreenHotkey {
  *  reference derive from. */
 export const SCREEN_HOTKEYS: ScreenHotkey[] = [
   { key: "F1", screen: "console",    label: "Console" },
-  { key: "F3", screen: "automation", label: "Automations" },
-  { key: "F4", screen: "github",     label: "GitHub" },
-  { key: "F5", screen: "projects",   label: "Projects" },
-  { key: "F6", screen: "settings",   label: "Settings" },
+  { key: "F2", screen: "projects",   label: "Planner" },
+  { key: "F3", screen: "skills",     label: "Skills" },
+  { key: "F4", screen: "automation", label: "Automations" },
+  { key: "F5", screen: "mcp",        label: "MCP" },
+  { key: "F6", screen: "github",     label: "GitHub" },
+  { key: "F7", screen: "agents",     label: "Security" },
+  { key: "F8", screen: "settings",   label: "Settings" },
 ];
 
 /** Lookup form for the keydown handler: `e.key` → screen. Derived from

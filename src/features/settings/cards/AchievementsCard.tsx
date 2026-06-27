@@ -4,7 +4,7 @@ import { ACHIEVEMENTS, isUnlocked } from "@/shared/lib/core/achievements";
 // Settings > Achievements: the persistent trophy case. Each achievement shows its
 // icon (full-color when unlocked, dimmed + grayscale when locked) and, once earned,
 // the date it was unlocked. Unlocks are once-ever and survive restarts (store).
-export function AchievementsSettings() {
+export function AchievementsCard() {
   const achievements = useAppStore((s) => s.achievements);
   const unlockedCount = ACHIEVEMENTS.filter((a) => isUnlocked(achievements, a.id)).length;
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SHORTCUT_GROUPS } from "./lib/shortcuts";
+import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
 import {
   REBINDABLE_IDS,
@@ -17,7 +17,7 @@ import {
   findLeaderConflict,
   type RebindableId,
   type LeaderId,
-} from "./lib/keybindings";
+} from "../lib/keybindings";
 
 const REBINDABLE_SET = new Set<string>(REBINDABLE_IDS);
 const LEADER_SET = new Set<string>(LEADER_IDS);
@@ -53,7 +53,7 @@ function Chord({ caps, active }: { caps: string[]; active?: boolean }) {
   );
 }
 
-export function KeyboardSettings() {
+export function KeyboardCard() {
   const keybindings = useAppStore((s) => s.keybindings);
   const setKeybinding = useAppStore((s) => s.setKeybinding);
   const resetKeybinding = useAppStore((s) => s.resetKeybinding);
