@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { MODELS, type ModelId } from "@/app/console/lib/models";
 import { Toggle } from "@/shared/ui/Toggle";
+import { SettingsCardHead } from "./SettingsControls";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: React.ReactNode;
@@ -41,9 +42,7 @@ export function GeneralSettings() {
       </p>
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Workspace</h3>
-        </div>
+        <SettingsCardHead title="Workspace" />
         <div className="field">
           <label>Base directory</label>
           <div style={{ display: "flex", gap: 8 }}>
@@ -66,9 +65,7 @@ export function GeneralSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Default model</h3>
-        </div>
+        <SettingsCardHead title="Default model" />
         <div className="field">
           <label>Model new consoles open with</label>
           <select
@@ -87,9 +84,7 @@ export function GeneralSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Sessions & console behavior</h3>
-        </div>
+        <SettingsCardHead title="Sessions & console behavior" />
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <ToggleRow
             on={autoResumeClaude}
@@ -114,9 +109,7 @@ export function GeneralSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Planner security</h3>
-        </div>
+        <SettingsCardHead title="Planner security" />
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <ToggleRow
             on={injectionHardGate}

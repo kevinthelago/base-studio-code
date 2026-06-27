@@ -4,44 +4,7 @@ import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{label}</div>
-        {hint && <div style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{hint}</div>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Select({ value, options, onChange }: {
-  value: number | string;
-  options: { label: string; value: number | string }[];
-  onChange: (v: number | string) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => {
-        const raw = e.target.value;
-        onChange(typeof value === "number" ? Number(raw) : raw);
-      }}
-      style={{
-        fontFamily: "var(--mono)", fontSize: 11.5,
-        background: "var(--bg-elev)", color: "var(--fg)",
-        border: "1px solid var(--border)", borderRadius: 6,
-        padding: "5px 8px", cursor: "pointer",
-      }}
-    >
-      {options.map(o => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
-  );
-}
+import { SettingsRow as Row, SettingsSelect as Select } from "./SettingsControls";
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
