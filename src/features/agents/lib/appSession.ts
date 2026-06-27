@@ -1,9 +1,9 @@
 // Agents — application-role display helpers (#740).
 //
 // Pure label/glyph derivation for the always-present application-role sessions
-// (Project Planner, Blueprint Assistant, Planning Autopilot, …). Split out of
-// AgentsScreen so the labels are React-free + unit-testable. Data-driven: known
-// roles get a tailored icon/label; any future role derives one from its own fields.
+// (Project Planner, Planning Autopilot, …). Split out of AgentsScreen so the labels
+// are React-free + unit-testable. Data-driven: known roles get a tailored icon/label;
+// any future role derives one from its own fields.
 
 import type { AgentProfile } from "./agentProfiles";
 
@@ -11,7 +11,6 @@ import type { AgentProfile } from "./agentProfiles";
 export function appSessionTag(p: AgentProfile): string {
   switch (p.id) {
     case "sys_planner":             return "⌨ planner";
-    case "sys_blueprint_assistant": return "✦ blueprint";
     case "sys_planning_autopilot":  return "◇ autopilot";
     default:                        return `${p.surfaceGlyph ?? "◆"} ${(p.name.split(" ")[0] ?? "role").toLowerCase()}`;
   }
@@ -21,7 +20,6 @@ export function appSessionTag(p: AgentProfile): string {
 export function appSessionOpenLabel(p: AgentProfile): string {
   switch (p.id) {
     case "sys_planner":             return "planner";
-    case "sys_blueprint_assistant": return "blueprints";
     case "sys_planning_autopilot":  return "settings";
     default:                        return (p.surface ?? "surface").toLowerCase();
   }

@@ -375,14 +375,27 @@ export interface BscAgentPerms {
  *  the flow owns `git push` / `gh pr create`, so they're lifted from the role denies when it
  *  permits pushing/PRing — mirroring the Claude role↔flow reconciliation (#304) so an `auto-pr`
  *  bsc-agent worker (github:read) can open its own PR. Everything else the role denies stays
- *  denied. With no flow grant (the default), behavior is unchanged. */
-export function bscAgentPerms(cap: RoleCapability, granted: string[] = []): BscAgentPerms {
+ *  denied. With no flow grant (the default), behavior is unchanged.
+ *
+ *  `cap` may be `null` for a role-less (ad-hoc) bsc-agent console — then only `extraDenyBash`
+ *  applies. `extraDenyBash` is the user's global command denylist (`store.deniedCommands`), the
+ *  parallel to the `...deniedCommands` the Claude path passes to `ensure_session_settings`; bsc-agent
+ *  has no `.claude/settings.json`, so they must ride in here to be enforced. The catastrophic
+ *  base floor (sudo / `rm -rf /` / force-push) is NOT listed here — it's an always-on floor inside
+ *  the bsc-agent runtime ({@link ../../../../crates/bsc-agent BASE_DANGEROUS_BASH}), so it can't be
+ *  dropped by an empty perm doc. */
+export function bscAgentPerms(
+  cap: RoleCapability | null,
+  granted: string[] = [],
+  extraDenyBash: string[] = [],
+): BscAgentPerms {
   // The scoped carve-out (#851) applies here too: a `code: "none"` director WITH commons writeGlobs
   // keeps its write tools (scoped to the commons) rather than having them denied outright.
-  const carveOut = hasScopedWriteCarveOut(cap);
+  const carveOut = cap ? hasScopedWriteCarveOut(cap) : false;
+  const roleDenies = cap ? roleDeniedCommands(cap).filter((d) => !granted.includes(d)) : [];
   return {
-    deny_tools: cap.code === "none" && !carveOut ? ["write_file", "edit_file"] : [],
-    deny_bash: roleDeniedCommands(cap).filter((d) => !granted.includes(d)),
-    write_globs: cap.code === "write" || carveOut ? cap.writeGlobs : [],
+    deny_tools: cap && cap.code === "none" && !carveOut ? ["write_file", "edit_file"] : [],
+    deny_bash: [...new Set([...roleDenies, ...extraDenyBash.map((c) => c.trim()).filter(Boolean)])],
+    write_globs: cap && (cap.code === "write" || carveOut) ? cap.writeGlobs : [],
   };
 }

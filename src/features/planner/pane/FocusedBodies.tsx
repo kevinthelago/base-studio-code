@@ -3,7 +3,7 @@
 // `../bodies/`; this module is the `FocusedPhaseBody` switch that maps a Phase to its body and
 // assembles the shared handler sets once. ProjectPane.tsx is the thin shell that renders it.
 import "./projectPane.css";
-import type { Perm, Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPaneData";
+import type { Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
 import type { Phase } from "../stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
@@ -44,7 +44,7 @@ export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../
    FocusedPhaseBody — maps a Phase to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   phase: Phase;
   data?: ProjectPaneData;
   projectId?: string;
@@ -62,11 +62,8 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
   onView?: (f: ContextFile) => void;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
-  onGenerateProfiles?: () => void;
   onTopology?: (t: Topology) => void;
   onDirectorDrive?: (d: DirectorDrive) => void;
   onToggleMcp?: (id: string) => void;
@@ -76,7 +73,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
 }) {
   // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
-  const fleetHandlers: FleetHandlers = { onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive };
+  const fleetHandlers: FleetHandlers = { onFlow, onModel, onTopology, onDirectorDrive };
   const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
   switch (phase.key) {
     case "source":

@@ -56,6 +56,20 @@ describe("parseFleetFile", () => {
     expect(fleet.streams[1].commands).toBeUndefined();
   });
 
+  it("round-trips a per-stream model (the `claude --model` tier), validating it", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "deep",  repo: "o/r", model: "opus-4.5" },   // valid tier — kept
+        { id: "cheap", repo: "o/r", model: "gpt-4o"   },   // not a known tier — dropped
+        { id: "plain", repo: "o/r" },                       // unset — undefined
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].model).toBe("opus-4.5");
+    expect(fleet.streams[1].model).toBeUndefined();
+    expect(fleet.streams[2].model).toBeUndefined();
+  });
+
   it("accepts depends_on as an alias and coerces a string recommended", () => {
     const raw = JSON.stringify({
       recommended: "2",

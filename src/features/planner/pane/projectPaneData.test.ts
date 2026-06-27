@@ -64,7 +64,7 @@ describe("buildProjectPaneData", () => {
         owns: ["src/auth/**", "src/login/**"],
         issues: ["#12"],
         dependsOn: [],
-        profile: "pf_build",
+        profile: "pf_auto",
         flow: { autonomy: "checkpoint", push: "auto-pr", trigger: "per-issue", gate: "hard" },
       },
     ]);
@@ -84,17 +84,17 @@ describe("buildProjectPaneData", () => {
     expect(a.flow.autonomy).toBe("checkpoint");
     expect(a.flow.gate).toBe("hard");
     // preset name from the assigned profile
-    expect(a.preset).toBe("Build & test");
-    // perm derived from pf_build tiers (read allow, edit allow, write->create allow,
-    // bash->run ask) + push auto-pr -> allow
+    expect(a.preset).toBe("Autonomous (trusted)");
+    // perm derived from pf_auto tiers (read/edit/write->create/bash->run all allow)
+    // + push auto-pr -> allow
     expect(a.perm.read).toBe("allow");
     expect(a.perm.edit).toBe("allow");
     expect(a.perm.create).toBe("allow");
-    expect(a.perm.run).toBe("ask");
+    expect(a.perm.run).toBe("allow");
     expect(a.perm.push).toBe("allow");
   });
 
-  it("a stream keeping its @name and no profile -> Custom preset + push none deny", () => {
+  it("a stream keeping its @name and no profile -> Autonomous default + push none deny", () => {
     const fleet = fleetWith([
       {
         id: "x", name: "@keep", repo: "o/r", owns: [], issues: [], dependsOn: [],
@@ -103,7 +103,8 @@ describe("buildProjectPaneData", () => {
     ]);
     const d = buildProjectPaneData(base({ fleet }));
     expect(d.agents[0].name).toBe("@keep");
-    expect(d.agents[0].preset).toBe("Custom");
+    // No explicit stream.profile → the worker's role default (Autonomous trusted).
+    expect(d.agents[0].preset).toBe("Autonomous (trusted)");
     expect(d.agents[0].perm.push).toBe("deny");
   });
 
@@ -296,28 +297,6 @@ describe("buildProjectPaneData", () => {
     const d = buildProjectPaneData(base({ sections }));
     expect(d.context.map(c => c.name)).toEqual(["goal.md"]);
     expect(d.context.some(c => c.name.startsWith("issues"))).toBe(false);
-  });
-
-  it("stream.perm overrides the profile-derived perm", () => {
-    const fleet = fleetWith([
-      {
-        id: "auth-ui", name: "Auth UI", repo: "acme/web", owns: [], issues: [], dependsOn: [],
-        profile: "pf_build",
-        perm: { read: "deny", edit: "deny", create: "deny", run: "deny", net: "deny", push: "deny", pkg: "deny" },
-      },
-    ]);
-    const d = buildProjectPaneData(base({ fleet }));
-    // pf_build would derive read=allow; the explicit perm wins.
-    expect(d.agents[0].perm.read).toBe("deny");
-    expect(d.agents[0].perm.push).toBe("deny");
-  });
-
-  it("stream.preset overrides the profile-derived preset", () => {
-    const fleet = fleetWith([
-      { id: "x", name: "@x", repo: "o/r", owns: [], issues: [], dependsOn: [], profile: "pf_build", preset: "custom" },
-    ]);
-    const d = buildProjectPaneData(base({ fleet }));
-    expect(d.agents[0].preset).toBe("custom");
   });
 
   it("an explicit pinned set drives context pinned (overriding confirmed default)", () => {

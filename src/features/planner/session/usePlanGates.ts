@@ -23,7 +23,6 @@ import { allSourcesConnected, migrationActive, datamodelSignals } from "../lib/s
 import { destinationDefined, syncDefined } from "../lib/integrationConfig";
 import { unlockedSharedRepos } from "../issues/dependencies";
 import { phasesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
-import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 
 interface PlanGatesDeps {
   sections: Section[];
@@ -31,8 +30,7 @@ interface PlanGatesDeps {
   planSecs: BlueprintStage[];
   ctxRequired: string[];
   publishRepos: string[];
-  planFleet: Record<string, { streams: Parameters<typeof fleetProfilesComplete>[0] }>;
-  agentProfiles: Parameters<typeof fleetProfilesComplete>[1];
+  planFleet: Record<string, { streams: { id: string; repo: string }[] }>;
   planAutomations: Record<string, unknown[]>;
   featureIssues: unknown[];
   effectiveProjectId: string;
@@ -56,7 +54,7 @@ interface PlanGatesDeps {
 
 export function usePlanGates(deps: PlanGatesDeps) {
   const {
-    sections, planSecs, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations,
+    sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
     planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
@@ -73,10 +71,10 @@ export function usePlanGates(deps: PlanGatesDeps) {
       repoCount: publishRepos.length,
       issueCount,
       fleetStreams: streams.length,
-      // Match each stream's ASSIGNED profile id (`st.profile`, e.g. `gen_<stream>`), NOT the
-      // stream id — generateAgentProfile never produces a profile whose id equals the stream id,
-      // so the old `p.id === st.id` check could never pass and the Permissions gate was stuck (#817).
-      fleetProfilesComplete: fleetProfilesComplete(streams, agentProfiles),
+      // Unified role→profile model: every stream auto-gets its role's default profile at launch
+      // (no per-stream generated profile to assign), so "profiles complete" simply means the fleet
+      // has been planned — i.e. there are streams.
+      fleetProfilesComplete: streams.length > 0,
       automationsAck: (planAutomations[effectiveProjectId]?.length ?? 0) > 0,
       skillsAck: false,
       requiresUi,
@@ -95,7 +93,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
       migrationSourceEnabled: migrationActive(sourceCfg),
       datamodelArtifact: datamodelSignals(sourceCfg),
     });
-  }, [sections, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
+  }, [sections, ctxRequired, publishRepos, planFleet, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
   // (drafted/confirmed; pending ones aren't authored yet) must not carry a deliberate "fill this
   // in later" marker (TODO / TBD / FIXME / XXX / TKTK). Scanned ONLY over sections that belong to

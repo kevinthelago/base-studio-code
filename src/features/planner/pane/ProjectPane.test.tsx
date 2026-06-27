@@ -208,21 +208,17 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No fleet yet/)).toBeInTheDocument();
   });
 
-  it("renders the Permissions fleet as agent rows + a generate-profiles action (#817)", () => {
-    const onGenerateProfiles = vi.fn();
+  it("renders the Permissions fleet as agent rows (#817)", () => {
     const permsPhase = { phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
-        initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
+        initial: "A", owns: ["src/auth/**"], issues: [], preset: "Autonomous (trusted)",
         perm: { read: "allow", edit: "allow", create: "allow", run: "ask", net: "deny", push: "ask", pkg: "deny" },
         flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
     ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} onGenerateProfiles={onGenerateProfiles} />);
+    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} />);
     // the stream renders as an agent row (no more "No agents yet" stub)
     expect(screen.getByText("@auth")).toBeInTheDocument();
-    // and the generate-profiles action drives the gate-completing step
-    fireEvent.click(screen.getByText("Generate least-privilege profiles"));
-    expect(onGenerateProfiles).toHaveBeenCalled();
   });
 
   it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {

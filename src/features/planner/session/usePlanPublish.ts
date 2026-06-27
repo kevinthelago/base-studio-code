@@ -97,10 +97,8 @@ export function usePlanPublish(deps: PlanPublishDeps) {
           .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
       ));
-      // Materialize any unassigned / dangling-reference agent profiles before
-      // launch so each worker gets its least-privilege profile (#358), then read
-      // the fleet back with the now-assigned profile ids.
-      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
+      // Each worker auto-runs under its ROLE's default profile at launch (worker → Autonomous,
+      // director → Read-only review) — no per-stream profile to materialize here anymore.
       const fullPlan = useAppStore.getState().planFleet[effectiveProjectId] ?? fleet;
       // Progress-gated relaunch (#1004): read each issue's status from plan.db and DON'T restart a
       // worker whose issues are all complete/verified — it already finished. Prune those streams (their

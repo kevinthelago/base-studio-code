@@ -57,7 +57,6 @@ import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
-import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 import { TERM_THEME, terminalShows } from "./planningTerminal";
 import { GitHubStructureCard } from "./GitHubStructureCard";
 
@@ -85,7 +84,7 @@ export function Planning({ visible }: { visible: boolean }) {
     blueprints, planStageConfig,
     projectBlueprintId, setProjectBlueprintId,
     uiScreens, uiApproved, planAutomations,
-    setPlanAgentStreamPerm, setPlanAgentStreamPreset, setPlanAgentStreamFlow, setPlanAgentStreamModel,
+    setPlanAgentStreamFlow, setPlanAgentStreamModel,
     addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
@@ -243,19 +242,6 @@ export function Planning({ visible }: { visible: boolean }) {
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
 
-  // Materialize least-privilege profiles for every stream (#819/#821). The planner writes profile
-  // ID references in fleet.json (e.g. `"profile": "engine-spine"`) but cannot create the
-  // AgentProfile objects — those live in app state. This reacts to the FLEET DATA itself (not to
-  // fleet.json content changing), so it fires for an already-synced project loaded from
-  // persistence and after HMR — exactly the cases the content-gated sync effect above misses.
-  // Whenever a stream lacks a resolvable profile the gate can't pass, so generate; idempotent, and
-  // once every stream resolves, `fleetProfilesComplete` is true and this is a no-op (no loop).
-  useEffect(() => {
-    const streams = planFleet[effectiveProjectId]?.streams ?? [];
-    if (streams.length > 0 && !fleetProfilesComplete(streams, agentProfiles)) {
-      useAppStore.getState().generateFleetProfiles(effectiveProjectId);
-    }
-  }, [planFleet, agentProfiles, effectiveProjectId]);
 
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
@@ -427,7 +413,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const {
     injectionGateState, phases, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady,
   } = usePlanGates({
-    sections, planSecs, ctxRequired, publishRepos, planFleet, agentProfiles, planAutomations,
+    sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
     planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
@@ -792,8 +778,6 @@ export function Planning({ visible }: { visible: boolean }) {
             <ProjectPane
               data={paneData}
               projectId={effectiveProjectId}
-              onPerm={(id, perm) => setPlanAgentStreamPerm(effectiveProjectId, id, perm)}
-              onPreset={(id, preset, perm) => setPlanAgentStreamPreset(effectiveProjectId, id, preset, perm)}
               onFlow={(id, f) => setPlanAgentStreamFlow(effectiveProjectId, id, {
                 autonomy: f.autonomy as FlowAutonomy,
                 push: (f.push === "auto-PR" ? "auto-pr" : f.push) as FlowPush,
@@ -808,7 +792,6 @@ export function Planning({ visible }: { visible: boolean }) {
               onDeployChange={(next) => setPlanDeployConfig(effectiveProjectId, next)}
               onTopology={(t) => setPlanFleetTopology(effectiveProjectId, t)}
               onDirectorDrive={(d) => setPlanFleetDirectorDrive(effectiveProjectId, d)}
-              onGenerateProfiles={() => useAppStore.getState().generateFleetProfiles(effectiveProjectId)}
               onToggleMcp={onToggleMcp}
               onBuildMcp={onBuildMcp}
               onAddMcp={onAddMcp}

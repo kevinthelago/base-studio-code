@@ -1,7 +1,7 @@
 // The focused Permissions stage (#817, split from FocusedBodies.tsx #1757): the fleet's streams as
-// least-privilege agent rows (posture bar + per-stream editor), plus the coordination topology +
-// director-drive controls and the "generate profiles" action that materializes the profiles the
-// stage's `profilesComplete` gate requires.
+// agent rows (the role's posture shown read-only + the per-stream model/flow editor), plus the
+// coordination topology + director-drive controls. Every stream auto-runs under its ROLE's profile
+// (worker → Autonomous, director → Read-only review) — no per-stream profile generation.
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { AgentsA } from "@/features/planner/pane/agentEditor";
 import { type Topology } from "@/features/planner/relationship/relationshipGraph";
@@ -23,7 +23,7 @@ const DRIVE_HINTS: Record<DirectorDrive, string> = {
   off:       "the director is never driven (a static session)",
 };
 
-export function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel, onGenerateProfiles, onTopology, onDirectorDrive, focusedStream, onSelectStream }: FleetHandlers & {
+export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDirectorDrive, focusedStream, onSelectStream }: FleetHandlers & {
   data?: ProjectPaneData;
   /** #1392 streams-link: the graph-focused stream → expand its editor; report row open/close back. */
   focusedStream?: string;
@@ -97,26 +97,11 @@ export function FocusedPermissionsBody({ data, onPerm, onPreset, onFlow, onModel
           </div>
         )}
       </div>
-      {onGenerateProfiles && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-          padding: "9px 11px", marginBottom: 8, borderRadius: 8,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-        }}>
-          <span style={{ flex: 1, minWidth: 160, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)", lineHeight: 1.5 }}>
-            Each stream runs under a <strong style={{ color: "var(--fg)" }}>least-privilege profile</strong> —
-            generate them, then review the posture per stream below.
-          </span>
-          <button className="mini accent" onClick={onGenerateProfiles} style={{ whiteSpace: "nowrap" }}>
-            Generate least-privilege profiles
-          </button>
-        </div>
-      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0 9px" }}>
         <span style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--fg-dim)" }}>permissions</span>
-        <span style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>least-privilege · per stream</span>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>role-assigned · per stream</span>
       </div>
-      <AgentsA agents={agents} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
+      <AgentsA agents={agents} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
     </div>
   );
 }

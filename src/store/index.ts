@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
+import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
@@ -183,6 +184,11 @@ export const useAppStore = create<AppStore>()(
         // imported blueprints are left untouched.
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
+        }
+        // Same idea for permission profiles: refresh the built-ins from the role JSON, drop retired
+        // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
+        if (state?.agentProfiles) {
+          state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
         }
         // Hydrate user blueprints from their on-disk dir (#blueprints): union them in (so one that
         // survived a store reset or a fresh download appears), and migrate any persisted-but-not-yet-

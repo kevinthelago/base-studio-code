@@ -2,7 +2,7 @@
 // These are imported by BOTH the per-body components AND the FocusedPhaseBody dispatcher, so they
 // live in their own React-free module to avoid a dispatcher↔body import cycle. FocusedBodies.tsx
 // re-exports them for back-compat (ProjectPane imports `AuthoringWiring` from there).
-import type { Perm, Flow, McpServer, ProjectPaneData } from "@/features/planner/pane/projectPaneData";
+import type { Flow, McpServer, ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import type { ModelId } from "@/app/console/lib/models";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
@@ -11,15 +11,12 @@ import type { McpLibraryItem } from "@/features/planner/blueprints/blueprintMcp"
 
 export type SyncState = "idle" | "running" | "done" | "error";
 
-/** The least-privilege fleet/permissions handler set (#1640). Shared by the Permissions body and
- *  the merged Streams body that embeds it, and assembled once by the dispatcher so each case spreads
- *  it instead of re-threading the seven handlers by name. */
+/** The fleet/permissions handler set (#1640). Shared by the Permissions body and the merged Streams
+ *  body that embeds it, and assembled once by the dispatcher so each case spreads it instead of
+ *  re-threading the handlers by name. Per-stream model + flow only — the role decides the profile. */
 export interface FleetHandlers {
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
-  onGenerateProfiles?: () => void;
   /** Set the project's coordination topology (#…). */
   onTopology?: (t: Topology) => void;
   /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */

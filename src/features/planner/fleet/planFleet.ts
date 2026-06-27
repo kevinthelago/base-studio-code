@@ -9,7 +9,7 @@
 
 import type { AgentFlow } from "./agentFlow";
 import { flowOrUndefined } from "./agentFlow";
-import type { ModelId } from "@/app/console/lib/models";
+import { MODEL_IDS, type ModelId } from "@/app/console/lib/models";
 import { type DirectorDrive, normalizeDirectorDrive, DEFAULT_DIRECTOR_DRIVE } from "./directorDrive";
 import { type IntegrationStrategy, normalizeStrategy } from "../lib/integrationStrategy";
 import {
@@ -111,12 +111,6 @@ export interface AgentStream {
    *  login. Unset ⇒ the publishing account (viewer). The `stream:<id>` label remains the
    *  agent-ownership marker; this is the first-class GitHub assignee. */
   assignee?: string;
-  /** Per-capability permission posture chosen in the project pane's agent editor.
-   *  When present it overrides the profile-derived posture in the pane. */
-  perm?: Record<string, "allow" | "ask" | "deny">;
-  /** Permission preset name chosen in the pane (e.g. "Build"), or "custom" when a
-   *  capability was hand-tuned. When present it overrides the profile-derived preset. */
-  preset?: string;
   /** MCP servers (catalog names) the planner assigned to THIS worker (#1054). At fleet launch
    *  the worker gets these (case-insensitive) on top of any global servers; the planner + director
    *  always see every installed server. Unset/empty ⇒ the worker gets only global servers. */
@@ -221,9 +215,12 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
       flow,
-      perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))
-        ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
-      preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
+      // Per-agent model (#…) — the tier this stream's session launches under (`claude --model`).
+      // Round-trips through plan.db (the planner / agent editor / `bsc-plan fleet set` may set it);
+      // validated against the known tiers so a stray value falls back to the global default rather
+      // than being passed verbatim to the CLI. Without this parse the selection is dropped on reload.
+      model: (typeof so.model === "string" && (MODEL_IDS as readonly string[]).includes(so.model.trim()))
+        ? (so.model.trim() as ModelId) : undefined,
       strategy: normalizeStrategy(so.strategy),
       assignee: typeof so.assignee === "string" && so.assignee.trim() ? so.assignee.trim() : undefined,
     });

@@ -46,7 +46,7 @@ describe("toRow", () => {
 
 describe("decideAudit", () => {
   it("allows Bash by default, blocks it when the role gate denies the command", () => {
-    const gate = gateOf("pf_build");
+    const gate = gateOf("pf_auto");
     expect(decideAudit(rec("Bash", "git status"), gate)).toBe("allow");
     const planner = roleCapability("planner"); // git read-only
     expect(decideAudit(rec("Bash", "git push"), gate, planner)).toBe("block");
@@ -54,9 +54,9 @@ describe("decideAudit", () => {
   });
 
   it("allows an edit inside the profile's path scope, blocks a denied path", () => {
-    const gate = gateOf("pf_build"); // allow src/**, tests/**; deny **/.env, .git/**
+    const gate = gateOf("pf_auto"); // allow **/*; deny **/.env, **/secrets/**
     expect(decideAudit(rec("Edit", "src/app.ts"), gate)).toBe("allow");
-    expect(decideAudit(rec("Edit", ".git/config"), gate)).toBe("block");
+    expect(decideAudit(rec("Edit", "config/.env"), gate)).toBe("block");
   });
 
   it("blocks a tool the profile denies outright (web on sandbox)", () => {

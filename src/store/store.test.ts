@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, TRIAGE_PROMPT } from "./";
-import { fleetProfilesComplete } from "@/shared/lib/session/profileGen";
 import type { ViewKey } from "@/app/console/panes/ViewTabs";
 import type { QueuedPane } from "@/app/console/lib/focusQueue";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
@@ -1155,10 +1154,11 @@ describe("agent fleet store", () => {
     expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
   });
 
-  it("fleetStartProject materializes a stream's dangling profile so perms route (#1580)", () => {
-    // A fleet revised after publish (or set via bsc-plan) can reference a profile id that was
-    // never created — the empty-agentProfiles STEM condition. Launch must materialize it.
-    const danglingFleet: FleetPlan = {
+  it("fleetStartProject binds each worker pane to its role's default profile, or its pinned id (#1828)", () => {
+    // Unified role→profile model: NO per-stream materialization. A stream may pin an explicit
+    // profile id (used verbatim); an unpinned stream binds to its ROLE's default profile
+    // (worker → Autonomous, pf_auto). agentProfiles is never mutated at launch.
+    const fleet2: FleetPlan = {
       recommended: 1,
       reasoning: "r",
       director: { enabled: false },
@@ -1168,19 +1168,15 @@ describe("agent fleet store", () => {
       ],
     };
     useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", agentProfiles: [] });
-    useAppStore.getState().fleetStartProject("MZ", danglingFleet, "mz-key");
+    useAppStore.getState().fleetStartProject("MZ", fleet2, "mz-key");
     const st = useAppStore.getState();
 
-    // The dangling id is materialized, carrying the stream's granted commands (#1572, sorted+deduped).
-    const uiProf = st.agentProfiles.find((p) => p.id === "ui-modes-dev");
-    expect(uiProf).toBeDefined();
-    expect(uiProf!.commands).toEqual(["tauri", "vite"]);
-    // The worker pane binds to the now-existing profile, so TerminalView resolves it at launch.
+    // A pinned profile id binds verbatim.
     expect(st.paneProfiles[fleetPaneId("mz-key", "ui-modes")]).toBe("ui-modes-dev");
-
-    // A stream with no assigned profile gets a generated one (gen_<id>), also bound.
-    expect(st.agentProfiles.find((p) => p.id === "gen_data")).toBeDefined();
-    expect(st.paneProfiles[fleetPaneId("mz-key", "data")]).toBe("gen_data");
+    // An unpinned worker stream binds to the worker role's default profile.
+    expect(st.paneProfiles[fleetPaneId("mz-key", "data")]).toBe("pf_auto");
+    // No per-stream generation: agentProfiles is untouched by launch.
+    expect(st.agentProfiles).toEqual([]);
   });
 
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
@@ -1271,28 +1267,6 @@ describe("agent fleet store", () => {
     const st = useAppStore.getState();
     // director disabled ⇒ pane 0 is the worker "w".
     expect(st.paneRoleGlobs[fleetPaneId("k", "w")]).toEqual(["src/x/**", "src/y.ts"]);
-  });
-
-  it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
-    const f: FleetPlan = {
-      recommended: 2, reasoning: "", director: { enabled: false },
-      streams: [
-        { id: "a", name: "A", repo: "o/r", owns: ["src/a/**"], issues: [], dependsOn: [] },
-        { id: "b", name: "B", repo: "o/r", owns: ["src/b/**"], issues: [], dependsOn: [], profile: "b-dev" },
-      ],
-    };
-    useAppStore.setState({ planFleet: { gp: f } });
-    useAppStore.getState().generateFleetProfiles("gp");
-    const st = useAppStore.getState();
-    const streams = st.planFleet["gp"].streams;
-    // unassigned -> generated id + a profile whose write paths are its owns
-    expect(streams[0].profile).toBe("gen_a");
-    expect(st.agentProfiles.find((p) => p.id === "gen_a")!.paths.allow).toEqual(["src/a/**"]);
-    // dangling reference -> materialized, keeping the planner-assigned id stable
-    expect(streams[1].profile).toBe("b-dev");
-    expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
-    // and the permissions gate now passes: every stream has an assigned, existing profile (#696)
-    expect(fleetProfilesComplete(streams, st.agentProfiles)).toBe(true);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
