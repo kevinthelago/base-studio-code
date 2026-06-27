@@ -4,7 +4,7 @@ The dead blueprint stage-pipeline mechanism + its runtime (handler registry, gat
 
 Deleted from GitHub; full content below. Machine-readable mirror: `pipelines.jsonl`.
 
-**Issues (7):** #514, #528, #529, #532, #533, #534, #626
+**Issues (8):** #514, #528, #529, #532, #533, #534, #626, #717
 
 ---
 
@@ -173,3 +173,32 @@ First slice of the Refactor & Cleanup blueprint: a Tauri scan command that runs 
 
 ---
 
+
+## #717 — Extensions: sandboxed code-bearing pipelines (esbuild-wasm iframe / web worker)
+
+- **state:** CLOSED (COMPLETED) · **labels:** feature, scope:core
+- **created:** 2026-06-11T15:20:35Z · **closed:** 2026-06-11T17:01:34Z
+
+## Acceptance criteria
+- [ ] A gist holds a manifest + a pre-bundled single-file JS/WASM; capability vocabulary (read-signals / write-files / render / network) + install consent
+- [ ] Visual/codegen pipelines run in the render-preview esbuild-wasm + sandboxed-iframe path; non-visual code runs in a Web Worker sandbox
+- [ ] Code is never run unsandboxed; capabilities are declared + user-approved; integrity-pinned
+- [ ] Heavy/dep-laden pipelines point to a tier-3 (MCP/webhook) target instead of bundling
+- [ ] Tests: capability gating + sandbox isolation
+
+## Owned paths
+- `src/lib/extensions/pipelines/**`
+
+## Depends on
+- **EX-gist** — Extensions: GitHub Gist publish/install + integrity pin
+
+---
+stream: extensions
+
+### Comments
+
+**kevinthelago** (2026-06-11T17:01:33Z):
+
+Work already landed on develop (src/lib/extensions/sandbox.ts present on develop). Closing as done.
+
+---
