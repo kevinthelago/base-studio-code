@@ -11,6 +11,8 @@
 //! Commands:
 //!   bsc-skill list                          # every skill, JSON
 //!   bsc-skill add                           # upsert from JSON on stdin (one object or array); prints id(s)
+//!   bsc-skill get <id>                      # one skill, JSON (or null)
+//!   bsc-skill remove <id>                   # delete one skill by id
 //!   bsc-skill group add                     # upsert a group from JSON on stdin; prints id
 //!   bsc-skill group list                    # every group, JSON
 //!   bsc-skill group get <id>                # one group, JSON
@@ -87,6 +89,22 @@ fn run() -> Result<(), String> {
             let s = store()?;
             let ids = cmd_add(&s, args.group.as_deref())?;
             println!("{}", serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(1).ok_or("usage: bsc-skill get <id>")?;
+            let s = store()?;
+            match s.get(id).map_err(|e| e.to_string())? {
+                Some(skill) => println!("{}", serde_json::to_string_pretty(&skill).unwrap_or_default()),
+                None => println!("null"),
+            }
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(1).ok_or("usage: bsc-skill remove <id>")?;
+            let s = store()?;
+            s.remove(id).map_err(|e| e.to_string())?;
+            println!("{}", serde_json::to_string(id).unwrap_or_default());
             Ok(())
         }
         "resolve" => {
@@ -211,6 +229,8 @@ SKILLS (the global library):
   list                      print every skill (JSON)
   add [--group <id>]        upsert from a skill object/array JSON on stdin; prints id(s).
                             --group also adds each skill to that group (created if missing).
+  get <id>                  print one skill (JSON, or null)
+  remove <id>               delete one skill by id (no-op if absent)
 
 GROUPS (task groups — named, reusable bundles of skills, toggled as one):
   group add                 upsert a group from a SkillGroup JSON on stdin; prints the id
@@ -233,6 +253,23 @@ mod tests {
 
     fn mem_store() -> Store {
         Store::open_in_memory().expect("open in-memory skills.db")
+    }
+
+    #[test]
+    fn skill_round_trip_add_get_remove() {
+        let s = mem_store();
+        // Absent id → get is None (the CLI prints `null`).
+        assert!(s.get("sk1").unwrap().is_none());
+        // Add, then get finds it.
+        s.upsert(&Skill { id: "sk1".into(), name: "First".into(), ..Default::default() }).unwrap();
+        let got = s.get("sk1").unwrap().expect("skill was added");
+        assert_eq!(got.id, "sk1");
+        assert_eq!(got.name, "First");
+        // Remove, then get is None again.
+        s.remove("sk1").unwrap();
+        assert!(s.get("sk1").unwrap().is_none(), "removed skill is gone");
+        // Removing an absent id is a no-op (no error), like `group remove`.
+        s.remove("sk1").unwrap();
     }
 
     #[test]
