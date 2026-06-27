@@ -52,19 +52,6 @@ export interface ProjectsState {
   setProjectStartupPromptDoc: (projectId: string, doc: string | null) => void;
   repoStartupPromptDoc: Record<string, string | null>;
   setRepoStartupPromptDoc: (projectId: string, repo: string, doc: string | null) => void;
-  // Reference-context assignment (persisted) — the SECOND assignment field from
-  // lib/assignments.ts, distinct from the startup prompt above. These are the
-  // documents injected as background context for a session. Unlike the startup
-  // prompt (one doc, override cascade), reference context ACCUMULATES across the
-  // default → project → repo levels. Stored as plain add-lists of relpaths; the
-  // launch resolver (#326) lifts them into the assignments-module cascade.
-  refContextDefault: string[];
-  refContextProject: Record<string, string[]>;            // keyed by projectId
-  refContextRepo: Record<string, string[]>;               // keyed by repoPromptKey
-  /** Toggle a document into/out of the reference-context set at one scope.
-   *  level "default" ignores the key; "project" keys by projectId; "repo" by
-   *  repoPromptKey(projectId, repo). */
-  toggleReferenceContext: (level: "default" | "project" | "repo", key: string | null, doc: string) => void;
   // Per-repo TRIAGE starting script (persisted). relpath of a unified-store doc,
   // or null. Used by triageStartProject for that repo's triage pane; falls back
   // to the verbatim TRIAGE_PROMPT when unset. Keyed by repoPromptKey.
