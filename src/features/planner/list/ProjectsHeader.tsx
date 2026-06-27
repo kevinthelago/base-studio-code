@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { BackButton } from "@/shared/ui/BackButton";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
@@ -228,14 +229,14 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
       <div style={{ padding: "14px 24px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <button
-              onClick={closeGithubBoard}
+            <BackButton
+              variant="text" label="portfolio" onClick={closeGithubBoard} aria-label="Back to portfolio"
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
-            >← portfolio</button>
+            />
             <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <span className="tag">{project.repo}</span>}

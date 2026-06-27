@@ -1,4 +1,5 @@
 import { Dialog } from "@/shared/ui/Dialog";
+import { BackButton } from "@/shared/ui/BackButton";
 
 /**
  * Shown when a project is opened whose blueprint / planner-template version differs from the one
@@ -24,7 +25,7 @@ export function BlueprintUpdateModal({ busy, onGoBack, onKeep, onRestart, onDism
       onDismiss={onDismiss}
       actions={
         <>
-          <button className="btn ghost" onClick={onGoBack}>← go back</button>
+          <BackButton variant="text" label="go back" className="btn ghost" onClick={onGoBack} aria-label="Go back" />
           <button className="btn" disabled={busy} onClick={onKeep}>keep previous plan files</button>
           <button
             className="btn"
