@@ -87,8 +87,11 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         } catch { /* plan.db not created until the planner adds a phase — ignore */ }
 
         // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
-        // reflect it from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
-        // setPlanFleet) reads it unchanged. Only override on a non-null fleet so a legacy fleet.json isn't wiped.
+        // plan.db is the SOLE fleet source (#1805): there is no fleet.json reader anymore. Reflect the
+        // fleet from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
+        // setPlanFleet) reads it unchanged. (plan_get_fleet also folds in + deletes any stray legacy
+        // fleet.json before returning, so the file can never be read here.) Guard on a non-null fleet so
+        // an empty DB doesn't churn the section.
         try {
           const dbFleet = await invoke<unknown | null>("plan_get_fleet", { projectKey: effectiveProjectId });
           if (dbFleet) {
