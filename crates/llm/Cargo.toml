@@ -11,3 +11,7 @@ name = "llm"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[dev-dependencies]
+# Async runtime for the live-socket mock-HTTP integration tests (offline; #1744).
+tokio = { version = "1", features = ["rt", "macros"] }
