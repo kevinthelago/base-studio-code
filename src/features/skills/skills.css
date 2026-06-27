@@ -144,9 +144,3 @@
 .skills-screen .hrow { transition: background .1s; }
 .skills-screen .hrow:hover { background: var(--bg-elev2) !important; }
 
-/* danger source/kind tag variant (not in global tokens) */
-.skills-screen .tag.danger {
-  color: var(--danger);
-  border-color: color-mix(in oklch, var(--danger), transparent 70%);
-  background: color-mix(in oklch, var(--danger), transparent 90%);
-}
