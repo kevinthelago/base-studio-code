@@ -261,18 +261,45 @@ files and rarely need a human.
      "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
      "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
      "streams": [
-       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md"},
-       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"commands":["cargo"],"prompt":"prompts/api-client-kickoff.md"}
+       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md","flow":{"autonomy":"continuous","push":"auto-pr","trigger":"per-issue","gate":"hard"}},
+       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"commands":["cargo"],"prompt":"prompts/api-client-kickoff.md","flow":{"autonomy":"checkpoint","push":"push-confirm","trigger":"per-stage","gate":"hard"}}
      ]
    }
    ```
-   Each stream's **`"commands"`** is the shell toolchain its worker auto-runs without a
-   prompt (see "Allow shell commands"). A stream may also carry **`"profile"`** — an
-   AgentProfile id that scopes its session's auto-approved commands, per-tool permissions,
-   and write-paths (least privilege, layered on top of the role). Either reuse an existing
-   profile or, in the fleet card, click **Generate least-privilege profiles** to derive one
-   per agent from its role + `owns` + its `commands`; set each stream's `"profile"` field
-   to assign one.
+   Each stream may carry a **`"flow"`** (#297) — its per-agent execution flow — as a
+   NESTED object: `"flow":{"autonomy":…,"push":…,"trigger":…,"gate":…}` (this is the
+   CANONICAL shape; it matches the stored model and round-trips through `bsc-plan fleet
+   get`). `autonomy` = `continuous`|`checkpoint`|`confirm`; `push` =
+   `auto-pr`|`self-merge`|`push-confirm`|`commit-only`|`none`; `trigger` =
+   `per-issue`|`per-stage`|`on-green`; `gate` = `soft`|`hard`. Omit `flow` (or any of its
+   fields) to take the default (`continuous` + `auto-pr` + `per-issue` + `hard`). The
+   flat attribute form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top
+   level, as the `<agent_assign>` tag emits) is ALSO accepted on ingest for back-compat,
+   but emit the nested `"flow"` object here.
+   **Generating each stream's permission set is a REQUIRED part of defining the stream —
+   not a later step, not a manual button.** As you author each stream, DERIVE its
+   least-privilege permissions from the project stack + the stream's `owns`/role and write
+   them onto the stream right here, in the same `bsc-plan fleet set` call:
+   - Each stream's **`"commands"`** is the shell toolchain its worker auto-runs without a
+     prompt — generate it from the stack + `owns` (a Rust worker → `["cargo"]`; a web worker
+     → `["npm","node","vite","tsc"]`; a Python worker → `["python","pytest"]`; add any
+     project-specific tool the lane runs unattended, e.g. `wasm-pack`). See "Grant each
+     stream its shell commands". At launch each entry becomes an explicit `Bash(<cmd> *)`
+     auto-approve rule.
+     - **Structural caveat:** a `Bash(<cmd> *)` rule matches the WHOLE command string, so a
+       piped/compound command (`cargo metadata | python -c …`) or a special-char invocation
+       still falls through to a prompt. So (a) list the REAL toolchain binaries each stream
+       runs, and (b) write kickoffs to prefer simple, single-binary invocations where
+       practical — a pipeline may still prompt even though its binaries are allowed.
+   - Each stream may also carry **`"profile"`** — an AgentProfile id that scopes its
+     session's auto-approved commands, per-tool permissions, and write-paths (least
+     privilege, layered on top of the role). Generate one per stream from its role + `owns`
+     + `commands` (the app can also derive a least-privilege profile from exactly those
+     inputs — role + `owns` + `commands`), or reuse an existing profile; set each stream's
+     `"profile"` field to assign it.
+   This is done AT PLAN TIME via `bsc-plan fleet set` — never deferred to launch or to a
+   "Generate profiles" click — so every worker boots already allowed to run exactly its own
+   toolchain.
    A stream may also carry **`"assignee"`** — a GitHub login the stream's issues are
    assigned to at publish (#847). A worker is an agent session, not a GitHub user, so this
    maps the stream to a human/collaborator login; omit it and the issues default to the
@@ -701,18 +728,31 @@ The app auto-assigns it so that repo's future sessions launch with it:
 <startup_script repo="owner/repo" mode="triage" path="prompts/web-triage.md" />
 ```
 
-**Grant each stream its shell commands** so its worker runs them without a permission
-prompt — the stack's build, test, run, and package-manager binaries (e.g. `cargo`,
-`npm`, `pnpm`, `pytest`, `docker`) plus any project-specific tool the stream runs
-unattended (`wasm-pack`, a repo script, …). Set them on the stream's **`commands`**
-array in the fleet plan (`bsc-plan fleet set` — see "Plan the agent fleet"); they become
-that worker's auto-approved `Bash(<cmd> *)` rules at launch. A safe baseline is ALWAYS
-allowed — read-only inspection (`ls`/`cat`/`grep`/`find`/`cd`/…) for every agent, and the
-common build toolchains for doer (worker) streams — so `commands` only needs the
-project-specific extras. `gh`/`git`/`bsc-plan` are always allowed; don't list them.
+**Grant each stream its shell commands** — YOU GENERATE this allowlist at plan time, as
+part of defining the stream (see "Plan the agent fleet" step 6); it is not a runtime toggle
+and not a manual button. Derive each stream's toolchain from the project stack + the
+stream's `owns`/role — the build, test, run, and package-manager binaries (a Rust worker →
+`["cargo"]`; a web worker → `["npm","node","vite","tsc"]`; a Python worker →
+`["python","pytest"]`; plus any project-specific tool the stream runs unattended:
+`wasm-pack`, `docker`, a repo script, …) — and set them on the stream's **`commands`** array
+in the fleet plan (`bsc-plan fleet set`). They become that worker's auto-approved
+`Bash(<cmd> *)` rules at launch, so it runs its own toolchain without a permission prompt. A
+safe baseline is ALWAYS allowed — read-only inspection (`ls`/`cat`/`grep`/`find`/`cd`/…) for
+every agent, and the common build toolchains for doer (worker) streams — so `commands` only
+needs the project-specific extras. `gh`/`git`/`bsc-plan` are always allowed; don't list them.
 **Required, not optional**, for anything outside that baseline: without it the worker
-blocks on a permission prompt for that command. (There is no `commands.json` file or
-`<allow_command>` tag — those were retired; the stream's `commands` is the only channel.)
+blocks on a permission prompt for that command.
+
+> **Structural caveat — pipelines may still prompt.** An auto-approve rule is
+> `Bash(<cmd> *)` and matches against the WHOLE command string, so a piped/compound command
+> (`cargo metadata | python -c …`) or a command with special chars does NOT match a
+> single-binary rule and falls through to a prompt. So (a) list the REAL toolchain commands
+> each stream runs on its `commands` array, and (b) write each kickoff to prefer simple,
+> single-binary invocations where practical — note that a pipeline can still prompt even
+> when every binary in it is allowed.
+
+(There is no `commands.json` file or `<allow_command>` tag — those were retired; the
+stream's `commands` is the only channel.)
 
 **Declare the agent fleet** (the parallel-execution plan). `bsc-plan fleet set` (see
 "Plan the agent fleet") is the authoritative channel; these tags are the fast path that

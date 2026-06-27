@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseFleetFile } from "./planFleet";
+import { DEFAULT_FLOW } from "./agentFlow";
 
 describe("parseFleetFile", () => {
   it("parses a full fleet, defaulting list fields", () => {
@@ -87,6 +88,49 @@ describe("parseFleetFile", () => {
     const fleet = parseFleetFile(raw)!;
     expect(fleet.strategy).toBeUndefined();
     expect(fleet.streams[0].strategy).toBeUndefined();
+  });
+
+  it("reads a stream's NESTED flow object (#297, canonical shape)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "a", repo: "o/r", flow: { autonomy: "checkpoint", push: "push-confirm", trigger: "per-stage", gate: "soft" } },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].flow).toEqual({
+      autonomy: "checkpoint", push: "push-confirm", trigger: "per-stage", gate: "soft",
+    });
+  });
+
+  it("normalizes FLAT autonomy/push/trigger/gate to the same nested flow (#1804)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "a", repo: "o/r", autonomy: "checkpoint", push: "push-confirm", trigger: "per-stage", gate: "soft" },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].flow).toEqual({
+      autonomy: "checkpoint", push: "push-confirm", trigger: "per-stage", gate: "soft",
+    });
+  });
+
+  it("prefers a named nested flow over flat fields (#1804)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "a", repo: "o/r", autonomy: "continuous", flow: { autonomy: "confirm", push: "none" } },
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    // nested wins entirely; its unset fields fall back to DEFAULT_FLOW, NOT to the flat top-level values.
+    expect(fleet.streams[0].flow).toEqual({
+      autonomy: "confirm", push: "none", trigger: DEFAULT_FLOW.trigger, gate: DEFAULT_FLOW.gate,
+    });
+  });
+
+  it("leaves flow undefined when a stream specifies neither nested nor flat flow (#1804 → DEFAULT_FLOW at launch)", () => {
+    const raw = JSON.stringify({ streams: [{ id: "a", repo: "o/r" }] });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].flow).toBeUndefined();
   });
 
   it("returns null for blank or malformed input", () => {

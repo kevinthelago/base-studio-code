@@ -1,6 +1,6 @@
 // The parallel-execution (fleet) plan — the agent streams, director, topology, and
-// relationship graph a project's `fleet.json` describes, plus the parser that turns
-// the planner-written JSON into a typed {@link FleetPlan}.
+// relationship graph a project's fleet describes, plus the parser that turns the
+// planner-written JSON (stored in plan.db, #1805) into a typed {@link FleetPlan}.
 //
 // Pure (no React / xterm / Tauri) so it can be unit-tested in isolation and shared
 // between the planner UI, the store, and the fleet helpers. Split out of the former
@@ -70,9 +70,9 @@ function parseEdges(raw: unknown): AgentRelationship[] {
   return out;
 }
 
-/** The agent-fleet config file (JSON: `fleet.json`). Surfaced by the poll like
- *  `commands.json` — not a rendered plan topic; parsed into the fleet store and
- *  shown in its own Fleet card. See {@link parseFleetFile}. */
+/** The fleet section key. The fleet plan is DB-owned (plan.db, #1018/#1805) — surfaced by the poll
+ *  under this stem (NOT a `fleet.json` file), not a rendered plan topic; parsed into the fleet store
+ *  and shown in its own Fleet card. See {@link parseFleetFile}. */
 export const FLEET_KEY = "fleet";
 
 /**
@@ -131,7 +131,7 @@ export interface AgentStream {
 /** Optional async-integrator session that coordinates the fleet from the project root. */
 export interface FleetDirector { enabled: boolean; role?: string; drive?: DirectorDrive; }
 
-/** The full parallel-execution plan for a project (persisted as `fleet.json`). */
+/** The full parallel-execution plan for a project (persisted in plan.db, #1805). */
 export interface FleetPlan {
   /** Optimal number of worker sessions to run concurrently. */
   recommended: number;
@@ -173,7 +173,7 @@ function coerceNum(v: unknown): number {
 }
 
 /**
- * Parse the `fleet.json` config the planner writes (surfaced by the topic poll
+ * Parse the FleetPlan JSON (the planner writes it to plan.db, #1805; surfaced by the poll
  * as stem {@link FLEET_KEY}) into a {@link FleetPlan}. Tolerant of partial/malformed
  * input: returns `null` only when the text is blank or not a JSON object; otherwise
  * fills sensible defaults. Streams missing `id` or `repo` are dropped; `dependsOn`
@@ -198,6 +198,17 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     // MCP servers (catalog names) the planner assigned to this worker (#1054); undefined when none
     // so the field round-trips cleanly. Carried through to fleetStartProject's per-worker resolution.
     const mcp = toStringArray(so.mcp);
+    // Per-agent flow (#297) arrives in EITHER shape (#1804): NESTED as `so.flow`
+    // ({autonomy,push,trigger,gate} — the canonical `bsc-plan fleet set` / fleet.json
+    // form, matching the store model) OR FLAT as top-level `so.autonomy`/`so.push`/
+    // `so.trigger`/`so.gate` (what the `<agent_assign>` tag attrs and legacy flat
+    // fleet.json emit). Prefer a named nested object; else assemble from the flat
+    // fields; else leave undefined so genuinely-unset streams still get DEFAULT_FLOW
+    // at launch (we must NOT silently materialize a flow here).
+    const nestedFlow = so.flow && typeof so.flow === "object" && !Array.isArray(so.flow)
+      ? (so.flow as Record<string, unknown>) : null;
+    const flow = flowOrUndefined(nestedFlow)
+      ?? flowOrUndefined({ autonomy: so.autonomy, push: so.push, trigger: so.trigger, gate: so.gate });
     streams.push({
       id,
       name: typeof so.name === "string" && so.name.trim() ? so.name.trim() : id,
@@ -209,7 +220,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       prompt,
       mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
-      flow: flowOrUndefined(so.flow && typeof so.flow === "object" && !Array.isArray(so.flow) ? so.flow as Record<string, unknown> : null),
+      flow,
       perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))
         ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
       preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
