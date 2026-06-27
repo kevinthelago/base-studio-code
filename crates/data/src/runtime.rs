@@ -1,7 +1,7 @@
 //! Runtime (planner-authored) REST connector presets (#1235).
 //!
 //! A built-in [`VendorPreset`](crate::presets::VendorPreset) is compiled in; a **runtime** preset
-//! is the same shape authored at runtime — by the planner via `bsc-plan integration add` — and
+//! is the same shape authored at runtime — by the planner via `bsc-data connector add` — and
 //! loaded from the connectors store (`~/.base-studio-code/connectors.json`). It lets a source with
 //! no packaged connector become a **native** integration: the scan builds the audited generic
 //! [`RestConnector`] from it, identical to a built-in.

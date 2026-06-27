@@ -19,8 +19,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
 rusqlite = { version = "0.40", features = ["bundled"] }
-# Runtime connector presets store (#1235): `bsc-plan integration` reads/writes the same
-# RuntimePreset shape the scan command consumes. `default-features = false` keeps the heavy
+# Runtime connector presets store (#1235): the deprecated `bsc-plan integration` verb (#1721) still
+# reads/writes the same RuntimePreset shape `bsc-data connector` now owns. `default-features = false` keeps the heavy
 # DuckDB store out of the CLI — the preset/connector logic compiles without it.
 bsc-data = { path = "../data", default-features = false }
 # Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the stdin/print
