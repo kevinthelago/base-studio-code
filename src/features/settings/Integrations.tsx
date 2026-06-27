@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "./General";
+import { Toggle } from "@/shared/ui/Toggle";
 import type { LlmProvider } from "@/shared/lib/core/llmConfig";
 
 const LLM_PROVIDERS: [LlmProvider, string][] = [
@@ -193,19 +194,7 @@ export function IntegrationsSettings() {
                   color: on ? "var(--accent)" : "var(--fg-muted)",
                 }}>{n}</span>
                 <span style={{ flex: 1 }} />
-                <span style={{
-                  width: 24, height: 14, borderRadius: 99,
-                  background: on ? "var(--accent)" : "var(--bg-elev2)",
-                  border: "1px solid " + (on ? "transparent" : "var(--border)"),
-                  position: "relative",
-                }}>
-                  <span style={{
-                    position: "absolute", top: 1,
-                    ...(on ? { right: 1 } : { left: 1 }),
-                    width: 10, height: 10, borderRadius: "50%",
-                    background: on ? "#1a120a" : "var(--fg-dim)",
-                  }} />
-                </span>
+                <Toggle on={on} size="xs" />
               </div>
               <div className="hint">{d}</div>
             </div>
