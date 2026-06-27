@@ -2,9 +2,9 @@ use super::prompts::*;
 use include_dir::{include_dir, Dir};
 
 /// The migrated stage directives (#1462) live as the `directive` field in each
-/// `prompts/stages/<id>.json` — the single source of truth, shared with the frontend `SectionDef`.
+/// `data/stages/<id>.json` — the single source of truth, shared with the frontend `SectionDef`.
 /// Embedded at compile time; `stage_directive` resolves them by id.
-static STAGES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/prompts/stages");
+static STAGES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data/stages");
 
 /// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
 /// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
@@ -23,14 +23,14 @@ pub(crate) fn planner_intro_prompt(mode: String) -> String {
 pub(crate) fn stage_directive(id: &str) -> String {
     // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
     // Every stage directive — including the composed/lifecycle ids (`repos_deploy`, `streams`,
-    // `refactor`, `transform`) — now resolves from its `prompts/stages/<id>.json` `directive` field;
+    // `refactor`, `transform`) — now resolves from its `data/stages/<id>.json` `directive` field;
     // an unknown id gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
     let key = if id == "testing-informational" { "testing" } else { id };
     embedded_directive(key)
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| format!("**{id}** — configured stage."))
 }
-/// Read the `directive` field of the embedded `prompts/stages/<id>.json`, if present + a string.
+/// Read the `directive` field of the embedded `data/stages/<id>.json`, if present + a string.
 fn embedded_directive(id: &str) -> Option<String> {
     let file = STAGES_DIR.get_file(format!("{id}.json"))?;
     let v: serde_json::Value = serde_json::from_slice(file.contents()).ok()?;
@@ -109,7 +109,7 @@ mod tests {
         assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists merged names: {md}");
     }
 
-    /// #1462: the migrated stage directives now live in `prompts/stages/<id>.json` (`directive` field),
+    /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
     /// read via `include_dir!`. Every migrated id (incl. the `testing-informational` alias) must
     /// resolve to its real directive — NOT the generic fallback — and come from the embedded JSON.
     /// This, with the substring tests above, proves the prose survived the move byte-for-byte.
@@ -134,7 +134,7 @@ mod tests {
 
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
     /// EXACTLY the expected set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
-    /// the SAME `prompts/stages/` dir, so a directive can't drift between them; this pins the set.
+    /// the SAME `data/stages/` dir, so a directive can't drift between them; this pins the set.
     /// #1610: the composed/lifecycle ids (`repos_deploy`/`streams`/`refactor`/`transform`) are now
     /// plain stage JSONs too — no Rust-side prose, no special carve-out.
     #[test]

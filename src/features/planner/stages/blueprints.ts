@@ -117,9 +117,9 @@ export interface SectionDef {
   phase?: "discover" | "decide" | "generate";
 }
 
-// The canonical planning-stage data lives as one JSON file per stage under src-tauri/prompts/stages/
-// (one file per key), the unified prompt-data root (#1462). Loaded + assembled into STAGE_DEFS here.
-const sectionModules = import.meta.glob<{ default: SectionDef }>("@prompts/stages/*.json", { eager: true });
+// The canonical planning-stage data lives as one JSON file per stage under src-tauri/data/stages/
+// (one file per key), the unified packaged-data root (#1462). Loaded + assembled into STAGE_DEFS here.
+const sectionModules = import.meta.glob<{ default: SectionDef }>("@data/stages/*.json", { eager: true });
 
 /** Every section definition, keyed by its filename stem (= the section key). */
 export const STAGE_DEFS: Record<string, SectionDef> = Object.fromEntries(
@@ -371,7 +371,7 @@ export interface BlueprintDef extends Omit<Blueprint, "sections"> {
 
 // The built-in blueprints live as one JSON file per blueprint under ./blueprints/ — each is just
 // metadata + an ordered list of section keys that chain into ./sections/*.json (resolved below).
-const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("@prompts/blueprints/*.json", { eager: true });
+const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("@data/blueprints/*.json", { eager: true });
 
 /** The built-in blueprint library, assembled from the per-blueprint JSON definitions: ordered by
  *  each def`s `order`, with its section keys resolved into section instances via mkStage. */

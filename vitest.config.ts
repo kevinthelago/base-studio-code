@@ -14,7 +14,7 @@ export default defineConfig({
   server: { fs: { strict: false } },
   resolve: { alias: {
     "@": fileURLToPath(new URL("./src", import.meta.url)),
-    "@prompts": fileURLToPath(new URL("./src-tauri/prompts", import.meta.url)),
+    "@data": fileURLToPath(new URL("./src-tauri/data", import.meta.url)),
   } },
   test: {
     environment: "jsdom",

@@ -4,7 +4,7 @@ use crate::fleet::protocols::append_section_once;
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
 /// (it runs at the hub, so it never gets the worker worktree protocol).
-pub(crate) const DIRECTOR_PROTOCOL_MD: &str = include_str!("../../prompts/fleet/director-protocol.md");
+pub(crate) const DIRECTOR_PROTOCOL_MD: &str = include_str!("../../data/fleet/director-protocol.md");
 
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
 #[tauri::command]
