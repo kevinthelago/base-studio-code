@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { SchedulesTab } from "../Schedules";
+import { SchedulesTab, ScheduleDrawer } from "../Schedules";
 import { HistoryTab } from "../History";
 import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "../HookAnalytics";
@@ -67,7 +67,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     ? <HooksView />
     : active === "history"
     ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
-    : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;
+    : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} />;
 
   return (
     <TabbedScreen
@@ -87,6 +87,9 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
           <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
         </>
       ) : undefined}
+      overlay={active === "schedules"
+        ? <ScheduleDrawer selectedId={selectedId} setSelectedId={setSelectedId} onViewAllHistory={viewAllHistory} />
+        : undefined}
     >
       {body}
     </TabbedScreen>

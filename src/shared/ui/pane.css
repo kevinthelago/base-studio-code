@@ -20,5 +20,6 @@
 .pane-head { height:46px; flex:0 0 46px; padding:0 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:10px; background:var(--bg-elev); }
 .pane-head .name { font-family:var(--mono); font-size:13px; color:var(--fg); font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pane-body { flex:1; overflow:auto; padding:16px 18px; display:flex; flex-direction:column; gap:14px; }
+.pane-body.flush { padding:0; gap:0; }
 .pane-foot { border-top:1px solid var(--border-soft); padding:10px 16px; background:var(--bg-elev); display:flex; align-items:center; gap:8px; }
 .pane-foot .spacer { flex:1; }
