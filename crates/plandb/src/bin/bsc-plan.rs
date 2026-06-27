@@ -605,7 +605,12 @@ fn cmd_discovery(args: &Args) -> Result<(), String> {
 /// connectors store (~/.base-studio-code/connectors.json) — NOT plan.db — so an authored integration
 /// is a native, app-wide connector like the built-ins. The spec is validated + secret-free on add
 /// (credentials go to the keychain, #1194).
+///
+/// **Deprecated (#1721):** the connectors store is DATA-platform state; its CLI access moved to
+/// `bsc-data connector`. This verb still works (delegating to the same `bsc_data::*` functions) so
+/// nothing breaks mid-transition, but it prints a one-line deprecation note to stderr.
 fn cmd_integration(args: &Args) -> Result<(), String> {
+    eprintln!("`bsc-plan integration` is deprecated; use `bsc-data connector`");
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let path = bsc_data::runtime_store_path();
     match sub {
@@ -1221,7 +1226,7 @@ DISCOVERY (the Discovery stage's DYNAMIC required-set — prose lives in discove
   discovery list                  show the required topic set
   (discovery files gate on GENERATION — written, not confirmed)
 
-INTEGRATION (native REST connectors authored at planning time — app-wide, NOT plan.db; #1235):
+INTEGRATION (DEPRECATED #1721 → use `bsc-data connector`; native REST connectors, app-wide, NOT plan.db; #1235):
   integration add               upsert a RuntimePreset JSON on stdin (validated, secret-free)
   integration list              list the runtime integrations
   integration get <id>          print one integration (RuntimePreset JSON)
