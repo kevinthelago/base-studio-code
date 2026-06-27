@@ -21,7 +21,7 @@ describe("screen registry (#nav-pass)", () => {
 
   it("screenLabel returns the canonical name, falling back to the raw key when unknown", () => {
     expect(screenLabel("console")).toBe("Console");
-    expect(screenLabel("agents")).toBe("Permissions");      // Agents screen is labeled Permissions
+    expect(screenLabel("agents")).toBe("Security");      // Agents screen is labeled Security
     expect(screenLabel("automation")).toBe("Automations");
     expect(screenLabel("nonexistent" as Screen)).toBe("nonexistent");
   });
