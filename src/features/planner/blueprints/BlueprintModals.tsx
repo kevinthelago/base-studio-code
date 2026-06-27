@@ -4,7 +4,7 @@
 
 import { useState, type ReactNode } from "react";
 import "../../../styles/blueprints.css";
-import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { Ic } from "./blueprintIcons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { stageKind, tint, hue } from "./blueprintCatalog";
@@ -28,13 +28,10 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   icon: ReactNode; iconBg?: string; iconColor?: string; title: string; sub?: string;
   onClose: () => void; children: ReactNode; foot?: ReactNode; lg?: boolean;
 }) {
-  useModalDismiss(onClose);
   return (
     <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
-      <div className="overlay blur" style={{ padding: 30 }}
-        onMouseDown={overlayDismiss(onClose)}>
-        <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}
-          onMouseDown={(e) => e.stopPropagation()}>
+      <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
+        <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <span className="mh-ico" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13, background: iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)", color: iconColor ?? "var(--accent)" }}>{icon}</span>
             <div><h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
@@ -43,7 +40,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
           <div className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</div>
           {foot && <div className="modal-foot" style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</div>}
         </div>
-      </div>
+      </ModalScrim>
     </div>
   );
 }
