@@ -227,9 +227,10 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
 - `bsc-audit` (#257) — PreToolUse hook: append a redacted `ts·pane·tool·target` line (never file
   contents/secrets) to `audit.log`.
 - `bsc-skill` (no args, #406) — Skill-tool telemetry to `skills.log`.
-- `bsc-hook` (#867) — wraps each *user* hook, runs it, logs `ts·event·name·outcome` (propagating the
-  exit code so a PreToolUse `exit 2` block still takes effect).
-- `bsc-mcp` (#879) — Pre+PostToolUse hook for MCP tools: logs round-trip latency + outcome.
+- `bsc-hook` (#867) — wraps each *user* hook, runs it, logs `ts·pane·event·name·outcome` (the pane is
+  `$BSC_AUDIT_PANE`, #1743; propagating the exit code so a PreToolUse `exit 2` block still takes effect).
+- `bsc-mcp` (#879) — Pre+PostToolUse hook for MCP tools: logs `ts·pane·server·tool·outcome·ms·detail`
+  (round-trip latency + outcome; the pane is `$BSC_AUDIT_PANE`, #1743).
 - `bsc-tokens` (#416) — Stop/SubagentStop hook: logs `session_id` + `transcript_path` (the transcript
   is the only per-message usage source; `read_token_usage` prices it).
 - `bsc-activity` (#1184) — turn-boundary signal (`run`/`idle`) that gates the console status dot's
