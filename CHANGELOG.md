@@ -11,9 +11,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **Frontend dedup & shared primitives** — a code-health sweep giving copy-pasted logic one home: a `shared/lib/github/` for the GitHub display layer (avatar palette + `loginColor`/`timeAgo`/`hueFor` consolidated, the scattered `GhProject`/`GHEvent`/`GhLabel` types unified) (#1492); shared `shared/ui/` atoms (`Avatar`, `LabelChip`, and the chart `Spark`/`HBars`) (#1493); and four reusable hooks/helpers that replace hand-rolled boilerplate across the app — `usePoll` (15 polling loops migrated, #1494), `useCoordLog`/`readCoordState` (the `read_coord_log → ingestCoordLog` replay, 5 fleet hooks, #1495), `useGithubQuery` (the planner/github fetch lifecycle, 4 screens, #1496), and `safeInvoke`/`fireInvoke` for Tauri error handling (#1497)
-- **Planning.tsx decomposition** — the planner session component split into focused, colocated hooks (`usePlannerTagStream`, `usePlanSectionPoll`, `usePlannerBlueprint`, `usePlanGates`, …), ~2.8k → ~2.2k LOC (#1474)
+- **Planning.tsx decomposition** — the planner session component split into focused, colocated hooks (`usePlannerTagStream`, `usePlanSectionPoll`, `usePlannerBlueprint`, `usePlanGates`, …), ~2.8k → ~2.2k LOC (#1474); a second pass extracted five more (`usePlanningTitle`, `usePlanConfirmations`, `usePlannerMessages`, `useCtxRequired`, `useSetupSignature`, #1775)
+- **Shared UI primitives & a UI-consistency sweep** — consolidated scattered UI onto shared atoms in `shared/ui/`: `BackButton` (canonical left-chevron, icon + text, #1752), `IconButton` (one close glyph + hit-area, #1753), `StatusDot` (#1777), `ModalScrim` (the single centered-overlay every modal builds on, + `--scrim`/z-index tokens, #1776), promise-returning `usePromptDialog`/`useConfirmDialog` replacing native `window.prompt`/`window.confirm` (#1738), the analytics `Kpi` + `StackedDayBars` (#1740), settings `SettingsControls` (#1745), and a `Toggle` `tone` prop (#1780). `useActiveProjectGithub` + `<QueryBanner>` dedup the four GitHub board screens (#1754)
+- **More large-file decomposition** — `handlePublish` extracted into a testable, React-free `publishSteps.ts` (`usePlanPublish` 688 → 358 LOC, #1749); `FocusedBodies.tsx` split into per-body files (1129 → 159 LOC, #1757)
+
+### Fixed
+- **Console pane status & broadcast keyed off positional ids** instead of the stable `paneIdFor` id — manual and fleet/triage tab activity dots, broadcast, and clear-input now target the right PTYs (#1729)
+
+### Added
+- **Tests for security-critical surfaces** — unit coverage for the `sessionLaunch` env/permission builders (#1755) and a `sessionRoles` ↔ `profileGen` role-table consistency guard that fails CI on drift (#1759)
 
 ### Removed
+- **Orphaned frontend modules** — `planSeamGraph`, `planEval`, and the mock `ConsoleView` (~936 LOC, no production references) (#1736); plus dead `.tag`/`.seg` CSS surfaced while auditing pills (#1793, #1794)
 - **Per-stage grading** — the advisory plan-grading system (graders, `sectionGrades`, the `grading/` module) removed end to end; it gated nothing (#1459, #1473, #1468)
 - **Skills Catalog tab** and the standalone allowed-commands permission scope (profiles now own command permissions) (#1466, #1457)
 
