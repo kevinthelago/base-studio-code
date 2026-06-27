@@ -106,7 +106,8 @@ base-studio-code/
 │   │                   #   github · sources · extensions · observability · mobile
 │   └── tauri.conf.json
 ├── crates/             # Tauri-free workspace crates — data · plandb · skilldb · llm · research ·
-│                       #   compliance · logs · bsc-agent (+ bsc-util / bsc-sqlite-util / mcp-rpc)
+│                       #   compliance · logs · bsc-blueprint · bsc-project · bsc-agent
+│                       #   (+ bsc-util / bsc-sqlite-util / bsc-cli-util / mcp-rpc)
 ├── src/                # React frontend — feature-first vertical slices (imports use `@/…`)
 │   ├── app/            # the shell — main/App, chrome (Rail · Titlebar · Tabstrip), and the
 │   │                   #   console execution surface (ConsoleScreen + panes/ + lib/)
