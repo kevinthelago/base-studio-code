@@ -215,7 +215,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }));
         return deltas;
       },
-      triageStartProject: (projectName, repos, projectId = "", deltas) =>
+      triageStartProject: (projectName, repos, projectId = "", deltas, clonePaths) =>
         set((s) => {
           // A triage tab for this project may already exist (re-run): rebuild it in
           // place at the same index. The caller kills the old panes' sessions first
@@ -262,9 +262,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneIds[i] = key;
             if (i < count) {
               const fullName = repos[i];
-              // A real repo — launch claude in its clone, ensure it's enabled. Draft projects
-              // live under draft/ (#904); a published project (has a board id) under projects/.
-              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
+              // A real repo — launch claude in its clone, ensure it's enabled. Prefer the
+              // Rust-resolved absolute clone dir (#1819, `repo_dir_path`) so the launch never
+              // depends on the async-loaded `bscBaseDir` mirror — empty at crash-recovery startup,
+              // which yielded an empty cwd → the settings.json writer skipped → permission-less
+              // session. Falls back to the `bscBaseDir`-derived path when an entry is absent.
+              newPaneCwds[key]     = clonePaths?.[fullName ?? ""] || projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
               newPaneInitCmds[key] = "claude";
               tabPaneNames[i]      = fullName?.split("/")[1] ?? `pane-${i + 1}`;
               // The startup prompt is baked into the claude launch by the backend
