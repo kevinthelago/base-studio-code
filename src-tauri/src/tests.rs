@@ -1,5 +1,5 @@
 use crate::*;
-use crate::project::{hub::*, plan_files::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
 use crate::fleet::{worktree::*, director::*, inspect::*};
 use crate::github::readiness::*;
 use crate::extensions::{mcp::*, cfg::*};
@@ -854,6 +854,51 @@ use crate::console::settings::*;
         let store = plandb::Store::open(&db).unwrap();
         assert!(store.list(None, None).unwrap().is_empty(), "issues cleared from the DB");
         assert!(store.feature_list().unwrap().is_empty(), "features cleared from the DB");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn plan_get_fleet_imports_a_stray_fleet_json_then_deletes_it() {
+        // #1805: plan.db is the sole fleet store. A stray legacy fleet.json in a hub whose plan.db has
+        // no fleet is imported into plan.db on the first read, then the file is deleted.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("fleetmig");
+        let key = "test-fleet-migrate".to_string();
+        let file = project_dir(&key).join("fleet.json");
+        write_file(&file, r#"{"recommended":2,"reasoning":"r","streams":[{"id":"api","repo":"o/api"}]}"#);
+
+        let fleet = plan_get_fleet(key.clone()).unwrap().expect("fleet imported from the stray file");
+        assert_eq!(fleet.get("recommended").and_then(|v| v.as_i64()), Some(2));
+        let streams = fleet.get("streams").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].get("id").and_then(|v| v.as_str()), Some("api"));
+        assert!(!file.exists(), "the stray fleet.json is deleted after import");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn plan_get_fleet_keeps_plan_db_and_deletes_a_stray_fleet_json() {
+        // #1805: when plan.db ALREADY has a fleet, a stray fleet.json is deleted without overwriting
+        // the DB (plan.db wins, never read from disk).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("fleetwins");
+        let key = "test-fleet-wins".to_string();
+        // Seed plan.db with the authoritative fleet.
+        plan_set_fleet(key.clone(), serde_json::json!({
+            "recommended": 1, "streams": [ { "id": "db-stream", "repo": "o/db" } ]
+        })).unwrap();
+        // A conflicting stray file that must NOT overwrite the DB.
+        let file = project_dir(&key).join("fleet.json");
+        write_file(&file, r#"{"recommended":9,"streams":[{"id":"stale","repo":"o/stale"}]}"#);
+
+        let fleet = plan_get_fleet(key.clone()).unwrap().expect("plan.db fleet present");
+        let streams = fleet.get("streams").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].get("id").and_then(|v| v.as_str()), Some("db-stream"), "plan.db wins");
+        assert_eq!(fleet.get("recommended").and_then(|v| v.as_i64()), Some(1), "DB meta untouched");
+        assert!(!file.exists(), "the stray fleet.json is deleted even though plan.db won");
 
         std::fs::remove_dir_all(&home).ok();
     }
