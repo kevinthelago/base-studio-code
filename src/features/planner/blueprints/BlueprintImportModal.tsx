@@ -10,7 +10,8 @@ import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, Ale
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
-import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/ModalScrim";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
@@ -114,8 +115,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   }, [source, token]);
   useEffect(() => { load(); }, [load]);
 
-  // Esc closes; clear any pending toast/busy timers on unmount.
-  useModalDismiss(onClose);
+  // Clear any pending toast/busy timers on unmount (Esc + overlay dismiss handled by ModalScrim).
   useEffect(() => {
     const pending = timers.current;
     return () => pending.forEach(clearTimeout);
@@ -178,11 +178,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
   });
 
   return (
-    <div
-      className="modal-scrim blur"
-      onMouseDown={overlayDismiss(onClose)}
-      style={{ padding: 36 }}
-    >
+    <ModalScrim onDismiss={onClose} blur style={{ padding: 36 }}>
       <div
         role="dialog" aria-modal="true" aria-label="Import blueprint from gist"
         style={{
@@ -386,9 +382,9 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
           fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
         }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />{toast}
+          <StatusDot size={7} color="var(--success)" />{toast}
         </div>
       )}
-    </div>
+    </ModalScrim>
   );
 }

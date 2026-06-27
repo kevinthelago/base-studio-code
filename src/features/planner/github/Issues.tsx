@@ -6,6 +6,7 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -288,10 +289,11 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
     >
       {/* Number + state */}
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-          background: issue.state === "OPEN" ? "var(--success)" : "var(--fg-dim)",
-        }} />
+        <StatusDot
+          size={8}
+          color={issue.state === "OPEN" ? "var(--success)" : "var(--fg-dim)"}
+          title={issue.state === "OPEN" ? "open" : "closed"}
+        />
         <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
           {issue.number}
         </span>

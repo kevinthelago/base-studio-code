@@ -16,6 +16,16 @@ describe("Toggle", () => {
     expect(container.querySelector("span.sess-toggle")).toBeTruthy();
   });
 
+  it("renders the xs (24×14) size with a 10px knob", () => {
+    const { container } = render(<Toggle on size="xs" className="xs-toggle" />);
+    const track = container.querySelector("span.xs-toggle") as HTMLElement;
+    expect(track).toBeTruthy();
+    expect(track.style.width).toBe("24px");
+    expect(track.style.height).toBe("14px");
+    const knob = track.querySelector("span") as HTMLElement;
+    expect(knob.style.width).toBe("10px");
+  });
+
   it("uses the accent track by default when on", () => {
     const { container } = render(<Toggle on />);
     expect(container.querySelector("span")!.style.background).toContain("var(--accent)");

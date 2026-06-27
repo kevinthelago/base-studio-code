@@ -22,14 +22,14 @@ import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session
 import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/mcp/lib/mcpServers";
-import { resolveReferenceContext, resolveStartupPrompt, isDiscoveryContextDoc } from "@/shared/lib/session/assignments";
+import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -85,8 +85,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         localDraftProjects:     byKey(s.localDraftProjects),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
-            refContextProject:      byKey(s.refContextProject),
-            refContextRepo:         byRepoKey(s.refContextRepo),
             ...(clearActive
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], planningSessionKey: "", projectsView: "list" as const }
               : {}),
@@ -99,7 +97,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           projectLocalRepos: {}, localDraftProjects: {},
           projectKeyAlias: {}, issueLinks: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
-          refContextDefault: [], refContextProject: {}, refContextRepo: {},
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
           planningSessionKey: "", planningTitle: "", planningPitch: "",
@@ -115,21 +112,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoStartupPromptDoc: setMapEntry(s.repoStartupPromptDoc, repoPromptKey(projectId, repo), doc) })),
-      refContextDefault: [],
-      refContextProject: {},
-      refContextRepo: {},
-      toggleReferenceContext: (level, key, doc) =>
-        set((s) => {
-          const toggle = (list: string[]): string[] =>
-            list.includes(doc) ? list.filter((d) => d !== doc) : [...list, doc];
-          if (level === "default") return { refContextDefault: toggle(s.refContextDefault) };
-          if (level === "project") {
-            const k = key ?? "";
-            return { refContextProject: setMapEntry(s.refContextProject, k, toggle(s.refContextProject[k] ?? [])) };
-          }
-          const k = key ?? "";
-          return { refContextRepo: setMapEntry(s.refContextRepo, k, toggle(s.refContextRepo[k] ?? [])) };
-        }),
       repoTriagePromptDoc: {},
       setRepoTriagePromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoTriagePromptDoc: setMapEntry(s.repoTriagePromptDoc, repoPromptKey(projectId, repo), doc) })),
@@ -256,7 +238,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
-          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneMcpServers        = { ...s.paneMcpServers };
@@ -305,16 +286,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
                 newPaneStartupPromptDocs[key] = doc ?? "";
               }
-              // Reference-context docs (#326): injected as background context for
-              // this pane regardless of which startup prompt won above. Keyed by
-              // the sanitized project key (projKey) so KB-page project assignments
-              // — which use the same key — resolve here. Triage drops the planner's
-              // discovery/context plan-section files (goal.md, scope.md, …) so the
-              // raw `# Goal` doesn't leak into the session (#1807) — those are the
-              // planner's working files, not intended assigned knowledge.
-              const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" })
-                .filter((d) => !isDiscoveryContextDoc(d));
-              if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.
               newPaneContinue[key] = true;
@@ -356,7 +327,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
-            paneReferenceDocs: newPaneReferenceDocs,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
             paneMcpServers: newPaneMcpServers,
@@ -423,7 +393,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneInitCmds          = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
-          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneMcpServers        = { ...s.paneMcpServers };
@@ -465,8 +434,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const fleetHarness = s.fleetHarness ?? "claude";
           const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
-          // Reference-context assignments resolved per pane below (#326).
-          const fleetAssignments = buildAssignments(s);
 
           let tabs = s.tabs;
           let firstTabIdx = -1;
@@ -511,7 +478,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneStatus[key];
               delete newPaneStartupPromptText[key];
               delete newPaneStartupPromptDocs[key];
-              delete newPaneReferenceDocs[key];
               delete newPaneCheckpointDocs[key];
               delete newPaneMcpServers[key];
               delete newPaneHooks[key];
@@ -536,13 +502,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
-                  // Project-level reference context for the director (no repo
-                  // scope). Keyed by the sanitized project key (safeKey) to match
-                  // the KB page's project assignments.
-                  {
-                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey });
-                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-                  }
                   tabPaneNames[i] = "director";
                   newPaneDirectorDrive[key] = resolveDirectorDrive(plan.director.drive);
                   newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, plan.strategy)).director;
@@ -566,12 +525,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
-                  // Repo-scoped reference context for this worker (#326). Keyed by
-                  // the sanitized project key (safeKey) to match KB-page assignments.
-                  {
-                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey, repo: sess.repo });
-                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-                  }
                   newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
                   tabPaneNames[i] = sess.name;
                   // Bridge pane id → stream so the coordinator can resolve which pane
@@ -644,7 +597,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
-            paneReferenceDocs: newPaneReferenceDocs,
             paneContinue: newPaneContinue,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneMcpServers: newPaneMcpServers,
