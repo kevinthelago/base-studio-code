@@ -4,15 +4,17 @@ import { SchedulesTab } from "../Schedules";
 import { HistoryTab } from "../History";
 import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "../HookAnalytics";
+import { fmtClock } from "../format";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import type { TabItem } from "@/app/chrome/TabBar";
-import type { RunStatus, Every, Automation } from "../lib/scheduler";
+import type { RunStatus, Every } from "../lib/scheduler";
 import "../automations.css";
 
 /**
  * Automations screen (#142) — on the shared `<TabbedScreen>` shell (#1821) + the unified tab system
  * (#463): tab order persists per page, the page opens whatever tab is first, tabs reorder, and each
- * can be torn off. `sectionOverride` renders a single section with no tab bar (detached window).
+ * can be torn off into its own window. `sectionOverride` renders a single section with no tab bar.
  */
 export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const { automations, addAutomation, tabs } = useAppStore();
@@ -21,12 +23,14 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
   const hookCount = useAppStore(s => s.hooks.length);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Automation | null>(null);
   const [histStatus, setHistStatus] = useState<"all" | RunStatus>("all");
   const [histSched, setHistSched] = useState<string>("all");
 
   const armed = automations.filter(a => a.armed).length;
   const totalRuns = automations.reduce((n, a) => n + a.runs.length, 0);
+  const nextAt = automations
+    .filter(a => a.armed && a.nextRunAt != null)
+    .reduce<number | null>((min, a) => (min == null || a.nextRunAt! < min ? a.nextRunAt! : min), null);
 
   const defs: TabItem[] = useMemo(() => [
     { id: "schedules", label: "Schedules", count: automations.length, hint: `· ${armed} armed` },
@@ -35,51 +39,56 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     { id: "analytics", label: "Hook Analytics" },
   ], [automations.length, armed, totalRuns, hookCount]);
 
-  function commitDraft() {
-    if (!draft) return;
-    const { id: _, ...def } = draft;
-    addAutomation(def);
+  const { tabs: tabItems, activeId, select, reorder, tearOff } = usePageTabs("automations", defs);
+  const active = sectionOverride ?? activeId;
+
+  function createAndSelect() {
+    addAutomation({
+      name: "New automation", armed: false,
+      when: { kind: "simple", every: "day" as Every, at: "09:00" },
+      targetTab: tabs[0]?.name ?? "", targetPaneIdx: 0,
+      action: "command", command: "",
+    });
     const list = useAppStore.getState().automations;
     const created = list[list.length - 1];
-    setDraft(null);
     if (created) setSelectedId(created.id);
+    select("schedules");
   }
+
+  function viewAllHistory(id: string) {
+    setHistSched(id);
+    setHistStatus("all");
+    select("history");
+  }
+
+  const body = active === "analytics"
+    ? <HookAnalyticsTab />
+    : active === "hooks"
+    ? <HooksView />
+    : active === "history"
+    ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
+    : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;
 
   return (
     <TabbedScreen
-      pageKey="automations"
-      defs={defs}
+      tabs={tabItems}
+      active={active}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
       sectionOverride={sectionOverride}
       className="auto-screen"
       bodyClassName="auto-body"
-      renderBody={(active, select) => {
-        const createAndSelect = () => {
-          setSelectedId(null);
-          setDraft({
-            id: "__draft__",
-            name: "New automation", armed: false,
-            when: { kind: "simple", every: "day" as Every, at: "09:00" },
-            targetTab: tabs[0]?.name ?? "", targetPaneIdx: 0,
-            action: "command", command: "",
-            lastRunAt: null,
-            nextRunAt: null,
-            runs: [],
-          });
-          select("schedules");
-        };
-        const viewAllHistory = (id: string) => {
-          setHistSched(id);
-          setHistStatus("all");
-          select("history");
-        };
-        return active === "analytics"
-          ? <HookAnalyticsTab />
-          : active === "hooks"
-          ? <HooksView />
-          : active === "history"
-          ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
-          : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} draft={draft} setDraft={setDraft} onCommit={commitDraft} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;
-      }}
-    />
+      right={active === "schedules" ? (
+        <>
+          <span className="quick-stat">
+            <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
+          </span>
+          <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
+        </>
+      ) : undefined}
+    >
+      {body}
+    </TabbedScreen>
   );
 }

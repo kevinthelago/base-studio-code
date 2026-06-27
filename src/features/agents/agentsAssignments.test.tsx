@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ProfileSelect, appSessionTag, appSessionOpenLabel, appReachNote } from "./AgentsScreen";
+import { ProfileSelect, appSessionTag, appSessionOpenLabel, appReachNote } from "./screens/AgentsScreen";
 import { APP_ROLES, findProfile, type AgentProfile } from "./lib/agentProfiles";
 
 describe("app-session role labels (#740)", () => {
