@@ -220,6 +220,7 @@ pub fn run() {
             project::ui_skeleton::read_ui_skeleton,
             project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
+            project::hub::repo_dir_path,
             observability::logs::append_coord_woke,
             githooks::read_git_hooks,
             perf::perf_get_config,
