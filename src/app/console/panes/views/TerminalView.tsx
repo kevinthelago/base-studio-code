@@ -472,6 +472,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           log.error(`console[${paneId}] preflight probe failed: ${e}`);
         }
         if (destroyed) return;
+      } else if (launchesClaude) {
+        // #1819: a claude-launching pane with an EMPTY cwd means we can't (and don't) write its
+        // settings.json — the role gate + shell allowlist are skipped and the session runs
+        // permission-less, prompting for everything. We still skip the write (never write to ""),
+        // but make it LOUD so a backend-resolved cwd regression can never silently drop perms again.
+        log.error(`console[${paneId}] launching claude with an EMPTY cwd — skipping ensure_session_settings; no role gate / shell allowlist written, session will prompt for everything (#1819)`);
       }
 
       // Resolve the effective init_cmd (Claude resume logic / non-Claude launch cmd) from the current

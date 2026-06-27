@@ -570,6 +570,13 @@ pub(crate) fn pty_create(
     if cwd_missing {
         log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
     }
+    // #1819: an EMPTY cwd is as dangerous as a missing one — with no cwd set the shell inherits the
+    // APP's working directory, so the session's per-cwd settings.json (role gate + shell allowlist)
+    // was never written there and a claude launch runs permission-less. We can't manufacture a dir,
+    // but flag it loudly here (and again, claude-specifically, once the launch plan is resolved).
+    if cwd.is_empty() {
+        log::warn!("pty[{pane_id}] launched with an EMPTY cwd — no per-session settings.json was written; the shell inherits the app's working directory (#1819)");
+    }
     let effective_cwd: String = if cwd_missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
     if !effective_cwd.is_empty() {
         cmd.cwd(&effective_cwd);
@@ -656,6 +663,12 @@ pub(crate) fn pty_create(
     // Whether the launch would start `claude` — the only command the degraded
     // non-bash path replays (an arbitrary bash init_cmd would be invalid there).
     let launch_claude = launch.as_deref().map(|s| harness.is_harness_launch(s)).unwrap_or(false);
+    // #1819: the high-severity case — claude is about to launch with NO cwd, so its role gate +
+    // shell allowlist (settings.json, written per-cwd by the frontend) were never written and the
+    // session will prompt for everything. Surface it loudly so the silent failure can't recur.
+    if launch_claude && cwd.is_empty() {
+        log::error!("pty[{pane_id}] launching claude with an EMPTY cwd — permission-less session: the role gate + shell allowlist in settings.json were never written (#1819)");
+    }
     // The default `--model` alias for this session (per-pane override or global
     // default, mapped from the UI model id). None ⇒ the harness's own default.
     let model_alias = model.as_deref().and_then(|m| harness.model_flag(m));

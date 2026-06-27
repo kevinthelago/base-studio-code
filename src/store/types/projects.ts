@@ -112,7 +112,12 @@ export interface ProjectsState {
   // `deltas` (#1004): optional per-repo (fullName → lead) since-last-run summary, prepended to
   // each pane's default triage prompt so a re-run resumes from what changed instead of re-ingesting.
   // Built by `prepareTriageRun` (which also records the new run marker) and passed in at launch.
-  triageStartProject: (projectName: string, repos: string[], projectId?: string, deltas?: Record<string, string>) => void;
+  // `clonePaths` (#1819): optional per-repo (fullName → absolute clone dir) cwds resolved from the
+  // Rust backend (`repo_dir_path`), mirroring `fleetStartProject`'s `paths`. Used verbatim so a
+  // triage launch never depends on the async-loaded `bscBaseDir` mirror (empty at crash-recovery
+  // startup → empty cwd → the settings.json writer is skipped → a permission-less session); falls
+  // back to the `bscBaseDir`-derived path per repo when an entry is absent.
+  triageStartProject: (projectName: string, repos: string[], projectId?: string, deltas?: Record<string, string>, clonePaths?: Record<string, string>) => void;
   // #1004: read each repo's last-triage marker + the since-then changed-issue delta from plan.db,
   // render a one-line resume lead per repo, and STAMP a fresh run marker (read-before-write). Keyed
   // by the project's plan.db key (effectiveProjectId). Returns the fullName → lead map for `deltas`.
