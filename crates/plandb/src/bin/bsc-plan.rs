@@ -23,7 +23,7 @@
 //!   bsc-plan render                   # print the issues.json projection to stdout (full)
 //! Global flags: --db <path>, --json, --pretty
 
-use bsc_sqlite_util::{print_json, read_stdin_json};
+use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use serde::Serialize;
 use std::io::Read;
@@ -179,6 +179,44 @@ fn emit_blob_or_null(json: bool, pretty: bool, blob: Option<serde_json::Value>, 
     match blob {
         Some(v) => print_json(&v, pretty),
         None => println!("{}", if json { "null" } else { none_text }),
+    }
+}
+
+/// Count the elements of an array-valued field of a blob (`services`/`dependencies`/`sections`/
+/// `streams`) for the human-mode `set` echo; a missing/non-array field counts as 0.
+fn blob_count(v: &serde_json::Value, key: &str) -> usize {
+    v.get(key).and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0)
+}
+
+/// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`). `set`
+/// reads one JSON object on stdin, replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in
+/// human mode; `get` emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun
+/// in the unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet`
+/// keeps its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
+fn cmd_blob_noun(
+    args: &Args,
+    verb: &str,
+    parse_noun: &str,
+    none_text: &str,
+    set_fn: impl Fn(&Store, &serde_json::Value) -> Result<(), String>,
+    get_fn: impl Fn(&Store) -> Result<Option<serde_json::Value>, String>,
+    msg_fn: impl Fn(&serde_json::Value) -> String,
+) -> Result<(), String> {
+    let s = open_store(&args.db)?;
+    match args.positional.get(1).map(String::as_str).unwrap_or("") {
+        "set" => {
+            let v: serde_json::Value = read_stdin_json_one(parse_noun)?;
+            set_fn(&s, &v)?;
+            if !args.json {
+                println!("{}", msg_fn(&v));
+            }
+            Ok(())
+        }
+        "get" => {
+            emit_blob_or_null(args.json, args.pretty, get_fn(&s)?, none_text);
+            Ok(())
+        }
+        other => Err(format!("unknown {verb} command '{other}'\n\n{USAGE}")),
     }
 }
 
@@ -411,14 +449,10 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
     match sub {
         // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
         "set" => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-            let plan: serde_json::Value =
-                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing fleet JSON: {e}"))?;
+            let plan: serde_json::Value = read_stdin_json_one("fleet JSON")?;
             s.fleet_set(&plan).map_err(|e| e.to_string())?;
             if !args.json {
-                let n = plan.get("streams").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                println!("fleet set ({n} streams)");
+                println!("fleet set ({} streams)", blob_count(&plan, "streams"));
             }
             Ok(())
         }
@@ -461,54 +495,22 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
 
 /// `deploy` — the Deploy stage's structured config (one blob).
 fn cmd_deploy(args: &Args) -> Result<(), String> {
-    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let s = open_store(&args.db)?;
-    match sub {
-        // `deploy set` reads the whole DeployConfig JSON on stdin and replaces it (one blob).
-        "set" => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-            let cfg: serde_json::Value =
-                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing deploy JSON: {e}"))?;
-            s.deploy_set(&cfg).map_err(|e| e.to_string())?;
-            if !args.json {
-                let n = cfg.get("services").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                println!("deploy set ({n} services)");
-            }
-            Ok(())
-        }
-        "get" => {
-            emit_blob_or_null(args.json, args.pretty, s.deploy_get().map_err(|e| e.to_string())?, "(no deploy config)");
-            Ok(())
-        }
-        other => Err(format!("unknown deploy command '{other}'\n\n{USAGE}")),
-    }
+    cmd_blob_noun(
+        args, "deploy", "deploy JSON", "(no deploy config)",
+        |s, v| s.deploy_set(v).map_err(|e| e.to_string()),
+        |s| s.deploy_get().map_err(|e| e.to_string()),
+        |v| format!("deploy set ({} services)", blob_count(v, "services")),
+    )
 }
 
 /// `deps` — the Deploy stage's locked dependency manifest (one blob).
 fn cmd_deps(args: &Args) -> Result<(), String> {
-    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let s = open_store(&args.db)?;
-    match sub {
-        // `deps set` reads the whole DependencyManifest JSON on stdin and replaces it (one blob).
-        "set" => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-            let manifest: serde_json::Value =
-                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing dependency manifest JSON: {e}"))?;
-            s.deps_set(&manifest).map_err(|e| e.to_string())?;
-            if !args.json {
-                let n = manifest.get("dependencies").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                println!("deps set ({n} dependencies)");
-            }
-            Ok(())
-        }
-        "get" => {
-            emit_blob_or_null(args.json, args.pretty, s.deps_get().map_err(|e| e.to_string())?, "(no dependency manifest)");
-            Ok(())
-        }
-        other => Err(format!("unknown deps command '{other}'\n\n{USAGE}")),
-    }
+    cmd_blob_noun(
+        args, "deps", "dependency manifest JSON", "(no dependency manifest)",
+        |s, v| s.deps_set(v).map_err(|e| e.to_string()),
+        |s| s.deps_get().map_err(|e| e.to_string()),
+        |v| format!("deps set ({} dependencies)", blob_count(v, "dependencies")),
+    )
 }
 
 /// `mcp` — catalog MCP servers scoped to the project (durable in plan.db).
@@ -547,29 +549,15 @@ fn cmd_mcp(args: &Args) -> Result<(), String> {
 
 /// `blueprint` — the blueprint an authoring project is designing (one blob).
 fn cmd_blueprint(args: &Args) -> Result<(), String> {
-    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let s = open_store(&args.db)?;
-    match sub {
-        // `blueprint set` reads the whole Blueprint JSON on stdin and replaces it (one blob).
-        "set" => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-            let bp: serde_json::Value =
-                serde_json::from_str(buf.trim()).map_err(|e| format!("parsing blueprint JSON: {e}"))?;
-            s.blueprint_set(&bp).map_err(|e| e.to_string())?;
-            if !args.json {
-                let n = bp.get("sections").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                let name = bp.get("name").and_then(|v| v.as_str()).unwrap_or("blueprint");
-                println!("blueprint set: {name} ({n} sections)");
-            }
-            Ok(())
-        }
-        "get" => {
-            emit_blob_or_null(args.json, args.pretty, s.blueprint_get().map_err(|e| e.to_string())?, "(no blueprint)");
-            Ok(())
-        }
-        other => Err(format!("unknown blueprint command '{other}'\n\n{USAGE}")),
-    }
+    cmd_blob_noun(
+        args, "blueprint", "blueprint JSON", "(no blueprint)",
+        |s, v| s.blueprint_set(v).map_err(|e| e.to_string()),
+        |s| s.blueprint_get().map_err(|e| e.to_string()),
+        |v| {
+            let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("blueprint");
+            format!("blueprint set: {name} ({} sections)", blob_count(v, "sections"))
+        },
+    )
 }
 
 /// `discovery` — the Discovery stage's DYNAMIC required-set (prose lives in discovery/<topic>.md).

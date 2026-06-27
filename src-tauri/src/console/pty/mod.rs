@@ -335,32 +335,17 @@ fn wire_bsc_env(
     if let Some(db) = plan_db_for_cwd(cwd) {
         cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
     }
-    if let Some(bin) = sidecar_bin_path("bsc-plan") {
-        cmd.env("BSC_PLAN_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
     // bsc-skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group
     // authored anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB
     // is the shared store the `bsc-skill` helper reads/writes; $BSC_SKILL_BIN the CLI it execs when
     // invoked with a subcommand (a no-arg fire stays the #406 telemetry hook). Unlike BSC_PLAN_DB
     // (per-project, cwd-derived), this is global — set unconditionally for every pane.
     cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
-    if let Some(bin) = sidecar_bin_path("bsc-skill") {
-        cmd.env("BSC_SKILL_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
     // bsc-data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
     // PlatformScan the planner reads at the UI-kickoff stage via the `bsc-data` CLI. $BSC_DATA_DB is
     // the project's .duckdb (cwd-derived, like BSC_PLAN_DB); $BSC_DATA_BIN the CLI the shell helper execs.
     if let Some(db) = data_db_for_cwd(cwd) {
         cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
-    }
-    if let Some(bin) = sidecar_bin_path("bsc-data") {
-        cmd.env("BSC_DATA_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-logs (#1716): the unified log-query CLI sidecar the `bsc-logs` shell helper execs (like
-    // bsc-plan/bsc-data — it needs SQLite for `bsc-logs perf` over perf.db, so it can't be pure shell).
-    // $BSC_LOG_DIR (set above) is the directory it reads. Staged for every pane; read-only.
-    if let Some(bin) = sidecar_bin_path("bsc-logs") {
-        cmd.env("BSC_LOGS_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // bsc-compliance (#1718): point every session at the GLOBAL compliance standards store + its CLI.
     // $BSC_COMPLIANCE_STORE is the store.db the `bsc-compliance` helper reads/writes (and which the
@@ -372,23 +357,25 @@ fn wire_bsc_env(
         "BSC_COMPLIANCE_STORE",
         to_bash_path(&base.join("compliance").join("store.db").to_string_lossy()),
     );
-    if let Some(bin) = sidecar_bin_path("bsc-compliance") {
-        cmd.env("BSC_COMPLIANCE_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-blueprint (#1719): the user-blueprint-store CLI sidecar the `bsc-blueprint` shell helper
-    // execs, so a live session can list/get/set/remove the user blueprint library
-    // (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
-    // No store-dir env: the CLI defaults to ~/.base-studio-code/blueprints via the shared home-dir
-    // resolver. Staged for every pane; the helper falls back to a PATH `bsc-blueprint` if unset.
-    if let Some(bin) = sidecar_bin_path("bsc-blueprint") {
-        cmd.env("BSC_BLUEPRINT_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // bsc-project (#1720): the cross-project hub-lifecycle CLI sidecar the `bsc-project` shell helper
-    // execs — `bsc-project list` + `published get|set <key>` over EVERY `~/.base-studio-code/projects/
-    // <key>/` hub (not tied to one plan.db, unlike bsc-plan). Mirrors the bsc-plan/bsc-logs
-    // sidecar-helper shape; staged for every pane, only its explicit subcommands touch disk.
-    if let Some(bin) = sidecar_bin_path("bsc-project") {
-        cmd.env("BSC_PROJECT_BIN", to_bash_path(&bin.to_string_lossy()));
+    // Sidecar CLI binaries: every bsc-* shell helper execs its sidecar via $BSC_*_BIN — the absolute,
+    // bash-style path of the bundled CLI (no PATH changes, no copies; the helper falls back to a PATH
+    // lookup when its BIN is unset, e.g. in the test target where the sidecar isn't present). The export
+    // is byte-identical per CLI, so table-drive it. The per-CLI store/db vars above stay separate: they
+    // are heterogeneous (cwd-derived Option vs global unconditional vs none, like bsc-logs' BSC_LOG_DIR
+    // and bsc-blueprint/bsc-project which need no store-dir env), so they do NOT belong in this loop.
+    for (stem, env_var) in [
+        ("bsc-plan", "BSC_PLAN_BIN"),
+        ("bsc-skill", "BSC_SKILL_BIN"),
+        ("bsc-data", "BSC_DATA_BIN"),
+        ("bsc-logs", "BSC_LOGS_BIN"),
+        ("bsc-compliance", "BSC_COMPLIANCE_BIN"),
+        ("bsc-blueprint", "BSC_BLUEPRINT_BIN"),
+        ("bsc-project", "BSC_PROJECT_BIN"),
+        ("bsc-agent", "BSC_AGENT_BIN"),
+    ] {
+        if let Some(bin) = sidecar_bin_path(stem) {
+            cmd.env(env_var, to_bash_path(&bin.to_string_lossy()));
+        }
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
@@ -397,10 +384,6 @@ fn wire_bsc_env(
     // group after the project. Persistent — reopening the planner keeps collecting into it.
     if let Some(group) = session_skill_group_for_pane(pane_id) {
         cmd.env("BSC_SESSION_SKILL_GROUP", group);
-    }
-    // The bsc-agent runtime sidecar (#1078 P3) — the `bsc-agent` harness's shell helper execs it.
-    if let Some(bin) = sidecar_bin_path("bsc-agent") {
-        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
     // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
