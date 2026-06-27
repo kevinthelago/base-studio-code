@@ -749,8 +749,17 @@ dependencies = [
 name = "bsc-blueprint"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-cli-util"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
 ]
@@ -759,6 +768,7 @@ dependencies = [
 name = "bsc-data"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "csv",
  "duckdb",
  "serde",
@@ -779,6 +789,7 @@ dependencies = [
 name = "bsc-project"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-util",
  "serde_json",
 ]
@@ -1079,6 +1090,7 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
  "mcp-rpc",
@@ -3148,7 +3160,7 @@ dependencies = [
 name = "logs"
 version = "0.1.0"
 dependencies = [
- "bsc-sqlite-util",
+ "bsc-cli-util",
  "bsc-util",
  "rusqlite",
  "serde",
@@ -3960,6 +3972,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 name = "plandb"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-data",
  "bsc-sqlite-util",
  "rusqlite",
@@ -5212,6 +5225,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 name = "skilldb"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "bsc-sqlite-util",
  "bsc-util",
  "include_dir",

@@ -27,6 +27,8 @@ bsc-util = { path = "../bsc-util" }
 # Shared SQLite-CLI helpers (#1621): `print_json` (compact/--pretty stdout) + `read_stdin_json`
 # (object-or-array), so the `bsc-compliance` CLI matches the `bsc-plan`/`bsc-skill` house style.
 bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
+bsc-cli-util = { path = "../bsc-cli-util" }
 # Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, and run-loop. This crate
 # supplies its own `tool_schemas` + `call_tool` + arg parsers via the `ToolServer` trait.
 mcp-rpc = { path = "../mcp-rpc" }

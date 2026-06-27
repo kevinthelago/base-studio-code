@@ -29,3 +29,5 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the home-dir / stdin
 # helpers the `bsc-skill` CLI shares with `bsc-plan` / `bsc-logs`.
 bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
+bsc-cli-util = { path = "../bsc-cli-util" }

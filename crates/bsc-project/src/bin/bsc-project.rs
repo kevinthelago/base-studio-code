@@ -14,13 +14,7 @@ use bsc_project::{is_published, list_projects, mark_published};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-project: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-project", run)
 }
 
 /// Parsed global flags + leftover positional args.

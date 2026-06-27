@@ -32,13 +32,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-compliance: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-compliance", run)
 }
 
 /// Parsed global flags + the value-bearing flags any verb may use + leftover positional args.
@@ -201,15 +195,15 @@ fn run() -> Result<(), String> {
     }
 }
 
-/// Resolve the store path: explicit `--db` wins, else [`Store::default_path`] (`$BSC_COMPLIANCE_STORE`,
-/// then `~/.base-studio-code/compliance/store.db`).
+/// Resolve the store path via the shared `--db` → `$BSC_COMPLIANCE_STORE` → default precedence
+/// ([`bsc_cli_util::resolve_store_path`]). The default is [`Store::default_path`], which falls back to
+/// `~/.base-studio-code/compliance/store.db` (it re-checks the env var, a harmless redundancy since
+/// the shared resolver only reaches the default when the env var is unset/empty).
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
-    if let Some(p) = flag {
-        return Ok(PathBuf::from(p));
-    }
-    Store::default_path()
-        .ok_or("could not resolve a store path; pass --db <path> or set BSC_COMPLIANCE_STORE")
-        .map_err(str::to_string)
+    bsc_cli_util::resolve_store_path(flag, "BSC_COMPLIANCE_STORE", || {
+        Store::default_path()
+            .ok_or_else(|| "could not resolve a store path; pass --db <path> or set BSC_COMPLIANCE_STORE".to_string())
+    })
 }
 
 const USAGE: &str = "\

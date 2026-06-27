@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use bsc_sqlite_util::print_json;
+use bsc_cli_util::emit;
 use logs::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
 
 struct Args {
@@ -92,14 +92,13 @@ fn run() -> Result<(), String> {
         // Every console session, one line each.
         "sessions" => {
             let rows = sessions(&dir);
-            if a.json {
-                print_json(&rows, a.pretty);
-            } else {
-                println!("session\trole\ttools\tskills\tmcp\tcoord\tcost\tactivity");
-                for r in &rows {
-                    println!("{}\t{}\t{}\t{}\t{}\t{}\t${:.2}\t{}", r.session, r.role, r.tools, r.skills, r.mcp, r.coord, r.cost_usd, r.activity);
-                }
-            }
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["session\trole\ttools\tskills\tmcp\tcoord\tcost\tactivity".to_string()];
+                lines.extend(rows.iter().map(|r| {
+                    format!("{}\t{}\t{}\t{}\t{}\t{}\t${:.2}\t{}", r.session, r.role, r.tools, r.skills, r.mcp, r.coord, r.cost_usd, r.activity)
+                }));
+                lines.join("\n")
+            });
         }
         // One session's full, time-merged story across every stream.
         "session" => {
@@ -107,19 +106,17 @@ fn run() -> Result<(), String> {
                 .ok_or("usage: bsc-logs session <id>")?;
             let events = query(&dir, &streams, Some(&id), a.since, a.limit);
             let c = cost::cost_for_session(&dir, &id);
-            if a.json {
-                #[derive(serde::Serialize)]
-                struct Out<'a> { session: &'a str, role: &'a str, events: &'a [LogEvent], cost: Option<cost::Cost> }
-                print_json(&Out { session: &id, role: role_of(&id), events: &events, cost: c }, a.pretty);
-            } else {
-                println!("time\tstream\tdetail");
-                for e in &events {
-                    println!("{}\t{}\t{}", hms(e.ts_ms), e.stream, e.summary);
+            #[derive(serde::Serialize)]
+            struct Out<'a> { session: &'a str, role: &'a str, events: &'a [LogEvent], cost: Option<cost::Cost> }
+            let value = Out { session: &id, role: role_of(&id), events: &events, cost: c.clone() };
+            emit(a.pretty, a.json, &value, || {
+                let mut lines = vec!["time\tstream\tdetail".to_string()];
+                lines.extend(events.iter().map(|e| format!("{}\t{}\t{}", hms(e.ts_ms), e.stream, e.summary)));
+                if let Some(c) = &c {
+                    lines.push(format!("--\tcost\t{} · in {} out {} cache {} · ${:.4}", c.model, c.input, c.output, c.cache_creation + c.cache_read, c.cost_usd));
                 }
-                if let Some(c) = c {
-                    println!("--\tcost\t{} · in {} out {} cache {} · ${:.4}", c.model, c.input, c.output, c.cache_creation + c.cache_read, c.cost_usd);
-                }
-            }
+                lines.join("\n")
+            });
         }
         // Token + cost rollup.
         "cost" => {
@@ -128,30 +125,28 @@ fn run() -> Result<(), String> {
                 Some(s) => all.into_iter().filter(|c| &c.session == s).collect(),
                 None => all,
             };
-            if a.json {
-                print_json(&rows, a.pretty);
-            } else {
-                println!("session\tmodel\tin\tout\tcache\tcost");
-                for c in &rows {
-                    println!("{}\t{}\t{}\t{}\t{}\t${:.4}", c.session, c.model, c.input, c.output, c.cache_creation + c.cache_read, c.cost_usd);
-                }
-            }
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["session\tmodel\tin\tout\tcache\tcost".to_string()];
+                lines.extend(rows.iter().map(|c| {
+                    format!("{}\t{}\t{}\t{}\t{}\t${:.4}", c.session, c.model, c.input, c.output, c.cache_creation + c.cache_read, c.cost_usd)
+                }));
+                lines.join("\n")
+            });
         }
         // Recent perf.db samples (rss/cpu/threads), the one binary-SQLite stream (#1716). perf.db
         // sits in the same log dir; read-only. Honors --session / --since / --limit like every verb.
         "perf" => {
             let samples = perf::perf_samples(&dir.join("perf.db"), a.session.as_deref(), a.since, a.limit);
-            if a.json {
-                print_json(&samples, a.pretty);
-            } else {
+            emit(a.pretty, a.json, &samples, || {
                 let dash = |v: Option<i64>| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into());
-                println!("time\tsession\tpid\trss_mb\tcpu%\tthreads");
-                for s in &samples {
+                let mut lines = vec!["time\tsession\tpid\trss_mb\tcpu%\tthreads".to_string()];
+                lines.extend(samples.iter().map(|s| {
                     let rss = s.rss_bytes.map(|b| format!("{:.1}", b as f64 / 1_048_576.0)).unwrap_or_else(|| "-".into());
                     let cpu = s.cpu_pct.map(|c| format!("{c:.1}")).unwrap_or_else(|| "-".into());
-                    println!("{}\t{}\t{}\t{}\t{}\t{}", hms(s.ts), s.session, dash(s.pid), rss, cpu, dash(s.threads));
-                }
-            }
+                    format!("{}\t{}\t{}\t{}\t{}\t{}", hms(s.ts), s.session, dash(s.pid), rss, cpu, dash(s.threads))
+                }));
+                lines.join("\n")
+            });
         }
         // A one-line recap for a session.
         "summary" => {
@@ -160,35 +155,24 @@ fn run() -> Result<(), String> {
             let r = sessions(&dir).into_iter().find(|r| r.session == id).unwrap_or(SessionRow {
                 session: id.clone(), role: role_of(&id), tools: 0, skills: 0, mcp: 0, coord: 0, cost_usd: 0.0, activity: String::new(),
             });
-            if a.json {
-                print_json(&r, a.pretty);
-            } else {
-                println!("{} [{}] · tools {} skills {} coord {} · ${:.2} · {}", r.session, r.role, r.tools, r.skills, r.coord, r.cost_usd, if r.activity.is_empty() { "—" } else { &r.activity });
-            }
+            emit(a.pretty, a.json, &r, || {
+                format!("{} [{}] · tools {} skills {} coord {} · ${:.2} · {}", r.session, r.role, r.tools, r.skills, r.coord, r.cost_usd, if r.activity.is_empty() { "—" } else { &r.activity })
+            });
         }
         // A single stream (the verb is the stream name).
         other => {
             let s = canonical_stream(other).ok_or_else(|| format!("unknown command/stream '{other}'\n\n{USAGE}"))?;
             let events = query(&dir, &[s], a.session.as_deref(), a.since, a.limit);
-            if a.json {
-                print_json(&events, a.pretty);
-            } else {
-                println!("time\tsession\tdetail");
-                for e in &events {
-                    println!("{}\t{}\t{}", hms(e.ts_ms), e.session, e.summary);
-                }
-            }
+            emit(a.pretty, a.json, &events, || {
+                let mut lines = vec!["time\tsession\tdetail".to_string()];
+                lines.extend(events.iter().map(|e| format!("{}\t{}\t{}", hms(e.ts_ms), e.session, e.summary)));
+                lines.join("\n")
+            });
         }
     }
     Ok(())
 }
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-logs: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-logs", run)
 }
