@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -33,38 +34,34 @@ const SEVERITY_COLOR: Record<"critical" | "warning" | "ok", string> = {
   ok: "var(--success)",
 };
 
-function StatusDot({ verdict }: { verdict: PrereqVerdict }) {
-  const color = verdict.ok ? SEVERITY_COLOR.ok : SEVERITY_COLOR[verdict.severity];
-  return (
-    <span
-      title={verdict.ok ? "found" : verdict.severity}
-      style={{
-        width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
-        background: color, boxShadow: `0 0 0 3px color-mix(in oklch, ${color}, transparent 82%)`,
-      }}
-    />
-  );
-}
-
 function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
   const url = verdict.ok ? null : firstUrl(verdict.hint);
+  // The row's leading status dot — the shared StatusDot with the prereq's severity color + a soft halo.
+  const dotColor = verdict.ok ? SEVERITY_COLOR.ok : SEVERITY_COLOR[verdict.severity];
   return (
     <div style={{
       display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px",
       background: alt ? "var(--bg-panel)" : "var(--bg-elev)",
     }}>
-      <div style={{ paddingTop: 3 }}><StatusDot verdict={verdict} /></div>
+      <div style={{ paddingTop: 3 }}>
+        <StatusDot
+          color={dotColor}
+          size={9}
+          title={verdict.ok ? "found" : verdict.severity}
+          style={{ boxShadow: `0 0 0 3px color-mix(in oklch, ${dotColor}, transparent 82%)` }}
+        />
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
           {verdict.ok ? (
-            <span className="tag green" style={{ fontSize: 9.5 }}>● found</span>
+            <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</span>
           ) : (
             <span
               className="tag"
               style={{ fontSize: 9.5, color: SEVERITY_COLOR[verdict.severity], borderColor: SEVERITY_COLOR[verdict.severity] }}
             >
-              ● {verdict.severity === "critical" ? "missing" : "attention"}
+              <StatusDot style={{ marginRight: 4 }} />{verdict.severity === "critical" ? "missing" : "attention"}
             </span>
           )}
           {verdict.version && (
