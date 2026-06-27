@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { parsePhases } from "../github/ghStructure";
 import type { Section } from "../github/ghStructure";
@@ -105,8 +106,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // worker whose issues are all complete/verified — it already finished. Prune those streams (their
       // worktrees/branches persist untouched); launch only the streams with outstanding work, plus the
       // director if enabled. On a first launch nothing is done, so every stream stays active.
-      const dbIssues = await invoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId })
-        .catch(() => [] as PlanIssue[]);
+      const dbIssues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId }, []);
       const { active, skipped } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
       const launchPlan = { ...fullPlan, streams: active };
       if (active.length === 0 && !launchPlan.director.enabled) {
@@ -139,12 +139,12 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // worktree path ensure_worktree just returned; the director uses the hub dir.
       const worktreePaths: Record<string, string> = {};
       for (const r of worktreeResults) if (r.path) worktreePaths[r.id] = r.path;
-      const hubPath = await invoke<string>("project_dir_path", { projectKey: effectiveProjectId }).catch(() => "");
+      const hubPath = await safeInvoke<string>("project_dir_path", { projectKey: effectiveProjectId }, "");
       // Give the director its standing protocol at the hub (#375) so it gets the bsc-fleet
       // roster instruction + answers worker questions (the refactor dropped this call; #734).
       if (launchPlan.director.enabled) {
-        await invoke("ensure_director_protocol", { projectKey: effectiveProjectId })
-          .catch(e => console.error("director protocol failed:", e));
+        await safeInvoke("ensure_director_protocol", { projectKey: effectiveProjectId }, undefined,
+          e => console.error("director protocol failed:", e));
       }
       const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId, { hubPath, worktreePaths });
       publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
@@ -175,7 +175,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       if (visibility === "local") {
         setGhStatus({ blueprint: { status: "created", detail: `${valid.name} · saved to library` } });
         setPublishPhase("done");
-        invoke("pty_write", { paneId, data: `[Blueprint "${valid.name}" saved to your local library.]\r` }).catch(console.error);
+        fireInvoke("pty_write", { paneId, data: `[Blueprint "${valid.name}" saved to your local library.]\r` }, console.error);
         return;
       }
       // Bundle attached skill/KB content so the share is self-contained; MCP stays by reference.
@@ -184,7 +184,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       setGhStatus({ blueprint: { status: "created", detail: valid.name, url: res.htmlUrl } });
       setPublishPhase("done");
       const kind = visibility === "catalog" ? "public" : "secret";
-      invoke("pty_write", { paneId, data: `[Blueprint published to a ${kind} gist: ${res.htmlUrl}]\r` }).catch(console.error);
+      fireInvoke("pty_write", { paneId, data: `[Blueprint published to a ${kind} gist: ${res.htmlUrl}]\r` }, console.error);
     } catch (e) {
       setGhStatus({ blueprint: { status: "error", detail: String(e) } });
       setPublishPhase("error");
@@ -269,7 +269,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         // from the board later resolves to the SAME on-disk hub instead of keying fresh state.
         store.setProjectKeyAlias(pv.id, effectiveProjectId);
         // Mark the hub published in place (#922) — the hub never moves, so --continue history survives.
-        invoke("mark_published", { projectKey: effectiveProjectId }).catch((e) => console.warn("mark_published failed (Projects page reconciles it):", e));
+        fireInvoke("mark_published", { projectKey: effectiveProjectId }, (e) => console.warn("mark_published failed (Projects page reconciles it):", e));
         // Drop the store's draft entry so the project can't linger as a ghost draft card.
         store.removeDraftProject(effectiveProjectId);
       }
@@ -319,7 +319,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
           if (batch.length < 100) break; // last page
         }
         for (const iss of recoverIssues(rows, repo)) {
-          await invoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss }).catch(() => {});
+          await safeInvoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss }, undefined);
           total++;
         }
       }
@@ -339,13 +339,12 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     let cancelled = false;
     (async () => {
       if (!visible || !githubToken || publishRepos.length === 0) { setRecoverable(0); return; }
-      const dbIssues = await invoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId })
-        .catch(() => [] as PlanIssue[]);
+      const dbIssues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId }, []);
       if (cancelled) return;
       if ((dbIssues?.length ?? 0) > 0) { setRecoverable(0); return; } // db already populated — nothing to recover
-      const rows = await invoke<GitHubIssueLike[]>("github_request", {
+      const rows = await safeInvoke<GitHubIssueLike[]>("github_request", {
         token: githubToken, path: `repos/${publishRepos[0]}/issues?state=all&per_page=100`,
-      }).catch(() => [] as GitHubIssueLike[]);
+      }, []);
       if (cancelled) return;
       // Count only planner-published issues — those with a ref marker (a recovered ref isn't "#<n>").
       setRecoverable(recoverIssues(rows ?? [], publishRepos[0]).filter((i) => !i.ref.startsWith("#")).length);

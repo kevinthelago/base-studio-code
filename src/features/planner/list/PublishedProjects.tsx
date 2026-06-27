@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { ExternalLink, MoreHorizontal, Trash2, Search } from "lucide-react";
 import { useAppStore } from "@/store";
 import { mintProjectId, findByTitle } from "@/shared/lib/core/projectPaths";
@@ -312,8 +313,8 @@ export function PublishedProjects({
   async function removeLocalFootprint(p: GhProject) {
     // delete_project_dir clears Windows read-only files first (#793) and handles relocated worktrees
     // without following a node_modules junction into the shared main node_modules.
-    await invoke("delete_project_dir", { projectKey: p.title })
-      .catch((e) => console.warn(`delete_project_dir failed: ${e}`));
+    await safeInvoke("delete_project_dir", { projectKey: p.title }, undefined,
+      (e) => console.warn(`delete_project_dir failed: ${e}`));
     // Pass BOTH the title and the GitHub node id: deleteLocalProject resolves the node id through the
     // alias to the slug-keyed maps (#997) and guards undefined slices (#874/#791), and clears the
     // active/planning session if this was the open project.

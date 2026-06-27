@@ -4,6 +4,7 @@
 // nothing to confirm/mirror. Returns the live required-topic list.
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { DISCOVERY_BASELINE } from "../stages/planStageDerive";
 import type { BlueprintStage } from "../stages/blueprints";
 
@@ -31,7 +32,7 @@ export function useCtxRequired(effectiveProjectId: string, planSecs: BlueprintSt
           ctxSeededRef.current.add(effectiveProjectId);
           const requires = planSecs.find(s => s.key === "discovery")?.requires ?? DISCOVERY_BASELINE;
           for (const t of requires) {
-            await invoke("plan_require_discovery", { projectKey: effectiveProjectId, topic: t, required: true }).catch(() => {});
+            await safeInvoke("plan_require_discovery", { projectKey: effectiveProjectId, topic: t, required: true }, undefined);
           }
           return; // next tick reads the seeded set
         }

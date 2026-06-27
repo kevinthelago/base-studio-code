@@ -9,7 +9,6 @@
 // can't itself be steered by an injection. Mount once at the app root so it runs on any screen.
 
 import { useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "../core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
@@ -56,11 +55,11 @@ async function quarantinePane(paneId: string, streamId: string, summary: string,
   if (inFlight.current.has(paneId)) return;
   inFlight.current.add(paneId);
   try {
-    await invoke("pty_kill", { paneId }).catch((e) => log.error(`warden: pty_kill ${paneId} failed: ${e}`));
+    await safeInvoke("pty_kill", { paneId }, undefined, (e) => log.error(`warden: pty_kill ${paneId} failed: ${e}`));
     useAppStore.getState().markQuarantine(paneId, { streamId, summary, at: Date.now() });
     // Mobile alert (#1102 slice 2a): a "quarantine" coord event → FCM push to paired phones.
-    await invoke("tunnel_emit_coord_event", { kind: "quarantine", session: paneId, refKey: summary, at: Date.now() })
-      .catch((e) => log.error(`warden: quarantine push ${paneId} failed: ${e}`));
+    await safeInvoke("tunnel_emit_coord_event", { kind: "quarantine", session: paneId, refKey: summary, at: Date.now() },
+      undefined, (e) => log.error(`warden: quarantine push ${paneId} failed: ${e}`));
     log.warn(`warden: quarantined ${paneId} (${streamId}) — ${summary}`);
   } finally {
     inFlight.current.delete(paneId);

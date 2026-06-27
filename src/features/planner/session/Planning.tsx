@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { Dialog } from "@/shared/ui/Dialog";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
@@ -572,7 +572,7 @@ export function Planning({ visible }: { visible: boolean }) {
     pendingOutput: () => autopilotTxRef.current.slice(apLastAnswered.current),
     userSim: (system, user) => oneShotComplete(resolveLlmConfig(useAppStore.getState()), system, user),
     sendReply: (text) => {
-      invoke("pty_write", { paneId, data: `${text}\r` }).catch(console.error);
+      fireInvoke("pty_write", { paneId, data: `${text}\r` }, console.error);
       apLastAnswered.current = autopilotTxRef.current.length;
     },
     confirm: (keys) => {
@@ -593,9 +593,9 @@ export function Planning({ visible }: { visible: boolean }) {
   const sendPrompt = useCallback((prompt: string) => {
     const line = flattenPrompt(prompt);
     if (terminalShows(termRef.current, line.slice(0, 40))) {
-      invoke("pty_write", { paneId, data: "\r" }).catch(console.error); // already there → just submit
+      fireInvoke("pty_write", { paneId, data: "\r" }, console.error); // already there → just submit
     } else {
-      invoke("pty_write", { paneId, data: line + "\r" }).catch(console.error);
+      fireInvoke("pty_write", { paneId, data: line + "\r" }, console.error);
     }
   }, [paneId]);
 

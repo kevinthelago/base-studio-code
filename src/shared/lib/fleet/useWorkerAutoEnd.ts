@@ -10,7 +10,6 @@
 
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "../core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
@@ -53,8 +52,8 @@ async function evaluateExit(paneId: string, opts: { kill?: boolean } = {}): Prom
   const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
   if (!projectKey) return; // can't query the DB without the project
 
-  const issues = await invoke<OwnedIssue[]>("plan_list_issues", { projectKey, stream: stream.id })
-    .catch((e) => { log.error(`auto-end: plan_list_issues failed for ${paneId}: ${e}`); return null; });
+  const issues = await safeInvoke<OwnedIssue[] | null>("plan_list_issues", { projectKey, stream: stream.id }, null,
+    (e) => log.error(`auto-end: plan_list_issues failed for ${paneId}: ${e}`));
   if (!issues) return;
 
   const coord = (await readCoordState(5000))?.state ?? emptyCoordState();
@@ -72,12 +71,12 @@ async function evaluateExit(paneId: string, opts: { kill?: boolean } = {}): Prom
     if (useAppStore.getState().paneRoles[directorPane] === "director") {
       const refs = issues.map((i) => i.ref).join(", ");
       const msg = `Stream ${stream.id} finished — its issues (${refs}) are complete in the plan. Close any still open on GitHub with \`gh issue close <ref>\`; a develop push doesn't auto-close them.`;
-      await invoke("pty_write", { paneId: directorPane, data: `${msg}\r` }).catch(() => {});
+      await safeInvoke("pty_write", { paneId: directorPane, data: `${msg}\r` }, undefined);
     }
   }
   // bsc-done (#1379): the worker is still live and asked to close, so actually kill its PTY.
   if (opts.kill) {
-    await invoke("pty_kill", { paneId }).catch((e) => log.error(`auto-end: pty_kill failed for ${paneId}: ${e}`));
+    await safeInvoke("pty_kill", { paneId }, undefined, (e) => log.error(`auto-end: pty_kill failed for ${paneId}: ${e}`));
   }
 }
 
@@ -131,7 +130,7 @@ export function useWorkerAutoEnd(): void {
       const stream = s.fleetPaneStreams[paneId];
       const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
       if (!projectKey || !stream) continue;
-      const issues = await invoke<OwnedIssue[]>("plan_list_issues", { projectKey, stream: stream.id }).catch(() => null);
+      const issues = await safeInvoke<OwnedIssue[] | null>("plan_list_issues", { projectKey, stream: stream.id }, null);
       if (isCancelled() || !issues) continue;
       const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
       const action = decideWorkerAutoEnd({
@@ -143,7 +142,7 @@ export function useWorkerAutoEnd(): void {
       if (action === "close-nudge" && !nudgedRef.current.has(paneId)) {
         nudgedRef.current.add(paneId); // once per idle period; cleared when the turn reopens
         log.info(`auto-end: nudging ${paneId} (${stream.id}) to self-close — idle + work complete`);
-        await invoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }).catch(() => {});
+        await safeInvoke("pty_write", { paneId, data: `${CLOSE_NUDGE}\r` }, undefined);
       } else if (action === "resurface-question" && !resurfacedRef.current.has(paneId)) {
         // Lost-question resurface (#1379 stage 4): the worker has waited too long on a director
         // answer — its ask may have been missed. Re-surface it to the live director ONCE so it
@@ -156,7 +155,7 @@ export function useWorkerAutoEnd(): void {
           const waited = Math.max(1, Math.round((now - ask.at) / 60_000));
           const msg = `Worker ${stream.id} (${paneId}) asked "${ask.question}" ~${waited}m ago and is still waiting with no answer — it may have been missed. Answer it when ready: echo "<answer>" | bsc-answer ${paneId} (or reassign). Don't leave it parked.`;
           log.info(`auto-end: resurfacing ${paneId}'s lost question to the director`);
-          await invoke("pty_write", { paneId: directorPane, data: `${msg}\r` }).catch(() => {});
+          await safeInvoke("pty_write", { paneId: directorPane, data: `${msg}\r` }, undefined);
         }
       }
     }

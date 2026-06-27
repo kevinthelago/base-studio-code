@@ -11,7 +11,7 @@
 // live deps through a ref, so the once-attached `pty_data` listener never captures a stale value.
 
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { stripAnsi } from "./planningTerminal";
@@ -182,11 +182,11 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     // once the user confirms/refines the model interactively.
     const dm = parseDataModelTag(bufRef.current);
     if (dm) {
-      invoke("data_persist_model", {
+      fireInvoke("data_persist_model", {
         projectKey: projIdSnap,
         model: dm,
         refined: false,
-      }).catch((e: unknown) => console.warn("data_persist_model failed:", e));
+      }, (e: unknown) => console.warn("data_persist_model failed:", e));
       bufRef.current = stripDataModelTags(bufRef.current);
     }
 

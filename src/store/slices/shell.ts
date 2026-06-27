@@ -4,7 +4,7 @@
 // (#1309); the chrome fields belong to app/ eventually. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
-import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { setMapEntry } from "../updateHelpers";
 
 type ShellSlice = Pick<AppStore,
@@ -41,23 +41,23 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       setPerfConfig: (config) => {
         set({ perfConfig: config });
         // Push the new config to the Rust backend so the sampler respects it.
-        invoke("perf_set_config", {
+        fireInvoke("perf_set_config", {
           enabled: config.enabled,
           intervalSecs: config.intervalSecs,
           retentionHours: config.retentionHours,
           maxDbMb: config.maxDbMb,
           trackProcess: config.trackProcess,
           trackFrontend: config.trackFrontend,
-        }).catch(() => { /* backend may not be ready */ });
+        });
       },
 
       logConfig: DEFAULT_LOG_CONFIG,
       setLogConfig: (config) => {
         set({ logConfig: config });
         // Push the cap to the Rust backend so "Enforce now" and the next startup respect it.
-        invoke("log_set_config", {
+        fireInvoke("log_set_config", {
           maxLines: config.maxLines,
           maxSizeMb: config.maxSizeMb,
-        }).catch(() => { /* backend may not be ready */ });
+        });
       },
 });

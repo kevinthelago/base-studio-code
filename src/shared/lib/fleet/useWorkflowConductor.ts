@@ -6,7 +6,7 @@
 // any event whose run has already moved past that stage. Mount once (ConsoleScreen stays
 // mounted across screens). Safe to run always — it only ever touches workflow panes.
 import { useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../core/safeInvoke";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { parseCoordLine } from "./coordination";
@@ -18,7 +18,7 @@ export function useWorkflowConductor(): void {
   const lastCount = useRef(0);
   usePoll(async (isCancelled) => {
     if (isCancelled()) return;
-    const lines = await invoke<string[]>("read_coord_log", { limit: 2000 }).catch(() => null);
+    const lines = await safeInvoke<string[] | null>("read_coord_log", { limit: 2000 }, null);
     if (isCancelled() || !lines) return;
     const runs = useAppStore.getState().workflowRuns;
     if (Object.keys(runs).length === 0) { lastCount.current = lines.length; return; }
@@ -44,7 +44,7 @@ export function useWorkflowConductor(): void {
     for (const item of toLaunch) {
       const tabs = useAppStore.getState().tabs;
       const idx = tabs.findIndex((t) => t.name === `workflow · ${item}`);
-      if (idx >= 0) await invoke("pty_kill", { paneId: `t${idx}p0` }).catch(() => {});
+      if (idx >= 0) await safeInvoke("pty_kill", { paneId: `t${idx}p0` }, undefined);
       useAppStore.getState().workflowMount(item);
     }
   }, POLL_MS, []);

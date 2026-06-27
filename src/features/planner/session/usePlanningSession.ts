@@ -14,7 +14,7 @@
 // store/invoke call are moved unchanged — only the closed-over values become hook parameters.
 
 import { useState, type MutableRefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { Terminal } from "@xterm/xterm";
 import type { Dispatch, SetStateAction } from "react";
 import { useAppStore } from "@/store";
@@ -72,7 +72,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
       ...store.commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
       ...store.schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
     ];
-    const paths = await invoke<{ planning_dir: string }>(
+    const paths = await safeInvoke<{ planning_dir: string } | null>(
       "setup_workspaces",
       {
         repoFullNames: linkedRepos,
@@ -87,7 +87,9 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
         enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
         authoring:   isAuthoring,                       // use the blueprint-author intro (#923)
       },
-    ).catch((e: unknown) => { console.error("workspace setup failed:", e); return null; });
+      null,
+      (e: unknown) => console.error("workspace setup failed:", e),
+    );
     refreshSetupSig(); // baseline updated (#756)
     return paths;
   }
@@ -98,17 +100,17 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     setRestarting(true);
     bufRef.current = "";
     term.clear();
-    await invoke("pty_kill", { paneId: paneId }).catch(console.error);
+    await safeInvoke("pty_kill", { paneId: paneId }, undefined, console.error);
     const paths = await regenerateWorkspace();
     const token = useAppStore.getState().githubToken;
     const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
     // A deliberate restart launches a brand-new `claude` — re-greet with the intro (#1240). No
     // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
     const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
-    const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
-      .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
+    const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
+      (e: unknown) => console.error("planner intro prompt failed:", e));
     const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "") || undefined;
-    await invoke("pty_create", {
+    await safeInvoke("pty_create", {
       paneId: paneId,
       cols: term.cols,
       rows: term.rows,
@@ -116,7 +118,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
       initCmd: "claude",
       startupPrompt,
       env: ghEnv,
-    }).catch(console.error);
+    }, undefined, console.error);
     setRestarting(false);
   }
 
@@ -135,7 +137,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
   async function doClearPlan() {
     setShowClearConfirm(false);
     const store = useAppStore.getState();
-    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
+    await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
     store.clearPlan(effectiveProjectId);
     store.setActiveProjectRepos([]);
     setRepoLinkFullNames([]);
@@ -152,7 +154,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     const before = store.projectBlueprintId[effectiveProjectId];
     store.applyBlueprintToProject(effectiveProjectId, targetId);
     if (store.projectBlueprintId[effectiveProjectId] === before) return; // switch was refused — leave as-is
-    await invoke("clear_project_plan_files", { projectKey: effectiveProjectId }).catch(console.error);
+    await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
     store.setActiveProjectRepos([]);
     setRepoLinkFullNames([]);
     store.setPlanningContext(planningPitch, "");

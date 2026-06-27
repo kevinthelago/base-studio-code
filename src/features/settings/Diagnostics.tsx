@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   interpretDiagnostics,
@@ -115,10 +116,8 @@ function ShellSelector() {
   function choose(next: ShellKind) {
     setKind(next);
     saveShellKind(next);
-    invoke("set_preferred_shell", { kind: next }).catch((e) => {
-      // Non-fatal: the local copy still drives the UI; surface nothing blocking.
-      console.error("set_preferred_shell failed", e);
-    });
+    // Non-fatal: the local copy still drives the UI; surface nothing blocking.
+    fireInvoke("set_preferred_shell", { kind: next }, (e) => console.error("set_preferred_shell failed", e));
   }
 
   const active = SHELL_OPTIONS.find((o) => o.kind === kind) ?? SHELL_OPTIONS[0];
