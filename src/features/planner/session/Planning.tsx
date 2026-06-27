@@ -1,16 +1,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
 import { useAppStore } from "@/store";
 import { Dialog } from "@/shared/ui/Dialog";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "../github/ghStructure";
 import type { Section, SectionState } from "../github/ghStructure";
-import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForTopic, groupTopics,
 } from "../stages/planTopics";
@@ -21,14 +16,10 @@ import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencie
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile } from "../issues/planIssues";
 import { ProjectPane } from "../pane/ProjectPane";
-import { hubToCanonical } from "@/features/planner/lib/plannerSync";
-import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "@/features/tunnel/lib/tunnelClient";
 import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
-import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
-import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
@@ -38,7 +29,6 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
-import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { BackButton } from "@/shared/ui/BackButton";
 import { clampIndex, gatePill, footerAction, resolveFooter } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
@@ -57,9 +47,10 @@ import { usePlanningModals } from "./usePlanningModals";
 import { usePlanningSession } from "./usePlanningSession";
 import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
-import { usePlannerMessages } from "./usePlannerMessages";
 import { usePlanConfirmations } from "./usePlanConfirmations";
 import { useSetupSignature } from "./useSetupSignature";
+import { usePlannerTerminal } from "./usePlannerTerminal";
+import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 // Planning autopilot (#746) — re-wired into the refactored planner after it was dropped in
 // the plannerCore/plannerSync refactor. Pure logic in planAutopilot*.ts; this is the wiring.
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
@@ -159,10 +150,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
   const paneId = `planning_${effectiveProjectId.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)}`;
-  // The planner's hub dir (set once setup_workspaces resolves) + whether the relay is live —
-  // used to mirror the planner pane + sync the plan over the tunnel (#801).
+  // The planner's hub dir — owned here so the earlier MCP wiring + the tunnel sync below can read it,
+  // but WRITTEN by usePlannerTerminal once setup_workspaces resolves (#801). tunnelRunning now lives
+  // inside usePlannerTunnelSync.
   const [planningDir, setPlanningDir] = useState("");
-  const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
   // The repos linked to this project (#833). For a published project that's the board's repos;
   // for an UNPUBLISHED one it's the linked+cloned set persisted under effectiveProjectId — so a
@@ -284,47 +275,9 @@ export function Planning({ visible }: { visible: boolean }) {
   });
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 
-  // ── Mobile relay: connect the planner session (#801) ──────────────────────────
-  // The active project's canonical plan (files + the stable proj-<hex> id). Route the JSON
-  // manifests to their canonical relpaths; everything else is a `.md` section. commands.json/
-  // features.json are outside the canonical-sync contract (isPlanFile), so they're excluded.
-  // Shared by the file-sync path (1) and the live-frame emit (1b).
-  const canonicalPlan = useMemo(() => {
-    if (Object.keys(savedSections).length === 0) return null;
-    const md: Record<string, string> = {};
-    let phasesJson, issuesJson, fleetJson, reposJson, skippedContent: string | undefined;
-    for (const [k, v] of Object.entries(savedSections)) {
-      if (k === "phases") phasesJson = v;
-      else if (k === "issues") issuesJson = v;
-      else if (k === FLEET_KEY) fleetJson = v;
-      else if (k === "repos") reposJson = v;
-      else if (k === SKIPPED_KEY) skippedContent = v;
-      else if (k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;
-      else md[k] = v;
-    }
-    return hubToCanonical({
-      projectTitle: effectiveProjectId,
-      sections: md,
-      confirmedSections: [...confirmedSet],
-      phasesJson, issuesJson, fleetJson, reposJson, skippedContent,
-    });
-  }, [savedSections, confirmedSet, effectiveProjectId]);
-
-  // (1) Plan-sync — push the canonical plan files so a paired mobile planner reconciles over
-  // the relay (E2E) instead of the API. Unchanged async file-sync path.
-  useEffect(() => {
-    if (!tunnelRunning || !canonicalPlan) return;
-    tunnelSetPlanState(canonicalPlan.meta.projectId, canonicalPlan.files).catch(() => {});
-  }, [tunnelRunning, canonicalPlan]);
-
-  // (2) PTY mirror — expose the planner pane so a paired phone can view (and, if granted,
-  // drive) the live planner terminal. Cleared when the planner unmounts or the relay stops.
-  useEffect(() => {
-    const setExtra = useAppStore.getState().setTunnelExtraPanes;
-    if (!tunnelRunning || !planningDir) { setExtra([]); return; }
-    setExtra([{ id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`, status: "running" as const }]);
-    return () => useAppStore.getState().setTunnelExtraPanes([]);
-  }, [tunnelRunning, planningDir, paneId, projectTitle]);
+  // Mobile-relay projection of the live planning session (#801/#934/#987) — the canonical-plan
+  // derivation + every tunnel emit/listen effect — now lives in usePlannerTunnelSync, called once
+  // currentStage/planStatusLabel are in scope (below the gate hook).
 
   // Real plan data for the ProjectPane (#: wire-in). Maps the fleet, agent
   // profiles, decomposed issues, phases, repos, and sections into the pane's
@@ -485,72 +438,15 @@ export function Planning({ visible }: { visible: boolean }) {
   useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, phases.length);
 
-  // ── Live planner frames over the tunnel (#934 / #987) ───────────────────────────
-  // Project the LIVE planning session (active stage + confirmed sections + files + the
-  // conversation) to a paired phone, alongside the async file-sync above. The desktop stays
-  // the single source of truth; the phone mirrors these and drives via the inbound listeners.
-
-  // The planner is a PTY running `claude`, so the structured conversation lives in Claude's
-  // transcript — poll it (newest 50 turns) while paired so the phone renders the real chat,
-  // not the raw terminal. pipelineRuns stays empty: the planner runs no pipelines (those are a
-  // fleet surface, #220).
-  const plannerMessages = usePlannerMessages(tunnelRunning, paneId);
-
-  // (1b) plan_state — debounced snapshot (replayed to newly-paired clients Rust-side).
-  useEffect(() => {
-    if (!tunnelRunning || !canonicalPlan) return;
-    const id = setTimeout(() => {
-      tunnelEmitPlanState(canonicalPlan.meta.projectId, currentStage, [...confirmedSet], canonicalPlan.files, plannerMessages, []).catch(() => {});
-    }, 500);
-    return () => clearTimeout(id);
-  }, [tunnelRunning, canonicalPlan, currentStage, confirmedSet, plannerMessages]);
-
-  // plan_status — cheap header update, un-debounced on stage/status change.
-  useEffect(() => {
-    if (!tunnelRunning || !canonicalPlan) return;
-    tunnelEmitPlanStatus(canonicalPlan.meta.projectId, currentStage, planStatusLabel).catch(() => {});
-  }, [tunnelRunning, canonicalPlan, currentStage, planStatusLabel]);
-
-  // plan_event — transient deltas at the transition sites (refs diff prev vs current).
-  const prevConfirmedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (tunnelRunning && canonicalPlan) {
-      for (const k of confirmedSet) {
-        if (!prevConfirmedRef.current.has(k)) {
-          tunnelEmitPlanEvent(canonicalPlan.meta.projectId, { kind: "section_confirmed", at: Date.now(), section: k }).catch(() => {});
-        }
-      }
-    }
-    prevConfirmedRef.current = new Set(confirmedSet);
-  }, [confirmedSet, tunnelRunning, canonicalPlan]);
-
-  const prevStageRef = useRef("");
-  useEffect(() => {
-    if (tunnelRunning && canonicalPlan && currentStage && currentStage !== prevStageRef.current) {
-      tunnelEmitPlanEvent(canonicalPlan.meta.projectId, { kind: "stage_advanced", at: Date.now(), stage: currentStage }).catch(() => {});
-    }
-    prevStageRef.current = currentStage;
-  }, [currentStage, tunnelRunning, canonicalPlan]);
-
-  const prevMsgCountRef = useRef(0);
-  useEffect(() => {
-    if (tunnelRunning && canonicalPlan && plannerMessages.length > prevMsgCountRef.current) {
-      const last = plannerMessages[plannerMessages.length - 1];
-      tunnelEmitPlanEvent(canonicalPlan.meta.projectId, { kind: "message_appended", at: last.at || Date.now(), message: last }).catch(() => {});
-    }
-    prevMsgCountRef.current = plannerMessages.length;
-  }, [plannerMessages, tunnelRunning, canonicalPlan]);
-
-  // Inbound DRIVE from the phone (#934): confirm a section, advance a stage, or chat into the
-  // planner PTY. Gated Rust-side behind the input grant (a view-only phone can't steer).
-  useEffect(() => {
-    const subs = [
-      listen<{ section: string }>("tunnel://plan-confirm", (e) => confirmPlanSection(effectiveProjectId, e.payload.section)),
-      listen<{ stageKey: string }>("tunnel://plan-advance", (e) => confirmPlanSection(effectiveProjectId, e.payload.stageKey)),
-      listen<{ text: string }>("tunnel://plan-chat", (e) => { void invoke("pty_write", { paneId, data: e.payload.text + "\r" }); }),
-    ];
-    return () => { for (const s of subs) void s.then((off) => off()); };
-  }, [effectiveProjectId, paneId, confirmPlanSection]);
+  // Mobile-relay projection of the live planning session (#801/#934/#987, usePlannerTunnelSync):
+  // the canonical-plan derivation, the message poll, and every tunnel emit/listen effect (file-sync,
+  // PTY mirror, plan_state/status, the confirmed/stage/message deltas, and the inbound DRIVE). All
+  // no-op unless the relay is live. Called here so currentStage/planStatusLabel (from the gate hook)
+  // are in scope.
+  usePlannerTunnelSync({
+    effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
+    planningDir, paneId, projectTitle, confirmPlanSection,
+  });
 
   // Stage gate-confirm/skip logic (#1775, usePlanConfirmations): the active stage's pending sections,
   // the confirm-stage primitive (#1068), the auto-advance effect (#1068), and the optional skip (#921).
@@ -587,13 +483,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // Null until the first focus tag arrives. Highlights the matching card.
   const [, setActiveSection] = useState<string | null>(null);
 
-  const containerRef   = useRef<HTMLDivElement>(null);
-  const termRef        = useRef<Terminal | null>(null);
-  const fitRef         = useRef<FitAddon | null>(null);
   // Drag-to-resize the plan-sections panel (#43; the terminal flexes to fill the rest).
   const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
-  const unlistenData   = useRef<UnlistenFn | null>(null);
-  const unlistenExit   = useRef<UnlistenFn | null>(null);
+  // The xterm terminal + PTY refs (containerRef, termRef) come from usePlannerTerminal, called below
+  // once its inputs (processChunk, stageIdsFor, refreshSetupSig) are in scope.
   // The planner's PTY tag-parse stream (#1474): owns bufRef + autopilotTxRef and a `processChunk`
   // that parses + dispatches every structured <tag> the planner emits. bufRef is the tag-scan
   // buffer (cleared on restart); autopilotTxRef is the un-consumed copy the autopilot reads.
@@ -639,6 +532,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // refreshSetupSig re-reads the baseline (called after every workspace setup).
   const { currentSig, lastSetupSig, refreshSetupSig, contextStale } =
     useSetupSignature(effectiveProjectId, linkedRepos, stageIdsFor);
+
+  // The planner's xterm terminal + PTY lifecycle (#1775, usePlannerTerminal): mount/spawn claude in
+  // the isolated planning dir, re-fit when shown, and re-sync setup_workspaces when a repo resolves.
+  // Owns the terminal; writes the resolved hub dir up via setPlanningDir.
+  const { containerRef, termRef } = usePlannerTerminal({
+    paneId, visible, effectiveProjectId, linkedRepos, treatAsExisting, isAuthoring,
+    activeProjectName, activeProjectNumber, planningPitch, stageIdsFor, refreshSetupSig,
+    processChunk, commands, schedules, setPlanningDir,
+  });
 
   // Modal open/close state (#1642, usePlanningModals): the clear-plan confirmation + the
   // blueprint-update modal and its version-mismatch auto-open state machine (#827/#1296).
@@ -703,209 +605,8 @@ export function Planning({ visible }: { visible: boolean }) {
   usePlannerPromptDelivery(effectiveProjectId, sendPrompt);
 
 
-  // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
-  // pty_kill is called on unmount so navigating away ends the session cleanly.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const term = new Terminal({
-      theme: TERM_THEME,
-      fontFamily: '"JetBrains Mono", monospace',
-      fontSize: 12,
-      lineHeight: 1.4,
-      cursorBlink: true,
-      cursorStyle: "bar",
-      scrollback: 10000,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(el);
-    termRef.current = term;
-    fitRef.current  = fitAddon;
-
-    term.onData(data => {
-      invoke("pty_write", { paneId: paneId, data }).catch(console.error);
-    });
-
-    // Capture state at mount time for workspace sync.
-    const repoSnapshot    = linkedRepos;  // string[] of full_names
-    const treatAsExistingSnap = treatAsExisting;
-    const isAuthoringSnap = isAuthoring;
-    const projNameSnap    = activeProjectName;
-    const projNumberSnap  = activeProjectNumber;
-    const pitchSnap       = planningPitch;
-    const projIdSnap      = effectiveProjectId;
-    const ghLoginSnap     = useAppStore.getState().githubUser?.login ?? "";
-    const ghNameSnap      = useAppStore.getState().githubUser?.name  ?? "";
-    const automationsSnap = [
-      ...commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
-      ...schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
-    ];
-
-    requestAnimationFrame(async () => {
-      fitAddon.fit();
-
-      // Subscribe before creating the PTY so we never miss early output.
-      unlistenData.current = await listen<string>(`pty_data_${paneId}`, ev => {
-        term.write(ev.payload);
-        // Parse structured tags out of the stripped output stream (#1474, usePlannerTagStream).
-        processChunk(ev.payload);
-      });
-
-      unlistenExit.current = await listen<unknown>(`pty_exit_${paneId}`, () => {
-        term.write("\r\n\x1b[33m[session ended — navigate away and back to restart]\x1b[0m\r\n");
-      });
-
-      // Create the isolated planning workspace directory with settings.json + CLAUDE.md.
-      const paths = await invoke<{ planning_dir: string }>(
-        "setup_workspaces",
-        {
-          repoFullNames: repoSnapshot,
-          automations:   automationsSnap,
-          isExisting:    treatAsExistingSnap,
-          projectName:   projNameSnap,
-          projectNumber: projNumberSnap,
-          pitch:         pitchSnap,
-          projectKey:    projIdSnap,
-          githubLogin:   ghLoginSnap,
-          githubName:    ghNameSnap,
-          enabledStages: stageIdsFor(projIdSnap), // scope the planner CLAUDE.md to the blueprint (#A)
-          authoring:     isAuthoringSnap,         // use the blueprint-author intro (#923)
-        },
-      ).catch((e: unknown) => {
-        console.error("workspace setup failed:", e);
-        return null;
-      });
-      refreshSetupSig(); // baseline updated (#756)
-      if (paths) setPlanningDir(paths.planning_dir); // for the relay planner-pane mirror (#801)
-
-      // Launch claude inside the isolated planning directory.
-      // Inject the stored GitHub token so `gh` CLI and direct API calls work
-      // without requiring the user to separately authenticate the gh CLI.
-      const token = useAppStore.getState().githubToken;
-      const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
-      // Role gate (#219): the planner is plan-only — write git/gh write denies plus a
-      // write-tool deny (#238) into its session settings before claude launches, so it
-      // can read for context but neither edit files nor mutate the repo/GitHub
-      // (publishing is an explicit, separately-gated step).
-      const plannerCap = roleCapability("planner");
-      const plannerWrite = roleWriteRules(plannerCap);
-      // Expose EVERY installed MCP server to the planner (#1054), project scope ignored: the planner
-      // is the assignment hub, so it sees all downloaded servers — it can call them while planning
-      // (e.g. research sources for a skill) and assign them to the workers that need them.
-      const plannerMcp = toSessionPayloads(resolveAllInstalledMcp(useAppStore.getState().mcpServers), []).mcp;
-      // The role gate covers the planner's scoped plan-file writes + git/gh read-only.
-      // WebFetch (docs / version / pricing lookups) and Read are added explicitly here so
-      // this single role-launch path fully sources the planner's tools — replacing the
-      // hardcoded settings.json literal that setup_workspaces used to write (#799).
-      await invoke("ensure_session_settings", {
-        cwd:             paths?.planning_dir ?? "",
-        allowedCommands: [],
-        deniedCommands:  roleDeniedCommands(plannerCap),
-        mcpServers:      plannerMcp,
-        hooks:           null,
-        // Auto-approve every MCP server the planner sees (Research/Compliance + any downloaded one)
-        // so it can call them while planning — e.g. the Research MCP when grounding a skill — without
-        // a per-tool permission prompt. `enabledMcpjsonServers` only trusts the server to LOAD.
-        allowToolRules:  [...plannerWrite.allow, "Read", "WebFetch", ...mcpAllowRules(plannerMcp)],
-        denyToolRules:   plannerWrite.deny,
-        replacePermissions: true,
-      }).catch((e: unknown) => console.error("planner session settings failed:", e));
-      // Planner introduction (#1240): a user-facing kickoff that has the planner OPEN the
-      // conversation (introduce itself, sketch the stage journey, summarize capabilities, ask one
-      // orienting question) instead of launching into a quiet terminal. Baked into the claude launch
-      // arg as a FRESH-ONLY startup prompt — the backend (which knows the conversation history)
-      // delivers it only on a genuinely new session and drops it on `--continue` resume, so a
-      // returning user isn't re-greeted. For a new project the user's pitch rides along so the
-      // planner acknowledges it rather than asking what they're building (replaces the old
-      // idle-detection pitch-typing). On failure it's undefined → the launch falls back to initCmd.
-      const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExistingSnap });
-      const introText = await invoke<string>("planner_intro_prompt", { mode: introMode })
-        .catch((e: unknown) => { console.error("planner intro prompt failed:", e); return ""; });
-      const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "") || undefined;
-      await invoke("pty_create", {
-        paneId:  paneId,
-        cols:    term.cols,
-        rows:    term.rows,
-        cwd:     paths?.planning_dir ?? "",
-        initCmd: "claude --continue 2>/dev/null || claude",
-        startupPrompt,
-        startupPromptFreshOnly: true,
-        env:     ghEnv,
-      }).catch(console.error);
-    });
-
-    const ro = new ResizeObserver(() => {
-      // No visibility guard: a hidden panel is display:none → zero client size,
-      // already skipped below. Guarding on a `visible` ref instead raced with
-      // React's commit and dropped the first fit after un-hiding, leaving the
-      // terminal smaller than its container.
-      const { clientWidth, clientHeight } = el;
-      if (clientWidth === 0 || clientHeight === 0) return;
-      fitAddon.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
-    });
-    ro.observe(el);
-
-    return () => {
-      unlistenData.current?.();
-      unlistenExit.current?.();
-      ro.disconnect();
-      term.dispose();
-      termRef.current = null;
-      fitRef.current  = null;
-      invoke("pty_kill", { paneId: paneId }).catch(console.error);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fit the terminal when the planning panel becomes visible (hidden → shown).
-  // The panel mounts lazily and has variable-height content above the terminal,
-  // so a single in-RAF fit can measure before the final layout — and cell metrics
-  // are wrong until the mono font loads. Re-fit on the frame, after a short delay,
-  // and once fonts are ready so it reliably fills the available space.
-  useEffect(() => {
-    if (!visible) return;
-    const refit = (focusToo: boolean) => {
-      const fit = fitRef.current, term = termRef.current, el = containerRef.current;
-      if (!fit || !term || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
-      fit.fit();
-      invoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }).catch(console.error);
-      if (focusToo) term.focus();
-    };
-    let cancelled = false;
-    const raf = requestAnimationFrame(() => refit(true));
-    const delayed = setTimeout(() => refit(false), 120);
-    document.fonts?.ready?.then(() => { if (!cancelled) refit(false); }).catch(() => {});
-    return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(delayed); };
-  }, [visible]);
-
   // Planner 2s plan.db + section-file poll (#1474, usePlanSectionPoll).
   usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads });
-
-  // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
-  useEffect(() => {
-    if (linkedRepos.length === 0) return;
-    const { commands: cmds, schedules: scheds } = useAppStore.getState();
-    invoke("setup_workspaces", {
-      repoFullNames: linkedRepos,
-      automations: [
-        ...cmds.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
-        ...scheds.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
-      ],
-      isExisting:    treatAsExisting,
-      projectName:   activeProjectName,
-      projectNumber: activeProjectNumber,
-      pitch:         planningPitch,
-      projectKey:    effectiveProjectId,
-      githubLogin:   useAppStore.getState().githubUser?.login ?? "",
-      githubName:    useAppStore.getState().githubUser?.name  ?? "",
-      enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
-      authoring:     isAuthoring,                     // use the blueprint-author intro (#923)
-    }).then(() => refreshSetupSig()).catch(console.error); // baseline updated (#756)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkedRepos]);
 
 
   // Session lifecycle (#1642, usePlanningSession): the `restarting` flag + the regenerate /
