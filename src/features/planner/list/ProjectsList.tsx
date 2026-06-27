@@ -290,11 +290,7 @@ export function ProjectsList() {
       {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕
           must not delete instantly. Shared by the Drafts chips and the Blueprints rail. */}
       {draftDeleteTarget && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 200,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
+        <div className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
           <div style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",

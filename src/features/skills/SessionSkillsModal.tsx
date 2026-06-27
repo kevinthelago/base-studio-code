@@ -107,7 +107,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "34px 20px", overflow: "auto" }}>
+    <div className="modal-scrim start" onClick={onClose} style={{ padding: "34px 20px", overflow: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
         {/* header */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
