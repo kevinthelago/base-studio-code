@@ -4,6 +4,7 @@
 // and the env-var editor. Kept here so neither feature owns the other's vocabulary.
 
 import { useState, useEffect } from "react";
+import { IconButton } from "@/shared/ui/IconButton";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -220,7 +221,7 @@ export function DrawerSlideOver({ open, header, body, onClose, onRemove }: {
           <>
             <div className="dr-head">
               {header}
-              <button className="x" title="close" onClick={onClose}>×</button>
+              <IconButton aria-label="close" onClick={onClose} />
             </div>
             <div className="dr-body">{body}</div>
             <div className="dr-foot">
@@ -252,7 +253,7 @@ export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onC
               value={v}
               onChange={ev => onChange(env.map((row, j) => j === i ? [row[0], ev.target.value] : row))}
             />
-            <button className="x" title="remove" onClick={() => onChange(env.filter((_, j) => j !== i))}>×</button>
+            <IconButton aria-label="remove" size="xs" onClick={() => onChange(env.filter((_, j) => j !== i))} />
           </div>
         ))}
         <button

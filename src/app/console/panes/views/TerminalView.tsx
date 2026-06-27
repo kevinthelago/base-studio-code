@@ -14,6 +14,7 @@ import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { composeReferenceContext } from "@/shared/lib/session/assignments";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
+import { IconButton } from "@/shared/ui/IconButton";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
@@ -746,11 +747,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           <span style={{ flex: 1, color: "var(--fg-muted)" }}>
             Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
           </span>
-          <span
-            onClick={() => useAppStore.getState().clearPanePermsStale(paneId)}
-            style={{ cursor: "pointer", color: "var(--fg-dim)" }}
-            title="Dismiss"
-          >✕</span>
+          <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
         </div>
       )}
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible

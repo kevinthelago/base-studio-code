@@ -6,6 +6,7 @@
 // unit-testable; styled to match the blueprint modals.
 
 import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { IconButton } from "@/shared/ui/IconButton";
 
 export type McpDownloadStatus = "pending" | "downloading" | "building" | "ready" | "error";
 
@@ -64,7 +65,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
               <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>Download MCP servers</h2>
               <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>Your plan uses these MCP servers — review the source, then install.</div>
             </div>
-            <button className="iconbtn" style={{ marginLeft: "auto" }} onClick={onCancel} disabled={busy}>✕</button>
+            <IconButton aria-label="cancel" style={{ marginLeft: "auto" }} onClick={onCancel} disabled={busy} />
           </div>
 
           <div className="modal-body" style={{ padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>

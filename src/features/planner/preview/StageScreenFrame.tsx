@@ -8,6 +8,7 @@
 // actions · close), a body slot (`children`), and an optional footer slot.
 
 import type { ReactNode } from "react";
+import { IconButton } from "@/shared/ui/IconButton";
 
 export function StageScreenFrame({
   label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,
@@ -48,7 +49,7 @@ export function StageScreenFrame({
           <span style={{ flex: 1 }} />
           {statusLabel && <span style={{ fontSize: 10, color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</span>}
           {actions}
-          {onClose && <button className="btn ghost sm" onClick={onClose} title="Close">✕</button>}
+          {onClose && <IconButton aria-label="Close" onClick={onClose} />}
         </div>
       )}
 

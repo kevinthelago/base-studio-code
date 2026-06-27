@@ -5,6 +5,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 import { timeAgoShort } from "@/shared/lib/core/format";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
+import { IconButton } from "@/shared/ui/IconButton";
 import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
@@ -99,7 +100,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
           </div>
         </div>
         <button className="btn ghost" style={{ height: 26 }}>open on github →</button>
-        <button className="btn ghost" style={{ height: 26, padding: "0 8px" }} onClick={onClose}>✕</button>
+        <IconButton aria-label="close" onClick={onClose} />
       </div>
 
       <div style={{ flex: 1, overflow: "auto" }}>

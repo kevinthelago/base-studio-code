@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { IconButton } from "@/shared/ui/IconButton";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import {
@@ -462,7 +463,7 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
         <div className="dr-head">
           <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
           <div className="name">{s.name || (isDraft ? "New skill" : "Untitled skill")}</div>
-          <button className="x" onClick={onClose}>×</button>
+          <IconButton aria-label="close" onClick={onClose} />
         </div>
         <div className="dr-body">
           <div className="field"><label>name <span className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</span></label><input className="input" value={s.name} placeholder="Skill name" onChange={(e) => onPatch({ name: e.target.value })} /></div>

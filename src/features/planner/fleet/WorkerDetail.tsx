@@ -10,6 +10,7 @@ import { usePoll } from "@/shared/hooks/usePoll";
 import { CardHead, StatCard, Avatar } from "@/shared/ui/charts";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
+import { IconButton } from "@/shared/ui/IconButton";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";
@@ -30,7 +31,7 @@ function Modal({ title, children, onClose, footer }: {
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center" }}>
           <h3 style={{ margin: 0 }}>{title}</h3>
           <div style={{ flex: 1 }} />
-          <button className="btn ghost" style={{ height: 24, width: 24, padding: 0, fontSize: 14 }} onClick={onClose}>×</button>
+          <IconButton aria-label="close" onClick={onClose} />
         </div>
         <div style={{ padding: 16 }}>{children}</div>
         {footer && <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-soft)", display: "flex", justifyContent: "flex-end", gap: 8 }}>{footer}</div>}
