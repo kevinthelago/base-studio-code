@@ -11,6 +11,7 @@ import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
 import { IconButton } from "@/shared/ui/IconButton";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
+import { pill, sourcePill } from "./skillStyles";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
   type SkillDef, type SessionSkillReason,
@@ -32,11 +33,6 @@ const REASON_META: Record<SessionSkillReason, { label: string; hue: string; hint
 function glyphTile(kind: SkillDef["kind"]): React.CSSProperties {
   const c = KIND[kind].color;
   return { width: 24, height: 24, flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, fontFamily: "var(--mono)", fontSize: 12, color: c, background: `color-mix(in oklch, ${c} 22%, var(--bg-elev))`, border: `1px solid color-mix(in oklch, ${c}, transparent 70%)` };
-}
-function pill(hue: string, plain = false): React.CSSProperties {
-  const base: React.CSSProperties = { fontFamily: "var(--mono)", fontSize: 9.5, padding: "2px 7px", borderRadius: 99, lineHeight: 1.1, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" };
-  if (plain) return { ...base, background: "color-mix(in oklch, var(--fg-dim), transparent 88%)", border: "1px solid color-mix(in oklch, var(--fg-dim), transparent 80%)", color: "var(--fg-muted)" };
-  return { ...base, background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 74%)`, color: hue };
 }
 
 export interface SessionSkillsModalProps {
@@ -91,7 +87,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.skill.name}</span>
-            <span style={st.skill.source === "team" ? pill("var(--info)") : st.skill.source === "imported" ? pill("var(--accent)") : pill("", true)}>{SOURCE_TAG[st.skill.source].label}</span>
+            <span style={sourcePill(st.skill.source)}>{SOURCE_TAG[st.skill.source].label}</span>
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={pill(m.hue, m.hue === "var(--fg-dim)")}>{m.label}</span>
