@@ -4,7 +4,7 @@ The removed Knowledge Store page — embedded-console block generation, list/sea
 
 Deleted from GitHub; full content below. Machine-readable mirror: `knowledge-store.jsonl`.
 
-**Issues (11):** #7, #32, #51, #140, #212, #320, #321, #322, #323, #324, #325
+**Issues (12):** #7, #32, #51, #140, #212, #320, #321, #322, #323, #324, #325, #1016
 
 ---
 
@@ -362,3 +362,54 @@ Delivered by PR #455 (squash 4d26a9e on develop). develop-merges don't auto-clos
 
 ---
 
+
+## #1016 — Context screen — a transparency inspector for Claude's context hierarchy (revive Knowledge Store)
+
+- **state:** CLOSED (COMPLETED) · **labels:** ui, feature
+- **created:** 2026-06-21T08:34:57Z · **closed:** 2026-06-26T00:11:00Z
+
+## Summary
+Bring back a top-level **Context** screen (the old Knowledge Store, reframed). Instead of just KB blocks, make it a **transparency inspector**: surface, top-down, the full hierarchy of everything the assistant reads — from global rules to the live session — so the user can see *what the assistant knows and where each fact comes from*. Today this is scattered across files the user never sees (the "where are you getting the workflow rules?" problem). The **memory layer is the centerpiece** — it's the dynamic, learned layer the assistant writes to as it works, and it should be visible + curatable rather than a hidden side effect.
+
+## The hierarchy (layer → source)
+| Layer | Source | Editable? |
+|---|---|---|
+| **Global instructions** | `~/.claude/CLAUDE.md` | phase 2 |
+| **Project instructions** | repo `CLAUDE.md` | phase 2 |
+| **Memory** ⭐ | `~/.claude/projects/<proj>/memory/` — `MEMORY.md` index + one-fact `*.md` files (frontmatter: `name`, `description`, `metadata.type` = user·feedback·project·reference; body w/ `[[links]]`) | phase 2 |
+| **Knowledge / Skills** | the existing KB blocks (`kbBlocks`) + Skills library (the old Knowledge Store content) | phase 2 |
+| **Plan context** | the active project's plan.db (features/issues/phases/repos) + plan section files + planner spec | read-only |
+| **Session** | live conversation + what's been auto-summarized into context | read-only |
+
+## Scope
+**MVP — read-only inspector:**
+- New Rail entry + screen (revive the removed `knowledge` route — see `onRehydrateStorage`'s `activeScreen === "knowledge"` redirect; remove that redirect).
+- A layer rail (global → session, ordered = precedence) + a main pane with per-layer renderers; a top "context map" overview (counts + precedence at a glance); global search across layers.
+- Per-layer reads via Tauri commands: global/project `CLAUDE.md`, list+read the **memory** dir (parse frontmatter), KB blocks/Skills (store), plan.db (`plan_list_features`/`plan_list_issues`/`plan_list_repos` + `read_plan_sections`), session summary.
+- The **Memory** view is the hero: cards grouped by type (user/feedback/project/reference), each showing name · type chip · description · expandable body · `[[linked]]` chips · source filename.
+
+**Phase 2 — editing (clearly distinct mode):**
+- Add/edit/delete a **memory** file; edit **CLAUDE.md** (global/project); edit **KB blocks/Skills** from the UI. "You're editing the assistant's instructions" should feel deliberate (mode toggle / distinct accent). Session + plan layers stay read-only.
+
+## Acceptance criteria
+- [ ] A `Context` screen exists in the Rail; the old `knowledge` redirect is removed.
+- [ ] Each layer renders its real source (CLAUDE.md files, memory dir, KB/Skills, plan.db + sections, session), each item showing its source path.
+- [ ] The Memory layer lists every memory grouped by type, with body + `[[links]]`, sourced from disk.
+- [ ] Search resolves "where does X come from" across layers.
+- [ ] Read-only MVP ships first; editing is a separate, clearly-gated phase.
+- [ ] Tests: the per-layer readers + the memory frontmatter parser + the screen render/interaction.
+
+## Design
+Kickoff prompt authored for Claude Design (transparency inspector, layer rail + per-layer renderers, memory hero view, read-only vs edit states, app design tokens). Implement against the resulting `.dc.html`.
+
+## Notes
+- The old Knowledge Store screen was removed; KB blocks (`kbBlocks`) + the Skills library still live in the store — they become the "Knowledge / Skills" layer here.
+- Pairs with the active memory system (the assistant already writes memories like "skip CI waits, merge fast"): this screen is how the user sees + curates what it has learned.
+
+### Comments
+
+**kevinthelago** (2026-06-26T00:11:00Z):
+
+Closing — this was an attempt to revive the old Knowledge Store screen (reframed as a context-transparency inspector), which is legacy direction we're not pursuing. The 'knowledge' route stays removed (the redirect at src/store/index.ts stays). Memory/KB/Skills curation, if revisited, will come through current surfaces rather than a revived top-level screen.
+
+---
