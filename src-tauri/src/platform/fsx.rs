@@ -109,7 +109,10 @@ pub(crate) fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
 /// file stem, into `sections` — skipping the workspace control files. Used to read the hub
 /// root + the `context/` subdir; a later call overrides earlier keys (context/ wins, #807).
 pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
-    const CONTROL: &[&str] = &["CLAUDE.md", "automations.md", "extensions.md", "github_context.md"];
+    // Workspace control files plus the DB-owned `fleet.json` (#1805): the fleet lives solely in
+    // plan.db now, so a stray legacy `fleet.json` must never be ingested as a plan section (it is
+    // migrated into plan.db then deleted on the first fleet read — see `migrate_stray_fleet_json`).
+    const CONTROL: &[&str] = &["CLAUDE.md", "automations.md", "extensions.md", "github_context.md", "fleet.json"];
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -289,6 +292,28 @@ mod tests {
         let mut obj = serde_json::json!({ "keep": true });
         ensure_object(&mut obj);
         assert_eq!(obj, serde_json::json!({ "keep": true }));
+    }
+
+    #[test]
+    fn ingest_section_files_skips_fleet_json_and_control_files() {
+        use std::fs;
+        let dir = scratch_path("ingest");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // A real section file is ingested by its stem; the DB-owned `fleet.json` and the workspace
+        // control files are skipped (#1805) so a stray fleet.json never surfaces as a plan section.
+        fs::write(dir.join("goal.md"), "the goal").unwrap();
+        fs::write(dir.join("fleet.json"), r#"{"streams":[{"id":"x","repo":"o/r"}]}"#).unwrap();
+        fs::write(dir.join("CLAUDE.md"), "spec").unwrap();
+
+        let mut sections = std::collections::HashMap::new();
+        ingest_section_files(&dir, &mut sections);
+
+        assert_eq!(sections.get("goal").map(String::as_str), Some("the goal"));
+        assert!(!sections.contains_key("fleet"), "stray fleet.json is excluded from the sweep");
+        assert!(!sections.contains_key("CLAUDE"), "control files are excluded");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
