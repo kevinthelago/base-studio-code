@@ -1,6 +1,6 @@
 // The parallel-execution (fleet) plan — the agent streams, director, topology, and
-// relationship graph a project's `fleet.json` describes, plus the parser that turns
-// the planner-written JSON into a typed {@link FleetPlan}.
+// relationship graph a project's fleet describes, plus the parser that turns the
+// planner-written JSON (stored in plan.db, #1805) into a typed {@link FleetPlan}.
 //
 // Pure (no React / xterm / Tauri) so it can be unit-tested in isolation and shared
 // between the planner UI, the store, and the fleet helpers. Split out of the former
@@ -70,9 +70,9 @@ function parseEdges(raw: unknown): AgentRelationship[] {
   return out;
 }
 
-/** The agent-fleet config file (JSON: `fleet.json`). Surfaced by the poll like
- *  `commands.json` — not a rendered plan topic; parsed into the fleet store and
- *  shown in its own Fleet card. See {@link parseFleetFile}. */
+/** The fleet section key. The fleet plan is DB-owned (plan.db, #1018/#1805) — surfaced by the poll
+ *  under this stem (NOT a `fleet.json` file), not a rendered plan topic; parsed into the fleet store
+ *  and shown in its own Fleet card. See {@link parseFleetFile}. */
 export const FLEET_KEY = "fleet";
 
 /**
@@ -131,7 +131,7 @@ export interface AgentStream {
 /** Optional async-integrator session that coordinates the fleet from the project root. */
 export interface FleetDirector { enabled: boolean; role?: string; drive?: DirectorDrive; }
 
-/** The full parallel-execution plan for a project (persisted as `fleet.json`). */
+/** The full parallel-execution plan for a project (persisted in plan.db, #1805). */
 export interface FleetPlan {
   /** Optimal number of worker sessions to run concurrently. */
   recommended: number;
@@ -173,7 +173,7 @@ function coerceNum(v: unknown): number {
 }
 
 /**
- * Parse the `fleet.json` config the planner writes (surfaced by the topic poll
+ * Parse the FleetPlan JSON (the planner writes it to plan.db, #1805; surfaced by the poll
  * as stem {@link FLEET_KEY}) into a {@link FleetPlan}. Tolerant of partial/malformed
  * input: returns `null` only when the text is blank or not a JSON object; otherwise
  * fills sensible defaults. Streams missing `id` or `repo` are dropped; `dependsOn`
