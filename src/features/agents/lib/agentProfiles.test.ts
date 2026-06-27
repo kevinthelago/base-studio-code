@@ -10,10 +10,10 @@ import {
 
 describe("resolveAllowlist", () => {
   it("unions guaranteed ∪ profile ∪ project ∪ repo, deduped, in precedence order", () => {
-    const out = resolveAllowlist("con_orch", "pf_build");
+    const out = resolveAllowlist("con_orch", "pf_auto");
     expect(out.map((r) => r.cmd)).toEqual([
       "gh", "git", // guaranteed
-      "cargo", "npm", "pnpm", "pytest", "make", "node", // profile
+      "cargo", "npm", "pnpm", "pytest", "make", "node", "docker", "aws", // profile (gh deduped)
       "just", // project (cargo deduped — already from profile)
     ]);
     expect(out.find((r) => r.cmd === "gh")?.origin).toBe("guaranteed");
@@ -22,7 +22,7 @@ describe("resolveAllowlist", () => {
   });
 
   it("includes repo-scope commands when present", () => {
-    const out = resolveAllowlist("con_tunnel", "pf_build");
+    const out = resolveAllowlist("con_tunnel", "pf_auto");
     expect(out.find((r) => r.cmd === "wscat")?.origin).toBe("repo");
   });
 
@@ -36,22 +36,22 @@ describe("resolveAllowlist", () => {
 
 describe("counts + lookup", () => {
   it("paneCount / consoleCount", () => {
-    expect(paneCount("pf_build")).toBe(2); // one pane in each console
-    expect(consoleCount("pf_build")).toBe(2);
-    expect(paneCount("pf_review")).toBe(1);
+    expect(paneCount("pf_auto")).toBe(3); // t1p0, t1p3, t2p0
+    expect(consoleCount("pf_auto")).toBe(2);
+    expect(paneCount("pf_review")).toBe(2); // t1p1, t1p2
     expect(consoleCount("pf_review")).toBe(1);
   });
 
   it("findProfile resolves application roles and profiles", () => {
     expect(findProfile("sys_planner")?.category).toBe("application");
-    expect(findProfile("pf_build")?.name).toBe("Build & test");
+    expect(findProfile("pf_auto")?.name).toBe("Autonomous (trusted)");
     expect(findProfile("nope")).toBeUndefined();
   });
 
   it("every basic app session has its own distinct application role (#680)", () => {
-    // all three basic app sessions are registered as application roles, each unique
+    // The packaged application roles are unique, registered singletons.
     const ids = APP_ROLES.map((r) => r.id);
-    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_blueprint_assistant", "sys_planning_autopilot"]));
+    expect(ids).toEqual(expect.arrayContaining(["sys_planner", "sys_planning_autopilot"]));
     expect(APP_ROLES.every((r) => r.category === "application")).toBe(true);
     expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
     expect(new Set(APP_ROLES.map((r) => r.name)).size).toBe(APP_ROLES.length); // distinct names
@@ -66,18 +66,5 @@ describe("counts + lookup", () => {
     expect(ap.tools.bash).toBe("deny");
     expect(ap.tools.write).toBe("deny");
     expect(ap.tools.read).toBe("allow"); // reads the pitch + planner output
-  });
-
-  it("the Blueprint Assistant role is minimal — no shell, no fs writes, no tools (#680)", () => {
-    const bp = findProfile("sys_blueprint_assistant")!;
-    expect(bp.name).toBe("Blueprint Assistant");
-    expect(bp.mode).toBe("deny");
-    expect(bp.commands).toEqual([]);            // no shell
-    expect(bp.tools.bash).toBe("deny");
-    expect(bp.tools.write).toBe("deny");        // no fs writes
-    expect(bp.tools.edit).toBe("deny");
-    expect(bp.tools.read).toBe("allow");        // may read the blueprint/KB context
-    expect(bp.paths.allow).toEqual([]);
-    expect(bp.net.allow).toEqual([]);
   });
 });

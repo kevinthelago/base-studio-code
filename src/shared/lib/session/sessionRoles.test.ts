@@ -58,6 +58,20 @@ describe("bscAgentPerms", () => {
     expect(lifted).not.toContain("gh pr create");
     expect(lifted).toContain("gh pr merge");
   });
+  it("folds the user's global denies into deny_bash on top of the role denies (deduped)", () => {
+    const cap = roleCapability("worker", { writeGlobs: ["src/**"] });
+    const p = bscAgentPerms(cap, [], ["terraform destroy", "  ", "gh pr merge"]);
+    expect(p.deny_bash).toContain("terraform destroy");
+    expect(p.deny_bash).toContain("gh pr merge");          // already a role deny — not duplicated
+    expect(p.deny_bash.filter((c) => c === "gh pr merge")).toHaveLength(1);
+    expect(p.deny_bash).not.toContain("");                  // blank entries dropped
+  });
+  it("a null cap (role-less console) yields only the user denies, permissive otherwise", () => {
+    const p = bscAgentPerms(null, [], ["psql"]);
+    expect(p.deny_bash).toEqual(["psql"]);
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual([]);
+  });
 });
 
 describe("classifyCommand", () => {

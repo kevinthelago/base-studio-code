@@ -1,71 +1,24 @@
-// The per-stream agent-permissions widget for the focused ProjectPane (#1560, split verbatim out of
-// FocusedBodies.tsx). AgentEditor is the expandable capability/model/flow editor; AgentsA is the
-// roster of agent rows that expand into it. Used by the Permissions + Streams stage bodies.
+// The per-stream agent editor for the focused ProjectPane (#1560). AgentEditor edits a stream's
+// MODEL + execution FLOW; AgentsA is the roster of agent rows that expand into it. Per-capability
+// permissions are NO LONGER per-stream: a worker runs under the Autonomous (trusted) role and the
+// director under Read-only review (the unified role→profile model) — the planner only layers extra
+// commands on top. The row still shows the role's resolved posture read-only (PostureBar).
 import { useState, useEffect } from "react";
 import "./projectPane.css";
-import type { Posture, Perm, Flow, Agent } from "./projectPaneData";
+import type { Flow, Agent } from "./projectPaneData";
 import { type ModelId, modelTier, tierToModelId } from "@/app/console/lib/models";
-import { Dot, Avatar, RoleChip, PostureBar, Tri, Seg, CAPS } from "./focusedPrimitives";
+import { Dot, Avatar, RoleChip, PostureBar, Seg } from "./focusedPrimitives";
 
-const PRESETS: Record<string, Perm> = {
-  Plan:   { read: "allow", edit: "deny",  create: "deny",  run: "ask",   net: "ask",   push: "deny",  pkg: "deny" },
-  Build:  { read: "allow", edit: "allow", create: "allow", run: "allow", net: "ask",   push: "ask",   pkg: "ask" },
-  Review: { read: "allow", edit: "deny",  create: "deny",  run: "allow", net: "deny",  push: "deny",  pkg: "deny" },
-  Triage: { read: "allow", edit: "deny",  create: "ask",   run: "deny",  net: "allow", push: "deny",  pkg: "deny" },
-  Full:   { read: "allow", edit: "allow", create: "allow", run: "allow", net: "allow", push: "allow", pkg: "allow" },
-};
-
-export function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
+export function AgentEditor({ a, onFlow, onModel }: {
   a: Agent;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
-  const [perm, setPerm] = useState<Perm>(a.perm);
-  const [preset, setPreset] = useState(a.preset);
   const [flow, setFlow] = useState<Flow>(a.flow);
   const [model, setModel] = useState<ModelId | undefined>(a.model);
-  useEffect(() => { setPerm(a.perm); setPreset(a.preset); setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (k: string, v: Posture) => {
-    const next = { ...perm, [k]: v };
-    setPerm(next); setPreset("custom");
-    onPerm?.(a.id, next);
-  };
-  const applyPreset = (p: string) => {
-    const next = { ...PRESETS[p] };
-    setPreset(p); setPerm(next);
-    onPreset?.(a.id, p, next);
-  };
+  useEffect(() => { setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
-      <div style={{ padding: "9px 12px", borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
-          <span className="ulabel">preset</span>
-          <span style={{ flex: 1 }} />
-          {preset === "custom" && <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>● customized</span>}
-        </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-          {Object.keys(PRESETS).map((p) => (
-            <span key={p} className={"preset" + (preset === p ? " on" : "")}
-              onClick={() => applyPreset(p)}>{p}</span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: "6px 12px 10px", borderTop: "1px solid var(--border-soft)" }}>
-        <div className="ulabel" style={{ padding: "5px 0 7px" }}>capabilities</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {CAPS.map((c) => (
-            <div key={c.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 16, textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>{c.g}</span>
-              <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>{c.label}</span>
-              <Tri value={perm[c.k]} onChange={(v) => set(c.k, v)} />
-            </div>
-          ))}
-        </div>
-      </div>
-
       {onModel && (
         <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
           <div className="ulabel" style={{ marginBottom: 8 }}>model</div>
@@ -106,10 +59,8 @@ export function AgentEditor({ a, onPerm, onPreset, onFlow, onModel }: {
   );
 }
 
-export function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel, focusedStream, onSelect }: {
+export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect }: {
   agents?: Agent[];
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
   /** #1392 streams-link: the stream the Streams graph has focused — expand its editor here. */
@@ -187,7 +138,7 @@ export function AgentsA({ agents = [], onPerm, onPreset, onFlow, onModel, focuse
                     {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
                     {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
                   </div>
-                  <AgentEditor a={a} onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} />
+                  <AgentEditor a={a} onFlow={onFlow} onModel={onModel} />
                 </>
               )}
             </div>

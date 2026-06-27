@@ -184,15 +184,6 @@ export interface PlanState {
   /** #378: set a stream's per-stream integration-strategy override (undefined clears
    *  it so the stream inherits the fleet default). */
   setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;
-  /** Set a stream's per-capability permission posture from the project pane's agent
-   *  editor; also marks the stream's preset as "custom" (a hand-tuned posture). */
-  setPlanAgentStreamPerm: (projectId: string, streamId: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
-  /** Apply a named permission preset to a stream from the project pane: sets both
-   *  the preset name and the full per-capability posture it implies. */
-  setPlanAgentStreamPreset: (projectId: string, streamId: string, preset: string, perm: Record<string, "allow" | "ask" | "deny">) => void;
-  /** #289: generate + assign a least-privilege profile for each unassigned stream,
-   *  scoped to that stream's resolved toolchain. Idempotent. */
-  generateFleetProfiles: (projectId: string) => void;
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string, strategy?: IntegrationStrategy) => void;
   /** Per-project coordination-topology override (#…), set in the Permissions pane. Wins
    *  over the planner's fleet.json topology and survives a fleet re-poll. */

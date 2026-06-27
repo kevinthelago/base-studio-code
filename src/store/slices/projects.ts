@@ -19,7 +19,7 @@ import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
 import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
-import { generateAgentProfile } from "@/shared/lib/session/profileGen";
+import { roleProfileId } from "@/shared/lib/session/roleProfile";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/mcp/lib/mcpServers";
 import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
@@ -405,22 +405,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
-          // #1580: materialize each stream's profile at LAUNCH so its permissions actually route.
-          // The planner assigns a profile id (e.g. "ui-modes-dev"), but the profile is only created
-          // in the planner session (`Planning.tsx` effect) / at publish — a fleet revised after
-          // publish or set via `bsc-plan` leaves DANGLING ids, so `TerminalView` finds no profile and
-          // the worker gets zero profile perms (empty allowedCommands). Generate any missing profile
-          // here (from the stream — role + `owns` + `commands`, #1572) and bind the pane to a profile
-          // that EXISTS. Idempotent: a resolvable id is reused (no duplicate, no clobber).
-          const newAgentProfiles = [...s.agentProfiles];
-          const profById = new Set(newAgentProfiles.map((p) => p.id));
-          const resolveStreamProfile = (stream: AgentStream): string => {
-            if (stream.profile && profById.has(stream.profile)) return stream.profile;
-            const gen = generateAgentProfile(stream, "worker", stream.commands ?? []);
-            const id = stream.profile || gen.id;
-            if (!profById.has(id)) { newAgentProfiles.push({ ...gen, id }); profById.add(id); }
-            return id;
-          };
+          // Unified role→profile model: every session gets its ROLE's default profile (director →
+          // Read-only review, worker → Autonomous trusted), resolved from {@link roleProfileId}. No
+          // per-stream profile generation — a stream may still pin an explicit `profile` id.
           const newPaneProviders            = { ...s.paneProviders };
           const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
@@ -559,9 +546,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
                 // it (#158). The director spans every repo, so it keeps the global token.
                 if (sess && sess.repo) newPaneRepos[key] = sess.repo;
-                // Bind to a profile that EXISTS (materializing if the planner's id is dangling, #1580),
-                // so the worker's profile permissions route at launch.
-                if (sess) newPaneProfiles[key] = resolveStreamProfile(sess);
+                // Bind the pane to its ROLE's default profile: director → Read-only review,
+                // worker → Autonomous (trusted) — unless the stream pins an explicit profile.
+                newPaneProfiles[key] = sess?.profile ?? roleProfileId(newPaneRoles[key]);
                 // The worker's owned paths become its role write boundary so edits in
                 // its lane auto-approve (dir/ -> dir/** so the subtree matches).
                 if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
@@ -608,7 +595,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneRoles: newPaneRoles,
             paneProviders: newPaneProviders,
             paneProfiles: newPaneProfiles,
-            agentProfiles: newAgentProfiles, // #1580: any profiles materialized for dangling stream refs
 
             fleetPaneStreams: newFleetPaneStreams,
             paneRoleGlobs: newPaneRoleGlobs,

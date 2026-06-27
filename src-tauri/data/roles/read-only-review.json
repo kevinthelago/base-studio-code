@@ -1,0 +1,14 @@
+{
+  "id": "pf_review",
+  "name": "Read-only review",
+  "color": "oklch(0.72 0.10 230)",
+  "category": "user",
+  "origin": "built-in",
+  "desc": "Inspect, search, and comment — never mutates the tree. The default for the director and the review / triage sessions.",
+  "mode": "deny",
+  "commands": [],
+  "tools": { "read": "allow", "grep": "allow", "glob": "allow", "edit": "deny", "write": "deny", "bash": "ask", "web": "ask", "task": "allow" },
+  "paths": { "allow": [], "deny": ["**/*"] },
+  "net": { "allow": ["api.github.com"] },
+  "builtin": true
+}

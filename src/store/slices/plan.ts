@@ -8,7 +8,6 @@ import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
-import { generateAgentProfile } from "@/shared/lib/session/profileGen";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
@@ -40,7 +39,7 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPerm" | "setPlanAgentStreamPreset" | "generateFleetProfiles" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planAutomations" | "addPlanAutomation" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -406,44 +405,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             x.id === streamId ? { ...x, strategy } : x);
           return { ...cur, streams };
         }),
-      setPlanAgentStreamPerm: (projectId, streamId, perm) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, perm: { ...perm }, preset: "custom" } : x);
-          return { ...cur, streams };
-        }),
-      setPlanAgentStreamPreset: (projectId, streamId, preset, perm) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, preset, perm: { ...perm } } : x);
-          return { ...cur, streams };
-        }),
-      generateFleetProfiles: (projectId) => {
-        const fleet = get().planFleet[projectId];
-        if (!fleet) return;
-        const profiles = [...get().agentProfiles];
-        const byId = new Set(profiles.map((pr) => pr.id));
-        const streams = fleet.streams.map((stream) => {
-          // Skip only if the stream already points at a profile that EXISTS. A
-          // dangling reference (the planner assigned an id we never created) is
-          // materialized here, keeping the assigned id so the reference stays stable.
-          if (stream.profile && byId.has(stream.profile)) return stream;
-          // Commands are a per-stream PROFILE property (#1457). Seed the generated profile from
-          // the stream's granted toolchain (#1572) — `stream.commands`, authored by the planner in
-          // the Permissions stage — so the worker auto-approves exactly those (written as
-          // `Bash(<cmd> *)` rules), on top of the posture-scaled safe baseline. Refined further per
-          // stream in the Permissions pane (its `commands` list is the single source).
-          const gen = generateAgentProfile(stream, "worker", stream.commands ?? []);
-          const id = stream.profile || gen.id;
-          if (!byId.has(id)) { profiles.push({ ...gen, id }); byId.add(id); }
-          return { ...stream, profile: id };
-        });
-        const next = { ...fleet, streams };
-        set({ agentProfiles: profiles, planFleet: setMapEntry(get().planFleet, projectId, next) });
-        fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
-      },
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         mutateFleet(projectId, (raw) => {
           const cur = raw ?? emptyFleet();

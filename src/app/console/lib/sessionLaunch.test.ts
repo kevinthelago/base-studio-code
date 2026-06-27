@@ -110,8 +110,8 @@ describe("buildSessionSettings", () => {
   });
 
   it("takes allowedCommands + bashPosture from the assigned profile", () => {
-    const build = PROFILES.find((p) => p.id === "pf_build")!;
-    const out = buildSessionSettings(mkStore({ paneProfiles: { p: "pf_build" }, agentProfiles: PROFILES }), "p");
+    const build = PROFILES.find((p) => p.id === "pf_auto")!;
+    const out = buildSessionSettings(mkStore({ paneProfiles: { p: "pf_auto" }, agentProfiles: PROFILES }), "p");
     const prof = resolveProfileSettings(build);
     expect(out.allowedCommands).toEqual(prof.allowedCommands);
     expect(out.allowedCommands).toContain("cargo");

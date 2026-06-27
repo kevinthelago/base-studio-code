@@ -3,10 +3,25 @@
 //! `write_file`/`edit_file` to a set of path globs — instead of relying on a harness
 //! config file (`.claude/settings.json`). Loaded from `$BSC_AGENT_PERMS` (a JSON file
 //! path or inline JSON); anything unset/empty/unparseable yields the permissive
-//! default (allow everything), so an unconfigured session behaves exactly as before.
+//! default — allow everything EXCEPT the always-on dangerous-command floor
+//! ([`BASE_DANGEROUS_BASH`]) — so an unconfigured session is permissive but never able to
+//! run the catastrophic invocations the Claude harness also blocks.
 
 use serde::Deserialize;
 use serde_json::Value;
+
+/// Catastrophic `bash` invocations denied for EVERY `bsc-agent` session, independent of the
+/// env-supplied [`Permissions`]. This is the runtime floor — parity with the always-on
+/// `DEFAULT_DENY` the Claude harness writes into `.claude/settings.json`
+/// (`src-tauri/src/console/settings.rs`) — so neither harness can be talked into a `sudo` /
+/// `rm -rf /` / force-push by an empty or missing permission doc. Substring-matched against the
+/// command (coarser than Claude's prefix rules), so the set is deliberately conservative —
+/// unambiguous, high-blast-radius patterns only, to avoid false-positives on ordinary work.
+/// Keep roughly in sync with `DEFAULT_DENY`; the user's configurable `deniedCommands` and the
+/// `bsc-taint` tainted-turn hook (#1167) cover the longer tail (curl|sh exfil, etc.).
+pub(crate) const BASE_DANGEROUS_BASH: &[&str] = &[
+    "sudo ", "rm -rf /", "rm -fr /", "rm -rf ~", "mkfs.", ":(){", "git push --force", "git push -f ",
+];
 
 /// The session's permission set. All-empty (the [`Default`]) is permissive.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -47,6 +62,10 @@ impl Permissions {
         match tool_name {
             "bash" => {
                 let cmd = args["command"].as_str().unwrap_or("");
+                // The always-on floor first — denied for every session regardless of `deny_bash`.
+                if BASE_DANGEROUS_BASH.iter().any(|p| cmd.contains(p)) {
+                    return Err("permission denied: command matches the built-in dangerous-command denylist".into());
+                }
                 if self.deny_bash.iter().any(|p| cmd.contains(p.as_str())) {
                     return Err("permission denied: bash command matches a denied pattern".into());
                 }
@@ -74,11 +93,33 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn permissive_default_allows_everything() {
+    fn permissive_default_allows_ordinary_work() {
+        // The default is permissive for everything EXCEPT the dangerous floor (asserted below):
+        // ordinary commands, writes, and reads all pass with no configured permissions.
         let p = Permissions::default();
-        assert!(p.check("bash", &json!({ "command": "rm -rf /" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "cargo build" })).is_ok());
         assert!(p.check("write_file", &json!({ "path": "/etc/passwd" })).is_ok());
         assert!(p.check("read_file", &json!({ "path": "/anything" })).is_ok());
+    }
+
+    #[test]
+    fn base_dangerous_floor_is_enforced_even_under_the_permissive_default() {
+        // Parity with the Claude harness's always-on DEFAULT_DENY: an unconfigured session
+        // (empty perms) still cannot run the catastrophic invocations.
+        let p = Permissions::default();
+        for cmd in [
+            "sudo rm -rf /tmp/x",
+            "rm -rf /",
+            "rm -rf ~/work",
+            "mkfs.ext4 /dev/sda",
+            "git push --force origin main",
+            "git push -f origin main",
+        ] {
+            assert!(p.check("bash", &json!({ "command": cmd })).is_err(), "should deny: {cmd}");
+        }
+        // Ordinary build/clean commands are unaffected (no false-positive on the floor).
+        assert!(p.check("bash", &json!({ "command": "rm -rf target" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "git push origin feat" })).is_ok());
     }
 
     #[test]

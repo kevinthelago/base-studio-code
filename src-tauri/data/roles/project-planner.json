@@ -1,0 +1,16 @@
+{
+  "id": "sys_planner",
+  "name": "Project Planner",
+  "color": "oklch(0.7 0.12 290)",
+  "category": "application",
+  "desc": "Always-present terminal session that runs project planning — turns pitches into issues and maintains the plan.",
+  "surface": "Project planning",
+  "surfaceGlyph": "P",
+  "session": "sys/planner",
+  "owns": "the planning terminal",
+  "mode": "ask",
+  "commands": ["gh"],
+  "tools": { "read": "allow", "grep": "allow", "glob": "allow", "edit": "allow", "write": "allow", "bash": "ask", "web": "ask", "task": "allow" },
+  "paths": { "allow": [".studio/plan/**", "docs/plan/**"], "deny": ["src/**"] },
+  "net": { "allow": ["api.github.com"] }
+}

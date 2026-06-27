@@ -4,7 +4,7 @@
 // so the planning workflow is one focused phase at a time.
 import { useState, useEffect } from "react";
 import "./projectPane.css";
-import type { Perm, Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
+import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
 import type { Phase, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
@@ -22,8 +22,6 @@ import { KindDot } from "./focusedPrimitives";
 export function ProjectPane({
   data,
   projectId,
-  onPerm,
-  onPreset,
   onFlow,
   onModel,
   // focused mode: one-phase sequenced rail (#652) — the only render mode (#1061)
@@ -33,7 +31,6 @@ export function ProjectPane({
   onSetReposPublic,
   repoOverrides,
   onSetRepoPublic,
-  onGenerateProfiles,
   onTopology,
   onDirectorDrive,
   onToggleMcp,
@@ -44,8 +41,6 @@ export function ProjectPane({
 }: {
   data?: ProjectPaneData;
   projectId?: string;
-  onPerm?: (streamId: string, perm: Perm) => void;
-  onPreset?: (streamId: string, preset: string, perm: Perm) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   /** Permissions stage: set a stream's per-agent LLM model (undefined ⇒ global default) (#…). */
   onModel?: (streamId: string, model: ModelId | undefined) => void;
@@ -84,9 +79,6 @@ export function ProjectPane({
   /** Per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
   repoOverrides?: Record<string, boolean>;
   onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
-  /** Materialize least-privilege profiles for every fleet stream (#817) — what the focused
-   *  Permissions stage needs to satisfy its `profilesComplete` gate. */
-  onGenerateProfiles?: () => void;
   /** Set the project's coordination topology (#…) — director / peer / hybrid. */
   onTopology?: (t: Topology) => void;
   /** Set the director's drive mode (#…) — event / heartbeat / manual / off. */
@@ -148,7 +140,7 @@ export function ProjectPane({
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
           <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} onView={setViewing}
-            onPerm={onPerm} onPreset={onPreset} onFlow={onFlow} onModel={onModel} onGenerateProfiles={onGenerateProfiles} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />

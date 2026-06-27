@@ -1,0 +1,14 @@
+{
+  "id": "pf_auto",
+  "name": "Autonomous (trusted)",
+  "color": "oklch(0.74 0.13 145)",
+  "category": "user",
+  "origin": "built-in",
+  "desc": "Runs unattended — auto-approves the full allowlist and most tools. The default for fleet workers; writes stay scoped to the worker's owned files by the role gate.",
+  "mode": "allow",
+  "commands": ["cargo", "npm", "pnpm", "pytest", "make", "node", "docker", "gh", "aws"],
+  "tools": { "read": "allow", "grep": "allow", "glob": "allow", "edit": "allow", "write": "allow", "bash": "allow", "web": "allow", "task": "allow" },
+  "paths": { "allow": ["**/*"], "deny": ["**/.env", "**/secrets/**"] },
+  "net": { "allow": ["*"] },
+  "builtin": true
+}

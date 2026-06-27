@@ -126,7 +126,9 @@ function derivePerm(profile: AgentProfile | undefined, push: string): Perm {
 function buildAgents(input: BuildProjectPaneInput): Agent[] {
   const streams = input.fleet?.streams ?? [];
   return streams.map((s, i) => {
-    const profile = s.profile ? input.profiles.find(p => p.id === s.profile) : undefined;
+    // The worker's posture is its ROLE's profile (Autonomous trusted), shown read-only — no
+    // per-stream perm/preset overrides anymore. An explicit `s.profile` override still resolves.
+    const profile = input.profiles.find(p => p.id === (s.profile ?? "pf_auto"));
     const flow = resolveFlow(s.flow);
     return {
       id: s.id,
@@ -138,8 +140,8 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
       initial: initialFor(s.id),
       owns: s.owns,
       issues: s.issues,
-      preset: s.preset ?? (profile ? profile.name : "Custom"),
-      perm: s.perm ? { ...s.perm } : derivePerm(profile, flow.push),
+      preset: profile ? profile.name : "Autonomous (trusted)",
+      perm: derivePerm(profile, flow.push),
       flow: { autonomy: flow.autonomy, push: mapPush(flow.push), gate: flow.gate },
       model: s.model,
       strategy: s.strategy,

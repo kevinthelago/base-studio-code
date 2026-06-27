@@ -5,7 +5,10 @@
 // filesystem/network scope. Assigned to console panes and applied at launch.
 // Application roles (e.g. Project Planner) are always-present singleton sessions.
 //
-// Pure — free of React/Tauri imports so the resolution logic is unit-testable.
+// The role/profile DEFINITIONS live as one JSON file per role under `src-tauri/data/roles/`,
+// loaded at build time via `import.meta.glob` (mirrors `data/skills/`, #1715) — so the packaged
+// set is data, edited without touching this module. Pure — free of React/Tauri imports so the
+// resolution logic is unit-testable.
 
 /** Tri-state permission: deny < ask < allow. */
 export type Tier = "deny" | "ask" | "allow";
@@ -40,108 +43,39 @@ export interface AgentProfile {
   owns?: string;
 }
 
+// One JSON file per role under `src-tauri/data/roles/`, bundled at build time. Application roles
+// (category "application") are the always-present singletons; every other entry is an assignable
+// permission profile (the built-in set seeded into the store). Sorted by filename for a stable order.
+const roleModules = import.meta.glob<{ default: AgentProfile }>("@data/roles/*.json", { eager: true });
+const ALL_ROLES: AgentProfile[] = Object.entries(roleModules)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([, m]) => m.default);
+
 /** Always-present, app-managed singleton sessions — not assignable to a pane. */
-export const APP_ROLES: AgentProfile[] = [
-  {
-    id: "sys_planner",
-    name: "Project Planner",
-    color: "oklch(0.7 0.12 290)",
-    category: "application",
-    desc: "Always-present terminal session that runs project planning — turns pitches into issues and maintains the plan.",
-    surface: "Project planning",
-    surfaceGlyph: "P",
-    session: "sys/planner",
-    owns: "the planning terminal",
-    mode: "ask",
-    commands: ["gh"],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
-    paths: { allow: [".studio/plan/**", "docs/plan/**"], deny: ["src/**"] },
-    net: { allow: ["api.github.com"] },
-  },
-  {
-    // The Blueprint Assistant ("Design with Claude") is a STATELESS one-shot completion
-    // (llm_complete) — it drafts/edits blueprint stages, prompts, and skills from a description.
-    // It runs no shell, writes no files, and uses no tools, so its minimal role only really
-    // governs what context it may read + net. Distinct from the Project Planner (#680).
-    id: "sys_blueprint_assistant",
-    name: "Blueprint Assistant",
-    color: "oklch(0.7 0.13 330)",
-    category: "application",
-    desc: "Always-present design assistant for blueprints — a one-shot Claude that drafts and edits blueprint stages, prompts, and skills from your description. Read-only: it sees the active blueprint and the skills / knowledge library and returns suggestions; it runs no shell, writes no files, and has no tools.",
-    surface: "Blueprints",
-    surfaceGlyph: "B",
-    session: "sys/blueprint-assistant",
-    owns: "the blueprint design assistant",
-    mode: "deny",
-    commands: [],
-    tools: { read: "allow", grep: "deny", glob: "deny", edit: "deny", write: "deny", bash: "deny", web: "deny", task: "deny" },
-    paths: { allow: [], deny: ["**/*"] },
-    net: { allow: [] },
-  },
-  {
-    // The Planning Autopilot (#682) is the SIMULATED USER: a one-shot Claude that answers
-    // the planner's discovery questions from the pitch so a plan can be produced hands-free.
-    // Like the Blueprint Assistant it's a stateless completion — it reads the pitch + the
-    // planner's output and returns a reply; no shell, no fs, no tools. Distinct from the
-    // Project Planner (which it drives).
-    id: "sys_planning_autopilot",
-    name: "Planning Autopilot",
-    color: "oklch(0.72 0.13 30)",
-    category: "application",
-    desc: "Answers the project planner's questions on your behalf, from the pitch, to drive a plan to completion hands-free. Read-only: it sees the pitch + the planner's output and replies; it runs no shell, writes no files, and has no tools.",
-    surface: "Project planning",
-    surfaceGlyph: "◇",
-    session: "sys/planning-autopilot",
-    owns: "the planning autopilot (simulated user)",
-    mode: "deny",
-    commands: [],
-    tools: { read: "allow", grep: "deny", glob: "deny", edit: "deny", write: "deny", bash: "deny", web: "deny", task: "deny" },
-    paths: { allow: [], deny: ["**/*"] },
-    net: { allow: [] },
-  },
-];
+export const APP_ROLES: AgentProfile[] = ALL_ROLES.filter((r) => r.category === "application");
+
+/** The assignable permission profiles (the packaged built-ins; user-created ones live in the store). */
+export const PROFILES: AgentProfile[] = ALL_ROLES.filter((r) => r.category !== "application");
+
+/** Profile ids retired from the packaged set — dropped from a persisted store on rehydrate. */
+const RETIRED_PROFILE_IDS = new Set(["pf_build", "pf_docs"]);
+
+/**
+ * Reconcile a persisted profile list against the packaged built-ins (mirrors the blueprint
+ * `refreshBuiltIns` migration): the built-ins always come FRESH from code (the role JSON), the
+ * retired demos + any stale generated (`gen_*`) profiles are dropped, and the user's own custom
+ * profiles are preserved. Run once in the store's `onRehydrateStorage`.
+ */
+export function reconcileBuiltInProfiles(stored: AgentProfile[]): AgentProfile[] {
+  const builtinIds = new Set(PROFILES.map((p) => p.id));
+  const customs = (stored ?? []).filter(
+    (p) => !builtinIds.has(p.id) && p.category !== "generated" && !RETIRED_PROFILE_IDS.has(p.id),
+  );
+  return [...PROFILES, ...customs];
+}
 
 /** The app role the planning autopilot's simulated user runs under (#682). */
 export const PLANNING_AUTOPILOT_ROLE_ID = "sys_planning_autopilot";
-
-export const PROFILES: AgentProfile[] = [
-  {
-    id: "pf_sandbox", name: "Sandboxed", color: "oklch(0.68 0.18 25)", category: "user", origin: "built-in",
-    desc: "Default for any new pane. Nothing runs without you. Good for untrusted or first-touch repos.",
-    mode: "deny", commands: [],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "deny", web: "deny", task: "deny" },
-    paths: { allow: [], deny: ["**/*"] }, net: { allow: [] }, builtin: true,
-  },
-  {
-    id: "pf_review", name: "Read-only review", color: "oklch(0.72 0.10 230)", category: "user", origin: "built-in",
-    desc: "Inspect, search, and comment — never mutates the tree. The profile @reviewer runs under.",
-    mode: "deny", commands: [],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "deny", write: "deny", bash: "ask", web: "ask", task: "allow" },
-    paths: { allow: [], deny: ["**/*"] }, net: { allow: ["api.github.com"] }, builtin: true,
-  },
-  {
-    id: "pf_build", name: "Build & test", color: "oklch(0.78 0.14 70)", category: "user", origin: "user-defined",
-    desc: "Can edit code and run the project's build/test commands, but asks before anything destructive.",
-    mode: "ask", commands: ["cargo", "npm", "pnpm", "pytest", "make", "node"],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
-    paths: { allow: ["src/**", "tests/**", "Cargo.toml", "package.json"], deny: ["**/.env", "**/secrets/**", ".git/**"] },
-    net: { allow: ["crates.io", "registry.npmjs.org", "pypi.org"] }, builtin: false,
-  },
-  {
-    id: "pf_docs", name: "Docs writer", color: "oklch(0.7 0.06 90)", category: "generated", origin: "generated by Planner",
-    desc: "Edits only under docs/ and the wiki. No build tools, no shell. The profile @docs runs under.",
-    mode: "ask", commands: [],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "deny", web: "allow", task: "deny" },
-    paths: { allow: ["docs/**", "*.md", "wiki/**"], deny: ["src/**", "**/*"] }, net: { allow: [] }, builtin: false,
-  },
-  {
-    id: "pf_auto", name: "Autonomous (trusted)", color: "oklch(0.74 0.13 145)", category: "user", origin: "user-defined",
-    desc: "Runs unattended — auto-approves the full allowlist and most tools. Scope to repos you trust.",
-    mode: "allow", commands: ["cargo", "npm", "pnpm", "pytest", "make", "node", "docker", "gh", "aws"],
-    tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "allow", web: "allow", task: "allow" },
-    paths: { allow: ["**/*"], deny: ["**/.env", "**/secrets/**"] }, net: { allow: ["*"] }, builtin: false,
-  },
-];
 
 /** Tools rendered in the tri-state table: [key, description]. */
 export const TOOL_DEFS: [ToolKey, string][] = [
@@ -180,9 +114,9 @@ export const CONSOLES: ConsoleSession[] = [
     id: "con_orch", name: "orchestrator", repo: "acme/payments", status: "running",
     projectAllow: ["cargo", "just"],
     panes: [
-      { id: "t1p0", agent: "@scratch", status: "running", profileId: "pf_build" },
+      { id: "t1p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
       { id: "t1p1", agent: "@reviewer", status: "awaiting", profileId: "pf_review" },
-      { id: "t1p2", agent: "@docs", status: "idle", profileId: "pf_docs" },
+      { id: "t1p2", agent: "@docs", status: "idle", profileId: "pf_review" },
       { id: "t1p3", agent: "@github", status: "running", profileId: "pf_auto" },
     ],
   },
@@ -190,7 +124,7 @@ export const CONSOLES: ConsoleSession[] = [
     id: "con_tunnel", name: "feat/tunnel", repo: "acme/payments", status: "running",
     projectAllow: ["cargo", "just"], repoAllow: ["wscat"],
     panes: [
-      { id: "t2p0", agent: "@scratch", status: "running", profileId: "pf_build" },
+      { id: "t2p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
       { id: "t2p1", agent: "@explore", status: "idle", profileId: "pf_sandbox" },
     ],
   },

@@ -8,15 +8,12 @@ describe("app-session role labels (#740)", () => {
     const tags = APP_ROLES.map((r) => appSessionTag(r));
     expect(new Set(tags).size).toBe(APP_ROLES.length); // all distinct
     expect(appSessionTag(findProfile("sys_planner")!)).toMatch(/planner/i);
-    expect(appSessionTag(findProfile("sys_blueprint_assistant")!)).toMatch(/blueprint/i);
     expect(appSessionTag(findProfile("sys_planning_autopilot")!)).toMatch(/autopilot/i);
   });
 
-  it("the 'open …' button + reach note are role-correct, not planner/librarian binaries", () => {
-    expect(appSessionOpenLabel(findProfile("sys_blueprint_assistant")!)).toBe("blueprints");
+  it("the 'open …' button + reach note are role-correct", () => {
     expect(appSessionOpenLabel(findProfile("sys_planning_autopilot")!)).toBe("settings");
-    // one-shot helpers aren't described as reached through Knowledge blocks
-    expect(appReachNote(findProfile("sys_blueprint_assistant")!)).not.toMatch(/Knowledge blocks/);
+    // one-shot helpers are described as one-shot helpers (not Knowledge blocks)
     expect(appReachNote(findProfile("sys_planning_autopilot")!)).toMatch(/one-shot helper/);
   });
 });
