@@ -87,4 +87,30 @@ describe("triageStartProject — reference context delivery", () => {
     const st = useAppStore.getState();
     expect(st.paneReferenceDocs[triagePaneId(sanitizeProjectKey("Proj"), "own/web")]).toEqual(["documents/global.md", "documents/proj.md"]);
   });
+
+  // #1807: the planner's discovery/context plan-section files (goal.md, scope.md, …) must NOT
+  // leak into triage as a bare `# Goal`. A stale project-level reference-context assignment (from
+  // the removed KB UI) that names those files is filtered out of the triage assembly, while
+  // genuine assigned-knowledge docs still pass through.
+  it("filters the planner's discovery/context docs out of the triage reference set", () => {
+    useAppStore.setState({
+      refContextDefault: [],
+      refContextProject: {
+        Proj: [`projects/${sanitizeProjectKey("Proj")}/context/goal.md`, "documents/proj.md"],
+      },
+    });
+    useAppStore.getState().triageStartProject("Proj", ["own/web"]);
+    const st = useAppStore.getState();
+    // goal.md dropped; the genuine knowledge doc survives.
+    expect(st.paneReferenceDocs[triagePaneId(sanitizeProjectKey("Proj"), "own/web")]).toEqual(["documents/proj.md"]);
+  });
+
+  it("leaves paneReferenceDocs unset when only discovery/context docs are assigned", () => {
+    useAppStore.setState({
+      refContextProject: { Proj: [`projects/${sanitizeProjectKey("Proj")}/discovery/goal.md`] },
+    });
+    useAppStore.getState().triageStartProject("Proj", ["own/web"]);
+    const st = useAppStore.getState();
+    expect(st.paneReferenceDocs[triagePaneId(sanitizeProjectKey("Proj"), "own/web")]).toBeUndefined();
+  });
 });
