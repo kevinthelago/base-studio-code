@@ -261,11 +261,21 @@ files and rarely need a human.
      "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
      "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
      "streams": [
-       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md"},
-       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"commands":["cargo"],"prompt":"prompts/api-client-kickoff.md"}
+       {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md","flow":{"autonomy":"continuous","push":"auto-pr","trigger":"per-issue","gate":"hard"}},
+       {"id":"api-client","name":"API client","repo":"owner/web","owns":["src/lib/api/**"],"issues":["#18"],"dependsOn":[],"commands":["cargo"],"prompt":"prompts/api-client-kickoff.md","flow":{"autonomy":"checkpoint","push":"push-confirm","trigger":"per-stage","gate":"hard"}}
      ]
    }
    ```
+   Each stream may carry a **`"flow"`** (#297) — its per-agent execution flow — as a
+   NESTED object: `"flow":{"autonomy":…,"push":…,"trigger":…,"gate":…}` (this is the
+   CANONICAL shape; it matches the stored model and round-trips through `bsc-plan fleet
+   get`). `autonomy` = `continuous`|`checkpoint`|`confirm`; `push` =
+   `auto-pr`|`self-merge`|`push-confirm`|`commit-only`|`none`; `trigger` =
+   `per-issue`|`per-stage`|`on-green`; `gate` = `soft`|`hard`. Omit `flow` (or any of its
+   fields) to take the default (`continuous` + `auto-pr` + `per-issue` + `hard`). The
+   flat attribute form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top
+   level, as the `<agent_assign>` tag emits) is ALSO accepted on ingest for back-compat,
+   but emit the nested `"flow"` object here.
    Each stream's **`"commands"`** is the shell toolchain its worker auto-runs without a
    prompt (see "Allow shell commands"). A stream may also carry **`"profile"`** — an
    AgentProfile id that scopes its session's auto-approved commands, per-tool permissions,
