@@ -117,7 +117,8 @@ describe("registry wiring", () => {
 
   it("screen-nav and zoom are rebindable single chords (#773)", () => {
     expect(DEFAULT_BINDINGS["screen-console"]).toBe("F1");
-    expect(DEFAULT_BINDINGS["screen-settings"]).toBe("F6");
+    expect(DEFAULT_BINDINGS["screen-github"]).toBe("F6");
+    expect(DEFAULT_BINDINGS["screen-settings"]).toBe("F8");
     expect(DEFAULT_BINDINGS["zoom-in"]).toBe("Ctrl+Equal");
     expect(DEFAULT_BINDINGS["zoom-reset"]).toBe("Ctrl+Digit0");
     // A bare F-key serializes to just the code, with no modifiers.

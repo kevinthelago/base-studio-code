@@ -1,8 +1,22 @@
-// Shared settings UI primitives (#1745) — the card-header + row/select/button building blocks the
-// settings tabs hand-rolled, in several cases byte-identically: `Row`/`Select` were duplicated in
-// Performance.tsx + Logs.tsx, `btn()` in Logs.tsx + Storage.tsx, and the card-header block repeats
-// across Appearance.tsx + General.tsx. One source so they can't drift.
 import type { ReactNode, CSSProperties } from "react";
+import { Toggle } from "@/shared/ui/Toggle";
+
+export function ToggleRow({ on, onToggle, title, children }: {
+  on: boolean; onToggle: () => void; title: string; children: ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
+      <div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+          {title}
+        </div>
+        <div className="hint">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 
 /** A settings-card header: a title, an optional inline hint, and an optional right-aligned control.
  *  The `.card` wrapper stays at the call site (it is a single class, not worth wrapping). */

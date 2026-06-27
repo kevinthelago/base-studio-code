@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { KeyboardSettings } from "./Keyboard";
+import { KeyboardCard } from "./KeyboardCard";
 import { useAppStore } from "@/store";
-import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "./lib/shortcuts";
+import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "../lib/shortcuts";
 
 beforeEach(() => {
   useAppStore.setState({ keybindings: {} });
 });
 
-describe("KeyboardSettings", () => {
+describe("KeyboardCard", () => {
   it("renders the reference, including a fixed (non-rebindable) row", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     expect(screen.getByRole("heading", { name: "Keyboard" })).toBeInTheDocument();
     // A digit-range shortcut is shown read-only (no rebind button).
     expect(screen.getByText("Switch to workspace tab by number")).toBeInTheDocument();
@@ -20,7 +20,7 @@ describe("KeyboardSettings", () => {
   });
 
   it("rebinds a console action to the captured chord and persists it", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     const btn = screen.getByRole("button", { name: /Rebind Toggle broadcast/ });
     fireEvent.click(btn);
     expect(screen.getByText("Press keys…")).toBeInTheDocument();
@@ -36,7 +36,7 @@ describe("KeyboardSettings", () => {
   });
 
   it("flags a conflict and leaves the binding unchanged", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     fireEvent.click(screen.getByRole("button", { name: /Rebind Toggle broadcast/ }));
     // Ctrl+Shift+F is fullscreen-toggle's default → conflict.
     fireEvent.keyDown(document, { code: "KeyF", ctrlKey: true, shiftKey: true });
@@ -46,7 +46,7 @@ describe("KeyboardSettings", () => {
   });
 
   it("Esc cancels capture without changing anything", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     fireEvent.click(screen.getByRole("button", { name: /Rebind Toggle broadcast/ }));
     fireEvent.keyDown(document, { code: "Escape" });
     expect(screen.queryByText("Press keys…")).not.toBeInTheDocument();
@@ -55,14 +55,14 @@ describe("KeyboardSettings", () => {
 
   it("reset reverts an overridden binding to its default", () => {
     useAppStore.setState({ keybindings: { "broadcast-toggle": "Ctrl+Alt+KeyB" } });
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     // Per-row reset (first one) clears the override.
     fireEvent.click(screen.getAllByText("reset")[0]);
     expect(useAppStore.getState().keybindings["broadcast-toggle"]).toBeUndefined();
   });
 
   it("screen-nav and zoom rows are now rebindable (#773)", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     // Screen nav: "Go to Console" can be rebound.
     const navBtn = screen.getByRole("button", { name: /Rebind Go to Console/ });
     fireEvent.click(navBtn);
@@ -77,7 +77,7 @@ describe("KeyboardSettings", () => {
   });
 
   it("rebinds a digit-range leader via the dropdown (#773 Tier 2)", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
     // Ctrl+Alt isn't a default for any range, so no conflict.
     fireEvent.change(select, { target: { value: "Ctrl+Alt" } });
@@ -85,7 +85,7 @@ describe("KeyboardSettings", () => {
   });
 
   it("flags a leader conflict and leaves it unchanged", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
     // Ctrl+Shift is pane-select's leader → conflict.
     fireEvent.change(select, { target: { value: "Ctrl+Shift" } });
@@ -95,7 +95,7 @@ describe("KeyboardSettings", () => {
 
   it("selecting the default leader clears the override", () => {
     useAppStore.setState({ keybindings: { "tab-switch": "Alt" } });
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     const select = screen.getByRole("combobox", { name: /Leader for Switch to workspace tab by number/ });
     fireEvent.change(select, { target: { value: "Ctrl" } }); // tab-switch's default
     expect(useAppStore.getState().keybindings["tab-switch"]).toBeUndefined();
@@ -105,17 +105,15 @@ describe("KeyboardSettings", () => {
     useAppStore.setState({
       keybindings: { "broadcast-toggle": "Ctrl+Alt+KeyB", "clear-input": "Ctrl+Alt+KeyX" },
     });
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     fireEvent.click(screen.getByRole("button", { name: /Reset all to defaults/ }));
     expect(useAppStore.getState().keybindings).toEqual({});
   });
 });
 
-// Exhaustive reference rendering — consolidated from the former keyboardSettings /
-// KeyboardSettings smoke tests. Renders with default bindings (keybindings: {}).
-describe("KeyboardSettings — reference rendering", () => {
+describe("KeyboardCard — reference rendering", () => {
   it("renders the page heading and every shortcut group title", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     expect(screen.getByText("Keyboard")).toBeTruthy();
     for (const group of SHORTCUT_GROUPS) {
       expect(screen.getByText(group.title)).toBeTruthy();
@@ -123,7 +121,7 @@ describe("KeyboardSettings — reference rendering", () => {
   });
 
   it("renders every shortcut description from SHORTCUT_GROUPS", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     for (const group of SHORTCUT_GROUPS) {
       for (const shortcut of group.items) {
         expect(screen.getByText(shortcut.desc)).toBeTruthy();
@@ -132,7 +130,7 @@ describe("KeyboardSettings — reference rendering", () => {
   });
 
   it("renders each key cap from SHORTCUT_GROUPS", () => {
-    render(<KeyboardSettings />);
+    render(<KeyboardCard />);
     for (const group of SHORTCUT_GROUPS) {
       for (const shortcut of group.items) {
         for (const key of shortcut.keys) {

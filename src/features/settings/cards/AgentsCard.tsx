@@ -2,7 +2,7 @@
 // global/project/repo allowlist editor was retired. This section now points to the Permissions
 // screen (where profiles live) and hosts session-wide agent defaults.
 
-export function AgentsSettings() {
+export function AgentsCard() {
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Agents</h2>

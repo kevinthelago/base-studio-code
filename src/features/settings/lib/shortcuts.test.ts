@@ -9,7 +9,9 @@ describe("shortcuts registry", () => {
     }
     // Spot-check the canonical F-key bindings.
     expect(SCREEN_KEY_MAP.F1).toBe("console");
-    expect(SCREEN_KEY_MAP.F6).toBe("settings");
+    expect(SCREEN_KEY_MAP.F6).toBe("github");
+    expect(SCREEN_KEY_MAP.F7).toBe("agents");
+    expect(SCREEN_KEY_MAP.F8).toBe("settings");
   });
 
   it("documents every screen hotkey in the Navigation group, so the page can't drift", () => {

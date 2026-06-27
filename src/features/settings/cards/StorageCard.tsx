@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { settingsBtn as btn } from "./SettingsControls";
+import { settingsBtn as btn } from "../screens/SettingsControls";
+
+// TODO: Refactor this storage card into the fleet tab.
+// Currently removed from settings/PlannerScreen but kept intact for the future refactor.
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -13,7 +16,7 @@ interface WorktreeUsage {
   targetBytes: number;
 }
 
-export function StorageSettings() {
+export function StorageCard() {
   const [rows, setRows] = useState<WorktreeUsage[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { StorageSettings } from "./Storage";
+import { StorageCard } from "./StorageCard";
 
 // The Tauri `invoke` mock is pre-wired in src/test/setup.ts; we just script per-command returns.
 const mockInvoke = vi.mocked(invoke);
@@ -21,9 +21,9 @@ beforeEach(() => {
   });
 });
 
-describe("StorageSettings", () => {
+describe("StorageCard", () => {
   it("lists worktrees grouped by project with sizes", async () => {
-    render(<StorageSettings />);
+    render(<StorageCard />);
     await waitFor(() => expect(screen.getByText("proj-a")).toBeInTheDocument());
     expect(screen.getByText("proj-b")).toBeInTheDocument();
     expect(screen.getByText("web--auth")).toBeInTheDocument();
@@ -34,7 +34,7 @@ describe("StorageSettings", () => {
   });
 
   it("reclaims a project's worktrees on confirm and refreshes", async () => {
-    render(<StorageSettings />);
+    render(<StorageCard />);
     await waitFor(() => expect(screen.getByText("proj-a")).toBeInTheDocument());
 
     // proj-a is the biggest (sorted first) → its Reclaim is the first one.
@@ -55,7 +55,7 @@ describe("StorageSettings", () => {
     mockInvoke.mockImplementation((cmd: string) =>
       cmd === "worktrees_disk_usage" ? Promise.resolve([]) : Promise.resolve(undefined),
     );
-    render(<StorageSettings />);
+    render(<StorageCard />);
     await waitFor(() => expect(screen.getByText(/No fleet worktrees on disk/)).toBeInTheDocument());
   });
 });

@@ -3,10 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { ConfigProfile } from "@/store";
 import { projectRepoCwd, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
-import { TOOL_PRESETS } from "./lib/toolPresets";
-import { ToolChip, ChipInput } from "./ToolPermissionInputs";
+import { TOOL_PRESETS } from "../lib/toolPresets";
+import { ToolChip, ChipInput } from "../ToolPermissionInputs";
 
-export function ClaudeConfigSettings() {
+export function ClaudeConfigCard() {
   const {
     projectLocalRepos, bscBaseDir, projectKeyAlias,
     configProfiles, addConfigProfile, updateConfigProfile, removeConfigProfile,
