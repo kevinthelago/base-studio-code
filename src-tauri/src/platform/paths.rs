@@ -34,8 +34,15 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
 /// The published-marker file inside a project hub (#922): `projects/<key>/.published`. Its presence
 /// means the project has been published to GitHub; absence = draft. The source of published-ness,
 /// replacing directory location.
+///
+/// Delegates the path to `bsc_project::published_marker` (#1761) so the `.published` marker logic is
+/// single-sourced with the `bsc-project` session CLI; the key is sanitized here (the app boundary,
+/// since the crate treats keys as opaque), and an unresolvable home falls back to the app's relative
+/// base (matching [`bsc_base_dir`]'s historical behavior).
 pub(crate) fn published_marker(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join(".published")
+    let key = sanitize_project_key(project_key);
+    bsc_project::published_marker(&key)
+        .unwrap_or_else(|| bsc_base_dir().join("projects").join(key).join(".published"))
 }
 
 /// Whether a project hub carries the published marker (#922).

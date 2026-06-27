@@ -3,6 +3,7 @@
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { Fragment, useState } from "react";
+import { BackButton } from "@/shared/ui/BackButton";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "../stages/focusedPlan";
 import type { StagePrompt } from "../session/plannerConductor";
 
@@ -220,7 +221,7 @@ export function PhaseFooter({ phase, action, published, publishLabel, onBack, on
     : undefined;
   return (
     <div className="ph-foot">
-      <button className="nav-btn" disabled={phase.index === 0} onClick={onBack}>← back</button>
+      <BackButton variant="text" label="back" className="nav-btn" disabled={phase.index === 0} onClick={onBack} aria-label="Back" />
       <span className="prog">phase {phase.index + 1} of {phase.total}</span>
       <span style={{ flex: 1 }} />
       {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}

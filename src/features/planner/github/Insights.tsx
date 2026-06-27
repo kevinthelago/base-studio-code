@@ -1,10 +1,7 @@
 import { useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -148,19 +145,7 @@ function StatCard({ k, v, sub, tone }: { k: string; v: string; sub: string; tone
 // ── Insights screen ───────────────────────────────────────────────────────────
 
 export function Insights() {
-  const {
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
-  } = useAppStore();
-
-  const { data, loading, error } = useGithubQuery<{ node: Record<string, unknown> }>(
-    (token) => invoke("github_graphql", {
-      token,
-      query: INSIGHTS_QUERY,
-      variables: { id: activeProjectId },
-    }),
-    [activeProjectId],
-    !!activeProjectId,
-  );
+  const { project, data, loading, error } = useActiveProjectGithub<{ node: Record<string, unknown> }>(INSIGHTS_QUERY);
 
   const { issues, statusOptions } = useMemo(() => {
     const node = data?.node as ProjectV2Node | undefined;
@@ -278,15 +263,6 @@ export function Insights() {
     return avg.toFixed(1);
   }, [weeklyActivity]);
 
-  const project: ActiveProjectInfo = {
-    id: activeProjectId ?? "",
-    number: activeProjectNumber,
-    name: activeProjectName,
-    repo: activeProjectRepo,
-    repos: activeProjectRepos,
-    description: "",
-  };
-
   const isLoading = loading && issues.length === 0;
 
   return (
@@ -295,14 +271,7 @@ export function Insights() {
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
         <div style={{ maxWidth: 1240, margin: "0 auto" }}>
 
-          {error && (
-            <div style={{
-              padding: "12px 16px", borderRadius: 6, marginBottom: 16,
-              background: "color-mix(in oklch, var(--danger), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-            }}>{error}</div>
-          )}
+          <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {isLoading && (
             <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>

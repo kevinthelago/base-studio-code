@@ -47,7 +47,7 @@ import { stageConfirmKeys, DISCOVERY_BASELINE } from "../stages/planStageDerive"
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
-import { Ic } from "../blueprints/blueprintIcons";
+import { BackButton } from "@/shared/ui/BackButton";
 import { clampIndex, gatePill, footerAction, resolveFooter, shouldAutoCompleteGate } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt, stagePrompts } from "./plannerConductor";
@@ -1089,18 +1089,7 @@ export function Planning({ visible }: { visible: boolean }) {
       <div style={{ padding: "14px 24px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              onClick={() => setProjectsView("list")}
-              title="Back to Planner"
-              aria-label="Back to Planner"
-              style={{
-                width: 30, height: 30, flex: "0 0 30px",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                background: "var(--bg-elev)", border: "1px solid var(--border)",
-                borderRadius: "var(--r-md)", cursor: "pointer",
-                color: "var(--fg)", padding: 0, marginRight: 2,
-              }}
-            ><Ic n="chevron_left" size={18} /></button>
+            <BackButton variant="icon" onClick={() => setProjectsView("list")} aria-label="Back to Planner" />
             {isExisting
               ? (
                 <>
