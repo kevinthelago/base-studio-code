@@ -1,10 +1,7 @@
 import { useState, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { timeAgoShort } from "@/shared/lib/core/format";
-import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { IconButton } from "@/shared/ui/IconButton";
 import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
@@ -363,24 +360,12 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
 // ── Issues screen ─────────────────────────────────────────────────────────────
 
 export function Issues() {
-  const {
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
-  } = useAppStore();
+  const { project, data, loading, error } = useActiveProjectGithub<{ node: Record<string, unknown> }>(ISSUES_QUERY);
 
   const [selectedIssue, setSelectedIssue] = useState<FlatIssue | null>(null);
   const [filters, setFilters] = useState<Filters>({
     search: "", state: "open", label: "", milestone: "", sort: "newest",
   });
-
-  const { data, loading, error } = useGithubQuery<{ node: Record<string, unknown> }>(
-    (token) => invoke("github_graphql", {
-      token,
-      query: ISSUES_QUERY,
-      variables: { id: activeProjectId },
-    }),
-    [activeProjectId],
-    !!activeProjectId,
-  );
 
   const rawIssues = useMemo<FlatIssue[]>(() => parseProjectV2Items<{
     number: number; title: string; body: string;
@@ -442,15 +427,6 @@ export function Issues() {
     }
   }, [rawIssues, filters]);
 
-  const project: ActiveProjectInfo = {
-    id: activeProjectId ?? "",
-    number: activeProjectNumber,
-    name: activeProjectName,
-    repo: activeProjectRepo,
-    repos: activeProjectRepos,
-    description: "",
-  };
-
   const panelOpen = selectedIssue !== null;
 
   return (
@@ -491,14 +467,7 @@ export function Issues() {
             </div>
           )}
 
-          {error && (
-            <div style={{
-              margin: 12, padding: "12px 16px", borderRadius: 6,
-              background: "color-mix(in oklch, var(--danger), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-            }}>{error}</div>
-          )}
+          <QueryBanner error={error} style={{ margin: 12 }} />
 
           {!loading && !error && filtered.length === 0 && rawIssues.length > 0 && (
             <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>

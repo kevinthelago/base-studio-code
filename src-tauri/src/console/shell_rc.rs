@@ -5,6 +5,27 @@
 // helper functions glue together and the whole rc breaks with a bash syntax error
 // (#296) — the full_bsc_rc_is_syntactically_valid_bash test guards this.
 
+/// Emit a sidecar-exec rc fragment (#1756): the near-byte-identical shell function shared by every
+/// compiled-binary helper (`bsc-plan`/`bsc-data`/`bsc-logs`/`bsc-compliance`/`bsc-blueprint`/
+/// `bsc-project`). Given the CLI name and its `$BSC_*_BIN` var, it produces — via `concat!`, so the
+/// result is a `&'static str` — a function that errors `127` on a missing/0-byte sidecar stub and
+/// otherwise execs the absolute-path binary (falling back to the bare name on PATH). The mandatory
+/// trailing `"\n"` (the #296 glue contract) is baked in here once, so a new sidecar helper can never
+/// forget it. The output is byte-identical to the hand-written fragments it replaced.
+///
+/// NOT for `bsc-skill` / `bsc-learned`: those are a different shape (argc-dispatched / a `bsc-plan`
+/// wrapper, no 0-byte check) and stay hand-written.
+macro_rules! bsc_sidecar_rc {
+    ($cli:literal, $bin:literal) => {
+        concat!(
+            $cli, "() { if [ -n \"${", $bin, ":-}\" ] && [ ! -s \"$", $bin,
+            "\" ]; then echo \"", $cli, ": ", $bin, " ($", $bin,
+            ") is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; ",
+            "return 127; fi; \"${", $bin, ":-", $cli, "}\" \"$@\"; }\n",
+        )
+    };
+}
+
 /// The `bsc-checkpoint` helper: reads stdin and overwrites the per-repo checkpoint
 /// doc named by `$BSC_CHECKPOINT_DOC` (creating its parent dir). Installed via an rc
 /// file + `BASH_ENV` so it's reachable from the agent's non-interactive `bash -c`
@@ -243,27 +264,18 @@ pub(crate) const BSC_FLEET_RC: &str = concat!(
 /// others it can't be pure shell (it needs SQLite), so the function execs the real binary by its
 /// absolute path in `$BSC_PLAN_BIN` (set per-session in pty_create, alongside `$BSC_PLAN_DB` = the
 /// project's plan.db). Falls back to a bare `bsc-plan` on PATH if the var is unset.
-pub(crate) const BSC_PLAN_RC: &str = concat!(
-    r#"bsc-plan() { if [ -n "${BSC_PLAN_BIN:-}" ] && [ ! -s "$BSC_PLAN_BIN" ]; then echo "bsc-plan: BSC_PLAN_BIN ($BSC_PLAN_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_PLAN_BIN:-bsc-plan}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_PLAN_RC: &str = bsc_sidecar_rc!("bsc-plan", "BSC_PLAN_BIN");
 
 /// The `bsc-data` shell helper (#1446) — execs the bundled per-project Data Model + PlatformScan
 /// CLI ($BSC_DATA_BIN); the planner reads them with `bsc-data model get` / `bsc-data scan get`.
-pub(crate) const BSC_DATA_RC: &str = concat!(
-    r#"bsc-data() { if [ -n "${BSC_DATA_BIN:-}" ] && [ ! -s "$BSC_DATA_BIN" ]; then echo "bsc-data: BSC_DATA_BIN ($BSC_DATA_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_DATA_BIN:-bsc-data}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_DATA_RC: &str = bsc_sidecar_rc!("bsc-data", "BSC_DATA_BIN");
 
 /// The `bsc-logs` shell helper (#1716) — execs the bundled unified log-query CLI ($BSC_LOGS_BIN); a
 /// live session reads its own audit/skill/mcp/hook/coord/activity streams + token cost + `perf.db`
 /// (`bsc-logs perf`) from its own shell. The directory it reads is $BSC_LOG_DIR (set per-session).
 /// Read-only. Mirrors the `bsc-plan`/`bsc-data` sidecar-helper shape exactly (it needs SQLite for the
 /// `perf` verb, so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_LOGS_RC: &str = concat!(
-    r#"bsc-logs() { if [ -n "${BSC_LOGS_BIN:-}" ] && [ ! -s "$BSC_LOGS_BIN" ]; then echo "bsc-logs: BSC_LOGS_BIN ($BSC_LOGS_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_LOGS_BIN:-bsc-logs}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_LOGS_RC: &str = bsc_sidecar_rc!("bsc-logs", "BSC_LOGS_BIN");
 
 /// The `bsc-compliance` shell helper (#1718) — execs the bundled compliance standards-store CLI
 /// ($BSC_COMPLIANCE_BIN) so a live session can query (and refresh) the WCAG/GDPR/CCPA/SOC2/…
@@ -271,20 +283,14 @@ pub(crate) const BSC_LOGS_RC: &str = concat!(
 /// plus the write side (upsert/remove/reseed). The store it reads is $BSC_COMPLIANCE_STORE (set
 /// per-session). Mirrors the `bsc-plan`/`bsc-data`/`bsc-logs` sidecar-helper shape exactly (SQLite,
 /// so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_COMPLIANCE_RC: &str = concat!(
-    r#"bsc-compliance() { if [ -n "${BSC_COMPLIANCE_BIN:-}" ] && [ ! -s "$BSC_COMPLIANCE_BIN" ]; then echo "bsc-compliance: BSC_COMPLIANCE_BIN ($BSC_COMPLIANCE_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_COMPLIANCE_BIN:-bsc-compliance}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_COMPLIANCE_RC: &str = bsc_sidecar_rc!("bsc-compliance", "BSC_COMPLIANCE_BIN");
 
 /// The `bsc-blueprint` shell helper (#1719) — execs the bundled user-blueprint-store CLI
 /// ($BSC_BLUEPRINT_BIN); a live session lists/gets/sets/removes the user blueprint library
 /// (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
 /// Mirrors the `bsc-logs`/`bsc-plan` sidecar-helper shape exactly (a compiled bin, not pure shell):
 /// execs the absolute-path binary, or errors on a 0-byte stub; falls back to a PATH `bsc-blueprint`.
-pub(crate) const BSC_BLUEPRINT_RC: &str = concat!(
-    r#"bsc-blueprint() { if [ -n "${BSC_BLUEPRINT_BIN:-}" ] && [ ! -s "$BSC_BLUEPRINT_BIN" ]; then echo "bsc-blueprint: BSC_BLUEPRINT_BIN ($BSC_BLUEPRINT_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_BLUEPRINT_BIN:-bsc-blueprint}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_BLUEPRINT_RC: &str = bsc_sidecar_rc!("bsc-blueprint", "BSC_BLUEPRINT_BIN");
 
 /// The `bsc-project` shell helper (#1720) — execs the bundled cross-project hub-lifecycle CLI
 /// ($BSC_PROJECT_BIN): `bsc-project list` + `bsc-project published get|set <key>` over EVERY
@@ -292,10 +298,7 @@ pub(crate) const BSC_BLUEPRINT_RC: &str = concat!(
 /// the projects dir + reads/writes the `.published` marker — sharing the app's path logic, so it
 /// execs a compiled binary, not pure shell. Mirrors the `bsc-plan`/`bsc-logs` sidecar-helper shape
 /// exactly: execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_PROJECT_RC: &str = concat!(
-    r#"bsc-project() { if [ -n "${BSC_PROJECT_BIN:-}" ] && [ ! -s "$BSC_PROJECT_BIN" ]; then echo "bsc-project: BSC_PROJECT_BIN ($BSC_PROJECT_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_PROJECT_BIN:-bsc-project}" "$@"; }"#,
-    "\n",
-);
+pub(crate) const BSC_PROJECT_RC: &str = bsc_sidecar_rc!("bsc-project", "BSC_PROJECT_BIN");
 
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
@@ -572,6 +575,32 @@ mod tests {
 {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+
+    #[test]
+    fn bsc_sidecar_macro_output_is_byte_identical_to_the_hand_written_fragment() {
+        // #1756: the 6 sidecar-exec consts are now macro-generated. Pin the macro's output for one
+        // representative CLI to the EXACT bytes the fragment had before the refactor — including the
+        // mandatory trailing newline (#296) — so a change to the macro that drifts the wire bytes is
+        // caught here, not in a downstream session. The other 5 differ only by CLI name + BIN var.
+        assert_eq!(
+            super::BSC_PLAN_RC,
+            "bsc-plan() { if [ -n \"${BSC_PLAN_BIN:-}\" ] && [ ! -s \"$BSC_PLAN_BIN\" ]; then echo \"bsc-plan: BSC_PLAN_BIN ($BSC_PLAN_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_PLAN_BIN:-bsc-plan}\" \"$@\"; }\n",
+        );
+        // Every sidecar fragment must define its hyphenated helper, exec its $BSC_*_BIN, and end in a
+        // trailing newline — the macro bakes all three in, for every CLI it generates.
+        for (rc, name, bin) in [
+            (super::BSC_PLAN_RC, "bsc-plan", "BSC_PLAN_BIN"),
+            (super::BSC_DATA_RC, "bsc-data", "BSC_DATA_BIN"),
+            (super::BSC_LOGS_RC, "bsc-logs", "BSC_LOGS_BIN"),
+            (super::BSC_COMPLIANCE_RC, "bsc-compliance", "BSC_COMPLIANCE_BIN"),
+            (super::BSC_BLUEPRINT_RC, "bsc-blueprint", "BSC_BLUEPRINT_BIN"),
+            (super::BSC_PROJECT_RC, "bsc-project", "BSC_PROJECT_BIN"),
+        ] {
+            assert!(rc.starts_with(&format!("{name}() {{")), "{name}: defines its helper");
+            assert!(rc.contains(bin), "{name}: execs its {bin} sidecar var");
+            assert!(rc.ends_with('\n'), "{name}: ends with a trailing newline (#296)");
+        }
     }
 
     #[test]

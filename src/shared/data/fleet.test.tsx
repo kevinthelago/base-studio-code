@@ -107,13 +107,13 @@ describe("Fleet screen", () => {
     render(<Fleet />);
     // Click the worker row to drill in.
     fireEvent.click(screen.getByText("api"));
-    expect(screen.getByText("← fleet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to fleet" })).toBeTruthy();
     expect(screen.getByText("Execution flow")).toBeTruthy();
     expect(screen.getByText("Owned issues")).toBeTruthy();
     // Permissions render from the real profile.
     expect(screen.getByText("Permissions")).toBeTruthy();
     // Back to the board.
-    fireEvent.click(screen.getByText("← fleet"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to fleet" }));
     expect(screen.getByText("Worker board")).toBeTruthy();
   });
 

@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
-import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { useActiveProject, QueryBanner } from "./useActiveProjectGithub";
 import {
   buildGantt, tickIntervalWeeks, tickLabel, windowStartFrom,
   WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
@@ -47,9 +46,7 @@ function BurnDown({ open, closed }: { open: number; closed: number }) {
 }
 
 export function Roadmap() {
-  const {
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
-  } = useAppStore();
+  const project = useActiveProject();
 
   // Filters: time window (clamps the Gantt so milestones aren't spread across the
   // project's whole history) and milestone state.
@@ -57,7 +54,7 @@ export function Roadmap() {
   const [stateFilter, setStateFilter] = useState<"all" | "open" | "closed">("all");
 
   // Use the primary repo; fall back to any repo derived from board items.
-  const effectiveRepo = activeProjectRepo || activeProjectRepos[0] || "";
+  const effectiveRepo = project.repo || project.repos[0] || "";
 
   const { data, loading, error } = useGithubQuery<GhMilestone[]>(
     () => githubRequest<GhMilestone[]>(
@@ -67,15 +64,6 @@ export function Roadmap() {
     !!effectiveRepo,
   );
   const milestones = Array.isArray(data) ? data : [];
-
-  const project: ActiveProjectInfo = {
-    id: activeProjectId ?? "",
-    number: activeProjectNumber,
-    name: activeProjectName,
-    repo: activeProjectRepo,
-    repos: activeProjectRepos,
-    description: "",
-  };
 
   // Apply the state filter, then build the windowed Gantt. Stats reflect the
   // filtered set so the cards match what the chart shows.
@@ -102,14 +90,7 @@ export function Roadmap() {
       <ProjectsHeader project={project} />
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
         <div style={{ maxWidth: 1240, margin: "0 auto" }}>
-          {error && (
-            <div style={{
-              padding: "12px 16px", borderRadius: 6, marginBottom: 16,
-              background: "color-mix(in oklch, var(--danger), transparent 88%)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-            }}>{error}</div>
-          )}
+          <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {/* Stat cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
