@@ -5,6 +5,7 @@
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
 import { BackButton } from "@/shared/ui/BackButton";
+import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -27,8 +28,8 @@ function Modal({ title, children, onClose, footer }: {
   title: string; children: React.ReactNode; onClose: () => void; footer?: React.ReactNode;
 }) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: "90vw", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+    <ModalScrim onDismiss={onClose}>
+      <div style={{ width: 440, maxWidth: "90vw", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center" }}>
           <h3 style={{ margin: 0 }}>{title}</h3>
           <div style={{ flex: 1 }} />
@@ -37,7 +38,7 @@ function Modal({ title, children, onClose, footer }: {
         <div style={{ padding: 16 }}>{children}</div>
         {footer && <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-soft)", display: "flex", justifyContent: "flex-end", gap: 8 }}>{footer}</div>}
       </div>
-    </div>
+    </ModalScrim>
   );
 }
 
@@ -315,7 +316,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", zIndex: 220,
+        <div className="above-modal" style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
           background: "var(--bg-elev2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px",
           fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</div>
       )}

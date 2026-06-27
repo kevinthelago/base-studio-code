@@ -436,9 +436,8 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
 function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => void; onClose: () => void }) {
   const [name, setName] = useState("");
   return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,.5)" }} />
-      <div style={{ position: "fixed", top: "30%", left: "50%", transform: "translateX(-50%)", zIndex: 71, width: 360, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 18, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
+    <div className="modal-scrim" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 360, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 18, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>New task group</div>
         <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</div>
         <input autoFocus className="input" placeholder="e.g. Release day" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onCreate(name.trim()); }} style={{ width: "100%", marginBottom: 14 }} />
@@ -447,7 +446,7 @@ function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => voi
           <button className="btn primary" disabled={!name.trim()} onClick={() => onCreate(name.trim())}>create</button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
