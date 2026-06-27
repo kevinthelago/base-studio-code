@@ -1,6 +1,8 @@
 // Hook-fire telemetry (#865 PR 2) — parse + aggregate the hook-fire log for the Hook
 // Analytics tab. Mirrors skillTelemetry.ts. The log lives at ~/.base-studio-code/hooks.log,
-// one TSV line per fire: `ts \t event \t hook \t outcome`, read newest-first via
+// one TSV line per fire: `ts \t pane \t event \t hook \t outcome` (#1743 prepended the pane
+// column). Legacy lines written before #1743 have no pane (`ts \t event \t hook \t outcome`)
+// and are still tolerated — the parser detects the shape by column count. Read newest-first via
 // `read_hook_log`. `outcome` is "allow" | "block" (PreToolUse decisions) or "ok"
 // (PostToolUse / non-gating events). Pure + unit-tested; the hook wrappers that EMIT these
 // lines are wired separately (PR 3).
@@ -22,7 +24,13 @@ export function parseHookLog(text: string): HookFire[] {
   const out: HookFire[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
-    const [tsRaw, event, hook, outcomeRaw] = line.split("\t");
+    const parts = line.split("\t");
+    // #1743: new lines carry a leading pane column (5 fields: ts·pane·event·hook·outcome); legacy
+    // lines have none (4 fields: ts·event·hook·outcome). Detect by column count and offset the field
+    // reads. The pane isn't surfaced here (the analytics don't break down by session), so it's read
+    // past, not stored.
+    const b = parts.length >= 5 ? 1 : 0;
+    const [tsRaw, event, hook, outcomeRaw] = [parts[0], parts[b + 1], parts[b + 2], parts[b + 3]];
     const ts = Number(tsRaw);
     if (!Number.isFinite(ts) || !event || !hook) continue;
     const outcome: HookOutcome = outcomeRaw === "block" ? "block" : outcomeRaw === "allow" ? "allow" : "ok";
