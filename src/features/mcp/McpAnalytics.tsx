@@ -2,24 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
+import { Kpi, StackedDayBars } from "@/shared/ui/charts";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
-// telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). Charts are
-// hand-rolled inline SVG (the house style; cf. HookAnalytics.tsx). Transport per server is
-// joined from the live extensions store; the rest comes from the parsed log. Empty until the
-// bsc-mcp hook pair emits calls (PR 2) — renders a clean zero state.
+// telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). The over-time chart +
+// KPI cards are shared primitives (StackedDayBars / Kpi); the per-server/results charts stay local.
+// Transport per server is joined from the live extensions store; the rest comes from the parsed log.
+// Empty until the bsc-mcp hook pair emits calls (PR 2) — renders a clean zero state.
 
 const DAYS = 14;
-
-function Kpi({ label, value, sub, color }: { label: string; value: React.ReactNode; sub: string; color?: string }) {
-  return (
-    <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 14px" }}>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, color: color ?? "var(--fg)", marginTop: 2 }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-    </div>
-  );
-}
 
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
 const fmtClock = (ts: number) => {
@@ -57,13 +48,6 @@ export function McpAnalyticsTab() {
 
   if (!an) return <div className="hint" style={{ padding: 16 }}>Loading MCP telemetry…</div>;
 
-  // ── Calls-over-time chart geometry (stacked ok/error bars) ──
-  const W = 600, H = 160, x0 = 30, baseY = 140, topY = 12;
-  const maxTotal = Math.max(1, ...an.daily.map((d) => d.ok + d.error));
-  const bw = (W - x0 - 10) / DAYS;
-  const scaleY = (v: number) => (v / maxTotal) * (baseY - topY);
-  const gridVals = [0, Math.ceil(maxTotal / 2), maxTotal];
-
   const maxServerCalls = Math.max(1, ...an.perServer.map((s) => s.calls));
   const errCount = an.recent.filter((c) => c.outcome === "fail").length;
 
@@ -78,42 +62,11 @@ export function McpAnalyticsTab() {
       </div>
 
       {/* Calls over time */}
-      <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Calls over time</h3>
-          <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>daily tool calls · ok vs error</span>
-          <div style={{ flex: 1 }} />
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--accent)" }} />ok</span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--danger)" }} />error</span>
-        </div>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: "var(--mono)" }}>
-          {gridVals.map((v, i) => {
-            const y = baseY - scaleY(v);
-            return (
-              <g key={i}>
-                <line x1={x0} y1={y} x2={W - 8} y2={y} stroke="var(--border-soft)" strokeWidth={1} />
-                <text x={x0 - 6} y={y + 3} textAnchor="end" fill="var(--fg-dim)" fontSize={9}>{v}</text>
-              </g>
-            );
-          })}
-          {an.daily.map((d, i) => {
-            const x = x0 + 4 + i * bw;
-            const w = bw - 5;
-            const hErr = scaleY(d.error);
-            const hOk = scaleY(d.ok);
-            const yErr = baseY - hErr;
-            const yOk = yErr - hOk;
-            const showLabel = i % 3 === 0;
-            return (
-              <g key={i}>
-                {hErr > 0 && <rect x={x} y={yErr} width={w} height={hErr} rx={2} fill="var(--danger)" />}
-                {hOk > 0 && <rect x={x} y={yOk} width={w} height={hOk} rx={2} fill="var(--accent)" />}
-                {showLabel && <text x={x + w / 2} y={152} textAnchor="middle" fill="var(--fg-dim)" fontSize={8.5}>{d.day.slice(5)}</text>}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+      <StackedDayBars
+        data={an.daily.map((d) => ({ day: d.day, upper: d.ok, lower: d.error }))}
+        title="Calls over time" subtitle="daily tool calls · ok vs error"
+        upperLabel="ok" lowerLabel="error"
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         {/* Calls per server */}

@@ -242,6 +242,69 @@ export function Spark({ data, color, w = 70, h = 20 }: SparkProps) {
   );
 }
 
+// ── stacked daily bars (over-time) card ───────────────────────────────────────
+// A panel-wrapped, two-series stacked bar chart over a fixed run of days — the shared
+// "Calls/Fires over time" card on the MCP + Hook analytics tabs (#1740). `lower` stacks
+// at the baseline, `upper` on top of it. Day labels show every 3rd bucket.
+export interface StackedDay { day: string; upper: number; lower: number }
+export function StackedDayBars({
+  data, title, subtitle, upperLabel, lowerLabel,
+  upperColor = "var(--accent)", lowerColor = "var(--danger)",
+}: {
+  data: StackedDay[];
+  title: string;
+  subtitle: string;
+  upperLabel: string;
+  lowerLabel: string;
+  upperColor?: string;
+  lowerColor?: string;
+}) {
+  const W = 600, H = 160, x0 = 30, baseY = 140, topY = 12;
+  const n = data.length || 1;
+  const maxTotal = Math.max(1, ...data.map((d) => d.lower + d.upper));
+  const bw = (W - x0 - 10) / n;
+  const scaleY = (v: number) => (v / maxTotal) * (baseY - topY);
+  const gridVals = [0, Math.ceil(maxTotal / 2), maxTotal];
+  return (
+    <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>{title}</h3>
+        <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>{subtitle}</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: upperColor }} />{upperLabel}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: lowerColor }} />{lowerLabel}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: "var(--mono)" }}>
+        {gridVals.map((v, i) => {
+          const y = baseY - scaleY(v);
+          return (
+            <g key={i}>
+              <line x1={x0} y1={y} x2={W - 8} y2={y} stroke="var(--border-soft)" strokeWidth={1} />
+              <text x={x0 - 6} y={y + 3} textAnchor="end" fill="var(--fg-dim)" fontSize={9}>{v}</text>
+            </g>
+          );
+        })}
+        {data.map((d, i) => {
+          const x = x0 + 4 + i * bw;
+          const w = bw - 5;
+          const hLower = scaleY(d.lower);
+          const hUpper = scaleY(d.upper);
+          const yLower = baseY - hLower;
+          const yUpper = yLower - hUpper;
+          const showLabel = i % 3 === 0;
+          return (
+            <g key={i}>
+              {hLower > 0 && <rect x={x} y={yLower} width={w} height={hLower} rx={2} fill={lowerColor} />}
+              {hUpper > 0 && <rect x={x} y={yUpper} width={w} height={hUpper} rx={2} fill={upperColor} />}
+              {showLabel && <text x={x + w / 2} y={152} textAnchor="middle" fill="var(--fg-dim)" fontSize={8.5}>{d.day.slice(5)}</text>}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // ── legend ──────────────────────────────────────────────────────────────────
 export interface LegendItem { color: string; label: string; value?: ReactNode }
 export function Legend({ items, style }: { items: LegendItem[]; style?: React.CSSProperties }) {
