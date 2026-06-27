@@ -94,7 +94,7 @@ describe("McpScreen + HooksView", () => {
     fireEvent.click(within(card).getByText("download"));
     // Clone (mock resolves) → added to Installed; build runs after. No drawer opens.
     await waitFor(() => expect(useAppStore.getState().mcpServers.some(e => e.name === "Dependency Graph")).toBe(true));
-    expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
+    expect((container.querySelector(".pane-drawer") as HTMLElement).className).not.toContain("on");
   });
 
   it("hides catalog entries that are already installed (#885)", () => {
@@ -120,22 +120,22 @@ describe("McpScreen + HooksView", () => {
 
   it("opens the config drawer when a row is clicked and closes via the scrim", () => {
     const { container } = render(<McpScreen />);
-    const drawer = container.querySelector(".drawer") as HTMLElement;
+    const drawer = container.querySelector(".pane-drawer") as HTMLElement;
     expect(drawer.className).not.toContain("on");
     fireEvent.click(screen.getByText("GitHub"));
     expect(drawer.className).toContain("on");
     expect(within(drawer).getByText("GitHub")).toBeTruthy(); // drawer header name
-    fireEvent.click(container.querySelector(".scrim") as HTMLElement);
-    expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
+    fireEvent.click(container.querySelector(".pane-scrim") as HTMLElement);
+    expect((container.querySelector(".pane-drawer") as HTMLElement).className).not.toContain("on");
   });
 
   it("removes the selected server from the store", () => {
     const { container } = render(<McpScreen />);
     fireEvent.click(screen.getByText("Filesystem"));
-    const drawer = container.querySelector(".drawer") as HTMLElement;
+    const drawer = container.querySelector(".pane-drawer") as HTMLElement;
     fireEvent.click(within(drawer).getByText("remove"));
     expect(useAppStore.getState().mcpServers.some(e => e.id === "e2")).toBe(false);
-    expect((container.querySelector(".drawer") as HTMLElement).className).not.toContain("on");
+    expect((container.querySelector(".pane-drawer") as HTMLElement).className).not.toContain("on");
   });
 
   it("MCP page has an Analytics tab that renders the telemetry surface (zero state)", async () => {
@@ -161,7 +161,7 @@ describe("McpScreen + HooksView", () => {
     const { container } = render(<HooksView />);
     fireEvent.click(screen.getByText("+ Custom hook"));
     expect(useAppStore.getState().hooks.some(h => h.id.startsWith("hook_"))).toBe(true);
-    expect((container.querySelector(".drawer") as HTMLElement).className).toContain("on");
+    expect((container.querySelector(".pane-drawer") as HTMLElement).className).toContain("on");
   });
 
   it("opens the first tab; empty installed shows a CTA to the catalog", () => {

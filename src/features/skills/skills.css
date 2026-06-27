@@ -13,18 +13,8 @@
   overflow: hidden;
 }
 
-/* ── edit drawer (ported from extensions.css, scoped) ───────────────────────── */
-.skills-screen .scrim { position:absolute; inset:0; background:color-mix(in oklch, #000, transparent 60%); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:4; }
-.skills-screen .scrim.on { opacity:1; pointer-events:auto; }
-.skills-screen .drawer { position:absolute; top:0; right:0; bottom:0; width:460px; max-width:90%; background:var(--bg-panel); border-left:1px solid var(--border-soft); box-shadow:-20px 0 50px rgba(0,0,0,.35); display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s cubic-bezier(.2,.7,.2,1); z-index:5; min-height:0; }
-.skills-screen .drawer.on { transform:translateX(0); }
-.skills-screen .dr-head { height:46px; flex:0 0 46px; padding:0 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:10px; background:var(--bg-elev); }
-.skills-screen .dr-head .name { font-family:var(--mono); font-size:13px; color:var(--fg); font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.skills-screen .dr-head .x { width:22px; height:22px; border-radius:4px; border:0; background:transparent; color:var(--fg-muted); cursor:pointer; font-size:16px; line-height:1; display:flex; align-items:center; justify-content:center; }
-.skills-screen .dr-head .x:hover { background:var(--bg-elev2); color:var(--fg); }
-.skills-screen .dr-body { flex:1; overflow:auto; padding:16px 18px; display:flex; flex-direction:column; gap:14px; }
-.skills-screen .dr-foot { border-top:1px solid var(--border-soft); padding:10px 16px; background:var(--bg-elev); display:flex; align-items:center; gap:8px; }
-.skills-screen .dr-foot .spacer { flex:1; }
+/* The edit-drawer frame (.scrim/.drawer/.dr-head/.dr-body/.dr-foot) moved to the shared <Pane>
+   (src/shared/ui/pane.css, .pane-* classes). Body-internal styles below stay screen-scoped. */
 
 /* toggle */
 .skills-screen .toggle { width:30px; height:16px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border); position:relative; cursor:pointer; flex:0 0 30px; transition:background .15s, border-color .15s; }

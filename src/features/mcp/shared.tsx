@@ -205,38 +205,6 @@ export function CatalogCard({ item, action }: { item: CatalogItem; action: React
   );
 }
 
-/** The right-hand config drawer + scrim. `header` and `children` (the drawer body) are
- *  feature-specific; the slide-over shell, remove/done footer, and scrim are shared. */
-export function DrawerSlideOver({ open, header, body, onClose, onRemove }: {
-  open: boolean;
-  header: React.ReactNode;
-  body: React.ReactNode;
-  onClose: () => void;
-  onRemove: () => void;
-}) {
-  return (
-    <>
-      <div className={"scrim" + (open ? " on" : "")} onClick={onClose} />
-      <div className={"drawer" + (open ? " on" : "")}>
-        {open && (
-          <>
-            <div className="dr-head">
-              {header}
-              <IconButton aria-label="close" onClick={onClose} />
-            </div>
-            <div className="dr-body">{body}</div>
-            <div className="dr-foot">
-              <button className="btn ghost danger" onClick={onRemove}>remove</button>
-              <div className="spacer" />
-              <button className="btn primary" onClick={onClose}>done</button>
-            </div>
-          </>
-        )}
-      </div>
-    </>
-  );
-}
-
 /** The env-var key/value editor drawer field (shared by servers + hooks). */
 export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onChange: (env: Array<[string, string]>) => void }) {
   return (
