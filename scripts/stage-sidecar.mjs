@@ -10,22 +10,25 @@
 // target). The macOS release builds `universal-apple-darwin`, whose sidecars must each be
 // a universal binary — so we build both Apple arches and `lipo` them.
 import { execSync } from "node:child_process";
-import { mkdirSync, copyFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-/** The sidecar binaries shipped beside the app. */
-const BINS = [
-  "bsc-plan",
-  "bsc-agent",
-  "bsc-research-mcp",
-  "bsc-compliance-mcp",
-  "bsc-skill",
-  "bsc-data",
-  "bsc-logs",
-  "bsc-compliance",
-  "bsc-blueprint",
-  "bsc-project",
-];
+/** The sidecar binaries shipped beside the app, derived from `tauri.conf.json`'s
+ *  `bundle.externalBin` (the canonical list) with the `binaries/` prefix stripped — so adding a
+ *  sidecar only means editing `externalBin`, never this file too (#1763). */
+function sidecarBins() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const confPath = join(here, "..", "src-tauri", "tauri.conf.json");
+  const conf = JSON.parse(readFileSync(confPath, "utf8"));
+  const ext = conf?.bundle?.externalBin;
+  if (!Array.isArray(ext) || ext.length === 0) {
+    throw new Error(`no bundle.externalBin array in ${confPath}`);
+  }
+  return ext.map((p) => p.replace(/^binaries\//, ""));
+}
+
+const BINS = sidecarBins();
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
