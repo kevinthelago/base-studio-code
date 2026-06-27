@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
+import { settingsBtn as btn } from "./SettingsControls";
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -10,10 +11,6 @@ interface WorktreeUsage {
   path: string;
   sizeBytes: number;
   targetBytes: number;
-}
-
-function btn(extra: React.CSSProperties = {}): React.CSSProperties {
-  return { padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5, background: "var(--bg-elev)", color: "var(--fg-muted)", border: "1px solid var(--border)", ...extra };
 }
 
 export function StorageSettings() {

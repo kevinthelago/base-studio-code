@@ -5,6 +5,7 @@ import {
   adjustFontSize,
 } from "@/app/console/lib/terminal";
 import { ACCENT_PRESETS, accentVars } from "./lib/appearance";
+import { SettingsCardHead } from "./SettingsControls";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";
@@ -33,10 +34,7 @@ export function AppearanceSettings() {
       </p>
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Terminal font size</h3>
-          <span className="hint">also bound to Ctrl + / Ctrl - / Ctrl 0</span>
-        </div>
+        <SettingsCardHead title="Terminal font size" hint="also bound to Ctrl + / Ctrl - / Ctrl 0" />
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <button
             className="btn"
@@ -82,10 +80,7 @@ export function AppearanceSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Accent color</h3>
-          <span className="hint">the highlight color used across the app</span>
-        </div>
+        <SettingsCardHead title="Accent color" hint="the highlight color used across the app" />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {ACCENT_PRESETS.map((p) => {
             const on = p.id === accent;
@@ -120,9 +115,7 @@ export function AppearanceSettings() {
       <div style={{ height: 18 }} />
 
       <div className="card">
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Theme</h3>
-        </div>
+        <SettingsCardHead title="Theme" />
         <div style={{ display: "flex", gap: 8 }}>
           {(["dark", "light"] as const).map((t) => (
             <button
