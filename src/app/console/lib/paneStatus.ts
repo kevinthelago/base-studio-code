@@ -8,14 +8,24 @@
 // The pure helpers here are the single decision surface for how those per-pane
 // states roll up to a tab, which panes count, and when a stale status is dropped —
 // extracted from the console so the rules are unit-testable in isolation.
+//
+// Pane ids are the STABLE identity ids minted by `paneIdFor` (#1176) — `man:<tabId>:p<n>` for a
+// manual tab, the minted `paneIds[]` for fleet/triage — NOT the legacy positional `t<idx>p<n>`.
+// So the rollup/clear here resolve cells through `paneIdFor` / `paneBelongsToTab` rather than
+// reconstructing positional keys, which only ever matched the legacy shape.
+import { paneIdFor, paneBelongsToTab, type PaneIdentityTab } from "./paneIdentity";
+
 export type PaneStatus = "run" | "on" | "idle";
 
-/** Pane id string for a (tab, pane) cell — the key for every per-pane store map. */
+/** A tab as the status helpers need it: its layout (cell count) + identity (to mint pane ids). */
+export type StatusTab = PaneIdentityTab & { layout: string; state?: PaneStatus };
+
+/** Legacy positional pane key for a (tab, pane) cell — only valid for positional/legacy tabs. */
 export function paneKey(tabIdx: number, paneIdx: number): string {
   return `t${tabIdx}p${paneIdx}`;
 }
 
-/** Parse a pane id back into its (tab, pane) indices, or null when malformed. */
+/** Parse a legacy positional pane id back into its (tab, pane) indices, or null when malformed. */
 export function parsePaneKey(pid: string): { tabIdx: number; paneIdx: number } | null {
   const m = /^t(\d+)p(\d+)$/.exec(pid);
   return m ? { tabIdx: Number(m[1]), paneIdx: Number(m[2]) } : null;
@@ -40,15 +50,15 @@ export function paneCountForLayout(layout: string): number {
  * "run" left by a closed or remounted pane cannot strand the tab in the running state.
  */
 export function aggregateTabState(
+  tab: StatusTab,
   tabIdx: number,
-  layout: string,
   statuses: Readonly<Record<string, PaneStatus>>,
   disabledPanes: Readonly<Record<string, boolean>> = {},
 ): PaneStatus {
-  const count = paneCountForLayout(layout);
+  const count = paneCountForLayout(tab.layout);
   let result: PaneStatus = "idle";
   for (let i = 0; i < count; i++) {
-    const pid = paneKey(tabIdx, i);
+    const pid = paneIdFor(tab, tabIdx, i); // the SAME id the pane's PTY + status are keyed by
     if (disabledPanes[pid]) continue; // disabled cell — no live session
     const s = statuses[pid] ?? "idle";
     if (s === "run") return "run"; // any running pane dominates the tab
@@ -58,20 +68,22 @@ export function aggregateTabState(
 }
 
 /**
- * Drop every per-pane status belonging to `tabIdx` (#435).
+ * Drop every per-pane status belonging to `tab` (at grid index `tabIdx`) (#435).
  *
  * Used when a tab's panes remount (a runId bump relaunches the sessions) or the tab
  * closes, so a previous session's "run"/"on" never lingers as a stale activity dot on
- * the fresh panes. Returns a new map; the input is not mutated.
+ * the fresh panes. Membership is by identity (`paneBelongsToTab`), so a manual or minted
+ * fleet/triage pane is cleared too — the old positional parse silently kept them. Returns
+ * a new map; the input is not mutated.
  */
 export function clearTabStatuses(
   statuses: Readonly<Record<string, PaneStatus>>,
+  tab: PaneIdentityTab,
   tabIdx: number,
 ): Record<string, PaneStatus> {
   const next: Record<string, PaneStatus> = {};
   for (const [pid, s] of Object.entries(statuses)) {
-    const parsed = parsePaneKey(pid);
-    if (!parsed || parsed.tabIdx !== tabIdx) next[pid] = s;
+    if (!paneBelongsToTab(pid, tab, tabIdx)) next[pid] = s;
   }
   return next;
 }

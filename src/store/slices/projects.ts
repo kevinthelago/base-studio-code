@@ -362,8 +362,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
             // Bumped runId remounts this tab's panes; clear their old statuses so a
-            // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435).
-            paneStatus: clearTabStatusesPure(s.paneStatus, newTabIdx),
+            // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435). Clear by
+            // the (reused) tab's identity so its minted triage ids drop too (#1176).
+            paneStatus: clearTabStatusesPure(s.paneStatus, existingIdx >= 0 ? s.tabs[existingIdx] : newTab, newTabIdx),
             paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
             activeScreen: "console" as Screen,
@@ -477,8 +478,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             if (firstTabIdx < 0) firstTabIdx = tabIdx;
             const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
             // Reused tab → bumped runId remounts its panes; clear their old statuses so
-            // a prior run's "run"/"on" doesn't persist on the fresh sessions (#435).
-            newPaneStatus = clearTabStatusesPure(newPaneStatus, tabIdx);
+            // a prior run's "run"/"on" doesn't persist on the fresh sessions (#435). Clear
+            // by the existing tab's identity so its minted director/worker ids drop (#1176) —
+            // the per-cell delete below only covers the NEW layout's ids.
+            const reusedTab = existingIdx >= 0 ? tabs[existingIdx] : undefined;
+            if (reusedTab) newPaneStatus = clearTabStatusesPure(newPaneStatus, reusedTab, tabIdx);
             // Resume only on re-run. Each worker has its OWN worktree (a distinct
             // cwd), so `claude --continue` is unambiguous even for several agents in
             // one repo — the old shared-cwd hazard is gone.
