@@ -11,6 +11,7 @@ import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { TabBar, type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { usePromptDialog, useConfirmDialog } from "@/shared/ui/promptDialog";
 import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "./lib/agentProfiles";
 import { deriveConsoles } from "./lib/consoleModel";
 import {
@@ -92,6 +93,12 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
     [paneProfiles, profiles],
   );
 
+  // App-styled prompt/confirm dialogs (#1738) — replace the blocking, unstyled, untestable
+  // native window.prompt/window.confirm. Each returns the value/decision as a promise; render
+  // their `dialog` elements once at the page root below.
+  const { prompt, dialog: promptDialog } = usePromptDialog();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+
   // Edits persist to the store. Application-role ids won't match a stored profile, so
   // their controls are effectively read-only (they're system-managed).
   function setMode(m: Tier) { updateAgentProfile(selectedId, { mode: m }); }
@@ -103,8 +110,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
     const p = find(selectedId);
     if (p) updateAgentProfile(selectedId, { commands: p.commands.filter((x) => x !== c) });
   }
-  function addCmd() {
-    const v = window.prompt("Allow which command? (e.g. cargo)");
+  async function addCmd() {
+    const v = await prompt({ title: "Allow a command", label: "Command to allow (e.g. cargo)", placeholder: "cargo", confirmLabel: "Allow" });
     const k = v?.trim().toLowerCase();
     const p = find(selectedId);
     if (k && p && !p.commands.includes(k)) updateAgentProfile(selectedId, { commands: [...p.commands, k] });
@@ -115,8 +122,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   function openProfile(id: string) { select("profiles"); setSelectedId(id); }
 
   // Create a new user profile (#259): sensible defaults, persisted, then selected.
-  function createProfile() {
-    const name = window.prompt("New role name?")?.trim();
+  async function createProfile() {
+    const name = (await prompt({ title: "New role", label: "Role name", placeholder: "e.g. Reviewer", confirmLabel: "Create" }))?.trim();
     if (!name) return;
     const taken = new Set(profiles.map((p) => p.id));
     const base = "pf_" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "role");
@@ -136,10 +143,10 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   }
 
   // Delete a custom profile (#259): drop it + any pane assignments pointing at it.
-  function deleteProfile(id: string) {
+  async function deleteProfile(id: string) {
     const p = find(id);
     if (!p || p.category === "application" || p.builtin) return;
-    if (!window.confirm(`Delete the "${p.name}" role?`)) return;
+    if (!(await confirm({ title: "Delete role", message: `Delete the "${p.name}" role?`, danger: true, confirmLabel: "Delete" }))) return;
     setAgentProfiles(profiles.filter((x) => x.id !== id));
     for (const [paneId, pid] of Object.entries(paneProfiles)) {
       if (pid === id) setPaneProfile(paneId, null);
@@ -211,6 +218,8 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
           <FlowTab runs={workflowRuns} wakePane={wakePane} profileFor={profileFor} />
         )}
       </div>
+      {promptDialog}
+      {confirmDialog}
     </div>
   );
 }
