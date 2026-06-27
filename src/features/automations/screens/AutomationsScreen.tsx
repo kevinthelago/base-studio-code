@@ -1,20 +1,20 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { SchedulesTab } from "./Schedules";
-import { HistoryTab } from "./History";
+import { SchedulesTab } from "../Schedules";
+import { HistoryTab } from "../History";
 import { HooksView } from "@/features/mcp";
-import { HookAnalyticsTab } from "./HookAnalytics";
-import { fmtClock } from "./format";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { HookAnalyticsTab } from "../HookAnalytics";
+import { fmtClock } from "../format";
+import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import type { RunStatus, Every } from "./lib/scheduler";
-import "./automations.css";
+import type { TabItem } from "@/app/chrome/TabBar";
+import type { RunStatus, Every } from "../lib/scheduler";
+import "../automations.css";
 
 /**
- * Automations screen (#142) — on the unified tab system (#463): tab order is
- * persisted per page, the page opens whatever tab is first, tabs reorder, and
- * each can be torn off into its own window. `sectionOverride` renders a single
- * section with no tab bar (detached window).
+ * Automations screen (#142) — on the shared `<TabbedScreen>` shell (#1821) + the unified tab system
+ * (#463): tab order persists per page, the page opens whatever tab is first, tabs reorder, and each
+ * can be torn off into its own window. `sectionOverride` renders a single section with no tab bar.
  */
 export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const { automations, addAutomation, tabs } = useAppStore();
@@ -70,29 +70,25 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} onViewAllHistory={viewAllHistory} />;
 
   return (
-    <div className="auto-screen">
-      <div className="auto-page">
-        {!sectionOverride && (
-          <TabBar
-            tabs={tabItems}
-            activeId={activeId}
-            onSelect={select}
-            onReorder={reorder}
-            onTearOff={tearOff}
-            right={
-              active === "schedules" ? (
-                <>
-                  <span className="quick-stat">
-                    <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
-                  </span>
-                  <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
-                </>
-              ) : undefined
-            }
-          />
-        )}
-        <div className="auto-body">{body}</div>
-      </div>
-    </div>
+    <TabbedScreen
+      tabs={tabItems}
+      active={active}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
+      sectionOverride={sectionOverride}
+      className="auto-screen"
+      bodyClassName="auto-body"
+      right={active === "schedules" ? (
+        <>
+          <span className="quick-stat">
+            <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
+          </span>
+          <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
+        </>
+      ) : undefined}
+    >
+      {body}
+    </TabbedScreen>
   );
 }
