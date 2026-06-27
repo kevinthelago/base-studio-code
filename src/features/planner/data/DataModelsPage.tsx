@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { IconButton } from "@/shared/ui/IconButton";
 import {
   FIELD_TYPES, checkDataModel, addEntity, removeEntity, addField, removeField, toggleIdentity,
   type DataModel, type Field,
@@ -205,8 +206,7 @@ function Editor({ model, edit, onDelete }: { model: DataModel; edit: (m: DataMod
                 ) : (
                   <input aria-label="Validate rule" value={f.validate ?? ""} placeholder="rule" onChange={(ev) => setFieldProp(ei, fi, { validate: ev.target.value || undefined })} style={inputCell} />
                 )}
-                <button aria-label="Remove field" onClick={() => edit(removeField(model, e.key, f.key))}
-                  style={{ background: "transparent", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 13 }}>✕</button>
+                <IconButton aria-label="Remove field" size="xs" onClick={() => edit(removeField(model, e.key, f.key))} />
               </div>
             ))}
             <button className="btn ghost" onClick={() => edit(addField(model, e.key, { key: `field${e.fields.length + 1}`, type: "string" }))}

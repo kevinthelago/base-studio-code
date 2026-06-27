@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
+import { IconButton } from "@/shared/ui/IconButton";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import {
   sessionSkillState, expandGroups, groupSkillCount,
@@ -113,7 +114,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
           <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>Skills for this session</div>
             <span style={{ flex: 1 }} />
-            <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: "var(--r-md)", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", cursor: "pointer", fontSize: 13 }}>✕</button>
+            <IconButton aria-label="close" onClick={onClose} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
             <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>{sessionLabel || sessionKey}</span>

@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import "../../../styles/blueprints.css";
 import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { Ic } from "./blueprintIcons";
+import { IconButton } from "@/shared/ui/IconButton";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -37,7 +38,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <span className="mh-ico" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13, background: iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)", color: iconColor ?? "var(--accent)" }}>{icon}</span>
             <div><h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
-            <button className="iconbtn" style={{ marginLeft: "auto" }} onClick={onClose}>✕</button>
+            <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
           </div>
           <div className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</div>
           {foot && <div className="modal-foot" style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</div>}

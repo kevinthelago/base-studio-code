@@ -252,6 +252,9 @@ html, body {
   cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
 .icon-btn:hover{ background:var(--bg-elev2); color:var(--fg); }
 .icon-btn.danger:hover{ color:var(--danger); }
+.icon-btn.sm{ width:20px; height:20px; font-size:12px; }
+.icon-btn.xs{ width:16px; height:16px; border-radius:4px; font-size:11px; }
+.icon-btn:disabled{ opacity:.5; cursor:not-allowed; }
 /* modal */
 .overlay{ position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
 .modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
