@@ -201,7 +201,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
-    setProjectsView, setPlanningContext, setPlanningSession,
+    setProjectsView, setPlanningContext, setPlanningSession, projectKeyAlias,
     setScreen, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
@@ -213,9 +213,11 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
       `I want to flesh out an existing GitHub Project #${project.number} called "${project.name}"${project.repo ? ` in ${project.repo}` : ""}. Help me define a clear goal, scope, tech stack, phases with milestones, and key risks. Then we'll publish milestones and tracking issues.`,
       project.repo,
     );
-    // Key the session by the project name (stable, human-readable, and matches a
-    // from-scratch session of the same name). The node id stays in activeProjectId.
-    setPlanningSession(project.name);
+    // Resolve the session key through the node-id alias set at publish (#1741): a project minted
+    // with a stable id lives under that id on disk, so reopening it from the board keys to
+    // `projectKeyAlias[project.id]`. Grandfathered/title-keyed projects have no alias, so the
+    // fallback keeps their existing title-keyed behavior. The node id stays in activeProjectId.
+    setPlanningSession(projectKeyAlias[project.id] ?? project.name);
     // Planning lives on the Projects page; from the GitHub board, jump there.
     setScreen("projects");
     setProjectsView("planning");

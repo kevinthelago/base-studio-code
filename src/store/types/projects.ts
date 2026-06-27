@@ -24,8 +24,11 @@ export interface ProjectsState {
   // planning session key — the title — and the GitHub id), plus the active-project
   // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
-  /** New, not-yet-published projects (drafts, #379). Keyed by the planning session key
-   *  (a unique `sanitize(title)-<id>` so a re-used title never inherits stale files). */
+  /** New, not-yet-published projects (drafts, #379). Keyed by the planning session key —
+   *  a freshly minted STABLE, opaque project id (`mintProjectId`, #1741) for projects created
+   *  after that change, or the legacy title-derived key for grandfathered drafts. The record's
+   *  `title` is display-only: renaming edits it in place (`updateDraftProject`) and never moves
+   *  the on-disk hub, and two same-titled drafts get distinct keys. */
   localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
   addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
   /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
@@ -90,7 +93,10 @@ export interface ProjectsState {
   // Stable per-session key for the planning directory, PTY slot, and plan
   // buckets. Frozen the moment a planning session begins so that neither the
   // publish flow assigning a GitHub Project id, nor the user editing the title,
-  // can move the working directory out from under an active session.
+  // can move the working directory out from under an active session. For projects
+  // created after #1741 this is a minted, opaque stable id (`mintProjectId`) — NOT
+  // title-derived — so the key/paths survive a rename and never collide on a shared
+  // title; grandfathered projects pass their legacy title-derived key here unchanged.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
   /** A prompt queued for the live planner session of a project, keyed by project key.

@@ -80,8 +80,11 @@ describe("ProjectsList — Blueprints section", () => {
     fireEvent.click(screen.getByText("start planning →"));
     await waitFor(() => {
       const s = useAppStore.getState();
-      expect(s.planningSessionKey).toBe("My_New_App");
-      expect(s.projectBlueprintId["My_New_App"]).toBe("fullstack"); // bound to the selection at creation
+      // #1741: the workspace key is a minted, opaque stable id — NOT the title-derived "My_New_App".
+      expect(s.planningSessionKey).toMatch(/^p-[a-z0-9]+-[a-z0-9]{6}$/);
+      expect(s.planningSessionKey).not.toBe("My_New_App");
+      // …and the blueprint is bound to the selection at creation, under that same stable key.
+      expect(s.projectBlueprintId[s.planningSessionKey]).toBe("fullstack");
     });
   });
 

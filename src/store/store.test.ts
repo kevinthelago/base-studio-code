@@ -10,7 +10,7 @@ import type { Hook } from "@/features/mcp/lib/hooks";
 import { defaultStageConfig } from "@/features/planner/stages/planStages";
 import { makeBlueprints } from "@/features/planner/stages/blueprints";
 import { directorPaneId, fleetPaneId, triagePaneId, paneIdFor } from "@/app/console/lib/paneIdentity";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { sanitizeProjectKey, mintProjectId } from "@/shared/lib/core/projectPaths";
 
 // Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
 // fleet director by `<key>:director`, workers by `<key>:<streamId>`.
@@ -1563,6 +1563,39 @@ describe("draft projects (#379)", () => {
     // deleteLocalProject also purges the draft entry (cleanup)
     st().deleteLocalProject(["acme-x2"]);
     expect(st().localDraftProjects["acme-x2"]).toBeUndefined();
+  });
+});
+
+
+describe("stable project id (#1741)", () => {
+  const st = () => useAppStore.getState();
+
+  it("keeps the workspace key stable across a title change (no path orphaning)", () => {
+    // A new project is created keyed by a minted, NON-title-derived stable id, used as the
+    // planning session key. Renaming edits only the display title in place.
+    const stableId = mintProjectId();
+    st().addDraftProject(stableId, { title: "Acme Web", pitch: "", createdAt: 1 });
+    st().setPlanningSession(stableId);
+    expect(st().planningSessionKey).toBe(stableId);
+
+    // Rename: the title changes but the key (and every on-disk path keyed off it) does NOT.
+    st().updateDraftProject(stableId, { title: "Acme Web — Renamed" });
+    expect(st().planningSessionKey).toBe(stableId);
+    expect(st().localDraftProjects[stableId]?.title).toBe("Acme Web — Renamed");
+    // The record still lives under the original key — no new title-derived entry appeared.
+    expect(Object.keys(st().localDraftProjects)).toContain(stableId);
+    expect(st().localDraftProjects[sanitizeProjectKey("Acme Web — Renamed")]).toBeUndefined();
+  });
+
+  it("gives two projects with the SAME title distinct keys (no collision)", () => {
+    const a = mintProjectId();
+    const b = mintProjectId();
+    expect(a).not.toBe(b);
+    st().addDraftProject(a, { title: "Duplicate", pitch: "", createdAt: 1 });
+    st().addDraftProject(b, { title: "Duplicate", pitch: "", createdAt: 2 });
+    expect(st().localDraftProjects[a]).toBeDefined();
+    expect(st().localDraftProjects[b]).toBeDefined();
+    expect(st().localDraftProjects[a]).not.toBe(st().localDraftProjects[b]);
   });
 });
 
