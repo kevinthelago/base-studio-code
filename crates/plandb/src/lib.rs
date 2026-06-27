@@ -518,13 +518,34 @@ impl Store {
     }
 
     /// Every stream's JSON, in order.
+    ///
+    /// plan.db is the authoritative fleet store, so a row whose `data` fails to parse is **surfaced,
+    /// not swallowed**: the bad row is **skipped** (never injected as a silent `Value::Null` that would
+    /// make a worker vanish from the fleet) and a warning naming the row's `id`/`position` + the parse
+    /// error is emitted to stderr. A single corrupt row does not abort the read — every good stream is
+    /// still returned, in order.
     pub fn fleet_stream_list(&self) -> rusqlite::Result<Vec<serde_json::Value>> {
-        let mut stmt = self.conn.prepare("SELECT data FROM fleet_streams ORDER BY position, id")?;
-        let out: rusqlite::Result<Vec<serde_json::Value>> = stmt
-            .query_map([], |r| r.get::<_, String>(0))?
-            .map(|s| s.map(|t| serde_json::from_str(&t).unwrap_or(serde_json::Value::Null)))
-            .collect();
-        out
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, position, data FROM fleet_streams ORDER BY position, id")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, position, data) = row?;
+            match serde_json::from_str::<serde_json::Value>(&data) {
+                Ok(v) => out.push(v),
+                Err(e) => eprintln!(
+                    "plandb: skipping malformed fleet_streams row (id={id}, position={position}): {e}"
+                ),
+            }
+        }
+        Ok(out)
     }
 
     /// Remove one stream by id (no-op if absent).
@@ -1241,6 +1262,35 @@ mod tests {
         s.fleet_set(&serde_json::json!({ "recommended": 1, "streams": [ { "id": "x", "repo": "o/r" } ] })).unwrap();
         s.clear().unwrap();
         assert!(s.fleet_get().unwrap().is_none());
+    }
+
+    #[test]
+    fn fleet_stream_list_skips_a_malformed_row_and_keeps_good_streams() {
+        let s = Store::open_in_memory().unwrap();
+        // one good stream via the normal path
+        s.fleet_set(&serde_json::json!({
+            "recommended": 1,
+            "streams": [ { "id": "good", "repo": "o/r", "perm": { "edit": "allow" } } ]
+        }))
+        .unwrap();
+        // inject a deliberately-corrupt row directly (bypasses fleet_set's JSON serialization)
+        s.conn
+            .execute(
+                "INSERT INTO fleet_streams (id, data, position, updated_at) \
+                 VALUES (?1, ?2, ?3, strftime('%s','now'))",
+                params!["broken", "{not valid json", 99i64],
+            )
+            .unwrap();
+        // the bad row is skipped (no Null), the good stream survives — length is the good-count
+        let streams = s.fleet_stream_list().unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0]["id"], serde_json::json!("good"));
+        assert!(streams.iter().all(|v| !v.is_null()));
+        // fleet_get reflects the same — only the good stream lands in the reconstructed plan
+        let got = s.fleet_get().unwrap().unwrap();
+        let got_streams = got["streams"].as_array().unwrap();
+        assert_eq!(got_streams.len(), 1);
+        assert_eq!(got_streams[0]["id"], serde_json::json!("good"));
     }
 
     #[test]

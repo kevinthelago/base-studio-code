@@ -11,7 +11,6 @@ import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib
 import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
-import { composeReferenceContext } from "@/shared/lib/session/assignments";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
 import { IconButton } from "@/shared/ui/IconButton";
@@ -391,18 +390,6 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
             startupPrompt = docText.trim() || PROJECT_INIT_PROMPT;
           }
         }
-      }
-      // Reference context (#326): documents assigned as background knowledge for
-      // this session (resolved at launch into paneReferenceDocs). Read each and
-      // fold their content onto the startup prompt under a clear heading, so the
-      // session starts with the assigned context in its first message.
-      const refRelpaths = useAppStore.getState().paneReferenceDocs[paneId];
-      if (refRelpaths && refRelpaths.length > 0) {
-        const contents = await Promise.all(
-          refRelpaths.map((rp) => invoke<string>("read_document", { relpath: rp }).catch(() => "")),
-        );
-        if (destroyed) return;
-        startupPrompt = composeReferenceContext(startupPrompt, contents);
       }
       // Triage continuity: if this pane has a checkpoint doc, fold the prior
       // session's "where we left off" note onto the prompt. The doc is handed to

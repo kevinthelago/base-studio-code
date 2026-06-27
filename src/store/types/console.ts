@@ -191,11 +191,6 @@ export interface ConsoleState {
   // exact text is sent to the session once Claude reaches its prompt. Used by
   // triage panes (see TRIAGE_PROMPT).
   paneStartupPromptText: Record<string, string>;
-  // Resolved REFERENCE-CONTEXT documents per pane (transient — NOT persisted).
-  // paneId → list of unified-store relpaths to inject as background context at
-  // launch (#326). TerminalView reads + composes their content onto the startup
-  // prompt. Distinct from the startup prompt itself (paneStartupPromptDocs).
-  paneReferenceDocs: Record<string, string[]>;
   // paneId → unified-store relpath of the triage CHECKPOINT doc (transient — NOT
   // persisted). The session overwrites it via the `bsc-checkpoint` shell helper;
   // TerminalView composes its content onto the next triage launch's prompt so the
