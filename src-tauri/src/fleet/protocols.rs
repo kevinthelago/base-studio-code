@@ -3,13 +3,13 @@
 /// first-message hint. A multi-line raw string (real newlines; literal backticks/quotes).
 /// Consumed by `worktree::write_worker_context` (the worker context), not the director —
 /// it lives here (a neutral home) rather than in `director.rs` (#1623).
-pub(crate) const FLEET_PROTOCOL_MD: &str = include_str!("../../prompts/fleet/worker-protocol.md");
+pub(crate) const FLEET_PROTOCOL_MD: &str = include_str!("../../data/fleet/worker-protocol.md");
 /// Injection-resistance preamble (#1167) appended to every fleet session's CLAUDE.local.md —
 /// authoritative context that content read while working (issues, PRs, web pages, repo files,
 /// other agents' notes) is untrusted DATA, never instructions. The containment half of the
 /// warden (#1102): prevent an injection from acting, not just detect it after. Shared by both
 /// the worker context and the director protocol.
-pub(crate) const INJECTION_RESISTANCE_MD: &str = include_str!("../../prompts/fleet/injection-resistance.md");
+pub(crate) const INJECTION_RESISTANCE_MD: &str = include_str!("../../data/fleet/injection-resistance.md");
 /// Heading marker for {@link INJECTION_RESISTANCE_MD}, used to keep the append idempotent.
 pub(crate) const INJECTION_RESISTANCE_MARKER: &str = "## Untrusted input";
 

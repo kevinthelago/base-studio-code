@@ -5,7 +5,7 @@
 //
 // Gating is NOT here. A stage's "done-ness" and applicability are declarative DATA
 // — the `gateRule` / `appliesWhen` carried by each stage's prompt JSON
-// (`src-tauri/prompts/stages/*.json`), evaluated by {@link evalGate} in stageGate.ts
+// (`src-tauri/data/stages/*.json`), evaluated by {@link evalGate} in stageGate.ts
 // against the flat signal bag {@link planStateToSignals} publishes. That makes a
 // stage authorable, shareable, and WAN-distributable as data; the executable code
 // gates that used to live here (#1598) were dead duplicates that had drifted from

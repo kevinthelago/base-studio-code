@@ -8,12 +8,12 @@ import { buildPlanStageState, type PlanStageState } from "./planStages";
 import type { SectionState } from "../github/ghStructure";
 import type { PlanSignals } from "./stageGate";
 
-// Single-sourced from the Discovery stage data (`src-tauri/prompts/stages/discovery.json`, its
+// Single-sourced from the Discovery stage data (`src-tauri/data/stages/discovery.json`, its
 // `requires` array) so the baseline lives in ONE place — the same data file the planner prompt and
 // gate read (#1591). Loaded directly via `import.meta.glob` (NOT through blueprints.ts STAGE_DEFS)
 // to avoid a circular import.
 const discoveryModules = import.meta.glob<{ default: { requires?: string[] } }>(
-  "@prompts/stages/discovery.json",
+  "@data/stages/discovery.json",
   { eager: true },
 );
 

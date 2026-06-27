@@ -95,12 +95,12 @@ export const SOURCE_TAG: Record<SkillSource, SourceTag> = {
 // that apply to nearly every product, so they ship enabled + global. Each carries
 // a real authored `body` (the SKILL.md procedure) the fleet runs verbatim.
 //
-// They live as one JSON file per skill under `src-tauri/prompts/skills/` (#1715) — the SAME
+// They live as one JSON file per skill under `src-tauri/data/skills/` (#1715) — the SAME
 // backend-owned data files the Rust `skilldb` crate embeds via `include_dir!` to seed a fresh
 // skills.db, so the packaged set is defined ONCE and read by both consumers (mirrors how the
 // built-in blueprints + stage directives already work). Keys are camelCase to parse identically
 // on both sides. Telemetry fields are intentionally absent (zeroed downstream by `fromSample`).
-const skillModules = import.meta.glob<{ default: Skill }>("@prompts/skills/*.json", { eager: true });
+const skillModules = import.meta.glob<{ default: Skill }>("@data/skills/*.json", { eager: true });
 
 /** The packaged skill library, assembled from the per-skill JSON definitions (sorted by id for a
  *  stable order). */
