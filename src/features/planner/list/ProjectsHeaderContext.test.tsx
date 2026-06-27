@@ -15,7 +15,7 @@ describe("ProjectsHeader (GitHub board header, #499)", () => {
 
   it("shows the published board tabs + a back-to-portfolio link", () => {
     render(<ProjectsHeader project={project} />);
-    expect(screen.getByText("← portfolio")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to portfolio" })).toBeTruthy();
     expect(screen.getByText("Board")).toBeTruthy();
     expect(screen.getByText("Roadmap")).toBeTruthy();
     expect(screen.getByText("Issues")).toBeTruthy();

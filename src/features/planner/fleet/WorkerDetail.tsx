@@ -4,6 +4,7 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
+import { BackButton } from "@/shared/ui/BackButton";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -122,7 +123,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       <div style={{ position: "sticky", top: 0, zIndex: 50, background: "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", padding: "12px 24px" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <button className="btn ghost" onClick={onBack} style={{ height: 26 }}>← fleet</button>
+            <BackButton variant="text" label="fleet" onClick={onBack} aria-label="Back to fleet" className="btn ghost" style={{ height: 26 }} />
             <div style={{ width: 1, height: 18, background: "var(--border-soft)" }} />
             <Avatar login={worker.name} bot size={26} />
             <div style={{ minWidth: 0 }}>
