@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import { useAppStore } from "@/store";
 import { clearGithubCache } from "@/shared/lib/github/github";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -172,7 +173,7 @@ function RepoCredentialsCard() {
           {scoped.map((r, i) => (
             <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", fontSize: 11.5 }}>
               <span style={{ fontFamily: "var(--mono)", flex: 1 }}>{r}</span>
-              <span className="tag green" style={{ fontSize: 9.5 }}>● scoped token</span>
+              <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />scoped token</span>
               <button className="btn ghost danger" style={{ height: 24, fontSize: 10.5 }} onClick={() => setRepoGithubToken(r, null)}>remove</button>
             </div>
           ))}
@@ -251,7 +252,7 @@ export function GitHubSettings() {
                 <b style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
                   {githubUser.name ? `${githubUser.name} (${githubUser.login})` : githubUser.login}
                 </b>
-                <span className="tag green">● connected</span>
+                <span className="tag green"><StatusDot style={{ marginRight: 4 }} />connected</span>
                 <span className="tag">scopes: repo · read:org · read:user · project</span>
               </div>
               <div className="hint" style={{ marginTop: 3 }}>
