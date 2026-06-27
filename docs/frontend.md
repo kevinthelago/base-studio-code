@@ -12,7 +12,7 @@ The frontend is a single-page React app that runs in the Tauri WebView and talks
 
 | Layer | Choice | Notes |
 |---|---|---|
-| UI library | **React 19** (`react` / `react-dom` `^19.2.7`) | CLAUDE.md still says "React 18" — the actual dependency is React 19. |
+| UI library | **React 19** (`react` / `react-dom` `^19.2.7`) | |
 | Language | TypeScript (`^6`), `strict` + `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch` | `tsconfig.json` |
 | Bundler / dev server | **Vite 8** (`@vitejs/plugin-react`) | `vite.config.ts` |
 | State | **Zustand 5** (one composed store) | `src/store/` |
