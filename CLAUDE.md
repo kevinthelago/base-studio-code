@@ -72,11 +72,18 @@ base-studio-code/
 │       ├── observability/   #   logs, perf, tokens, audit
 │       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
 ├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
-│   ├── data/                #   canonical Data Model (DuckDB) + connectors
+│   ├── data/                #   canonical Data Model (DuckDB) + connectors (pkg bsc-data, bsc-data CLI)
 │   ├── plandb/              #   per-project plan store (SQLite) + bsc-plan CLI
-│   ├── llm/                 #   model-agnostic LlmProvider abstraction
+│   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc-skill CLI
+│   ├── logs/                #   unified log/perf/cost engine + bsc-logs CLI (#1607)
+│   ├── compliance/          #   compliance-standards store + bsc-compliance CLI & bsc-compliance-mcp server
 │   ├── research/            #   literature research + bsc-research-mcp server
-│   └── bsc-agent/           #   model-agnostic agent runtime
+│   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
+│   ├── bsc-agent/           #   model-agnostic agent runtime
+│   ├── bsc-blueprint/       #   user blueprint store + bsc-blueprint CLI
+│   ├── bsc-project/         #   project-hub list/published store + bsc-project CLI
+│   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
+│   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs (paths, SQLite, CLI arg parsing)
 ├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). The four
 │   │                        #   top-level dirs ARE the architecture; imports use `@/…` → src (no
 │   │                        #   deep `../../` relatives). No more layer dirs (components/lib/hooks/…).
@@ -196,7 +203,7 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 - `phases.json` (milestones), `issues.json` (granular issues), `fleet.json` (streams)
 - `prompts/` — kickoff scripts the planner authors (`<stream>-kickoff.md`, `director-kickoff.md`)
 - `automations.md`, `github_context.md`
-- linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees under `<key>/.worktrees/`
+- linked repos cloned in as subdirs (`<key>/<repo>/`); fleet worktrees live **outside** the hub at `~/.base-studio-code/worktrees/<key>/<repo>--<slug>/` (#844, so the planner `CLAUDE.md` is not their ancestor — `worktrees_dir` in `platform/paths.rs`)
 
 ### The planner is plan-only
 Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context and writes plan files, but cannot edit project code, commit, push, or open PRs. Publishing the GitHub structure is done by the **app** (`handlePublish`), not the planner's shell.
@@ -225,7 +232,7 @@ Three kinds of session live around a project, each needing **different** context
 
 ## Console — the execution surface
 
-Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty.rs`; launch wiring: `src/app/console/panes/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
+Where the planned work runs. A **tab** holds a CSS-grid of **panes**; each pane is a PTY session running `claude` in a repo or worktree, with swappable **views** (console chat, files, branches, changes, log). Backend: `pty_create` in `console/pty/` (dir-module: `mod.rs` + `job.rs`); launch wiring: `src/app/console/panes/views/TerminalView.tsx` + `fleetStartProject` in `src/store/index.ts`.
 
 ### Session roles + the role gate (#219, `src/shared/lib/session/sessionRoles.ts`)
 Every session has a role bounding its capabilities (least privilege), applied at launch via `ensure_session_settings` to `.claude/settings.json`:
@@ -243,16 +250,18 @@ Every session has a role bounding its capabilities (least privilege), applied at
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
 - **Director** at the project hub (`projects/<key>/`), kickoff `prompts/director-kickoff.md` — sees every repo + worktree; coordinates, never writes feature code.
-- **Workers** each in their own **git worktree** (`projects/<key>/.worktrees/<repo>--<id>/`) on a **branch named after the stream id**, seeded with `CLAUDE.local.md` (the plan, copied in by `ensure_worktree`) and the stream's kickoff (`prompts/<id>-kickoff.md`, else `buildStreamPrompt`). Per-agent profile + flow applied.
+- **Workers** each in their own **git worktree** (`~/.base-studio-code/worktrees/<key>/<repo>--<slug>/`, outside the hub per #844) on a **branch named after the stream id**, seeded with `CLAUDE.local.md` (the plan, copied in by `ensure_worktree`) and the stream's kickoff (`prompts/<id>-kickoff.md`, else `buildStreamPrompt`). Per-agent profile + flow applied.
 
 ### Per-agent flow at launch (#297)
 Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a hard push-confirm gate) vs deny; the autonomy + push paragraph in the kickoff; and a coordination wake when a checkpoint/confirm agent pauses. The flow's push policy is the **authority** over `git push` / `gh pr create` and lifts the role gate's broad gh-write deny for exactly those two (#304) — so an `auto-pr` worker can open its own PR while `gh pr merge` / repo-delete stay role-denied.
 
 ### Coordination (#199, `src/shared/lib/fleet/coordination.ts`)
-Agents emit structured events to an app-wide `coord.log`: `bsc-blocked --on <ref>` (waiting on a dependency), `bsc-wait` (paused for the user, #297), and the satisfy emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) shows blocked / paused / ready sessions; one whose deps land (or that the user resumes) is **woken** — relaunched fresh with a token-aware wake prompt. Auto-wake is opt-in (`useCoordinator`).
+Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for the user, #297), the worker↔director Q&A pair `bsc-ask`/`bsc-answer`, the `bsc-issue`/`bsc-assign` capture-and-route emitters, and the completion emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) surfaces paused / blocked-on-a-question / ready sessions for the user. **Runtime dependency-wait was removed (#1039):** there is no `bsc-blocked --on` and no coordinator auto-wake — `dependsOn` is a *planning-time* sequencing hint only; at run time workers build against the planned contracts in parallel and never park on an upstream, and the director owns contracts + integration.
 
-### bsc-* shell helpers
-Installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`): `bsc-checkpoint` (resume note), `bsc-note` / `bsc-blocked` (DECISIONS.md + coord events), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters. **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this.
+### bsc-* shell helpers + the runtime state-CLI surface (#1325)
+Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
+
+**Compiled state CLIs (sidecars):** the runtime principle is that **every persistent app store is reachable from a live session via its own `bsc-*` CLI** — real bundled binaries execed by an absolute path from an env var (no PATH changes): `bsc-plan` (plan.db, `$BSC_PLAN_DB`), `bsc-skill` (global skills.db, incl. `get`/`remove`), `bsc-data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc-plan integration`, #1721), `bsc-logs` (unified logs + perf/cost), `bsc-compliance` (compliance standards — the CLI alongside `bsc-compliance-mcp`), `bsc-blueprint` (user blueprints), and `bsc-project` (project-hub list/published). So a live session can read or drive any of these stores directly from bash.
 
 ### Pipelines (#220) and GitHub-readiness (#297 S1)
 - **Pipelines**: a staged conductor sequences build, test, review, integrate with the least-privilege tester/reviewer/conductor roles, bounded by retry limits.
