@@ -1,5 +1,8 @@
 use crate::*;
 
+// NOTE: the planner prompts (`data/planner/process.md`, `data/stages/permissions.json`) declare
+// this same baseline (MANDATORY_BASH + BASELINE_READONLY + BASELINE_BUILD) so the planner authors
+// only stack-specific extras on top — keep them in sync if these three constants change (#1817).
 /// Shell commands every spawned repo/console session auto-approves regardless of
 /// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
 /// depends on them. `gh` is required by triage; `git` by every repo session;
