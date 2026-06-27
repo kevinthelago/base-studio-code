@@ -122,7 +122,7 @@ describe("PhaseFooter (#652)", () => {
   });
   it("disables back on the first phase", () => {
     render(<PhaseFooter phase={phase({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);
-    expect(screen.getByText("← back")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
   });
 });
 
