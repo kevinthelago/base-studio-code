@@ -1,19 +1,20 @@
 import { useState, useMemo } from "react";
-import { resolveMcpInstallDir, catalogLink } from "./lib/mcpInstall";
-import { useMcpInstallStatus } from "./useMcpInstallStatus";
-import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "./lib/mcpCatalogView";
+import { resolveMcpInstallDir, catalogLink } from "../lib/mcpInstall";
+import { useMcpInstallStatus } from "../useMcpInstallStatus";
+import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "../lib/mcpCatalogView";
 import { useAppStore } from "@/store";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
-import { McpAnalyticsTab } from "./McpAnalytics";
+import { type TabItem } from "@/app/chrome/TabBar";
+import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { McpAnalyticsTab } from "../McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "./lib/mcpServers";
-import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
+import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "../lib/mcpServers";
+import { hookFromCatalog, blankHook, type Hook } from "../lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, DrawerSlideOver, InstalledRow, CatalogCard, type Scope,
-} from "./shared";
-import "./mcp.css";
+} from "../shared";
+import "../mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // MCP servers screen — the Rail "MCP" page. Owns the install/version machinery (download, build,
@@ -198,16 +199,16 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   ), [scope]);
 
   return (
-    <div className="ext-screen">
-      <div className="ext-page">
-        {!sectionOverride && (
-          <TabBar
-            tabs={tabs}
-            activeId={activeId}
-            onSelect={select}
-            onReorder={reorder}
-            onTearOff={tearOff}
-            right={
+    <TabbedScreen
+      tabs={tabs}
+      active={tab}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
+      sectionOverride={sectionOverride}
+      className="ext-screen"
+      bodyClassName="ext-body"
+      right={
               tab === "analytics" ? (
                 <span className="hint" style={{ fontFamily: "var(--mono)" }}>window · last 14 days</span>
               ) : (
@@ -232,12 +233,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
                 </>
               )
             }
-          />
-        )}
-        <div className="ext-body">{body}</div>
-      </div>
-
-      <DrawerSlideOver
+      overlay={
+        <DrawerSlideOver
         open={!!selected}
         onClose={() => setSelectedId(null)}
         onRemove={() => { if (selected) { removeMcpServer(selected.id); setSelectedId(null); } }}
@@ -281,7 +278,10 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
           </DrawerBody>
         )}
       />
-    </div>
+      }
+    >
+      {body}
+    </TabbedScreen>
   );
 }
 

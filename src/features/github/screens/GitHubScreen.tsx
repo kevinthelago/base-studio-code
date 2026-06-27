@@ -1,15 +1,16 @@
 import { useAppStore } from "@/store";
 import { useDragResize } from "@/shared/hooks/useDragResize";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { type TabItem } from "@/app/chrome/TabBar";
+import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { GitHubEmpty } from "./Empty";
-import { GitHubSummary } from "./GitHubSummary";
+import { GitHubEmpty } from "../Empty";
+import { GitHubSummary } from "../GitHubSummary";
 import { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
 import { ProjectBoard } from "@/features/planner/github/ProjectBoard";
 import { Roadmap } from "@/features/planner/github/Roadmap";
 import { Issues } from "@/features/planner/github/Issues";
 import { Insights } from "@/features/planner/github/Insights";
-import { Pulse } from "./Pulse";
+import { Pulse } from "../Pulse";
 
 const GITHUB_TABS: TabItem[] = [
   { id: "summary", label: "Summary", hint: "all repos · analytics" },
@@ -64,10 +65,14 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   const activeRepo = githubRepos.find(r => r.full_name === activeRepoName) ?? githubRepos[0] ?? null;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {!sectionOverride && (
-        <TabBar tabs={ghTabs} activeId={activeId} onSelect={select} onReorder={reorder} onTearOff={tearOff} />
-      )}
+    <TabbedScreen
+      tabs={ghTabs}
+      active={mode}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
+      sectionOverride={sectionOverride}
+    >
 
       {/* Summary page */}
       {mode === "summary" && <GitHubSummary />}
@@ -148,6 +153,6 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
           <Pulse repo={activeRepo} />
         </div>
       </div>
-    </div>
+    </TabbedScreen>
   );
 }
