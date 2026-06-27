@@ -51,6 +51,14 @@ describe("STAGE_KINDS derived from the stage JSON data layer (#1603)", () => {
     expect(stageKind("discovery").glyph).toBe("flag");
   });
 
+  it("renders the skills stage with the sparkles glyph, matching the Skills nav-rail icon (#1808)", () => {
+    // The progression rail (PlanGateRow) reads stageKind(key).glyph; skills must resolve to the
+    // lucide `sparkles` glyph the Skills screen uses in app/registry.ts (single-sourced from skills.json).
+    expect(stageKind("skills").glyph).toBe("sparkles");
+    expect(stageKind("skills").glyph).toBe(STAGE_DEFS.skills.icon);
+    expect("sparkles" in ICONS).toBe(true);
+  });
+
   it("sources the dimension kinds from discovery.json dimensions", () => {
     const stack = (STAGE_DEFS.discovery.dimensions ?? []).find((d) => d.key === "stack")!;
     expect(stack.icon).toBeTruthy();

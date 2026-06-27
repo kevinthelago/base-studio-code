@@ -23,6 +23,9 @@ export const ICONS: Record<string, string> = {
   key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.5 11.5 21 2"/><path d="m15.5 7.5 3 3"/><path d="m18.5 4.5 3 3"/>',
   bolt: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
   extension: '<path d="M9 3h6v3a2 2 0 1 0 4 0V3h2v6h-3a2 2 0 1 0 0 4h3v6h-6v-3a2 2 0 1 0-4 0v3H5v-6h3a2 2 0 1 0 0-4H5V3z"/>',
+  // lucide `sparkles` (v1.21.0) — kept byte-identical to the icon the Skills nav-rail screen renders
+  // (app/registry.ts), so the skills stage glyph matches it across the blueprint surfaces.
+  sparkles: '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
   science: '<path d="M9 3h6"/><path d="M10 3v6.5L5 19a1 1 0 0 0 .9 1.5h12.2A1 1 0 0 0 19 19l-5-9.5V3"/><path d="M7.5 14h9"/>',
   security: '<path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/>',
   monitoring: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
