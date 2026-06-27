@@ -8,7 +8,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { IconButton } from "@/shared/ui/IconButton";
+import { Pane } from "@/shared/ui/Pane";
+import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import {
@@ -81,8 +82,12 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupFilter, setGroupFilter] = useState<string | null>(null);     // selected task group id
   const [facetSel, setFacetSel] = useState<FacetSelection>({});
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<SkillDef | null>(null);
+  const drawer = useDraft<SkillDef>({
+    items: skills,
+    newDraft: () => ({ ...blankSkill(), id: DRAFT_ID }),
+    onUpdate: updateSkill,
+    onCreate: (d) => { const { id: _id, ...def } = d; return addSkill(def); },
+  });
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -161,13 +166,8 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   };
 
   // ── drawer ────────────────────────────────────────────────────────────────────
-  const selectedSkill = selectedId ? skills.find((s) => s.id === selectedId) ?? null : null;
-  const editing = draft ?? selectedSkill;
-  const isDraft = !!draft;
-  function patch(id: string, p: Partial<SkillDef>) { if (draft && id === DRAFT_ID) setDraft((d) => (d ? { ...d, ...p } : d)); else updateSkill(id, p); }
-  function newSkill() { setSelectedId(null); setDraft({ ...blankSkill(), id: DRAFT_ID }); }
-  function commitDraft() { if (!draft) return; const { id: _id, ...def } = draft; setSelectedId(addSkill(def)); setDraft(null); }
-  function closeDrawer() { setSelectedId(null); setDraft(null); }
+  const editing = drawer.selected;
+  const isDraft = drawer.isDraft;
   function importSkills(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -184,7 +184,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const rowHandlers: SkillRowHandlers = {
     selectMode, selected, groupsBySkill,
     onSelect: toggleSel,
-    onOpen: (id) => { setSelectedId(id); setDraft(null); },
+    onOpen: drawer.select,
     onTogglePin: toggleSkillPin,
     onToggle: toggleSkill,
   };
@@ -211,7 +211,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
       right={mode === "library"
         ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn" onClick={() => fileRef.current?.click()}>import</button>
-            <button className="btn primary" onClick={newSkill}>+ skill</button>
+            <button className="btn primary" onClick={drawer.startDraft}>+ skill</button>
             <span className="sync">● github sync</span>
           </div>
         : <span className="sync">● github sync</span>}
@@ -221,8 +221,8 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
           {editing && (
             <SkillDrawer
               s={editing} isDraft={isDraft} projects={projects} groups={skillGroups}
-              onPatch={(p) => patch(editing.id, p)} onClose={closeDrawer}
-              onCommit={commitDraft} onDelete={() => { removeSkill(editing.id); closeDrawer(); }}
+              onPatch={drawer.patch} onClose={drawer.close}
+              onCommit={drawer.commit} onDelete={() => { removeSkill(editing.id); drawer.close(); }}
               onToggleGroup={(gid) => toggleSkillGroupMember(gid, editing.id)}
             />
           )}
@@ -392,14 +392,14 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                   <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>Nothing matches the active search + filters. Create a skill, import one, or clear the filters.</div>
                   <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
                     <button className="btn" onClick={clearFilters}>Clear filters</button>
-                    <button className="btn primary" onClick={newSkill}>+ new skill</button>
+                    <button className="btn primary" onClick={drawer.startDraft}>+ new skill</button>
                   </div>
                 </div>
               ) : density === "list" ? (
                 <SkillsListView filtered={filtered} h={rowHandlers} />
               ) : density === "cards" ? (
                 <SkillsCardsView filtered={filtered} groupsBySkill={groupsBySkill}
-                  onOpen={(id) => { setSelectedId(id); setDraft(null); }} onPin={toggleSkillPin} onToggle={toggleSkill} />
+                  onOpen={drawer.select} onPin={toggleSkillPin} onToggle={toggleSkill} />
               ) : (
                 <SkillsGroupedView sections={groupedSections} showNoGroupsHint={groupedNoGroups}
                   onNewGroup={() => setAddGroupOpen(true)} h={rowHandlers} />
@@ -425,7 +425,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
                 <span>skill</span><span style={{ textAlign: "right" }}>invocations</span><span style={{ textAlign: "right" }}>today</span><span style={{ textAlign: "right" }}>success</span><span style={{ textAlign: "right" }}>7-day</span>
               </div>
               {runRows.map((s, i) => { const sc = successColor(s.success); const today = stats[skillSlug(s.name)]?.today ?? 0; return (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, alignItems: "center", padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); setSelectedId(s.id); }}>
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, alignItems: "center", padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); drawer.select(s.id); }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ color: KIND[s.kind].color }}>{KIND[s.kind].glyph}</span><span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span></span>
                   <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}</span>
                   <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{today}</span>
@@ -465,15 +465,18 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
 }) {
   const isGlobal = s.projects.length === 0;
   return (
-    <>
-      <div className="scrim on" onClick={onClose} />
-      <div className="drawer on">
-        <div className="dr-head">
-          <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
-          <div className="name">{s.name || (isDraft ? "New skill" : "Untitled skill")}</div>
-          <IconButton aria-label="close" onClick={onClose} />
-        </div>
-        <div className="dr-body">
+    <Pane
+      open
+      isDraft={isDraft}
+      onClose={onClose}
+      onCommit={onCommit}
+      onRemove={onDelete}
+      commitDisabled={!s.name.trim()}
+      header={<>
+        <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
+        <div className="name">{s.name || (isDraft ? "New skill" : "Untitled skill")}</div>
+      </>}
+    >
           <div className="field"><label>name <span className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</span></label><input className="input" value={s.name} placeholder="Skill name" onChange={(e) => onPatch({ name: e.target.value })} /></div>
           <div style={{ display: "flex", gap: 16 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">enabled</span><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></span>
@@ -508,13 +511,6 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
                   <div key={p.id} className={"pm-row" + (sel ? " on" : "")} onClick={() => onPatch({ projects: sel ? s.projects.filter((x) => x !== String(p.number)) : [...s.projects, String(p.number)] })}><div className="check">{sel ? "✓" : ""}</div><div className="pname">{p.title} <span className="hint">#{p.number}</span></div></div>
                 ); })}</div>)}
           </div>
-        </div>
-        <div className="dr-foot">
-          {isDraft ? <button className="btn ghost" onClick={onClose}>cancel</button> : <button className="btn ghost danger" onClick={onDelete}>remove</button>}
-          <div className="spacer" />
-          {isDraft ? <button className="btn primary" disabled={!s.name.trim()} onClick={onCommit}>done</button> : <button className="btn primary" onClick={onClose}>done</button>}
-        </div>
-      </div>
-    </>
+    </Pane>
   );
 }

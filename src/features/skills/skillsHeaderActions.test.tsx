@@ -51,7 +51,7 @@ describe("SkillsScreen — page-header actions (import + '+ skill')", () => {
   it("'+ skill' opens the draft drawer without creating a skill", () => {
     const { container } = render(<SkillsScreen />);
     fireEvent.click(within(header(container)).getByText("+ skill"));
-    const drawer = container.querySelector(".drawer.on") as HTMLElement;
+    const drawer = container.querySelector(".pane-drawer.on") as HTMLElement;
     expect(drawer).toBeTruthy();
     expect(within(drawer).getByText("procedure — SKILL.md body")).toBeTruthy();
     expect(useAppStore.getState().skills).toHaveLength(2); // draft not committed

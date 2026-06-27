@@ -12,8 +12,9 @@ import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
 import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "../lib/mcpServers";
 import { hookFromCatalog, blankHook, type Hook } from "../lib/hooks";
 import {
-  useGhProjects, scopeChips, DrawerBody, DrawerSlideOver, InstalledRow, CatalogCard, type Scope,
+  useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
 } from "../shared";
+import { Pane } from "@/shared/ui/Pane";
 import "../mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -234,7 +235,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
               )
             }
       overlay={
-        <DrawerSlideOver
+        <Pane
         open={!!selected}
         onClose={() => setSelectedId(null)}
         onRemove={() => { if (selected) { removeMcpServer(selected.id); setSelectedId(null); } }}
@@ -393,7 +394,7 @@ export function HooksView() {
         </div>
       </div>
 
-      <DrawerSlideOver
+      <Pane
         open={!!selected}
         onClose={() => setSelectedId(null)}
         onRemove={() => { if (selected) { removeHook(selected.id); setSelectedId(null); } }}
