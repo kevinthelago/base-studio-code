@@ -11,6 +11,7 @@ import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
 import { useModalDismiss, overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
@@ -386,7 +387,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
           fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
         }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />{toast}
+          <StatusDot size={7} color="var(--success)" />{toast}
         </div>
       )}
     </div>
