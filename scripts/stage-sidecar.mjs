@@ -14,7 +14,18 @@ import { mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** The sidecar binaries shipped beside the app. */
-const BINS = ["bsc-plan", "bsc-agent", "bsc-research-mcp", "bsc-compliance-mcp", "bsc-skill"];
+const BINS = [
+  "bsc-plan",
+  "bsc-agent",
+  "bsc-research-mcp",
+  "bsc-compliance-mcp",
+  "bsc-skill",
+  "bsc-data",
+  "bsc-logs",
+  "bsc-compliance",
+  "bsc-blueprint",
+  "bsc-project",
+];
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
