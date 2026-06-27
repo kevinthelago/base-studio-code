@@ -55,7 +55,7 @@ Set in `tsconfig.json` (`paths`) and mirrored in `vite.config.ts` + `vitest.conf
 | Alias | Resolves to | Use |
 |---|---|---|
 | `@/…` | `src/…` | all frontend imports — never `../../..` |
-| `@prompts/…` | `src-tauri/prompts/…` | build-time-bundled prompt/stage/blueprint/**skills** JSON (lives outside `src/`, loaded via `import.meta.glob`) |
+| `@data/…` | `src-tauri/data/…` | build-time-bundled prompt/stage/blueprint/**skills** JSON (lives outside `src/`, loaded via `import.meta.glob`) |
 
 ---
 
@@ -121,7 +121,7 @@ features/<x>/
 | Feature | Screen | What it is |
 |---|---|---|
 | **`planner/`** | Projects | **the flagship** — the app-owned planning session that turns a pitch or repo set into an executable plan. See below. |
-| `skills/` | Skills | the **Skills library** — reusable markdown context blocks (the injectable-context system that superseded the old Knowledge Base), written into a session's `.claude/skills/`. Source of truth is the global `skills.db`; the slice is a write-through cache (`hydrateSkills`). The **packaged** built-ins live as data at `src-tauri/prompts/skills/*.json` — a dual consumer like blueprints/stages: the frontend reads them via `import.meta.glob` (`shared/data/skills.ts`) and the Rust `skilldb` seeds a fresh DB from the same files via `include_dir!` (CLI/planner parity without a UI boot), #1715. |
+| `skills/` | Skills | the **Skills library** — reusable markdown context blocks (the injectable-context system that superseded the old Knowledge Base), written into a session's `.claude/skills/`. Source of truth is the global `skills.db`; the slice is a write-through cache (`hydrateSkills`). The **packaged** built-ins live as data at `src-tauri/data/skills/*.json` — a dual consumer like blueprints/stages: the frontend reads them via `import.meta.glob` (`shared/data/skills.ts`) and the Rust `skilldb` seeds a fresh DB from the same files via `include_dir!` (CLI/planner parity without a UI boot), #1715. |
 | `mcp/` | MCP | MCP servers + hooks management; catalog + per-session assignment. |
 | `automations/` | Automations | cron-triggered rules (`useScheduler`) that dispatch a command into a console pane. |
 | `github/` | GitHub | GitHub OAuth, repo selection, the Projects v2 board (the board moved here, #498). |
@@ -206,7 +206,7 @@ npm run test:coverage
   - `@tauri-apps/plugin-log`, `@tauri-apps/plugin-opener`, `@tauri-apps/plugin-store`
 
   These apply to **every** test file automatically. Override `invoke` per-test when you need a specific return value.
-- The Vitest config re-declares the `@/` and `@prompts/` aliases, so imports resolve identically to the app.
+- The Vitest config re-declares the `@/` and `@data/` aliases, so imports resolve identically to the app.
 
 What to test (from `CLAUDE.md`): a new store action → its state transitions + edge cases; a new component → render smoke test + interaction tests; a bug fix → a regression test. Tests ship in the **same branch** as the change.
 
@@ -230,7 +230,7 @@ What to test (from `CLAUDE.md`): a new store action → its state transitions + 
   ```
   `npm run lint` catches react-hooks rule violations that `typecheck` and `vitest` do not — don't skip it. Re-run `npm run typecheck` after your *final* `.ts` edit (CI's tsc enforces a stricter lib target than esbuild's test transpile, so a passing test can still fail typecheck).
 
-- **`@prompts/` is outside `src/`.** Stage/blueprint JSON is bundled from `src-tauri/prompts/` at build time via `import.meta.glob` — it's data, not source you edit casually.
+- **`@data/` is outside `src/`.** Stage/blueprint JSON is bundled from `src-tauri/data/` at build time via `import.meta.glob` — it's data, not source you edit casually.
 
 - **Lazy-mount lifecycle.** Console and Projects stay mounted (CSS-hidden) after first render to preserve xterm/PTY sessions and local state; other screens unmount when inactive. Keep heavy module graphs out of the boot path.
 
