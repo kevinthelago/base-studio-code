@@ -126,6 +126,48 @@ pub(crate) fn plan_remove_phase(project_key: String, name: String) -> Result<(),
 
 // ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────
 
+/// One-time migration of a stray legacy `fleet.json` in the project hub into plan.db (#1805).
+/// plan.db is the SOLE fleet store now; this rescues data from pre-#1317 hubs that still carry a
+/// `fleet.json` on disk, then removes the file so the fleet has exactly one home. Idempotent and
+/// **plan.db-wins**:
+/// - no stray file ⇒ no-op (the common, post-migration case — a cheap `is_file()` check per call).
+/// - file present AND plan.db already has a fleet ⇒ delete the file untouched (plan.db is never
+///   overwritten from disk).
+/// - file present AND plan.db empty ⇒ import the file's JSON object into plan.db, then delete it.
+///
+/// The stream JSON is stored wholesale (any flat-flow fields are preserved), and the frontend's
+/// `parseFleetFile` normalizes flat→nested flow at read time, so the import is lossless.
+pub(crate) fn migrate_stray_fleet_json(project_key: &str) {
+    let file = crate::project_dir(project_key).join("fleet.json");
+    if !file.is_file() {
+        return;
+    }
+    // plan.db wins: if it already holds a fleet, drop the stray file without reading it.
+    if fleet_for(project_key).is_some() {
+        let _ = std::fs::remove_file(&file);
+        return;
+    }
+    // plan.db is empty — import the file's JSON object (if it parses) into plan.db, then delete it.
+    let parsed = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .filter(serde_json::Value::is_object);
+    match parsed {
+        Some(value) => match open(project_key).and_then(|s| s.fleet_set(&value).map_err(|e| e.to_string())) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&file);
+                log::info!("migrate_stray_fleet_json({project_key}): imported legacy fleet.json into plan.db");
+            }
+            Err(e) => log::warn!("migrate_stray_fleet_json({project_key}): import failed, keeping file: {e}"),
+        },
+        None => {
+            // Unparseable / non-object stray file — it carries no usable fleet; drop the dead artifact.
+            let _ = std::fs::remove_file(&file);
+            log::warn!("migrate_stray_fleet_json({project_key}): dropped unparseable fleet.json");
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
     open(&project_key)?.fleet_set(&fleet).map_err(|e| e.to_string())
@@ -133,6 +175,9 @@ pub(crate) fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> R
 
 #[tauri::command]
 pub(crate) fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::Value>, String> {
+    // plan.db is the sole fleet store (#1805) — fold a stray legacy fleet.json in before reading so
+    // it can't be lost, then it's gone for good (idempotent; plan.db wins on conflict).
+    migrate_stray_fleet_json(&project_key);
     open(&project_key)?.fleet_get().map_err(|e| e.to_string())
 }
 
