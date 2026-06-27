@@ -7,6 +7,7 @@
 //!   resolution shared by the desktop app and every `bsc-*` CLI.
 //! - [`print_json`] — print any `Serialize` value to stdout, compact by default / indented with `--pretty`.
 //! - [`read_stdin_json`] — read stdin as JSON, accepting either one object or an array, into a `Vec<T>`.
+//! - [`read_stdin_json_one`] — read stdin as a single JSON object into one `T` (the singleton-blob `set` shape).
 //!
 //! Tauri-free and dependency-light (`serde` / `serde_json` + the leaf `bsc-util`) so the small CLIs stay small.
 
@@ -56,20 +57,52 @@ pub fn read_stdin_json<T: DeserializeOwned>(noun: &str) -> Result<Vec<T>, String
     parse_json_items(&buf, noun)
 }
 
+/// Read JSON from stdin as exactly one `T` — the shape every singleton-blob `set`-style command takes
+/// (`deploy`/`deps`/`blueprint`/`fleet set`, `bsc-data` connector writes). `noun` names the value for
+/// error messages (e.g. `"deploy JSON"`, `"blueprint JSON"`).
+///
+/// Shares [`parse_json_items`]' trim/empty guard, but parses a single object (no array form).
+///
+/// # Errors
+/// - the stdin read fails,
+/// - the input is empty/whitespace,
+/// - the JSON doesn't parse into `T`.
+pub fn read_stdin_json_one<T: DeserializeOwned>(noun: &str) -> Result<T, String> {
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+    parse_json_one(&buf, noun)
+}
+
+/// Trim `buf` and reject empty/whitespace input — the shared guard both stdin readers run before
+/// parsing. `shape` is appended after `noun` in the error: `""` for a lone object, the array hint for
+/// the object-or-array reader.
+fn trim_or_empty_err<'a>(buf: &'a str, noun: &str, shape: &str) -> Result<&'a str, String> {
+    let buf = buf.trim();
+    if buf.is_empty() {
+        return Err(format!("expected {noun}{shape} as JSON on stdin"));
+    }
+    Ok(buf)
+}
+
 /// The object-or-array dispatch behind [`read_stdin_json`], split out so it's testable without
 /// driving real stdin. Trims `buf`; empty input is an error; a leading `[` parses as `Vec<T>`,
 /// otherwise as a single `T` wrapped in a one-element vec.
 fn parse_json_items<T: DeserializeOwned>(buf: &str, noun: &str) -> Result<Vec<T>, String> {
-    let buf = buf.trim();
-    if buf.is_empty() {
-        return Err(format!("expected {noun} (or array of {noun}s) as JSON on stdin"));
-    }
+    let buf = trim_or_empty_err(buf, noun, &format!(" (or array of {noun}s)"))?;
     if buf.starts_with('[') {
         serde_json::from_str(buf).map_err(|e| format!("parsing {noun} array: {e}"))
     } else {
         let one: T = serde_json::from_str(buf).map_err(|e| format!("parsing {noun}: {e}"))?;
         Ok(vec![one])
     }
+}
+
+/// The single-object parse behind [`read_stdin_json_one`], split out so it's testable without driving
+/// real stdin. Trims `buf`; empty input is an error; parses one `T` (an array is a parse error, not a
+/// vec — this reader is the singleton-blob shape).
+fn parse_json_one<T: DeserializeOwned>(buf: &str, noun: &str) -> Result<T, String> {
+    let buf = trim_or_empty_err(buf, noun, "")?;
+    serde_json::from_str(buf).map_err(|e| format!("parsing {noun}: {e}"))
 }
 
 #[cfg(test)]
@@ -101,5 +134,22 @@ mod tests {
         assert!(parse_json_items::<i64>("   ", "n").unwrap_err().contains("expected n"));
         assert!(parse_json_items::<i64>("nope", "n").unwrap_err().contains("parsing n"));
         assert!(parse_json_items::<i64>("[nope", "n").unwrap_err().contains("parsing n array"));
+    }
+
+    #[test]
+    fn parse_json_one_reads_a_single_object_empty_and_malformed() {
+        // The stdin read can't be exercised in a unit test; `parse_json_one` is the shared core
+        // `read_stdin_json_one` delegates to (the single-object analogue of `parse_json_items`).
+        let one: i64 = parse_json_one("42", "deploy JSON").unwrap();
+        assert_eq!(one, 42);
+        // A nested object round-trips as one T.
+        let obj: serde_json::Value = parse_json_one("{\"a\":1}", "deploy JSON").unwrap();
+        assert_eq!(obj, serde_json::json!({ "a": 1 }));
+        // Empty/whitespace shares the trim guard — noun in the error, no array hint.
+        let empty = parse_json_one::<serde_json::Value>("  \n ", "deploy JSON").unwrap_err();
+        assert!(empty.contains("expected deploy JSON"));
+        assert!(!empty.contains("array"));
+        // Malformed JSON names the noun.
+        assert!(parse_json_one::<serde_json::Value>("nope", "deploy JSON").unwrap_err().contains("parsing deploy JSON"));
     }
 }
