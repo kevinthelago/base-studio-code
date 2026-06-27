@@ -4,6 +4,7 @@
 // and the env-var editor. Kept here so neither feature owns the other's vocabulary.
 
 import { useState, useEffect } from "react";
+import { StatusDot } from "@/shared/ui/StatusDot";
 import { IconButton } from "@/shared/ui/IconButton";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
@@ -64,7 +65,7 @@ export function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => vo
 /** The scope summary chips on a row: off / global / named-projects. */
 export function scopeChips(e: { enabled: boolean; projects: string[] }, projects: GhProject[]) {
   if (!e.enabled) return <span className="tag" style={{ color: "var(--fg-dim)" }}>off</span>;
-  if (e.projects.length === 0) return <span className="tag green">● global</span>;
+  if (e.projects.length === 0) return <span className="tag green"><StatusDot style={{ marginRight: 4 }} />global</span>;
   const named = e.projects
     .map(pid => projects.find(p => p.id === pid))
     .filter(Boolean) as GhProject[];
