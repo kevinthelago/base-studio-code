@@ -1,11 +1,9 @@
 import { useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ProjectsHeader } from "../list/ProjectsHeader";
-import type { ActiveProjectInfo } from "../list/ProjectsHeader";
+import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
@@ -274,20 +272,8 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 // ── Board ─────────────────────────────────────────────────────────────────────
 
 export function ProjectBoard() {
-  const {
-    activeProjectId, activeProjectName, activeProjectRepo, activeProjectRepos, activeProjectNumber,
-    projectsDrawerIssue, setProjectsDrawerIssue, setActiveProjectRepos,
-  } = useAppStore();
-
-  const { data, loading, error } = useGithubQuery<{ node: Record<string, unknown> }>(
-    (token) => invoke("github_graphql", {
-      token,
-      query: BOARD_QUERY,
-      variables: { id: activeProjectId },
-    }),
-    [activeProjectId],
-    !!activeProjectId,
-  );
+  const { projectsDrawerIssue, setProjectsDrawerIssue, setActiveProjectRepos } = useAppStore();
+  const { project, data, loading, error } = useActiveProjectGithub<{ node: Record<string, unknown> }>(BOARD_QUERY);
 
   const { columns, byColumn, allItems, repos } = useMemo(() => {
     const node = data?.node as ProjectV2Node | undefined;
@@ -342,15 +328,6 @@ export function ProjectBoard() {
     if (repos.length > 0) setActiveProjectRepos(repos);
   }, [repos, setActiveProjectRepos]);
 
-  const project: ActiveProjectInfo = {
-    id: activeProjectId ?? "",
-    number: activeProjectNumber,
-    name: activeProjectName,
-    repo: activeProjectRepo,
-    repos: activeProjectRepos,
-    description: "",
-  };
-
   const drawerOpen = projectsDrawerIssue !== null;
   const drawerIssue = drawerOpen ? allItems.find(i => i.number === projectsDrawerIssue) : undefined;
 
@@ -368,14 +345,7 @@ export function ProjectBoard() {
           </div>
         )}
 
-        {error && (
-          <div style={{
-            padding: "12px 16px", borderRadius: 6, margin: 8,
-            background: "color-mix(in oklch, var(--danger), transparent 88%)",
-            border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
-          }}>{error}</div>
-        )}
+        <QueryBanner error={error} style={{ margin: 8 }} />
 
         {/* Board columns */}
         <div style={{
