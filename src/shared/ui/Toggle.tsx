@@ -1,8 +1,9 @@
 // A pill switch (#1527) — consolidates the toggle copied across settings, skills, and the planner
-// deploy/integration bodies. Two sizes preserve the (drifted) call sites exactly: "md" (32×18, the
-// settings panels) and "sm" (26×15, the skills rows + planner deploy/integration toggles). `tone`
-// picks the ON-state color: "accent" (default) or "success" (the green deploy/integration toggles —
-// a translucent track with a solid success border + knob). The track lights when `on`; the knob
+// deploy/integration bodies. Three sizes preserve the (drifted) call sites exactly: "md" (32×18, the
+// settings panels), "sm" (26×15, the skills rows + planner deploy/integration toggles), and "xs"
+// (24×14, the compact Integrations "tools available to agents" grid, #1779). `tone` picks the
+// ON-state color: "accent" (default) or "success" (the green deploy/integration toggles — a
+// translucent track with a solid success border + knob). The track lights when `on`; the knob
 // slides right.
 
 import type { MouseEvent } from "react";
@@ -10,8 +11,8 @@ import type { MouseEvent } from "react";
 interface ToggleProps {
   on: boolean;
   onClick?: (e: MouseEvent) => void;
-  /** "md" (32×18) — the default, used by the settings panels — or "sm" (26×15) for the skills rows. */
-  size?: "sm" | "md";
+  /** "md" (32×18, default — settings panels), "sm" (26×15, skills rows), or "xs" (24×14, compact grids). */
+  size?: "xs" | "sm" | "md";
   /** ON-state color: "accent" (default) or "success" (green). */
   tone?: "accent" | "success";
   className?: string;
@@ -27,7 +28,13 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
   const borderOn = success ? "var(--success)" : "transparent";
   const borderOff = success ? "var(--border-soft)" : "var(--border)";
 
-  if (size === "sm") {
+  // "sm" (26×15 / 11px knob) and "xs" (24×14 / 10px knob) share the absolute-knob track; only the
+  // track/knob dimensions and the ON knob offset differ.
+  if (size === "sm" || size === "xs") {
+    const xs = size === "xs";
+    const w = xs ? 24 : 26;
+    const h = xs ? 14 : 15;
+    const knob = xs ? 10 : 11;
     return (
       <span
         className={className}
@@ -35,14 +42,14 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
         role={role}
         aria-checked={ariaChecked}
         style={{
-          width: 26, height: 15, borderRadius: 99, position: "relative", flex: "0 0 auto",
+          width: w, height: h, borderRadius: 99, position: "relative", flex: "0 0 auto",
           cursor: onClick ? "pointer" : "default",
           background: on ? trackOn : "var(--bg-elev2)",
           border: "1px solid " + (on ? borderOn : borderOff),
         }}
       >
         <span style={{
-          position: "absolute", top: 1, left: on ? 12 : 1, width: 11, height: 11, borderRadius: "50%",
+          position: "absolute", top: 1, left: on ? w - knob - 3 : 1, width: knob, height: knob, borderRadius: "50%",
           background: on ? (success ? "var(--success)" : "var(--bg-canvas)") : "var(--fg-dim)",
         }} />
       </span>
