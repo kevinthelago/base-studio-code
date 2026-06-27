@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   paneIdFor, manualPaneId, fleetPaneId, directorPaneId, triagePaneId, isManualPaneId, positionalPaneId,
-  parsePaneIdentity,
+  parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab,
 } from "./paneIdentity";
 
 describe("paneIdentity (#1176)", () => {
@@ -44,6 +44,49 @@ describe("paneIdentity (#1176)", () => {
     it("falls back to positional for an id-less legacy tab", () => {
       expect(paneIdFor({}, 1, 1)).toBe("t1p1");
       expect(paneIdFor(undefined, 0, 0)).toBe("t0p0");
+    });
+  });
+
+  describe("paneBelongsToTab — identity-aware ownership (the inverse of paneIdFor)", () => {
+    it("matches a manual tab by its stable id, not by index", () => {
+      const tab = { id: "tab-A" };
+      expect(paneBelongsToTab("man:tab-A:p0", tab, 0)).toBe(true);
+      expect(paneBelongsToTab("man:tab-A:p3", tab, 7)).toBe(true); // index is irrelevant for man:
+      expect(paneBelongsToTab("man:tab-B:p0", tab, 0)).toBe(false); // different tab id
+    });
+
+    it("matches a minted fleet/triage id only via the tab's paneIds[]", () => {
+      const tab = { id: "x", kind: "build" as const, paneIds: ["proj:director", "proj:auth"] };
+      expect(paneBelongsToTab("proj:auth", tab, 0)).toBe(true);
+      expect(paneBelongsToTab("proj:director", tab, 5)).toBe(true);
+      expect(paneBelongsToTab("proj:other", tab, 0)).toBe(false);
+    });
+
+    it("matches a legacy positional id by tab index", () => {
+      expect(paneBelongsToTab("t2p1", {}, 2)).toBe(true);
+      expect(paneBelongsToTab("t2p1", {}, 3)).toBe(false);
+    });
+
+    it("rejects an unrecognized key", () => {
+      expect(paneBelongsToTab("apply_tag", { id: "tab-A" }, 0)).toBe(false);
+    });
+  });
+
+  describe("findPaneOwnerTab — resolve a pane id to its tab", () => {
+    const tabs = [
+      { id: "manual-1" },                                              // 0: manual
+      { id: "x", kind: "build" as const, paneIds: ["p:director", "p:auth"] }, // 1: fleet (minted)
+      { id: "y" },                                                     // 2: manual
+    ];
+    it("resolves a manual id to its tab regardless of index drift", () => {
+      expect(findPaneOwnerTab(tabs, "man:y:p0")).toEqual({ tab: tabs[2], tabIdx: 2 });
+    });
+    it("resolves a minted fleet id to its tab", () => {
+      expect(findPaneOwnerTab(tabs, "p:auth")).toEqual({ tab: tabs[1], tabIdx: 1 });
+    });
+    it("returns null for an id no tab owns", () => {
+      expect(findPaneOwnerTab(tabs, "man:gone:p0")).toBeNull();
+      expect(findPaneOwnerTab(tabs, "p:missing")).toBeNull();
     });
   });
 

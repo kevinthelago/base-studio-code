@@ -8,8 +8,8 @@ import { DEFAULT_ACCENT } from "@/features/settings/lib/appearance";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "@/app/console/lib/focusQueue";
 import { DEFAULT_REAPER_CONFIG } from "@/app/console/lib/idleReaper";
 import { clampFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "@/app/console/lib/terminal";
-import { aggregateTabState, clearTabStatuses as clearTabStatusesPure, parsePaneKey } from "@/app/console/lib/paneStatus";
-import { isManualPaneId } from "@/app/console/lib/paneIdentity";
+import { aggregateTabState, clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
+import { isManualPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "@/app/console/lib/tabReorder";
 import { newTabId } from "../helpers";
 import { setMapEntry, deleteMapEntry, updateArrayItem } from "../updateHelpers";
@@ -159,17 +159,19 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           // is exactly what the reaper ages from. (Same-status pings early-return above, so an
           // idle pane that stays idle keeps aging correctly.)
           const paneLastActivity = setMapEntry(s.paneLastActivity, paneId, Date.now());
-          const parsed = parsePaneKey(paneId);
-          const tab = parsed ? s.tabs[parsed.tabIdx] : undefined;
-          if (!parsed || !tab) return { paneStatus, paneLastActivity };
+          // Resolve the owning tab by IDENTITY (#1176) — a manual/minted pane id never
+          // parses as a positional `t{idx}p{n}`, so the old positional parse dropped the
+          // rollup for every fleet/triage/manual pane (its activity dot got stuck).
+          const owner = findPaneOwnerTab(s.tabs, paneId);
+          if (!owner) return { paneStatus, paneLastActivity };
           // Re-roll the owning tab from the full live set; only rebuild the tabs
           // array when the rollup actually changes (status events are frequent).
-          const nextState = aggregateTabState(parsed.tabIdx, tab.layout, paneStatus, s.disabledPanes);
-          if (nextState === tab.state) return { paneStatus, paneLastActivity };
+          const nextState = aggregateTabState(owner.tab, owner.tabIdx, paneStatus, s.disabledPanes);
+          if (nextState === owner.tab.state) return { paneStatus, paneLastActivity };
           return {
             paneStatus,
             paneLastActivity,
-            tabs: updateArrayItem(s.tabs, parsed.tabIdx, { state: nextState }),
+            tabs: updateArrayItem(s.tabs, owner.tabIdx, { state: nextState }),
           };
         }),
       // ── Warden quarantine (#1102) ────────────────────────────────────────────
@@ -218,21 +220,20 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         set((s) => {
           const tab = s.tabs[tabIdx];
           if (!tab) return {};
-          const state = aggregateTabState(tabIdx, tab.layout, s.paneStatus, s.disabledPanes);
+          const state = aggregateTabState(tab, tabIdx, s.paneStatus, s.disabledPanes);
           return state === tab.state
             ? {}
             : { tabs: updateArrayItem(s.tabs, tabIdx, { state }) };
         }),
       clearTabStatuses: (tabIdx) =>
         set((s) => {
-          const paneStatus = clearTabStatusesPure(s.paneStatus, tabIdx);
           const tab = s.tabs[tabIdx];
-          const tabs = tab
-            ? s.tabs.map((t, i) =>
-                i === tabIdx
-                  ? { ...t, state: aggregateTabState(i, t.layout, paneStatus, s.disabledPanes) }
-                  : t)
-            : s.tabs;
+          if (!tab) return {};
+          const paneStatus = clearTabStatusesPure(s.paneStatus, tab, tabIdx);
+          const tabs = s.tabs.map((t, i) =>
+            i === tabIdx
+              ? { ...t, state: aggregateTabState(t, i, paneStatus, s.disabledPanes) }
+              : t);
           return { paneStatus, tabs };
         }),
       paneInitCmds: {},
@@ -249,12 +250,13 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           const next = { ...s.disabledPanes };
           if (disabled) next[paneId] = true; else delete next[paneId];
           // Enabling/disabling a pane changes which cells count in its tab's rollup
-          // (a disabled cell can't be "run"), so re-roll the owning tab (#435).
-          const parsed = parsePaneKey(paneId);
-          const tabs = parsed && s.tabs[parsed.tabIdx]
+          // (a disabled cell can't be "run"), so re-roll the owning tab (#435). Resolve
+          // the tab by identity so a manual/minted pane id rolls up too (#1176).
+          const owner = findPaneOwnerTab(s.tabs, paneId);
+          const tabs = owner
             ? s.tabs.map((t, i) =>
-                i === parsed.tabIdx
-                  ? { ...t, state: aggregateTabState(i, t.layout, s.paneStatus, next) }
+                i === owner.tabIdx
+                  ? { ...t, state: aggregateTabState(t, i, s.paneStatus, next) }
                   : t)
             : s.tabs;
           return { disabledPanes: next, tabs };
@@ -327,10 +329,11 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         })),
       closeTab: (idx) =>
         set((s) => {
+          const closing = s.tabs[idx];
           const tabs = s.tabs.filter((_, i) => i !== idx);
           // Drop the closed tab's pane statuses so its sessions' "run"/"on" can't
           // linger as a stale activity dot (#435) — like the focusQueue reset.
-          const paneStatus = clearTabStatusesPure(s.paneStatus, idx);
+          const paneStatus = closing ? clearTabStatusesPure(s.paneStatus, closing, idx) : s.paneStatus;
           if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [], paneStatus };
           let activeTabIdx = s.activeTabIdx;
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
@@ -379,7 +382,7 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           Object.keys(paneCwds).forEach((key) => { if (isExcess(key)) delete paneCwds[key]; });
           // Re-roll this tab's state against the new grid: cells trimmed away by a
           // smaller layout stop contributing their "run"/"on" (#435).
-          tabs[tabIdx] = { ...tabs[tabIdx], state: aggregateTabState(tabIdx, layout, s.paneStatus, s.disabledPanes) };
+          tabs[tabIdx] = { ...tabs[tabIdx], state: aggregateTabState(tabs[tabIdx], tabIdx, s.paneStatus, s.disabledPanes) };
           return {
             tabs,
             paneNames: setMapEntry(s.paneNames, tabIdx, tabPaneNames),
