@@ -18,22 +18,23 @@ import {
 import {
   blankSkill, deriveSkillKpis, parseSkillsFile, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
-} from "./lib/skills";
+} from "../lib/skills";
 import {
   mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
   SORTS, type Density, type SortKey, type FacetSelection,
-} from "./lib/skillsFilter";
-import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
-import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
-import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
+} from "../lib/skillsFilter";
+import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../lib/skillTelemetry";
+import { successColor, tintBg, glyphTile, pill } from "../skillStyles";
+import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "../SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { type TabItem } from "@/app/chrome/TabBar";
+import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { LessonsTab } from "./LessonsTab";
+import { LessonsTab } from "../LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
-import "./skills.css";
+import "../skills.css";
 
 type Mode = "library" | "lessons" | "runs";
 
@@ -199,15 +200,35 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
 
   return (
-    <div className="skills-screen">
-      {!sectionOverride && <TabBar tabs={skillTabs} activeId={activeId} onSelect={select} onReorder={reorder} onTearOff={tearOff}
-        right={mode === "library"
-          ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button className="btn" onClick={() => fileRef.current?.click()}>import</button>
-              <button className="btn primary" onClick={newSkill}>+ skill</button>
-              <span className="sync">● github sync</span>
-            </div>
-          : <span className="sync">● github sync</span>} />}
+    <TabbedScreen
+      tabs={skillTabs}
+      active={mode}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
+      sectionOverride={sectionOverride}
+      className="skills-screen"
+      right={mode === "library"
+        ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn" onClick={() => fileRef.current?.click()}>import</button>
+            <button className="btn primary" onClick={newSkill}>+ skill</button>
+            <span className="sync">● github sync</span>
+          </div>
+        : <span className="sync">● github sync</span>}
+      overlay={
+        <>
+          {addGroupOpen && <NewGroupDialog onClose={() => setAddGroupOpen(false)} onCreate={(name) => { const id = addSkillGroup(name, GROUP_HUES[skillGroups.length % GROUP_HUES.length]); setGroupFilter(id); setAddGroupOpen(false); }} />}
+          {editing && (
+            <SkillDrawer
+              s={editing} isDraft={isDraft} projects={projects} groups={skillGroups}
+              onPatch={(p) => patch(editing.id, p)} onClose={closeDrawer}
+              onCommit={commitDraft} onDelete={() => { removeSkill(editing.id); closeDrawer(); }}
+              onToggleGroup={(gid) => toggleSkillGroupMember(gid, editing.id)}
+            />
+          )}
+        </>
+      }
+    >
       {/* Hidden import file input (the header "import" button triggers it). */}
       <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importSkills(f); e.target.value = ""; }} />
 
@@ -417,19 +438,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
         </div></section>
       )}
 
-      {/* New-group prompt */}
-      {addGroupOpen && <NewGroupDialog onClose={() => setAddGroupOpen(false)} onCreate={(name) => { const id = addSkillGroup(name, GROUP_HUES[skillGroups.length % GROUP_HUES.length]); setGroupFilter(id); setAddGroupOpen(false); }} />}
-
-      {/* Edit drawer */}
-      {editing && (
-        <SkillDrawer
-          s={editing} isDraft={isDraft} projects={projects} groups={skillGroups}
-          onPatch={(p) => patch(editing.id, p)} onClose={closeDrawer}
-          onCommit={commitDraft} onDelete={() => { removeSkill(editing.id); closeDrawer(); }}
-          onToggleGroup={(gid) => toggleSkillGroupMember(gid, editing.id)}
-        />
-      )}
-    </div>
+    </TabbedScreen>
   );
 }
 
