@@ -25,6 +25,9 @@ duckdb-store = ["dep:duckdb"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 csv = "1"
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper), `resolve_store_path` (--db→env→default),
+# and `emit` (the lean-TSV-vs-JSON dispatch) the `bsc-data` CLI shares with `bsc-plan` / `bsc-logs` / ….
+bsc-cli-util = { path = "../bsc-cli-util" }
 # `bundled` compiles DuckDB from source (mirrors how rusqlite is bundled in
 # src-tauri) for cross-platform reliability without a system libduckdb.
 duckdb = { version = "1", features = ["bundled"], optional = true }

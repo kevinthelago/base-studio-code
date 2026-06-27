@@ -31,13 +31,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("bsc-plan: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    bsc_cli_util::cli_main("bsc-plan", run)
 }
 
 /// Parsed global flags + leftover positional args.
@@ -820,14 +814,13 @@ fn set_hub_doc(path: &Path, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve the plan.db path: explicit `--db` wins, else the `BSC_PLAN_DB` env var.
+/// Resolve the plan.db path via the shared `--db` → `$BSC_PLAN_DB` → default precedence
+/// ([`bsc_cli_util::resolve_store_path`]). There is no default location for a project's plan.db, so
+/// the default is a hard error.
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
-    if let Some(p) = flag {
-        return Ok(PathBuf::from(p));
-    }
-    std::env::var("BSC_PLAN_DB")
-        .map(PathBuf::from)
-        .map_err(|_| "no plan.db: pass --db <path> or set BSC_PLAN_DB".to_string())
+    bsc_cli_util::resolve_store_path(flag, "BSC_PLAN_DB", || {
+        Err("no plan.db: pass --db <path> or set BSC_PLAN_DB".to_string())
+    })
 }
 
 /// Read JSON from stdin (one issue object or an array), upsert each, return the assigned refs.
