@@ -198,6 +198,17 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     // MCP servers (catalog names) the planner assigned to this worker (#1054); undefined when none
     // so the field round-trips cleanly. Carried through to fleetStartProject's per-worker resolution.
     const mcp = toStringArray(so.mcp);
+    // Per-agent flow (#297) arrives in EITHER shape (#1804): NESTED as `so.flow`
+    // ({autonomy,push,trigger,gate} — the canonical `bsc-plan fleet set` / fleet.json
+    // form, matching the store model) OR FLAT as top-level `so.autonomy`/`so.push`/
+    // `so.trigger`/`so.gate` (what the `<agent_assign>` tag attrs and legacy flat
+    // fleet.json emit). Prefer a named nested object; else assemble from the flat
+    // fields; else leave undefined so genuinely-unset streams still get DEFAULT_FLOW
+    // at launch (we must NOT silently materialize a flow here).
+    const nestedFlow = so.flow && typeof so.flow === "object" && !Array.isArray(so.flow)
+      ? (so.flow as Record<string, unknown>) : null;
+    const flow = flowOrUndefined(nestedFlow)
+      ?? flowOrUndefined({ autonomy: so.autonomy, push: so.push, trigger: so.trigger, gate: so.gate });
     streams.push({
       id,
       name: typeof so.name === "string" && so.name.trim() ? so.name.trim() : id,
@@ -209,7 +220,7 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       prompt,
       mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
-      flow: flowOrUndefined(so.flow && typeof so.flow === "object" && !Array.isArray(so.flow) ? so.flow as Record<string, unknown> : null),
+      flow,
       perm: (so.perm && typeof so.perm === "object" && !Array.isArray(so.perm))
         ? (so.perm as Record<string, "allow" | "ask" | "deny">) : undefined,
       preset: typeof so.preset === "string" && so.preset.trim() ? so.preset.trim() : undefined,
