@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
-import { SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
 
 export function PerfRetentionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -26,9 +26,7 @@ export function PerfRetentionCard() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Metrics retention</h3>
-      </div>
+      <SettingsCardHead title="Metrics retention" />
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         <Row
           label="History retention"
