@@ -64,3 +64,37 @@ export function SettingsSelect({ value, options, onChange }: {
 export function settingsBtn(extra: CSSProperties = {}): CSSProperties {
   return { padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5, background: "var(--bg-elev)", color: "var(--fg-muted)", border: "1px solid var(--border)", ...extra };
 }
+
+/** A labelled full-width text input (the `.field` stack: label · input · hint). `trailing` puts a
+ *  control beside the input (e.g. a "Choose…" file-picker button). For full-width inputs where the
+ *  horizontal SettingsRow layout doesn't fit. */
+export function SettingsTextField({ label, hint, value, onChange, placeholder, type = "text", trailing }: {
+  label: ReactNode; hint?: ReactNode; value: string; onChange: (v: string) => void;
+  placeholder?: string; type?: string; trailing?: ReactNode;
+}) {
+  const input = (
+    <input className="input" type={type} value={value} placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)} />
+  );
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {trailing ? <div style={{ display: "flex", gap: 8 }}>{input}{trailing}</div> : input}
+      {hint != null && <div className="hint">{hint}</div>}
+    </div>
+  );
+}
+
+/** A labelled full-width <select> (the `.field` stack: label · select · hint). `children` are the
+ *  <option>s, so callers keep full control over option labels. */
+export function SettingsSelectField({ label, hint, value, onChange, children }: {
+  label: ReactNode; hint?: ReactNode; value: string; onChange: (v: string) => void; children: ReactNode;
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>{children}</select>
+      {hint != null && <div className="hint">{hint}</div>}
+    </div>
+  );
+}
