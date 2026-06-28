@@ -31,23 +31,8 @@ pub(crate) async fn llm_complete(
         tools,
         max_tokens: 4096,
     };
-    match kind {
-        ::llm::ProviderKind::Anthropic => ::llm::AnthropicProvider.complete(&req, &api_key).await,
-        ::llm::ProviderKind::OpenAi => ::llm::OpenAiProvider.complete(&req, &api_key).await,
-        ::llm::ProviderKind::Gemini => ::llm::GeminiProvider.complete(&req, &api_key).await,
-        ::llm::ProviderKind::Local => {
-            let base = base_url
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| ::llm::DEFAULT_LOCAL_BASE_URL.to_string());
-            ::llm::LocalProvider { base_url: base }.complete(&req, &api_key).await
-        }
-        ::llm::ProviderKind::Ollama => {
-            let base = base_url
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| ::llm::DEFAULT_LOCAL_BASE_URL.to_string());
-            // The one-shot completion path doesn't tool-call, so the generic profile is fine (no
-            // `/api/show` round-trip needed here).
-            ::llm::OllamaProvider::new(base).complete(&req, &api_key).await
-        }
-    }
+    // Build the provider once via the shared factory (#1845). The one-shot completion path doesn't
+    // tool-call, so Ollama uses the generic profile (no `/api/show` round-trip needed here).
+    let provider = ::llm::build_provider(kind, base_url, None);
+    provider.complete(&req, &api_key).await
 }

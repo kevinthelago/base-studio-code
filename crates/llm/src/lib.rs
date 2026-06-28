@@ -137,6 +137,66 @@ pub fn resolve_provider(name: &str) -> Result<ProviderKind, String> {
     }
 }
 
+/// Resolve a local/ollama `base_url`, defaulting to [`DEFAULT_LOCAL_BASE_URL`] when unset/empty.
+fn resolve_base_url(base_url: Option<String>) -> String {
+    base_url.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string())
+}
+
+/// A concrete, dispatch-by-enum wrapper over every [`LlmProvider`]. The trait uses `async fn`, so it
+/// isn't object-safe (`Box<dyn LlmProvider>` won't compile) — this enum is the single concrete type
+/// both call sites (the `llm_complete` command + the `bsc-agent` loop) build via [`build_provider`]
+/// and then call `complete`/`turn` on, instead of each repeating the 5-arm construction match (#1845).
+pub enum Provider {
+    Anthropic(AnthropicProvider),
+    OpenAi(OpenAiProvider),
+    Gemini(GeminiProvider),
+    Local(LocalProvider),
+    Ollama(OllamaProvider),
+}
+
+impl LlmProvider for Provider {
+    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+        match self {
+            Provider::Anthropic(p) => p.complete(req, api_key).await,
+            Provider::OpenAi(p) => p.complete(req, api_key).await,
+            Provider::Gemini(p) => p.complete(req, api_key).await,
+            Provider::Local(p) => p.complete(req, api_key).await,
+            Provider::Ollama(p) => p.complete(req, api_key).await,
+        }
+    }
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        match self {
+            Provider::Anthropic(p) => p.turn(t, api_key).await,
+            Provider::OpenAi(p) => p.turn(t, api_key).await,
+            Provider::Gemini(p) => p.turn(t, api_key).await,
+            Provider::Local(p) => p.turn(t, api_key).await,
+            Provider::Ollama(p) => p.turn(t, api_key).await,
+        }
+    }
+}
+
+/// Construct the [`Provider`] for a [`ProviderKind`] — the ONE provider-construction site (#1845),
+/// replacing the identical 5-arm match the `llm_complete` command and the `bsc-agent` loop each had.
+/// `base_url` is used only for `local`/`ollama` (resolved to [`DEFAULT_LOCAL_BASE_URL`] when
+/// unset/empty); `ollama_profile` is the tool-using path's pre-detected `/api/show` profile (`None` ⇒
+/// the generic profile, which is correct for the one-shot `complete` path that doesn't tool-call).
+pub fn build_provider(
+    kind: ProviderKind,
+    base_url: Option<String>,
+    ollama_profile: Option<OllamaProfile>,
+) -> Provider {
+    match kind {
+        ProviderKind::Anthropic => Provider::Anthropic(AnthropicProvider),
+        ProviderKind::OpenAi => Provider::OpenAi(OpenAiProvider),
+        ProviderKind::Gemini => Provider::Gemini(GeminiProvider),
+        ProviderKind::Local => Provider::Local(LocalProvider { base_url: resolve_base_url(base_url) }),
+        ProviderKind::Ollama => match ollama_profile {
+            Some(p) => Provider::Ollama(OllamaProvider::with_profile(resolve_base_url(base_url), p)),
+            None => Provider::Ollama(OllamaProvider::new(resolve_base_url(base_url))),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +210,30 @@ mod tests {
         assert!(matches!(resolve_provider("ollama"), Ok(ProviderKind::Ollama)));
         assert!(resolve_provider("mistral").is_err());
         assert!(resolve_provider("").is_err());
+    }
+
+    #[test]
+    fn build_provider_maps_each_kind_and_resolves_base() {
+        assert!(matches!(build_provider(ProviderKind::Anthropic, None, None), Provider::Anthropic(_)));
+        assert!(matches!(build_provider(ProviderKind::OpenAi, None, None), Provider::OpenAi(_)));
+        assert!(matches!(build_provider(ProviderKind::Gemini, None, None), Provider::Gemini(_)));
+        // local/ollama default the base url when unset or blank.
+        match build_provider(ProviderKind::Local, None, None) {
+            Provider::Local(p) => assert_eq!(p.base_url, DEFAULT_LOCAL_BASE_URL),
+            _ => panic!("expected Local"),
+        }
+        match build_provider(ProviderKind::Local, Some("   ".into()), None) {
+            Provider::Local(p) => assert_eq!(p.base_url, DEFAULT_LOCAL_BASE_URL), // blank → default
+            _ => panic!("expected Local"),
+        }
+        match build_provider(ProviderKind::Local, Some("http://10.0.0.5:8080/v1".into()), None) {
+            Provider::Local(p) => assert_eq!(p.base_url, "http://10.0.0.5:8080/v1"),
+            _ => panic!("expected Local"),
+        }
+        // ollama: generic profile (None) for the one-shot path, or a pre-detected profile.
+        assert!(matches!(build_provider(ProviderKind::Ollama, None, None), Provider::Ollama(_)));
+        let profile = OllamaProfile { supports_tools: false, stop: vec![] };
+        assert!(matches!(build_provider(ProviderKind::Ollama, None, Some(profile)), Provider::Ollama(_)));
     }
 
     // Mirror of `bsc-agent`'s `is_transient_error` — duplicated here (the `llm` crate
