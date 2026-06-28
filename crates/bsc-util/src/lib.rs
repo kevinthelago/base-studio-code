@@ -20,6 +20,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod sidecars;
 pub use sidecars::{Sidecar, SIDECARS};
 
+/// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
+/// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).
+pub mod log_streams;
+pub use log_streams::{LogStream, LOG_STREAMS};
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
