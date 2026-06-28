@@ -175,6 +175,20 @@ pub enum Provider {
     Ollama(OllamaProvider),
 }
 
+impl Provider {
+    /// The model's usable context window in tokens — the budget the `bsc-agent` loop compacts older
+    /// turns against (#1831). Ollama: the `num_ctx` we send (sized from the detected context, clamped),
+    /// else 8192. Local (generic OpenAI-compat): a conservative 8192. Hosted models have large
+    /// contexts, so a high value (compaction effectively never fires for them).
+    pub fn context_budget_tokens(&self) -> usize {
+        match self {
+            Provider::Ollama(p) => p.num_ctx().unwrap_or(8192) as usize,
+            Provider::Local(_) => 8192,
+            _ => 200_000,
+        }
+    }
+}
+
 impl LlmProvider for Provider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
         match self {
