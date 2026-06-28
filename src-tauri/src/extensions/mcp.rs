@@ -172,11 +172,13 @@ pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg
 }
 /// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
-/// the bundled `bsc-research-mcp` binary's absolute path at write time.
-pub(crate) const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
+/// the bundled `bsc-research-mcp` binary's absolute path at write time. Sourced from the canonical
+/// bundled-binary registry (#1848) so the server name is defined ONCE (the frontend sentinel + the
+/// pty path-wrapper agree by construction).
+pub(crate) const RESEARCH_MCP_MARKER: &str = bsc_util::RESEARCH_MCP;
 /// The same sentinel for the built-in Compliance server (#1005) — rewritten to the bundled
-/// `bsc-compliance-mcp` binary's absolute path at write time.
-pub(crate) const COMPLIANCE_MCP_MARKER: &str = "bsc-compliance-mcp";
+/// `bsc-compliance-mcp` binary's absolute path at write time. From the registry (#1848).
+pub(crate) const COMPLIANCE_MCP_MARKER: &str = bsc_util::COMPLIANCE_MCP;
 /// Resolve a stdio MCP command, substituting the bundled-binary absolute path for a built-in MCP
 /// marker (Research #1196, Compliance #1005). A non-marker command passes through unchanged; a
 /// marker falls back to the bare name when its bundled binary can't be located (e.g. a dev build

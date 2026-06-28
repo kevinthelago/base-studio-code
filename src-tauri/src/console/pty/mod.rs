@@ -164,14 +164,14 @@ fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
 /// since Claude Code spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the
 /// `$BSC_*_BIN` shell helpers. Thin wrapper over [`sidecar_bin_path`].
 pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
-    sidecar_bin_path("bsc-research-mcp")
+    sidecar_bin_path(bsc_util::RESEARCH_MCP)
 }
 
 /// The absolute path of the bundled `bsc-compliance-mcp` server (#1005), or None if absent. Used by
 /// `extensions/mcp.rs` to rewrite the built-in Compliance server's `.mcp.json` command to the real
 /// binary path, like [`bsc_research_mcp_bin_path`]. Thin wrapper over [`sidecar_bin_path`].
 pub(crate) fn bsc_compliance_mcp_bin_path() -> Option<std::path::PathBuf> {
-    sidecar_bin_path("bsc-compliance-mcp")
+    sidecar_bin_path(bsc_util::COMPLIANCE_MCP)
 }
 
 /// Build the environment for a session shell.

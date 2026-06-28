@@ -85,6 +85,42 @@ pub const SIDECARS: &[Sidecar] = &[
     },
 ];
 
+// ── Bundled MCP-server binaries (#1848) ──────────────────────────────────────────────
+//
+// The two bundled native MCP servers are app-shipped binaries resolved by the SAME `sidecar_bin_path`
+// lookup as the CLIs above, but they aren't CLIs: no `$BSC_*_BIN` staging and no shell helper — Claude
+// Code spawns them directly from `.mcp.json`, where the app substitutes the binary's absolute path for
+// a sentinel marker. They live here so the inventory of every app-shipped binary (CLIs + MCP servers)
+// is ONE list, and each server's name is defined ONCE — referenced by the pty path wrappers and the
+// `extensions/mcp.rs` markers instead of being re-typed in each.
+
+/// The bundled Research MCP server (#1196) — the `.mcp.json` sentinel + the `sidecar_bin_path` stem.
+pub const RESEARCH_MCP: &str = "bsc-research-mcp";
+/// The bundled Compliance MCP server (#1005) — the `.mcp.json` sentinel + the `sidecar_bin_path` stem.
+pub const COMPLIANCE_MCP: &str = "bsc-compliance-mcp";
+
+/// One bundled native MCP server: a binary shipped beside the app exe, spawned by Claude Code from
+/// `.mcp.json` (its absolute path substituted for the `name` sentinel at write time).
+pub struct BundledMcp {
+    /// The binary stem (`bsc-research-mcp`) — both the `sidecar_bin_path` lookup and the `.mcp.json`
+    /// command sentinel the app rewrites to the resolved absolute path.
+    pub name: &'static str,
+    /// One-line purpose (docs).
+    pub purpose: &'static str,
+}
+
+/// Every bundled MCP-server binary the app ships.
+pub const BUNDLED_MCP_SERVERS: &[BundledMcp] = &[
+    BundledMcp { name: RESEARCH_MCP, purpose: "literature research over scholarly sources" },
+    BundledMcp { name: COMPLIANCE_MCP, purpose: "the compliance standards corpus" },
+];
+
+/// Every app-shipped `bsc-*` binary's stem — the CLIs (`SIDECARS`) plus the bundled MCP servers — the
+/// ONE inventory of binaries `sidecar_bin_path` can resolve beside the app exe.
+pub fn all_bundled_names() -> Vec<&'static str> {
+    SIDECARS.iter().map(|s| s.name).chain(BUNDLED_MCP_SERVERS.iter().map(|m| m.name)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +163,24 @@ mod tests {
         // standard_rc excludes bsc-skill (bespoke) and bsc-agent (none).
         assert!(!SIDECARS.iter().find(|s| s.name == "bsc-skill").unwrap().standard_rc);
         assert!(!SIDECARS.iter().find(|s| s.name == "bsc-agent").unwrap().standard_rc);
+    }
+
+    #[test]
+    fn bundled_mcp_servers_are_named_and_distinct_from_the_clis() {
+        // #1848: the two bundled MCP servers are first-class registry entries; their names are the
+        // single source the pty path-wrappers + the extensions/mcp.rs markers reference.
+        let mcp: Vec<&str> = BUNDLED_MCP_SERVERS.iter().map(|m| m.name).collect();
+        assert_eq!(mcp, [RESEARCH_MCP, COMPLIANCE_MCP]);
+        for m in BUNDLED_MCP_SERVERS {
+            assert!(m.name.starts_with("bsc-") && m.name.ends_with("-mcp"), "{} bad mcp name", m.name);
+        }
+        // The unified inventory is the CLIs + the MCP servers, with no overlap.
+        let all = all_bundled_names();
+        let unique: std::collections::HashSet<&str> = all.iter().copied().collect();
+        assert_eq!(all.len(), unique.len(), "no bundled binary appears twice");
+        assert!(all.contains(&RESEARCH_MCP) && all.contains(&COMPLIANCE_MCP));
+        assert!(all.contains(&"bsc-plan"), "the CLIs are part of the one inventory too");
+        // MCP servers are NOT CLIs — never in SIDECARS (so never staged as $BSC_*_BIN / advertised).
+        assert!(!SIDECARS.iter().any(|s| s.name == RESEARCH_MCP || s.name == COMPLIANCE_MCP));
     }
 }
