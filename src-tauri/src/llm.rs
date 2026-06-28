@@ -33,6 +33,6 @@ pub(crate) async fn llm_complete(
     };
     // Build the provider once via the shared factory (#1845). The one-shot completion path doesn't
     // tool-call, so Ollama uses the generic profile (no `/api/show` round-trip needed here).
-    let provider = ::llm::build_provider(kind, base_url, None);
+    let provider = ::llm::build_provider(kind, base_url, None, None);
     provider.complete(&req, &api_key).await
 }

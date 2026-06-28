@@ -184,16 +184,27 @@ pub fn build_provider(
     kind: ProviderKind,
     base_url: Option<String>,
     ollama_profile: Option<OllamaProfile>,
+    num_ctx_cap: Option<u64>,
 ) -> Provider {
     match kind {
         ProviderKind::Anthropic => Provider::Anthropic(AnthropicProvider),
         ProviderKind::OpenAi => Provider::OpenAi(OpenAiProvider),
         ProviderKind::Gemini => Provider::Gemini(GeminiProvider),
         ProviderKind::Local => Provider::Local(LocalProvider { base_url: resolve_base_url(base_url) }),
-        ProviderKind::Ollama => match ollama_profile {
-            Some(p) => Provider::Ollama(OllamaProvider::with_profile(resolve_base_url(base_url), p)),
-            None => Provider::Ollama(OllamaProvider::new(resolve_base_url(base_url))),
-        },
+        ProviderKind::Ollama => {
+            let base = resolve_base_url(base_url);
+            let provider = match ollama_profile {
+                Some(p) => OllamaProvider::with_profile(base, p),
+                None => OllamaProvider::new(base),
+            };
+            // The user's per-agent context cap (VRAM-bound, $BSC_AGENT_NUM_CTX) overrides the default
+            // num_ctx ceiling sized from the detected context length (#1829).
+            let provider = match num_ctx_cap {
+                Some(cap) => provider.with_num_ctx_cap(cap),
+                None => provider,
+            };
+            Provider::Ollama(provider)
+        }
     }
 }
 
@@ -214,26 +225,30 @@ mod tests {
 
     #[test]
     fn build_provider_maps_each_kind_and_resolves_base() {
-        assert!(matches!(build_provider(ProviderKind::Anthropic, None, None), Provider::Anthropic(_)));
-        assert!(matches!(build_provider(ProviderKind::OpenAi, None, None), Provider::OpenAi(_)));
-        assert!(matches!(build_provider(ProviderKind::Gemini, None, None), Provider::Gemini(_)));
+        assert!(matches!(build_provider(ProviderKind::Anthropic, None, None, None), Provider::Anthropic(_)));
+        assert!(matches!(build_provider(ProviderKind::OpenAi, None, None, None), Provider::OpenAi(_)));
+        assert!(matches!(build_provider(ProviderKind::Gemini, None, None, None), Provider::Gemini(_)));
         // local/ollama default the base url when unset or blank.
-        match build_provider(ProviderKind::Local, None, None) {
+        match build_provider(ProviderKind::Local, None, None, None) {
             Provider::Local(p) => assert_eq!(p.base_url, DEFAULT_LOCAL_BASE_URL),
             _ => panic!("expected Local"),
         }
-        match build_provider(ProviderKind::Local, Some("   ".into()), None) {
+        match build_provider(ProviderKind::Local, Some("   ".into()), None, None) {
             Provider::Local(p) => assert_eq!(p.base_url, DEFAULT_LOCAL_BASE_URL), // blank → default
             _ => panic!("expected Local"),
         }
-        match build_provider(ProviderKind::Local, Some("http://10.0.0.5:8080/v1".into()), None) {
+        match build_provider(ProviderKind::Local, Some("http://10.0.0.5:8080/v1".into()), None, None) {
             Provider::Local(p) => assert_eq!(p.base_url, "http://10.0.0.5:8080/v1"),
             _ => panic!("expected Local"),
         }
         // ollama: generic profile (None) for the one-shot path, or a pre-detected profile.
-        assert!(matches!(build_provider(ProviderKind::Ollama, None, None), Provider::Ollama(_)));
-        let profile = OllamaProfile { supports_tools: false, stop: vec![] };
-        assert!(matches!(build_provider(ProviderKind::Ollama, None, Some(profile)), Provider::Ollama(_)));
+        assert!(matches!(build_provider(ProviderKind::Ollama, None, None, None), Provider::Ollama(_)));
+        let profile = OllamaProfile { supports_tools: false, stop: vec![], context_length: Some(131072) };
+        // The $BSC_AGENT_NUM_CTX cap clamps num_ctx below the detected context length (#1829).
+        match build_provider(ProviderKind::Ollama, None, Some(profile), Some(8192)) {
+            Provider::Ollama(p) => assert_eq!(p.num_ctx(), Some(8192)),
+            _ => panic!("expected Ollama"),
+        }
     }
 
     // Mirror of `bsc-agent`'s `is_transient_error` — duplicated here (the `llm` crate

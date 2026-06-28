@@ -263,22 +263,28 @@ async fn main() {
 
     eprintln!("\x1b[2m▸ contacting the model — the first local response can take a while (model load + context)…\x1b[0m");
     // Build the provider once via the shared factory (#1845) instead of a 5-arm match. The Ollama
-    // tool-using path first detects the model's `/api/show` profile (so tools are advertised/parsed
-    // correctly); every other provider ignores base_url + profile. $BSC_AGENT_BASE_URL is the
-    // app-supplied local/ollama endpoint (default Ollama when unset/empty).
+    // tool-using path first detects the model's `/api/show` profile — tool capability, stop tokens,
+    // and context length — so tools are advertised/parsed correctly and num_ctx is sized from the real
+    // context (#1829: the native /api/chat turn path sets num_ctx; without it Ollama silently truncates
+    // a long agent prompt to its ~4096 default). Other providers ignore base_url + profile.
+    // $BSC_AGENT_BASE_URL is the app-supplied local/ollama endpoint (default Ollama when unset/empty);
+    // $BSC_AGENT_NUM_CTX is the user's per-agent (VRAM-bound) context-window cap.
     let base_url = std::env::var("BSC_AGENT_BASE_URL").ok().filter(|s| !s.trim().is_empty());
+    let num_ctx_cap = std::env::var("BSC_AGENT_NUM_CTX").ok().and_then(|s| s.trim().parse::<u64>().ok());
     let ollama_profile = if matches!(kind, llm::ProviderKind::Ollama) {
         let base = base_url.as_deref().unwrap_or(llm::DEFAULT_LOCAL_BASE_URL);
         let profile = llm::detect_ollama_profile(base, &model).await;
         eprintln!(
-            "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s) detected\x1b[0m",
-            profile.supports_tools, profile.stop.len(),
+            "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s), model ctx={}\x1b[0m",
+            profile.supports_tools,
+            profile.stop.len(),
+            profile.context_length.map(|c| c.to_string()).unwrap_or_else(|| "?".into()),
         );
         Some(profile)
     } else {
         None
     };
-    let provider = llm::build_provider(kind, base_url, ollama_profile);
+    let provider = llm::build_provider(kind, base_url, ollama_profile, num_ctx_cap);
     let result = run_with_provider(provider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await;
 
     if let Err(e) = result {
