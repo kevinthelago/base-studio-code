@@ -55,6 +55,27 @@ export function Card({ label, hint, badge, accent, children }: {
   );
 }
 
+/** A compact list-item card (mono title row + optional meta line) for the stage bodies' simple
+ *  lists (skills, automations). `badge` sits inline after the title; `highlight` rings it in the
+ *  accent hue (e.g. a freshly-authored skill). */
+export function ListItemCard({ title, meta, badge, highlight }: {
+  title: ReactNode; meta?: ReactNode; badge?: ReactNode; highlight?: boolean;
+}) {
+  return (
+    <div style={{
+      padding: "8px 10px", borderRadius: 6,
+      background: highlight ? "var(--accent-soft)" : "var(--bg-canvas)",
+      border: highlight ? "1px solid var(--accent)" : "1px solid var(--border-soft)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ fontFamily: mono, fontSize: 11, color: "var(--fg)" }}>{title}</div>
+        {badge}
+      </div>
+      {meta != null && <div style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{meta}</div>}
+    </div>
+  );
+}
+
 /** Source row header: mode chip · label · location. */
 export function SourceHead({ s, right }: { s: CollectSource; right?: ReactNode }) {
   return (
