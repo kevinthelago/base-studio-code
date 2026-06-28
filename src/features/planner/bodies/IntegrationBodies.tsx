@@ -3,6 +3,7 @@
 // fills the sink + cadence here; the `destinationDefined` / `syncDefined` gate signals derive from it.
 
 import { useAppStore } from "@/store";
+import { Notice } from "@/shared/ui/Notice";
 import {
   DESTINATIONS, destinationMeta, WRITE_MODES, SYNC_MODES,
   defaultIntegrationConfig, destinationChecks, syncChecks,
@@ -15,14 +16,9 @@ function Readiness({ checks, label }: { checks: { ok: boolean }[]; label: string
   const ok = checks.filter((c) => c.ok).length;
   const ready = ok === checks.length;
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
-      background: `color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
-      border: `1px solid color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: 99, background: ready ? "var(--success)" : "var(--accent)" }} />
-      <span style={{ fontFamily: MONO, fontSize: 11, color: ready ? "var(--success)" : "var(--accent)" }}>{ready ? `${label} defined` : `${ok}/${checks.length} set`}</span>
-    </div>
+    <Notice tone={ready ? "success" : "accent"} dot>
+      {ready ? `${label} defined` : `${ok}/${checks.length} set`}
+    </Notice>
   );
 }
 

@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
+import { Notice } from "@/shared/ui/Notice";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
   deriveDataModel, presetToConnector, registerPresetConnectors, proposeFromPitch,
@@ -152,18 +153,11 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   return (
     <div data-testid="source-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* top readiness banner */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 9, padding: "9px 13px", borderRadius: "var(--r-md)",
-        background: `color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 90%)`,
-        border: `1px solid color-mix(in oklch, ${ready ? "var(--success)" : "var(--accent)"}, transparent 72%)`,
-      }}>
-        <span style={{ width: 7, height: 7, borderRadius: 99, background: ready ? "var(--success)" : "var(--accent)" }} />
-        <span style={{ fontFamily: MONO, fontSize: 11, color: ready ? "var(--success)" : "var(--accent)" }}>
-          {total === 0 ? "Declare your sources" : ready ? "✓ sources connected" : `${scanned} / ${total} connected`}
-        </span>
-        <span style={{ flex: 1 }} />
+      <Notice tone={ready ? "success" : "accent"} dot right={
         <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only integrations · credentials never leave this device"}</span>
-      </div>
+      }>
+        {total === 0 ? "Declare your sources" : ready ? "✓ sources connected" : `${scanned} / ${total} connected`}
+      </Notice>
 
       {/* planner-proposed sources */}
       {proposedPending.length > 0 && (
