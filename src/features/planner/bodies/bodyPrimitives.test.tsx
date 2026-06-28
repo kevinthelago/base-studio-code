@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Card, Kv, ModeChip, EntityChip, Readiness } from "./bodyPrimitives";
+import { Card, Kv, ModeChip, EntityChip, Readiness, ListItemCard } from "./bodyPrimitives";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 describe("bodyStyles — shared inline-style constants", () => {
@@ -43,5 +43,16 @@ describe("bodyPrimitives — shared focused-pane primitives", () => {
     render(<Readiness checks={[{ id: "a", label: "all set", ok: true }]} />);
     expect(screen.getByText("all set")).toBeTruthy();
     expect(screen.getByText("gate met")).toBeTruthy();
+  });
+
+  it("renders a ListItemCard with title, optional meta, and badge", () => {
+    const { rerender } = render(<ListItemCard title="my-skill" meta="does a thing" badge={<span>NEW</span>} />);
+    expect(screen.getByText("my-skill")).toBeTruthy();
+    expect(screen.getByText("does a thing")).toBeTruthy();
+    expect(screen.getByText("NEW")).toBeTruthy();
+    // meta omitted when not provided
+    rerender(<ListItemCard title="bare" />);
+    expect(screen.getByText("bare")).toBeTruthy();
+    expect(screen.queryByText("does a thing")).toBeNull();
   });
 });
