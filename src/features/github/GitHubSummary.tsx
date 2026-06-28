@@ -4,6 +4,7 @@
 // the per-card UI in `summary/*`, and the React-free shaping in `lib/githubSummary.ts`.
 
 import { useAppStore } from "@/store";
+import { SectionLabel } from "@/shared/ui/SectionLabel";
 import { useGithubSummary } from "./useGithubSummary";
 import { ActivityHeatmap } from "./summary/ActivityHeatmap";
 import { LanguageMix } from "./summary/LanguageMix";
@@ -50,7 +51,7 @@ export function GitHubSummary() {
             ["merged PRs",       loading ? "…" : String(totalMerged),   "last ~90 days via events",      "muted"  ],
           ] as const).map(([k, v, sub, tone]) => (
             <div key={k} className="card" style={{ padding: "10px 12px" }}>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
+              <SectionLabel>{k}</SectionLabel>
               <div style={{
                 fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : tone === "info" ? "var(--info)" : "var(--fg)",

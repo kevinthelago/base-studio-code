@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { SectionLabel } from "@/shared/ui/SectionLabel";
 
 /**
  * GitHub-not-connected state for the Projects page — the leaner of the two
@@ -39,10 +40,7 @@ export function ProjectsEmpty() {
             borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             textAlign: "left",
           }}>
-            <div style={{
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-              textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6,
-            }}>Scopes requested</div>
+            <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {["repo", "project", "issues", "read:org"].map(s => (
                 <span key={s} className="tag">{s}</span>
