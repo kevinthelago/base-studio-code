@@ -3,6 +3,7 @@ import { paneCount, type Every, type Automation, type SimpleWhen } from "./lib/s
 import { isValidCron } from "./lib/cron";
 import { fmtStamp } from "./format";
 import { Pane } from "@/shared/ui/Pane";
+import { EmptyState } from "@/shared/ui/EmptyState";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 
@@ -38,13 +39,11 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew }: {
 
   if (automations.length === 0) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>No automations yet</div>
-        <div className="hint" style={{ maxWidth: 380, textAlign: "center", lineHeight: 1.6 }}>
-          Schedule a command to fire into a console pane on a cadence.
-        </div>
-        <button className="btn primary" onClick={onNew}>+ New automation</button>
-      </div>
+      <EmptyState
+        title="No automations yet"
+        description="Schedule a command to fire into a console pane on a cadence."
+        actions={<button className="btn primary" onClick={onNew}>+ New automation</button>}
+      />
     );
   }
 
