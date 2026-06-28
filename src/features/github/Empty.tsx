@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { SectionLabel } from "@/shared/ui/SectionLabel";
 
 /**
  * GitHub-not-connected state for the GitHub page — the richer of the two
@@ -46,10 +47,7 @@ export function GitHubEmpty() {
               marginTop: 20, padding: "12px 14px",
               borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             }}>
-              <div style={{
-                fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-                textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6,
-              }}>Scopes requested</div>
+              <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {["repo", "project", "read:org", "read:user"].map(s => (
                   <span key={s} className="tag">{s}</span>
@@ -67,10 +65,7 @@ export function GitHubEmpty() {
 
         {/* Feature list — the GitHub page's current surfaces (#498/#499). */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{
-            fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
-            textTransform: "uppercase", letterSpacing: ".08em",
-          }}>what you get</div>
+          <SectionLabel style={{ letterSpacing: ".08em" }}>what you get</SectionLabel>
           {[
             ["Portfolio summary", "Every repo and GitHub Project in one view, with live analytics — open issues, PRs, CI, and contributor activity."],
             ["Project boards",    "Open any GitHub Project as a real-time Kanban mirror. Drag to move; columns map to GH status fields."],
