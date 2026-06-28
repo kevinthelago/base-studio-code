@@ -13,7 +13,7 @@ import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
 } from "@/features/settings/lib/keybindings";
-import { VIEW_ORDER } from "@/app/console/panes/ViewTabs";
+import { VIEW_ORDER } from "@/app/console/panes/viewDefs";
 
 function keyToTermBytes(e: KeyboardEvent): string | null {
   const { key, ctrlKey, altKey, shiftKey } = e;

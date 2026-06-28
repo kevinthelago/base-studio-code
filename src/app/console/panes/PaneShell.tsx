@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { createPortal } from "react-dom";
-import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
+import { type ViewKey, VIEW_DEFS } from "./viewDefs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 import { placeMenu, type MenuPlacement } from "./menuPlacement";
 import { toModelId } from "@/app/console/lib/modelDisplay";
