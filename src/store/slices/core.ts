@@ -5,6 +5,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
 
 type CoreSlice = Pick<AppStore,
   "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
@@ -16,7 +17,10 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
 
       // API-tier LLM provider config (#1085). claudeApiKey is the anthropic key.
       llmProvider: "anthropic",
-      setLlmProvider: (p) => set({ llmProvider: p }),
+      // Switch the model field to the new provider's default when it still holds another provider's
+      // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
+      // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
+      setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
       llmModel: "claude-sonnet-4-6",
       setLlmModel: (m) => set({ llmModel: m }),
       openaiKey: "",

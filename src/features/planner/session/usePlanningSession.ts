@@ -19,6 +19,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { Dispatch, SetStateAction } from "react";
 import { useAppStore } from "@/store";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
+import { plannerLaunchConfig } from "./plannerLaunch";
 
 export interface PlanningSessionDeps {
   termRef: MutableRefObject<Terminal | null>;
@@ -103,21 +104,40 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     await safeInvoke("pty_kill", { paneId: paneId }, undefined, console.error);
     const paths = await regenerateWorkspace();
     const token = useAppStore.getState().githubToken;
-    const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
-    // A deliberate restart launches a brand-new `claude` — re-greet with the intro (#1240). No
+    const ghEnv: Record<string, string> = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
+    // A deliberate restart launches a brand-new session — re-greet with the intro (#1240). No
     // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
     const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
     const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
       (e: unknown) => console.error("planner intro prompt failed:", e));
-    const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "") || undefined;
+    // Relaunch on the selected harness (Claude Code or bsc-agent for any LLM, incl. a forced
+    // local/ollama provider), carrying the plan-only role gate + provider/model/MCP via BSC_AGENT_*
+    // env so a restarted local-model planner keeps the same context, prompt, state, and permissions.
+    // A restart is a deliberate brand-new session (#1240) — re-greet with the intro and DON'T request
+    // resume (no `continueSession`), so clear-plan / switch-blueprint start genuinely fresh.
+    const launch = plannerLaunchConfig(useAppStore.getState(), ghEnv);
+    // bsc-agent (one-shot) never gets stage 1's directive via runtime injection — bake it into the
+    // intro so a weak local model begins the stage instead of waiting to be advanced (#qwen).
+    let firstStageDirective: string | undefined;
+    if (launch.providerId === "bsc-agent") {
+      const firstStage = stageIdsFor(effectiveProjectId)[0];
+      if (firstStage) {
+        firstStageDirective = await safeInvoke<string>(
+          "planner_stage_directive", { id: firstStage }, "",
+          (e: unknown) => console.error("planner stage directive failed:", e),
+        ) || undefined;
+      }
+    }
+    const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "", firstStageDirective) || undefined;
     await safeInvoke("pty_create", {
       paneId: paneId,
       cols: term.cols,
       rows: term.rows,
       cwd: paths?.planning_dir ?? "",
-      initCmd: "claude",
+      initCmd: launch.providerId === "bsc-agent" ? launch.initCmd : "claude",
       startupPrompt,
-      env: ghEnv,
+      env: launch.env,
+      providerId: launch.providerId,
     }, undefined, console.error);
     setRestarting(false);
   }
