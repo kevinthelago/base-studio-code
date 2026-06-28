@@ -57,16 +57,12 @@ pub fn to_ms(ts: &str) -> Option<i64> {
     bsc_util::iso8601_to_epoch_ms(ts)
 }
 
-/// The streams a `bsc-logs` query knows about, with their file + canonical name.
-const STREAMS: &[(&str, &str)] = &[
-    ("tool", "audit.log"),
-    ("skill", "skills.log"),
-    ("mcp", "mcp.log"),
-    ("hook", "hooks.log"),
-    ("activity", "activity.log"),
-    ("done", "done.log"),
-    ("coord", "coord.log"),
-];
+/// The streams a `bsc-logs` query knows about — `(canonical name, file)` — from the shared
+/// `bsc_util::LOG_STREAMS` registry (#1847), the ONE list also read by the pty env-writer. The
+/// token/cost stream is staged + written but read via the separate cost path, so it's excluded here.
+fn streams() -> Vec<(&'static str, &'static str)> {
+    bsc_util::log_streams::reader_streams()
+}
 
 /// Resolve a user-supplied stream alias to its canonical name (e.g. `audit`→`tool`, `skills`→`skill`).
 pub fn canonical_stream(name: &str) -> Option<&'static str> {
@@ -124,7 +120,7 @@ fn parse_line(stream: &'static str, line: &str) -> Option<LogEvent> {
 
 /// Read + parse one stream's events from `dir` (unsorted). Missing file ⇒ empty; malformed lines skipped.
 pub fn read_stream(dir: &Path, stream: &'static str) -> Vec<LogEvent> {
-    let file = STREAMS.iter().find(|(s, _)| *s == stream).map(|(_, f)| *f);
+    let file = streams().into_iter().find(|(s, _)| *s == stream).map(|(_, f)| f);
     let Some(file) = file else { return vec![] };
     let text = std::fs::read_to_string(dir.join(file)).unwrap_or_default();
     text.lines().filter(|l| !l.trim().is_empty()).filter_map(|l| parse_line(stream, l)).collect()
@@ -141,7 +137,7 @@ pub fn query(
     limit: Option<usize>,
 ) -> Vec<LogEvent> {
     let wanted: Vec<&'static str> =
-        if streams.is_empty() { STREAMS.iter().map(|(s, _)| *s).collect() } else { streams.to_vec() };
+        if streams.is_empty() { self::streams().into_iter().map(|(s, _)| s).collect() } else { streams.to_vec() };
     let mut out: Vec<LogEvent> = Vec::new();
     for s in wanted {
         for e in read_stream(dir, s) {

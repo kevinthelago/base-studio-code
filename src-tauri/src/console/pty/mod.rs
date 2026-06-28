@@ -274,52 +274,16 @@ fn wire_bsc_env(
     for (k, v) in crate::platform::pkgcache::package_cache_env(&base, cwd) {
         cmd.env(k, v);
     }
-    // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
-    // settings.json by the frontend) appends one redacted TSV line per tool attempt to
-    // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
-    // panes whose settings install the hook actually write).
-    cmd.env("BSC_AUDIT_LOG", to_bash_path(&base.join("audit.log").to_string_lossy()));
+    // Observability log streams (#1847): every per-pane TSV a `bsc-*` hook appends to is a row in the
+    // canonical `bsc_util::LOG_STREAMS` registry — the ONE list shared with the unified `bsc-logs`
+    // reader (`crates/logs`); each row's doc comment is the stream's spec (which hook writes it + the
+    // line shape). Point each `$BSC_*_LOG` at the app-wide file under `base`; setting them for every
+    // pane is harmless (only a pane whose settings.json installs the hook actually writes). `pane_id`
+    // is the id every line is tagged with (via `$BSC_AUDIT_PANE`).
     cmd.env("BSC_AUDIT_PANE", pane_id);
-    // Skill usage log (#406): the `bsc-skill` Skill-tool hook (added to gated panes'
-    // settings.json by the frontend) appends one TSV line per skill invocation to this
-    // app-wide log, tagged with the pane id via BSC_AUDIT_PANE. Set for every pane
-    // (harmless — only panes whose settings install the hook actually write).
-    cmd.env("BSC_SKILL_LOG", to_bash_path(&base.join("skills.log").to_string_lossy()));
-    // Hook-fire log (#867 follow-up): the `bsc-hook` wrapper around each USER hook (the
-    // frontend wraps the command in toHookPayload) appends one TSV line per fire to this
-    // app-wide log, for the Hook Analytics tab. Set for every pane (harmless — only panes
-    // whose settings install wrapped user hooks write).
-    cmd.env("BSC_HOOK_LOG", to_bash_path(&base.join("hooks.log").to_string_lossy()));
-    // MCP-call log (#879 PR 2): the `bsc-mcp` PreToolUse+PostToolUse hook pair (added to gated
-    // panes' settings.json by the frontend) appends one TSV line per MCP call — round-trip
-    // latency + outcome — to this app-wide log, for the MCP Analytics tab. Set for every pane
-    // (harmless — only panes whose settings install the hooks actually write).
-    cmd.env("BSC_MCP_LOG", to_bash_path(&base.join("mcp.log").to_string_lossy()));
-    // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook (added to
-    // gated panes' settings.json by the frontend) pipes Claude Code's hook JSON — which
-    // carries `session_id` + `transcript_path` — into this; it appends one TSV line
-    // (`ts \t pane \t session_id \t transcript_path`) to this app-wide log, tagged with
-    // the pane id via BSC_AUDIT_PANE. The transcript itself holds the per-message usage;
-    // `read_token_usage` parses + prices it. Set for every pane (harmless — only panes
-    // whose settings install the hook actually write). Claude Code hooks don't expose
-    // token usage as a field, so the transcript is the only per-session source.
-    cmd.env("BSC_TOKENS_LOG", to_bash_path(&base.join("tokens.log").to_string_lossy()));
-    // Turn-activity log (#1184): the `bsc-activity` UserPromptSubmit/Stop/SubagentStop hooks (added
-    // to claude-launching panes' settings.json by the frontend) append one TSV line per turn boundary
-    // — `ts \t pane \t run|idle` — to this app-wide log, tagged with the pane id via BSC_AUDIT_PANE.
-    // The frontend polls the latest state per pane (`read_pane_activity`) and gates the status dot's
-    // silence timer so a worker that's working-but-silent doesn't false-idle. Set for every pane
-    // (harmless — only panes whose settings install the hooks actually write).
-    cmd.env("BSC_ACTIVITY_LOG", to_bash_path(&base.join("activity.log").to_string_lossy()));
-    // Worker self-close log (#1379): a finished WORKER calls `bsc-done`, which appends `ts \t pane`
-    // here. The frontend polls it (`read_done_panes`) and reaps the pane — classify the resting
-    // state from plan.db, `markPaneEnded`, and `pty_kill`. Set for every pane (harmless — only a
-    // worker told to self-close ever writes).
-    cmd.env("BSC_DONE_LOG", to_bash_path(&base.join("done.log").to_string_lossy()));
-    // Coordination log (#199): `bsc-blocked --on <ref>` appends a structured
-    // blocked event here (tagged with the pane id via BSC_AUDIT_PANE); the director's
-    // merge/close append satisfy events later. Set for every pane; only --on writes.
-    cmd.env("BSC_COORD_LOG", to_bash_path(&base.join("coord.log").to_string_lossy()));
+    for s in bsc_util::LOG_STREAMS {
+        cmd.env(s.env_var, to_bash_path(&base.join(s.filename).to_string_lossy()));
+    }
     // bsc-logs (#1716): point every session at the log directory the unified `bsc-logs` query CLI
     // reads (the `logs::log_dir` resolver honors $BSC_LOG_DIR, else `~/.base-studio-code`). It's the
     // same `base` dir that holds all the *_LOG TSVs above + `perf.db`, so a live agent can drill into
@@ -1014,6 +978,20 @@ mod tests {
         let mut cmd = CommandBuilder::new("bash");
         let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
         assert!(cmd.get_env("BSC_LOG_DIR").is_some(), "BSC_LOG_DIR must be exported for bsc-logs");
+    }
+
+    #[test]
+    fn wire_bsc_env_exports_every_registry_log_stream() {
+        // #1847: the pty writer stages every `bsc_util::LOG_STREAMS` row's $BSC_*_LOG — the same
+        // registry the unified `bsc-logs` reader resolves filenames from — so the writer + reader
+        // can't drift on the stream set. Plus the pane tag every line carries.
+        use super::CommandBuilder;
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
+        for s in bsc_util::LOG_STREAMS {
+            assert!(cmd.get_env(s.env_var).is_some(), "{} ({}) must be exported", s.key, s.env_var);
+        }
+        assert!(cmd.get_env("BSC_AUDIT_PANE").is_some(), "the pane tag must be exported");
     }
 
     #[test]
