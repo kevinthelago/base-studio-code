@@ -36,3 +36,14 @@ pub(crate) async fn llm_complete(
     let provider = ::llm::build_provider(kind, base_url, None, None);
     provider.complete(&req, &api_key).await
 }
+
+/// List the models installed on the local Ollama endpoint (#1830) — drives the Settings model
+/// dropdown + the "test connection" button. `base_url` defaults to Ollama's local endpoint; an `Err`
+/// means the endpoint is unreachable (Ollama not running / wrong URL).
+#[tauri::command]
+pub(crate) async fn ollama_models(base_url: Option<String>) -> Result<Vec<String>, String> {
+    let base = base_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| ::llm::DEFAULT_LOCAL_BASE_URL.to_string());
+    ::llm::list_models(&base).await
+}
