@@ -146,6 +146,34 @@ fn show_url(base: &str) -> String {
     format!("{}/api/show", native_root(base))
 }
 
+/// Ollama's native `/api/tags` endpoint — the installed-model list (#1830).
+fn tags_url(base: &str) -> String {
+    format!("{}/api/tags", native_root(base))
+}
+
+/// List the model names installed on the Ollama endpoint, sorted (#1830). Drives the Settings model
+/// dropdown and doubles as a connectivity probe — `Err("Request failed: …")` means the endpoint is
+/// unreachable (Ollama not running / wrong URL). Pure parse in [`parse_models`].
+pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
+    let v = super::get_json(&tags_url(base_url)).await?;
+    Ok(parse_models(&v))
+}
+
+/// Pull the sorted model names out of an `/api/tags` response (`{ models: [{ name, … }] }`). Pure.
+fn parse_models(v: &Value) -> Vec<String> {
+    let mut names: Vec<String> = v
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
 /// Query Ollama's `/api/show` for `model` and derive its [`OllamaProfile`]. Best-effort: any failure
 /// (server down, old version, non-Ollama endpoint) yields [`OllamaProfile::default`] so the session
 /// still runs with the generic behavior. Pure derivation is in [`profile_from_show`].
@@ -393,6 +421,21 @@ mod tests {
         assert_eq!(native_chat_url("http://10.0.0.5:8080"), "http://10.0.0.5:8080/api/chat");
         // The one-shot path keeps the OpenAI-compat endpoint.
         assert_eq!(chat_completions_url("http://localhost:11434/v1"), "http://localhost:11434/v1/chat/completions");
+    }
+
+    #[test]
+    fn tags_url_and_parse_models() {
+        assert_eq!(tags_url("http://localhost:11434/v1"), "http://localhost:11434/api/tags");
+        assert_eq!(tags_url("http://localhost:11434"), "http://localhost:11434/api/tags");
+        // Names are pulled from models[].name and sorted; entries without a name are skipped.
+        let v = json!({ "models": [
+            { "name": "qwen3-coder:latest", "size": 1 },
+            { "name": "llama3.1:8b" },
+            { "size": 9 },
+        ]});
+        assert_eq!(parse_models(&v), vec!["llama3.1:8b", "qwen3-coder:latest"]);
+        // No models array (unreachable-ish / empty) → empty list, not a panic.
+        assert!(parse_models(&json!({})).is_empty());
     }
 
     #[test]

@@ -115,6 +115,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             crate::llm::llm_complete,
+            crate::llm::ollama_models,
             github::github_request,
             github::gist_create,
             github::gist_update,

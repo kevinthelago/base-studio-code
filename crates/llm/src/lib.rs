@@ -19,7 +19,7 @@ mod http_it;
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
-pub use ollama::{detect_ollama_profile, OllamaProfile, OllamaProvider};
+pub use ollama::{detect_ollama_profile, list_models, OllamaProfile, OllamaProvider};
 pub use openai::OpenAiProvider;
 pub use toolparse::{recover_tool_calls, strip_tool_syntax};
 pub use turn::{Msg, ToolCall, ToolDef, Turn, TurnResult};
@@ -97,6 +97,27 @@ pub(crate) async fn post_json(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        return Err(format_api_error(status, &json));
+    }
+    Ok(json)
+}
+
+/// Issue a GET and return the parsed JSON body — same timeouts + error-string formats as [`post_json`]
+/// (a down endpoint fails with `"Request failed: …"`). For Ollama's GET endpoints, e.g. `/api/tags`
+/// model discovery (#1830).
+pub(crate) async fn get_json(url: &str) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let response = client.get(url).send().await.map_err(|e| format!("Request failed: {}", e))?;
     let status = response.status();
     let json: serde_json::Value = response
         .json()
