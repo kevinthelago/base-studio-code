@@ -95,6 +95,78 @@ pub fn block_on_tool<F: std::future::Future>(fut: F) -> F::Output {
     tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
 }
 
+/// Tokens held back from the context budget for the model's response + an incoming tool result — so a
+/// compacted prompt still has room to answer. (`max_tokens` is 4096.) (#1831)
+const COMPACT_RESERVE_TOKENS: usize = 4096 + 512;
+
+/// Rough token estimate for a string — chars/4 (good enough to keep a conversation under the model's
+/// context window; exact per-model tokenization isn't worth a dependency here). (#1831)
+fn estimate_tokens(s: &str) -> usize {
+    s.len() / 4 + 1
+}
+
+/// Approximate tokens a message contributes to the prompt.
+fn msg_tokens(m: &Msg) -> usize {
+    match m {
+        Msg::User(s) => estimate_tokens(s),
+        Msg::Assistant { text, tool_calls } => {
+            estimate_tokens(text)
+                + tool_calls
+                    .iter()
+                    .map(|tc| estimate_tokens(&tc.name) + estimate_tokens(&tc.args.to_string()))
+                    .sum::<usize>()
+        }
+        Msg::ToolResult { content, .. } => estimate_tokens(content),
+    }
+}
+
+/// Compact a conversation to fit a context `budget` (#1831): keep the system prompt (counted via
+/// `system_tokens`, separate from `messages`), the first user message (the task), and the most-recent
+/// messages that fit; elide the middle, replacing it with a marker. Drops only at safe boundaries — a
+/// dangling tool-result whose assistant call was elided is removed too — so the OpenAI/Ollama
+/// tool_call↔result pairing stays valid. Returns the (possibly) compacted messages + whether it
+/// changed anything. Pure → unit-tested. (Elision, not summarization — a summarize pass is a future
+/// refinement.)
+pub(crate) fn compact_messages(
+    system_tokens: usize,
+    messages: Vec<Msg>,
+    budget: usize,
+    reserve: usize,
+) -> (Vec<Msg>, bool) {
+    let usable = budget.saturating_sub(reserve);
+    let total: usize = system_tokens + messages.iter().map(msg_tokens).sum::<usize>();
+    if total <= usable || messages.len() <= 2 {
+        return (messages, false);
+    }
+    // Anchor the first user message (the task), if the head is one.
+    let mut head: Vec<Msg> = Vec::new();
+    if matches!(messages.first(), Some(Msg::User(_))) {
+        head.push(messages[0].clone());
+    }
+    let marker = Msg::User("[earlier conversation elided to fit the context window]".to_string());
+    let head_tokens: usize = head.iter().map(msg_tokens).sum::<usize>() + msg_tokens(&marker);
+    let mut budget_left = usable.saturating_sub(system_tokens + head_tokens);
+    // Keep the most-recent messages that fit (scanning from the end, after the anchored head).
+    let mut kept_rev: Vec<Msg> = Vec::new();
+    for m in messages[head.len()..].iter().rev() {
+        let t = msg_tokens(m);
+        if t > budget_left {
+            break;
+        }
+        budget_left -= t;
+        kept_rev.push(m.clone());
+    }
+    kept_rev.reverse();
+    // The kept region must not begin with a dangling tool-result (its assistant call was elided).
+    while matches!(kept_rev.first(), Some(Msg::ToolResult { .. })) {
+        kept_rev.remove(0);
+    }
+    let mut out = head;
+    out.push(marker);
+    out.extend(kept_rev);
+    (out, true)
+}
+
 /// Run the agent loop: build a [`Turn`] from the conversation + tools, ask the
 /// provider, and while it returns tool calls, execute them, append the results, and
 /// continue — until the provider answers with no tool calls (final text) or the
@@ -129,17 +201,36 @@ pub async fn run_agent<P: LlmProvider>(
     let tool_defs: Vec<ToolDef> = tools.iter().map(|t| t.def.clone()).collect();
     let mut last_text = String::new();
 
+    // Context-budget compaction (#1831): the model's usable window in tokens, set by the app from the
+    // provider's num_ctx ($BSC_AGENT_CONTEXT_BUDGET; defaults high for hosted models, so a no-op there).
+    // The fixed system prompt + a response reserve are subtracted; older turns are elided to fit.
+    let context_budget: usize = std::env::var("BSC_AGENT_CONTEXT_BUDGET")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(200_000);
+    let system_tokens = estimate_tokens(&format!("{AGENT_INSTRUCTIONS}\n\n{system}"));
+    let mut announced_compaction = false;
+
     // Outer loop = one iteration per USER turn. One-shot (non-interactive) runs it exactly once; in
     // interactive mode each pass handles a user message, then blocks for the next on stdin.
     loop {
         let mut answered = false;
         for step in 0..max_steps {
+            // Compact older turns to fit the model's context window (#1831) — a clone for THIS request;
+            // the persisted `messages` keep the full history (a later `--continue` loses nothing it
+            // wouldn't have had to drop anyway).
+            let (turn_messages, did_compact) =
+                compact_messages(system_tokens, messages.clone(), context_budget, COMPACT_RESERVE_TOKENS);
+            if did_compact && !announced_compaction {
+                eprintln!("\x1b[2m· compacted older turns to fit the ~{context_budget}-token context window\x1b[0m");
+                announced_compaction = true;
+            }
             let turn = Turn {
                 system: format!(
                     "{AGENT_INSTRUCTIONS}\n\n{}",
                     system
                 ),
-                messages: messages.clone(),
+                messages: turn_messages,
                 tools: tool_defs.clone(),
                 model: model.to_string(),
                 max_tokens: 4096,
@@ -938,6 +1029,56 @@ mod tests {
     use llm::{LlmRequest, ToolCall};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::cell::Cell;
+
+    #[test]
+    fn compact_messages_leaves_a_short_conversation_unchanged() {
+        let msgs = vec![
+            Msg::User("hi".into()),
+            Msg::Assistant { text: "hello".into(), tool_calls: vec![] },
+        ];
+        let (out, did) = compact_messages(10, msgs.clone(), 10_000, 100);
+        assert!(!did, "well under budget ⇒ no compaction");
+        assert_eq!(out.len(), msgs.len());
+    }
+
+    #[test]
+    fn compact_messages_elides_the_middle_and_keeps_tool_pairing() {
+        // task + 10 tool rounds (~100 tokens of content each) + a final turn; a tight budget forces
+        // elision of the middle.
+        let mut msgs = vec![Msg::User("TASK: do the thing".into())];
+        for i in 0..10 {
+            msgs.push(Msg::Assistant {
+                text: String::new(),
+                tool_calls: vec![ToolCall { id: format!("c{i}"), name: "read_file".into(), args: serde_json::json!({ "path": format!("file{i}") }) }],
+            });
+            msgs.push(Msg::ToolResult { id: format!("c{i}"), content: "x".repeat(400) });
+        }
+        msgs.push(Msg::User("FINAL question".into()));
+        let before = msgs.len();
+
+        let (out, did) = compact_messages(100, msgs, 600, 100); // usable = 500 tokens
+        assert!(did, "over budget ⇒ compacts");
+        assert!(out.len() < before, "the middle is elided");
+        // Anchored: the original task first, then the elision marker.
+        assert!(matches!(&out[0], Msg::User(s) if s.starts_with("TASK")));
+        assert!(matches!(&out[1], Msg::User(s) if s.contains("elided")));
+        // The most-recent turn survives.
+        assert!(matches!(out.last(), Some(Msg::User(s)) if s.starts_with("FINAL")));
+        // Pairing intact: every kept tool-result follows an assistant tool-call (or another result) —
+        // never a dangling result whose call was elided.
+        for w in out.windows(2) {
+            if matches!(&w[1], Msg::ToolResult { .. }) {
+                assert!(
+                    matches!(&w[0], Msg::Assistant { tool_calls, .. } if !tool_calls.is_empty())
+                        || matches!(&w[0], Msg::ToolResult { .. }),
+                    "a kept tool-result must follow its assistant call (or another result)",
+                );
+            }
+        }
+        // Fits the usable budget after compaction.
+        let after: usize = 100 + out.iter().map(msg_tokens).sum::<usize>();
+        assert!(after <= 500, "compacted to within usable budget, got {after}");
+    }
 
     /// The injected instructions must teach a local model the thing it kept getting wrong: a CLI like
     /// `bsc-files` is run THROUGH the `bash` tool, not as its own function — and it must never refuse

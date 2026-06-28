@@ -285,6 +285,8 @@ async fn main() {
         None
     };
     let provider = llm::build_provider(kind, base_url, ollama_profile, num_ctx_cap);
+    // Tell the agent loop the model's context budget so it can compact older turns to fit (#1831).
+    std::env::set_var("BSC_AGENT_CONTEXT_BUDGET", provider.context_budget_tokens().to_string());
     let result = run_with_provider(provider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await;
 
     if let Err(e) = result {
