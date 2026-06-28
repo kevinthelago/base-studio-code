@@ -33,6 +33,25 @@ fn normalize_tool_name(s: &str) -> String {
 ///   3. a small alias map for common synonyms (`create_file`/`str_replace`/`run`/`cat`/…).
 ///
 /// An exact match always wins, so a real tool name is never remapped. Pure → unit-tested.
+/// Tool-name aliases: a near-miss name a local model reaches for → the canonical tool. Table-driven
+/// (#1846) so the synonyms live in data, not a match arm; `every_alias_targets_a_real_native_tool…`
+/// asserts every target is a real native tool, so the table can't point at a renamed/removed tool.
+const TOOL_ALIASES: &[(&str, &str)] = &[
+    ("file_create", "write_file"), ("create_file", "write_file"), ("file_write", "write_file"),
+    ("new_file", "write_file"), ("newfile", "write_file"), ("make_file", "write_file"), ("save_file", "write_file"),
+    ("file_edit", "edit_file"), ("str_replace", "edit_file"), ("str_replace_editor", "edit_file"),
+    ("replace_in_file", "edit_file"), ("apply_patch", "edit_file"), ("patch_file", "edit_file"),
+    ("file_read", "read_file"), ("open_file", "read_file"), ("cat", "read_file"), ("view_file", "read_file"),
+    ("file_list", "list_files"), ("list_dir", "list_files"), ("listdir", "list_files"),
+    ("list_directory", "list_files"), ("ls", "list_files"),
+    ("file_stat", "file_info"), ("stat", "file_info"),
+    ("run", "bash"), ("run_command", "bash"), ("shell", "bash"), ("exec", "bash"),
+    ("execute", "bash"), ("command", "bash"), ("run_shell", "bash"),
+    ("search", "grep"), ("grep_search", "grep"), ("ripgrep", "grep"),
+    ("glob_search", "glob"), ("find_files", "glob"),
+    ("fetch", "webfetch"), ("http_get", "webfetch"), ("web_fetch", "webfetch"), ("curl", "webfetch"),
+];
+
 fn resolve_tool<'a>(name: &str, tools: &'a [Tool]) -> Option<&'a Tool> {
     if let Some(t) = tools.iter().find(|t| t.def.name == name) {
         return Some(t);
@@ -41,20 +60,9 @@ fn resolve_tool<'a>(name: &str, tools: &'a [Tool]) -> Option<&'a Tool> {
     if let Some(t) = tools.iter().find(|t| normalize_tool_name(&t.def.name) == n) {
         return Some(t);
     }
-    // Synonyms a model invents when it doesn't echo our exact verb. Maps to a canonical tool name,
-    // which is then looked up in the live set (so an alias for an unavailable tool still misses).
-    let alias = match n.as_str() {
-        "file_create" | "create_file" | "file_write" | "new_file" | "newfile" | "make_file" | "save_file" => "write_file",
-        "file_edit" | "str_replace" | "str_replace_editor" | "replace_in_file" | "apply_patch" | "patch_file" => "edit_file",
-        "file_read" | "open_file" | "cat" | "view_file" => "read_file",
-        "file_list" | "list_dir" | "listdir" | "list_directory" | "ls" => "list_files",
-        "file_stat" | "stat" => "file_info",
-        "run" | "run_command" | "shell" | "exec" | "execute" | "command" | "run_shell" => "bash",
-        "search" | "grep_search" | "ripgrep" => "grep",
-        "glob_search" | "find_files" => "glob",
-        "fetch" | "http_get" | "web_fetch" | "curl" => "webfetch",
-        _ => return None,
-    };
+    // Synonyms a model invents when it doesn't echo our exact verb (the TOOL_ALIASES table). Map to a
+    // canonical tool name, then look it up in the live set (so an alias for an unavailable tool misses).
+    let alias = TOOL_ALIASES.iter().find(|(a, _)| *a == n.as_str()).map(|(_, target)| *target)?;
     tools.iter().find(|t| t.def.name == alias)
 }
 
@@ -767,11 +775,29 @@ const AGENT_INSTRUCTIONS: &str = include_str!("../data/agent-instructions.md");
 
 static TASK_CHILDREN_SPAWNED: AtomicUsize = AtomicUsize::new(0);
 
-/// The standard tool set every `bsc-agent` session (root or sub-agent) is launched with:
-/// the file/shell/search/web verbs plus a [`task_tool`] for delegation. The provider /
-/// model / permissions are threaded through so the `task` tool can spawn a child loop on
-/// the same provider under the same (no broader) grants. `depth` is the caller's nesting
-/// level (0 at the root); the child receives `depth + 1`.
+/// The native tool builders every `bsc-agent` session is launched with — the file/shell/search/web
+/// verbs as one registry (#1846), so adding a verb is one line here. `list_files`/`file_info` are
+/// FIRST-CLASS, INTENT-NAMED tools (backed by the `bsc-files` LIBRARY in-process — no subprocess, no
+/// binary-path fragility) because a local model reaches for "list/show the files" and kept inventing
+/// `*_list` names when nothing matched — clearly-named tools it calls as reliably as MCP tools (the
+/// prose-only hint didn't work, and a single args-string tool got fumbled).
+const NATIVE_TOOL_BUILDERS: &[fn() -> Tool] = &[
+    read_file_tool,
+    write_file_tool,
+    edit_file_tool,
+    bash_tool,
+    grep_tool,
+    glob_tool,
+    webfetch_tool,
+    list_files_tool,
+    file_info_tool,
+];
+
+/// The standard tool set every `bsc-agent` session (root or sub-agent) is launched with: the native
+/// [`NATIVE_TOOL_BUILDERS`] verbs plus a [`task_tool`] for delegation. The provider / model /
+/// permissions are threaded through so the `task` tool can spawn a child loop on the same provider
+/// under the same (no broader) grants. `depth` is the caller's nesting level (0 at the root); the
+/// child receives `depth + 1`.
 pub fn default_tools<P: LlmProvider + Send + Sync + 'static>(
     provider: Arc<P>,
     api_key: String,
@@ -780,23 +806,8 @@ pub fn default_tools<P: LlmProvider + Send + Sync + 'static>(
     perms: Permissions,
     depth: usize,
 ) -> Vec<Tool> {
-    let mut tools = vec![
-        read_file_tool(),
-        write_file_tool(),
-        edit_file_tool(),
-        bash_tool(),
-        grep_tool(),
-        glob_tool(),
-        webfetch_tool(),
-        task_tool(provider, api_key, model, system, perms, depth),
-    ];
-    // File-structure tools, backed by the `bsc-files` LIBRARY in-process (no subprocess, no
-    // binary-path fragility). Exposed as FIRST-CLASS, INTENT-NAMED tools — `list_files` is the verb a
-    // local model actually reaches for (it kept inventing `*_list` names when nothing matched). The
-    // prose-only hint didn't work, and a single args-string tool got fumbled; clearly-named tools the
-    // model calls the same reliable way it calls MCP tools.
-    tools.push(list_files_tool());
-    tools.push(file_info_tool());
+    let mut tools: Vec<Tool> = NATIVE_TOOL_BUILDERS.iter().map(|b| b()).collect();
+    tools.push(task_tool(provider, api_key, model, system, perms, depth));
     tools
 }
 
@@ -953,6 +964,20 @@ mod tests {
         assert_eq!(name("frobnicate"), None);
         // An alias for a tool that ISN'T in this session's set misses (grep absent here).
         assert_eq!(name("ripgrep"), None);
+    }
+
+    #[test]
+    fn every_alias_targets_a_real_native_tool_and_aliases_are_unique() {
+        // #1846 drift guard: the TOOL_ALIASES table can only point at a tool NATIVE_TOOL_BUILDERS
+        // actually builds, so renaming/removing a tool forces fixing its aliases (else this fails) —
+        // the alias table and the tool registry can't diverge.
+        let names: std::collections::HashSet<String> =
+            NATIVE_TOOL_BUILDERS.iter().map(|b| b().def.name).collect();
+        let mut seen = std::collections::HashSet::new();
+        for (alias, target) in TOOL_ALIASES {
+            assert!(names.contains(*target), "alias '{alias}' targets unknown tool '{target}'");
+            assert!(seen.insert(*alias), "duplicate alias '{alias}'");
+        }
     }
 
     #[test]
