@@ -25,12 +25,23 @@ export function plannerIntroMode({ isAuthoring, isExisting }: { isAuthoring: boo
 }
 
 /** Compose the startup prompt: the mode's intro, plus the user's pitch for a NEW project so the
- *  planner acknowledges it instead of asking what they're building. An empty intro (e.g. the
- *  command failed) yields `""` so the launch falls back to its plain `initCmd`. */
-export function composePlannerIntro(intro: string, mode: PlannerIntroMode, pitch: string): string {
+ *  planner acknowledges it instead of asking what they're building, plus (for the one-shot
+ *  `bsc-agent` runtime) the FIRST active stage's directive so a weak local model actually BEGINS the
+ *  stage instead of greeting and then waiting to be advanced (#qwen). An empty intro (e.g. the
+ *  command failed) yields `""` so the launch falls back to its plain `initCmd`.
+ *
+ *  `firstStageDirective` is omitted for Claude Code, which receives each stage's directive via the
+ *  app's runtime injection as it advances — there the greeting is deliberately greeting-only. */
+export function composePlannerIntro(
+  intro: string, mode: PlannerIntroMode, pitch: string, firstStageDirective?: string,
+): string {
   if (!intro.trim()) return "";
+  let out = intro;
   if (mode === "new" && pitch.trim()) {
-    return `${intro}\n\n---\nThe user has already shared this pitch — acknowledge it and reflect your understanding back instead of asking what they're building:\n\n${pitch.trim()}`;
+    out += `\n\n---\nThe user has already shared this pitch — acknowledge it and reflect your understanding back instead of asking what they're building:\n\n${pitch.trim()}`;
   }
-  return intro;
+  if (firstStageDirective?.trim()) {
+    out += `\n\n---\nThe app drives this plan one stage at a time. Your FIRST stage is below — after you greet the user, BEGIN it now (don't wait to be advanced):\n\n${firstStageDirective.trim()}`;
+  }
+  return out;
 }

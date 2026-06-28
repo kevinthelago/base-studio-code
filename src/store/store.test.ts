@@ -134,6 +134,21 @@ describe("LLM provider config (#1085)", () => {
     g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
     g().setOpenaiKey(""); g().setGeminiKey("");
   });
+
+  it("switching to ollama defaults the model to qwen3-coder, and switching back restores claude", () => {
+    const g = () => useAppStore.getState();
+    // From the anthropic default, picking Ollama swaps the (unrunnable) claude model for the local one.
+    g().setLlmProvider("ollama");
+    expect(g().llmModel).toBe("qwen3-coder");
+    // Switching back reverts the leftover local default to the anthropic default.
+    g().setLlmProvider("anthropic");
+    expect(g().llmModel).toBe("claude-sonnet-4-6");
+    // A model the user typed survives a provider switch.
+    g().setLlmModel("llama3.1"); g().setLlmProvider("ollama");
+    expect(g().llmModel).toBe("llama3.1");
+    // restore defaults for other tests
+    g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
+  });
 });
 
 describe("terminal font zoom", () => {
@@ -1152,6 +1167,15 @@ describe("agent fleet store", () => {
     st = useAppStore.getState();
     expect(st.paneProviders[directorPaneId("hb-key")]).toBe("bsc-agent");
     expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
+
+    // A local/ollama provider FORCES bsc-agent even with the harness toggle left on "claude" —
+    // Claude Code can't drive Ollama, so selecting it runs the whole fleet on the local model.
+    useAppStore.setState({ fleetHarness: "claude", llmProvider: "ollama" });
+    useAppStore.getState().fleetStartProject("HO", fleet, "ho-key");
+    st = useAppStore.getState();
+    expect(st.paneProviders[directorPaneId("ho-key")]).toBe("bsc-agent");
+    expect(st.paneProviders[fleetPaneId("ho-key", "auth-ui")]).toBe("bsc-agent");
+    useAppStore.setState({ llmProvider: "anthropic" }); // restore for sibling tests
   });
 
   it("fleetStartProject binds each worker pane to its role's default profile, or its pinned id (#1828)", () => {

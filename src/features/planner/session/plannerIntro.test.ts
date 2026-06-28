@@ -46,4 +46,22 @@ describe("plannerIntro — compose (#1240)", () => {
     expect(composePlannerIntro("", "new", "x")).toBe("");
     expect(composePlannerIntro("   ", "existing", "")).toBe("");
   });
+
+  it("bakes the first stage directive (bsc-agent) so the planner begins instead of waiting (#qwen)", () => {
+    const composed = composePlannerIntro("INTRO", "existing", "", "Drive the discovery checklist; create goal.md, scope.md.");
+    expect(composed).toContain("INTRO");
+    expect(composed).toContain("BEGIN it now");
+    expect(composed).toContain("Drive the discovery checklist");
+  });
+
+  it("composes the pitch AND the first-stage directive together for a new project", () => {
+    const composed = composePlannerIntro("INTRO", "new", "build a todo app", "Start discovery now.");
+    expect(composed).toContain("build a todo app");
+    expect(composed).toContain("Start discovery now.");
+  });
+
+  it("omits the directive block when none is passed (Claude Code path is unchanged)", () => {
+    expect(composePlannerIntro("INTRO", "existing", "")).toBe("INTRO");
+    expect(composePlannerIntro("INTRO", "existing", "", "   ")).toBe("INTRO"); // blank directive ignored
+  });
 });
