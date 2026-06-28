@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { useModalDismiss } from "@/shared/hooks/useModalDismiss";
 import { createPortal } from "react-dom";
 
@@ -63,12 +64,7 @@ export function TabBar({
 
   useEffect(() => { if (editingId !== null) editRef.current?.select(); }, [editingId]);
 
-  useEffect(() => {
-    if (!menu) return;
-    const down = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(null); };
-    document.addEventListener("mousedown", down);
-    return () => document.removeEventListener("mousedown", down);
-  }, [menu]);
+  useClickOutside(menuRef, () => setMenu(null), !!menu);
   useModalDismiss(useCallback(() => setMenu(null), []), { enabled: !!menu });
 
   const commitRename = useCallback(() => {
