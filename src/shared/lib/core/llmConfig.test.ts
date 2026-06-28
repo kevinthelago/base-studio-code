@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { resolveLlmConfig, hasLlmKey, bscAgentEnv, type LlmConfigSource } from "./llmConfig";
+import {
+  resolveLlmConfig, hasLlmKey, bscAgentEnv, providerNeedsBscAgent, effectiveHarness,
+  resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL,
+  type LlmConfigSource,
+} from "./llmConfig";
 
 const base: LlmConfigSource = {
   llmProvider: "anthropic",
@@ -28,12 +32,40 @@ describe("resolveLlmConfig (#1085)", () => {
     expect(resolveLlmConfig({ ...base, llmProvider: "gemini" }).apiKey).toBe("gem-key");
   });
 
-  it("returns no key for local", () => {
+  it("returns no key for local / ollama", () => {
     expect(resolveLlmConfig({ ...base, llmProvider: "local" }).apiKey).toBe("");
+    expect(resolveLlmConfig({ ...base, llmProvider: "ollama" }).apiKey).toBe("");
   });
 
   it("carries the configured model", () => {
     expect(resolveLlmConfig({ ...base, llmProvider: "openai", llmModel: "gpt-5" }).model).toBe("gpt-5");
+  });
+
+  it("substitutes the local default when ollama still holds a stale claude model (#404 fix)", () => {
+    // The bug: provider switched to ollama but llmModel left at the anthropic default → 404 on Ollama.
+    expect(resolveLlmConfig({ ...base, llmProvider: "ollama" }).model).toBe(DEFAULT_LOCAL_MODEL);
+    expect(resolveLlmConfig({ ...base, llmProvider: "local", llmModel: "" }).model).toBe(DEFAULT_LOCAL_MODEL);
+    // A real local model the user typed is kept.
+    expect(resolveLlmConfig({ ...base, llmProvider: "ollama", llmModel: "llama3.1" }).model).toBe("llama3.1");
+  });
+});
+
+describe("resolveModel / modelOnProviderSwitch", () => {
+  it("resolveModel swaps empty/claude models only for local providers", () => {
+    expect(resolveModel("ollama", "claude-sonnet-4-6")).toBe(DEFAULT_LOCAL_MODEL);
+    expect(resolveModel("local", "")).toBe(DEFAULT_LOCAL_MODEL);
+    expect(resolveModel("ollama", "qwen3-coder")).toBe("qwen3-coder"); // custom kept
+    expect(resolveModel("anthropic", "claude-sonnet-4-6")).toBe("claude-sonnet-4-6"); // hosted untouched
+    expect(resolveModel("openai", "")).toBe(""); // hosted untouched
+  });
+
+  it("modelOnProviderSwitch defaults to qwen3-coder for ollama and restores claude for hosted", () => {
+    expect(modelOnProviderSwitch("ollama", "claude-sonnet-4-6")).toBe(DEFAULT_LOCAL_MODEL);
+    expect(modelOnProviderSwitch("ollama", "")).toBe(DEFAULT_LOCAL_MODEL);
+    expect(modelOnProviderSwitch("ollama", "llama3.1")).toBe("llama3.1"); // custom kept
+    // Switching back: a leftover local default reverts to the anthropic default.
+    expect(modelOnProviderSwitch("anthropic", DEFAULT_LOCAL_MODEL)).toBe("claude-sonnet-4-6");
+    expect(modelOnProviderSwitch("openai", "gpt-5")).toBe("gpt-5"); // custom kept
   });
 });
 
@@ -44,8 +76,32 @@ describe("hasLlmKey", () => {
   it("is false when a cloud provider has no key", () => {
     expect(hasLlmKey({ provider: "anthropic", model: "m", apiKey: "", baseUrl: "" })).toBe(false);
   });
-  it("is true for local even without a key", () => {
+  it("is true for local / ollama even without a key", () => {
     expect(hasLlmKey({ provider: "local", model: "llama3", apiKey: "", baseUrl: "" })).toBe(true);
+    expect(hasLlmKey({ provider: "ollama", model: "llama3", apiKey: "", baseUrl: "" })).toBe(true);
+  });
+});
+
+describe("providerNeedsBscAgent / effectiveHarness", () => {
+  it("flags local + ollama as needing bsc-agent (Claude Code can't drive them)", () => {
+    expect(providerNeedsBscAgent("local")).toBe(true);
+    expect(providerNeedsBscAgent("ollama")).toBe(true);
+    expect(providerNeedsBscAgent("anthropic")).toBe(false);
+    expect(providerNeedsBscAgent("openai")).toBe(false);
+    expect(providerNeedsBscAgent("gemini")).toBe(false);
+  });
+
+  it("forces bsc-agent for a local/ollama provider regardless of the toggle", () => {
+    expect(effectiveHarness("ollama", "claude")).toBe("bsc-agent");
+    expect(effectiveHarness("ollama", "bsc-agent")).toBe("bsc-agent");
+    expect(effectiveHarness("local", "claude")).toBe("bsc-agent");
+  });
+
+  it("honors the explicit toggle for providers Claude Code can run", () => {
+    expect(effectiveHarness("anthropic", "claude")).toBe("claude");
+    expect(effectiveHarness("anthropic", "bsc-agent")).toBe("bsc-agent");
+    expect(effectiveHarness("openai", "claude")).toBe("claude");
+    expect(effectiveHarness("gemini", "bsc-agent")).toBe("bsc-agent");
   });
 });
 

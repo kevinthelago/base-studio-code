@@ -20,6 +20,7 @@ import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib
 import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
 import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
+import { plannerLaunchConfig } from "./plannerLaunch";
 import { TERM_THEME } from "./planningTerminal";
 import type { Command, Schedule } from "@/shared/data/mock";
 
@@ -149,7 +150,7 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       // Inject the stored GitHub token so `gh` CLI and direct API calls work
       // without requiring the user to separately authenticate the gh CLI.
       const token = useAppStore.getState().githubToken;
-      const ghEnv = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
+      const ghEnv: Record<string, string> = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
       // Role gate (#219): the planner is plan-only — write git/gh write denies plus a
       // write-tool deny (#238) into its session settings before claude launches, so it
       // can read for context but neither edit files nor mutate the repo/GitHub
@@ -188,16 +189,36 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
       const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExistingSnap });
       const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
         (e: unknown) => console.error("planner intro prompt failed:", e));
-      const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "") || undefined;
+      // Run the planner on the selected harness: Claude Code, or bsc-agent (any LLM) when chosen or
+      // forced by a local/ollama provider Claude can't drive (#1078). bsc-agent gets the same plan-only
+      // role gate, MCP, and provider/model/base-url via BSC_AGENT_* env; context + the intro prompt +
+      // plan state come through identically.
+      const launch = plannerLaunchConfig(useAppStore.getState(), ghEnv);
+      // bsc-agent is a one-shot loop, so it never receives stage 1's directive via runtime injection
+      // (Claude does). Bake the first active stage's directive into the intro so a weak local model
+      // begins discovery instead of greeting and then waiting to be advanced (#qwen).
+      let firstStageDirective: string | undefined;
+      if (launch.providerId === "bsc-agent") {
+        const firstStage = stageIdsFor(projIdSnap)[0];
+        if (firstStage) {
+          firstStageDirective = await safeInvoke<string>(
+            "planner_stage_directive", { id: firstStage }, "",
+            (e: unknown) => console.error("planner stage directive failed:", e),
+          ) || undefined;
+        }
+      }
+      const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "", firstStageDirective) || undefined;
       await safeInvoke("pty_create", {
         paneId:  paneId,
         cols:    term.cols,
         rows:    term.rows,
         cwd:     paths?.planning_dir ?? "",
-        initCmd: "claude --continue 2>/dev/null || claude",
+        initCmd: launch.initCmd,
         startupPrompt,
-        startupPromptFreshOnly: true,
-        env:     ghEnv,
+        startupPromptFreshOnly: launch.startupPromptFreshOnly,
+        continueSession: launch.continueSession,
+        env:     launch.env,
+        providerId: launch.providerId,
       }, undefined, console.error);
     });
 

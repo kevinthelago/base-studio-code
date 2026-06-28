@@ -1,14 +1,15 @@
 import { useAppStore } from "@/store";
-import type { LlmProvider } from "@/shared/lib/core/llmConfig";
+import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],
   ["openai",    "OpenAI"],
   ["gemini",    "Google Gemini"],
   ["local",     "Local (Ollama / OpenAI-compatible)"],
+  ["ollama",    "Ollama (Local)"],
 ];
 export const KEY_PLACEHOLDER: Record<LlmProvider, string> = {
-  anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "",
+  anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "", ollama: "",
 };
 
 export function LlmProviderCard() {
@@ -53,10 +54,10 @@ export function LlmProviderCard() {
             className="input"
             value={llmModel}
             onChange={(e) => setLlmModel(e.target.value)}
-            placeholder="claude-sonnet-4-6"
+            placeholder={providerNeedsBscAgent(llmProvider) ? "qwen3-coder" : "claude-sonnet-4-6"}
           />
         </div>
-        {llmProvider === "local" && (
+        {(llmProvider === "local" || llmProvider === "ollama") && (
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Base URL</label>
             <input
@@ -65,12 +66,12 @@ export function LlmProviderCard() {
               onChange={(e) => setLocalBaseUrl(e.target.value)}
               placeholder="http://localhost:11434/v1"
             />
-            <div className="hint">OpenAI-compatible endpoint (e.g. Ollama).</div>
+            <div className="hint">{llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama)."}</div>
           </div>
         )}
         <div className="field" style={{ gridColumn: "1 / -1" }}>
           <label>API key</label>
-          {llmProvider === "local" ? (
+          {(llmProvider === "local" || llmProvider === "ollama") ? (
             <div className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</div>
           ) : (
             <>
@@ -91,11 +92,22 @@ export function LlmProviderCard() {
         </div>
         <div className="field" style={{ gridColumn: "1 / -1" }}>
           <label>Run the agent fleet on</label>
-          <select className="input" value={fleetHarness} onChange={(e) => setFleetHarness(e.target.value as "claude" | "bsc-agent")}>
+          {/* A local/ollama provider can't run on Claude Code, so it forces bsc-agent — the planner,
+              workers, and director all run on the selected LLM. Lock the control + say so. */}
+          <select
+            className="input"
+            value={providerNeedsBscAgent(llmProvider) ? "bsc-agent" : fleetHarness}
+            disabled={providerNeedsBscAgent(llmProvider)}
+            onChange={(e) => setFleetHarness(e.target.value as "claude" | "bsc-agent")}
+          >
             <option value="claude">Claude Code (default)</option>
             <option value="bsc-agent">bsc-agent — the provider/model above</option>
           </select>
-          <div className="hint">Workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context.</div>
+          <div className="hint">
+            {providerNeedsBscAgent(llmProvider)
+              ? "Locked to bsc-agent — the selected local provider runs the planner, workers, and director on the LLM above, with the same role permissions, MCP, and context."
+              : "Planner, workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context."}
+          </div>
         </div>
         <div className="field">
           <label>Per-agent context cap</label>
