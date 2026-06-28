@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { FillBar } from "@/shared/ui/FillBar";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
 import { Kpi, StackedDayBars } from "@/shared/ui/charts";
@@ -90,9 +91,7 @@ export function McpAnalyticsTab() {
                     <div style={{ flex: 1 }} />
                     <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{s.calls}</span>
                   </div>
-                  <div style={{ height: 8, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(s.calls / maxServerCalls) * 100}%`, background: c, borderRadius: 99 }} />
-                  </div>
+                  <FillBar value={s.calls / maxServerCalls} color={c} />
                 </div>
               );
             })}
