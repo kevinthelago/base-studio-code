@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
 
@@ -34,6 +36,33 @@ export function LlmProviderCard() {
     else if (llmProvider === "anthropic") setClaudeApiKey(v);
   };
 
+  // Local-model preflight (#1830): probe the Ollama endpoint for its installed models — surfaces a
+  // down server / wrong URL HERE (before a session hits it mid-task) and offers the model names as
+  // suggestions for the free-text model field below.
+  const isLocal = providerNeedsBscAgent(llmProvider);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestMsg("");
+    try {
+      const found = await invoke<string[]>("ollama_models", { baseUrl: localBaseUrl });
+      setModels(found);
+      setTestMsg(
+        found.length
+          ? `✓ reachable — ${found.length} model${found.length === 1 ? "" : "s"} installed`
+          : "✓ reachable — no models yet (run `ollama pull <model>`)",
+      );
+    } catch (e) {
+      setModels([]);
+      setTestMsg(`✗ ${String(e)}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="card">
       <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
@@ -54,19 +83,32 @@ export function LlmProviderCard() {
             className="input"
             value={llmModel}
             onChange={(e) => setLlmModel(e.target.value)}
-            placeholder={providerNeedsBscAgent(llmProvider) ? "qwen3-coder" : "claude-sonnet-4-6"}
+            placeholder={isLocal ? "qwen3-coder" : "claude-sonnet-4-6"}
+            list={isLocal ? "ollama-models" : undefined}
           />
+          {isLocal && models.length > 0 && (
+            <datalist id="ollama-models">
+              {models.map((m) => <option key={m} value={m} />)}
+            </datalist>
+          )}
         </div>
-        {(llmProvider === "local" || llmProvider === "ollama") && (
+        {isLocal && (
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Base URL</label>
-            <input
-              className="input"
-              value={localBaseUrl}
-              onChange={(e) => setLocalBaseUrl(e.target.value)}
-              placeholder="http://localhost:11434/v1"
-            />
-            <div className="hint">{llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama)."}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="input"
+                value={localBaseUrl}
+                onChange={(e) => setLocalBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434/v1"
+              />
+              <button className="btn" onClick={testConnection} disabled={testing}>
+                {testing ? "testing…" : "test"}
+              </button>
+            </div>
+            <div className="hint">
+              {testMsg || (llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama).")}
+            </div>
           </div>
         )}
         <div className="field" style={{ gridColumn: "1 / -1" }}>
