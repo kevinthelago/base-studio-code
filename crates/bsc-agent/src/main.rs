@@ -262,43 +262,24 @@ async fn main() {
     };
 
     eprintln!("\x1b[2m▸ contacting the model — the first local response can take a while (model load + context)…\x1b[0m");
-    let result = match kind {
-        llm::ProviderKind::Anthropic => {
-            run_with_provider(llm::AnthropicProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
-        }
-        llm::ProviderKind::OpenAi => {
-            run_with_provider(llm::OpenAiProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
-        }
-        llm::ProviderKind::Gemini => {
-            run_with_provider(llm::GeminiProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
-        }
-        llm::ProviderKind::Local => {
-            // The OpenAI-compatible endpoint for local models — $BSC_AGENT_BASE_URL (set by the
-            // app from the user's config), falling back to Ollama's default when unset/empty.
-            let base_url = std::env::var("BSC_AGENT_BASE_URL")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
-            run_with_provider(llm::LocalProvider { base_url }, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
-        }
-        llm::ProviderKind::Ollama => {
-            // The local Ollama provider endpoint — $BSC_AGENT_BASE_URL (set by the
-            // app from the user's config), falling back to Ollama's default when unset/empty.
-            let base_url = std::env::var("BSC_AGENT_BASE_URL")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
-            // Per-model adaptation: query Ollama's /api/show ONCE for this model's tool capability +
-            // stop tokens, and drive how we advertise/parse tools from it (graceful generic default
-            // if /api/show is unreachable). One round-trip at session start.
-            let profile = llm::detect_ollama_profile(&base_url, &model).await;
-            eprintln!(
-                "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s) detected\x1b[0m",
-                profile.supports_tools, profile.stop.len(),
-            );
-            run_with_provider(llm::OllamaProvider::with_profile(base_url, profile), &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
-        }
+    // Build the provider once via the shared factory (#1845) instead of a 5-arm match. The Ollama
+    // tool-using path first detects the model's `/api/show` profile (so tools are advertised/parsed
+    // correctly); every other provider ignores base_url + profile. $BSC_AGENT_BASE_URL is the
+    // app-supplied local/ollama endpoint (default Ollama when unset/empty).
+    let base_url = std::env::var("BSC_AGENT_BASE_URL").ok().filter(|s| !s.trim().is_empty());
+    let ollama_profile = if matches!(kind, llm::ProviderKind::Ollama) {
+        let base = base_url.as_deref().unwrap_or(llm::DEFAULT_LOCAL_BASE_URL);
+        let profile = llm::detect_ollama_profile(base, &model).await;
+        eprintln!(
+            "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s) detected\x1b[0m",
+            profile.supports_tools, profile.stop.len(),
+        );
+        Some(profile)
+    } else {
+        None
     };
+    let provider = llm::build_provider(kind, base_url, ollama_profile);
+    let result = run_with_provider(provider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await;
 
     if let Err(e) = result {
         eprintln!("bsc-agent: {e}");
