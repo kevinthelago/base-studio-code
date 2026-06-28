@@ -2,7 +2,7 @@
 // value types (warden quarantine, auto-ended workers). Split from store/types (#1634).
 import type { Screen } from "@/app/chrome/Rail";
 import type { Tab } from "@/app/chrome/Tabstrip";
-import type { ViewKey } from "@/app/console/panes/ViewTabs";
+import type { ViewKey } from "@/app/console/panes/viewDefs";
 import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget } from "@/app/console/lib/focusQueue";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";

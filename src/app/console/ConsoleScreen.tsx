@@ -14,7 +14,7 @@ import { usePaneTokenUsage, type PaneTokenUsage } from "@/app/console/lib/usePan
 import { recordRender } from "@/shared/lib/core/perf";
 import { resetLaunchGate } from "@/shared/lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "@/app/console/lib/consoleFocus";
-import type { ViewKey } from "@/app/console/panes/ViewTabs";
+import type { ViewKey } from "@/app/console/panes/viewDefs";
 import type { EndedInfo } from "@/store/types";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";

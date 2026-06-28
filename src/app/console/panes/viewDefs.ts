@@ -1,6 +1,11 @@
 import { Terminal, FolderOpen, GitBranch, GitCompareArrows, History, ShieldCheck, Activity } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+// The canonical console-pane VIEW registry: the set of views a pane can show, their icon/label/
+// hotkey, and their order. The view switcher itself lives in the PaneMenu dropdown (#1149/#1319) and
+// the PaneShell trigger glyph; both read VIEW_DEFS, and useHotkeys maps Alt+digits through VIEW_ORDER.
+// (Extracted out of the former ViewTabs tab-strip component — removed once switching moved into the
+// menu; the icon-registry migration of these glyphs is tracked separately as the console+icons theme.)
 export type ViewKey = "console" | "files" | "branches" | "changes" | "log" | "tools" | "telemetry";
 
 // `group` (#1149) splits the view-switcher dropdown into the working SCREENs (terminal, files,
@@ -18,46 +23,3 @@ export const VIEW_DEFS: Record<ViewKey, { Icon: LucideIcon; label: string; hint:
 /** Views in their canonical (hotkey) order — index i ⇒ Alt+(i+1) / Alt+Shift+(i+1). The single
  *  source the view hotkeys (useHotkeys) map digits through, so the keys never drift from VIEW_DEFS. */
 export const VIEW_ORDER: ViewKey[] = ["console", "files", "branches", "changes", "log", "tools", "telemetry"];
-
-interface ViewTabsProps {
-  active: ViewKey;
-  available: ViewKey[];
-  onSwitch?: (view: ViewKey) => void;
-}
-
-export function ViewTabs({ active, available, onSwitch }: ViewTabsProps) {
-  return (
-    <div style={{
-      height: 26, flex: "0 0 26px",
-      display: "flex", alignItems: "center", gap: 2,
-      padding: "0 6px",
-      borderBottom: "1px solid var(--border-soft)",
-      background: "var(--bg-panel)",
-      fontFamily: "var(--mono)",
-    }}>
-      {available.map((k) => {
-        const { Icon, label, hotkey } = VIEW_DEFS[k];
-        const on = k === active;
-        return (
-          <div
-            key={k}
-            title={`${label} · ${hotkey}`}
-            onClick={() => onSwitch?.(k)}
-            style={{
-              width: 24, height: 20,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              borderRadius: 4,
-              background: on ? "var(--bg-canvas)" : "transparent",
-              border: on ? "1px solid var(--accent-dim)" : "1px solid transparent",
-              color: on ? "var(--accent)" : "var(--fg-muted)",
-              cursor: "pointer",
-            }}
-          >
-            <Icon size={12} />
-          </div>
-        );
-      })}
-      <div style={{ flex: 1 }} />
-    </div>
-  );
-}

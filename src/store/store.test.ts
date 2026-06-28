@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, TRIAGE_PROMPT } from "./";
-import type { ViewKey } from "@/app/console/panes/ViewTabs";
+import type { ViewKey } from "@/app/console/panes/viewDefs";
 import type { QueuedPane } from "@/app/console/lib/focusQueue";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";

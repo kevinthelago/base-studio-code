@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Maximize2, Minimize2, Power, PowerOff, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
+import { type ViewKey, VIEW_DEFS } from "./viewDefs";
 import { type ModelId, MODELS } from "@/app/console/lib/models";
 
 // Re-exported so existing `import { type ModelId } from "./PaneMenu"` call sites keep working
