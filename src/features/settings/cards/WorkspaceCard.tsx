@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsTextField } from "../screens/SettingsControls";
 
 export function WorkspaceCard() {
   const { bscBaseDir, setBscBaseDir } = useAppStore();
@@ -13,23 +13,18 @@ export function WorkspaceCard() {
   return (
     <div className="card">
       <SettingsCardHead title="Workspace" />
-      <div className="field">
-        <label>Base directory</label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            className="input"
-            value={bscBaseDir}
-            onChange={(e) => setBscBaseDir(e.target.value)}
-            placeholder="~/.base-studio-code"
-          />
-          <button className="btn" onClick={chooseBaseDir}>Choose…</button>
-        </div>
-        <div className="hint">
+      <SettingsTextField
+        label="Base directory"
+        value={bscBaseDir}
+        onChange={setBscBaseDir}
+        placeholder="~/.base-studio-code"
+        trailing={<button className="btn" onClick={chooseBaseDir}>Choose…</button>}
+        hint={<>
           Where projects, clones, and agent worktrees live
           (<code>&lt;base&gt;/projects/&lt;project&gt;/…</code>). Leave blank for the default
           (<code>~/.base-studio-code</code>).
-        </div>
-      </div>
+        </>}
+      />
     </div>
   );
 }
