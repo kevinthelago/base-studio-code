@@ -171,7 +171,8 @@ export function ProjectsList() {
     await deleteDraft(key);
   }
 
-  const repos = new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? []));
+  // Memoized: only the distinct-repo count feeds the summary line, so don't rebuild the Set every render.
+  const repos = useMemo(() => new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [])), [visibleProjects]);
 
   // Per-project live fleet counts: a worker belongs to a project when its repo is
   // one of the project's repos (running vs parked = asking/waiting/blocked).
