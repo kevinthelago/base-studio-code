@@ -11,8 +11,8 @@ use crate::*;
 pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc-plan"];
 /// Safe read-only inspection / navigation commands auto-approved in every session whose
 /// shell posture is not `deny`, so ordinary work (`ls`, `cat`, `grep`, …) never prompts.
-/// Pure inspection + light scaffolding; the destructive forms are still caught by
-/// [`DEFAULT_DENY`]. Written as explicit `Bash(<cmd> *)` rules because Claude Code does NOT
+/// Pure inspection + light scaffolding; the destructive forms are still caught by the shared
+/// dangerous-bash floor (`bsc_util::dangerous`). Written as explicit `Bash(<cmd> *)` rules because Claude Code does NOT
 /// honor a bare `Bash` allow as allow-all — every auto-runnable command must be enumerated.
 pub(crate) const BASELINE_READONLY: &[&str] = &[
     "ls", "cat", "head", "tail", "grep", "rg", "find", "fd", "pwd", "cd", "echo", "wc",
@@ -28,30 +28,13 @@ pub(crate) const BASELINE_BUILD: &[&str] = &[
     "python", "python3", "pip", "pip3", "pytest", "make", "go", "tsc", "vite", "eslint",
     "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet", "ollama",
 ];
-/// Dangerous command patterns denied in every spawned session by default.
-///
-/// The session allows the Bash tool broadly so ordinary work — including loops
-/// and `&&` / `|` compound commands — runs without a prompt ("start and go").
-/// These guard against the most catastrophic *direct* invocations; deny takes
-/// precedence over allow in Claude Code. Best-effort: prefix matching can't catch
-/// a dangerous command nested inside a loop or pipe, so this raises the bar
-/// against accidents, not a true sandbox. Users extend it via the per-session
-/// `denied_commands` (set by the agent profile's command policy).
-pub(crate) const DEFAULT_DENY: &[&str] = &[
-    "Bash(sudo *)",
-    "Bash(rm -rf /*)",
-    "Bash(rm -fr /*)",
-    "Bash(rm -rf ~*)",
-    "Bash(dd *)",
-    "Bash(mkfs *)",
-    "Bash(shutdown *)",
-    "Bash(reboot *)",
-    "Bash(git push --force*)",
-    "Bash(git push -f *)",
-    "Bash(curl *| sh)",
-    "Bash(curl *| bash)",
-    "Bash(wget *| sh)",
-];
+// Dangerous command patterns denied in every spawned session by default — the always-on floor, now
+// the shared `bsc_util::dangerous` registry (#1844). The Claude harness renders the `Bash(<glob>)`
+// deny rules (`claude_deny_rules`); the bsc-agent runtime renders the substring form from the SAME
+// canonical list, so the two floors can't drift. The session allows Bash broadly so ordinary work
+// (loops, `&&`/`|`) runs without a prompt; these guard the most catastrophic *direct* invocations
+// (deny > allow in Claude Code; prefix matching can't catch a danger nested in a loop/pipe — an
+// accident bar, not a sandbox). Users extend it via the per-session `denied_commands`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ensure_session_settings(
@@ -85,7 +68,7 @@ pub(crate) fn ensure_session_settings(
 /// `Bash` + the read-only AND build baselines; `ask` coordinators get the read-only baseline
 /// only (build/unlisted commands prompt); `deny` agents get neither. Always added: the
 /// mandatory gh/git/bsc-plan and the per-stream `allowed_commands` the planner granted. A
-/// curated default deny-list ({@link DEFAULT_DENY}) plus any user/project `denied_commands`
+/// curated default deny-list (`bsc_util::dangerous::claude_deny_rules`) plus any user/project `denied_commands`
 /// block the most dangerous direct invocations (deny wins over allow). Merges into existing
 /// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
 #[allow(clippy::too_many_arguments)]
@@ -139,7 +122,7 @@ pub(crate) fn write_session_settings(
     }
 
     // Deny: curated dangerous defaults + user/project denies (deny > allow).
-    let mut deny_rules: Vec<String> = DEFAULT_DENY.iter().map(|s| (*s).to_string()).collect();
+    let mut deny_rules: Vec<String> = bsc_util::dangerous::claude_deny_rules().map(|s| s.to_string()).collect();
     for c in denied_commands {
         let c = c.trim();
         if !c.is_empty() {

@@ -3,25 +3,20 @@
 //! `write_file`/`edit_file` to a set of path globs — instead of relying on a harness
 //! config file (`.claude/settings.json`). Loaded from `$BSC_AGENT_PERMS` (a JSON file
 //! path or inline JSON); anything unset/empty/unparseable yields the permissive
-//! default — allow everything EXCEPT the always-on dangerous-command floor
-//! ([`BASE_DANGEROUS_BASH`]) — so an unconfigured session is permissive but never able to
+//! default — allow everything EXCEPT the always-on dangerous-command floor (the shared
+//! `bsc_util::dangerous` registry, #1844) — so an unconfigured session is permissive but never able to
 //! run the catastrophic invocations the Claude harness also blocks.
 
 use serde::Deserialize;
 use serde_json::Value;
 
-/// Catastrophic `bash` invocations denied for EVERY `bsc-agent` session, independent of the
-/// env-supplied [`Permissions`]. This is the runtime floor — parity with the always-on
-/// `DEFAULT_DENY` the Claude harness writes into `.claude/settings.json`
-/// (`src-tauri/src/console/settings.rs`) — so neither harness can be talked into a `sudo` /
-/// `rm -rf /` / force-push by an empty or missing permission doc. Substring-matched against the
-/// command (coarser than Claude's prefix rules), so the set is deliberately conservative —
-/// unambiguous, high-blast-radius patterns only, to avoid false-positives on ordinary work.
-/// Keep roughly in sync with `DEFAULT_DENY`; the user's configurable `deniedCommands` and the
-/// `bsc-taint` tainted-turn hook (#1167) cover the longer tail (curl|sh exfil, etc.).
-pub(crate) const BASE_DANGEROUS_BASH: &[&str] = &[
-    "sudo ", "rm -rf /", "rm -fr /", "rm -rf ~", "mkfs.", ":(){", "git push --force", "git push -f ",
-];
+// The always-on dangerous-bash floor — catastrophic invocations denied for EVERY `bsc-agent` session,
+// independent of the env-supplied [`Permissions`]. It now comes from the SHARED `bsc_util::dangerous`
+// registry (#1844): the same canonical list the Claude harness renders as `Bash(<glob>)` deny rules
+// renders here as substrings (`agent_dangerous_substrings`) — so neither harness can be talked into a
+// `sudo` / `rm -rf /` / force-push by an empty or missing permission doc, and the two floors can't
+// drift. Substring-matched (coarser than Claude's prefix rules) + deliberately conservative; the
+// user's `deniedCommands` and the `bsc-taint` hook (#1167) cover the longer tail (curl|sh exfil, etc.).
 
 /// The session's permission set. All-empty (the [`Default`]) is permissive.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -63,7 +58,7 @@ impl Permissions {
             "bash" => {
                 let cmd = args["command"].as_str().unwrap_or("");
                 // The always-on floor first — denied for every session regardless of `deny_bash`.
-                if BASE_DANGEROUS_BASH.iter().any(|p| cmd.contains(p)) {
+                if bsc_util::dangerous::agent_dangerous_substrings().any(|p| cmd.contains(p)) {
                     return Err("permission denied: command matches the built-in dangerous-command denylist".into());
                 }
                 if self.deny_bash.iter().any(|p| cmd.contains(p.as_str())) {

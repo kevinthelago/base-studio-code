@@ -26,6 +26,10 @@ pub use sidecars::{BundledMcp, Sidecar, BUNDLED_MCP_SERVERS, COMPLIANCE_MCP, RES
 pub mod log_streams;
 pub use log_streams::{LogStream, LOG_STREAMS};
 
+/// The canonical always-on dangerous-bash floor (#1844) — ONE list both the Claude harness
+/// (`Bash(<glob>)` deny rules) and the bsc-agent runtime (substring match) render from.
+pub mod dangerous;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
