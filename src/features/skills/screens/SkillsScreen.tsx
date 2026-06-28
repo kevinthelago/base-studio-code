@@ -9,6 +9,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Pane } from "@/shared/ui/Pane";
+import { EmptyState } from "@/shared/ui/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
@@ -386,15 +387,17 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
               )}
 
               {isEmpty ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", textAlign: "center" }}>
-                  <div style={{ width: 52, height: 52, borderRadius: "var(--r-lg)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 22 }}>⌕</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)", marginTop: 16 }}>No skills match</div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>Nothing matches the active search + filters. Create a skill, import one, or clear the filters.</div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+                <EmptyState
+                  icon="⌕"
+                  iconVariant="dashed"
+                  title="No skills match"
+                  description="Nothing matches the active search + filters. Create a skill, import one, or clear the filters."
+                  style={{ padding: "80px 20px" }}
+                  actions={<>
                     <button className="btn" onClick={clearFilters}>Clear filters</button>
                     <button className="btn primary" onClick={drawer.startDraft}>+ new skill</button>
-                  </div>
-                </div>
+                  </>}
+                />
               ) : density === "list" ? (
                 <SkillsListView filtered={filtered} h={rowHandlers} />
               ) : density === "cards" ? (
