@@ -1,7 +1,7 @@
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
-import { SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
 
 export function MetricsCollectionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -12,9 +12,7 @@ export function MetricsCollectionCard() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Performance metrics collection</h3>
-      </div>
+      <SettingsCardHead title="Performance metrics collection" />
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         <Row
           label="Enable metrics collection"

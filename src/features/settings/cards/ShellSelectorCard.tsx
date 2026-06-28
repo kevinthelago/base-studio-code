@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { SettingsCardHead } from "../screens/SettingsControls";
 import {
   loadShellKind,
   saveShellKind,
@@ -30,10 +31,7 @@ export function ShellSelectorCard() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Console shell</h3>
-        <span className="hint">the shell new console sessions launch under · applies to the next launch</span>
-      </div>
+      <SettingsCardHead title="Console shell" hint="the shell new console sessions launch under · applies to the next launch" />
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {SHELL_OPTIONS.map((o) => {
           const on = o.kind === kind;

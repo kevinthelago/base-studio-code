@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { ToggleRow } from "../screens/SettingsControls";
+import { SettingsCardHead, ToggleRow } from "../screens/SettingsControls";
 
 export function PlanningAutomationCard() {
   const { autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
@@ -10,9 +10,7 @@ export function PlanningAutomationCard() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Planning automation</h3>
-      </div>
+      <SettingsCardHead title="Planning automation" />
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <ToggleRow
           on={autoPlanWithClaude}
