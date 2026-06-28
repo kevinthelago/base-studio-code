@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SettingsCardHead, SettingsRow, SettingsSelect, settingsBtn } from "./SettingsControls";
+import { SettingsCardHead, SettingsRow, SettingsSelect, settingsBtn, SettingsTextField, SettingsSelectField } from "./SettingsControls";
 
 describe("SettingsCardHead", () => {
   it("renders the title, and the hint only when provided", () => {
@@ -38,6 +38,39 @@ describe("SettingsSelect", () => {
   it("returns a string for a string value", () => {
     const onChange = vi.fn();
     render(<SettingsSelect value="a" options={[{ label: "A", value: "a" }, { label: "B", value: "b" }]} onChange={onChange} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "b" } });
+    expect(onChange).toHaveBeenCalledWith("b");
+  });
+});
+
+describe("SettingsTextField", () => {
+  it("renders label/hint, reflects value, and emits the raw string on change", () => {
+    const onChange = vi.fn();
+    render(<SettingsTextField label="Base directory" hint="where things live" value="~/x" onChange={onChange} placeholder="~/.base-studio-code" />);
+    expect(screen.getByText("Base directory")).toBeTruthy();
+    expect(screen.getByText("where things live")).toBeTruthy();
+    const input = screen.getByPlaceholderText("~/.base-studio-code") as HTMLInputElement;
+    expect(input.value).toBe("~/x");
+    fireEvent.change(input, { target: { value: "~/y" } });
+    expect(onChange).toHaveBeenCalledWith("~/y");
+  });
+
+  it("renders a trailing control beside the input when given", () => {
+    render(<SettingsTextField label="Base directory" value="" onChange={() => {}} trailing={<button>Choose…</button>} />);
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeTruthy();
+  });
+});
+
+describe("SettingsSelectField", () => {
+  it("renders options and emits the selected value", () => {
+    const onChange = vi.fn();
+    render(
+      <SettingsSelectField label="Model" value="a" onChange={onChange}>
+        <option value="a">A</option>
+        <option value="b">B</option>
+      </SettingsSelectField>,
+    );
+    expect(screen.getByText("Model")).toBeTruthy();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "b" } });
     expect(onChange).toHaveBeenCalledWith("b");
   });
