@@ -18,6 +18,16 @@ pub(crate) fn planner_intro_prompt(mode: String) -> String {
     }
     .to_string()
 }
+/// Return one planning stage's directive prose by id (the same text `build_active_stages_md`
+/// embeds) so the frontend can bake the FIRST active stage's directive into a bsc-agent planner's
+/// startup prompt (#qwen). Claude Code receives stage directives via runtime injection as it
+/// advances; the one-shot bsc-agent loop never gets stage 1's, so without this it greets the user
+/// and then waits for instructions the app never sends. Unknown ids fall back to the generic line.
+#[tauri::command]
+pub(crate) fn planner_stage_directive(id: String) -> String {
+    stage_directive(&id)
+}
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 pub(crate) fn stage_directive(id: &str) -> String {

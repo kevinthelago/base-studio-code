@@ -19,6 +19,45 @@ pub struct Tool {
     pub run: ToolFn,
 }
 
+/// Normalize a tool name for tolerant matching: lowercase, fold separators (`-`/space) to `_`, and
+/// collapse the MCP-style double underscore a local model imitates (`file__create` → `file_create`).
+fn normalize_tool_name(s: &str) -> String {
+    s.trim().to_ascii_lowercase().replace(['-', ' '], "_").replace("__", "_")
+}
+
+/// Resolve a model-emitted tool name to a real [`Tool`], tolerating the near-miss names local models
+/// reach for instead of bouncing the call as "unknown tool". Three tiers, most-specific first:
+///   1. exact name match (the normal path — Anthropic + a well-behaved local model);
+///   2. normalized match (`file__create` → `file_create`, `File-Info` → `file_info`) — qwen3-coder
+///      MCP-namespaces the file verbs with `__`, which otherwise never matches;
+///   3. a small alias map for common synonyms (`create_file`/`str_replace`/`run`/`cat`/…).
+///
+/// An exact match always wins, so a real tool name is never remapped. Pure → unit-tested.
+fn resolve_tool<'a>(name: &str, tools: &'a [Tool]) -> Option<&'a Tool> {
+    if let Some(t) = tools.iter().find(|t| t.def.name == name) {
+        return Some(t);
+    }
+    let n = normalize_tool_name(name);
+    if let Some(t) = tools.iter().find(|t| normalize_tool_name(&t.def.name) == n) {
+        return Some(t);
+    }
+    // Synonyms a model invents when it doesn't echo our exact verb. Maps to a canonical tool name,
+    // which is then looked up in the live set (so an alias for an unavailable tool still misses).
+    let alias = match n.as_str() {
+        "file_create" | "create_file" | "file_write" | "new_file" | "newfile" | "make_file" | "save_file" => "write_file",
+        "file_edit" | "str_replace" | "str_replace_editor" | "replace_in_file" | "apply_patch" | "patch_file" => "edit_file",
+        "file_read" | "open_file" | "cat" | "view_file" => "read_file",
+        "file_list" | "list_dir" | "listdir" | "list_directory" | "ls" => "list_files",
+        "file_stat" | "stat" => "file_info",
+        "run" | "run_command" | "shell" | "exec" | "execute" | "command" | "run_shell" => "bash",
+        "search" | "grep_search" | "ripgrep" => "grep",
+        "glob_search" | "find_files" => "glob",
+        "fetch" | "http_get" | "web_fetch" | "curl" => "webfetch",
+        _ => return None,
+    };
+    tools.iter().find(|t| t.def.name == alias)
+}
+
 // --- Runtime bridges -------------------------------------------------------
 //
 // A tool's [`ToolFn`] is **synchronous** (`Fn(&Value) -> Result<String, String>`) and runs inline
@@ -53,6 +92,13 @@ pub fn block_on_tool<F: std::future::Future>(fut: F) -> F::Output {
 /// continue — until the provider answers with no tool calls (final text) or the
 /// step budget runs out. Assistant text and a `[tool] <name>` trace are printed as
 /// they happen (the binary runs inside the PTY).
+///
+/// `interactive` keeps the session alive like Claude Code's REPL: after a task settles (a final
+/// answer or an exhausted budget) it reads the next user turn from **stdin** and continues the
+/// conversation, persisting after each turn, until stdin reaches EOF (the pane closed). Without it
+/// the loop runs the one task and returns — the right behavior for a sub-agent / one-shot call. The
+/// interactive path is what makes the planner / director usable on bsc-agent: the user keeps steering
+/// instead of the process exiting (and ending the PTY) after the first response.
 #[allow(clippy::too_many_arguments)] // the agent entrypoint legitimately takes the full session config
 pub async fn run_agent<P: LlmProvider>(
     provider: &P,
@@ -68,63 +114,144 @@ pub async fn run_agent<P: LlmProvider>(
     prior: &[Msg],
     session_path: Option<&Path>,
     max_steps: usize,
+    interactive: bool,
 ) -> Result<String, String> {
     let mut messages: Vec<Msg> = prior.to_vec();
     messages.push(Msg::User(user.to_string()));
     let tool_defs: Vec<ToolDef> = tools.iter().map(|t| t.def.clone()).collect();
+    let mut last_text = String::new();
 
-    for _ in 0..max_steps {
-        let turn = Turn {
-            system: system.to_string(),
-            messages: messages.clone(),
-            tools: tool_defs.clone(),
-            model: model.to_string(),
-            max_tokens: 4096,
-        };
-        let result = turn_with_retry(provider, &turn, api_key, Duration::from_millis(500)).await?;
-        // Record every assistant turn to the transcript (cost accounting reads its usage).
-        telemetry.record_assistant(model, &result.usage);
-        if !result.text.is_empty() {
-            println!("{}", result.text);
+    // Outer loop = one iteration per USER turn. One-shot (non-interactive) runs it exactly once; in
+    // interactive mode each pass handles a user message, then blocks for the next on stdin.
+    loop {
+        let mut answered = false;
+        for step in 0..max_steps {
+            let turn = Turn {
+                system: format!(
+                    "{AGENT_INSTRUCTIONS}\n\n{}",
+                    system
+                ),
+                messages: messages.clone(),
+                tools: tool_defs.clone(),
+                model: model.to_string(),
+                max_tokens: 4096,
+            };
+            // Per-turn heartbeat to the PTY (stderr): the request is non-streaming, so without this
+            // the pane shows nothing while the model thinks — indistinguishable from a hang. Dim, so
+            // it doesn't clutter the real output.
+            eprintln!("\x1b[2m· thinking (step {}/{max_steps})…\x1b[0m", step + 1);
+            let mut result = turn_with_retry(provider, &turn, api_key, Duration::from_millis(500)).await?;
+            // Fallback for local models (#1078): some — notably qwen via Ollama — emit tool calls as
+            // TEXT (`<tool_call>{…}</tool_call>` / `<function=name>…</function>`) instead of the
+            // structured `tool_calls` field, which the OpenAI-compat endpoint then doesn't convert.
+            // When the structured field is empty, recover any call from the text so it still runs (and
+            // strip the raw syntax from what we display).
+            if result.tool_calls.is_empty() {
+                let recovered = llm::recover_tool_calls(&result.text);
+                if !recovered.is_empty() {
+                    result.text = llm::strip_tool_syntax(&result.text);
+                    result.tool_calls = recovered;
+                }
+            }
+            // Record every assistant turn to the transcript (cost accounting reads its usage).
+            telemetry.record_assistant(model, &result.usage);
+            if !result.text.is_empty() {
+                println!("{}", result.text);
+            }
+            if result.tool_calls.is_empty() {
+                // Final answer for this user turn: record it, persist, stop stepping.
+                messages.push(Msg::Assistant { text: result.text.clone(), tool_calls: vec![] });
+                if let Some(p) = session_path {
+                    save_conversation(p, &messages);
+                }
+                last_text = result.text.clone();
+                answered = true;
+                break;
+            }
+            messages.push(Msg::Assistant {
+                text: result.text.clone(),
+                tool_calls: result.tool_calls.clone(),
+            });
+            for tc in &result.tool_calls {
+                // Tolerant name resolution (#qwen): map a near-miss name (`file__create`) to the real
+                // tool BEFORE gating/auditing, so perms + audit + the trace all use the canonical name.
+                let resolved = resolve_tool(&tc.name, tools);
+                let name = resolved.map(|t| t.def.name.as_str()).unwrap_or(tc.name.as_str());
+                println!("[tool] {name}");
+                // Permission gate: a denial is fed back as the tool result (so the model
+                // sees it and adapts) rather than crashing the loop.
+                let output = match perms.check(name, &tc.args) {
+                    Err(reason) => {
+                        println!("[denied] {name}");
+                        reason
+                    }
+                    Ok(()) => {
+                        telemetry.audit(name, &tc.args); // one audit line per executed tool
+                        match resolved {
+                            Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
+                            None => format!("error: unknown tool '{}'", tc.name),
+                        }
+                    }
+                };
+                messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
+            }
         }
-        if result.tool_calls.is_empty() {
-            // Record the final assistant turn so a resumed session sees it, then persist.
-            messages.push(Msg::Assistant { text: result.text.clone(), tool_calls: vec![] });
+
+        // The agentic loop for this user turn ended. If it ran out of steps without a final answer,
+        // persist what we have; one-shot surfaces the budget error, interactive notes it and waits.
+        if !answered {
             if let Some(p) = session_path {
                 save_conversation(p, &messages);
             }
+            if !interactive {
+                telemetry.finish();
+                return Err(format!("agent did not finish within {max_steps} steps"));
+            }
+            eprintln!("\x1b[2m· (reached the {max_steps}-step budget for this turn — add direction to continue)\x1b[0m");
+        }
+
+        // One-shot mode returns the final answer (the historical contract). Interactive mode waits
+        // for the next user message and loops; EOF on stdin (pane closed / Ctrl-D) ends the session.
+        if !interactive {
             telemetry.finish();
-            return Ok(result.text);
+            return Ok(last_text);
         }
-        messages.push(Msg::Assistant {
-            text: result.text.clone(),
-            tool_calls: result.tool_calls.clone(),
-        });
-        for tc in &result.tool_calls {
-            println!("[tool] {}", tc.name);
-            // Permission gate: a denial is fed back as the tool result (so the model
-            // sees it and adapts) rather than crashing the loop.
-            let output = match perms.check(&tc.name, &tc.args) {
-                Err(reason) => {
-                    println!("[denied] {}", tc.name);
-                    reason
-                }
-                Ok(()) => {
-                    telemetry.audit(&tc.name, &tc.args); // one audit line per executed tool
-                    match tools.iter().find(|t| t.def.name == tc.name) {
-                        Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
-                        None => format!("error: unknown tool '{}'", tc.name),
-                    }
-                }
-            };
-            messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
+        match read_next_user_turn().await {
+            Some(next) => messages.push(Msg::User(next)),
+            None => {
+                telemetry.finish();
+                return Ok(last_text);
+            }
         }
     }
-    if let Some(p) = session_path {
-        save_conversation(p, &messages);
+}
+
+/// Block (off the async worker) for the next user turn from stdin, echoing a prompt first. Returns
+/// `None` on EOF (the PTY closed) so the caller ends the session; skips blank lines so a stray Enter
+/// doesn't submit an empty turn. The PTY is in canonical mode, so the terminal line-edits + echoes
+/// the user's typing — they see what they enter.
+async fn read_next_user_turn() -> Option<String> {
+    use std::io::{BufRead, Write};
+    loop {
+        // A visible, distinct prompt so the user knows the agent is waiting for them (not hung).
+        eprint!("\n\x1b[1;36m› \x1b[0m");
+        let _ = std::io::stderr().flush();
+        let line = tokio::task::spawn_blocking(|| {
+            let mut s = String::new();
+            match std::io::stdin().lock().read_line(&mut s) {
+                Ok(0) | Err(_) => None, // EOF or read error
+                Ok(_) => Some(s),
+            }
+        })
+        .await
+        .ok()
+        .flatten()?;
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+        // Blank line — re-prompt rather than submitting an empty turn.
     }
-    telemetry.finish();
-    Err(format!("agent did not finish within {max_steps} steps"))
 }
 
 /// How many times a *transient* provider error is retried before the loop gives up.
@@ -268,6 +395,60 @@ pub fn edit_file_tool() -> Tool {
     }
 }
 
+/// Resolve a real `bash` for the `bash` tool. **Critical on Windows:** a bare `bash` on PATH
+/// resolves to `C:\Windows\System32\bash.exe` — the WSL launcher — which fails with
+/// `execvpe(/bin/bash): No such file or directory` when no WSL distro is installed. So prefer, in
+/// order: `$BSC_AGENT_BASH` (the exact Git Bash the app's session shell runs under, set in
+/// `wire_bsc_env`), then a real `$SHELL`, then a located Git Bash, before the bare `bash` fallback.
+/// (Mirrors the app's `platform::shell::resolve_shell`; bsc-agent can't depend on `src-tauri`, so the
+/// minimal Windows search is duplicated here to keep the standalone binary self-sufficient.)
+fn resolve_bash() -> String {
+    if let Ok(b) = std::env::var("BSC_AGENT_BASH") {
+        let b = b.trim();
+        if !b.is_empty() {
+            return b.to_string();
+        }
+    }
+    if let Ok(s) = std::env::var("SHELL") {
+        if !s.is_empty() && std::path::Path::new(&s).exists() {
+            return s;
+        }
+    }
+    #[cfg(windows)]
+    if let Some(b) = find_git_bash() {
+        return b;
+    }
+    "bash".to_string()
+}
+
+/// Locate Git Bash's `bash.exe` (never WSL's System32 stub) under the common install roots. Windows
+/// only; returns the first existing `bin\bash.exe` or `usr\bin\bash.exe`.
+#[cfg(windows)]
+fn find_git_bash() -> Option<String> {
+    use std::path::PathBuf;
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+        if let Ok(p) = std::env::var(var) {
+            roots.push(PathBuf::from(p).join("Git"));
+        }
+    }
+    if let Ok(p) = std::env::var("LOCALAPPDATA") {
+        roots.push(PathBuf::from(p).join("Programs").join("Git"));
+    }
+    roots.push(PathBuf::from(r"C:\Program Files\Git"));
+    for root in roots {
+        let bin = root.join("bin").join("bash.exe");
+        if bin.exists() {
+            return Some(bin.to_string_lossy().into_owned());
+        }
+        let usr = root.join("usr").join("bin").join("bash.exe");
+        if usr.exists() {
+            return Some(usr.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 /// The `bash` tool: run a command with `bash -c` and return combined stdout+stderr.
 /// A non-zero exit is NOT an error — the output (plus an `[exit N]` line) is returned
 /// so the agent can read it; only a spawn failure is an `Err`.
@@ -284,11 +465,12 @@ pub fn bash_tool() -> Tool {
         },
         run: Box::new(|args| {
             let command = args["command"].as_str().ok_or("missing 'command' argument")?;
-            let output = std::process::Command::new("bash")
+            let shell = resolve_bash();
+            let output = std::process::Command::new(&shell)
                 .arg("-c")
                 .arg(command)
                 .output()
-                .map_err(|e| format!("bash: failed to spawn: {e}"))?;
+                .map_err(|e| format!("bash: failed to spawn '{shell}': {e}"))?;
             let mut out = String::new();
             out.push_str(&String::from_utf8_lossy(&output.stdout));
             out.push_str(&String::from_utf8_lossy(&output.stderr));
@@ -297,6 +479,113 @@ pub fn bash_tool() -> Tool {
                 out.push_str(&format!("\n[exit {code}]"));
             }
             Ok(out)
+        }),
+    }
+}
+
+/// Run a project `bsc-*` CLI by name via `bash -c "<cli> <args>"` (so the BASH_ENV shell function that
+/// execs the staged sidecar is in scope), feeding `stdin` to it when provided. Returns combined
+/// stdout+stderr (a non-zero exit is appended as `[exit N]`, not an error — the model reads it).
+/// Shared by every [`bsc_cli_tool`]. (#qwen)
+fn run_bsc_cli(cli: &str, args: &str, stdin: Option<&str>) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let shell = resolve_bash();
+    let line = if args.trim().is_empty() { cli.to_string() } else { format!("{cli} {}", args.trim()) };
+    let mut child = std::process::Command::new(&shell)
+        .arg("-c")
+        .arg(&line)
+        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{cli}: failed to spawn '{shell}': {e}"))?;
+    if let Some(s) = stdin {
+        if let Some(mut si) = child.stdin.take() {
+            let _ = si.write_all(s.as_bytes());
+        } // dropped here → EOF, so a CLI that reads stdin (e.g. `bsc-plan add`) doesn't hang
+    }
+    let output = child.wait_with_output().map_err(|e| format!("{cli}: {e}"))?;
+    let mut out = String::new();
+    out.push_str(&String::from_utf8_lossy(&output.stdout));
+    out.push_str(&String::from_utf8_lossy(&output.stderr));
+    if !output.status.success() {
+        let code = output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into());
+        out.push_str(&format!("\n[exit {code}]"));
+    }
+    Ok(out)
+}
+
+/// Pull the command-argument string + optional stdin out of a model's tool-call arguments, however it
+/// shaped them — so a `bsc-*` tool runs like the normal command it is rather than depending on one
+/// exact arg key (#qwen). A local model may pass the args under `args`/`command`/`cmd`/`argv`/
+/// `subcommand`, as a string OR an argv array, or just splat positional values into the object; any of
+/// those reconstructs the same command line. `stdin` (or `input`) pipes input for a write. Pure.
+fn extract_cli_args(v: &Value) -> (String, Option<String>) {
+    let stdin = ["stdin", "input"]
+        .iter()
+        .find_map(|k| v.get(*k).and_then(Value::as_str))
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    // An explicit arguments field wins — as a string ("list --limit 5") or an argv array.
+    for key in ["args", "arguments", "command", "cmd", "argv", "subcommand"] {
+        match v.get(key) {
+            Some(Value::String(s)) => return (s.trim().to_string(), stdin),
+            Some(Value::Array(arr)) => {
+                let joined = arr.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
+                return (joined.trim().to_string(), stdin);
+            }
+            _ => {}
+        }
+    }
+    // Fallback: treat the object as positional args — join its scalar values (skipping the stdin
+    // keys), so `{ "0": "list", "1": "--limit", "2": "5" }` or `{ "x": "summary" }` still runs.
+    let positional: Vec<String> = v
+        .as_object()
+        .map(|o| {
+            o.iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "stdin" | "input"))
+                .filter_map(|(_, val)| match val {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    Value::Bool(b) => Some(b.to_string()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (positional.join(" ").trim().to_string(), stdin)
+}
+
+/// A FIRST-CLASS tool for one project `bsc-*` CLI (#qwen). Local models (qwen especially) call a CLI
+/// like `bsc-plan` as a *tool*, not via the `bash` tool — and then bounce off "unknown tool" and give
+/// up. So we hand them the tool by its real name: `args` is the CLI argument string (`"summary"`,
+/// `"list --status open"`), `stdin` optionally pipes input (JSON for a write like `add`). It runs
+/// `<cli> <args>` through bash exactly as the user would. Same intent-named-tool fix as `list_files`.
+/// Only registered when the CLI is actually staged this session (its `$BSC_*_BIN` is set), so an
+/// alias for an absent CLI never appears.
+pub fn bsc_cli_tool(cli: &'static str) -> Tool {
+    Tool {
+        def: ToolDef {
+            name: cli.to_string(),
+            description: format!(
+                "Run the `{cli}` project CLI. Put the CLI arguments in `args` (e.g. \"summary\" or \
+                 \"list --limit 5\"); use `args: \"help\"` to see its commands, then `args: \"<command> help\"` \
+                 for one command's args. Pipe input (e.g. JSON for a write) via `stdin`. Equivalent to \
+                 running `{cli} <args>` in the shell."
+            ),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "args": { "type": "string", "description": "the CLI arguments, e.g. \"summary\" or \"list --limit 5\" (empty runs the CLI with no args — its help/overview)" },
+                    "stdin": { "type": "string", "description": "optional text piped to the command's stdin (e.g. JSON for a write command)" }
+                }
+            }),
+        },
+        run: Box::new(move |args| {
+            // Tolerant of however the model shaped the call, so it runs like the normal command it is.
+            let (a, stdin) = extract_cli_args(args);
+            run_bsc_cli(cli, &a, stdin.as_deref())
         }),
     }
 }
@@ -474,6 +763,7 @@ const MAX_TASK_CHILDREN: usize = 32;
 const MAX_TASK_STEPS: usize = 20;
 /// Prepended to the inherited project context so a delegated child knows its remit.
 const TASK_SYSTEM_PREFIX: &str = "You are a sub-agent spawned to complete one focused task. Work autonomously with the tools available and return your final answer as plain text when you are done.\n\n";
+const AGENT_INSTRUCTIONS: &str = include_str!("../data/agent-instructions.md");
 
 static TASK_CHILDREN_SPAWNED: AtomicUsize = AtomicUsize::new(0);
 
@@ -490,7 +780,7 @@ pub fn default_tools<P: LlmProvider + Send + Sync + 'static>(
     perms: Permissions,
     depth: usize,
 ) -> Vec<Tool> {
-    vec![
+    let mut tools = vec![
         read_file_tool(),
         write_file_tool(),
         edit_file_tool(),
@@ -499,7 +789,62 @@ pub fn default_tools<P: LlmProvider + Send + Sync + 'static>(
         glob_tool(),
         webfetch_tool(),
         task_tool(provider, api_key, model, system, perms, depth),
-    ]
+    ];
+    // File-structure tools, backed by the `bsc-files` LIBRARY in-process (no subprocess, no
+    // binary-path fragility). Exposed as FIRST-CLASS, INTENT-NAMED tools — `list_files` is the verb a
+    // local model actually reaches for (it kept inventing `*_list` names when nothing matched). The
+    // prose-only hint didn't work, and a single args-string tool got fumbled; clearly-named tools the
+    // model calls the same reliable way it calls MCP tools.
+    tools.push(list_files_tool());
+    tools.push(file_info_tool());
+    tools
+}
+
+/// `list_files` — the project's folder structure with file sizes/counts/language (gitignore-aware),
+/// rendered from `bsc_files::build_tree`. The model's natural "list/show the files" verb.
+fn list_files_tool() -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "list_files".into(),
+            description: "List the project's files and folders under a path — each file's size and language, each directory's aggregate size and file count. The fast way to understand the codebase layout; respects .gitignore. Use this instead of guessing at the structure.".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "directory to list, relative to the project root (default \".\")" },
+                    "depth": { "type": "integer", "description": "limit the tree to this many levels (optional)" }
+                }
+            }),
+        },
+        run: Box::new(|args| {
+            let rel = args["path"].as_str().filter(|s| !s.is_empty()).unwrap_or(".");
+            let depth = args["depth"].as_u64().map(|d| d as usize);
+            let base = std::env::current_dir().map_err(|e| format!("list_files: cwd: {e}"))?.join(rel);
+            let node = bsc_files::build_tree(&base, &bsc_files::TreeOpts::default())?;
+            let mut out = bsc_files::render_tree(&node, depth);
+            out.push_str(&format!("\n{} files, {}", node.files, bsc_files::human_size(node.size)));
+            Ok(out)
+        }),
+    }
+}
+
+/// `file_info` — size, language, and line count for one path, from `bsc_files::stat`.
+fn file_info_tool() -> Tool {
+    Tool {
+        def: ToolDef {
+            name: "file_info".into(),
+            description: "Report a single file or directory's size, language, and line count.".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": { "type": "string", "description": "the file or directory, relative to the project root" } },
+                "required": ["path"]
+            }),
+        },
+        run: Box::new(|args| {
+            let rel = args["path"].as_str().ok_or("file_info: missing 'path'")?;
+            let base = std::env::current_dir().map_err(|e| format!("file_info: cwd: {e}"))?.join(rel);
+            Ok(bsc_files::stat(&base, true)?.lean())
+        }),
+    }
 }
 
 /// The `task` tool: delegate a focused sub-task to a child agent loop. The child runs the
@@ -567,7 +912,7 @@ pub fn task_tool<P: LlmProvider + Send + Sync + 'static>(
                     );
                     run_agent(
                         &*provider, &api_key, &model, &system, &prompt, &child_tools, &perms, &tele,
-                        &[], None, MAX_TASK_STEPS,
+                        &[], None, MAX_TASK_STEPS, false, // sub-agent: one-shot, never reads stdin
                     )
                     .await
                 })
@@ -582,6 +927,87 @@ mod tests {
     use llm::{LlmRequest, ToolCall};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::cell::Cell;
+
+    /// The injected instructions must teach a local model the thing it kept getting wrong: a CLI like
+    /// `bsc-files` is run THROUGH the `bash` tool, not as its own function — and it must never refuse
+    /// a command as "unsupported". Guards against the preamble drifting back to a bare tool list.
+    /// The file-structure tools are the reliable, MCP-style surface a local model actually calls (vs.
+    /// the prose-only hint it ignored / the args-string it fumbled). Intent-named, and they run.
+    #[test]
+    fn resolve_tool_maps_near_miss_names_to_real_tools() {
+        // The real set a session is launched with (a representative subset).
+        let tools = vec![write_file_tool(), edit_file_tool(), read_file_tool(), bash_tool(), list_files_tool(), file_info_tool()];
+        let name = |n: &str| super::resolve_tool(n, &tools).map(|t| t.def.name.as_str());
+        // Exact match wins (a real name is never remapped).
+        assert_eq!(name("write_file"), Some("write_file"));
+        // qwen's MCP-namespaced verbs: normalized + aliased.
+        assert_eq!(name("file__create"), Some("write_file"));
+        assert_eq!(name("file__edit"), Some("edit_file"));
+        assert_eq!(name("file__info"), Some("file_info")); // normalized match, no alias needed
+        // Common synonyms from other local models.
+        assert_eq!(name("create_file"), Some("write_file"));
+        assert_eq!(name("str_replace"), Some("edit_file"));
+        assert_eq!(name("run"), Some("bash"));
+        assert_eq!(name("File-Info"), Some("file_info")); // case + separator folding
+        // A genuinely unknown name still misses (fed back to the model as an error).
+        assert_eq!(name("frobnicate"), None);
+        // An alias for a tool that ISN'T in this session's set misses (grep absent here).
+        assert_eq!(name("ripgrep"), None);
+    }
+
+    #[test]
+    fn extract_cli_args_handles_the_shapes_a_local_model_uses() {
+        use serde_json::json;
+        let go = |v| super::extract_cli_args(&v);
+        // The documented shape.
+        assert_eq!(go(json!({ "args": "summary" })), ("summary".to_string(), None));
+        // Alternate arg keys, an argv array, and stdin for a write.
+        assert_eq!(go(json!({ "command": "list --limit 5" })).0, "list --limit 5");
+        assert_eq!(go(json!({ "argv": ["list", "--status", "open"] })).0, "list --status open");
+        assert_eq!(go(json!({ "args": "add", "stdin": "[{}]" })), ("add".to_string(), Some("[{}]".to_string())));
+        // Positional splat fallback (sorted keys "0","1" → "fleet get").
+        assert_eq!(go(json!({ "0": "fleet", "1": "get" })).0, "fleet get");
+        // Empty → runs the CLI bare (its help/overview).
+        assert_eq!(go(json!({})), (String::new(), None));
+    }
+
+    #[test]
+    fn bsc_cli_tool_is_named_after_the_cli_and_takes_args_plus_stdin() {
+        // qwen calls `bsc-plan` as a tool; we register it by that exact name so the call resolves
+        // instead of bouncing as "unknown tool". args + stdin let it run any subcommand (incl. writes).
+        let t = bsc_cli_tool("bsc-plan");
+        assert_eq!(t.def.name, "bsc-plan");
+        assert!(t.def.description.contains("bsc-plan"));
+        assert!(t.def.description.contains("help"), "points the model at the CLI's own help");
+        let props = &t.def.schema["properties"];
+        assert!(props.get("args").is_some(), "exposes an args string");
+        assert!(props.get("stdin").is_some(), "exposes an optional stdin");
+    }
+
+    #[test]
+    fn file_structure_tools_are_named_and_run() {
+        let lf = list_files_tool();
+        assert_eq!(lf.def.name, "list_files");
+        let fi = file_info_tool();
+        assert_eq!(fi.def.name, "file_info");
+        // list_files runs against the cwd (the crate dir under test) and returns a tree + summary.
+        let out = (lf.run)(&serde_json::json!({ "path": ".", "depth": 1 })).unwrap();
+        assert!(out.contains("files,"), "summary line present: {out}");
+        // file_info on a missing path is a clean Err fed back to the model, not a panic.
+        assert!((fi.run)(&serde_json::json!({ "path": "definitely-not-a-real-file-xyz" })).is_err());
+    }
+
+    #[test]
+    fn agent_instructions_point_at_the_real_tools_and_forbid_the_refusal() {
+        let i = AGENT_INSTRUCTIONS;
+        // The intent-named file tools the model should call (not a prose-only CLI hint).
+        assert!(i.contains("list_files"), "must name the list_files tool");
+        assert!(i.contains("file_info"), "must name the file_info tool");
+        assert!(i.contains("bash"), "must name the bash tool for shell commands");
+        // The exact failure mode we're fixing: the model calling a command 'unsupported'.
+        assert!(i.contains("unsupported") || i.contains("not in my toolset"),
+            "must explicitly forbid the 'command is unsupported' refusal");
+    }
 
     /// A provider that scripts two turns: (1) call `read_file` on a temp path, then
     /// (2) — once it sees the tool result echoed back — return the final text. Proves
@@ -633,7 +1059,7 @@ mod tests {
             file: path.to_string_lossy().into_owned(),
         };
         let tools = vec![read_file_tool()];
-        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 5)
+        let out = run_agent(&mock, "", "m", "", "read the file", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 5, false)
             .await
             .unwrap();
         assert_eq!(out, "done: saw HELLO");
@@ -659,7 +1085,7 @@ mod tests {
             }
         }
         let tools = vec![read_file_tool()];
-        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 3)
+        let err = run_agent(&Loopy, "", "m", "", "go", &tools, &Permissions::default(), &Telemetry::disabled(), &[], None, 3, false)
             .await
             .unwrap_err();
         assert!(err.contains("did not finish"));
@@ -708,7 +1134,7 @@ mod tests {
         let mock = BashMock { step: Cell::new(0) };
         let tools = vec![bash_tool()];
         let perms = Permissions { deny_bash: vec!["rm -rf".into()], ..Default::default() };
-        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, &Telemetry::disabled(), &[], None, 5)
+        let out = run_agent(&mock, "", "m", "", "clean up", &tools, &perms, &Telemetry::disabled(), &[], None, 5, false)
             .await
             .unwrap();
         assert_eq!(out, "ok: was denied");
@@ -740,7 +1166,7 @@ mod tests {
         let tx = dir.join("s.jsonl");
         let tokens = dir.join("tokens.log").to_string_lossy().into_owned();
         let tele = Telemetry::for_test(Some(tokens), Some(tx.clone()));
-        let out = run_agent(&FinalMock, "", "claude-x", "", "hi", &[], &Permissions::default(), &tele, &[], None, 5)
+        let out = run_agent(&FinalMock, "", "claude-x", "", "hi", &[], &Permissions::default(), &tele, &[], None, 5, false)
             .await
             .unwrap();
         assert_eq!(out, "all done");
@@ -773,7 +1199,7 @@ mod tests {
         let session = dir.join("conversation.json");
 
         // Fresh run: records the user turn + the final assistant turn.
-        run_agent(&OneShot, "", "m", "", "first", &[], &Permissions::default(), &Telemetry::disabled(), &[], Some(&session), 5)
+        run_agent(&OneShot, "", "m", "", "first", &[], &Permissions::default(), &Telemetry::disabled(), &[], Some(&session), 5, false)
             .await
             .unwrap();
         let prior = load_conversation(&session);
@@ -781,7 +1207,7 @@ mod tests {
         assert!(matches!(&prior[0], Msg::User(s) if s == "first"));
 
         // Resume: seeded with `prior`, the second exchange appends to the same file.
-        run_agent(&OneShot, "", "m", "", "second", &[], &Permissions::default(), &Telemetry::disabled(), &prior, Some(&session), 5)
+        run_agent(&OneShot, "", "m", "", "second", &[], &Permissions::default(), &Telemetry::disabled(), &prior, Some(&session), 5, false)
             .await
             .unwrap();
         let after = load_conversation(&session);
@@ -889,6 +1315,19 @@ mod tests {
         let err = (tool.run)(&serde_json::json!({ "path": &p, "old_string": "zzz", "new_string": "x" })).unwrap_err();
         assert!(err.contains("not found"));
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn resolve_bash_prefers_app_provided_path() {
+        // The app hands the runtime the exact Git Bash via $BSC_AGENT_BASH; it wins over everything
+        // (so the `bash` tool never falls through to the Windows WSL launcher). Unique value so the
+        // assertion is unambiguous even though env is process-global.
+        std::env::set_var("BSC_AGENT_BASH", "/opt/from-app/bash");
+        assert_eq!(resolve_bash(), "/opt/from-app/bash");
+        // Trimmed + empty is treated as unset (falls through, not returned blank).
+        std::env::set_var("BSC_AGENT_BASH", "   ");
+        assert_ne!(resolve_bash(), "");
+        std::env::remove_var("BSC_AGENT_BASH");
     }
 
     #[test]

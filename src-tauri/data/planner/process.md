@@ -748,7 +748,7 @@ stream's `commands`** (the app pre-approves them at launch; mirrors `BASELINE_RE
 - **Build / test toolchains** (doer/worker streams): `cargo`, `rustc`, `rustup`, `npm`,
   `pnpm`, `yarn`, `npx`, `node`, `deno`, `bun`, `python`, `python3`, `pip`, `pip3`,
   `pytest`, `make`, `go`, `tsc`, `vite`, `eslint`, `prettier`, `vitest`, `jest`, `docker`,
-  `mvn`, `gradle`, `dotnet`
+  `mvn`, `gradle`, `dotnet`, `ollama`
 - **Always** (every agent): `gh`, `git`, `bsc-plan`
 
 So a stream's `commands` lists ONLY the tools its stack needs that are NOT in the baseline

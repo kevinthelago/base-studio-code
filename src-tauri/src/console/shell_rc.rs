@@ -300,6 +300,13 @@ pub(crate) const BSC_BLUEPRINT_RC: &str = bsc_sidecar_rc!("bsc-blueprint", "BSC_
 /// exactly: execs the absolute-path binary, or errors on a 0-byte stub.
 pub(crate) const BSC_PROJECT_RC: &str = bsc_sidecar_rc!("bsc-project", "BSC_PROJECT_BIN");
 
+/// The `bsc-files` shell helper — execs the bundled filesystem/structure CLI ($BSC_FILES_BIN) so a
+/// live session can read the folder tree with file metrics (`bsc-files tree`) + single-path `stat`
+/// from its own shell. Standalone (no store/env required; defaults the root to the shell's cwd, which
+/// the app `cd`s to the session repo). Mirrors the `bsc-plan`/`bsc-project` sidecar-helper shape
+/// exactly: execs the absolute-path binary, or errors on a 0-byte stub; falls back to a PATH lookup.
+pub(crate) const BSC_FILES_RC: &str = bsc_sidecar_rc!("bsc-files", "BSC_FILES_BIN");
+
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
 /// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
@@ -341,6 +348,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_COMPLIANCE_RC,
     BSC_BLUEPRINT_RC,
     BSC_PROJECT_RC,
+    BSC_FILES_RC,
     BSC_LEARNED_RC,
 ];
 

@@ -4,18 +4,46 @@
 //! hub-lifecycle view, not tied to one plan.db. Installed per-session like the other `bsc-*` helpers
 //! and execed by absolute path from `$BSC_PROJECT_BIN`.
 //!
-//! Commands:
-//!   bsc-project list                    # key + published + path for every local project (TSV; --json array)
-//!   bsc-project published get <key>     # whether <key> is published
-//!   bsc-project published set <key>     # mark <key> published (writes the .published marker)
-//! Global flags: --json
+//! Help is per-command so a model loads only what it needs (#1762):
+//!   bsc-project help            # compact menu (the small "what commands exist" prompt)
+//!   bsc-project published help  # detailed help for ONE command
+//!   bsc-project <cmd> help      # same, after any command
 
+use bsc_cli_util::CmdDoc;
 use bsc_project::{is_published, list_projects, mark_published};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     bsc_cli_util::cli_main("bsc-project", run)
 }
+
+const TAGLINE: &str = "the cross-project hub lifecycle — list local projects + the .published marker (#1720)";
+
+/// The command catalog — drives both dispatch and the shared help system. One detailed `usage` block
+/// per top-level command keeps the overview tiny and the detail one-fetch-away.
+const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "list",
+        summary: "key + published + path for every local project",
+        usage: "\
+USAGE:
+  bsc-project list [--json]
+
+Prints one row per local project under ~/.base-studio-code/projects/ — its key, whether it is
+published, and its absolute path. TSV by default; --json emits an array of { key, published, path }.",
+    },
+    CmdDoc {
+        name: "published",
+        summary: "read or set a project's .published marker",
+        usage: "\
+USAGE:
+  bsc-project published get <key>     # print whether <key> is published
+  bsc-project published set <key>     # mark <key> published (writes the in-place .published marker)
+
+Published-ness is the in-place .published marker under the project hub (#922) — setting it never
+moves the hub directory. For a single project's plan + prose, use `bsc-plan` instead.",
+    },
+];
 
 /// Parsed global flags + leftover positional args.
 struct Args {
@@ -28,10 +56,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     for arg in raw {
         match arg.as_str() {
             "--json" => a.json = true,
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                std::process::exit(0);
-            }
+            // `-h`/`--help` route to the help command (anywhere on the line).
+            "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -42,14 +68,28 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
-    if cmd.is_empty() {
-        print!("{USAGE}");
+
+    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
+    if cmd.is_empty() || cmd == "help" {
+        match args.positional.get(1) {
+            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-project", TAGLINE, COMMANDS, name)),
+            None => print!("{}", bsc_cli_util::help_overview("bsc-project", TAGLINE, COMMANDS)),
+        }
         return Ok(());
     }
+    // Per-command help: `bsc-project <cmd> help`.
+    if args.positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for("bsc-project", TAGLINE, COMMANDS, &cmd));
+        return Ok(());
+    }
+
     match cmd.as_str() {
         "list" => cmd_list(&args),
         "published" => cmd_published(&args),
-        other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+        other => Err(format!(
+            "unknown command '{other}'\n\n{}",
+            bsc_cli_util::help_overview("bsc-project", TAGLINE, COMMANDS)
+        )),
     }
 }
 
@@ -100,24 +140,12 @@ fn cmd_published(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown published command '{other}'\n\n{USAGE}")),
+        other => Err(format!(
+            "unknown published command '{other}'\n\n{}",
+            bsc_cli_util::help_for("bsc-project", TAGLINE, COMMANDS, "published")
+        )),
     }
 }
-
-const USAGE: &str = "\
-bsc-project — the cross-project hub lifecycle (#1720)
-
-USAGE:
-  bsc-project <command> [args] [--json]
-
-COMMANDS:
-  list                          key + published + path for every local project (TSV; --json array)
-  published get <key>           print whether <key> is published
-  published set <key>           mark <key> published (writes the in-place .published marker)
-
-Projects live under ~/.base-studio-code/projects/<key>/; published-ness is the in-place .published
-marker (#922). For a single project's plan + prose, use `bsc-plan` instead.
-";
 
 #[cfg(test)]
 mod tests {
@@ -133,5 +161,26 @@ mod tests {
     #[test]
     fn parse_args_rejects_an_unknown_flag() {
         assert!(parse_args(vec!["list".into(), "--nope".into()]).is_err());
+    }
+
+    #[test]
+    fn parse_args_routes_help_flag_to_the_help_command() {
+        let a = parse_args(vec!["--help".into()]).unwrap();
+        assert_eq!(a.positional.first().map(String::as_str), Some("help"));
+    }
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = bsc_cli_util::help_overview("bsc-project", TAGLINE, COMMANDS);
+        assert!(ov.contains("list"));
+        assert!(ov.contains("published"));
+        // Per-command help shows that one command's detail (incl. its subcommands).
+        let one = bsc_cli_util::help_for("bsc-project", TAGLINE, COMMANDS, "published");
+        assert!(one.contains("bsc-project published"));
+        assert!(one.contains("set"));
+        assert!(!one.contains("list"));
+        // An unknown command falls back to the overview.
+        let miss = bsc_cli_util::help_for("bsc-project", TAGLINE, COMMANDS, "nope");
+        assert!(miss.contains("COMMANDS:"));
     }
 }

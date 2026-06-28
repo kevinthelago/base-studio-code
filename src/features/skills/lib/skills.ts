@@ -302,6 +302,8 @@ export function parseSkillGroupsFile(raw: string, all: SkillDef[]): Array<Omit<S
 // Shape handed to `ensure_session_settings` (field names match the Rust SkillCfg).
 
 export interface SkillCfg {
+  /** Stable skilldb id — carried so the backend can count an attach as a use (#A). */
+  id: string;
   name: string;
   description: string;
   prompt: string;
@@ -309,12 +311,13 @@ export interface SkillCfg {
 }
 
 /** Resolved skills → their `.claude/skills/<slug>/SKILL.md` payloads. Skips any
- *  skill whose name slugs to empty (nothing to key the directory on). */
+ *  skill whose name slugs to empty (nothing to key the directory on). Carries the
+ *  stable id so the launch path can count an attach as a use (#A). */
 export function toSkillCfgs(defs: SkillDef[]): SkillCfg[] {
   const out: SkillCfg[] = [];
   for (const s of defs) {
     if (!skillSlug(s.name)) continue;
-    out.push({ name: s.name, description: s.desc, prompt: s.prompt, tools: s.tools });
+    out.push({ id: s.id, name: s.name, description: s.desc, prompt: s.prompt, tools: s.tools });
   }
   return out;
 }

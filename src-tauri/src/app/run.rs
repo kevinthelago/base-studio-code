@@ -100,6 +100,14 @@ pub fn run() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
                 tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
             });
+            // Reclaim stale fleet worktrees so they don't accumulate to GBs (#worktree-disk): orphans
+            // (deleted project) + merged-and-clean worktrees. Off the synchronous boot path + on a
+            // worker thread (the git probes + recursive deletes are I/O-heavy); never touches a dirty
+            // worktree, so it can't lose work.
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
+                tauri::async_runtime::spawn_blocking(fleet::teardown::gc_worktrees_on_boot);
+            });
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -142,6 +150,7 @@ pub fn run() {
             source_oauth::source_oauth_begin,
             planner::workspace::setup_workspaces,
             planner::directives::planner_intro_prompt,
+            planner::directives::planner_stage_directive,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,

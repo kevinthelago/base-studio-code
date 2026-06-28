@@ -26,7 +26,7 @@ pub(crate) const BASELINE_READONLY: &[&str] = &[
 pub(crate) const BASELINE_BUILD: &[&str] = &[
     "cargo", "rustc", "rustup", "npm", "pnpm", "yarn", "npx", "node", "deno", "bun",
     "python", "python3", "pip", "pip3", "pytest", "make", "go", "tsc", "vite", "eslint",
-    "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet",
+    "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet", "ollama",
 ];
 /// Dangerous command patterns denied in every spawned session by default.
 ///
@@ -205,6 +205,10 @@ pub(crate) fn write_session_settings(
     crate::platform::fsx::atomic_write_json(&settings_path, &config).map_err(|e| e.to_string())?;
     write_mcp_json(&root, mcp_servers)?;
     write_session_skills(&root, skills)?;
+    // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
+    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
+    // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
+    crate::extensions::skills::record_skill_uses(skills);
     git_exclude(&root, ".claude/");
     git_exclude(&root, ".mcp.json");
     Ok(())

@@ -268,6 +268,12 @@ fn wire_bsc_env(
     let _ = std::fs::write(&rc, bsc_rc_body());
     let rc_bash = to_bash_path(&rc.to_string_lossy());
     cmd.env("BASH_ENV", &rc_bash);
+    // Shared package-manager caches/stores so the fleet's per-repo worktrees don't each keep a full
+    // copy of node_modules / target/ (#worktree-disk). App-native, every package manager; NATIVE OS
+    // paths (read by cargo/npm/etc., not the bash shell). A no-op for non-worktree sessions.
+    for (k, v) in crate::platform::pkgcache::package_cache_env(&base, cwd) {
+        cmd.env(k, v);
+    }
     // Agents audit log (#257): the `bsc-audit` PreToolUse hook (added to gated panes'
     // settings.json by the frontend) appends one redacted TSV line per tool attempt to
     // this app-wide log, tagged with the pane id. Set for every pane (harmless — only
@@ -371,6 +377,7 @@ fn wire_bsc_env(
         ("bsc-compliance", "BSC_COMPLIANCE_BIN"),
         ("bsc-blueprint", "BSC_BLUEPRINT_BIN"),
         ("bsc-project", "BSC_PROJECT_BIN"),
+        ("bsc-files", "BSC_FILES_BIN"),
         ("bsc-agent", "BSC_AGENT_BIN"),
     ] {
         if let Some(bin) = sidecar_bin_path(stem) {
@@ -389,6 +396,11 @@ fn wire_bsc_env(
     // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
     // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
     if provider_id == Some("bsc-agent") {
+        // Hand the runtime the SAME real bash the session shell uses (Git Bash on Windows), so its
+        // `bash` tool never falls through to `Command::new("bash")` → the WSL launcher
+        // (System32\bash.exe), which fails `execvpe(/bin/bash)` with no WSL distro. `resolve_shell`
+        // already locates Git Bash and avoids that stub.
+        cmd.env("BSC_AGENT_BASH", crate::shell::resolve_shell());
         if let Some(p) = crate::bsc_agent_session_path(cwd) {
             cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
         }

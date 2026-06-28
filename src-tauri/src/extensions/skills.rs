@@ -27,6 +27,33 @@ pub(crate) fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCf
     }
     Ok(())
 }
+
+/// Count an ATTACH of each skill (#A): a session getting these skills written is a "use" of them, so
+/// bump the global usage counter via skilldb. `ensure_session_settings` is the single backend
+/// chokepoint both manual launches and fleet workers funnel through, so usage is counted UNIFORMLY +
+/// model-agnostically — not scraped from the Claude-only skill log (which under-counts every
+/// non-Claude caller). Skills with no id (older payloads) are skipped. Best-effort: a missing/locked
+/// `skills.db` never blocks a launch. Deliberately SEPARATE from `write_session_skills` (a pure
+/// writer) so unit tests that call that writer don't mutate the real global store.
+pub(crate) fn record_skill_uses(skills: &[SkillCfg]) {
+    let ids: Vec<&str> = skills.iter().map(|s| s.id.trim()).filter(|id| !id.is_empty()).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let path = crate::bsc_base_dir().join("skills.db");
+    if !path.exists() {
+        return; // no global store yet — nothing to count against
+    }
+    match skilldb::Store::open(&path) {
+        Ok(store) => {
+            for id in ids {
+                let _ = store.record_use(id); // best-effort: a missing row just affects 0 rows
+            }
+        }
+        Err(e) => log::warn!("record_skill_uses: open {}: {e}", path.display()),
+    }
+}
+
 /// Render a string as a YAML double-quoted scalar so frontmatter values with
 /// colons, `#`, leading specials, or newlines can't break the `SKILL.md` header.
 pub(crate) fn yaml_quote(s: &str) -> String {
