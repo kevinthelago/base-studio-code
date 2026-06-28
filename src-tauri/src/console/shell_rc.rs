@@ -626,6 +626,20 @@ mod tests {
     }
 
     #[test]
+    fn registry_standard_sidecars_each_have_a_helper_in_the_rc_body() {
+        // #1843: the bsc-* sidecar set is the single `bsc_util::SIDECARS` registry. Every `standard_rc`
+        // sidecar in it must have its shell helper defined in the concat body (and exec its $BSC_*_BIN),
+        // so adding a CLI to the registry forces adding its rc fragment here — the list (staging +
+        // prompt block) and the helpers can't drift apart. (bsc-skill's bespoke helper + the
+        // bsc-agent runtime, which has no helper, are `standard_rc: false` and so not required here.)
+        let body = super::bsc_rc_body();
+        for s in bsc_util::SIDECARS.iter().filter(|s| s.standard_rc) {
+            assert!(body.contains(&format!("{}() {{", s.name)), "registry sidecar {} has no rc helper", s.name);
+            assert!(body.contains(s.bin_env), "rc helper for {} must exec {}", s.name, s.bin_env);
+        }
+    }
+
+    #[test]
     fn bsc_blueprint_rc_execs_the_sidecar_and_is_in_the_concat_body() {
         // #1719: the `bsc-blueprint` helper mirrors bsc-logs/bsc-plan — it execs the absolute-path
         // sidecar in $BSC_BLUEPRINT_BIN (falling back to a bare `bsc-blueprint` on PATH) so a live

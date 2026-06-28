@@ -96,49 +96,22 @@ fn compose_skills(start: &Path) -> String {
     out.join("\n\n")
 }
 
-/// One project CLI's runtime-availability descriptor: the sidecar's `$BSC_*_BIN` env var (set by the
-/// app when the binary is staged — `wire_bsc_env`), an optional `context_env` that must ALSO be set
-/// for the CLI to reach a *project* store, and a one-line purpose. Drives both the system-prompt block
-/// and the startup banner, so a bsc-agent session advertises exactly the CLIs it can actually run.
-struct ProjectCli {
-    name: &'static str,
-    bin_env: &'static str,
-    context_env: Option<&'static str>,
-    blurb: &'static str,
-}
+// The `bsc-*` sidecar CLI set is the canonical `bsc_util::SIDECARS` registry (#1843) — ONE list shared
+// by the app's env staging (`wire_bsc_env`), the shell helpers (`console/shell_rc`), and the prompt
+// block below — so adding a CLI is a one-line registry change instead of four hand-kept copies.
 
-/// Every `bsc-*` state CLI the app can wire into a session (the same set staged in `wire_bsc_env`).
-/// A CLI is "available" when its `bin_env` is set; the two project-scoped ones note when their
-/// per-project store env is absent (so the model isn't told to use `bsc-plan` with no plan.db).
-const PROJECT_CLIS: &[ProjectCli] = &[
-    ProjectCli { name: "bsc-plan", bin_env: "BSC_PLAN_BIN", context_env: Some("BSC_PLAN_DB"),
-        blurb: "this project's plan store: issues, features, fleet streams, phases, prose sections" },
-    ProjectCli { name: "bsc-data", bin_env: "BSC_DATA_BIN", context_env: Some("BSC_DATA_DB"),
-        blurb: "the Data Model + Platform Behavior Summary + entity tables; REST connectors" },
-    ProjectCli { name: "bsc-skill", bin_env: "BSC_SKILL_BIN", context_env: None,
-        blurb: "the global skills library + task-groups" },
-    ProjectCli { name: "bsc-logs", bin_env: "BSC_LOGS_BIN", context_env: None,
-        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only)" },
-    ProjectCli { name: "bsc-compliance", bin_env: "BSC_COMPLIANCE_BIN", context_env: None,
-        blurb: "the compliance standards corpus (accessibility/privacy/security obligations)" },
-    ProjectCli { name: "bsc-blueprint", bin_env: "BSC_BLUEPRINT_BIN", context_env: None,
-        blurb: "the user blueprint library" },
-    ProjectCli { name: "bsc-project", bin_env: "BSC_PROJECT_BIN", context_env: None,
-        blurb: "list local projects + read/set the published marker" },
-    ProjectCli { name: "bsc-files", bin_env: "BSC_FILES_BIN", context_env: None,
-        blurb: "the project's file tree with metrics + single-path stat" },
-];
-
-/// The staged-this-session subset of [`PROJECT_CLIS`] — those whose `bin_env` is set (per `is_set`).
-fn available_clis(is_set: &impl Fn(&str) -> bool) -> Vec<&'static ProjectCli> {
-    PROJECT_CLIS.iter().filter(|c| is_set(c.bin_env)).collect()
+/// The staged-this-session subset of the registry: advertised CLIs whose `bin_env` is set (per
+/// `is_set`). A CLI is "available" when its `bin_env` is set; the two project-scoped ones note when
+/// their per-project store env is absent (so the model isn't told to use `bsc-plan` with no plan.db).
+fn available_clis(is_set: &impl Fn(&str) -> bool) -> Vec<&'static bsc_util::Sidecar> {
+    bsc_util::SIDECARS.iter().filter(|c| c.advertise && is_set(c.bin_env)).collect()
 }
 
 /// Render the "Project CLIs available this session" system-prompt block from the staged `clis`, or ""
 /// when none are wired (a bare run outside the app — keeps the prompt clean). Each line names the CLI
 /// plus its purpose, and flags a project-scoped CLI whose store env is missing. The help-first
 /// protocol of `<cli> help` is taught once in `AGENT_INSTRUCTIONS`; this block is the live inventory.
-fn render_clis_block(clis: &[&ProjectCli], is_set: &impl Fn(&str) -> bool) -> String {
+fn render_clis_block(clis: &[&bsc_util::Sidecar], is_set: &impl Fn(&str) -> bool) -> String {
     if clis.is_empty() {
         return String::new();
     }

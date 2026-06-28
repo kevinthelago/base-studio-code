@@ -15,6 +15,11 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The canonical `bsc-*` sidecar CLI registry (#1843) — ONE list shared by the app's env staging
+/// (`wire_bsc_env`), the shell helpers (`console/shell_rc`), and the agent's prompt block.
+pub mod sidecars;
+pub use sidecars::{Sidecar, SIDECARS};
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
