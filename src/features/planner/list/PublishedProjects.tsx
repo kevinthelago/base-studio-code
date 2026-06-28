@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useState, useRef, type Dispatch, type SetStateAction } from "react";
+import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { ExternalLink, MoreHorizontal, Trash2, Search } from "lucide-react";
@@ -128,16 +129,8 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
   const repos  = (p.repositories?.nodes ?? []).map(r => r.nameWithOwner.split("/")[1] ?? r.nameWithOwner);
   const { open, pct } = projectProgress(p);
 
-  // Close the menu on an outside mousedown, but NOT on a mousedown inside it —
-  // otherwise the menu unmounts before a menu item's click fires.
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, setMenuOpenId]);
+  // Close on an outside mousedown (not click — so the menu doesn't unmount before an item's click fires).
+  useClickOutside(menuRef, () => setMenuOpenId(null), isOpen);
 
   return (
     <div
@@ -265,16 +258,7 @@ export function PublishedProjects({
 
   // Dismiss the new-project form on an outside click (#…) — closes without clearing the title, so a
   // stray click keeps what was typed. The trigger button is excluded so it keeps toggling the form.
-  useEffect(() => {
-    if (!newOpen) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (newFormRef.current?.contains(t) || newBtnRef.current?.contains(t)) return;
-      setNewOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [newOpen]);
+  useClickOutside(newFormRef, () => setNewOpen(false), newOpen, newBtnRef);
 
   // The GitHub Projects v2 board now lives on the GitHub page (#498).
   function handleOpenGithubBoard(p: GhProject) {

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { MoreHorizontal, Pencil, Check, Layers, GitFork, Shield, Wrench, Database, Link2, Download, Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
@@ -104,12 +105,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
   const menuId = "bp:" + b.id;
   const isOpen = menuOpenId === menuId;
   const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!isOpen) return;
-    function onDown(e: MouseEvent) { if (!menuRef.current?.contains(e.target as Node)) setMenuOpenId(null); }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [isOpen, setMenuOpenId]);
+  useClickOutside(menuRef, () => setMenuOpenId(null), isOpen);
 
   const hue = catHue(b.category);
   const Icon = CAT_ICON[b.category] ?? Layers;

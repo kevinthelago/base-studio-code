@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { createPortal } from "react-dom";
 import { type ViewKey, VIEW_DEFS } from "./ViewTabs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
@@ -127,16 +128,8 @@ export function PaneShell({
     return () => window.removeEventListener("resize", compute);
   }, [menuOpen]);
 
-  // Close the pane menu on outside click, but let the button's own click handler toggle it
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onMouseDown(e: MouseEvent) {
-      if (menuButtonRef.current?.contains(e.target as Node)) return;
-      if (!menuRef.current?.contains(e.target as Node)) onMenuToggle?.();
-    }
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [menuOpen, onMenuToggle]);
+  // Close the pane menu on outside click, but let the button's own click handler toggle it.
+  useClickOutside(menuRef, () => onMenuToggle?.(), menuOpen, menuButtonRef);
 
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState(agent);
