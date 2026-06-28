@@ -27,6 +27,7 @@ import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skil
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
+import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 
 type ProjectsSlice = Pick<AppStore,
   "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
@@ -421,7 +422,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // coordinates the whole fleet), while each worker gets the global servers plus only the
           // servers its stream was assigned. Hooks/skills still share the project scope.
           // Which harness the fleet runs on (#1078 P5): "claude" (default) or "bsc-agent" (any LLM).
-          const fleetHarness = s.fleetHarness ?? "claude";
+          // A local/ollama provider forces bsc-agent (Claude Code can't drive it), so selecting
+          // Ollama runs the workers + director on Ollama without the separate harness toggle.
+          const fleetHarness = effectiveHarness(s.llmProvider, s.fleetHarness ?? "claude");
           const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
 
