@@ -12,17 +12,12 @@
 //! on the agent token budget. Escalate only when needed — `get <ref>` for one full issue, or the list
 //! flags `--full` / `--fields` / `--limit` / `--since` (and `--pretty` to re-indent a JSON read).
 //!
-//! Commands:
-//!   bsc-plan add                      # upsert from JSON on stdin (one object or an array); prints ref(s)
-//!   bsc-plan get <ref>                # one issue's FULL spec
-//!   bsc-plan summary                  # totals + per-status / per-stream / per-phase counts
-//!   bsc-plan list [--status S] [--stream S] [--full|--fields a,b|--limit N|--since EPOCH]
-//!   bsc-plan mine --stream S [--status S]   # alias for `list --stream S`
-//!   bsc-plan status <ref> <status>    # open|in_progress|blocked|complete|verified|failed
-//!   bsc-plan remove <ref>
-//!   bsc-plan render                   # print the issues.json projection to stdout (full)
-//! Global flags: --db <path>, --json, --pretty
+//! Help is per-command so a model loads only what it needs (#1762):
+//!   bsc-plan help            # compact menu (the small "what commands exist" prompt)
+//!   bsc-plan fleet help      # detailed help for ONE command
+//!   bsc-plan <cmd> help      # same, after any command
 
+use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use serde::Serialize;
@@ -32,6 +27,238 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     bsc_cli_util::cli_main("bsc-plan", run)
+}
+
+const TAGLINE: &str = "the project plan store — issues, features, fleet, sections (#plan-db)";
+
+/// The command catalog — drives the shared help system. One detailed `usage` block per top-level
+/// command keeps the overview tiny and the detail one-fetch-away; the multi-verb nouns document their
+/// subcommands in their own block. Reads are lean by default (#1562); `--json`/`--pretty` for JSON.
+const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "add",
+        summary: "upsert issue(s) from JSON on stdin; prints ref(s)",
+        usage: "\
+USAGE:
+  bsc-plan add   # one issue object, or an array, as JSON on stdin
+
+Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.",
+    },
+    CmdDoc {
+        name: "get",
+        summary: "print one issue's FULL spec",
+        usage: "\
+USAGE:
+  bsc-plan get <ref> [--json] [--pretty]
+
+One issue's full spec — the detail the lean `list` omits. --json is compact; --pretty re-indents.",
+    },
+    CmdDoc {
+        name: "summary",
+        summary: "plan overview: totals + per-status/stream/phase counts",
+        usage: "\
+USAGE:
+  bsc-plan summary [--json] [--pretty]
+
+The cheapest \"where does the plan stand\" read: totals plus per-status, per-stream, per-phase counts.",
+    },
+    CmdDoc {
+        name: "list",
+        summary: "the issue table (lean by default; escalation flags)",
+        usage: "\
+USAGE:
+  bsc-plan list [--status S] [--stream S] [--full] [--fields a,b] [--limit N] [--since EPOCH] [--json|--pretty]
+
+Lean by default (#1562): a compact TSV (counts, no body) / compact --json summary. Escalate only
+when needed:
+  --full              every field (TSV lines, or full --json)
+  --fields a,b,...    project just these columns as TSV (body reachable here)
+  --limit N           cap to N rows (plan order)
+  --since EPOCH       only rows changed after EPOCH seconds (resume-delta read)
+  --pretty            re-indent a --json read",
+    },
+    CmdDoc {
+        name: "mine",
+        summary: "your stream's issues (alias for list --stream)",
+        usage: "\
+USAGE:
+  bsc-plan mine --stream S [--status S] [--full|--fields a,b|--limit N|--since EPOCH] [--json|--pretty]
+
+An alias for `list --stream S` — the same lean table + escalation flags, scoped to one stream.",
+    },
+    CmdDoc {
+        name: "status",
+        summary: "set an issue's status",
+        usage: "\
+USAGE:
+  bsc-plan status <ref> <status>
+
+Sets one issue's status. <status> is one of: open | in_progress | blocked | complete | verified | failed.",
+    },
+    CmdDoc {
+        name: "remove",
+        summary: "delete an issue",
+        usage: "\
+USAGE:
+  bsc-plan remove <ref>
+
+Deletes one issue by ref.",
+    },
+    CmdDoc {
+        name: "render",
+        summary: "print the issues.json projection (full, unchanged)",
+        usage: "\
+USAGE:
+  bsc-plan render
+
+Prints the full issues.json projection to stdout (the durable shape, unchanged).",
+    },
+    CmdDoc {
+        name: "feature",
+        summary: "the features roster + detail-fill (titles-first)",
+        usage: "\
+USAGE:
+  bsc-plan feature add <name>...   # register feature title(s) — the roster (slug from name)
+  bsc-plan feature add             # (no names) merge details from a feature object/array on stdin
+  bsc-plan feature list            # list features (· = title only, ✓ = fully defined)
+  bsc-plan feature get <slug>      # print one feature's full spec
+  bsc-plan feature remove <slug>   # delete a feature",
+    },
+    CmdDoc {
+        name: "repo",
+        summary: "repos linked to the project (durable in plan.db)",
+        usage: "\
+USAGE:
+  bsc-plan repo add <owner/repo>...   # link repo(s) to the project
+  bsc-plan repo list                  # list the linked repos
+  bsc-plan repo remove <owner/repo>   # unlink a repo",
+    },
+    CmdDoc {
+        name: "phase",
+        summary: "the roadmap phases (referenced by 1-based order)",
+        usage: "\
+USAGE:
+  bsc-plan phase add <name> [description...]   # add/merge a roadmap phase (in order)
+  bsc-plan phase list                          # list phases in order
+  bsc-plan phase remove <name>                 # delete a phase",
+    },
+    CmdDoc {
+        name: "fleet",
+        summary: "streams + per-stream permissions/flows + director/topology",
+        usage: "\
+USAGE:
+  bsc-plan fleet set                  # replace the fleet from a FleetPlan JSON on stdin
+  bsc-plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
+  bsc-plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
+  bsc-plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
+  bsc-plan fleet remove <stream-id>   # drop one stream
+
+`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.",
+    },
+    CmdDoc {
+        name: "deploy",
+        summary: "the Deploy stage's structured config (one blob)",
+        usage: "\
+USAGE:
+  bsc-plan deploy set   # replace the deploy config from a DeployConfig JSON on stdin
+  bsc-plan deploy get   # print the deploy config (DeployConfig JSON)",
+    },
+    CmdDoc {
+        name: "deps",
+        summary: "the locked dependency manifest (one blob)",
+        usage: "\
+USAGE:
+  bsc-plan deps set   # replace the manifest from a DependencyManifest JSON on stdin
+  bsc-plan deps get   # print the manifest (a `dependencies` array + a `registries` map)",
+    },
+    CmdDoc {
+        name: "mcp",
+        summary: "catalog MCP servers scoped to the project",
+        usage: "\
+USAGE:
+  bsc-plan mcp add <name>...   # assign MCP server(s) by catalog name
+  bsc-plan mcp list            # list the assigned servers
+  bsc-plan mcp remove <name>   # unassign a server",
+    },
+    CmdDoc {
+        name: "blueprint",
+        summary: "the blueprint an authoring project is designing (one blob)",
+        usage: "\
+USAGE:
+  bsc-plan blueprint set   # replace the blueprint from a Blueprint JSON on stdin
+  bsc-plan blueprint get   # print the blueprint (Blueprint JSON)",
+    },
+    CmdDoc {
+        name: "discovery",
+        summary: "the Discovery stage's dynamic required-set",
+        usage: "\
+USAGE:
+  bsc-plan discovery require <topic>...     # mark topic(s) required for this project
+  bsc-plan discovery unrequire <topic>...   # drop topic(s) from the required set
+  bsc-plan discovery list                   # show the required topic set
+
+Prose lives in discovery/<topic>.md; these files gate on GENERATION (written, not confirmed).",
+    },
+    CmdDoc {
+        name: "integration",
+        summary: "DEPRECATED (#1721) → use `bsc-data connector`",
+        usage: "\
+USAGE:
+  bsc-plan integration add|list|get <id>|remove <id>
+
+DEPRECATED (#1721): native REST connector presets are DATA-platform state — use `bsc-data connector`
+instead. This verb still works (same store) but prints a deprecation note to stderr.",
+    },
+    CmdDoc {
+        name: "lesson",
+        summary: "self-correction candidates (the review queue; #1362)",
+        usage: "\
+USAGE:
+  bsc-plan lesson add \"<mistake>\" --rule \"<rule>\" [--cause <c>] [--from <prov>]   # capture a candidate
+  bsc-plan lesson list [--status pending|confirmed|discarded]                  # list candidates (JSON)
+  bsc-plan lesson confirm <id> | discard <id>                                  # set the user's verdict
+  bsc-plan lesson remove <id>                                                  # delete a candidate
+
+Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalized mistake|rule key.",
+    },
+    CmdDoc {
+        name: "section",
+        summary: "the project's flat prose files (goal/scope/stack/…)",
+        usage: "\
+USAGE:
+  bsc-plan section list          # list the present prose .md files
+  bsc-plan section get <name>    # print one section (e.g. goal, scope, stack) verbatim
+  bsc-plan section set <name>    # write a section from stdin
+
+Sections live beside plan.db in the hub dir. The `.md` is implied; the name is path-safe (a bare
+name, no traversal).",
+    },
+    CmdDoc {
+        name: "automations",
+        summary: "read/write automations.md (the named hub doc)",
+        usage: "\
+USAGE:
+  bsc-plan automations get   # read automations.md
+  bsc-plan automations set   # write automations.md from stdin",
+    },
+    CmdDoc {
+        name: "github-context",
+        summary: "read github_context.md (app-generated; read-only)",
+        usage: "\
+USAGE:
+  bsc-plan github-context get   # read github_context.md (app-generated; read-only)",
+    },
+];
+
+/// The compact command menu (the shared help overview) — shown on `help`, on no command, and at the
+/// foot of an unknown-command error.
+fn menu() -> String {
+    bsc_cli_util::help_overview("bsc-plan", TAGLINE, COMMANDS)
+}
+
+/// One command's detailed help — shown on `<cmd> help` and at the foot of an unknown-subcommand error.
+fn cmd_help(name: &str) -> String {
+    bsc_cli_util::help_for("bsc-plan", TAGLINE, COMMANDS, name)
 }
 
 /// Parsed global flags + leftover positional args.
@@ -83,10 +310,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                 let v = it.next().ok_or("--since needs an epoch-seconds value")?;
                 a.since = Some(v.parse().map_err(|_| format!("--since: '{v}' is not an integer"))?);
             }
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                std::process::exit(0);
-            }
+            // `-h`/`--help` route to the help command (handled in run()).
+            "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -97,8 +322,19 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
-    if cmd.is_empty() {
-        print!("{USAGE}");
+
+    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
+    // Handled before any handler opens the DB (help must work without a plan.db).
+    if cmd.is_empty() || cmd == "help" {
+        match args.positional.get(1) {
+            Some(name) => print!("{}", cmd_help(name)),
+            None => print!("{}", menu()),
+        }
+        return Ok(());
+    }
+    // Per-command help: `bsc-plan <cmd> help`.
+    if args.positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", cmd_help(&cmd));
         return Ok(());
     }
 
@@ -126,7 +362,7 @@ fn run() -> Result<(), String> {
         "section" => cmd_section(&args),
         "automations" => cmd_automations(&args),
         "github-context" => cmd_github_context(&args),
-        other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown command '{other}'\n\n{}", menu())),
     }
 }
 
@@ -210,7 +446,7 @@ fn cmd_blob_noun(
             emit_blob_or_null(args.json, args.pretty, get_fn(&s)?, none_text);
             Ok(())
         }
-        other => Err(format!("unknown {verb} command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown {verb} command '{other}'\n\n{}", cmd_help(verb))),
     }
 }
 
@@ -363,7 +599,7 @@ fn cmd_feature(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown feature command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown feature command '{other}'\n\n{}", cmd_help("feature"))),
     }
 }
 
@@ -397,7 +633,7 @@ fn cmd_repo(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown repo command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown repo command '{other}'\n\n{}", cmd_help("repo"))),
     }
 }
 
@@ -432,7 +668,7 @@ fn cmd_phase(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown phase command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown phase command '{other}'\n\n{}", cmd_help("phase"))),
     }
 }
 
@@ -496,7 +732,7 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
                 }
                 Ok(())
             }
-            other => Err(format!("unknown fleet stream command '{other}'\n\n{USAGE}")),
+            other => Err(format!("unknown fleet stream command '{other}'\n\n{}", cmd_help("fleet"))),
         },
         "meta" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
             "set" => {
@@ -507,9 +743,9 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
                 }
                 Ok(())
             }
-            other => Err(format!("unknown fleet meta command '{other}'\n\n{USAGE}")),
+            other => Err(format!("unknown fleet meta command '{other}'\n\n{}", cmd_help("fleet"))),
         },
-        other => Err(format!("unknown fleet command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown fleet command '{other}'\n\n{}", cmd_help("fleet"))),
     }
 }
 
@@ -563,7 +799,7 @@ fn cmd_mcp(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown mcp command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown mcp command '{other}'\n\n{}", cmd_help("mcp"))),
     }
 }
 
@@ -605,7 +841,7 @@ fn cmd_discovery(args: &Args) -> Result<(), String> {
             emit_json_or_lines(args.json, &required, "(no required discovery topics)", |_, t| t.clone());
             Ok(())
         }
-        other => Err(format!("unknown discovery command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown discovery command '{other}'\n\n{}", cmd_help("discovery"))),
     }
 }
 
@@ -661,7 +897,7 @@ fn cmd_integration(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown integration command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown integration command '{other}'\n\n{}", cmd_help("integration"))),
     }
 }
 
@@ -711,7 +947,7 @@ fn cmd_lesson(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown lesson command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown lesson command '{other}'\n\n{}", cmd_help("lesson"))),
     }
 }
 
@@ -735,7 +971,7 @@ fn cmd_section(args: &Args) -> Result<(), String> {
             let name = args.positional.get(2).ok_or("usage: bsc-plan section set <name>  (content on stdin)")?;
             set_hub_doc(&hub_md_path(&hub, name)?, args.json)
         }
-        other => Err(format!("unknown section command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown section command '{other}'\n\n{}", cmd_help("section"))),
     }
 }
 
@@ -746,7 +982,7 @@ fn cmd_automations(args: &Args) -> Result<(), String> {
     match sub {
         "get" => get_hub_doc(&path, "automations"),
         "set" => set_hub_doc(&path, args.json),
-        other => Err(format!("unknown automations command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown automations command '{other}'\n\n{}", cmd_help("automations"))),
     }
 }
 
@@ -756,7 +992,7 @@ fn cmd_github_context(args: &Args) -> Result<(), String> {
     let path = resolve_hub(&args.db)?.join("github_context.md");
     match sub {
         "get" => get_hub_doc(&path, "github context"),
-        other => Err(format!("unknown github-context command '{other}'\n\n{USAGE}")),
+        other => Err(format!("unknown github-context command '{other}'\n\n{}", cmd_help("github-context"))),
     }
 }
 
@@ -1159,112 +1395,29 @@ fn render_issue(i: &PlanIssue) -> String {
     out
 }
 
-const USAGE: &str = "\
-bsc-plan — the project plan store (#plan-db)
-
-USAGE:
-  bsc-plan <command> [args] [--db <path>] [--json]
-
-READING IS LEAN BY DEFAULT (#1562): list/mine emit a compact TSV (counts, no body) and --json emits
-a compact summary array; escalate only when you need more — `get <ref>` for one full issue, or the
-list flags below. This keeps an embedded plan.db read cheap on the agent token budget.
-
-COMMANDS:
-  add                       upsert from JSON on stdin (one object or array); prints ref(s)
-  get <ref>                 print one issue's FULL spec (--json compact; --pretty to indent)
-  summary                   plan overview: totals + per-status / per-stream / per-phase counts
-  list [--status S] [--stream S] [--full] [--fields a,b] [--limit N] [--since EPOCH]
-                            lean issue table by default; escalate with the flags
-  mine --stream S [--status S]     your stream's issues (alias for list --stream)
-  status <ref> <status>     set status: open|in_progress|blocked|complete|verified|failed
-  remove <ref>              delete an issue
-  render                    print the issues.json projection to stdout (full, unchanged)
-
-LIST ESCALATION FLAGS:
-  --full                    every field (not the lean summary) — TSV lines, or full --json
-  --fields ref,title,...    project just these columns as TSV (body reachable here)
-  --limit N                 cap to N rows (plan order)
-  --since EPOCH             only rows changed after EPOCH seconds (resume-delta read)
-  --pretty                  re-indent a --json / blob read (default is compact)
-
-FEATURES (titles-first):
-  feature add <name>...     register feature title(s) — the roster (slug derived from name)
-  feature add               (no names) merge details from a feature object/array on stdin, by slug
-  feature list              list features (· = title only, ✓ = fully defined)
-  feature get <slug>        print one feature's full spec
-  feature remove <slug>     delete a feature
-
-REPOS (linked, durable in plan.db):
-  repo add <owner/repo>...  link repo(s) to the project
-  repo list                 list the linked repos
-  repo remove <owner/repo>  unlink a repo
-
-PHASES (the roadmap — features reference a phase by its 1-based order):
-  phase add <name> [desc]   add/merge a roadmap phase (in order)
-  phase list                list phases in order
-  phase remove <name>       delete a phase
-
-FLEET (streams + per-stream permissions/flows + director/topology):
-  fleet set                  replace the fleet from a FleetPlan JSON on stdin
-  fleet get                  print the fleet (FleetPlan JSON)
-  fleet stream set <id>      upsert ONE stream's JSON on stdin (granular; keeps order)
-  fleet meta set             upsert just the meta (director/topology/…) JSON on stdin
-  fleet remove <stream-id>   drop one stream
-
-DEPLOY (the Deploy stage's structured config — one blob):
-  deploy set                replace the deploy config from a DeployConfig JSON on stdin
-  deploy get                print the deploy config (DeployConfig JSON)
-
-DEPS (the Deploy stage's locked dependency manifest — one blob):
-  deps set                  replace the manifest from a DependencyManifest JSON on stdin
-  deps get                  print the manifest (DependencyManifest JSON)
-                            (shape: a `dependencies` array + a `registries` map keyed by source)
-
-MCP (catalog servers scoped to the project):
-  mcp add <name>...         assign MCP server(s) by catalog name
-  mcp list                  list the assigned servers
-  mcp remove <name>         unassign a server
-
-BLUEPRINT (the blueprint an authoring project is designing — one blob):
-  blueprint set             replace the blueprint from a Blueprint JSON on stdin
-  blueprint get             print the blueprint (Blueprint JSON)
-
-DISCOVERY (the Discovery stage's DYNAMIC required-set — prose lives in discovery/<topic>.md files):
-  discovery require <topic>...    mark topic(s) required for this project
-  discovery unrequire <topic>...  drop topic(s) from the required set
-  discovery list                  show the required topic set
-  (discovery files gate on GENERATION — written, not confirmed)
-
-INTEGRATION (DEPRECATED #1721 → use `bsc-data connector`; native REST connectors, app-wide, NOT plan.db; #1235):
-  integration add               upsert a RuntimePreset JSON on stdin (validated, secret-free)
-  integration list              list the runtime integrations
-  integration get <id>          print one integration (RuntimePreset JSON)
-  integration remove <id>       delete a runtime integration
-  (the spec carries no credentials — secrets live in the OS keychain; auth: oauth|token|apikey|basic)
-
-LESSONS (self-correction candidates — usually captured via the `bsc-learned` helper; #1362):
-  lesson add \"<mistake>\" --rule \"<rule>\" [--cause <c>] [--from <prov>]   capture a candidate
-  lesson list [--status pending|confirmed|discarded]   list candidates (JSON; queue reads pending)
-  lesson confirm <id> | discard <id>    set the user's verdict
-  lesson remove <id>            delete a candidate
-  (candidates de-dupe on a normalized mistake|rule key — a re-capture bumps a 'seen' counter)
-
-SECTIONS (the project's flat prose files, beside plan.db in the hub — the .md is implied, path-safe):
-  section list              list the present prose .md files (goal/scope/stack/architecture/users/…)
-  section get <name>        print one section (e.g. `goal`, `scope`, `stack`) verbatim
-  section set <name>        write a section from stdin (path-safe: a bare name, no traversal)
-
-NAMED HUB DOCS (the two well-known prose files in the hub):
-  automations get | set     read/write automations.md (from stdin on set)
-  github-context get        read github_context.md (app-generated; read-only)
-
-The plan.db is found via --db <path> or the BSC_PLAN_DB env var.
-The connectors store is ~/.base-studio-code/connectors.json (BSC_CONNECTORS overrides).
-";
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = menu();
+        // Every top-level command appears in the compact menu.
+        for c in [
+            "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
+            "phase", "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
+            "lesson", "section", "automations", "github-context",
+        ] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        // `fleet help` shows the fleet subcommands, not the whole menu.
+        let f = cmd_help("fleet");
+        assert!(f.contains("bsc-plan fleet"));
+        assert!(f.contains("stream set"));
+        assert!(!f.contains("lesson"));
+        // An unknown command falls back to the overview.
+        assert!(cmd_help("nope").contains("COMMANDS:"));
+    }
 
     fn summary(r: &str, stream: Option<&str>, phase: Option<serde_json::Value>, acc: usize) -> IssueSummary {
         IssueSummary {

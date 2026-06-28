@@ -89,6 +89,41 @@ pub fn emit<T: Serialize>(pretty: bool, json: bool, value: &T, lean: impl FnOnce
     }
 }
 
+/// One command's documentation for the shared help system. `name` is the subcommand word, `summary`
+/// is the single line shown in the compact overview, and `usage` is the detailed block shown by
+/// `<prog> <name> help`. The split is deliberate: the overview stays tiny (cheap context for a model
+/// to load), and full detail is fetched one command at a time on demand.
+pub struct CmdDoc {
+    pub name: &'static str,
+    pub summary: &'static str,
+    pub usage: &'static str,
+}
+
+/// The COMPACT overview: the program tagline, the invocation shape, and one aligned line per command.
+/// Small on purpose — this is the "just enough to know what exists" surface (a model loads it once,
+/// then drills into a single command's `help`). Pure → unit-testable.
+pub fn help_overview(prog: &str, tagline: &str, cmds: &[CmdDoc]) -> String {
+    let w = cmds.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    let mut s = format!(
+        "{prog} — {tagline}\n\nUSAGE:\n  {prog} <command> [args] [--json|--pretty]\n  {prog} <command> help    # detailed help for ONE command (keeps context small)\n\nCOMMANDS:\n",
+    );
+    for c in cmds {
+        s.push_str(&format!("  {:<w$}  {}\n", c.name, c.summary, w = w));
+    }
+    s.push_str(&format!("\nRun `{prog} <command> help` for the args of a single command.\n"));
+    s
+}
+
+/// ONE command's detailed help (`name` matched against `cmds`), falling back to the [`help_overview`]
+/// when `name` isn't a known command — so `<prog> help <typo>` shows the menu rather than nothing.
+/// Pure → unit-testable.
+pub fn help_for(prog: &str, tagline: &str, cmds: &[CmdDoc], name: &str) -> String {
+    match cmds.iter().find(|c| c.name == name) {
+        Some(c) => format!("{prog} {} — {}\n\n{}\n", c.name, c.summary, c.usage),
+        None => help_overview(prog, tagline, cmds),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +176,35 @@ mod tests {
         std::env::remove_var("BSC_CLI_UTIL_TEST_D");
         let err = resolve_store_path(&None, "BSC_CLI_UTIL_TEST_D", || Err("no store".into())).unwrap_err();
         assert_eq!(err, "no store");
+    }
+
+    const DOCS: &[CmdDoc] = &[
+        CmdDoc { name: "tree", summary: "folder structure with sizes", usage: "USAGE:\n  prog tree [path]" },
+        CmdDoc { name: "stat", summary: "metrics for one path", usage: "USAGE:\n  prog stat <path>" },
+    ];
+
+    #[test]
+    fn help_overview_lists_every_command_compactly() {
+        let s = help_overview("bsc-x", "a test tool", DOCS);
+        assert!(s.contains("bsc-x — a test tool"));
+        assert!(s.contains("tree"));
+        assert!(s.contains("folder structure with sizes"));
+        assert!(s.contains("stat"));
+        // The overview points at the per-command help (the small-context contract).
+        assert!(s.contains("<command> help"));
+        // It is the SUMMARY, not the full usage — detail is deferred.
+        assert!(!s.contains("prog tree [path]"));
+    }
+
+    #[test]
+    fn help_for_returns_one_commands_detail_or_falls_back_to_the_menu() {
+        let one = help_for("bsc-x", "a test tool", DOCS, "tree");
+        assert!(one.contains("bsc-x tree"));
+        assert!(one.contains("prog tree [path]")); // the detailed usage block
+        assert!(!one.contains("stat")); // only the asked-for command
+        // An unknown command shows the overview rather than nothing.
+        let miss = help_for("bsc-x", "a test tool", DOCS, "nope");
+        assert!(miss.contains("COMMANDS:"));
+        assert!(miss.contains("tree"));
     }
 }

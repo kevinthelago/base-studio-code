@@ -5,20 +5,81 @@
 //! `bsc-plan`'s house style: lean TSV with a header by default, `--json` (compact) / `--pretty`,
 //! `--session` / `--stream` / `--since` / `--limit`.
 //!
-//! Usage:
-//!   bsc-logs sessions                       # every console session, one line each
-//!   bsc-logs session <id>                   # one session's full, time-merged story
-//!   bsc-logs <stream> [--session <id>]      # one category (audit|skill|mcp|hook|coord|activity|done)
-//!   bsc-logs cost [--session <id>]          # token + cost rollup
-//!   bsc-logs perf [--session <id>]          # recent perf.db samples (rss/cpu/threads)
-//!   bsc-logs summary --session <id>         # a one-line recap
-//!   flags: --session <id> --stream <name> --since <epochMs> --limit N --json --pretty --dir <path>
+//! Help is per-command so a model loads only what it needs (#1762):
+//!   bsc-logs help            # compact menu (the small "what commands exist" prompt)
+//!   bsc-logs session help    # detailed help for ONE command
+//!   bsc-logs <cmd> help      # same, after any command
+//! (no-arg `bsc-logs` keeps its established default: list every session.)
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use bsc_cli_util::emit;
+use bsc_cli_util::{emit, CmdDoc};
 use logs::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
+
+const TAGLINE: &str = "query a console session's logs — tools/skills/mcp/hooks/cost/coord/activity + perf (read-only, #1607)";
+
+/// The command catalog — drives the shared help system. One detailed `usage` block per command keeps
+/// the overview tiny and the detail one-fetch-away. The event-category verbs (audit|skill|…) share
+/// one `<stream>` entry since they dispatch identically.
+const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "sessions",
+        summary: "every console session, one line each (the default)",
+        usage: "\
+USAGE:
+  bsc-logs sessions [--json|--pretty]
+
+One row per console session: role, per-stream event counts, cost, and last activity. This is also
+the no-argument default.",
+    },
+    CmdDoc {
+        name: "session",
+        summary: "one session's full, time-merged story",
+        usage: "\
+USAGE:
+  bsc-logs session <id> [--since <epochMs>] [--limit N] [--json|--pretty]
+
+Every event for <id> across all streams, merged into one timeline, plus its token/cost rollup.",
+    },
+    CmdDoc {
+        name: "<stream>",
+        summary: "one event category: audit|skill|mcp|hook|coord|activity|done",
+        usage: "\
+USAGE:
+  bsc-logs <stream> [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
+
+The verb is the category name itself — one of: audit, skill, mcp, hook, coord, activity, done.
+Prints that stream's events (optionally filtered to one --session).",
+    },
+    CmdDoc {
+        name: "cost",
+        summary: "token + cost rollup",
+        usage: "\
+USAGE:
+  bsc-logs cost [--session <id>] [--json|--pretty]
+
+Per-session token usage (in/out/cache) and USD cost; filter to one --session.",
+    },
+    CmdDoc {
+        name: "perf",
+        summary: "recent perf.db samples (rss/cpu/threads)",
+        usage: "\
+USAGE:
+  bsc-logs perf [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
+
+Recent process metrics sampled into perf.db (the one binary-SQLite stream): rss, cpu%, threads.",
+    },
+    CmdDoc {
+        name: "summary",
+        summary: "a one-line recap for a session",
+        usage: "\
+USAGE:
+  bsc-logs summary --session <id> [--json|--pretty]
+
+A compact one-line recap of a session: role, event counts, cost, last activity.",
+    },
+];
 
 struct Args {
     positional: Vec<String>,
@@ -52,26 +113,14 @@ fn parse_args() -> Result<Args, String> {
             "--since" => a.since = Some(it.next().ok_or("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
             "--limit" => a.limit = Some(it.next().ok_or("--limit needs a value")?.parse().map_err(|_| "--limit must be a number")?),
             "--dir" => a.dir = Some(PathBuf::from(it.next().ok_or("--dir needs a value")?)),
-            "-h" | "--help" => { print!("{USAGE}"); std::process::exit(0); }
+            // `-h`/`--help` route to the help command (handled in run()).
+            "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => a.positional.push(other.to_string()),
         }
     }
     Ok(a)
 }
-
-const USAGE: &str = "\
-bsc-logs — query a console session's logs (#1607)
-
-  sessions                  every console session, one line each
-  session <id>              one session's full, time-merged story
-  <stream> [--session <id>] one category: audit|skill|mcp|hook|coord|activity|done
-  cost [--session <id>]     token + cost rollup
-  perf [--session <id>]     recent perf.db samples (rss/cpu/threads)
-  summary --session <id>    a one-line recap
-
-flags: --session <id> --stream <name> --since <epochMs> --limit N --json --pretty --dir <path>
-";
 
 /// `ts_ms` → `HH:MM:SS` (UTC), for the lean TSV timeline.
 fn hms(ms: i64) -> String {
@@ -81,6 +130,22 @@ fn hms(ms: i64) -> String {
 
 fn run() -> Result<(), String> {
     let a = parse_args()?;
+
+    // Help surface — handled before touching the log dir (help must work anywhere). `help` /
+    // `help <cmd>` and the trailing `<cmd> help` form; a bare `bsc-logs` keeps its `sessions` default.
+    if a.positional.first().map(String::as_str) == Some("help") {
+        match a.positional.get(1) {
+            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, name)),
+            None => print!("{}", bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS)),
+        }
+        return Ok(());
+    }
+    if a.positional.get(1).map(String::as_str) == Some("help") {
+        let name = a.positional[0].clone();
+        print!("{}", bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, &name));
+        return Ok(());
+    }
+
     let dir = a.dir.clone().unwrap_or_else(logs::log_dir);
     let streams: Vec<&'static str> = match &a.stream {
         Some(s) => vec![canonical_stream(s).ok_or_else(|| format!("unknown stream '{s}'"))?],
@@ -161,7 +226,12 @@ fn run() -> Result<(), String> {
         }
         // A single stream (the verb is the stream name).
         other => {
-            let s = canonical_stream(other).ok_or_else(|| format!("unknown command/stream '{other}'\n\n{USAGE}"))?;
+            let s = canonical_stream(other).ok_or_else(|| {
+                format!(
+                    "unknown command/stream '{other}'\n\n{}",
+                    bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS)
+                )
+            })?;
             let events = query(&dir, &[s], a.session.as_deref(), a.since, a.limit);
             emit(a.pretty, a.json, &events, || {
                 let mut lines = vec!["time\tsession\tdetail".to_string()];
@@ -175,4 +245,24 @@ fn run() -> Result<(), String> {
 
 fn main() -> ExitCode {
     bsc_cli_util::cli_main("bsc-logs", run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{COMMANDS, TAGLINE};
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS);
+        for c in ["sessions", "session", "cost", "perf", "summary", "<stream>"] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        // Per-command help shows that one command's detail only.
+        let one = bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, "perf");
+        assert!(one.contains("bsc-logs perf"));
+        assert!(one.contains("perf.db"));
+        assert!(!one.contains("token + cost rollup"));
+        // An unknown command falls back to the overview.
+        assert!(bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+    }
 }

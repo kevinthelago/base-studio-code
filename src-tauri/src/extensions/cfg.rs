@@ -27,6 +27,10 @@ pub(crate) struct HookCfg {
 /// (`.claude/skills/<slug>/SKILL.md`). Field names match the frontend payload.
 #[derive(serde::Deserialize, Clone)]
 pub(crate) struct SkillCfg {
+    /// The stable skilldb skill id — carried so attach-time usage counting (#A) can bump the right
+    /// row. Optional (defaults empty) so older payloads / tests without it still deserialize.
+    #[serde(default)]
+    pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) prompt: String,

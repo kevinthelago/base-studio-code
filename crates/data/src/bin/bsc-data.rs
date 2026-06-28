@@ -8,20 +8,12 @@
 //!
 //! Reading is lean by default; `--json` emits compact JSON and `--pretty` re-indents it.
 //!
-//! USAGE:
-//!   bsc-data model get                 # print {"model":<DataModel>,"refined":<bool>} or null
-//!   bsc-data model set [--refined]     # upsert the DataModel JSON from stdin
-//!   bsc-data scan get                  # print the PlatformScan JSON or null
-//!   bsc-data scan set                  # upsert the PlatformScan JSON from stdin
-//!   bsc-data tables                    # entity tables + row counts
-//!   bsc-data rows <entity> [--limit N] # sample rows from an entity table
-//!   bsc-data count <entity>            # row count for an entity
-//!   bsc-data nulls <entity> [<field>]  # NULL counts (all fields, or one)
-//!   bsc-data lineage <entity>          # per-row + per-field lineage counts
-//!   bsc-data connector list            # runtime REST connector presets (connectors.json; no --db)
-//!   bsc-data connector add             # upsert a RuntimePreset JSON from stdin (validated)
+//! Help is per-command so a model loads only what it needs (#1762):
+//!   bsc-data help            # compact menu (the small "what commands exist" prompt)
+//!   bsc-data model help      # detailed help for ONE command
+//!   bsc-data <cmd> help      # same, after any command
 
-use bsc_cli_util::emit;
+use bsc_cli_util::{emit, CmdDoc};
 use bsc_data::{DataModel, DataStore, MetaStore, PlatformScan};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -30,6 +22,93 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     bsc_cli_util::cli_main("bsc-data", run)
 }
+
+const TAGLINE: &str = "the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)";
+
+/// The command catalog — drives the shared help system. One detailed `usage` block per top-level
+/// command keeps the overview tiny; the multi-verb commands (`model`/`scan`/`connector`) document
+/// their subcommands in their own usage blocks. Reading is lean TSV by default (`--json`/`--pretty`).
+const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "model",
+        summary: "read/write the canonical Data Model",
+        usage: "\
+USAGE:
+  bsc-data model get                 # print {\"model\":<DataModel>,\"refined\":<bool>} (or null)
+  bsc-data model set [--refined]     # upsert the DataModel JSON on stdin
+
+Needs a store (--db <path> or $BSC_DATA_DB).",
+    },
+    CmdDoc {
+        name: "scan",
+        summary: "read/write the Platform Behavior Summary (PlatformScan)",
+        usage: "\
+USAGE:
+  bsc-data scan get                  # print the PlatformScan JSON (or null)
+  bsc-data scan set                  # upsert the PlatformScan JSON on stdin
+
+Needs a store (--db <path> or $BSC_DATA_DB).",
+    },
+    CmdDoc {
+        name: "tables",
+        summary: "list entity tables + row counts",
+        usage: "\
+USAGE:
+  bsc-data tables [--json|--pretty]
+
+Lists every entity table in the materialized DataStore with its row count.",
+    },
+    CmdDoc {
+        name: "rows",
+        summary: "sample rows from an entity table (default 20)",
+        usage: "\
+USAGE:
+  bsc-data rows <entity> [--limit N] [--json|--pretty]
+
+A small sample of rows from <entity> — capped at --limit (default 20) so an agent reads a peek,
+not a dump.",
+    },
+    CmdDoc {
+        name: "count",
+        summary: "row count for an entity",
+        usage: "\
+USAGE:
+  bsc-data count <entity> [--json|--pretty]
+
+The row count for one entity table.",
+    },
+    CmdDoc {
+        name: "nulls",
+        summary: "NULL counts — all fields, or just <field>",
+        usage: "\
+USAGE:
+  bsc-data nulls <entity> [<field>] [--json|--pretty]
+
+NULL counts for an entity: every field, or just <field> when given.",
+    },
+    CmdDoc {
+        name: "lineage",
+        summary: "per-row + per-field lineage counts for an entity",
+        usage: "\
+USAGE:
+  bsc-data lineage <entity> [--json|--pretty]
+
+The per-row and per-field lineage counts recorded for an entity.",
+    },
+    CmdDoc {
+        name: "connector",
+        summary: "runtime REST connector presets (no --db needed)",
+        usage: "\
+USAGE:
+  bsc-data connector list            # list the runtime connectors
+  bsc-data connector get <id>        # print one connector (RuntimePreset JSON)
+  bsc-data connector add             # upsert a RuntimePreset JSON on stdin (validated, secret-free)
+  bsc-data connector remove <id>     # delete a runtime connector
+
+Runtime REST connector presets live in ~/.base-studio-code/connectors.json ($BSC_CONNECTORS
+overrides) — the app-wide store, NOT the per-project DuckDB, so `connector` needs no --db.",
+    },
+];
 
 /// Parsed flags + leftover positional args.
 struct Args {
@@ -67,10 +146,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                         .map_err(|_| "--limit needs a number")?,
                 );
             }
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                std::process::exit(0);
-            }
+            // `-h`/`--help` route to the help command (handled in run()).
+            "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -107,10 +184,22 @@ fn open_data_store(db: &Path) -> Result<DataStore, String> {
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
-    if cmd.is_empty() {
-        print!("{USAGE}");
+
+    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
+    // Handled before resolving any store (help must work without a --db).
+    if cmd.is_empty() || cmd == "help" {
+        match args.positional.get(1) {
+            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, name)),
+            None => print!("{}", bsc_cli_util::help_overview("bsc-data", TAGLINE, COMMANDS)),
+        }
         return Ok(());
     }
+    // Per-command help: `bsc-data <cmd> help`.
+    if args.positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, &cmd));
+        return Ok(());
+    }
+
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     // `connector` reaches the runtime REST connector store (~/.base-studio-code/connectors.json),
     // NOT the per-project DuckDB — so it must NOT require --db / BSC_DATA_DB. Dispatch it first.
@@ -257,10 +346,10 @@ fn run() -> Result<(), String> {
             );
             Ok(())
         }
-        _ => {
-            print!("{USAGE}");
-            Err(format!("unknown command: {cmd} {sub}"))
-        }
+        _ => Err(format!(
+            "unknown command: {cmd} {sub}\n\n{}",
+            bsc_cli_util::help_overview("bsc-data", TAGLINE, COMMANDS)
+        )),
     }
 }
 
@@ -325,47 +414,31 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown connector command '{other}'\n\n{USAGE}")),
+        other => Err(format!(
+            "unknown connector command '{other}'\n\n{}",
+            bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "connector")
+        )),
     }
 }
-
-const USAGE: &str = "\
-bsc-data — the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)
-
-USAGE:
-  bsc-data <command> [args] [--db <path>] [--json] [--pretty]
-
-MODEL (the canonical Data Model):
-  model get                 print {\"model\":<DataModel>,\"refined\":<bool>} (or null)
-  model set [--refined]     upsert the DataModel JSON on stdin
-
-SCAN (the Platform Behavior Summary):
-  scan get                  print the PlatformScan JSON (or null)
-  scan set                  upsert the PlatformScan JSON on stdin
-
-DATASTORE (the materialized entity tables + lineage; reading is lean by default):
-  tables                    list entity tables + row counts
-  rows <entity> [--limit N] sample rows from an entity table (default 20)
-  count <entity>            row count for an entity
-  nulls <entity> [<field>]  NULL counts — all fields, or just <field>
-  lineage <entity>          per-row + per-field lineage counts for an entity
-
-CONNECTOR (runtime REST connector presets in ~/.base-studio-code/connectors.json; no --db needed):
-  connector list            list the runtime connectors
-  connector get <id>        print one connector (RuntimePreset JSON)
-  connector add             upsert a RuntimePreset JSON on stdin (validated, secret-free)
-  connector remove <id>     delete a runtime connector
-
-OUTPUT:
-  --json                    compact JSON (default is lean TSV)
-  --pretty                  re-indented JSON (implies --json)
-
-The store is found via --db <path> or the BSC_DATA_DB env var.
-";
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = bsc_cli_util::help_overview("bsc-data", TAGLINE, COMMANDS);
+        for c in ["model", "scan", "tables", "rows", "count", "nulls", "lineage", "connector"] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        // `connector help` shows the connector subcommands, not the whole menu.
+        let c = bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "connector");
+        assert!(c.contains("bsc-data connector"));
+        assert!(c.contains("remove <id>"));
+        assert!(!c.contains("sample rows"));
+        // An unknown command falls back to the overview.
+        assert!(bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+    }
 
     #[test]
     fn parses_db_refined_and_positionals() {

@@ -8,7 +8,9 @@
 mod anthropic;
 mod gemini;
 mod local;
+mod ollama;
 mod openai;
+mod toolparse;
 mod turn;
 
 #[cfg(test)]
@@ -17,7 +19,9 @@ mod http_it;
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
+pub use ollama::{detect_ollama_profile, OllamaProfile, OllamaProvider};
 pub use openai::OpenAiProvider;
+pub use toolparse::{recover_tool_calls, strip_tool_syntax};
 pub use turn::{Msg, ToolCall, ToolDef, Turn, TurnResult};
 
 /// A provider-agnostic chat-completion request. `messages` and `tools` are passed
@@ -54,10 +58,21 @@ pub(crate) fn format_api_error(status: reqwest::StatusCode, json: &serde_json::V
     format!("API error ({}): {}", status, err)
 }
 
+/// Connect timeout — how long to wait for the TCP/TLS connection before failing. Short so an
+/// unreachable endpoint (e.g. Ollama not running) surfaces quickly instead of hanging the session.
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+/// Overall request timeout — a hard ceiling on a single call so a stuck server (or a non-streaming
+/// local model wedged on a huge prompt) can't hang the agent forever. Generous, since a local model
+/// can be slow on the first inference (model load + long context); it's a backstop, not a target.
+const REQUEST_TIMEOUT_SECS: u64 = 600;
+
 /// Issue a JSON POST and return the parsed response body, collapsing the
 /// request/status-check/error-format block every provider repeated. Headers
 /// (auth, API version, …) vary per provider, so the caller passes them in; the
 /// JSON content-type is set by `.json()`.
+///
+/// The client carries a connect + overall timeout (see the consts above) so a down/stuck endpoint
+/// fails with a `"Request failed: …"` error instead of hanging indefinitely.
 ///
 /// **CRITICAL:** the error strings produced here (`"Request failed: …"` on a
 /// transport failure and `"API error (<status>): …"` on a non-2xx response) are
@@ -68,7 +83,11 @@ pub(crate) async fn post_json(
     headers: &[(&str, String)],
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Request failed: {}", e))?;
     let mut builder = client.post(url);
     for (name, value) in headers {
         builder = builder.header(*name, value);
@@ -102,9 +121,10 @@ pub enum ProviderKind {
     OpenAi,
     Gemini,
     Local,
+    Ollama,
 }
 
-/// Resolve a provider name (`"anthropic"` | `"openai"` | `"gemini"` | `"local"`) to a
+/// Resolve a provider name (`"anthropic"` | `"openai"` | `"gemini"` | `"local"` | `"ollama"`) to a
 /// [`ProviderKind`]. Errors on an unknown provider rather than silently defaulting.
 pub fn resolve_provider(name: &str) -> Result<ProviderKind, String> {
     match name {
@@ -112,6 +132,7 @@ pub fn resolve_provider(name: &str) -> Result<ProviderKind, String> {
         "openai" => Ok(ProviderKind::OpenAi),
         "gemini" => Ok(ProviderKind::Gemini),
         "local" => Ok(ProviderKind::Local),
+        "ollama" => Ok(ProviderKind::Ollama),
         other => Err(format!("Unknown LLM provider: '{other}'")),
     }
 }
@@ -126,6 +147,7 @@ mod tests {
         assert!(matches!(resolve_provider("openai"), Ok(ProviderKind::OpenAi)));
         assert!(matches!(resolve_provider("gemini"), Ok(ProviderKind::Gemini)));
         assert!(matches!(resolve_provider("local"), Ok(ProviderKind::Local)));
+        assert!(matches!(resolve_provider("ollama"), Ok(ProviderKind::Ollama)));
         assert!(resolve_provider("mistral").is_err());
         assert!(resolve_provider("").is_err());
     }

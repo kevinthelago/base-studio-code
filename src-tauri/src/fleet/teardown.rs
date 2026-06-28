@@ -234,6 +234,94 @@ pub(crate) fn reclaim_project_worktrees(project_key: &str) -> usize {
     removed
 }
 
+/// Is `wt` a worktree that's SAFE to reclaim at boot? Only when it's a real git worktree, its tree
+/// is clean (no uncommitted/untracked work — build artifacts are git-excluded so don't count), AND
+/// its branch is already merged into the owning clone's current branch (its work is landed; the
+/// progress-gated relaunch skips it anyway). A DIRTY worktree is NEVER disposable. Conservative on
+/// purpose — a worktree merged only on the remote (the local clone hasn't pulled) reads as not-merged
+/// and is kept, which is the safe direction.
+pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
+    if !wt.join(".git").exists() || !clone.join(".git").exists() {
+        return false;
+    }
+    let git_ok = |args: &[&str]| {
+        let mut c = std::process::Command::new("git");
+        c.args(args);
+        no_window(&mut c).status().map(|s| s.success()).unwrap_or(false)
+    };
+    let wt_str = wt.to_string_lossy();
+    let clone_str = clone.to_string_lossy();
+    // Clean tree: `status --porcelain` prints nothing. Untracked source files block reclaim;
+    // node_modules/target are git-excluded (ensure_worktree) so they never appear here.
+    let mut st = std::process::Command::new("git");
+    st.args(["-C", &wt_str, "status", "--porcelain"]);
+    let clean = no_window(&mut st).output().map(|o| o.stdout.is_empty()).unwrap_or(false);
+    if !clean {
+        return false;
+    }
+    // Merged: the worktree's HEAD is an ancestor of the clone's current HEAD (local merge).
+    let mut head = std::process::Command::new("git");
+    head.args(["-C", &wt_str, "rev-parse", "HEAD"]);
+    let Ok(out) = no_window(&mut head).output() else { return false };
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if sha.is_empty() {
+        return false;
+    }
+    git_ok(&["-C", &clone_str, "merge-base", "--is-ancestor", &sha, "HEAD"])
+}
+
+/// Reclaim worktrees that are safe to drop, at boot, so they don't accumulate (#worktree-disk):
+///   * **orphans** — the project hub `projects/<key>` is gone (a deleted/abandoned project whose
+///     reclaim didn't fully run): remove the entire `worktrees/<key>/`.
+///   * **merged + clean** — a live project's worktree whose branch is integrated and tree is clean
+///     ({@link worktree_is_disposable}).
+///
+/// Best-effort, pure over `base_dir` for testability; never removes a dirty worktree. Returns the
+/// number of worktree directories reclaimed.
+pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
+    let root = base_dir.join("worktrees");
+    let Ok(rd) = std::fs::read_dir(&root) else { return 0 };
+    let mut removed = 0usize;
+    for entry in rd.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let key = entry.file_name().to_string_lossy().into_owned();
+        let hub_gone = !base_dir.join("projects").join(&key).exists();
+        let Ok(wts) = std::fs::read_dir(entry.path()) else { continue };
+        for w in wts.flatten() {
+            let wt = w.path();
+            if !w.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let name = w.file_name().to_string_lossy().into_owned();
+            // `<repoShort>--<slug>` → the owning clone (first `--` is the boundary).
+            let clone = match name.split_once("--") {
+                Some((repo_short, _)) => base_dir.join("projects").join(&key).join(repo_short),
+                None => std::path::PathBuf::new(),
+            };
+            let disposable = hub_gone || worktree_is_disposable(&clone, &wt);
+            if disposable && remove_worktree_at(&clone, &wt).is_ok() {
+                removed += 1;
+            }
+        }
+        // Drop the per-project root if the whole project is gone (and now emptied).
+        if hub_gone {
+            let _ = std::fs::remove_dir(entry.path());
+        }
+    }
+    if removed > 0 {
+        log::info!("boot-gc: reclaimed {removed} stale fleet worktree(s)");
+    }
+    removed
+}
+
+/// Boot entry point: GC stale worktrees against the real base dir (#worktree-disk). Off the
+/// synchronous boot path.
+pub(crate) fn gc_worktrees_on_boot() -> usize {
+    gc_worktrees_impl(&crate::bsc_base_dir())
+}
+
 // ── Tauri commands ──────────────────────────────────────────────────────────────
 
 /// Tear down ONE fleet worker's worktree (stream complete / reap), junction-safe, removing both the
@@ -323,6 +411,57 @@ mod tests {
         init_clone(&clone);
         let wt = base.join("never-made");
         assert!(remove_worktree_at(&clone, &wt).is_ok());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Boot-GC (#worktree-disk): reclaim merged-and-clean worktrees + orphans (project gone), but
+    /// NEVER a dirty or unmerged-with-work worktree.
+    #[test]
+    fn gc_reclaims_merged_and_orphans_but_keeps_dirty_and_ahead() {
+        let base = unique_dir("gc");
+        let key = "projk";
+        let clone = base.join("projects").join(key).join("web");
+        init_clone(&clone);
+        let wt_root = base.join("worktrees").join(key);
+        fs::create_dir_all(&wt_root).unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            let mut c = std::process::Command::new("git");
+            c.args(["-C", &dir.to_string_lossy()]).args(args);
+            assert!(no_window(&mut c).status().unwrap().success(), "git {args:?}");
+        };
+        let add_wt = |name: &str, branch: &str| {
+            let wt = wt_root.join(name);
+            let mut c = std::process::Command::new("git");
+            c.args(["-C", &clone.to_string_lossy(), "worktree", "add", "-b", branch, &wt.to_string_lossy()]);
+            assert!(no_window(&mut c).status().unwrap().success(), "worktree add {branch}");
+            wt
+        };
+        // (a) merged + clean — branch at the clone's HEAD, nothing changed → disposable.
+        let merged = add_wt("web--merged", "merged");
+        // (b) unmerged + clean — a committed change ahead of HEAD → keep (work not landed).
+        let ahead = add_wt("web--ahead", "ahead");
+        fs::write(ahead.join("new.txt"), "x").unwrap();
+        git(&ahead, &["add", "."]);
+        git(&ahead, &["commit", "-q", "-m", "ahead"]);
+        // (c) merged but DIRTY — an untracked file → keep (never lose uncommitted work).
+        let dirty = add_wt("web--dirty", "dirty");
+        fs::write(dirty.join("scratch.txt"), "y").unwrap();
+        // (d) orphan — a project whose hub is gone → reclaim regardless of git state.
+        let orphan_clone = base.join("projects").join("gone").join("api");
+        init_clone(&orphan_clone);
+        let mut oc = std::process::Command::new("git");
+        let orphan_wt = base.join("worktrees").join("gone").join("api--x");
+        oc.args(["-C", &orphan_clone.to_string_lossy(), "worktree", "add", "-b", "x", &orphan_wt.to_string_lossy()]);
+        assert!(no_window(&mut oc).status().unwrap().success());
+        fs::remove_dir_all(base.join("projects").join("gone")).unwrap(); // hub gone
+
+        let removed = gc_worktrees_impl(&base);
+
+        assert!(!merged.exists(), "merged+clean worktree reclaimed");
+        assert!(ahead.exists(), "unmerged worktree with work kept");
+        assert!(dirty.exists(), "dirty worktree kept (no work lost)");
+        assert!(!orphan_wt.exists(), "orphaned-project worktree reclaimed");
+        assert!(removed >= 2, "reclaimed at least the merged + orphan worktrees (got {removed})");
         let _ = fs::remove_dir_all(&base);
     }
 

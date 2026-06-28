@@ -83,6 +83,21 @@ pub struct Skill {
     /// replace it from code while never touching user-created/imported/catalog skills.
     #[serde(default, skip_serializing_if = "is_false")]
     pub packaged: bool,
+    /// Usage count (#A): bumped by [`Store::record_use`] each time the skill is applied/attached — the
+    /// single chokepoint the user (UI/CLI) and an agent (`bsc-skill use`) both funnel through, so usage
+    /// is counted UNIFORMLY (not scraped from the Claude-only skill log, which under-counts every
+    /// non-Claude caller). Read-only on the store shape: never written by [`Store::upsert`] (so an edit
+    /// can't reset it — hence `skip_deserializing`), but serialized OUT for the navigation reads + the
+    /// Skills-page usage chart.
+    #[serde(default, skip_deserializing)]
+    pub uses: i64,
+    /// Epoch-seconds of the last [`Store::record_use`], for recency-aware ranking. Read-only (see `uses`).
+    #[serde(default, skip_deserializing)]
+    pub last_used_at: i64,
+    /// Epoch-seconds of the last upsert (edit), stamped by [`Store::upsert`]. Surfaced for the
+    /// `rank`/`updated` navigation sorts. Read-only on the shape; never accepted from input JSON.
+    #[serde(default, skip_deserializing)]
+    pub updated_at: i64,
 }
 
 /// A named bundle of skills, toggled as one (the redesign's task group). Many-to-many with skills
@@ -200,6 +215,17 @@ impl Store {
     pub fn remove(&self, id: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM skills WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    /// Record one USE of a skill (#A): bump `uses` + stamp `last_used_at` (epoch seconds). Returns the
+    /// rows affected — 0 when no skill has that id. The single chokepoint the user (UI/CLI) and an
+    /// agent (`bsc-skill use`) both funnel through, so usage is counted uniformly. `uses`/`last_used_at`
+    /// are deliberately NOT touched by [`upsert`](Self::upsert), so editing a skill never resets them.
+    pub fn record_use(&self, id: &str) -> rusqlite::Result<usize> {
+        self.conn.execute(
+            "UPDATE skills SET uses = uses + 1, last_used_at = strftime('%s','now') WHERE id = ?1",
+            params![id],
+        )
     }
 
     // ── groups ────────────────────────────────────────────────────────────────────
@@ -337,7 +363,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             pinned      INTEGER NOT NULL DEFAULT 0,
             packaged    INTEGER NOT NULL DEFAULT 0,
             position    INTEGER NOT NULL DEFAULT 0,
-            updated_at  INTEGER NOT NULL DEFAULT 0
+            updated_at  INTEGER NOT NULL DEFAULT 0,
+            uses        INTEGER NOT NULL DEFAULT 0,
+            last_used_at INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS skill_groups (
             id          TEXT PRIMARY KEY,
@@ -347,14 +375,20 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );",
-    )
+    )?;
+    // Usage telemetry columns (#A) for a skills.db created before they existed: ALTER is additive and
+    // idempotent — the duplicate-column error on an already-migrated db is expected and ignored.
+    for (col, decl) in [("uses", "INTEGER NOT NULL DEFAULT 0"), ("last_used_at", "INTEGER NOT NULL DEFAULT 0")] {
+        let _ = conn.execute(&format!("ALTER TABLE skills ADD COLUMN {col} {decl}"), []);
+    }
+    Ok(())
 }
 
 // ── JSON (de)serialization for the value-list columns ─────────────────────────────
 // `arr_to_json` / `json_to_arr` are shared with plandb via `bsc_sqlite_util` (#1621).
 
 const SKILL_COLS: &str =
-    "SELECT id, name, kind, source, desc, prompt, tools, profiles, projects, enabled, pinned, packaged FROM skills";
+    "SELECT id, name, kind, source, desc, prompt, tools, profiles, projects, enabled, pinned, packaged, uses, last_used_at, updated_at FROM skills";
 
 fn row_to_skill(r: &rusqlite::Row) -> rusqlite::Result<Skill> {
     Ok(Skill {
@@ -370,6 +404,9 @@ fn row_to_skill(r: &rusqlite::Row) -> rusqlite::Result<Skill> {
         enabled: r.get::<_, i64>(9)? != 0,
         pinned: r.get::<_, i64>(10)? != 0,
         packaged: r.get::<_, i64>(11)? != 0,
+        uses: r.get(12)?,
+        last_used_at: r.get(13)?,
+        updated_at: r.get(14)?,
     })
 }
 
@@ -446,6 +483,27 @@ mod tests {
         s.upsert(&mk("x", "X")).unwrap();
         s.remove("x").unwrap();
         assert!(s.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn record_use_bumps_count_and_is_preserved_across_an_edit() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("x", "X")).unwrap();
+        assert_eq!(s.get("x").unwrap().unwrap().uses, 0, "starts at 0");
+        // Two uses → count 2, last_used_at stamped.
+        assert_eq!(s.record_use("x").unwrap(), 1, "one row updated");
+        s.record_use("x").unwrap();
+        let got = s.get("x").unwrap().unwrap();
+        assert_eq!(got.uses, 2, "two recorded uses");
+        assert!(got.last_used_at > 0, "last_used_at is stamped");
+        // An edit (re-upsert) must NOT reset the usage counter.
+        let before = s.get("x").unwrap().unwrap().uses;
+        s.upsert(&mk("x", "X renamed")).unwrap();
+        let after = s.get("x").unwrap().unwrap();
+        assert_eq!(after.name, "X renamed");
+        assert_eq!(after.uses, before, "upsert preserves uses (never resets it)");
+        // Recording a use of an absent skill affects 0 rows (not an error).
+        assert_eq!(s.record_use("nope").unwrap(), 0);
     }
 
     #[test]

@@ -20,8 +20,8 @@ pub(crate) async fn llm_complete(
     use ::llm::LlmProvider;
     let provider = provider.unwrap_or_else(|| "anthropic".to_string());
     let kind = ::llm::resolve_provider(&provider)?;
-    // Local (Ollama) needs no API key; every hosted provider does.
-    if api_key.is_empty() && !matches!(kind, ::llm::ProviderKind::Local) {
+    // Local / Ollama need no API key; every hosted provider does.
+    if api_key.is_empty() && !matches!(kind, ::llm::ProviderKind::Local | ::llm::ProviderKind::Ollama) {
         return Err("No API key configured. Add it in Settings → Integrations.".to_string());
     }
     let req = ::llm::LlmRequest {
@@ -40,6 +40,14 @@ pub(crate) async fn llm_complete(
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| ::llm::DEFAULT_LOCAL_BASE_URL.to_string());
             ::llm::LocalProvider { base_url: base }.complete(&req, &api_key).await
+        }
+        ::llm::ProviderKind::Ollama => {
+            let base = base_url
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| ::llm::DEFAULT_LOCAL_BASE_URL.to_string());
+            // The one-shot completion path doesn't tool-call, so the generic profile is fine (no
+            // `/api/show` round-trip needed here).
+            ::llm::OllamaProvider::new(base).complete(&req, &api_key).await
         }
     }
 }

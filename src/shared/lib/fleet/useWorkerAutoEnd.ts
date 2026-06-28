@@ -160,4 +160,35 @@ export function useWorkerAutoEnd(): void {
       }
     }
   }, IDLE_POLL_MS, []);
+
+  // Reclaim a finished worker's worktree once its branch is MERGED (#worktree-disk). Gated on the
+  // pane already being ENDED (its work is pushed) AND the PR merged on GitHub — the authoritative
+  // remote signal the boot-GC's local merge check can't see. Teardown runs once per pane; the
+  // boot-GC remains the fallback for anything missed (and never removes a dirty/unmerged worktree).
+  const tornDownRef = useRef<Set<string>>(new Set());
+  usePoll(async (isCancelled) => {
+    const s = useAppStore.getState();
+    const token = s.githubToken;
+    if (!token) return;
+    for (const paneId of Object.keys(s.endedPanes)) {
+      if (tornDownRef.current.has(paneId)) continue;
+      if ((s.paneRoles[paneId] ?? "worker") !== "worker") continue;
+      const ps = s.paneStream[paneId];               // { repo, branch }
+      const stream = s.fleetPaneStreams[paneId];      // AgentStream (.id = the worktree slug source)
+      const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
+      if (!ps || !stream || !projectKey) continue;
+      const owner = ps.repo.split("/")[0];
+      const prs = await safeInvoke<Array<{ merged_at: string | null }> | null>(
+        "github_request",
+        { token, path: `repos/${ps.repo}/pulls?state=all&head=${owner}:${ps.branch}&per_page=1` },
+        null,
+      );
+      if (isCancelled()) return;
+      if (!Array.isArray(prs) || prs[0]?.merged_at == null) continue; // not merged yet — keep it
+      tornDownRef.current.add(paneId); // reclaim once
+      log.info(`teardown: stream ${stream.id} merged → reclaiming its worktree`);
+      await safeInvoke("teardown_worktree", { projectKey, repo: ps.repo, agentId: stream.id }, undefined,
+        (e) => log.error(`teardown_worktree failed for ${stream.id}: ${e}`));
+    }
+  }, 60_000, []);
 }

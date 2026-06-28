@@ -172,7 +172,7 @@ describe("task groups (#skills-groups)", () => {
 describe("toSkillCfgs", () => {
   it("maps to the backend payload and skips name-less skills", () => {
     const cfgs = toSkillCfgs([def({ name: "Open a clean PR" }), def({ id: "x", name: "***" })]);
-    expect(cfgs).toEqual([{ name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
+    expect(cfgs).toEqual([{ id: "s1", name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
   });
 });
 

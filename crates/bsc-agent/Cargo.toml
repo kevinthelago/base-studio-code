@@ -13,6 +13,9 @@ path = "src/main.rs"
 [dependencies]
 # Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting.
 bsc-util = { path = "../bsc-util" }
+# The file-structure engine, reused IN-PROCESS by the `list_files`/`file_info` tools (the standalone
+# `bsc-files` binary is the same lib). Avoids a subprocess + the Windows binary-path resolution.
+bsc-files = { path = "../bsc-files" }
 llm = { path = "../llm", package = "bsc-llm" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

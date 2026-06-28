@@ -31,7 +31,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/bsc-plan", "binaries/bsc-agent", "binaries/bsc-research-mcp", "binaries/bsc-compliance-mcp", "binaries/bsc-skill", "binaries/bsc-data", "binaries/bsc-logs", "binaries/bsc-compliance", "binaries/bsc-blueprint", "binaries/bsc-project"],
+    "externalBin": ["binaries/bsc-plan", "binaries/bsc-agent", "binaries/bsc-research-mcp", "binaries/bsc-compliance-mcp", "binaries/bsc-skill", "binaries/bsc-data", "binaries/bsc-logs", "binaries/bsc-compliance", "binaries/bsc-blueprint", "binaries/bsc-project", "binaries/bsc-files"],
     "publisher": "base-studio-code",
     "icon": [
       "icons/32x32.png",

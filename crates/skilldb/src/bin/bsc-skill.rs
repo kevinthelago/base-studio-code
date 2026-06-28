@@ -9,19 +9,12 @@
 //! ignoring the flags — the one behavior change). `resolve` prints the group's member skills (the
 //! SKILL.md-bound shape), de-duped + ordered + existence-filtered.
 //!
-//! Commands:
-//!   bsc-skill list                          # every skill, JSON
-//!   bsc-skill add                           # upsert from JSON on stdin (one object or array); prints id(s)
-//!   bsc-skill get <id>                      # one skill, JSON (or null)
-//!   bsc-skill remove <id>                   # delete one skill by id
-//!   bsc-skill group add                     # upsert a group from JSON on stdin; prints id
-//!   bsc-skill group list                    # every group, JSON
-//!   bsc-skill group get <id>                # one group, JSON
-//!   bsc-skill group remove <id>
-//!   bsc-skill group member <group> <skill> [--off]   # toggle membership; prints resulting ids
-//!   bsc-skill resolve <group-id>            # the group's member skills, JSON
-//! Global flags: --db <path>, --json, --pretty
+//! Help is per-command so a model loads only what it needs (#1762):
+//!   bsc-skill help          # compact menu (the small "what commands exist" prompt)
+//!   bsc-skill group help    # detailed help for ONE command
+//!   bsc-skill <cmd> help    # same, after any command
 
+use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json};
 use skilldb::{Skill, SkillGroup, Store};
 use std::io::Read;
@@ -32,20 +25,139 @@ fn main() -> ExitCode {
     bsc_cli_util::cli_main("bsc-skill", run)
 }
 
+const TAGLINE: &str = "the global skills + task-groups store — author/resolve reusable skill bundles (#1338)";
+
+/// The command catalog — drives the shared help system. One detailed `usage` block per top-level
+/// command keeps the overview tiny and the detail one-fetch-away; `group`'s subcommands live in its
+/// own usage block. Output is JSON throughout (compact; `--pretty` indents).
+const COMMANDS: &[CmdDoc] = &[
+    CmdDoc {
+        name: "list",
+        summary: "navigate skills — facets, ranked, paginated (JSON)",
+        usage: "\
+USAGE:
+  bsc-skill list [--kind k] [--source s] [--project p] [--group g] [--pinned] [--query q]
+                 [--sort rank|uses|updated|name] [--limit N] [--offset M] [--pretty]
+
+Navigate the library the way the Skills page does. Filters: --kind, --source, --project (global +
+project-scoped), --group (members of a task group), --pinned, --query (name/desc/id substring).
+Sort (default `rank` = usage weighted by update-recency, so regularly-used + fresh skills surface
+first): rank | uses | updated | name. Paginated: --limit (default 20) + --offset; the result is
+{ skills:[lean rows], total, offset, limit, returned } — page until `returned` is 0. Each row omits
+the heavy `prompt` body (one `get <id>` away).",
+    },
+    CmdDoc {
+        name: "add",
+        summary: "upsert skill(s) from JSON on stdin; prints id(s)",
+        usage: "\
+USAGE:
+  bsc-skill add [--group <id>] [--pretty]   # skill JSON (one object or an array) on stdin
+
+Upserts each skill by its (required, non-empty) \"id\". With --group, each skill is also added to
+that group (the group is created, named after its id, if it does not exist yet).",
+    },
+    CmdDoc {
+        name: "get",
+        summary: "print one skill (JSON, or null)",
+        usage: "\
+USAGE:
+  bsc-skill get <id> [--pretty]
+
+Prints the skill JSON for <id>, or `null` if absent.",
+    },
+    CmdDoc {
+        name: "remove",
+        summary: "delete one skill by id (no-op if absent)",
+        usage: "\
+USAGE:
+  bsc-skill remove <id> [--pretty]
+
+Deletes the skill keyed by <id>. A no-op (not an error) when it does not exist.",
+    },
+    CmdDoc {
+        name: "group",
+        summary: "task-group CRUD + membership (named, reusable skill bundles)",
+        usage: "\
+USAGE:
+  bsc-skill group add                       # upsert a SkillGroup from JSON on stdin; prints the id
+  bsc-skill group list                      # print every group (JSON)
+  bsc-skill group get <id>                  # print one group (JSON, or null)
+  bsc-skill group remove <id>               # delete a group
+  bsc-skill group member <group> <skill>    # add <skill> to <group> (--off removes); prints ids
+
+A task group is a named, reusable bundle of skills toggled as one. Members are stored as ids;
+`resolve` expands a group to its actual skills.",
+    },
+    CmdDoc {
+        name: "resolve",
+        summary: "a group's member skills, ordered + paginated (JSON)",
+        usage: "\
+USAGE:
+  bsc-skill resolve <group-id> [--limit N] [--offset M] [--pretty]
+
+\"Display just this group's skills\" — the group's member skills, ordered, de-duped, and
+existence-filtered (the expandGroups semantics the app binds to SKILL.md files). Paginated like
+`list`: { skills:[lean rows], total, offset, limit, returned }.",
+    },
+    CmdDoc {
+        name: "groups",
+        summary: "find task groups + their live member counts (JSON)",
+        usage: "\
+USAGE:
+  bsc-skill groups [--query q] [--pretty]
+
+Lists every task group with its live member count (id, name, hue, memberCount), optionally filtered
+by --query (name/id substring). The entry point for `resolve <group-id>` (\"show just that group\").",
+    },
+    CmdDoc {
+        name: "use",
+        summary: "record a use of a skill (bumps its usage counter)",
+        usage: "\
+USAGE:
+  bsc-skill use <id|slug>
+
+Records one use of a skill: increments its usage counter and stamps its last-used time. Accepts a
+stable id or a name-slug. This is the single chokepoint the user (UI/CLI) and an agent both call, so
+usage is counted uniformly — it then drives the `list --sort rank|uses` ordering + the Skills-page
+usage chart. Prints { id, uses, lastUsedAt }.",
+    },
+];
+
+/// Default page size for the paginated reads (`list`/`resolve`) — small so a session reads a peek,
+/// not the whole library, keeping the agent's context cheap (#A).
+const DEFAULT_PAGE: usize = 20;
+
 /// Parsed global flags + leftover positional args.
 struct Args {
     db: Option<String>,
     off: bool,
-    /// `add --group <id>`: also add each upserted skill to this group (created if missing).
+    /// `add --group <id>`: also add each upserted skill to this group (created if missing). Doubles as
+    /// the `list --group <id>` membership filter (#A).
     group: Option<String>,
     /// Indent the JSON output (#1762). The default is compact, matching every other `bsc-*` CLI;
     /// `--json` is accepted as an explicit no-op since `bsc-skill`'s output is always JSON.
     pretty: bool,
+    // ── navigation facets + pagination (#A): the same axes the user navigates the Skills page by ──
+    kind: Option<String>,
+    source: Option<String>,
+    /// `list --project <p>`: skills that apply to project `p` (global skills + ones scoped to it).
+    project: Option<String>,
+    pinned: bool,
+    /// `list --sort rank|uses|updated|name` (default `rank` = uses × updated-recency).
+    sort: Option<String>,
+    /// `list`/`groups --query <q>`: case-insensitive substring over name/desc/id.
+    query: Option<String>,
+    limit: Option<usize>,
+    offset: usize,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, off: false, group: None, pretty: false, positional: Vec::new() };
+    let mut a = Args {
+        db: None, off: false, group: None, pretty: false, kind: None, source: None,
+        project: None, pinned: false, sort: None, query: None, limit: None, offset: 0,
+        positional: Vec::new(),
+    };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -55,10 +167,22 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             // Output is always JSON; --json is accepted so callers can be explicit.
             "--json" => {}
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                std::process::exit(0);
+            "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
+            "--source" => a.source = Some(it.next().ok_or("--source needs a value")?),
+            "--project" => a.project = Some(it.next().ok_or("--project needs a value")?),
+            "--pinned" => a.pinned = true,
+            "--sort" => a.sort = Some(it.next().ok_or("--sort needs a value")?),
+            "--query" => a.query = Some(it.next().ok_or("--query needs a value")?),
+            "--limit" => {
+                let v = it.next().ok_or("--limit needs a number")?;
+                a.limit = Some(v.parse().map_err(|_| format!("--limit: '{v}' is not a number"))?);
             }
+            "--offset" => {
+                let v = it.next().ok_or("--offset needs a number")?;
+                a.offset = v.parse().map_err(|_| format!("--offset: '{v}' is not a number"))?;
+            }
+            // `-h`/`--help` route to the help command (handled in run()).
+            "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -66,11 +190,93 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
+/// Epoch-seconds now (for recency ranking). 0 on the impossible pre-1970 clock — harmless, just makes
+/// every skill maximally "stale" that run.
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Recency bucket for an `updated_at` (epoch s) vs `now`: more recent = higher. Bounded so usage stays
+/// the dominant ranking term while a freshly-updated skill still lifts above an ancient one. Pure.
+fn recency_bucket(updated_at: i64, now: i64) -> i64 {
+    match (now - updated_at).max(0) / 86_400 {
+        0..=1 => 4,
+        2..=7 => 3,
+        8..=30 => 2,
+        31..=90 => 1,
+        _ => 0,
+    }
+}
+
+/// The default `rank` score: usage weighted ABOVE recency, so "regularly used AND updated" surfaces
+/// first (the navigation ask). Pure → unit-tested.
+fn rank_score(uses: i64, updated_at: i64, now: i64) -> i64 {
+    uses * 2 + recency_bucket(updated_at, now)
+}
+
+/// Directory-safe slug of a skill name — mirrors the frontend `skillSlug` + the Rust `skill_slug` so
+/// `use <name>` resolves the same id the launch path keys by: lowercase, keep `[a-z0-9-]`, collapse
+/// other runs to one `-`, trim `-`.
+fn slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending = false;
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            if pending && !out.is_empty() {
+                out.push('-');
+            }
+            pending = false;
+            out.push(c);
+        } else {
+            pending = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+/// The compact, navigation-friendly projection of a skill for the paginated `list`/`resolve` reads —
+/// the metadata + usage the user navigates by, minus the heavy `prompt` body (one `get <id>` away).
+fn lean_skill_row(s: &Skill) -> serde_json::Value {
+    serde_json::json!({
+        "id": s.id, "name": s.name, "kind": s.kind, "source": s.source,
+        "pinned": s.pinned, "enabled": s.enabled, "uses": s.uses,
+        "lastUsedAt": s.last_used_at, "updatedAt": s.updated_at,
+        "projects": s.projects, "desc": s.desc,
+    })
+}
+
+/// Slice `rows` to one page and wrap it with pagination metadata — the shared shape `list`/`resolve`
+/// both return, so an agent can page deterministically (`offset += returned` until `returned == 0`).
+fn paginate(rows: Vec<Skill>, limit: usize, offset: usize, pretty: bool) {
+    let total = rows.len();
+    let offset = offset.min(total);
+    let page: Vec<serde_json::Value> = rows.iter().skip(offset).take(limit).map(lean_skill_row).collect();
+    let returned = page.len();
+    print_json(
+        &serde_json::json!({ "skills": page, "total": total, "offset": offset, "limit": limit, "returned": returned }),
+        pretty,
+    );
+}
+
 fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
-    if cmd.is_empty() {
-        print!("{USAGE}");
+
+    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
+    // Handled before opening the store (help must work without a skills.db).
+    if cmd.is_empty() || cmd == "help" {
+        match args.positional.get(1) {
+            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, name)),
+            None => print!("{}", bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS)),
+        }
+        return Ok(());
+    }
+    // Per-command help: `bsc-skill <cmd> help`.
+    if args.positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, &cmd));
         return Ok(());
     }
 
@@ -80,10 +286,106 @@ fn run() -> Result<(), String> {
     };
 
     match cmd.as_str() {
+        // Faceted, sorted, paginated navigation — the same axes the user navigates the Skills page by
+        // (type/source/project/group/pinned), ranked by usage × recency, in cheap pages (#A).
         "list" => {
             let s = store()?;
-            let skills = s.list().map_err(|e| e.to_string())?;
-            print_json(&skills, args.pretty);
+            let now = now_secs();
+            let mut skills = s.list().map_err(|e| e.to_string())?;
+            if let Some(k) = &args.kind {
+                skills.retain(|sk| &sk.kind == k);
+            }
+            if let Some(src) = &args.source {
+                skills.retain(|sk| &sk.source == src);
+            }
+            if let Some(p) = &args.project {
+                // Applies to project p: a global skill (no project scope) or one scoped to it.
+                skills.retain(|sk| sk.projects.is_empty() || sk.projects.contains(p));
+            }
+            if args.pinned {
+                skills.retain(|sk| sk.pinned);
+            }
+            if let Some(g) = &args.group {
+                let members: std::collections::HashSet<String> = s
+                    .group_get(g)
+                    .map_err(|e| e.to_string())?
+                    .map(|grp| grp.skill_ids.into_iter().collect())
+                    .unwrap_or_default();
+                skills.retain(|sk| members.contains(&sk.id));
+            }
+            if let Some(q) = &args.query {
+                let ql = q.to_lowercase();
+                skills.retain(|sk| {
+                    sk.name.to_lowercase().contains(&ql)
+                        || sk.desc.to_lowercase().contains(&ql)
+                        || sk.id.to_lowercase().contains(&ql)
+                });
+            }
+            match args.sort.as_deref().unwrap_or("rank") {
+                "rank" => skills.sort_by(|a, b| {
+                    rank_score(b.uses, b.updated_at, now)
+                        .cmp(&rank_score(a.uses, a.updated_at, now))
+                        .then(b.updated_at.cmp(&a.updated_at))
+                        .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                }),
+                "uses" => skills.sort_by(|a, b| b.uses.cmp(&a.uses).then(b.updated_at.cmp(&a.updated_at))),
+                "updated" => skills.sort_by_key(|s| std::cmp::Reverse(s.updated_at)),
+                "name" => skills.sort_by_key(|s| s.name.to_lowercase()),
+                other => return Err(format!("unknown --sort '{other}' (expected rank|uses|updated|name)")),
+            }
+            paginate(skills, args.limit.unwrap_or(DEFAULT_PAGE), args.offset, args.pretty);
+            Ok(())
+        }
+        // Find groups (the "display just a group's skills" entry point): every task group + its live
+        // member count, optionally filtered by `--query` over name/id (#A).
+        "groups" => {
+            let s = store()?;
+            let live: std::collections::HashSet<String> =
+                s.list().map_err(|e| e.to_string())?.into_iter().map(|sk| sk.id).collect();
+            let ql = args.query.as_ref().map(|q| q.to_lowercase());
+            let rows: Vec<serde_json::Value> = s
+                .group_list()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter(|g| {
+                    ql.as_ref().is_none_or(|q| g.name.to_lowercase().contains(q) || g.id.to_lowercase().contains(q))
+                })
+                .map(|g| {
+                    let count = g.skill_ids.iter().filter(|id| live.contains(*id)).count();
+                    serde_json::json!({ "id": g.id, "name": g.name, "hue": g.hue, "memberCount": count })
+                })
+                .collect();
+            print_json(&rows, args.pretty);
+            Ok(())
+        }
+        // Record a USE of a skill (#A): the chokepoint the user (UI/CLI) and an agent both call, so
+        // usage is counted uniformly. Accepts a stable id OR a name-slug.
+        "use" => {
+            let key = args.positional.get(1).ok_or("usage: bsc-skill use <id|slug>")?;
+            let s = store()?;
+            let id = if s.get(key).map_err(|e| e.to_string())?.is_some() {
+                key.clone()
+            } else {
+                let want = slug(key);
+                s.list()
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .find(|sk| slug(&sk.name) == want)
+                    .map(|sk| sk.id)
+                    .ok_or_else(|| format!("no skill with id or name-slug '{key}'"))?
+            };
+            if s.record_use(&id).map_err(|e| e.to_string())? == 0 {
+                return Err(format!("no skill with id '{id}'"));
+            }
+            let after = s.get(&id).map_err(|e| e.to_string())?;
+            print_json(
+                &serde_json::json!({
+                    "id": id,
+                    "uses": after.as_ref().map(|sk| sk.uses).unwrap_or(0),
+                    "lastUsedAt": after.map(|sk| sk.last_used_at).unwrap_or(0),
+                }),
+                args.pretty,
+            );
             Ok(())
         }
         "add" => {
@@ -106,11 +408,12 @@ fn run() -> Result<(), String> {
             print_json(&id, args.pretty);
             Ok(())
         }
+        // "Display just this group's skills" — the group's member skills, paginated like `list` (#A).
         "resolve" => {
-            let gid = args.positional.get(1).ok_or("usage: bsc-skill resolve <group-id>")?;
+            let gid = args.positional.get(1).ok_or("usage: bsc-skill resolve <group-id> [--limit N] [--offset M]")?;
             let s = store()?;
             let skills = s.resolve(gid).map_err(|e| e.to_string())?;
-            print_json(&skills, args.pretty);
+            paginate(skills, args.limit.unwrap_or(DEFAULT_PAGE), args.offset, args.pretty);
             Ok(())
         }
         "group" => {
@@ -162,10 +465,16 @@ fn run() -> Result<(), String> {
                     print_json(&ids, args.pretty);
                     Ok(())
                 }
-                other => Err(format!("unknown group command '{other}'\n\n{USAGE}")),
+                other => Err(format!(
+                    "unknown group command '{other}'\n\n{}",
+                    bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "group")
+                )),
             }
         }
-        other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+        other => Err(format!(
+            "unknown command '{other}'\n\n{}",
+            bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS)
+        )),
     }
 }
 
@@ -213,42 +522,55 @@ fn pair_into_group(s: &Store, gid: &str, skill_ids: &[String]) -> rusqlite::Resu
     Ok(())
 }
 
-const USAGE: &str = "\
-bsc-skill — the global skills + task-groups store (#1338)
-
-USAGE:
-  bsc-skill <command> [args] [--db <path>] [--json] [--pretty]
-
-Output is JSON — compact by default; --pretty indents it (--json is accepted as an explicit no-op).
-
-SKILLS (the global library):
-  list                      print every skill (JSON)
-  add [--group <id>]        upsert from a skill object/array JSON on stdin; prints id(s).
-                            --group also adds each skill to that group (created if missing).
-  get <id>                  print one skill (JSON, or null)
-  remove <id>               delete one skill by id (no-op if absent)
-
-GROUPS (task groups — named, reusable bundles of skills, toggled as one):
-  group add                 upsert a group from a SkillGroup JSON on stdin; prints the id
-  group list                print every group (JSON)
-  group get <id>            print one group (JSON, or null)
-  group remove <id>         delete a group
-  group member <g> <s>      add skill <s> to group <g>  (--off removes it); prints resulting ids
-
-RESOLVE:
-  resolve <group-id>        print the group's member skills (JSON) — ordered, de-duped,
-                            existence-filtered (the expandGroups semantics)
-
-The skills.db is found via --db <path>, the BSC_SKILL_DB env var, or the default global store at
-~/.base-studio-code/skills.db.
-";
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn mem_store() -> Store {
         Store::open_in_memory().expect("open in-memory skills.db")
+    }
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS);
+        for c in ["list", "add", "get", "remove", "group", "groups", "resolve", "use"] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        // `group help` shows the group command's subcommands, not the whole menu.
+        let g = bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "group");
+        assert!(g.contains("bsc-skill group"));
+        assert!(g.contains("member"));
+        assert!(!g.contains("resolve <group-id>"));
+        // The new navigation/usage commands have their own detailed help.
+        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "use").contains("usage counter"));
+        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "groups").contains("member count"));
+        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "list").contains("--sort"));
+        // An unknown command falls back to the overview.
+        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+    }
+
+    #[test]
+    fn rank_weights_usage_above_recency_but_recency_breaks_ties() {
+        let now = 1_000_000_000;
+        let day = 86_400;
+        // More uses always outranks fewer, regardless of recency.
+        assert!(rank_score(5, now - 365 * day, now) > rank_score(1, now, now), "usage dominates");
+        // Among equal usage, the more recently updated ranks higher.
+        assert!(rank_score(2, now, now) > rank_score(2, now - 200 * day, now), "recency breaks ties");
+        // A freshly-updated zero-use skill still outranks an ancient zero-use one.
+        assert!(rank_score(0, now, now) > rank_score(0, now - 365 * day, now));
+        // recency_bucket is bounded + monotonic in staleness.
+        assert_eq!(recency_bucket(now, now), 4);
+        assert_eq!(recency_bucket(now - 365 * day, now), 0);
+        assert!(recency_bucket(now - 3 * day, now) >= recency_bucket(now - 20 * day, now));
+    }
+
+    #[test]
+    fn slug_matches_the_launch_path_keying() {
+        assert_eq!(slug("Open a PR"), "open-a-pr");
+        assert_eq!(slug("  Triage!! failing  test "), "triage-failing-test");
+        assert_eq!(slug("already-slug"), "already-slug");
+        assert_eq!(slug("***"), "");
     }
 
     #[test]

@@ -2,8 +2,8 @@
 //! runs a tool-using agent loop against any provider in `bsc-llm`. Configured by env
 //! (so the app can launch it like `bsc-plan`): `BSC_AGENT_PROVIDER` (default
 //! `anthropic`), `BSC_AGENT_MODEL`, `BSC_AGENT_API_KEY`. The task comes from argv (or
-//! stdin); the system prompt is the `CLAUDE.md` chain (cwd + ancestors) + `CLAUDE.local.md`,
-//! matching Claude Code's context loading. Output goes to
+//! stdin); the system prompt is the global `~/.claude/CLAUDE.md` user memory + the `CLAUDE.md`
+//! chain (cwd + ancestors) + `CLAUDE.local.md`, matching Claude Code's context loading. Output goes to
 //! stdout — it runs inside the PTY like `claude` does.
 
 mod agent;
@@ -11,7 +11,7 @@ mod mcp;
 mod permissions;
 mod telemetry;
 
-use agent::{default_tools, run_agent, Tool};
+use agent::{bsc_cli_tool, default_tools, run_agent, Tool};
 use llm::{LlmProvider, Msg};
 use permissions::Permissions;
 use std::io::Read;
@@ -19,11 +19,39 @@ use std::path::Path;
 use std::sync::Arc;
 use telemetry::Telemetry;
 
-/// Compose the system prompt the way Claude Code does: every `CLAUDE.md` from the filesystem root
-/// down to `start` (most-specific last), then `start/CLAUDE.local.md` (the plan / local overrides
-/// copied into worker worktrees). Absent/empty files are skipped. (#1078 P3 context parity)
+/// The user's home directory (for the global `~/.claude` memory), from the platform env. `None` when
+/// neither var is set — then global user memory is simply skipped, like any other absent file.
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(std::path::PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+}
+
+/// Compose the system prompt the way Claude Code does: the global user memory (`~/.claude/CLAUDE.md`)
+/// FIRST as the least-specific layer, then every `CLAUDE.md` from the filesystem root down to `start`
+/// (most-specific last), then `start/CLAUDE.local.md` (the plan / local overrides copied into worker
+/// worktrees), then skills. Absent/empty files are skipped. (#1078 P3 context parity)
 fn compose_system(start: &Path) -> String {
+    compose_system_inner(start, home_dir().as_deref())
+}
+
+/// The pure core of [`compose_system`], with the home dir injected so it's testable without touching
+/// process env. `home` supplies the global `~/.claude/CLAUDE.md` user memory.
+fn compose_system_inner(start: &Path, home: Option<&Path>) -> String {
     let mut parts: Vec<String> = Vec::new();
+    // Global user memory: Claude Code loads `~/.claude/CLAUDE.md` into EVERY session, and the app
+    // writes it as its "global" target (the Settings global instructions — agent/claude_config.rs).
+    // It is NOT an ancestor of a project hub / worktree, so the ancestor walk below would miss it —
+    // read it FIRST (least-specific), so a bsc-agent session gets the same global context, overridden
+    // by the project/local files that follow. (#parity)
+    if let Some(home) = home {
+        if let Ok(c) = std::fs::read_to_string(home.join(".claude").join("CLAUDE.md")) {
+            if !c.trim().is_empty() {
+                parts.push(c);
+            }
+        }
+    }
     let mut dirs: Vec<&Path> = start.ancestors().collect();
     dirs.reverse(); // root first, `start` last — the most-specific CLAUDE.md appears last
     for d in dirs {
@@ -68,6 +96,72 @@ fn compose_skills(start: &Path) -> String {
     out.join("\n\n")
 }
 
+/// One project CLI's runtime-availability descriptor: the sidecar's `$BSC_*_BIN` env var (set by the
+/// app when the binary is staged — `wire_bsc_env`), an optional `context_env` that must ALSO be set
+/// for the CLI to reach a *project* store, and a one-line purpose. Drives both the system-prompt block
+/// and the startup banner, so a bsc-agent session advertises exactly the CLIs it can actually run.
+struct ProjectCli {
+    name: &'static str,
+    bin_env: &'static str,
+    context_env: Option<&'static str>,
+    blurb: &'static str,
+}
+
+/// Every `bsc-*` state CLI the app can wire into a session (the same set staged in `wire_bsc_env`).
+/// A CLI is "available" when its `bin_env` is set; the two project-scoped ones note when their
+/// per-project store env is absent (so the model isn't told to use `bsc-plan` with no plan.db).
+const PROJECT_CLIS: &[ProjectCli] = &[
+    ProjectCli { name: "bsc-plan", bin_env: "BSC_PLAN_BIN", context_env: Some("BSC_PLAN_DB"),
+        blurb: "this project's plan store: issues, features, fleet streams, phases, prose sections" },
+    ProjectCli { name: "bsc-data", bin_env: "BSC_DATA_BIN", context_env: Some("BSC_DATA_DB"),
+        blurb: "the Data Model + Platform Behavior Summary + entity tables; REST connectors" },
+    ProjectCli { name: "bsc-skill", bin_env: "BSC_SKILL_BIN", context_env: None,
+        blurb: "the global skills library + task-groups" },
+    ProjectCli { name: "bsc-logs", bin_env: "BSC_LOGS_BIN", context_env: None,
+        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only)" },
+    ProjectCli { name: "bsc-compliance", bin_env: "BSC_COMPLIANCE_BIN", context_env: None,
+        blurb: "the compliance standards corpus (accessibility/privacy/security obligations)" },
+    ProjectCli { name: "bsc-blueprint", bin_env: "BSC_BLUEPRINT_BIN", context_env: None,
+        blurb: "the user blueprint library" },
+    ProjectCli { name: "bsc-project", bin_env: "BSC_PROJECT_BIN", context_env: None,
+        blurb: "list local projects + read/set the published marker" },
+    ProjectCli { name: "bsc-files", bin_env: "BSC_FILES_BIN", context_env: None,
+        blurb: "the project's file tree with metrics + single-path stat" },
+];
+
+/// The staged-this-session subset of [`PROJECT_CLIS`] — those whose `bin_env` is set (per `is_set`).
+fn available_clis(is_set: &impl Fn(&str) -> bool) -> Vec<&'static ProjectCli> {
+    PROJECT_CLIS.iter().filter(|c| is_set(c.bin_env)).collect()
+}
+
+/// Render the "Project CLIs available this session" system-prompt block from the staged `clis`, or ""
+/// when none are wired (a bare run outside the app — keeps the prompt clean). Each line names the CLI
+/// plus its purpose, and flags a project-scoped CLI whose store env is missing. The help-first
+/// protocol of `<cli> help` is taught once in `AGENT_INSTRUCTIONS`; this block is the live inventory.
+fn render_clis_block(clis: &[&ProjectCli], is_set: &impl Fn(&str) -> bool) -> String {
+    if clis.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<String> = clis
+        .iter()
+        .map(|c| {
+            let ctx = match c.context_env {
+                Some(env) if !is_set(env) => "  (no project store in this session — needs a project context)",
+                _ => "",
+            };
+            format!("- `{}` — {}{}", c.name, c.blurb, ctx)
+        })
+        .collect();
+    format!(
+        "# Project CLIs available this session\n\
+         These `bsc-*` programs are wired into this session. Each is available as a TOOL you can call \
+         DIRECTLY by name — e.g. call the `bsc-plan` tool with `args: \"summary\"` — or run it via the \
+         `bash` tool. Each has a `help` command: call it with `args: \"help\"` for the command menu, \
+         then `args: \"<command> help\"` for one command's args. Check help before guessing.\n\n{}",
+        lines.join("\n"),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     let provider = std::env::var("BSC_AGENT_PROVIDER").unwrap_or_else(|_| "anthropic".into());
@@ -96,7 +190,38 @@ async fn main() {
 
     // System prompt = the CLAUDE.md chain (ancestors + cwd) + CLAUDE.local.md (the plan),
     // matching Claude Code's context loading so a bsc-agent worker sees the same context.
-    let system = compose_system(&std::env::current_dir().unwrap_or_default());
+    let mut system = compose_system(&std::env::current_dir().unwrap_or_default());
+
+    // Append the live inventory of `bsc-*` state CLIs wired into THIS session (Part B): probe which
+    // sidecars are staged ($BSC_*_BIN set) and tell the model exactly which it can run + that each has
+    // a `help` command. Done before the banner so the reported `context=` size includes it.
+    let env_set = |k: &str| std::env::var(k).map(|v| !v.trim().is_empty()).unwrap_or(false);
+    let clis = available_clis(&env_set);
+    let cli_block = render_clis_block(&clis, &env_set);
+    if !cli_block.is_empty() {
+        system = format!("{system}\n\n{cli_block}");
+    }
+
+    // Startup banner (to the PTY): the launch command + screen-clear scrolls the baked task out of
+    // view, so echo what THIS session is actually running — provider, model, context size, and a task
+    // preview — so the user can see it started and isn't staring at a silent, seemingly-hung screen.
+    eprintln!(
+        "\x1b[2m▸ bsc-agent · provider={provider} · model={} · context={} chars\x1b[0m",
+        if model.is_empty() { "<default>" } else { &model },
+        system.len(),
+    );
+    let preview: String = task.chars().take(160).collect();
+    eprintln!("\x1b[2m▸ task: {preview}{}\x1b[0m", if task.chars().count() > 160 { "…" } else { "" });
+    // Echo the project CLIs wired this session (Part B): the model is told what's available + that each
+    // has a `help` command, so it reaches for `bsc-plan` etc. instead of never discovering them.
+    if !clis.is_empty() {
+        let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
+        eprintln!(
+            "\x1b[2m▸ project CLIs ({}): {} — run `<cli> help` for commands\x1b[0m",
+            names.len(),
+            names.join(", "),
+        );
+    }
     // The native tool set (read/write/edit/bash/grep/glob/webfetch + the `task` sub-agent
     // tool) is built per-provider by `default_tools` once the provider is resolved below, so
     // the `task` tool can capture the live provider. MCP tools are collected up front here.
@@ -110,19 +235,31 @@ async fn main() {
         if !raw.trim().is_empty() {
             match serde_json::from_str::<Vec<mcp::McpServerCfg>>(&raw) {
                 Ok(cfgs) => {
+                    if !cfgs.is_empty() {
+                        eprintln!("\x1b[2m▸ connecting {} MCP server(s)…\x1b[0m", cfgs.len());
+                    }
                     for cfg in &cfgs {
                         match mcp::connect(cfg).await {
                             Ok((client, mut mtools)) => {
+                                eprintln!("\x1b[2m  ✓ {} ({} tool(s))\x1b[0m", cfg.name, mtools.len());
                                 mcp_tools.append(&mut mtools);
                                 _mcp_clients.push(client);
                             }
-                            Err(e) => eprintln!("bsc-agent: mcp '{}' connect failed: {e}", cfg.name),
+                            // A failed/timed-out server is skipped, not fatal — the session still runs.
+                            Err(e) => eprintln!("\x1b[33m  ✗ mcp '{}' skipped: {e}\x1b[0m", cfg.name),
                         }
                     }
                 }
                 Err(e) => eprintln!("bsc-agent: BSC_AGENT_MCP parse error: {e}"),
             }
         }
+    }
+    // First-class tools for the project CLIs wired this session (#qwen): a local model calls `bsc-plan`
+    // as a TOOL (not via the `bash` tool), then bounces off "unknown tool" and gives up — so register
+    // each staged CLI by its real name. They ride alongside the MCP tools into the loop (and show in
+    // the tool-visibility banner). Gated on the same availability probe as the system-prompt block.
+    for c in &clis {
+        mcp_tools.push(bsc_cli_tool(c.name));
     }
     // Least-privilege gate ($BSC_AGENT_PERMS); permissive when unset.
     let perms = permissions::Permissions::from_env();
@@ -151,6 +288,7 @@ async fn main() {
         }
     };
 
+    eprintln!("\x1b[2m▸ contacting the model — the first local response can take a while (model load + context)…\x1b[0m");
     let result = match kind {
         llm::ProviderKind::Anthropic => {
             run_with_provider(llm::AnthropicProvider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
@@ -169,6 +307,23 @@ async fn main() {
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
             run_with_provider(llm::LocalProvider { base_url }, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
+        }
+        llm::ProviderKind::Ollama => {
+            // The local Ollama provider endpoint — $BSC_AGENT_BASE_URL (set by the
+            // app from the user's config), falling back to Ollama's default when unset/empty.
+            let base_url = std::env::var("BSC_AGENT_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| llm::DEFAULT_LOCAL_BASE_URL.into());
+            // Per-model adaptation: query Ollama's /api/show ONCE for this model's tool capability +
+            // stop tokens, and drive how we advertise/parse tools from it (graceful generic default
+            // if /api/show is unreachable). One round-trip at session start.
+            let profile = llm::detect_ollama_profile(&base_url, &model).await;
+            eprintln!(
+                "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s) detected\x1b[0m",
+                profile.supports_tools, profile.stop.len(),
+            );
+            run_with_provider(llm::OllamaProvider::with_profile(base_url, profile), &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await
         }
     };
 
@@ -205,13 +360,92 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
         0,
     );
     tools.extend(mcp_tools);
-    run_agent(&*provider, api_key, model, system, task, &tools, perms, tele, prior, session_path, 20).await
+    // Tool-visibility banner (to the PTY): list every tool the model actually has this session —
+    // the native verbs plus the namespaced `mcp__<server>__<tool>` entries — so the user can see
+    // what's wired up (the per-server counts above don't name the tools, and the native set was
+    // never echoed at all). Dim, like the rest of the startup banner.
+    let tool_names: Vec<&str> = tools.iter().map(|t| t.def.name.as_str()).collect();
+    eprintln!("\x1b[2m▸ {} tool(s) available: {}\x1b[0m", tool_names.len(), tool_names.join(", "));
+    // The root session runs in a PTY, so it's INTERACTIVE: after the initial task settles it keeps
+    // the session alive and reads further user turns from stdin (Claude-REPL parity), instead of the
+    // process exiting after one response and ending the pane. (#1078 interactive mode)
+    run_agent(&*provider, api_key, model, system, task, &tools, perms, tele, prior, session_path, 20, true).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::compose_system;
+    use super::{available_clis, compose_system_inner, render_clis_block};
     use std::fs;
+
+    /// Compose with NO global home memory, so a real `~/.claude/CLAUDE.md` on the dev machine can't
+    /// leak into these structural assertions. The global layer has its own test below.
+    fn compose_system(start: &std::path::Path) -> String {
+        compose_system_inner(start, None)
+    }
+
+    #[test]
+    fn global_user_memory_is_injected_first_then_overridden_by_project_files() {
+        // Mirrors Claude Code: ~/.claude/CLAUDE.md (the app's "global" target) loads into every
+        // session as the LEAST-specific layer. bsc-agent must inject it too (it's not an ancestor of
+        // the project hub / worktree, so the ancestor walk alone misses it). (#parity)
+        let base = std::env::temp_dir().join(format!("bsc-agent-global-{}", std::process::id()));
+        let home = base.join("home");
+        let proj = base.join("proj"); // a sibling of home — NOT under it, like a real project hub
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        fs::write(home.join(".claude").join("CLAUDE.md"), "GLOBAL-MEMORY").unwrap();
+        fs::write(proj.join("CLAUDE.md"), "PROJECT-SPEC").unwrap();
+
+        let s = compose_system_inner(&proj, Some(home.as_path()));
+        let (gi, pi) = (s.find("GLOBAL-MEMORY"), s.find("PROJECT-SPEC"));
+        assert!(gi.is_some() && pi.is_some(), "both global + project present: {s}");
+        assert!(gi < pi, "global memory is least-specific (appears first): {s}");
+
+        // With no home, the global layer is simply absent (best-effort) — not an error.
+        let none = compose_system_inner(&proj, None);
+        assert!(!none.contains("GLOBAL-MEMORY"));
+        assert!(none.contains("PROJECT-SPEC"));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn available_clis_filters_to_staged_bins_and_block_flags_missing_context() {
+        // Only bsc-plan + bsc-files staged; bsc-plan has NO plan.db (BSC_PLAN_DB absent).
+        let is_set = |k: &str| ["BSC_PLAN_BIN", "BSC_FILES_BIN"].contains(&k);
+        let clis = available_clis(&is_set);
+        let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["bsc-plan", "bsc-files"], "lists only the staged sidecars, in order");
+
+        let block = render_clis_block(&clis, &is_set);
+        assert!(block.contains("# Project CLIs available this session"));
+        assert!(block.contains("bsc-plan"));
+        assert!(block.contains("bsc-files"));
+        // The help-first protocol is referenced so the model self-serves command detail.
+        assert!(block.contains("<cli> help"));
+        // bsc-plan is staged but BSC_PLAN_DB is absent → flagged as needing a project context.
+        assert!(block.contains("needs a project context"));
+        // A sidecar that isn't staged never appears.
+        assert!(!block.contains("bsc-compliance"));
+    }
+
+    #[test]
+    fn render_clis_block_is_empty_when_nothing_is_staged() {
+        // A bare run outside the app (no $BSC_*_BIN) injects nothing — the prompt stays clean.
+        let none = |_k: &str| false;
+        assert!(available_clis(&none).is_empty());
+        assert!(render_clis_block(&[], &none).is_empty());
+    }
+
+    #[test]
+    fn project_cli_with_its_store_present_is_not_flagged() {
+        // bsc-plan staged AND BSC_PLAN_DB present → no "needs a project context" caveat.
+        let is_set = |k: &str| ["BSC_PLAN_BIN", "BSC_PLAN_DB"].contains(&k);
+        let clis = available_clis(&is_set);
+        let block = render_clis_block(&clis, &is_set);
+        assert!(block.contains("bsc-plan"));
+        assert!(!block.contains("needs a project context"));
+    }
 
     #[test]
     fn composes_ancestor_chain_then_local() {

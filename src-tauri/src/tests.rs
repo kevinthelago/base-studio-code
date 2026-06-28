@@ -493,12 +493,14 @@ use crate::console::settings::*;
 
         let skills = vec![
             SkillCfg {
+                id: "open-pr".into(),
                 name: "Open a clean PR".into(),
                 description: "Open a tidy pull request".into(),
                 prompt: "Do the PR steps.".into(),
                 tools: vec!["create_pr".into(), "git_diff".into()],
             },
             SkillCfg {
+                id: "review-docs".into(),
                 name: "Review Docs".into(),
                 description: "Review the docs".into(),
                 prompt: "Check the docs.".into(),

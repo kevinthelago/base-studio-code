@@ -348,6 +348,49 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    /// Stress/reliability (#worktree-disk): the fleet launches N workers at once, so N
+    /// `add_worktree_healing` calls race on ONE clone — git's worktree admin is the weakest spot
+    /// (it locks `.git/worktrees`). All adds must still succeed (the prune+retry heals contention),
+    /// each worktree is then removed, and the clone is left with NO dangling records or leaked dirs.
+    #[test]
+    fn concurrent_worktree_adds_and_removes_are_reliable() {
+        use std::sync::{Arc, Barrier};
+        let base = unique_dir("stress");
+        let clone = base.join("clone");
+        init_repo_with_commit(&clone);
+        let clone_str = clone.to_string_lossy().into_owned();
+        const N: usize = 6;
+        let barrier = Arc::new(Barrier::new(N));
+        let mut handles = Vec::new();
+        for i in 0..N {
+            let clone_str = clone_str.clone();
+            let base = base.clone();
+            let clone_pb = clone.clone();
+            let barrier = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                let slug = format!("stream-{i}");
+                let wt = base.join(format!("wt-{i}"));
+                let wt_str = wt.to_string_lossy().into_owned();
+                barrier.wait(); // release all threads into `git worktree add` simultaneously
+                add_worktree_healing(&clone_str, &wt_str, &slug).expect("add under contention");
+                assert!(wt.join(".git").exists(), "worktree {i} created");
+                std::fs::write(wt.join("work.txt"), "x").unwrap();
+                crate::fleet::teardown::remove_worktree_at(&clone_pb, &wt).expect("remove");
+                assert!(!wt.exists(), "worktree {i} removed");
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // Only the main clone remains registered — no dangling worktree records.
+        let mut list = std::process::Command::new("git");
+        list.args(["-C", &clone_str, "worktree", "list"]);
+        let out = no_window(&mut list).output().unwrap();
+        let lines = String::from_utf8_lossy(&out.stdout).lines().count();
+        assert_eq!(lines, 1, "only the clone remains; no leaked worktree records");
+        let _ = fs::remove_dir_all(&base);
+    }
+
     /// #1568: a genuine failure surfaces git's actual stderr (not a bare "failed"), so a launch
     /// failure is debuggable from the message alone.
     #[test]
