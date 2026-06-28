@@ -1,14 +1,12 @@
 import { useAppStore } from "@/store";
-import { ToggleRow } from "../screens/SettingsControls";
+import { SettingsCardHead, ToggleRow } from "../screens/SettingsControls";
 
 export function IssueSecurityCard() {
   const { restrictToBscIssues, setRestrictToBscIssues } = useAppStore();
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Issue security</h3>
-      </div>
+      <SettingsCardHead title="Issue security" />
       <ToggleRow
         on={restrictToBscIssues}
         onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}

@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
-import { SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "../screens/SettingsControls";
 
 export function LogsRetentionCard({
   onEnforced,
@@ -29,9 +29,7 @@ export function LogsRetentionCard({
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Log retention</h3>
-      </div>
+      <SettingsCardHead title="Log retention" />
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         <Row label="Max lines per log" hint="On enforcement (and at startup), each telemetry log is trimmed to its newest N lines.">
           <Select

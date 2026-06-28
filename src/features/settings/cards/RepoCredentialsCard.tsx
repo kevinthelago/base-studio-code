@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppStore } from "@/store";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { SettingsCardHead } from "../screens/SettingsControls";
 
 export function RepoCredentialsCard() {
   const repoGithubTokens = useAppStore((s) => s.repoGithubTokens);
@@ -18,10 +19,7 @@ export function RepoCredentialsCard() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Repo credentials</h3>
-        <span className="hint">scope a repo-specific token — that repo's sessions use it instead of your global PAT, so they can't reach other repos via the proxy.</span>
-      </div>
+      <SettingsCardHead title="Repo credentials" hint="scope a repo-specific token — that repo's sessions use it instead of your global PAT, so they can't reach other repos via the proxy." />
 
       <div style={{ display: "flex", gap: 8 }}>
         <select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} style={{ width: 240, height: 34 }}>
