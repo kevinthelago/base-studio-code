@@ -366,22 +366,13 @@ fn wire_bsc_env(
     // Sidecar CLI binaries: every bsc-* shell helper execs its sidecar via $BSC_*_BIN — the absolute,
     // bash-style path of the bundled CLI (no PATH changes, no copies; the helper falls back to a PATH
     // lookup when its BIN is unset, e.g. in the test target where the sidecar isn't present). The export
-    // is byte-identical per CLI, so table-drive it. The per-CLI store/db vars above stay separate: they
+    // is byte-identical per CLI, so it's driven by the shared `bsc_util::SIDECARS` registry (#1843) —
+    // the ONE sidecar list. The per-CLI store/db vars above stay separate: they
     // are heterogeneous (cwd-derived Option vs global unconditional vs none, like bsc-logs' BSC_LOG_DIR
     // and bsc-blueprint/bsc-project which need no store-dir env), so they do NOT belong in this loop.
-    for (stem, env_var) in [
-        ("bsc-plan", "BSC_PLAN_BIN"),
-        ("bsc-skill", "BSC_SKILL_BIN"),
-        ("bsc-data", "BSC_DATA_BIN"),
-        ("bsc-logs", "BSC_LOGS_BIN"),
-        ("bsc-compliance", "BSC_COMPLIANCE_BIN"),
-        ("bsc-blueprint", "BSC_BLUEPRINT_BIN"),
-        ("bsc-project", "BSC_PROJECT_BIN"),
-        ("bsc-files", "BSC_FILES_BIN"),
-        ("bsc-agent", "BSC_AGENT_BIN"),
-    ] {
-        if let Some(bin) = sidecar_bin_path(stem) {
-            cmd.env(env_var, to_bash_path(&bin.to_string_lossy()));
+    for s in bsc_util::SIDECARS {
+        if let Some(bin) = sidecar_bin_path(s.name) {
+            cmd.env(s.bin_env, to_bash_path(&bin.to_string_lossy()));
         }
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
