@@ -1,7 +1,7 @@
 // The Features board (split from FocusedBodies.tsx #1757): one card per user-facing capability the
 // planner has written to features.json, with a defined/drafting badge + its owning stream. The
 // "easy way" the user curates and watches each feature take shape.
-import { useState } from "react";
+import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Tile } from "@/features/planner/pane/focusedPrimitives";
 import { featureDefined, type PlanFeature } from "@/features/planner/issues/featureList";
 
@@ -9,13 +9,7 @@ export function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) 
   const list = features ?? [];
   // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
   const firstDrafting = list.find((f) => !featureDefined(f))?.slug;
-  const [open, setOpen] = useState<Set<string>>(() => new Set(firstDrafting ? [firstDrafting] : []));
-  const toggle = (slug: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug); else next.add(slug);
-      return next;
-    });
+  const { open, toggle } = useExpandable(firstDrafting ? [firstDrafting] : []);
 
   if (list.length === 0) {
     return (
