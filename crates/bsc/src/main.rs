@@ -17,7 +17,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("logs", "unified logs + perf + cost (read-only)"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
-    // Added as the migration lands (#1877): mcp
+    ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
 ];
 
 fn top_help() -> String {
@@ -47,12 +47,42 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "files" => bsc_files::cli::run(rest, "bsc files"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
+        "mcp" => run_mcp(rest),
         "" | "help" | "-h" | "--help" => {
             print!("{}", top_help());
             Ok(())
         }
         other => Err(format!("unknown command '{other}'\n\n{}", top_help())),
     }
+}
+
+/// `bsc mcp <server>` (#1877): the bundled native MCP servers — once standalone `bsc-research-mcp` /
+/// `bsc-compliance-mcp` binaries — are now subcommands of the umbrella. Each builds its server from
+/// the environment and runs the shared stdio JSON-RPC loop (`mcp_rpc::run_stdio_server`), so the app's
+/// `.mcp.json` spawns `bsc mcp research` / `bsc mcp compliance` instead of a separate binary.
+fn run_mcp(rest: Vec<String>) -> Result<(), String> {
+    let server = rest.first().map(String::as_str).unwrap_or("");
+    match server {
+        "research" => mcp_rpc::run_stdio_server(&research::mcp::Server::from_env()?),
+        "compliance" => mcp_rpc::run_stdio_server(&compliance::mcp::Server::from_env()?),
+        "" | "help" | "-h" | "--help" => {
+            print!("{}", mcp_help());
+            Ok(())
+        }
+        other => Err(format!("unknown mcp server '{other}'\n\n{}", mcp_help())),
+    }
+}
+
+fn mcp_help() -> String {
+    String::from(
+        "bsc mcp — bundled native MCP servers (stdio JSON-RPC 2.0)\n\n\
+         USAGE:\n  \
+         bsc mcp <server>\n\n\
+         SERVERS:\n  \
+         research    literature grounding (arXiv · Semantic Scholar · PubMed · Crossref)\n  \
+         compliance  compliance standards corpus (WCAG · GDPR · CCPA · SOC 2)\n\n\
+         These are spawned by Claude Code from the project's .mcp.json; you rarely run them by hand.\n",
+    )
 }
 
 fn main() -> ExitCode {

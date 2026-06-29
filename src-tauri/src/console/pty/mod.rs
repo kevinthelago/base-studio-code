@@ -147,31 +147,25 @@ fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
 }
 
-/// The absolute path of a bundled `bsc-*` sidecar binary (CLI or MCP server) named `stem` — the
-/// binary sitting beside the running app exe (the cargo target dir in dev; a bundled sidecar in a
-/// release), or None if it isn't there. `stem` is the bare name without the platform extension
-/// (`.exe` is appended on Windows). Sessions get the resolved paths as `$BSC_*_BIN` env vars for the
-/// shell helpers to exec — no PATH change; the two MCP servers are rewritten into `.mcp.json`
-/// (which Claude Code spawns directly, no shell-rc) via the `pub(crate)` wrappers below.
+/// The absolute path of a bundled `bsc-*` binary named `stem` — the binary sitting beside the running
+/// app exe (the cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there.
+/// `stem` is the bare name without the platform extension (`.exe` is appended on Windows). The app
+/// ships just two binaries now (#1877): the unified `bsc` umbrella (every state CLI + the two MCP
+/// servers are its subcommands) and the `bsc-agent` runtime. Sessions get `bsc` as `$BSC_BIN` and
+/// `bsc-agent` as `$BSC_AGENT_BIN`; the MCP servers are rewritten into `.mcp.json` as `bsc mcp <sub>`
+/// (which Claude Code spawns directly, no shell-rc) via the `pub(crate)` wrapper below.
 fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
     let p = std::env::current_exe().ok()?.with_file_name(exe);
     p.exists().then_some(p)
 }
 
-/// The absolute path of the bundled `bsc-research-mcp` server (#1196), or None if absent. Used by
-/// `extensions/mcp.rs` to rewrite the Research server's `.mcp.json` command to the real binary path,
-/// since Claude Code spawns `.mcp.json` commands directly (no PATH/shell-rc), unlike the
-/// `$BSC_*_BIN` shell helpers. Thin wrapper over [`sidecar_bin_path`].
-pub(crate) fn bsc_research_mcp_bin_path() -> Option<std::path::PathBuf> {
-    sidecar_bin_path(bsc_util::RESEARCH_MCP)
-}
-
-/// The absolute path of the bundled `bsc-compliance-mcp` server (#1005), or None if absent. Used by
-/// `extensions/mcp.rs` to rewrite the built-in Compliance server's `.mcp.json` command to the real
-/// binary path, like [`bsc_research_mcp_bin_path`]. Thin wrapper over [`sidecar_bin_path`].
-pub(crate) fn bsc_compliance_mcp_bin_path() -> Option<std::path::PathBuf> {
-    sidecar_bin_path(bsc_util::COMPLIANCE_MCP)
+/// The absolute path of the bundled unified `bsc` binary (#1877), or None if absent. Used by
+/// `extensions/mcp.rs` to rewrite the built-in Research/Compliance MCP servers' `.mcp.json` commands
+/// to `<bsc> mcp <sub>`, since Claude Code spawns `.mcp.json` commands directly (no PATH/shell-rc).
+/// Thin wrapper over [`sidecar_bin_path`].
+pub(crate) fn bsc_bin_path() -> Option<std::path::PathBuf> {
+    sidecar_bin_path("bsc")
 }
 
 /// Build the environment for a session shell.
@@ -295,49 +289,49 @@ fn wire_bsc_env(
     if !cwd.is_empty() {
         cmd.env("BSC_REPO_ROOT", to_bash_path(cwd));
     }
-    // bsc-plan (#plan-db): point this session at its project's canonical plan store. Both vars feed
-    // the `bsc-plan` shell helper (installed via the rc above, like every other bsc-*): $BSC_PLAN_DB
-    // is the plan.db it reads/writes, $BSC_PLAN_BIN the absolute path of the CLI it execs — no PATH
-    // changes, no copies. The DB is derived from the cwd — every project session runs under
-    // `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
+    // bsc plan (#plan-db): point this session at its project's canonical plan store. $BSC_PLAN_DB is
+    // the plan.db the `bsc plan` subcommand reads/writes (the unified `bsc` binary is staged once as
+    // $BSC_BIN below — no per-CLI binary). The DB is derived from the cwd — every project session runs
+    // under `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
     // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
-    // console in some repo) get no BSC_PLAN_DB and never call bsc-plan.
+    // console in some repo) get no BSC_PLAN_DB and never call `bsc plan`.
     if let Some(db) = plan_db_for_cwd(cwd) {
         cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
     }
-    // bsc-skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group
-    // authored anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB
-    // is the shared store the `bsc-skill` helper reads/writes; $BSC_SKILL_BIN the CLI it execs when
-    // invoked with a subcommand (a no-arg fire stays the #406 telemetry hook). Unlike BSC_PLAN_DB
-    // (per-project, cwd-derived), this is global — set unconditionally for every pane.
+    // bsc skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group authored
+    // anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB is the shared
+    // store the `bsc skill` subcommand reads/writes (a no-arg `bsc-skill` fire stays the #406 telemetry
+    // hook). Unlike BSC_PLAN_DB (per-project, cwd-derived), this is global — set for every pane.
     cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
-    // bsc-data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
-    // PlatformScan the planner reads at the UI-kickoff stage via the `bsc-data` CLI. $BSC_DATA_DB is
-    // the project's .duckdb (cwd-derived, like BSC_PLAN_DB); $BSC_DATA_BIN the CLI the shell helper execs.
+    // bsc data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
+    // PlatformScan the planner reads at the UI-kickoff stage via `bsc data`. $BSC_DATA_DB is the
+    // project's .duckdb (cwd-derived, like BSC_PLAN_DB).
     if let Some(db) = data_db_for_cwd(cwd) {
         cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
     }
-    // bsc-compliance (#1718): point every session at the GLOBAL compliance standards store + its CLI.
-    // $BSC_COMPLIANCE_STORE is the store.db the `bsc-compliance` helper reads/writes (and which the
-    // bundled `bsc-compliance-mcp` server reads — same `Store::default_path` default), $BSC_COMPLIANCE_BIN
-    // the absolute path of the CLI it execs. Unlike BSC_PLAN_DB (per-project, cwd-derived), the corpus is
-    // global — set unconditionally for every pane (like bsc-skill's skills.db), so any live session can
-    // inspect/refresh the standards from its own shell.
+    // bsc compliance (#1718): point every session at the GLOBAL compliance standards store.
+    // $BSC_COMPLIANCE_STORE is the store.db the `bsc compliance` subcommand reads/writes (and which the
+    // bundled `bsc mcp compliance` server reads — same `Store::default_path` default). Unlike
+    // BSC_PLAN_DB (per-project, cwd-derived), the corpus is global — set for every pane, so any live
+    // session can inspect/refresh the standards from its own shell.
     cmd.env(
         "BSC_COMPLIANCE_STORE",
         to_bash_path(&base.join("compliance").join("store.db").to_string_lossy()),
     );
-    // Sidecar CLI binaries: every bsc-* shell helper execs its sidecar via $BSC_*_BIN — the absolute,
-    // bash-style path of the bundled CLI (no PATH changes, no copies; the helper falls back to a PATH
-    // lookup when its BIN is unset, e.g. in the test target where the sidecar isn't present). The export
-    // is byte-identical per CLI, so it's driven by the shared `bsc_util::SIDECARS` registry (#1843) —
-    // the ONE sidecar list. The per-CLI store/db vars above stay separate: they
-    // are heterogeneous (cwd-derived Option vs global unconditional vs none, like bsc-logs' BSC_LOG_DIR
-    // and bsc-blueprint/bsc-project which need no store-dir env), so they do NOT belong in this loop.
-    for s in bsc_util::SIDECARS {
-        if let Some(bin) = sidecar_bin_path(s.name) {
-            cmd.env(s.bin_env, to_bash_path(&bin.to_string_lossy()));
-        }
+    // The unified `bsc` binary (#1877): every `bsc <sub>` state CLI a session runs (`bsc plan …`,
+    // `bsc skill …`, `bsc logs …`, …) resolves through ONE staged binary in $BSC_BIN — the absolute,
+    // bash-style path of the bundled umbrella (no PATH changes, no copies; the `bsc` shell helper falls
+    // back to a PATH lookup when $BSC_BIN is unset, e.g. in the test target where the sidecar isn't
+    // present). The per-CLI store/db vars above (BSC_PLAN_DB / BSC_DATA_DB / BSC_SKILL_DB /
+    // BSC_COMPLIANCE_STORE / BSC_LOG_DIR) stay separate — the subcommands still read them — but the
+    // binary path is now ONE var, not eight.
+    if let Some(bin) = bsc_bin_path() {
+        cmd.env("BSC_BIN", to_bash_path(&bin.to_string_lossy()));
+    }
+    // The model-agnostic agent runtime stays its OWN separate binary in $BSC_AGENT_BIN (#1877): a
+    // bsc-agent session relaunches it, and the `bsc-agent` shell helper execs it by this path.
+    if let Some(bin) = sidecar_bin_path("bsc-agent") {
+        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
     // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
@@ -970,10 +964,10 @@ mod tests {
 
     #[test]
     fn wire_bsc_env_exports_the_log_dir_for_bsc_logs() {
-        // #1716: every session must be able to query its own log streams + perf.db via the unified
-        // `bsc-logs` CLI, which reads $BSC_LOG_DIR. wire_bsc_env stages it for every pane (the same
-        // base dir that holds the *_LOG TSVs). The sidecar binary isn't present in the test target,
-        // so BSC_LOGS_BIN is only set when staged — BSC_LOG_DIR is the unconditional contract.
+        // #1716/#1877: every session must be able to query its own log streams + perf.db via the
+        // unified `bsc logs` subcommand, which reads $BSC_LOG_DIR. wire_bsc_env stages it for every
+        // pane (the same base dir that holds the *_LOG TSVs). The `bsc` binary isn't present in the
+        // test target, so $BSC_BIN is only set when staged — BSC_LOG_DIR is the unconditional contract.
         use super::CommandBuilder;
         let mut cmd = CommandBuilder::new("bash");
         let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
