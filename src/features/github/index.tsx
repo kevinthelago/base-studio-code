@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { Chip } from "@/shared/ui/Chip";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
@@ -135,11 +136,11 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     flex: 1, minWidth: 0,
                   }}>{r.full_name}</span>
-                  <span className="tag" style={{ fontSize: 9.5 }}>{langTag(r.language)}</span>
+                  <Chip style={{ fontSize: 9.5 }}>{langTag(r.language)}</Chip>
                 </div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
                   <span>⊕ {r.open_issues_count}</span>
-                  {r.private && <span className="tag" style={{ fontSize: 9 }}>private</span>}
+                  {r.private && <Chip style={{ fontSize: 9 }}>private</Chip>}
                 </div>
               </div>
             );

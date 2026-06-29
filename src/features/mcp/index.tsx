@@ -15,6 +15,8 @@ import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
 } from "./shared";
 import { Pane } from "@/shared/ui/Pane";
+import { Chip } from "@/shared/ui/Chip";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import "./mcp.css";
@@ -80,7 +82,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   function updateControl(e: McpServer): React.ReactNode {
     if (!catalogLink(e.name)) return null;
     const s = mcpStatus[e.name];
-    if (s === "current") return <span className="tag green" title="at the latest release">up to date</span>;
+    if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
       return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
     if (s === undefined || s === "checking" || s === "downloading")
@@ -97,10 +99,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   // populated installed states.
   const builtInSection = builtInCatalog.length > 0 && (
     <>
-      <div className="sec-head">
-        <h3 style={{ color: "var(--fg-dim)" }}>Built-in tools</h3>
-        <span className="hint">always available — no install</span>
-      </div>
+      <SectionHeader title="Built-in tools" titleStyle={{ color: "var(--fg-dim)" }} hint="always available — no install" />
       <div className="catalog">
         {builtInCatalog.map(c => (
           <CatalogCard key={c.name} item={c} action={<span className="hint">built-in</span>} />
@@ -126,12 +125,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     return (
       <>
         <div>
-          <div className="sec-head">
-            <h3>MCP servers</h3>
-            <span className="hint">external processes over stdio or HTTP</span>
-            <div className="spacer" />
-            <span className="meta">{onCount}/{mcpServers.length} enabled</span>
-          </div>
+          <SectionHeader title="MCP servers" hint="external processes over stdio or HTTP" meta={<>{onCount}/{mcpServers.length} enabled</>} />
           <div className="row-list">
             {mcpServers.map(e => (
               <InstalledRow
@@ -160,12 +154,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     const items = filterCatalog(browsableCatalog(mcpServers), search);
     return (
       <>
-        <div className="sec-head">
-          <h3>Browse</h3>
-          <span className="hint">First-party and third-party MCP servers you can add with one click.</span>
-          <div className="spacer" />
-          <input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />
-        </div>
+        <SectionHeader title="Browse" hint="First-party and third-party MCP servers you can add with one click." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <div className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
@@ -240,7 +229,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled server"}</div>
-            <span className="tag info">{mcpLabel(selected)}</span>
+            <Chip tone="info">{mcpLabel(selected)}</Chip>
           </>
         )}
         body={selected && (
@@ -320,12 +309,7 @@ export function HooksView() {
     const onCount = hooks.filter(e => e.enabled).length;
     return (
       <div>
-        <div className="sec-head">
-          <h3>Hooks</h3>
-          <span className="hint">Claude Code lifecycle automations</span>
-          <div className="spacer" />
-          <span className="meta">{onCount}/{hooks.length} enabled</span>
-        </div>
+        <SectionHeader title="Hooks" hint="Claude Code lifecycle automations" meta={<>{onCount}/{hooks.length} enabled</>} />
         <div className="row-list">
           {hooks.length === 0 && (
             <div className="hint" style={{ padding: "8px 2px" }}>No hooks yet — add one from the catalog.</div>
@@ -356,12 +340,7 @@ export function HooksView() {
     const items = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : available;
     return (
       <>
-        <div className="sec-head">
-          <h3>Add from catalog</h3>
-          <span className="hint">First-party hooks.</span>
-          <div className="spacer" />
-          <input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />
-        </div>
+        <SectionHeader title="Add from catalog" hint="First-party hooks." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <div className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
@@ -395,7 +374,7 @@ export function HooksView() {
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled hook"}</div>
-            <span className="tag green">{hookLabel(selected)}</span>
+            <Chip tone="success">{hookLabel(selected)}</Chip>
           </>
         )}
         body={selected && (

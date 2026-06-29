@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { invoke } from "@tauri-apps/api/core";
 import { FillBar } from "@/shared/ui/FillBar";
 import { useAppStore } from "@/store";
@@ -75,8 +76,8 @@ export function McpAnalyticsTab() {
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Calls per server</h3>
             <div style={{ flex: 1 }} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--info)" }} />http</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--violet, oklch(0.70 0.12 300))" }} />stdio</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
             {an.perServer.length === 0 && <span className="hint">No MCP calls recorded yet.</span>}

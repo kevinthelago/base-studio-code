@@ -298,18 +298,7 @@ html, body {
   border-radius:4px; font-family:var(--mono); font-size:10px;
   color:var(--fg-muted); background:var(--bg-elev);
 }
-.tag{
-  display:inline-flex; align-items:center; padding:1px 7px; border-radius:99px;
-  font-family:var(--mono); font-size:10px; line-height:1.6;
-  background:var(--bg-elev2); color:var(--fg-muted);
-  border:1px solid var(--border-soft);
-}
-.tag.amber{ color:var(--accent); border-color:color-mix(in oklch, var(--accent), transparent 75%);
-  background:color-mix(in oklch, var(--accent), transparent 90%); }
-.tag.green{ color:var(--success); border-color:color-mix(in oklch, var(--success), transparent 75%);
-  background:color-mix(in oklch, var(--success), transparent 90%); }
-.tag.info { color:var(--info);    border-color:color-mix(in oklch, var(--info),    transparent 75%);
-  background:color-mix(in oklch, var(--info),    transparent 90%); }
+/* (.tag retired — every site now composes the shared <Chip tone>, #1874) */
 
 /* image / asset placeholders (striped) */
 .placeholder{

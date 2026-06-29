@@ -1,43 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { detachMarker, detachedTabId, detachedSection } from "./detachWindow";
-
-describe("detachMarker", () => {
-  it("accepts a well-formed tab marker", () => {
-    expect(detachMarker({ kind: "tab", tabId: "tab_abc" })).toEqual({ kind: "tab", tabId: "tab_abc" });
-  });
-  it("accepts a well-formed section marker", () => {
-    expect(detachMarker({ kind: "section", page: "github", section: "repos" })).toEqual({
-      kind: "section", page: "github", section: "repos",
-    });
-  });
-  it("rejects malformed / absent markers (main window)", () => {
-    expect(detachMarker(undefined)).toBeNull();
-    expect(detachMarker(null)).toBeNull();
-    expect(detachMarker({})).toBeNull();
-    expect(detachMarker({ kind: "tab" })).toBeNull();           // missing tabId
-    expect(detachMarker({ kind: "section", page: "x" })).toBeNull(); // missing section
-    expect(detachMarker("?detachTab=x")).toBeNull();            // not an object
-  });
-});
+import { detachedTabId, detachedSection } from "./detachWindow";
 
 describe("detachedTabId", () => {
-  it("reads the detached tab's stable id from the injected marker", () => {
-    expect(detachedTabId({ kind: "tab", tabId: "tab_abc" })).toBe("tab_abc");
+  it("parses the detached tab's stable id", () => {
+    expect(detachedTabId("?detachTab=tab_abc")).toBe("tab_abc");
+    expect(detachedTabId("?foo=1&detachTab=tab_xyz")).toBe("tab_xyz");
   });
-  it("returns null for a section marker or the main window", () => {
-    expect(detachedTabId({ kind: "section", page: "github", section: "repos" })).toBeNull();
-    expect(detachedTabId(undefined)).toBeNull();
+  it("returns null when absent (main window)", () => {
+    expect(detachedTabId("")).toBeNull();
+    expect(detachedTabId("?other=1")).toBeNull();
   });
 });
 
 describe("detachedSection", () => {
-  it("reads <page>/<section> from the injected marker", () => {
-    expect(detachedSection({ kind: "section", page: "github", section: "repos" })).toEqual({
-      page: "github", section: "repos",
-    });
+  it("parses ?detach=<page>&section=<id>", () => {
+    expect(detachedSection("?detach=github&section=repos")).toEqual({ page: "github", section: "repos" });
   });
-  it("returns null for a tab marker or the main window", () => {
-    expect(detachedSection({ kind: "tab", tabId: "tab_abc" })).toBeNull();
-    expect(detachedSection(undefined)).toBeNull();
+  it("returns null when either part is missing", () => {
+    expect(detachedSection("?detach=github")).toBeNull();
+    expect(detachedSection("?section=repos")).toBeNull();
+    expect(detachedSection("")).toBeNull();
   });
 });

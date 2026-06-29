@@ -1,6 +1,7 @@
 // Open pull-requests card — open PRs across all sampled repos (#1644).
 
 import type { OpenPR } from "../lib/githubSummary";
+import { Chip } from "@/shared/ui/Chip";
 
 export function OpenPRsAllRepos({ prs, loading }: {
   prs: OpenPR[];
@@ -32,7 +33,7 @@ export function OpenPRsAllRepos({ prs, loading }: {
                 <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.t}</div>
                 <div style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>@{p.who} · {p.repo}</div>
               </div>
-              {p.draft && <span className="tag" style={{ fontSize: 9.5 }}>draft</span>}
+              {p.draft && <Chip style={{ fontSize: 9.5 }}>draft</Chip>}
               <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{p.age}</span>
             </div>
           ))}

@@ -4,6 +4,7 @@
 // the fleet's repos (#415). No fabrication — tokens/spend still need per-session
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
@@ -59,7 +60,7 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
       <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
         {Object.values(STATUS).map(s => (
           <span key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />{s.label}
+            <ColorSwatch color={s.color} />{s.label}
           </span>
         ))}
       </div>
@@ -78,7 +79,7 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
           {slices.map(s => (
             <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 24px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
+              <ColorSwatch color={s.color} />
               <span>{s.name}</span>
               <span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
             </div>
