@@ -41,8 +41,6 @@
 .skills-workspace .ta:focus { outline:none; border-color:var(--accent-dim); }
 
 /* project assignment */
-.skills-workspace .global-banner { padding:8px 12px; border-radius:var(--r-md); background:color-mix(in oklch, var(--success), transparent 88%); border:1px solid color-mix(in oklch, var(--success), transparent 70%); font-family:var(--mono); font-size:10.5px; color:var(--fg); display:flex; align-items:center; gap:8px; }
-.skills-workspace .global-banner .gd { width:7px; height:7px; border-radius:50%; background:var(--success); }
 .skills-workspace .proj-multi { display:flex; flex-direction:column; gap:4px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md); padding:6px; }
 .skills-workspace .proj-multi .pm-row { display:grid; grid-template-columns:18px 1fr; gap:10px; padding:7px 10px; border-radius:5px; cursor:pointer; border:1px solid transparent; background:transparent; align-items:center; }
 .skills-workspace .proj-multi .pm-row:hover, .skills-workspace .proj-multi .pm-row.on { background:var(--bg-elev); }
@@ -58,38 +56,6 @@
 
 /* (.empty migrated to the shared <EmptyState>) */
 
-/* page-mode strip (Library / Lessons / Runs) */
-.skills-workspace .modestrip {
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-panel);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  height: 34px;
-  flex: 0 0 34px;
-}
-.skills-workspace .modestrip .m {
-  padding: 0 12px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 2px solid transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  background: transparent;
-  border-top: 0;
-  border-left: 0;
-  border-right: 0;
-  font: inherit;
-}
-.skills-workspace .modestrip .m:hover { color: var(--fg); }
-.skills-workspace .modestrip .m.on { border-bottom-color: var(--accent); color: var(--accent); }
-.skills-workspace .modestrip .m .mh { color: var(--fg-dim); font-size: 10px; }
-.skills-workspace .modestrip .sync { font-size: 10px; color: var(--success); }
 
 /* scrollable page body */
 .skills-workspace .an-page {

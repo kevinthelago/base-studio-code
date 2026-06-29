@@ -280,60 +280,6 @@
   background: var(--bg-canvas);
 }
 
-.gate-pill {
-  font-family: var(--mono); font-size: 9px;
-  padding: 2px 8px; border-radius: 99px;
-  white-space: nowrap;
-}
-.gate-pill.met {
-  background: color-mix(in oklch, var(--success), transparent 84%);
-  border: 1px solid color-mix(in oklch, var(--success), transparent 60%);
-  color: var(--success);
-}
-.gate-pill.unmet {
-  background: var(--bg-elev);
-  border: 1px solid var(--border-soft);
-  color: var(--fg-dim);
-}
-
-/* ----------------------------------------------------------------
-   Stage banners (#652)
-   ---------------------------------------------------------------- */
-.stage-banner {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border-soft);
-  font-family: var(--mono); font-size: 10px;
-  user-select: none;
-}
-.stage-banner.done {
-  background: color-mix(in oklch, var(--success), transparent 93%);
-  color: var(--fg-muted);
-}
-.stage-banner.locked {
-  background: var(--bg-panel);
-  color: var(--fg-dim);
-  opacity: 0.7;
-}
-.stage-banner.banked {
-  background: color-mix(in oklch, var(--success), transparent 90%);
-  border-left: 2px solid color-mix(in oklch, var(--success), transparent 40%);
-  color: var(--fg-muted);
-}
-.banner-icon {
-  width: 14px; text-align: center; font-size: 10px; flex: 0 0 14px;
-}
-.stage-banner.done   .banner-icon { color: var(--success); }
-.stage-banner.locked .banner-icon { color: var(--border); }
-.stage-banner.banked .banner-icon { color: var(--success); }
-
-.banked-pill {
-  font-family: var(--mono); font-size: 8.5px; padding: 1px 6px; border-radius: 4px;
-  background: color-mix(in oklch, var(--success), transparent 80%);
-  border: 1px solid color-mix(in oklch, var(--success), transparent 55%);
-  color: var(--success);
-}
-
 /* ----------------------------------------------------------------
    Footer advance bar (#652)
    ---------------------------------------------------------------- */
@@ -345,24 +291,6 @@
   padding: 8px 12px;
   border-top: 1px solid var(--border-soft);
   background: var(--bg-panel);
-}
-
-.advance-btn {
-  padding: 4px 12px; border-radius: 5px;
-  font-family: var(--mono); font-size: 10px;
-  cursor: pointer; border: 1px solid var(--border-soft);
-  background: var(--bg-elev); color: var(--fg-dim);
-  white-space: nowrap;
-  transition: background .12s, color .12s, border-color .12s;
-}
-.advance-btn:disabled { cursor: default; }
-.advance-btn.back:not(:disabled):hover { background: var(--bg-elev2); color: var(--fg-muted); }
-.advance-btn.fwd.enabled {
-  background: color-mix(in oklch, var(--accent), transparent 82%);
-  border-color: var(--accent-dim); color: var(--accent);
-}
-.advance-btn.fwd.enabled:hover {
-  background: color-mix(in oklch, var(--accent), transparent 72%);
 }
 
 /* ----------------------------------------------------------------
