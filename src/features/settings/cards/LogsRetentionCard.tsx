@@ -2,8 +2,9 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
+import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Button } from "@/shared/ui/Button";
+import { Card } from "@/shared/ui/Card";
 
 export function LogsRetentionCard({
   onEnforced,
@@ -29,8 +30,7 @@ export function LogsRetentionCard({
   const update = (patch: Partial<LogConfig>) => setLogConfig({ ...logConfig, ...patch });
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Log retention" />
+    <Card title="Log retention">
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         <Row label="Max lines per log" hint="On enforcement (and at startup), each telemetry log is trimmed to its newest N lines.">
           <Select
@@ -61,6 +61,6 @@ export function LogsRetentionCard({
           <Button size="sm" disabled={busy} onClick={() => void enforceNow()}>{busy ? "Enforcing…" : "Enforce now"}</Button>
         </Row>
       </div>
-    </div>
+    </Card>
   );
 }

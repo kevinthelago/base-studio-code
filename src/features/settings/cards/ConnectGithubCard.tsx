@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubConnect } from "../lib/useGithubConnect";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { Chip } from "@/shared/ui/Chip";
+import { Card } from "@/shared/ui/Card";
 
 function ConnectFlowCard() {
   const {
@@ -14,7 +15,7 @@ function ConnectFlowCard() {
   } = useGithubConnect();
 
   return (
-    <div className="card">
+    <Card>
       <h3 style={{ margin: "0 0 10px", fontFamily: "var(--mono)", fontSize: 14 }}>Connect GitHub account</h3>
 
       {clientId ? (
@@ -119,7 +120,7 @@ function ConnectFlowCard() {
       <div className="hint" style={{ marginTop: 8 }}>
         Token stored locally · never sent to any server other than github.com
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -134,7 +135,7 @@ export function ConnectGithubCard() {
   }
 
   return (
-    <div className="card" style={{ display: "flex", alignItems: "center", gap: 16 }}>
+    <Card style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <div style={{
         width: 44, height: 44, borderRadius: "50%",
         background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
@@ -162,6 +163,6 @@ export function ConnectGithubCard() {
         </div>
       </div>
       <button className="btn danger" onClick={() => { clearGithubCache().catch(() => {}); disconnectGithub(); }}>Disconnect</button>
-    </div>
+    </Card>
   );
 }

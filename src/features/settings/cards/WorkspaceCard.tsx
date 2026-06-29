@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { SettingsCardHead, SettingsTextField } from "../pages/SettingsControls";
+import { SettingsTextField } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function WorkspaceCard() {
   const { bscBaseDir, setBscBaseDir } = useAppStore();
@@ -11,8 +12,7 @@ export function WorkspaceCard() {
   }
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Workspace" />
+    <Card title="Workspace">
       <SettingsTextField
         label="Base directory"
         value={bscBaseDir}
@@ -25,6 +25,6 @@ export function WorkspaceCard() {
           (<code>~/.base-studio-code</code>).
         </>}
       />
-    </div>
+    </Card>
   );
 }

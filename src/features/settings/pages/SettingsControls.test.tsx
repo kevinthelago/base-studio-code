@@ -1,21 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SettingsCardHead, SettingsRow, SettingsSelect, SettingsTextField, SettingsSelectField } from "./SettingsControls";
-
-describe("SettingsCardHead", () => {
-  it("renders the title, and the hint only when provided", () => {
-    const { rerender } = render(<SettingsCardHead title="Workspace" />);
-    expect(screen.getByRole("heading", { name: "Workspace" })).toBeTruthy();
-    expect(screen.queryByText("a hint")).toBeNull();
-    rerender(<SettingsCardHead title="Accent" hint="a hint" />);
-    expect(screen.getByText("a hint")).toBeTruthy();
-  });
-
-  it("renders a right control when given", () => {
-    render(<SettingsCardHead title="T" right={<button>act</button>} />);
-    expect(screen.getByText("act")).toBeTruthy();
-  });
-});
+import { SettingsRow, SettingsSelect, SettingsTextField, SettingsSelectField } from "./SettingsControls";
 
 describe("SettingsRow", () => {
   it("renders label, optional hint, and children", () => {

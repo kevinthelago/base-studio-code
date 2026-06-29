@@ -1,12 +1,12 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead, ToggleRow } from "../pages/SettingsControls";
+import { ToggleRow } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function IssueSecurityCard() {
   const { restrictToBscIssues, setRestrictToBscIssues } = useAppStore();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Issue security" />
+    <Card title="Issue security">
       <ToggleRow
         on={restrictToBscIssues}
         onToggle={() => setRestrictToBscIssues(!restrictToBscIssues)}
@@ -17,6 +17,6 @@ export function IssueSecurityCard() {
         <code>bsc-generated</code> label) — a hand-created or injected issue is ignored, so a
         malicious issue can't drive a worker. Turn off to triage every open issue.
       </ToggleRow>
-    </div>
+    </Card>
   );
 }

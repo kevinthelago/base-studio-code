@@ -1,13 +1,13 @@
 import { useAppStore } from "@/store";
 import { MODELS, type ModelId } from "@/app/console/lib/models";
-import { SettingsCardHead, SettingsSelectField } from "../pages/SettingsControls";
+import { SettingsSelectField } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function DefaultModelCard() {
   const { defaultModel, setDefaultModel } = useAppStore();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Default model" />
+    <Card title="Default model">
       <SettingsSelectField
         label="Model new consoles open with"
         value={defaultModel}
@@ -18,6 +18,6 @@ export function DefaultModelCard() {
           <option key={m.id} value={m.id}>{m.id} · {m.tone}</option>
         ))}
       </SettingsSelectField>
-    </div>
+    </Card>
   );
 }

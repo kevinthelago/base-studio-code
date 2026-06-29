@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead } from "./SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
@@ -12,8 +12,7 @@ export function SkillsPage() {
         How reusable agent skills are stored, packaged, and injected into sessions.
       </p>
 
-      <div className="card">
-        <SettingsCardHead title="Skills library" />
+      <Card title="Skills library">
         <div style={prose}>
           <p style={{ margin: "0 0 10px 0" }}>
             A <strong>skill</strong> is a reusable markdown context block (prompt + bundled tools +
@@ -33,7 +32,7 @@ export function SkillsPage() {
           </p>
           <button className="btn" onClick={() => setWorkspace("skills")}>Open Skills library →</button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

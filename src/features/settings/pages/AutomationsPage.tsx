@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead } from "./SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
@@ -12,8 +12,7 @@ export function AutomationsPage() {
         How scheduled automations run against your console sessions.
       </p>
 
-      <div className="card">
-        <SettingsCardHead title="Automations" />
+      <Card title="Automations">
         <div style={prose}>
           <p style={{ margin: "0 0 10px 0" }}>
             An <strong>automation</strong> is a cron-triggered rule that dispatches a command into a
@@ -26,7 +25,7 @@ export function AutomationsPage() {
           </p>
           <button className="btn" onClick={() => setWorkspace("automation")}>Open Automations →</button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

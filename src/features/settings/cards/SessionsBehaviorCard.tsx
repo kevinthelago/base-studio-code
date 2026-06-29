@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead, ToggleRow } from "../pages/SettingsControls";
+import { ToggleRow } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function SessionsBehaviorCard() {
   const {
@@ -8,8 +9,7 @@ export function SessionsBehaviorCard() {
   } = useAppStore();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Sessions & console behavior" />
+    <Card title="Sessions & console behavior">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <ToggleRow
           on={autoResumeClaude}
@@ -29,6 +29,6 @@ export function SessionsBehaviorCard() {
           (Ctrl+Shift+N cycles manually). Works while maximized.
         </ToggleRow>
       </div>
-    </div>
+    </Card>
   );
 }
