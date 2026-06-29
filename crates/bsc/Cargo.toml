@@ -1,0 +1,16 @@
+[package]
+name = "bsc"
+version = "0.1.0"
+edition = "2021"
+description = "The unified base-studio-code CLI (#1877): one binary, `bsc <command>` dispatching to every state store / tool that used to be its own `bsc-*` sidecar."
+
+# Single binary named `bsc` — the one sidecar bundled into the app.
+[[bin]]
+name = "bsc"
+path = "src/main.rs"
+
+[dependencies]
+# The shared CLI scaffold (#1762): help dispatch + the unknown-command renderer.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# Subcommand crates — each exposes `cli::run(args, prog)`. Added here as they're migrated (#1877).
+bsc-project = { path = "../bsc-project" }
