@@ -9,6 +9,7 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { Chip } from "@/shared/ui/Chip";
 import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { Banner } from "@/shared/ui/Banner";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -103,8 +104,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
   return (
     <div className="field">
       <label>project assignment</label>
-      <div className="global-banner" style={isGlobal ? undefined : { opacity: 0.6 }}>
-        <span className="gd" />
+      <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
         <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
         <div style={{ flex: 1 }} />
         <div
@@ -112,7 +112,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
           title={isGlobal ? "global" : "scoped to projects"}
           onClick={() => onSet(isGlobal ? (projects[0] ? [projects[0].id] : []) : [])}
         />
-      </div>
+      </Banner>
 
       {!isGlobal && (
         <>
