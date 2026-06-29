@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPathConfined } from "./fsConfine";
+import { isPathConfined, isConfigProtected } from "./fsConfine";
 
 describe("isPathConfined", () => {
   const root = "/c/dev/repo";
@@ -33,5 +33,25 @@ describe("isPathConfined", () => {
   it("does not treat a sibling with a shared prefix as inside (boundary)", () => {
     // /c/dev/repo2 must NOT count as under /c/dev/repo
     expect(isPathConfined(root, "/c/dev/repo2/x")).toBe(false);
+  });
+});
+
+describe("isConfigProtected", () => {
+  const root = "/c/dev/repo";
+
+  it("flags the session's own .claude config (relative + absolute under root, Windows)", () => {
+    expect(isConfigProtected(root, ".claude")).toBe(true);
+    expect(isConfigProtected(root, ".claude/settings.json")).toBe(true);
+    expect(isConfigProtected(root, "./.claude/settings.json")).toBe(true);
+    expect(isConfigProtected(root, "/c/dev/repo/.claude/settings.json")).toBe(true);
+    expect(isConfigProtected("C:/dev/repo", "C:\\dev\\repo\\.claude\\settings.json")).toBe(true);
+  });
+
+  it("does NOT flag ordinary files, empty paths, or a non-root .claude", () => {
+    expect(isConfigProtected(root, "src/app.ts")).toBe(false);
+    expect(isConfigProtected(root, "")).toBe(false);
+    expect(isConfigProtected(root, "src/.claude/x")).toBe(false); // only the repo-root .claude
+    expect(isConfigProtected(root, "/etc/.claude/x")).toBe(false); // outside the root (escape-checked)
+    expect(isConfigProtected(root, ".claudette/x")).toBe(false); // must be the whole `.claude` segment
   });
 });
