@@ -92,7 +92,8 @@ base-studio-code/
 │   │   ├── registry.ts      #   canonical Workspace → {label, icon} (#1879); the rail + titlebar both read it
 │   │   ├── chrome/          #   Rail, Titlebar, Screen (shared tabbed shell, #1878), Tabstrip, TabBar, StatusBar
 │   │   ├── console/         #   the execution surface: ConsoleWorkspace + panes/ + lib/ (pane system)
-│   │   └── *Banner.tsx · ErrorBoundary   #   crash/quarantine/readiness banners, error boundary
+│   │   ├── safety/          #   the crash layer: ErrorBoundary + fatalOverlay (self-installing DOM crash overlay, #1905)
+│   │   └── *Banner.tsx      #   crash/quarantine/readiness banners
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
 │   │   │                    #   + index.ts (public API barrel). Import UI via @/features/<x>; import
 │   │   │                    #   the pure domain via @/features/<x>/lib/* (keeps React out of non-UI).
