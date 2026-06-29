@@ -34,8 +34,8 @@ export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: 
 
   const tile = (v: React.ReactNode, k: string, c?: string) => (
     <div style={{ flex: 1, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 11px" }}>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, color: c ?? "var(--fg)" }}>{v}</div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</div>
+      <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: c ?? "var(--fg)" }}>{v}</div>
+      <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</div>
     </div>
   );
 
@@ -64,24 +64,24 @@ export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: 
               opacity: s.enabled ? 1 : 0.72,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>
-                <span style={{
+                <span className="mono" style={{
                   width: 24, height: 24, borderRadius: 6, display: "grid", placeItems: "center", flex: "0 0 24px",
-                  fontFamily: "var(--mono)", fontSize: 12, color: tr.c,
+                  fontSize: 12, color: tr.c,
                   border: `1px solid color-mix(in oklch, ${tr.c}, transparent 55%)`,
                 }}>{(s.name[0] ?? "?").toUpperCase()}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => toggleOpen(s.id)}>
                   <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{s.name}</span>
+                    <span className="mono-value">{s.name}</span>
                     {s.official && <span className="chip" style={{ fontSize: 8 }}>official</span>}
                     {!s.official && s.downloadable && <span className="chip" style={{ fontSize: 8 }}>first-party</span>}
                     <span className="chip" style={{ fontSize: 8, color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</span>
                   </span>
-                  {s.desc && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</span>}
+                  {s.desc && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</span>}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                     <span className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: stat.c }}>{stat.label}</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: stat.c }}>{stat.label}</span>
                   </span>
                   <span className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
                 </div>
@@ -89,7 +89,7 @@ export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: 
 
               {isErr && s.err && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 12px 10px" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--danger)" }}>⚠ {s.err}</span>
+                  <span className="mono" style={{ fontSize: 9.5, color: "var(--danger)" }}>⚠ {s.err}</span>
                   <span style={{ flex: 1 }} />
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
                 </div>
@@ -97,22 +97,22 @@ export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: 
 
               {isOpen && (
                 <div style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", marginBottom: 4 }}>command</div>
-                  <div style={{
-                    fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-elev)",
+                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 4 }}>command</div>
+                  <div className="mono" style={{
+                    fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-elev)",
                     border: "1px solid var(--border-soft)", borderRadius: 6, padding: "6px 9px", marginBottom: 11,
                     overflowX: "auto", whiteSpace: "nowrap",
                   }}><span style={{ color: "var(--accent)" }}>$ </span>{s.cmd || "—"}</div>
 
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)", marginBottom: 6 }}>scope · {s.scope}</div>
+                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 6 }}>scope · {s.scope}</div>
                   {s.agents.length > 0 ? (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 11 }}>
                       {s.agents.map((id) => (
-                        <span key={id} style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</span>
+                        <span key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</span>
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 11 }}>not wired yet — enable to grant the fleet access</div>
+                    <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 11 }}>not wired yet — enable to grant the fleet access</div>
                   )}
 
                   <div style={{ display: "flex", gap: 7 }}>

@@ -271,6 +271,14 @@ html, body {
 .field label{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }
 .hint{ font-size:10.5px; color:var(--fg-dim); }
 
+/* ===== mono text vocabulary (#typography) — `.mono` is the base font (one place to change it);
+   the semantic classes bake the canonical micro-label / caption / value look. Compose with an
+   inline color/size override for emphasis or a non-canonical variant. ===== */
+.mono { font-family: var(--mono); }
+.mono-label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-dim); }
+.mono-caption { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+.mono-value { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+
 .card{
   background:var(--bg-panel); border:1px solid var(--border-soft);
   border-radius:var(--r-lg); padding:16px;
