@@ -1,14 +1,11 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
 import { workspaceLabel } from "@/app/registry";
 import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
-import { Dialog } from "@/shared/ui/Dialog";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { useAppStore } from "@/store";
 import { useHotkeys } from "./useHotkeys";
@@ -17,15 +14,15 @@ import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/fe
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
 import { ConsoleWorkspace } from "@/app/console";
-import { paneIdFor } from "@/app/console/lib/paneIdentity";
+import { useConsoleTabs } from "@/app/console/useConsoleTabs";
+import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations/AutomationsStatus";
 import { SkillsStatus } from "@/features/skills/SkillsStatus";
-import type { Tab } from "@/app/chrome/Tabstrip";
 import { SuperUserAchievement } from "@/app/SuperUserAchievement";
 import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
-import { openDetachedTab, detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
+import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { accentVars } from "@/features/settings/lib/appearance";
 
 // Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
@@ -48,109 +45,9 @@ function WorkspaceFallback() {
   );
 }
 
-// ── New-tab dialog ────────────────────────────────────────────────────────────
-
-const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];
-
 /** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't
  *  load the cold-start window (#1033). Metrics during boot have no diagnostic value. */
 const METRICS_GRACE_MS = 5000;
-
-function nextTabName(tabs: Tab[]): string {
-  const nums = tabs
-    .map(t => t.name.match(/^tab-(\d+)$/)?.[1])
-    .filter((n): n is string => n !== undefined)
-    .map(Number);
-  return `tab-${nums.length === 0 ? 1 : Math.max(...nums) + 1}`;
-}
-
-interface NewTabDialogProps {
-  onConfirm: (layout: string) => void;
-  onDismiss: () => void;
-}
-
-function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
-  const [layout, setLayout] = useState("2×2");
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    onConfirm(layout);
-  }
-
-  return (
-    <Dialog title="New workspace" onDismiss={onDismiss} actions={
-      <>
-        <button className="btn" onClick={onDismiss}>cancel</button>
-        <button className="btn primary" onClick={handleSubmit}>create</button>
-      </>
-    }>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="field">
-          <label>Layout</label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {LAYOUTS.map((l) => {
-              const [c, r] = l.split("×").map(Number);
-              const active = l === layout;
-              return (
-                <button
-                  key={l}
-                  type="button"
-                  autoFocus={l === layout}
-                  onClick={() => setLayout(l)}
-                  style={{
-                    padding: "6px 10px", borderRadius: 5, cursor: "pointer",
-                    fontFamily: "var(--mono)", fontSize: 11.5,
-                    background: active ? "var(--bg-elev2)" : "var(--bg-elev)",
-                    border: "1px solid " + (active ? "var(--accent)" : "var(--border-soft)"),
-                    color: active ? "var(--accent)" : "var(--fg-muted)",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                  }}
-                >
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${c}, 10px)`,
-                    gridTemplateRows: `repeat(${r}, 7px)`,
-                    gap: 2,
-                  }}>
-                    {Array.from({ length: c * r }).map((_, i) => (
-                      <div key={i} style={{
-                        borderRadius: 1,
-                        background: active ? "var(--accent)" : "var(--border)",
-                      }} />
-                    ))}
-                  </div>
-                  {l}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
-  return (
-    <div style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 16,
-    }}>
-      <LayoutGrid size={40} style={{ color: "var(--fg-dim)", opacity: 0.4 }} />
-      <div style={{ textAlign: "center", lineHeight: 1.6 }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)", marginBottom: 4 }}>
-          No workspaces
-        </div>
-        <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
-          Create a workspace to start running agents in parallel.
-        </div>
-      </div>
-      <button className="btn primary" onClick={onNew} style={{ marginTop: 4 }}>
-        New workspace
-      </button>
-    </div>
-  );
-}
 
 // Render a detached page's section. A switch over literal cases (not a dynamic
 // lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.
@@ -184,9 +81,7 @@ export default function App() {
 
   const {
     activeWorkspace, setWorkspace,
-    tabs, activeTabIdx, setActiveTab,
-    addTab, closeTab, renameTab, setTabLayout, moveTab,
-    detachedTabIds, setTabDetached,
+    tabs, activeTabIdx,
     focusedAgentName,
     activeRepoName,
     automationsTab,
@@ -196,6 +91,10 @@ export default function App() {
     accent,
     hasHydrated,
   } = useAppStore();
+
+  // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
+  // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
+  const consoleTabs = useConsoleTabs();
 
   // Apply the chosen accent to the design-token CSS vars at the document root,
   // live on change and after persisted state rehydrates. Inline vars on :root
@@ -295,69 +194,6 @@ export default function App() {
     return parts.filter(Boolean).join(" — ");
   })();
 
-  const [confirmCloseIdx, setConfirmCloseIdx] = useState<number | null>(null);
-  const [showNewTab, setShowNewTab] = useState(false);
-
-  // Also handle ⌘T hotkey for new tab
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "t" && activeWorkspace === "console") {
-        e.preventDefault();
-        setShowNewTab(true);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [activeWorkspace]);
-
-  function killTabPtys(tabIdx: number, layout: string) {
-    const [c, r] = layout.split("×").map(Number);
-    const tab = tabs[tabIdx];
-    for (let i = 0; i < c * r; i++) {
-      // Kill the pane's RESOLVED identity id (#1176) — manual panes are `man:<tabId>:p<idx>`,
-      // so the old positional `t{tabIdx}p{i}` would miss the real session and leak it.
-      fireInvoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }, console.error);
-    }
-  }
-
-  async function handleLayoutChange(tabIdx: number, layout: string) {
-    const tab = tabs[tabIdx];
-    const [oldCols, oldRows] = tab.layout.split("×").map(Number);
-    const [newCols, newRows] = layout.split("×").map(Number);
-    const oldCount = oldCols * oldRows;
-    const newCount = newCols * newRows;
-    // Kill PTY sessions for panes that will no longer exist (resolved identity id, #1176).
-    if (newCount < oldCount) {
-      for (let i = newCount; i < oldCount; i++) {
-        fireInvoke("pty_kill", { paneId: paneIdFor(tab, tabIdx, i) }, console.error);
-      }
-    }
-    setTabLayout(tabIdx, layout);
-  }
-
-  function handleCloseRequest(idx: number) {
-    const tab = tabs[idx];
-    if (tab.state === "run" || tab.state === "on") {
-      setConfirmCloseIdx(idx);
-    } else {
-      killTabPtys(idx, tab.layout);
-      closeTab(idx);
-    }
-  }
-
-  function confirmClose() {
-    if (confirmCloseIdx !== null) {
-      killTabPtys(confirmCloseIdx, tabs[confirmCloseIdx].layout);
-      closeTab(confirmCloseIdx);
-    }
-    setConfirmCloseIdx(null);
-  }
-
-  const pendingTab = confirmCloseIdx !== null ? tabs[confirmCloseIdx] : null;
-  const activeSessionCount = pendingTab
-    ? /* placeholder until real session tracking */ 1
-    : 0;
-
   // Hold the first paint until the async-persisted state has hydrated, so screens
   // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
   // load. Hydration is a fast local read — a brief blank-canvas frame, not a wait.
@@ -407,31 +243,7 @@ export default function App() {
       <div className="shell">
         <Rail active={activeWorkspace} onNavigate={setWorkspace} />
         <div className="main">
-          {activeWorkspace === "console" && (
-            <Tabstrip
-              tabs={tabs}
-              activeIdx={activeTabIdx}
-              onSelect={setActiveTab}
-              onClose={handleCloseRequest}
-              onAdd={() => setShowNewTab(true)}
-              onRename={renameTab}
-              onChangeLayout={handleLayoutChange}
-              onReorder={moveTab}
-              hiddenIds={detachedTabIds}
-              onTearOff={(idx) => {
-                const t = tabs[idx];
-                if (!t?.id) return;
-                openDetachedTab(t.id, t.name, () => setTabDetached(t.id!, false));
-                setTabDetached(t.id, true);
-                // If the active tab was the one torn off, move focus to the first
-                // tab still in the bar so the window isn't left on a hidden tab.
-                if (activeTabIdx === idx) {
-                  const next = tabs.findIndex((x, i) => i !== idx && !detachedTabIds.includes(x.id ?? ""));
-                  if (next >= 0) setActiveTab(next);
-                }
-              }}
-            />
-          )}
+          {activeWorkspace === "console" && <Tabstrip {...consoleTabs.tabstripProps} />}
           {/* ConsoleWorkspace stays mounted across all screen navigations so xterm
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
@@ -446,7 +258,7 @@ export default function App() {
             </div>
           )}
           {activeWorkspace === "console" && tabs.length === 0 && (
-            <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
+            <ConsoleEmptyState onNew={consoleTabs.openNewTab} />
           )}
           {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
               sessions survive screen switches (CSS hides it when inactive). */}
@@ -476,39 +288,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Close-tab confirmation */}
-      {confirmCloseIdx !== null && pendingTab && (
-        <Dialog
-          title={`Close "${pendingTab.name}"?`}
-          danger
-          onDismiss={() => setConfirmCloseIdx(null)}
-          actions={
-            <>
-              <button className="btn" onClick={() => setConfirmCloseIdx(null)}>cancel</button>
-              <button
-                className="btn"
-                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                onClick={confirmClose}
-              >
-                close tab
-              </button>
-            </>
-          }
-        >
-          {activeSessionCount === 1
-            ? "1 active session is running in this tab and will be stopped."
-            : `${activeSessionCount} active sessions are running in this tab and will be stopped.`}
-          {" "}This cannot be undone.
-        </Dialog>
-      )}
-
-      {/* New tab */}
-      {showNewTab && (
-        <NewTabDialog
-          onConfirm={(layout) => { addTab({ name: nextTabName(tabs), layout, state: "idle" }); setShowNewTab(false); }}
-          onDismiss={() => setShowNewTab(false)}
-        />
-      )}
+      {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
+      {consoleTabs.dialogs}
     </div>
   );
 }
