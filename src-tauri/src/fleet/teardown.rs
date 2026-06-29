@@ -87,9 +87,7 @@ pub(crate) fn remove_worktree_at(clone: &Path, wt: &Path) -> Result<(), String> 
     // Preferred path: let git remove the dir AND its admin record in one shot.
     if clone.join(".git").exists() {
         let clone_str = clone.to_string_lossy().into_owned();
-        let mut cmd = std::process::Command::new("git");
-        cmd.args(["-C", &clone_str, "worktree", "remove", "--force", &wt_str]);
-        let ok = no_window(&mut cmd).status().map(|s| s.success()).unwrap_or(false);
+        let ok = crate::git_ok(&clone_str, &["worktree", "remove", "--force", &wt_str]);
         if ok && !wt.exists() {
             log::info!("teardown: removed worktree {wt_str}");
             return Ok(());
@@ -105,9 +103,7 @@ pub(crate) fn remove_worktree_at(clone: &Path, wt: &Path) -> Result<(), String> 
     std::fs::remove_dir_all(wt).map_err(|e| format!("remove_worktree: {e}"))?;
     if clone.join(".git").exists() {
         let clone_str = clone.to_string_lossy().into_owned();
-        let mut prune = std::process::Command::new("git");
-        prune.args(["-C", &clone_str, "worktree", "prune"]);
-        let _ = no_window(&mut prune).status();
+        let _ = crate::git_ok(&clone_str, &["worktree", "prune"]);
     }
     log::info!("teardown: removed worktree (fallback) {wt_str}");
     Ok(())
@@ -244,11 +240,6 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
     if !wt.join(".git").exists() || !clone.join(".git").exists() {
         return false;
     }
-    let git_ok = |args: &[&str]| {
-        let mut c = std::process::Command::new("git");
-        c.args(args);
-        no_window(&mut c).status().map(|s| s.success()).unwrap_or(false)
-    };
     let wt_str = wt.to_string_lossy();
     let clone_str = clone.to_string_lossy();
     // Clean tree: `status --porcelain` prints nothing. Untracked source files block reclaim;
@@ -260,14 +251,11 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
         return false;
     }
     // Merged: the worktree's HEAD is an ancestor of the clone's current HEAD (local merge).
-    let mut head = std::process::Command::new("git");
-    head.args(["-C", &wt_str, "rev-parse", "HEAD"]);
-    let Ok(out) = no_window(&mut head).output() else { return false };
-    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let Ok(sha) = crate::git_run(&wt_str, &["rev-parse", "HEAD"]) else { return false };
     if sha.is_empty() {
         return false;
     }
-    git_ok(&["-C", &clone_str, "merge-base", "--is-ancestor", &sha, "HEAD"])
+    crate::git_ok(&clone_str, &["merge-base", "--is-ancestor", &sha, "HEAD"])
 }
 
 /// Reclaim worktrees that are safe to drop, at boot, so they don't accumulate (#worktree-disk):

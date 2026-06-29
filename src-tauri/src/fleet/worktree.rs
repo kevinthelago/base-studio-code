@@ -78,11 +78,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
 /// verbatim if the retry still fails (#1568).
 fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(), String> {
     let branch_ref = format!("refs/heads/{slug}");
-    let branch_exists = || {
-        let mut p = std::process::Command::new("git");
-        p.args(["-C", clone_str, "rev-parse", "--verify", "--quiet", &branch_ref]);
-        no_window(&mut p).status().map(|s| s.success()).unwrap_or(false)
-    };
+    let branch_exists = || git_ok(clone_str, &["rev-parse", "--verify", "--quiet", &branch_ref]);
     let run_add = |reuse: bool| -> std::io::Result<std::process::Output> {
         let mut c = std::process::Command::new("git");
         c.args(["-C", clone_str, "worktree", "add"]);
@@ -91,14 +87,12 @@ fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(),
         } else {
             c.args(["-b", slug, wt_str]); // create the branch at HEAD
         }
-        no_window(&mut c).output()
+        crate::platform::process::run_output(&mut c)
     };
 
     let mut out = run_add(branch_exists()).map_err(|e| e.to_string())?;
     if !out.status.success() {
-        let mut prune = std::process::Command::new("git");
-        prune.args(["-C", clone_str, "worktree", "prune"]);
-        let _ = no_window(&mut prune).status();
+        let _ = git_ok(clone_str, &["worktree", "prune"]);
         // Re-probe: the first attempt may itself have created the branch, so the correct form can
         // have flipped from create to reuse.
         out = run_add(branch_exists()).map_err(|e| e.to_string())?;
