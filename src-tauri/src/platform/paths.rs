@@ -36,7 +36,7 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
 /// replacing directory location.
 ///
 /// Delegates the path to `bsc_project::published_marker` (#1761) so the `.published` marker logic is
-/// single-sourced with the `bsc-project` session CLI; the key is sanitized here (the app boundary,
+/// single-sourced with the `bsc project` session CLI; the key is sanitized here (the app boundary,
 /// since the crate treats keys as opaque), and an unresolvable home falls back to the app's relative
 /// base (matching [`bsc_base_dir`]'s historical behavior).
 pub(crate) fn published_marker(project_key: &str) -> std::path::PathBuf {

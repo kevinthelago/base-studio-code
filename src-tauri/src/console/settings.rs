@@ -9,9 +9,10 @@ use crate::*;
 /// Shell commands every spawned repo/console session auto-approves regardless of
 /// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
 /// depends on them. `gh` is required by triage; `git` by every repo session;
-/// `bsc-plan` is the plan-store CLI (#plan-db) the planner/director/workers use to
-/// read+write issues, so it must never prompt (the planner runs it under autopilot).
-pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc-plan"];
+/// `bsc` is the unified state CLI (#1877) — `bsc plan` (the plan store, #plan-db) plus the
+/// `skill`/`data`/`logs`/… subcommands the planner/director/workers drive — so it must never
+/// prompt (the planner runs it under autopilot); a `Bash(bsc *)` allow covers every `bsc <sub>`.
+pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc"];
 /// Safe read-only inspection / navigation commands auto-approved in every session whose
 /// shell posture is not `deny`, so ordinary work (`ls`, `cat`, `grep`, …) never prompts.
 /// Pure inspection + light scaffolding; the destructive forms are still caught by the shared
@@ -70,7 +71,7 @@ pub(crate) fn ensure_session_settings(
 /// session's `bash_posture` (the agent profile's bash tier): `allow` doers get the bare
 /// `Bash` + the read-only AND build baselines; `ask` coordinators get the read-only baseline
 /// only (build/unlisted commands prompt); `deny` agents get neither. Always added: the
-/// mandatory gh/git/bsc-plan and the per-stream `allowed_commands` the planner granted. A
+/// mandatory gh/git/bsc and the per-stream `allowed_commands` the planner granted. A
 /// curated default deny-list (`bsc_util::dangerous::claude_deny_rules`) plus any user/project `denied_commands`
 /// block the most dangerous direct invocations (deny wins over allow). Merges into existing
 /// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
@@ -102,7 +103,7 @@ pub(crate) fn write_session_settings(
     //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
     //     unlisted commands fall through to a prompt.
     //   - "deny"  (sandboxed): neither baseline.
-    // ALWAYS: mandatory gh/git/bsc-plan + each per-stream granted command (`allowed_commands`).
+    // ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
     let mut allow_rules: Vec<String> = Vec::new();
     let mut baseline: Vec<&str> = Vec::new();
     match bash_posture {
@@ -192,7 +193,7 @@ pub(crate) fn write_session_settings(
     write_mcp_json(&root, mcp_servers)?;
     write_session_skills(&root, skills)?;
     // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
-    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
+    // `bsc skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
     // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
     crate::extensions::skills::record_skill_uses(skills);
     git_exclude(&root, ".claude/");

@@ -89,7 +89,7 @@ pub(crate) fn project_session_ids(pane_ids: &[String], key: &str) -> Vec<String>
 /// The per-project session skill group id for a pane, or None for non-planner panes (#1419). Only
 /// the planner pane (`planning_<key>`) authors session skills, so only it gets `BSC_SESSION_SKILL_GROUP`
 /// — workers/director/manual panes don't. The id is deterministic from the (already-sanitized) key so
-/// the Planning pane and the `bsc-skill` CLI resolve the same group. Pure for testing.
+/// the Planning pane and the `bsc skill` CLI resolve the same group. Pure for testing.
 pub(crate) fn session_skill_group_for_pane(pane_id: &str) -> Option<String> {
     pane_id.strip_prefix("planning_").map(|key| format!("grp-session-{key}"))
 }
@@ -135,7 +135,7 @@ fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
 }
 
 /// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
-/// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc-data`
+/// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
 /// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
 fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     if cwd.is_empty() {
@@ -269,7 +269,7 @@ fn wire_bsc_env(
         cmd.env(k, v);
     }
     // Observability log streams (#1847): every per-pane TSV a `bsc-*` hook appends to is a row in the
-    // canonical `bsc_util::LOG_STREAMS` registry — the ONE list shared with the unified `bsc-logs`
+    // canonical `bsc_util::LOG_STREAMS` registry — the ONE list shared with the unified `bsc logs`
     // reader (`crates/logs`); each row's doc comment is the stream's spec (which hook writes it + the
     // line shape). Point each `$BSC_*_LOG` at the app-wide file under `base`; setting them for every
     // pane is harmless (only a pane whose settings.json installs the hook actually writes). `pane_id`
@@ -278,7 +278,7 @@ fn wire_bsc_env(
     for s in bsc_util::LOG_STREAMS {
         cmd.env(s.env_var, to_bash_path(&base.join(s.filename).to_string_lossy()));
     }
-    // bsc-logs (#1716): point every session at the log directory the unified `bsc-logs` query CLI
+    // bsc logs (#1716): point every session at the log directory the unified `bsc logs` query CLI
     // reads (the `logs::log_dir` resolver honors $BSC_LOG_DIR, else `~/.base-studio-code`). It's the
     // same `base` dir that holds all the *_LOG TSVs above + `perf.db`, so a live agent can drill into
     // its own audit/coord/tokens/perf streams from its own shell. Set for every pane (read-only).
@@ -334,7 +334,7 @@ fn wire_bsc_env(
         cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
     }
     // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
-    // gets it. Skills the planner authors with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` join
+    // gets it. Skills the planner authors with `bsc skill add --group "$BSC_SESSION_SKILL_GROUP"` join
     // this group, which the Planning pane resolves + highlights as "authored this session". The id is
     // deterministic from the (already-sanitized) key so the pane and the CLI agree; the app names the
     // group after the project. Persistent — reopening the planner keeps collecting into it.
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn session_skill_group_only_for_the_planner_pane() {
         // #1419: only the planner pane carries the per-project session skill group; the id is
-        // deterministic from the key so the pane + the bsc-skill CLI agree.
+        // deterministic from the key so the pane + the bsc skill CLI agree.
         assert_eq!(
             super::session_skill_group_for_pane("planning_acme-crm"),
             Some("grp-session-acme-crm".to_string()),
@@ -971,13 +971,13 @@ mod tests {
         use super::CommandBuilder;
         let mut cmd = CommandBuilder::new("bash");
         let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
-        assert!(cmd.get_env("BSC_LOG_DIR").is_some(), "BSC_LOG_DIR must be exported for bsc-logs");
+        assert!(cmd.get_env("BSC_LOG_DIR").is_some(), "BSC_LOG_DIR must be exported for bsc logs");
     }
 
     #[test]
     fn wire_bsc_env_exports_every_registry_log_stream() {
         // #1847: the pty writer stages every `bsc_util::LOG_STREAMS` row's $BSC_*_LOG — the same
-        // registry the unified `bsc-logs` reader resolves filenames from — so the writer + reader
+        // registry the unified `bsc logs` reader resolves filenames from — so the writer + reader
         // can't drift on the stream set. Plus the pane tag every line carries.
         use super::CommandBuilder;
         let mut cmd = CommandBuilder::new("bash");

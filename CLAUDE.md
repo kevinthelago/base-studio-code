@@ -72,16 +72,16 @@ base-studio-code/
 │       ├── observability/   #   logs, perf, tokens, audit
 │       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
 ├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
-│   ├── data/                #   canonical Data Model (DuckDB) + connectors (pkg bsc-data, bsc-data CLI)
-│   ├── plandb/              #   per-project plan store (SQLite) + bsc-plan CLI
-│   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc-skill CLI
-│   ├── logs/                #   unified log/perf/cost engine + bsc-logs CLI (#1607)
-│   ├── compliance/          #   compliance-standards store + bsc-compliance CLI & bsc-compliance-mcp server
-│   ├── research/            #   literature research + bsc-research-mcp server
+│   ├── data/                #   canonical Data Model (DuckDB) + connectors (pkg bsc-data, bsc data CLI)
+│   ├── plandb/              #   per-project plan store (SQLite) + bsc plan CLI
+│   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc skill CLI
+│   ├── logs/                #   unified log/perf/cost engine + bsc logs CLI (#1607)
+│   ├── compliance/          #   compliance-standards store + bsc compliance CLI & bsc mcp compliance server
+│   ├── research/            #   literature research + bsc mcp research server
 │   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
 │   ├── bsc-agent/           #   model-agnostic agent runtime
-│   ├── bsc-blueprint/       #   user blueprint store + bsc-blueprint CLI
-│   ├── bsc-project/         #   project-hub list/published store + bsc-project CLI
+│   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI
+│   ├── bsc-project/         #   project-hub list/published store + bsc project CLI
 │   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
 │   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs (paths, SQLite, CLI arg parsing)
 ├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). The four
@@ -163,7 +163,7 @@ mobile-studio-code (standalone app — separate repo; usable on its own)
 
 ## Key Concepts
 
-**Skill** — A named, reusable markdown block (the **Skills library**, `src/features/skills/` + `crates/skilldb` + the `bsc-skill` CLI) that supplies injectable context — standardized GitHub Actions configs, code review checklists, architecture patterns. Attached per blueprint/section and written into the session's `.claude/skills/`. This is the injectable-context system (it superseded the old Knowledge Base).
+**Skill** — A named, reusable markdown block (the **Skills library**, `src/features/skills/` + `crates/skilldb` + the `bsc skill` CLI) that supplies injectable context — standardized GitHub Actions configs, code review checklists, architecture patterns. Attached per blueprint/section and written into the session's `.claude/skills/`. This is the injectable-context system (it superseded the old Knowledge Base).
 
 **Console** — A single agent session tied to a repo, model, and optional skills. Multiple consoles run in parallel within a tab.
 
@@ -263,7 +263,7 @@ Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
 Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
-**Compiled state CLIs (sidecars):** the runtime principle is that **every persistent app store is reachable from a live session via its own `bsc-*` CLI** — real bundled binaries execed by an absolute path from an env var (no PATH changes): `bsc-plan` (plan.db, `$BSC_PLAN_DB`), `bsc-skill` (global skills.db, incl. `get`/`remove`), `bsc-data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc-plan integration`, #1721), `bsc-logs` (unified logs + perf/cost), `bsc-compliance` (compliance standards — the CLI alongside `bsc-compliance-mcp`), `bsc-blueprint` (user blueprints), and `bsc-project` (project-hub list/published). So a live session can read or drive any of these stores directly from bash.
+**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc project` (project-hub list/published), and `bsc files` (file tree). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
 
 ### Pipelines (#220) and GitHub-readiness (#297 S1)
 - **Pipelines**: a staged conductor sequences build, test, review, integrate with the least-privilege tester/reviewer/conductor roles, bounded by retry limits.

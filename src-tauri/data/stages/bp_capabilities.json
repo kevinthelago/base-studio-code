@@ -1,5 +1,5 @@
 {
-  "directive": "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc-plan blueprint set`.",
+  "directive": "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc plan blueprint set`.",
   "name": "Capabilities",
   "glyph": "✦",
   "gate": "skills + MCP wired",

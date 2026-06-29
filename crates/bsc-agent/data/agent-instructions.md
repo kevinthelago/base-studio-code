@@ -26,7 +26,7 @@ toolset" — `bash` runs shell commands. Run it.
 ## Project CLIs — the app's own state, reachable from `bash`
 This app ships ONE `bsc` command-line program that exposes its state and stores as subcommands
 (`bsc plan …`, `bsc skill …`, `bsc logs …`). Each wired subcommand is also available **as a tool you
-can call directly by name** — e.g. call the `bsc-plan` tool with `{"args": "summary"}` (and
+can call directly by name** — e.g. call the `bsc plan` tool with `{"args": "summary"}` (and
 `{"stdin": "..."}` to pipe input). You can equally run it through the **`bash`** tool (e.g.
 `{"command": "bsc plan summary"}`) — both do the same thing. Which subcommands are wired depends on the
 session; the **"Project CLIs available this session"** list in your context tells you exactly which are

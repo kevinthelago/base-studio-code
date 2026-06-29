@@ -8,13 +8,6 @@ description = "Global skills + task-groups store (SQLite) for base-studio-code (
 [lib]
 name = "skilldb"
 
-# The session-facing CLI: injected into EVERY console session (B-global), pointed at the global
-# skills.db via the BSC_SKILL_DB env var (default ~/.base-studio-code/skills.db). Authoring +
-# resolution of skills and groups, addressable from any live session's own shell.
-[[bin]]
-name = "bsc-skill"
-path = "src/bin/bsc-skill.rs"
-
 [dependencies]
 # Shared leaf utilities (#1646): the one home-dir resolver.
 bsc-util = { path = "../bsc-util" }

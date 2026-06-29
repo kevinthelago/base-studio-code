@@ -2,7 +2,7 @@ use crate::*;
 
 /// The user blueprint store, rooted at `~/.base-studio-code/blueprints/`. File CRUD + the
 /// path-traversal slug guard live in the Tauri-free `bsc-blueprint` crate (shared with the
-/// `bsc-blueprint` session CLI), so the slug guard has ONE definition (#1761).
+/// `bsc blueprint` session CLI), so the slug guard has ONE definition (#1761).
 fn blueprint_store() -> bsc_blueprint::Store {
     bsc_blueprint::Store::new(bsc_base_dir().join("blueprints"))
 }

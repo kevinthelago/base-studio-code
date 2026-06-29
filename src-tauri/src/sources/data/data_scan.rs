@@ -330,13 +330,13 @@ pub fn data_platform_scan(
         "fhir" => scan_fhir(&fields),
         other => Ok(ScanResult::pending(format!("no live transport for {other}"))),
     }?;
-    // Persist the captured behavior layer so the planner can read it via `bsc-data scan get` (#786).
+    // Persist the captured behavior layer so the planner can read it via `bsc data scan get` (#786).
     persist_scan(&project, &result.platform);
     Ok(result)
 }
 
 /// Persist a source scan's captured behavior layer (`PlatformScan`) into the project's DuckDB store
-/// (#1446/#786) so the planner can read the Platform Behavior Summary via `bsc-data scan get`.
+/// (#1446/#786) so the planner can read the Platform Behavior Summary via `bsc data scan get`.
 /// Best-effort: a persist failure logs but never fails the scan.
 #[cfg(feature = "source-stage")]
 fn persist_scan(project_key: &str, scan: &bsc_data::PlatformScan) {

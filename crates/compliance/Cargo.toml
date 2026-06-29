@@ -9,18 +9,6 @@ description = "Native compliance-standards source of truth for base-studio-code 
 [lib]
 name = "compliance"
 
-# The agent-facing MCP server: the planner/director/workers call its tools over stdio JSON-RPC.
-# Bundled beside the app exe (Tauri externalBin) and auto-registered in .mcp.json.
-[[bin]]
-name = "bsc-compliance-mcp"
-path = "src/bin/bsc-compliance-mcp.rs"
-
-# The session-facing state CLI (#1718): exposes the same store/engine projections to ANY shell
-# session (not just the .mcp.json ones) + the write side (upsert/remove/reseed) the MCP server lacks.
-[[bin]]
-name = "bsc-compliance"
-path = "src/bin/bsc-compliance.rs"
-
 [dependencies]
 # Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
 bsc-util = { path = "../bsc-util" }
