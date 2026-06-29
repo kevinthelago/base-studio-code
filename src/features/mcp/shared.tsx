@@ -8,6 +8,7 @@ import { StatusDot } from "@/shared/ui/StatusDot";
 import { IconButton } from "@/shared/ui/IconButton";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -128,7 +129,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
                         <div className="pname">{p.title}</div>
                         <div className="pbranch">#{p.number}</div>
                       </div>
-                      <div className="pside"><span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--accent-dim)" }} /></div>
+                      <div className="pside"><ColorSwatch color="var(--accent-dim)" size={8} /></div>
                     </div>
                   );
                 })}

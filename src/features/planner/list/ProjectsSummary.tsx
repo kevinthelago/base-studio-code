@@ -3,6 +3,7 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
 import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
@@ -171,7 +172,7 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 5, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
         {items.map(it => (
           <div key={it.n} style={{ display: "grid", gridTemplateColumns: "12px 1fr 40px", gap: 8, alignItems: "center" }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: it.c, display: "inline-block" }} />
+            <ColorSwatch color={it.c} />
             <span style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.n}</span>
             <span style={{ textAlign: "right", color: "var(--fg-dim)" }}>{it.pct}%</span>
           </div>
@@ -225,8 +226,8 @@ function VelocityCard({ repoIssues, loading }: {
             })}
           </svg>
           <div style={{ display: "flex", gap: 14, marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
-            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "color-mix(in oklch, var(--info), transparent 50%)" }} /> opened</span>
-            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "var(--accent)" }} /> closed</span>
+            <span><ColorSwatch color="color-mix(in oklch, var(--info), transparent 50%)" /> opened</span>
+            <span><ColorSwatch color="var(--accent)" /> closed</span>
             <div style={{ flex: 1 }} />
             <span>avg <b style={{ color: "var(--fg)" }}>{loading ? "…" : `${avgClosed} closed/wk`}</b></span>
           </div>
@@ -422,7 +423,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
             cursor: "pointer", minWidth: 0, overflow: "hidden",
           }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0, display: "inline-block" }} />
+              <ColorSwatch color={c} size={8} />
               <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
               <Chip tone={status === "active" ? "success" : status === "shipped" ? "neutral" : "accent"} style={{ fontSize: 9 }}>{status}</Chip>
             </div>

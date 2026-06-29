@@ -4,6 +4,7 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { BackButton } from "@/shared/ui/BackButton";
 import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
@@ -361,7 +362,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                 background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
                 border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
               }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                <ColorSwatch color={p.color} size={8} />
                 <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, flex: 1 }}>{p.name}</span>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
                 {p.id === profileId && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: p.color }}>current</span>}

@@ -10,6 +10,7 @@ import { StatusDot } from "@/shared/ui/StatusDot";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
@@ -72,7 +73,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
       accent={p.color}
       selected={on}
       onClick={onClick}
-      lead={<span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, display: "block" }} />}
+      lead={<ColorSwatch color={p.color} radius={3} style={{ display: "block" }} />}
       title={p.name}
       titleAside={<Chip tone={originTone(obCls)} size="xs">{origin}</Chip>}
       subtitle={
