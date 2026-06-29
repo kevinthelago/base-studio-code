@@ -1,4 +1,4 @@
-import type { ReactNode, CSSProperties } from "react";
+import type { ReactNode } from "react";
 import { Toggle } from "@/shared/ui/Toggle";
 
 export function ToggleRow({ on, onToggle, title, children }: {
@@ -58,11 +58,6 @@ export function SettingsSelect({ value, options, onChange }: {
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
-}
-
-/** Inline style for a compact mono settings button; `extra` overrides (e.g. an active border color). */
-export function settingsBtn(extra: CSSProperties = {}): CSSProperties {
-  return { padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5, background: "var(--bg-elev)", color: "var(--fg-muted)", border: "1px solid var(--border)", ...extra };
 }
 
 /** A labelled full-width text input (the `.field` stack: label · input · hint). `trailing` puts a

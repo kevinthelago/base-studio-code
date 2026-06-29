@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SettingsCardHead, SettingsRow, SettingsSelect, settingsBtn, SettingsTextField, SettingsSelectField } from "./SettingsControls";
+import { SettingsCardHead, SettingsRow, SettingsSelect, SettingsTextField, SettingsSelectField } from "./SettingsControls";
 
 describe("SettingsCardHead", () => {
   it("renders the title, and the hint only when provided", () => {
@@ -73,14 +73,5 @@ describe("SettingsSelectField", () => {
     expect(screen.getByText("Model")).toBeTruthy();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "b" } });
     expect(onChange).toHaveBeenCalledWith("b");
-  });
-});
-
-describe("settingsBtn", () => {
-  it("returns the base style and merges overrides", () => {
-    const base = settingsBtn();
-    expect(base.borderRadius).toBe(6);
-    expect(base.cursor).toBe("pointer");
-    expect(settingsBtn({ color: "var(--fg)" }).color).toBe("var(--fg)");
   });
 });

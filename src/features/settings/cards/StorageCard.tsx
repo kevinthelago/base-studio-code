@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { settingsBtn as btn } from "../pages/SettingsControls";
+import { Button } from "@/shared/ui/Button";
 
 // TODO: Refactor this storage card into the fleet tab.
 // Currently removed from settings/PlannerPage but kept intact for the future refactor.
@@ -74,7 +74,7 @@ export function StorageCard() {
           {rows.length} worktree{rows.length === 1 ? "" : "s"} · {fmtBytes(grandTotal)} total
         </span>
         <span style={{ flex: 1 }} />
-        <button style={btn()} disabled={busy} onClick={() => void refresh()}>Refresh</button>
+        <Button size="sm" disabled={busy} onClick={() => void refresh()}>Refresh</Button>
       </div>
 
       {projects.length === 0 ? (
