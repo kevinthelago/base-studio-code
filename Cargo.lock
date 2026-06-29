@@ -742,7 +742,9 @@ dependencies = [
  "bsc-project",
  "compliance",
  "logs",
+ "mcp-rpc",
  "plandb",
+ "research",
  "skilldb",
 ]
 

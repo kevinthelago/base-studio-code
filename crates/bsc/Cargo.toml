@@ -28,3 +28,7 @@ bsc-files = { path = "../bsc-files" }
 plandb = { path = "../plandb" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
+# `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each
+# exposes a `mcp::Server::from_env()` run over the shared stdio JSON-RPC core (`mcp_rpc`).
+research = { path = "../research" }
+mcp-rpc = { path = "../mcp-rpc" }

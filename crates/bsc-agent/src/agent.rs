@@ -684,27 +684,27 @@ fn extract_cli_args(v: &Value) -> (String, Option<String>) {
     (positional.join(" ").trim().to_string(), stdin)
 }
 
-/// A FIRST-CLASS tool for one project `bsc-*` CLI (#qwen). Local models (qwen especially) call a CLI
-/// like `bsc-plan` as a *tool*, not via the `bash` tool — and then bounce off "unknown tool" and give
-/// up. So we hand them the tool by its real name: `args` is the CLI argument string (`"summary"`,
-/// `"list --status open"`), `stdin` optionally pipes input (JSON for a write like `add`). It runs
-/// `<cli> <args>` through bash exactly as the user would. Same intent-named-tool fix as `list_files`.
-/// Only registered when the CLI is actually staged this session (its `$BSC_*_BIN` is set), so an
-/// alias for an absent CLI never appears.
-pub fn bsc_cli_tool(cli: &'static str) -> Tool {
+/// A FIRST-CLASS tool for one `bsc <sub>` project CLI subcommand (#qwen / #1877). Local models (qwen
+/// especially) call a CLI like `bsc-plan` as a *tool*, not via the `bash` tool — and then bounce off
+/// "unknown tool" and give up. So we hand them the tool by a recognizable name `bsc-<sub>` (e.g.
+/// `bsc-plan`): `args` is the CLI argument string (`"summary"`, `"list --status open"`), `stdin`
+/// optionally pipes input (JSON for a write like `add`). It runs `bsc <sub> <args>` through bash (the
+/// `bsc` shell helper execs the staged $BSC_BIN). Same intent-named-tool fix as `list_files`. Only
+/// registered when the unified `bsc` binary is staged this session ($BSC_BIN set).
+pub fn bsc_cli_tool(sub: &'static str) -> Tool {
     Tool {
         def: ToolDef {
-            name: cli.to_string(),
+            name: format!("bsc-{sub}"),
             description: format!(
-                "Run the `{cli}` project CLI. Put the CLI arguments in `args` (e.g. \"summary\" or \
+                "Run the `bsc {sub}` project CLI. Put the CLI arguments in `args` (e.g. \"summary\" or \
                  \"list --limit 5\"); use `args: \"help\"` to see its commands, then `args: \"<command> help\"` \
                  for one command's args. Pipe input (e.g. JSON for a write) via `stdin`. Equivalent to \
-                 running `{cli} <args>` in the shell."
+                 running `bsc {sub} <args>` in the shell."
             ),
             schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "args": { "type": "string", "description": "the CLI arguments, e.g. \"summary\" or \"list --limit 5\" (empty runs the CLI with no args — its help/overview)" },
+                    "args": { "type": "string", "description": "the CLI arguments, e.g. \"summary\" or \"list --limit 5\" (empty runs the subcommand with no args — its help/overview)" },
                     "stdin": { "type": "string", "description": "optional text piped to the command's stdin (e.g. JSON for a write command)" }
                 }
             }),
@@ -712,7 +712,9 @@ pub fn bsc_cli_tool(cli: &'static str) -> Tool {
         run: Box::new(move |args| {
             // Tolerant of however the model shaped the call, so it runs like the normal command it is.
             let (a, stdin) = extract_cli_args(args);
-            run_bsc_cli(cli, &a, stdin.as_deref())
+            // Run via the unified binary: `bsc <sub> <args>` (the `bsc` shell helper execs $BSC_BIN).
+            let full = if a.is_empty() { sub.to_string() } else { format!("{sub} {a}") };
+            run_bsc_cli("bsc", &full, stdin.as_deref())
         }),
     }
 }
@@ -1167,11 +1169,12 @@ mod tests {
 
     #[test]
     fn bsc_cli_tool_is_named_after_the_cli_and_takes_args_plus_stdin() {
-        // qwen calls `bsc-plan` as a tool; we register it by that exact name so the call resolves
-        // instead of bouncing as "unknown tool". args + stdin let it run any subcommand (incl. writes).
-        let t = bsc_cli_tool("bsc-plan");
+        // qwen calls `bsc-plan` as a tool; we register the `plan` subcommand by the recognizable name
+        // `bsc-plan` so the call resolves instead of bouncing as "unknown tool". args + stdin let it
+        // run any subcommand (incl. writes); under the hood it execs `bsc plan <args>` (#1877).
+        let t = bsc_cli_tool("plan");
         assert_eq!(t.def.name, "bsc-plan");
-        assert!(t.def.description.contains("bsc-plan"));
+        assert!(t.def.description.contains("bsc plan"));
         assert!(t.def.description.contains("help"), "points the model at the CLI's own help");
         let props = &t.def.schema["properties"];
         assert!(props.get("args").is_some(), "exposes an args string");

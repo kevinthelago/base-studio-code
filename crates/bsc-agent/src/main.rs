@@ -96,21 +96,25 @@ fn compose_skills(start: &Path) -> String {
     out.join("\n\n")
 }
 
-// The `bsc-*` sidecar CLI set is the canonical `bsc_util::SIDECARS` registry (#1843) — ONE list shared
-// by the app's env staging (`wire_bsc_env`), the shell helpers (`console/shell_rc`), and the prompt
-// block below — so adding a CLI is a one-line registry change instead of four hand-kept copies.
+// The `bsc` subcommand set is the canonical `bsc_util::SIDECARS` registry (#1843/#1877) — ONE list
+// shared by the shell helper (`console/shell_rc`) and the prompt block below. The app stages ONE
+// umbrella binary as $BSC_BIN; every state CLI is a subcommand (`bsc plan …`, `bsc skill …`).
 
-/// The staged-this-session subset of the registry: advertised CLIs whose `bin_env` is set (per
-/// `is_set`). A CLI is "available" when its `bin_env` is set; the two project-scoped ones note when
-/// their per-project store env is absent (so the model isn't told to use `bsc-plan` with no plan.db).
+/// The subcommands available this session: the advertised registry when the unified `bsc` binary is
+/// staged ($BSC_BIN set), else none. The two project-scoped ones note when their per-project store
+/// env is absent (so the model isn't told to use `bsc plan` with no plan.db).
 fn available_clis(is_set: &impl Fn(&str) -> bool) -> Vec<&'static bsc_util::Sidecar> {
-    bsc_util::SIDECARS.iter().filter(|c| c.advertise && is_set(c.bin_env)).collect()
+    if !is_set("BSC_BIN") {
+        return Vec::new();
+    }
+    bsc_util::SIDECARS.iter().filter(|c| c.advertise).collect()
 }
 
-/// Render the "Project CLIs available this session" system-prompt block from the staged `clis`, or ""
-/// when none are wired (a bare run outside the app — keeps the prompt clean). Each line names the CLI
-/// plus its purpose, and flags a project-scoped CLI whose store env is missing. The help-first
-/// protocol of `<cli> help` is taught once in `AGENT_INSTRUCTIONS`; this block is the live inventory.
+/// Render the "Project CLIs available this session" system-prompt block from the available `clis`, or
+/// "" when none are wired (a bare run outside the app — keeps the prompt clean). Each line names the
+/// `bsc <sub>` invocation plus its purpose, and flags a project-scoped subcommand whose store env is
+/// missing. The help-first protocol of `bsc <sub> help` is taught once in `AGENT_INSTRUCTIONS`; this
+/// block is the live inventory.
 fn render_clis_block(clis: &[&bsc_util::Sidecar], is_set: &impl Fn(&str) -> bool) -> String {
     if clis.is_empty() {
         return String::new();
@@ -122,15 +126,16 @@ fn render_clis_block(clis: &[&bsc_util::Sidecar], is_set: &impl Fn(&str) -> bool
                 Some(env) if !is_set(env) => "  (no project store in this session — needs a project context)",
                 _ => "",
             };
-            format!("- `{}` — {}{}", c.name, c.blurb, ctx)
+            format!("- `bsc {}` — {}{}", c.name, c.blurb, ctx)
         })
         .collect();
     format!(
         "# Project CLIs available this session\n\
-         These `bsc-*` programs are wired into this session. Each is available as a TOOL you can call \
-         DIRECTLY by name — e.g. call the `bsc-plan` tool with `args: \"summary\"` — or run it via the \
-         `bash` tool. Each has a `help` command: call it with `args: \"help\"` for the command menu, \
-         then `args: \"<command> help\"` for one command's args. Check help before guessing.\n\n{}",
+         The unified `bsc` CLI is wired into this session; each subcommand below is also available as a \
+         TOOL you can call DIRECTLY by name — e.g. call the `bsc-plan` tool with `args: \"summary\"` — or \
+         run it via the `bash` tool as `bsc <sub> …`. Each subcommand has a `help` command: run \
+         `bsc <sub> help` for the command menu, then `bsc <sub> <command> help` for one command's args. \
+         Check help before guessing.\n\n{}",
         lines.join("\n"),
     )
 }
@@ -186,11 +191,11 @@ async fn main() {
     let preview: String = task.chars().take(160).collect();
     eprintln!("\x1b[2m▸ task: {preview}{}\x1b[0m", if task.chars().count() > 160 { "…" } else { "" });
     // Echo the project CLIs wired this session (Part B): the model is told what's available + that each
-    // has a `help` command, so it reaches for `bsc-plan` etc. instead of never discovering them.
+    // has a `help` command, so it reaches for `bsc plan` etc. instead of never discovering them.
     if !clis.is_empty() {
-        let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
+        let names: Vec<String> = clis.iter().map(|c| format!("bsc {}", c.name)).collect();
         eprintln!(
-            "\x1b[2m▸ project CLIs ({}): {} — run `<cli> help` for commands\x1b[0m",
+            "\x1b[2m▸ project CLIs ({}): {} — run `bsc <sub> help` for commands\x1b[0m",
             names.len(),
             names.join(", "),
         );
@@ -373,27 +378,30 @@ mod tests {
 
     #[test]
     fn available_clis_filters_to_staged_bins_and_block_flags_missing_context() {
-        // Only bsc-plan + bsc-files staged; bsc-plan has NO plan.db (BSC_PLAN_DB absent).
-        let is_set = |k: &str| ["BSC_PLAN_BIN", "BSC_FILES_BIN"].contains(&k);
+        // #1877: staging is binary-level — the unified `bsc` is staged ($BSC_BIN), so EVERY advertised
+        // subcommand is available. Here no project store is present (BSC_PLAN_DB / BSC_DATA_DB absent).
+        let is_set = |k: &str| k == "BSC_BIN";
         let clis = available_clis(&is_set);
         let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["bsc-plan", "bsc-files"], "lists only the staged sidecars, in order");
+        assert_eq!(
+            names,
+            vec!["plan", "data", "skill", "logs", "compliance", "blueprint", "project", "files"],
+            "lists every advertised subcommand, in order, once $BSC_BIN is staged",
+        );
 
         let block = render_clis_block(&clis, &is_set);
         assert!(block.contains("# Project CLIs available this session"));
-        assert!(block.contains("bsc-plan"));
-        assert!(block.contains("bsc-files"));
-        // The help-first protocol is referenced so the model self-serves command detail.
-        assert!(block.contains("<cli> help"));
-        // bsc-plan is staged but BSC_PLAN_DB is absent → flagged as needing a project context.
+        assert!(block.contains("bsc plan"));
+        assert!(block.contains("bsc files"));
+        // The help-first protocol is referenced (as `bsc <sub> help`) so the model self-serves detail.
+        assert!(block.contains("bsc <sub> help"));
+        // bsc plan + bsc data are project-scoped and their stores are absent → flagged.
         assert!(block.contains("needs a project context"));
-        // A sidecar that isn't staged never appears.
-        assert!(!block.contains("bsc-compliance"));
     }
 
     #[test]
     fn render_clis_block_is_empty_when_nothing_is_staged() {
-        // A bare run outside the app (no $BSC_*_BIN) injects nothing — the prompt stays clean.
+        // A bare run outside the app (no $BSC_BIN) injects nothing — the prompt stays clean.
         let none = |_k: &str| false;
         assert!(available_clis(&none).is_empty());
         assert!(render_clis_block(&[], &none).is_empty());
@@ -401,11 +409,12 @@ mod tests {
 
     #[test]
     fn project_cli_with_its_store_present_is_not_flagged() {
-        // bsc-plan staged AND BSC_PLAN_DB present → no "needs a project context" caveat.
-        let is_set = |k: &str| ["BSC_PLAN_BIN", "BSC_PLAN_DB"].contains(&k);
+        // $BSC_BIN staged AND both project stores (BSC_PLAN_DB + BSC_DATA_DB) present → no "needs a
+        // project context" caveat on either project-scoped subcommand.
+        let is_set = |k: &str| ["BSC_BIN", "BSC_PLAN_DB", "BSC_DATA_DB"].contains(&k);
         let clis = available_clis(&is_set);
         let block = render_clis_block(&clis, &is_set);
-        assert!(block.contains("bsc-plan"));
+        assert!(block.contains("bsc plan"));
         assert!(!block.contains("needs a project context"));
     }
 

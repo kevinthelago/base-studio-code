@@ -115,9 +115,9 @@ of these crates and exposes thin command wrappers over them.
    *non-interactive* `bash -c` subshells get the helpers too. It sets the per-pane env vars the
    helpers read: the app-wide TSV log paths (`BSC_AUDIT_LOG`, `BSC_SKILL_LOG`, `BSC_HOOK_LOG`,
    `BSC_MCP_LOG`, `BSC_TOKENS_LOG`, `BSC_ACTIVITY_LOG`, `BSC_DONE_LOG`, `BSC_COORD_LOG`), the pane id
-   (`BSC_AUDIT_PANE`), the repo root (`BSC_REPO_ROOT`), the per-project plan DB + CLI
-   (`BSC_PLAN_DB`/`BSC_PLAN_BIN`, only for sessions under a project hub), and the global skills DB +
-   CLI (`BSC_SKILL_DB`/`BSC_SKILL_BIN`, unconditional).
+   (`BSC_AUDIT_PANE`), the repo root (`BSC_REPO_ROOT`), the unified CLI binary (`BSC_BIN`, the one
+   `bsc` umbrella every `bsc <sub>` subcommand execs — #1877), the per-project plan DB (`BSC_PLAN_DB`,
+   only for sessions under a project hub), and the global skills DB (`BSC_SKILL_DB`, unconditional).
 6. **Process-tree ownership:** each session gets a kill-on-close **Windows Job Object** (or, on Unix,
    the shell's **process-group id** via `setsid` + `killpg`) so dropping the session on `pty_kill` /
    app exit reaps the whole tree (shell → `claude` → any `gh`/`git`/MCP child) instead of leaking
@@ -214,21 +214,24 @@ exact field name a command actually returns; don't assume camelCase.
 Two distinct mechanisms, both reachable from any live session's own shell — this is the #1325 runtime
 surface (live sessions can read/drive app state from their own bash).
 
-**Compiled sidecar CLIs** (real binaries, execed by their absolute path via an env var so there are
-no PATH changes; bundled with the app and rebuilt with `npm run build:plan`):
+**Compiled CLIs** — the app ships ONE umbrella binary, `bsc`, execed by its absolute path via a single
+env var `$BSC_BIN` (no PATH changes; bundled with the app and rebuilt with `npm run build:plan`). Every
+state store/tool that used to be its own `bsc-*` sidecar is now a **subcommand** (`bsc <command>`,
+#1877); the only other shipped binary is the model-agnostic `bsc-agent` runtime (`$BSC_AGENT_BIN`):
 
-| Command | Crate | Pointed at | Role |
+| Subcommand | Crate | Pointed at | Role |
 |---|---|---|---|
-| `bsc-plan` | `plandb` | `$BSC_PLAN_DB` (per-project), `$BSC_PLAN_BIN` | The plan store CLI — planner writes; workers/director read + drive issue status. |
-| `bsc-skill` | `skilldb` | `$BSC_SKILL_DB` (global), `$BSC_SKILL_BIN` | The global skills/task-groups CLI (with a subcommand). With *no* args it's the Skill-tool telemetry hook instead — argc is the discriminator. |
-| `bsc-data` | `data` | `$BSC_DATA_BIN` | Read the per-project Data Model + PlatformScan (`bsc-data model get` / `bsc-data scan get`) and author runtime REST presets (`bsc-data connector`, which replaced the deprecated `bsc-plan integration`, #1721). |
-| `bsc-logs` | `logs` | `$BSC_LOGS_BIN` | Read the unified logs + perf/cost from a live shell (#1607). |
-| `bsc-compliance` | `compliance` | `$BSC_COMPLIANCE_BIN` | The state CLI for compliance standards (`bsc-compliance standards list/get`) — the non-MCP companion to `bsc-compliance-mcp`. |
-| `bsc-blueprint` | `bsc-blueprint` | `$BSC_BLUEPRINT_BIN` | List/read/write the user blueprint store. |
-| `bsc-project` | `bsc-project` | `$BSC_PROJECT_BIN` | Enumerate local project hubs (`bsc-project list`) + their published marker (`bsc-project published`). |
-| `bsc-research-mcp` | `research` | (stdio MCP) | Literature research tools for the planner/fleet. |
-| `bsc-compliance-mcp` | `compliance` | (stdio MCP) | Current compliance standards for the planner. |
-| `bsc-agent` | `bsc-agent` | `$BSC_AGENT_BIN` (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. |
+| `bsc plan` | `plandb` | `$BSC_PLAN_DB` (per-project) | The plan store CLI — planner writes; workers/director read + drive issue status. |
+| `bsc skill` | `skilldb` | `$BSC_SKILL_DB` (global) | The global skills/task-groups CLI. The no-arg `bsc-skill` shell helper stays the Skill-tool telemetry hook — argc is the discriminator. |
+| `bsc data` | `data` | `$BSC_DATA_DB` (per-project) | Read the per-project Data Model + PlatformScan (`bsc data model get` / `bsc data scan get`) and author runtime REST presets (`bsc data connector`, which replaced the deprecated plan-store `integration`, #1721). |
+| `bsc logs` | `logs` | `$BSC_LOG_DIR` | Read the unified logs + perf/cost from a live shell (#1607). |
+| `bsc compliance` | `compliance` | `$BSC_COMPLIANCE_STORE` (global) | The state CLI for compliance standards (`bsc compliance standards list/get`) — the non-MCP companion to `bsc mcp compliance`. |
+| `bsc blueprint` | `bsc-blueprint` | (user blueprint dir) | List/read/write the user blueprint store. |
+| `bsc project` | `bsc-project` | (projects dir) | Enumerate local project hubs (`bsc project list`) + their published marker (`bsc project published`). |
+| `bsc files` | `bsc-files` | (cwd) | The project's file tree with metrics + single-path `stat`. |
+| `bsc mcp research` | `research` | (stdio MCP) | Literature research tools for the planner/fleet (spawned from `.mcp.json`). |
+| `bsc mcp compliance` | `compliance` | (stdio MCP) | Current compliance standards for the planner (spawned from `.mcp.json`). |
+| `bsc-agent` | `bsc-agent` | `$BSC_AGENT_BIN` (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. A separate binary, not a `bsc` subcommand. |
 
 **Pure-shell helpers** ([`console/shell_rc.rs`](../src-tauri/src/console/shell_rc.rs)) — rc-file
 fragments concatenated into `~/.base-studio-code/bsc-env.sh` and sourced via `BASH_ENV`. They have
