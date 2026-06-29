@@ -15,6 +15,7 @@ import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
 } from "./shared";
 import { Pane } from "@/shared/ui/Pane";
+import { Chip } from "@/shared/ui/Chip";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import "./mcp.css";
@@ -80,7 +81,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   function updateControl(e: McpServer): React.ReactNode {
     if (!catalogLink(e.name)) return null;
     const s = mcpStatus[e.name];
-    if (s === "current") return <span className="tag green" title="at the latest release">up to date</span>;
+    if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
       return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
     if (s === undefined || s === "checking" || s === "downloading")
@@ -240,7 +241,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled server"}</div>
-            <span className="tag info">{mcpLabel(selected)}</span>
+            <Chip tone="info">{mcpLabel(selected)}</Chip>
           </>
         )}
         body={selected && (
@@ -395,7 +396,7 @@ export function HooksView() {
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled hook"}</div>
-            <span className="tag green">{hookLabel(selected)}</span>
+            <Chip tone="success">{hookLabel(selected)}</Chip>
           </>
         )}
         body={selected && (

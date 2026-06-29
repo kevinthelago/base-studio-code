@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { Chip } from "@/shared/ui/Chip";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -111,7 +112,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
               <div key={wtr.session} className="card" style={{ marginBottom: 10, borderColor: "var(--success)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <SessionTag session={wtr.session} profile={profileFor(wtr.session)} />
-                  <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</span>
+                  <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</Chip>
                   <div style={{ flex: 1 }} />
                   {wtr.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
                   <button
@@ -137,10 +138,10 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 <SessionTag session={v.session} profile={profileFor(v.session)} />
                 {v.deadlocked
-                  ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />deadlocked</span>
+                  ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />deadlocked</Chip>
                   : v.stalled
-                    ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</span>
-                    : <span className="tag" style={{ fontSize: 9.5 }}>waiting</span>}
+                    ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</Chip>
+                    : <Chip style={{ fontSize: 9.5 }}>waiting</Chip>}
                 <div style={{ flex: 1 }} />
                 {v.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {v.checkpoint}</span>}
               </div>
@@ -169,7 +170,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{id}</h3>
                   <span className="hint" style={{ fontSize: 10.5 }}>{run.workflow.name}</span>
-                  <span className="tag" style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</span>
+                  <Chip style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</Chip>
                   <div style={{ flex: 1 }} />
                   {run.state.escalation && (
                     <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>

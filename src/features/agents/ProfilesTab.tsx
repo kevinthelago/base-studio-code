@@ -122,7 +122,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
                 <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Owns {p.owns}</div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</div>
               </div>
-              <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</span>
+              <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</Chip>
             </div>
           </div>
         )}
