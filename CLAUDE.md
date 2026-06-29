@@ -60,15 +60,14 @@ base-studio-code/
 │       ├── tests.rs         #   cross-cutting test module (+ testutil.rs)
 │       ├── platform/        #   OS primitives: paths, git, shell, process, fsx, docstore
 │       ├── app/             #   Tauri shell: run(), state, recovery, dialog
-│       ├── console/         #   interactive PTY surface: pty, ledger, discovery, settings, shell_rc
-│       ├── agent/           #   agent launch/config: harness, launch, claude_config
+│       ├── console/         #   interactive PTY surface: pty, ledger, discovery, shell_rc
+│       ├── session/         #   session launch/config/permissioning: harness, launch, claude_config, settings, llm
 │       ├── project/         #   on-disk hub + plan store: hub, plan_files, plan_db, blueprints, files, dead_code, ui_skeleton
 │       ├── planner/         #   planning session: prompts, directives, workspace
 │       ├── fleet/           #   worker fleet: worktree, director, staging
 │       ├── github/          #   GitHub integration: api, oauth, repos, readiness, git_hooks
 │       ├── sources/         #   migration data sources: data, oauth, credentials
 │       ├── extensions/      #   MCP servers, hooks, skills, cfg
-│       ├── llm.rs           #   the llm_complete command: provider-agnostic one-shot completion (→ crates/llm)
 │       ├── observability/   #   logs, perf, tokens, audit
 │       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
 ├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
@@ -156,7 +155,7 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
 
 ```
 base-studio-code (desktop host)
-├── Agent Orchestrator      — spawns/manages parallel agent sessions       (src-tauri/src/{console,agent,fleet})
+├── Agent Orchestrator      — spawns/manages parallel agent sessions       (src-tauri/src/{console,session,fleet})
 ├── GitHub Integration      — OAuth, repo selection, PR/issue access       (src-tauri/src/github)
 ├── Mobile relay client     — dials the Cloudflare relay for mobile pairing (src-tauri/src/mobile/tunnel)
 └── UI Shell                — Tauri WebView running the React frontend

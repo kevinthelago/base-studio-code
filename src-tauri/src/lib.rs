@@ -6,10 +6,9 @@ mod planner;
 mod platform;
 mod app;
 mod console;
-mod agent;
+mod session;
 mod github;
 mod sources;
-mod llm;
 mod observability;
 mod mobile;
 mod project;
@@ -20,7 +19,7 @@ pub use app::run::run;
 
 // ── stage 1/2 domain modules, re-exported under their pre-restructure names ──
 pub(crate) use console::{pty, ledger as pty_ledger, discovery as session_discovery};
-pub(crate) use agent::harness;
+pub(crate) use session::harness;
 pub(crate) use github::{oauth, git_hooks as githooks};
 pub(crate) use sources::{data, oauth as source_oauth, credentials};
 pub(crate) use platform::docstore;
@@ -45,7 +44,7 @@ pub(crate) use platform::shell::{split_utf8_at_boundary, to_bash_path, to_native
 pub(crate) use app::state::UncleanShutdown;
 pub(crate) use app::recovery::{session_lock_path, claim_session_lock};
 pub(crate) use project::hub::migrate_draft_hubs_into_projects;
-pub(crate) use agent::launch::{
+pub(crate) use session::launch::{
     claude_launch, claude_model_flag, claude_project_dir_name,
     has_claude_history, has_bsc_agent_history, bsc_agent_session_path,
 };
