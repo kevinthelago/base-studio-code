@@ -3,7 +3,7 @@
 // matching run via driveOnEvent, persists it, and -- on a launch -- relaunches the run's
 // dedicated `workflow · <item>` pane for the next stage (kill → mount, so it spawns fresh
 // and role-scoped). Idempotent: it only processes NEW log lines, and driveOnEvent ignores
-// any event whose run has already moved past that stage. Mount once (ConsoleScreen stays
+// any event whose run has already moved past that stage. Mount once (ConsoleWorkspace stays
 // mounted across screens). Safe to run always — it only ever touches workflow panes.
 import { useRef } from "react";
 import { safeInvoke } from "../core/safeInvoke";

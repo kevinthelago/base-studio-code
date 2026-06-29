@@ -1,7 +1,7 @@
 import { IssueSecurityCard } from "../cards/IssueSecurityCard";
 import { AgentsCard } from "../cards/AgentsCard";
 
-export function SecurityScreen() {
+export function SecurityPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
       {/* Header */}

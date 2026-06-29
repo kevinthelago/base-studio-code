@@ -6,7 +6,7 @@ import { blankSkill } from "./lib/skills";
 
 const SESS = "proj:checkout";
 
-describe("SessionSkillsModal (#skills-groups, Surface B)", () => {
+describe("SessionSkillsModal (#skills-groups, Workspace B)", () => {
   beforeEach(() => {
     useAppStore.setState({
       skills: [

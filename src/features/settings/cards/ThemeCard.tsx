@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";

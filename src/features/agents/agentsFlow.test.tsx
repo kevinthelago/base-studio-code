@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, fireEvent, waitFor, within } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { AgentsScreen } from "./";
+import { AgentsWorkspace } from "./";
 import { useAppStore } from "@/store";
 import { startRun } from "@/shared/lib/fleet/conductor";
 import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
@@ -50,14 +50,14 @@ describe("Agents · Flow tab (#199/#220)", () => {
       `${TS}\tt0p0\tblocked\tsession:t0p1`,
       `${TS}\tt0p1\tblocked\tsession:t0p0`,
     ]);
-    const { container } = render(<AgentsScreen />);
+    const { container } = render(<AgentsWorkspace />);
     openFlow(container);
 
     await waitFor(() => {
       expect(container.textContent).toContain("⚠ deadlock");
     });
-    // Both sessions render a "deadlocked" tag.
-    const tags = Array.from(container.querySelectorAll(".tag")).map((t) => t.textContent ?? "");
+    // Both sessions render a "deadlocked" chip.
+    const tags = Array.from(container.querySelectorAll(".chip")).map((t) => t.textContent ?? "");
     expect(tags.filter((t) => t.includes("deadlocked")).length).toBe(2);
   });
 
@@ -66,7 +66,7 @@ describe("Agents · Flow tab (#199/#220)", () => {
       `${TS}\tt0p0\tblocked\t#1`,
       `${TS}\tx\tmerged\t#1`, // #1 lands -> t0p0 is ready
     ]);
-    const { container, findByText } = render(<AgentsScreen />);
+    const { container, findByText } = render(<AgentsWorkspace />);
     openFlow(container);
 
     const wake = await findByText("Wake");
@@ -83,7 +83,7 @@ describe("Agents · Flow tab (#199/#220)", () => {
     useAppStore.setState({ workflowRuns: { "#42": run } });
     seedCoordLog([]);
 
-    const { container } = render(<AgentsScreen />);
+    const { container } = render(<AgentsWorkspace />);
     openFlow(container);
 
     await waitFor(() => {

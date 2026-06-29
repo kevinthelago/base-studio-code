@@ -5,7 +5,7 @@
 // + the planner channel). Reads/mutates the store `skills` + `skillGroups` slices; every enabled,
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Pane } from "@/shared/ui/Pane";
@@ -18,7 +18,7 @@ import {
   type SkillKind, type SkillSource, type SkillProfile,
 } from "@/shared/data/skills";
 import {
-  blankSkill, deriveSkillKpis, parseSkillsFile, skillSlug,
+  blankSkill, deriveSkillKpis, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
 } from "./lib/skills";
 import {
@@ -32,7 +32,7 @@ import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
@@ -54,7 +54,7 @@ const MODES: Array<{ k: Mode; label: string }> = [
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
-export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const skills = useAppStore((s) => s.skills);
   const addSkill = useAppStore((s) => s.addSkill);
   const updateSkill = useAppStore((s) => s.updateSkill);
@@ -62,7 +62,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const toggleSkill = useAppStore((s) => s.toggleSkill);
   const toggleSkillPin = useAppStore((s) => s.toggleSkillPin);
   const setSkillProjects = useAppStore((s) => s.setSkillProjects);
-  const upsertSkills = useAppStore((s) => s.upsertSkills);
   const githubToken = useAppStore((s) => s.githubToken);
   // Lessons (#1362) are per-project (plan.db); the queue scopes to the active project.
   const activeProjectName = useAppStore((s) => s.activeProjectName);
@@ -73,7 +72,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const toggleSkillGroupMember = useAppStore((s) => s.toggleSkillGroupMember);
 
   const { tabs: skillTabs, activeId, select, reorder, tearOff } = usePageTabs("skills", SKILL_TABS);
-  const mode: Mode = (sectionOverride ?? activeId) as Mode;
+  const mode: Mode = (pageOverride ?? activeId) as Mode;
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("Most invoked");
@@ -92,7 +91,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   });
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [projects, setProjects] = useState<GhProject[]>([]);
   useEffect(() => {
@@ -170,17 +168,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   // ── drawer ────────────────────────────────────────────────────────────────────
   const editing = drawer.selected;
   const isDraft = drawer.isDraft;
-  function importSkills(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      let normalized = text;
-      try { const parsed = JSON.parse(text); if (parsed && !Array.isArray(parsed)) normalized = JSON.stringify([parsed]); } catch { /* parseSkillsFile handles */ }
-      const defs = parseSkillsFile(normalized);
-      if (defs.length) upsertSkills(defs);
-    };
-    reader.readAsText(file);
-  }
 
   // ── shared row handlers (List + Grouped views) ──────────────────────────────────
   const rowHandlers: SkillRowHandlers = {
@@ -202,21 +189,14 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={skillTabs}
       active={mode}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
-      className="skills-screen"
-      right={mode === "library"
-        ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className="btn" onClick={() => fileRef.current?.click()}>import</button>
-            <button className="btn primary" onClick={drawer.startDraft}>+ skill</button>
-            <span className="sync">● github sync</span>
-          </div>
-        : <span className="sync">● github sync</span>}
+      pageOverride={pageOverride}
+      className="skills-workspace"
       overlay={
         <>
           {addGroupOpen && <NewGroupDialog onClose={() => setAddGroupOpen(false)} onCreate={(name) => { const id = addSkillGroup(name, GROUP_HUES[skillGroups.length % GROUP_HUES.length]); setGroupFilter(id); setAddGroupOpen(false); }} />}
@@ -231,8 +211,6 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
         </>
       }
     >
-      {/* Hidden import file input (the header "import" button triggers it). */}
-      <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importSkills(f); e.target.value = ""; }} />
 
 
       {mode === "library" && (
@@ -442,7 +420,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
         </div></section>
       )}
 
-    </TabbedScreen>
+    </Screen>
   );
 }
 

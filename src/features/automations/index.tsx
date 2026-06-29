@@ -4,8 +4,7 @@ import { SchedulesTab, ScheduleDrawer } from "./Schedules";
 import { HistoryTab } from "./History";
 import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "./HookAnalytics";
-import { fmtClock } from "./format";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useDraft } from "@/shared/hooks/useDraft";
 import type { TabItem } from "@/app/chrome/TabBar";
@@ -13,11 +12,11 @@ import type { RunStatus, Every, Automation } from "./lib/scheduler";
 import "./automations.css";
 
 /**
- * Automations screen (#142) — on the shared `<TabbedScreen>` shell (#1821) + the unified tab system
+ * Automations screen (#142) — on the shared `<Screen>` shell (#1821) + the unified tab system
  * (#463): tab order persists per page, the page opens whatever tab is first, tabs reorder, and each
- * can be torn off into its own window. `sectionOverride` renders a single section with no tab bar.
+ * can be torn off into its own window. `pageOverride` renders a single section with no tab bar.
  */
-export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const { automations, addAutomation, updateAutomation, tabs } = useAppStore();
   // Hooks live here (the MCP page is servers-only, #865 / #mcp-hooks-split) — event-triggered
   // automations alongside the time-triggered Schedules.
@@ -30,9 +29,6 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
 
   const armed = automations.filter(a => a.armed).length;
   const totalRuns = automations.reduce((n, a) => n + a.runs.length, 0);
-  const nextAt = automations
-    .filter(a => a.armed && a.nextRunAt != null)
-    .reduce<number | null>((min, a) => (min == null || a.nextRunAt! < min ? a.nextRunAt! : min), null);
 
   const defs: TabItem[] = useMemo(() => [
     { id: "schedules", label: "Schedules", count: automations.length, hint: `· ${armed} armed` },
@@ -42,7 +38,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
   ], [automations.length, armed, totalRuns, hookCount]);
 
   const { tabs: tabItems, activeId, select, reorder, tearOff } = usePageTabs("automations", defs);
-  const active = sectionOverride ?? activeId;
+  const active = pageOverride ?? activeId;
 
   function createAndSelect() {
     const id = addAutomation({
@@ -70,29 +66,21 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     : <SchedulesTab selectedId={drawer.selectedId} onSelect={drawer.select} onNew={createAndSelect} />;
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={tabItems}
       active={active}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
-      className="auto-screen"
+      pageOverride={pageOverride}
+      className="auto-workspace"
       bodyClassName="auto-body"
-      right={active === "schedules" ? (
-        <>
-          <span className="quick-stat">
-            <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
-          </span>
-          <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
-        </>
-      ) : undefined}
       overlay={active === "schedules"
         ? <ScheduleDrawer selected={drawer.selected} onClose={drawer.close} onViewAllHistory={viewAllHistory} />
         : undefined}
     >
       {body}
-    </TabbedScreen>
+    </Screen>
   );
 }
 

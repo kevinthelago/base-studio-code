@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { settingsBtn as btn } from "../screens/SettingsControls";
+import { settingsBtn as btn } from "../pages/SettingsControls";
 
 // TODO: Refactor this storage card into the fleet tab.
-// Currently removed from settings/PlannerScreen but kept intact for the future refactor.
+// Currently removed from settings/PlannerPage but kept intact for the future refactor.
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {

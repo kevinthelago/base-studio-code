@@ -17,7 +17,7 @@ export interface Tab {
   layout: string;
   state?: "run" | "on" | "idle";
   // Bumped when a tab's sessions are relaunched (e.g. triage re-run) so the panes
-  // remount with fresh PTYs. Woven into ConsoleScreen's pane key; transient.
+  // remount with fresh PTYs. Woven into ConsoleWorkspace's pane key; transient.
   runId?: number;
   // Stable project identity for fleet/triage tabs (#457): the sanitized projectKey
   // (a GitHub node id where possible). The reuse lookup matches on THIS, not the

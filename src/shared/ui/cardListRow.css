@@ -1,5 +1,5 @@
 /* CardListRow — the shared selectable card-list row (portable; not feature-scoped). The card-list
-   archetype of the row vocabulary (#1865; sibling: DataTableRow). Chrome was the ex-`.ext-screen .row`
+   archetype of the row vocabulary (#1865; sibling: DataTableRow). Chrome was the ex-`.ext-workspace .row`
    mcp.css rule; feature content (health dot, scope chips, toggle) keeps its own screen-scoped styling
    inside the slots. */
 .card-list-row {

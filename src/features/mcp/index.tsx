@@ -4,17 +4,19 @@ import { useMcpInstallStatus } from "./useMcpInstallStatus";
 import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "./lib/mcpCatalogView";
 import { useAppStore } from "@/store";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
+import { type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "./lib/mcpServers";
+import { mcpFromCatalog, type McpServer, type McpTransport } from "./lib/mcpServers";
 import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
-  useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
+  useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
 } from "./shared";
 import { Pane } from "@/shared/ui/Pane";
+import { Chip } from "@/shared/ui/Chip";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import "./mcp.css";
@@ -30,7 +32,7 @@ function mcpLabel(e: McpServer): string {
   return e.transport === "http" ? "mcp · http" : "mcp · stdio";
 }
 
-export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const mcpServers          = useAppStore(s => s.mcpServers);
   const addMcpServer        = useAppStore(s => s.addMcpServer);
   const updateMcpServer     = useAppStore(s => s.updateMcpServer);
@@ -40,10 +42,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   const githubToken         = useAppStore(s => s.githubToken);
   const bscBaseDir          = useAppStore(s => s.bscBaseDir);
 
-  const [scope, setScope] = useState<Scope>("global");
   const drawer = useDraft<McpServer>({ items: mcpServers, onUpdate: updateMcpServer });
   const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
 
   const projects = useGhProjects(githubToken);
 
@@ -60,7 +60,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     ];
   }, [mcpServers]);
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("mcp", tabDefs);
-  const tab = sectionOverride ?? activeId;
+  const tab = pageOverride ?? activeId;
   const selected = drawer.selected;
 
   /** Add a catalog item as an installed server, with `{dir}` resolved to its on-disk download
@@ -71,16 +71,11 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     if (openDrawer) drawer.select(id);
   }
 
-  function addCustom() {
-    drawer.select(addMcpServer(blankMcpServer()));
-    setAddOpen(false);
-  }
-
   // The version/update control on an installed downloadable server's row (#885).
   function updateControl(e: McpServer): React.ReactNode {
     if (!catalogLink(e.name)) return null;
     const s = mcpStatus[e.name];
-    if (s === "current") return <span className="tag green" title="at the latest release">up to date</span>;
+    if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
       return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
     if (s === undefined || s === "checking" || s === "downloading")
@@ -97,10 +92,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   // populated installed states.
   const builtInSection = builtInCatalog.length > 0 && (
     <>
-      <div className="sec-head">
-        <h3 style={{ color: "var(--fg-dim)" }}>Built-in tools</h3>
-        <span className="hint">always available — no install</span>
-      </div>
+      <SectionHeader title="Built-in tools" titleStyle={{ color: "var(--fg-dim)" }} hint="always available — no install" />
       <div className="catalog">
         {builtInCatalog.map(c => (
           <CatalogCard key={c.name} item={c} action={<span className="hint">built-in</span>} />
@@ -126,12 +118,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     return (
       <>
         <div>
-          <div className="sec-head">
-            <h3>MCP servers</h3>
-            <span className="hint">external processes over stdio or HTTP</span>
-            <div className="spacer" />
-            <span className="meta">{onCount}/{mcpServers.length} enabled</span>
-          </div>
+          <SectionHeader title="MCP servers" hint="external processes over stdio or HTTP" meta={<>{onCount}/{mcpServers.length} enabled</>} />
           <div className="row-list">
             {mcpServers.map(e => (
               <InstalledRow
@@ -160,12 +147,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     const items = filterCatalog(browsableCatalog(mcpServers), search);
     return (
       <>
-        <div className="sec-head">
-          <h3>Browse</h3>
-          <span className="hint">First-party and third-party MCP servers you can add with one click.</span>
-          <div className="spacer" />
-          <input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />
-        </div>
+        <SectionHeader title="Browse" hint="First-party and third-party MCP servers you can add with one click." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <div className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
@@ -190,47 +172,16 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     : tab === "catalog" ? catalogView()
     : installedView();
 
-  const summary = useMemo<React.ReactNode>(() => (
-    <>showing MCP servers <b style={{ color: "var(--fg-muted)" }}>{SCOPE_COPY[scope]}</b></>
-  ), [scope]);
-
   return (
-    <TabbedScreen
+    <Screen
       tabs={tabs}
       active={tab}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
-      className="ext-screen"
+      pageOverride={pageOverride}
+      className="ext-workspace"
       bodyClassName="ext-body"
-      right={
-              tab === "analytics" ? (
-                <span className="hint" style={{ fontFamily: "var(--mono)" }}>window · last 14 days</span>
-              ) : (
-                <>
-                  <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
-                  <SegmentedControl
-                    label="scope"
-                    options={(["global", "project"] as Scope[]).map(s => ({
-                      label: s.charAt(0).toUpperCase() + s.slice(1),
-                      on: scope === s,
-                      onClick: () => setScope(s),
-                    }))}
-                  />
-                  <div style={{ position: "relative" }}>
-                    <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add MCP server</button>
-                    {addOpen && (
-                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 10, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: 4, minWidth: 180, display: "flex", flexDirection: "column", gap: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-                        <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={addCustom}>Custom MCP server</button>
-                        <div style={{ borderTop: "1px solid var(--border-soft)", margin: "2px 0" }} />
-                        <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); select("catalog"); }}>Browse catalog…</button>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )
-            }
       overlay={
         <Pane
         open={!!selected}
@@ -240,7 +191,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled server"}</div>
-            <span className="tag info">{mcpLabel(selected)}</span>
+            <Chip tone="info">{mcpLabel(selected)}</Chip>
           </>
         )}
         body={selected && (
@@ -281,7 +232,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
       }
     >
       {body}
-    </TabbedScreen>
+    </Screen>
   );
 }
 
@@ -320,12 +271,7 @@ export function HooksView() {
     const onCount = hooks.filter(e => e.enabled).length;
     return (
       <div>
-        <div className="sec-head">
-          <h3>Hooks</h3>
-          <span className="hint">Claude Code lifecycle automations</span>
-          <div className="spacer" />
-          <span className="meta">{onCount}/{hooks.length} enabled</span>
-        </div>
+        <SectionHeader title="Hooks" hint="Claude Code lifecycle automations" meta={<>{onCount}/{hooks.length} enabled</>} />
         <div className="row-list">
           {hooks.length === 0 && (
             <div className="hint" style={{ padding: "8px 2px" }}>No hooks yet — add one from the catalog.</div>
@@ -356,12 +302,7 @@ export function HooksView() {
     const items = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : available;
     return (
       <>
-        <div className="sec-head">
-          <h3>Add from catalog</h3>
-          <span className="hint">First-party hooks.</span>
-          <div className="spacer" />
-          <input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />
-        </div>
+        <SectionHeader title="Add from catalog" hint="First-party hooks." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <div className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
@@ -375,7 +316,7 @@ export function HooksView() {
   }
 
   return (
-    <div className="ext-screen">
+    <div className="ext-workspace">
       <div className="ext-page">
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 22px 0" }}>
           <button className="btn ghost" onClick={addCustom}>+ Custom hook</button>
@@ -395,7 +336,7 @@ export function HooksView() {
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
             <div className="name">{selected.name || "Untitled hook"}</div>
-            <span className="tag green">{hookLabel(selected)}</span>
+            <Chip tone="success">{hookLabel(selected)}</Chip>
           </>
         )}
         body={selected && (

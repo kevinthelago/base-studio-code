@@ -2,7 +2,7 @@
 //
 // The fleet's live work-flow on the Agents screen: which sessions are parked on a
 // dependency and which work items are flowing through their workflow stages. Pure
-// summary + color helpers, split out of AgentsScreen so they're React-free + testable.
+// summary + color helpers, split out of AgentsWorkspace so they're React-free + testable.
 
 import type { BlockedView, Waiter } from "@/shared/lib/fleet/coordination";
 import type { WorkflowRun } from "@/shared/lib/fleet/conductor";

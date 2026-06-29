@@ -5,7 +5,7 @@
 // (no React / store / Tauri).
 
 export type Lifecycle = "greenfield" | "transform" | "harden" | "maintain";
-export type Surface = "ui" | "cli" | "api" | "service" | "library" | "data";
+export type Workspace = "ui" | "cli" | "api" | "service" | "library" | "data";
 export type ServiceTopology = "none" | "split" | "combine";
 export type DeployKind = "none" | "static" | "serverless" | "container" | "service";
 
@@ -14,7 +14,7 @@ export type DeployKind = "none" | "static" | "serverless" | "container" | "servi
 export interface ClassificationSignals {
   lifecycle: Lifecycle;
   /** ⊆ {ui, cli, api, service, library, data} — what the project exposes. */
-  surfaces: Surface[];
+  surfaces: Workspace[];
   provenance: "new" | "existing";
   migration: boolean;
   dataModel: boolean;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { BackButton } from "@/shared/ui/BackButton";
+import { Chip } from "@/shared/ui/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
@@ -203,7 +204,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
     setProjectsView, setPlanningContext, setPlanningSession, projectKeyAlias,
-    setScreen, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+    setWorkspace, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
     usePageTabs("github-board", GITHUB_BOARD_TABS,
@@ -220,7 +221,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
     // fallback keeps their existing title-keyed behavior. The node id stays in activeProjectId.
     setPlanningSession(projectKeyAlias[project.id] ?? project.name);
     // Planning lives on the Projects page; from the GitHub board, jump there.
-    setScreen("projects");
+    setWorkspace("projects");
     setProjectsView("planning");
   }
 
@@ -239,7 +240,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
             />
             <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
-            {project.repo && <span className="tag">{project.repo}</span>}
+            {project.repo && <Chip>{project.repo}</Chip>}
             {project.number > 0 && (
               <span style={{
                 padding: "1px 6px", borderRadius: 3,

@@ -1,6 +1,6 @@
-// Skills library view-mode renderers (#1706). Extracted from SkillsScreen.tsx: the shared skill
+// Skills library view-mode renderers (#1706). Extracted from SkillsWorkspace.tsx: the shared skill
 // row (List + Grouped), the card, and the three density views — List, Cards, Grouped/Kind. Pure
-// presentation driven by props; SkillsScreen owns the state + handlers and the surrounding chrome.
+// presentation driven by props; SkillsWorkspace owns the state + handlers and the surrounding chrome.
 
 import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/shared/data/skills";
 import { Spark } from "@/shared/ui/charts";

@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 
 export function IdleReaperCard() {
   const idleReaper = useAppStore((s) => s.idleReaper);

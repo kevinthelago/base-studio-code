@@ -1,4 +1,4 @@
-// Agents — Activity tab (#1643 split from AgentsScreen).
+// Agents — Activity tab (#1643 split from AgentsWorkspace).
 //
 // The per-pane tool-attempt feed (#257): summary cards, decision + console filters,
 // and the table of allow/ask/block rows. Row derivation + filtering + counts are pure

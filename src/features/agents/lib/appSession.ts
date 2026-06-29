@@ -1,7 +1,7 @@
 // Agents — application-role display helpers (#740).
 //
 // Pure label/glyph derivation for the always-present application-role sessions
-// (Project Planner, Planning Autopilot, …). Split out of AgentsScreen so the labels
+// (Project Planner, Planning Autopilot, …). Split out of AgentsWorkspace so the labels
 // are React-free + unit-testable. Data-driven: known roles get a tailored icon/label;
 // any future role derives one from its own fields.
 

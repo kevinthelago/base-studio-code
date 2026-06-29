@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
+import { Chip } from "@/shared/ui/Chip";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
@@ -88,7 +89,7 @@ export function TunnelSettings() {
   // until the desktop responds (#B-wan-viewonly). Cleared once input is granted/revoked.
   const [inputRequested, setInputRequested] = useState(false);
 
-  // Mirror the Rust client's running state into the store so ConsoleScreen knows
+  // Mirror the Rust client's running state into the store so ConsoleWorkspace knows
   // whether to push live pane metadata.
   const sync = useCallback((s: TunnelStatus) => {
     setStatus(s);
@@ -195,9 +196,9 @@ export function TunnelSettings() {
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", marginBottom: 14, gap: 12 }}>
           <h3 style={{ margin: 0 }}>Relay connection</h3>
-          <span className={"tag " + (running ? "green" : "")}>
+          <Chip tone={running ? "success" : "neutral"}>
             {running ? (clients > 0 ? `● paired · ${clients} device${clients === 1 ? "" : "s"}` : "● waiting for a device") : "○ disconnected"}
-          </span>
+          </Chip>
           <span style={{ flex: 1 }} />
           <button className="btn" disabled={busy || (!running && !canConnect)} onClick={onConnect}>
             {running ? "disconnect" : busy ? "connecting…" : "connect"}
@@ -299,9 +300,9 @@ export function TunnelSettings() {
               <div className="field">
                 <label>Input control</label>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className={"tag " + (inputGranted ? "green" : "")}>
+                  <Chip tone={inputGranted ? "success" : "neutral"}>
                     {inputGranted ? "● input granted" : "○ view-only"}
-                  </span>
+                  </Chip>
                   <span style={{ flex: 1 }} />
                   <button
                     className="btn"

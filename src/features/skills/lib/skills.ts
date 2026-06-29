@@ -238,7 +238,7 @@ export function applySessionSkillChoice(
 // ── Task groups (#skills-groups) ────────────────────────────────────────────────
 // A "task group" is a named, reusable bundle of skills (the redesign's ⬡). Many-to-many with
 // skills (a skill can belong to several groups), keyed by stable skill id. A group is the unit of
-// bulk toggling: toggle a group onto a session (manually, Surface B) or onto a fleet stream (the
+// bulk toggling: toggle a group onto a session (manually, Workspace B) or onto a fleet stream (the
 // planner) and every member skill is enabled at once. Groups are LIVE references — editing a
 // group's membership updates every session/stream that has it on, rather than freezing the set.
 

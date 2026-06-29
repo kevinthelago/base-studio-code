@@ -739,8 +739,8 @@ in the fleet plan (`bsc plan fleet set`). They become that worker's auto-approve
 `Bash(<cmd> *)` rules at launch, so it runs its own toolchain without a permission prompt.
 
 **Every worker is automatically granted this baseline — do NOT list any of these in a
-stream's `commands`** (the app pre-approves them at launch; mirrors `BASELINE_READONLY` /
-`BASELINE_BUILD` / `MANDATORY_BASH` in `console/settings.rs`):
+stream's `commands`** (the app pre-approves them at launch from the backend-owned
+`data/permissions/base.json`):
 - **Navigation / inspection / text** (every agent): `ls`, `cat`, `head`, `tail`, `grep`,
   `rg`, `find`, `fd`, `pwd`, `cd`, `echo`, `wc`, `sort`, `uniq`, `diff`, `tree`, `which`,
   `env`, `date`, `file`, `stat`, `basename`, `dirname`, `cut`, `sleep`, `printf`, `test`,
