@@ -58,12 +58,7 @@
 .agents-page .pd-sec .h h4 { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--fg); text-transform: uppercase; letter-spacing: .08em; }
 .agents-page .pd-sec .h .spacer { flex: 1; }
 
-.agents-page .seg { display: inline-flex; gap: 3px; padding: 3px; background: var(--bg-canvas); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
-.agents-page .seg button { height: 24px; padding: 0 14px; border: 1px solid transparent; background: transparent; color: var(--fg-muted); font-family: var(--mono); font-size: 10.5px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 6px; }
-.agents-page .seg button .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.agents-page .seg button.on[data-v="deny"] { color: var(--danger); border-color: color-mix(in oklch, var(--danger), transparent 60%); background: color-mix(in oklch, var(--danger), transparent 88%); }
-.agents-page .seg button.on[data-v="ask"] { color: var(--accent); border-color: var(--accent-dim); background: color-mix(in oklch, var(--accent), transparent 86%); }
-.agents-page .seg button.on[data-v="allow"] { color: var(--success); border-color: color-mix(in oklch, var(--success), transparent 60%); background: color-mix(in oklch, var(--success), transparent 88%); }
+/* (.seg moved to the shared <SegmentedControl size="md">, #1874) */
 
 .agents-page .cmd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .agents-page .cmd-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 9px; border-radius: 5px; background: var(--bg-canvas); border: 1px solid var(--border-soft); font-family: var(--mono); font-size: 11px; color: var(--fg); }
@@ -79,12 +74,7 @@
 .agents-page .tool-row:nth-child(even) { background: var(--bg-elev); }
 .agents-page .tool-row .tn { font-family: var(--mono); font-size: 11.5px; color: var(--fg); }
 .agents-page .tool-row .td { font-size: 10.5px; color: var(--fg-muted); }
-.agents-page .tri { display: inline-flex; gap: 0; border: 1px solid var(--border-soft); border-radius: 5px; overflow: hidden; }
-.agents-page .tri button { height: 22px; padding: 0 10px; border: 0; background: var(--bg-canvas); color: var(--fg-dim); font-family: var(--mono); font-size: 9.5px; cursor: pointer; border-left: 1px solid var(--border-soft); }
-.agents-page .tri button:first-child { border-left: 0; }
-.agents-page .tri button.on[data-v="deny"] { background: color-mix(in oklch, var(--danger), transparent 82%); color: var(--danger); }
-.agents-page .tri button.on[data-v="ask"] { background: color-mix(in oklch, var(--accent), transparent 82%); color: var(--accent); }
-.agents-page .tri button.on[data-v="allow"] { background: color-mix(in oklch, var(--success), transparent 82%); color: var(--success); }
+/* (.tri moved to the shared <SegmentedControl variant="joined">, #1874) */
 
 .agents-page .scope-list { display: flex; flex-direction: column; gap: 6px; }
 .agents-page .scope-line { display: flex; gap: 6px; align-items: center; }

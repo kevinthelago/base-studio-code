@@ -8,6 +8,7 @@
 import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { CardListRow } from "@/shared/ui/CardListRow";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
   type AgentProfile, type ConsoleSession, type Tier, type ToolKey,
@@ -134,13 +135,16 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
       {/* base policy */}
       <div className="pd-sec" style={lock}>
         <div className="h"><h4>Base policy</h4><span className="hint">applies to anything not listed below</span></div>
-        <div className="seg">
-          {(["deny", "ask", "allow"] as Tier[]).map((v) => (
-            <button key={v} data-v={v} className={p.mode === v ? "on" : ""} onClick={() => setMode(v)}>
-              <span className="d" />{v[0].toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          size="md"
+          options={(["deny", "ask", "allow"] as Tier[]).map((v) => ({
+            label: v[0].toUpperCase() + v.slice(1),
+            on: p.mode === v,
+            onClick: () => setMode(v),
+            tone: v,
+            dot: true,
+          }))}
+        />
       </div>
 
       {/* shell commands */}
@@ -176,11 +180,15 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
               <span className="tn">{t}</span>
               <span className="td">{d}</span>
               <span style={{ justifySelf: "end" }}>
-                <span className="tri">
-                  {(["deny", "ask", "allow"] as Tier[]).map((v) => (
-                    <button key={v} data-v={v} className={p.tools[t] === v ? "on" : ""} onClick={() => setTool(t, v)}>{v}</button>
-                  ))}
-                </span>
+                <SegmentedControl
+                  variant="joined"
+                  options={(["deny", "ask", "allow"] as Tier[]).map((v) => ({
+                    label: v,
+                    on: p.tools[t] === v,
+                    onClick: () => setTool(t, v),
+                    tone: v,
+                  }))}
+                />
               </span>
             </div>
           ))}
