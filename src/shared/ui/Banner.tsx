@@ -16,6 +16,8 @@ export interface BannerProps {
   right?: ReactNode;
   /** Renders a trailing dismiss ✕; invoked on click. */
   onDismiss?: () => void;
+  /** ARIA role — e.g. "alert" / "status" for announced banners. */
+  role?: string;
   children: ReactNode;
   className?: string;
   style?: CSSProperties;
@@ -26,14 +28,14 @@ export interface BannerProps {
  *  `variant="bar"` makes it a full-width top-of-app/screen banner. Replaces the per-feature inline
  *  callouts, the `Notice` status box (`dot`/`loud`/`right`), AND the hand-rolled app banners. */
 export function Banner({
-  tone = "neutral", variant = "inline", lead, dot, loud, right, onDismiss, children, className, style,
+  tone = "neutral", variant = "inline", lead, dot, loud, right, onDismiss, role, children, className, style,
 }: BannerProps) {
   const cls = `banner tone-${tone}`
     + (variant === "bar" ? " bar" : "")
     + (loud ? " loud" : "")
     + (className ? ` ${className}` : "");
   return (
-    <div className={cls} style={style}>
+    <div className={cls} role={role} style={style}>
       {dot && <span className="banner-dot" />}
       {lead}
       {children}

@@ -22,9 +22,7 @@ import { AutomationsStatus } from "@/features/automations/AutomationsStatus";
 import { SkillsStatus } from "@/features/skills/SkillsStatus";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import { SuperUserAchievement } from "@/app/SuperUserAchievement";
-import { CrashRecoveryBanner } from "@/app/CrashRecoveryBanner";
-import { SessionRecoveryBanner } from "@/app/SessionRecoveryBanner";
-import { QuarantineBanner } from "@/app/QuarantineBanner";
+import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import { openDetachedTab, detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
@@ -405,9 +403,7 @@ export default function App() {
     <div className="app">
       <SuperUserAchievement />
       <Titlebar workspace={titleWorkspace} />
-      <CrashRecoveryBanner />
-      <SessionRecoveryBanner />
-      <QuarantineBanner />
+      <AppBanners />
       <div className="shell">
         <Rail active={activeWorkspace} onNavigate={setWorkspace} />
         <div className="main">

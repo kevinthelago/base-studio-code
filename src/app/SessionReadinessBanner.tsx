@@ -1,4 +1,4 @@
-// Dismissible amber banner for non-critical PTY readiness warnings (#564).
+// Dismissible warn banner for non-critical PTY readiness warnings (#564).
 //
 // Renders below the pane chrome when `gh`/`gh auth` checks fail — the agent
 // shell still works, but GitHub integration is degraded. Each warning gets its
@@ -6,7 +6,7 @@
 // acknowledged it.
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
-import { IconButton } from "@/shared/ui/IconButton";
+import { Banner } from "@/shared/ui/Banner";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];
@@ -23,24 +23,14 @@ export function SessionReadinessBanner({
   if (warnings.length === 0) return null;
 
   return (
-    <div
+    <Banner
+      variant="bar"
+      tone="warn"
+      loud
       role="alert"
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        padding: "6px 10px",
-        fontSize: 12,
-        lineHeight: 1.4,
-        color: "#e5c07b",
-        background: "#3a2f1a",
-        borderBottom: "1px solid #5a4a28",
-        flexShrink: 0,
-      }}
+      onDismiss={onDismiss}
+      lead={<span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>}
     >
-      <span style={{ fontWeight: 600, whiteSpace: "nowrap", marginTop: 1 }}>
-        ⚠ GitHub
-      </span>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
         {warnings.map((w) => (
           <span key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -49,33 +39,22 @@ export function SessionReadinessBanner({
               <button
                 onClick={onSignInGitHub}
                 style={{
-                  background: "transparent",
-                  border: "1px solid #e5c07b",
-                  color: "#e5c07b",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  padding: "1px 6px",
-                  borderRadius: 3,
-                  lineHeight: 1.4,
+                  background: "transparent", border: "1px solid currentColor", color: "currentColor",
+                  cursor: "pointer", fontSize: 11, padding: "1px 6px", borderRadius: 3, lineHeight: 1.4,
                 }}
               >
                 Sign in →
               </button>
             )}
             {w.installUrl && w.id !== "gh-auth" && (
-              <a
-                href={w.installUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: "#e5c07b", fontSize: 11, textDecoration: "underline" }}
-              >
+              <a href={w.installUrl} target="_blank" rel="noreferrer"
+                style={{ color: "currentColor", fontSize: 11, textDecoration: "underline" }}>
                 Install →
               </a>
             )}
           </span>
         ))}
       </div>
-      <IconButton aria-label="Dismiss GitHub warning" onClick={onDismiss} style={{ color: "#e5c07b", flexShrink: 0 }} />
-    </div>
+    </Banner>
   );
 }
