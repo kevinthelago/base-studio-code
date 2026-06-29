@@ -55,7 +55,7 @@ that block is the canonical index of the backend's command surface.
 | [`sources/`](../src-tauri/src/sources/) | Migration data sources / the "Source pane" | `data/` (dir-module split #1661 — `data/data_csv.rs`: CSV ingest; `data/data_scan.rs`: platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
 | [`extensions/`](../src-tauri/src/extensions/) | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `skill_store.rs` (the `skill_store_*`/`skill_group_*` commands over `crates/skilldb`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) |
 | [`observability/`](../src-tauri/src/observability/) | Logs, metrics, accounting | `logs.rs` (managed log streams + caps, and the readers for the app-wide `bsc-*` TSVs — audit/skill/hook/mcp/coord, #1689), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens/` (dir-module #1659 — `tokens/cost.rs`: `read_token_usage`, delegating pricing to `crates/logs`; `tokens/activity.rs` · `tokens/messages.rs`). The worktree-changes/commits/branch audit moved to `fleet/inspect.rs` (#1667). |
-| [`mobile/`](../src-tauri/src/mobile/) | The paired mobile companion | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands + wire protocol), `tunnel/protocol.rs` (serde wire types — matches mobile's `types.ts`), `tunnel/noise.rs` (Noise IK handshake), `tunnel/transport.rs` (relay dial-out + pump) |
+| [`mobile/`](../src-tauri/src/mobile/) | The paired mobile companion (desktop glue) | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands; re-exports the wire protocol + Noise from the `bsc-tunnel` crate), `tunnel/state.rs` (the in-process bus + FCM worker), `tunnel/transport.rs` (relay dial-out + pump), `tunnel/commands.rs`. The Tauri-free wire types + Noise crypto live in [`crates/bsc-tunnel`](../crates/bsc-tunnel/) (#1919). |
 | [`tests.rs`](../src-tauri/src/tests.rs) / `testutil.rs` | Cross-cutting integration tests + the shared test harness (`temp_home`, `ENV_LOCK`, `write_file`) | — |
 
 ---
@@ -81,6 +81,7 @@ of these crates and exposes thin command wrappers over them.
 | [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc-blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). Shared by the desktop's `project/blueprints.rs` and the session-side `bsc-blueprint` CLI. |
 | [`bsc-project`](../crates/bsc-project/) | `bsc_project` | **`bsc-project`** | Project-hub enumeration store: `bsc-project list` (every local hub) and `bsc-project published` (a hub's `.published` marker), so a live session can introspect the project set. |
 | [`mcp-rpc`](../crates/mcp-rpc/) | `mcp_rpc` | — | The shared stdio JSON-RPC scaffold the bundled MCP servers (`research`, `compliance`) build on. |
+| [`bsc-tunnel`](../crates/bsc-tunnel/) | `bsc_tunnel` | — | The mobile-tunnel wire contract (serde types matching mobile's `types.ts`) + Noise IK crypto — Tauri-free, shared with mobile-studio-code (#1919). |
 | [`bsc-util`](../crates/bsc-util/) · [`bsc-sqlite-util`](../crates/bsc-sqlite-util/) · [`bsc-cli-util`](../crates/bsc-cli-util/) | `bsc_util` · `bsc_sqlite_util` · `bsc_cli_util` | — | Shared internal libraries (no bins): base-dir/path helpers, the common `rusqlite` open/migrate helpers, and the shared CLI arg-parsing used across the `bsc-*` binaries. |
 | [`bsc-agent`](../crates/bsc-agent/) | — | **`bsc-agent`** | The model-agnostic agent *runtime* (epic #1078, P2): a lean tokio binary over the `llm` crate. The alternative harness to Claude Code, selected per-console by provider id; runs the agent loop + tools (incl. a `webfetch` on a dedicated thread). |
 
@@ -163,7 +164,7 @@ cwd-keyed `--continue` history) stays stable.
 
 Both peers dial *out* to a Cloudflare relay (`relay/`); the relay forwards only opaque
 `{ room, ciphertext }`. The payload is an end-to-end **Noise IK** session
-(`Noise_IK_25519_ChaChaPoly_BLAKE2s`, [`noise.rs`](../src-tauri/src/mobile/tunnel/noise.rs)) — the
+(`Noise_IK_25519_ChaChaPoly_BLAKE2s`, [`noise.rs`](../crates/bsc-tunnel/src/noise.rs)) — the
 desktop is the **responder** with a long-lived static keypair; the mobile is the **initiator** and
 learns the desktop's static public key from the **QR**. `TunnelState`
 ([`mod.rs`](../src-tauri/src/mobile/tunnel/mod.rs)) is the in-process bus that tees PTY output, holds
