@@ -4,7 +4,6 @@ import { SchedulesTab, ScheduleDrawer } from "./Schedules";
 import { HistoryTab } from "./History";
 import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "./HookAnalytics";
-import { fmtClock } from "./format";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useDraft } from "@/shared/hooks/useDraft";
@@ -30,9 +29,6 @@ export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string }
 
   const armed = automations.filter(a => a.armed).length;
   const totalRuns = automations.reduce((n, a) => n + a.runs.length, 0);
-  const nextAt = automations
-    .filter(a => a.armed && a.nextRunAt != null)
-    .reduce<number | null>((min, a) => (min == null || a.nextRunAt! < min ? a.nextRunAt! : min), null);
 
   const defs: TabItem[] = useMemo(() => [
     { id: "schedules", label: "Schedules", count: automations.length, hint: `· ${armed} armed` },
@@ -79,14 +75,6 @@ export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string }
       pageOverride={pageOverride}
       className="auto-workspace"
       bodyClassName="auto-body"
-      right={active === "schedules" ? (
-        <>
-          <span className="quick-stat">
-            <i style={{ background: armed > 0 ? "var(--success)" : "var(--fg-dim)" }} /> next run <b>{fmtClock(nextAt)}</b>
-          </span>
-          <button className="btn primary" onClick={createAndSelect}>+ New schedule</button>
-        </>
-      ) : undefined}
       overlay={active === "schedules"
         ? <ScheduleDrawer selected={drawer.selected} onClose={drawer.close} onViewAllHistory={viewAllHistory} />
         : undefined}

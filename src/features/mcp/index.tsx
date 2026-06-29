@@ -7,12 +7,12 @@ import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
+import { type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "./lib/mcpServers";
+import { mcpFromCatalog, type McpServer, type McpTransport } from "./lib/mcpServers";
 import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
-  useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
+  useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
 } from "./shared";
 import { Pane } from "@/shared/ui/Pane";
 import { Chip } from "@/shared/ui/Chip";
@@ -42,10 +42,8 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const githubToken         = useAppStore(s => s.githubToken);
   const bscBaseDir          = useAppStore(s => s.bscBaseDir);
 
-  const [scope, setScope] = useState<Scope>("global");
   const drawer = useDraft<McpServer>({ items: mcpServers, onUpdate: updateMcpServer });
   const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
 
   const projects = useGhProjects(githubToken);
 
@@ -71,11 +69,6 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     const def = resolveMcpInstallDir(mcpFromCatalog(item.name), item.name, bscBaseDir);
     const id = addMcpServer(def);
     if (openDrawer) drawer.select(id);
-  }
-
-  function addCustom() {
-    drawer.select(addMcpServer(blankMcpServer()));
-    setAddOpen(false);
   }
 
   // The version/update control on an installed downloadable server's row (#885).
@@ -179,10 +172,6 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     : tab === "catalog" ? catalogView()
     : installedView();
 
-  const summary = useMemo<React.ReactNode>(() => (
-    <>showing MCP servers <b style={{ color: "var(--fg-muted)" }}>{SCOPE_COPY[scope]}</b></>
-  ), [scope]);
-
   return (
     <Screen
       tabs={tabs}
@@ -193,33 +182,6 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
       pageOverride={pageOverride}
       className="ext-workspace"
       bodyClassName="ext-body"
-      right={
-              tab === "analytics" ? (
-                <span className="hint" style={{ fontFamily: "var(--mono)" }}>window · last 14 days</span>
-              ) : (
-                <>
-                  <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
-                  <SegmentedControl
-                    label="scope"
-                    options={(["global", "project"] as Scope[]).map(s => ({
-                      label: s.charAt(0).toUpperCase() + s.slice(1),
-                      on: scope === s,
-                      onClick: () => setScope(s),
-                    }))}
-                  />
-                  <div style={{ position: "relative" }}>
-                    <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add MCP server</button>
-                    {addOpen && (
-                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 10, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: 4, minWidth: 180, display: "flex", flexDirection: "column", gap: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-                        <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={addCustom}>Custom MCP server</button>
-                        <div style={{ borderTop: "1px solid var(--border-soft)", margin: "2px 0" }} />
-                        <button className="btn ghost" style={{ justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); select("catalog"); }}>Browse catalog…</button>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )
-            }
       overlay={
         <Pane
         open={!!selected}

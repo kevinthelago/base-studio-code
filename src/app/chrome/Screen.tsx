@@ -12,8 +12,6 @@ export interface ScreenProps {
   onTearOff: (id: string) => void;
   /** Torn-off detached-page mode: render only the active body, with no page-tab bar. */
   pageOverride?: string;
-  /** Toolbar content on the right of the page-tab bar. */
-  right?: ReactNode;
   /** Extra class on the root — a workspace scoping hook (e.g. `"ext-workspace"`) so the workspace's own
    *  scoped CSS keeps applying on top of the shared `.screen` layout. */
   className?: string;
@@ -38,7 +36,7 @@ export interface ScreenProps {
  * shows one **Page** at a time; the page-tab strip is **PageTabs**. See `docs/frontend-structure.md`.
  */
 export function Screen({
-  tabs, active, onSelect, onReorder, onTearOff, pageOverride, right, className, bodyClassName, children, overlay,
+  tabs, active, onSelect, onReorder, onTearOff, pageOverride, className, bodyClassName, children, overlay,
 }: ScreenProps) {
   return (
     <div className={className ? `screen ${className}` : "screen"}>
@@ -50,7 +48,6 @@ export function Screen({
             onSelect={onSelect}
             onReorder={onReorder}
             onTearOff={onTearOff}
-            right={right}
           />
         )}
         <div className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>
