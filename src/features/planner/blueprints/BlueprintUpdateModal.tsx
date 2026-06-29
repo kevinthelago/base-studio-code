@@ -1,5 +1,5 @@
-import { Dialog } from "@/shared/ui/Dialog";
-import { BackButton } from "@/shared/ui/BackButton";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
+import { BackButton } from "@/shared/ui/controls/BackButton";
 
 /**
  * Shown when a project is opened whose blueprint / planner-template version differs from the one

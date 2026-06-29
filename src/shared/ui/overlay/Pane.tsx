@@ -8,7 +8,7 @@
 // every editor shares (cancel/done while drafting, remove/done for an existing item). Pairs with
 // the `useDraft` hook for the selection/draft state.
 import { type ReactNode } from "react";
-import { IconButton } from "@/shared/ui/IconButton";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 import "./pane.css";
 
 export interface PaneProps {

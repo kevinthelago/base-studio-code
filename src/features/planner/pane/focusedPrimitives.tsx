@@ -3,7 +3,7 @@
 // they read. No state, no effects.
 import type { Posture, Perm, Flow, Agent } from "./projectPaneData";
 import "./projectPane.css";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }

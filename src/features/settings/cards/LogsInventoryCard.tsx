@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ConfirmButton } from "@/shared/ui/ConfirmButton";
+import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { Card } from "@/shared/ui/Card";
-import { Button } from "@/shared/ui/Button";
+import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
 
 interface LogFileInfo {
   stream: string; label: string; path: string;

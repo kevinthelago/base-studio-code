@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FillBar } from "@/shared/ui/FillBar";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
 import { StatCard, StackedDayBars } from "@/shared/ui/charts";

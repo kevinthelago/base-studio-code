@@ -101,7 +101,7 @@ base-studio-code/
 │   ├── shared/              # feature-agnostic; no feature imports it
 │   │   ├── lib/             #   core (log/perf/llm), session, fleet, security, cleanup
 │   │   ├── hooks/  ·  data/ #   shared hooks · typed sample data (mock.ts)
-│   │   └── ui/              #   Dialog/ModalScrim, BackButton, IconButton, StatusDot, Chip, Toggle, icons, charts
+│   │   └── ui/              #   shared primitives, grouped (#1902): controls/ overlay/ feedback/ data/ layout/ charts/ + icons.tsx
 │   ├── styles/tokens.css    # design tokens + base component styles
 │   └── store/               # Zustand store COMPOSITION
 │       ├── index.ts         #   create() composes feature slices + persist

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { BackButton } from "@/shared/ui/BackButton";
-import { Chip } from "@/shared/ui/Chip";
+import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Chip } from "@/shared/ui/data/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";

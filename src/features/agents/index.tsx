@@ -12,7 +12,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { usePromptDialog, useConfirmDialog } from "@/shared/ui/promptDialog";
+import { usePromptDialog, useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "./lib/agentProfiles";
 import { deriveConsoles } from "./lib/consoleModel";
 import {

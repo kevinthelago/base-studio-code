@@ -1,4 +1,4 @@
-import type { ChipTone } from "@/shared/ui/Chip";
+import type { ChipTone } from "@/shared/ui/data/Chip";
 
 /** Map a profile's base-policy mode to a Chip tone (was `.mode-badge.{deny,ask,allow}`). */
 export function modeTone(mode: string): ChipTone {

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Avatar } from "@/shared/ui/Avatar";
+import { Avatar } from "@/shared/ui/data/Avatar";
 import { timeAgo } from "@/shared/lib/core/format";
 
 /** One row of the activity feed — the normalized shape shared by the github cross-repo feed and the

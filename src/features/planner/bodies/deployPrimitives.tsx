@@ -3,7 +3,7 @@
 // inline style objects (prop/chip). Their signatures deliberately differ from the cross-body
 // primitives in bodyPrimitives.tsx (e.g. this Card is numbered/done-aware) and so are NOT merged.
 
-import { Toggle as Switch } from "@/shared/ui/Toggle";
+import { Toggle as Switch } from "@/shared/ui/controls/Toggle";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 export const prop: React.CSSProperties = { fontFamily: MONO, fontSize: 9, color: "var(--accent)" };

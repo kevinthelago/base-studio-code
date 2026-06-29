@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { Chip } from "@/shared/ui/Chip";
-import { Card } from "@/shared/ui/Card";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Chip } from "@/shared/ui/data/Chip";
+import { Card } from "@/shared/ui/data/Card";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {

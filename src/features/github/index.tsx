@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";

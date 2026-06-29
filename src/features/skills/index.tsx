@@ -6,11 +6,11 @@
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
 import { useState, useEffect, useMemo } from "react";
-import { Banner } from "@/shared/ui/Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { Pane } from "@/shared/ui/Pane";
-import { EmptyState } from "@/shared/ui/EmptyState";
+import { Pane } from "@/shared/ui/overlay/Pane";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
@@ -30,9 +30,9 @@ import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/s
 import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
-import { Toggle } from "@/shared/ui/Toggle";
-import { Checkbox } from "@/shared/ui/Checkbox";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl";
+import { Toggle } from "@/shared/ui/controls/Toggle";
+import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";

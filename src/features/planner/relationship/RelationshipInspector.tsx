@@ -4,7 +4,7 @@
 // Agent Relationships - Swimlanes · inspector().
 
 import type { ReactNode } from "react";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import {
   EDGE_KIND_META, ARTIFACT_COLOR, ROLE_COLOR, DIRECTOR_COLOR, hardLabel, runtimeNote,
   type RelationshipGraph, type RelFocus,

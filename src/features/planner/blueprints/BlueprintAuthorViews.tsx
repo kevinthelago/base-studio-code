@@ -9,8 +9,8 @@ import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Sparkles } from "lucide-react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
-import { IconButton } from "@/shared/ui/IconButton";
-import { Chip } from "@/shared/ui/Chip";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Chip } from "@/shared/ui/data/Chip";
 import {
   hue, tint, stageKind, STAGE_KIND_KEYS, DISPOSITIONS, DISPOSITION_KEYS,
 } from "./blueprintCatalog";

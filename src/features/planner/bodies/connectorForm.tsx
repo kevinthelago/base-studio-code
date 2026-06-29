@@ -15,7 +15,7 @@ import {
   type DeclaredSource, type SpecField, type SourceStatus,
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 
 export const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",

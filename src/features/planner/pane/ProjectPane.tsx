@@ -3,7 +3,7 @@
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
 // so the planning workflow is one focused phase at a time.
 import { useState, useEffect } from "react";
-import { Pane } from "@/shared/ui/Pane";
+import { Pane } from "@/shared/ui/overlay/Pane";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";

@@ -1,7 +1,7 @@
 import { useAppStore } from "@/store";
-import { EmptyState } from "@/shared/ui/EmptyState";
-import { Chip } from "@/shared/ui/Chip";
-import { SectionLabel } from "@/shared/ui/SectionLabel";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Chip } from "@/shared/ui/data/Chip";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 
 /**
  * GitHub-not-connected state for the Projects page — the leaner of the two

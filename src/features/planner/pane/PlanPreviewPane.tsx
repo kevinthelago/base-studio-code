@@ -5,7 +5,7 @@
 // the real triggers (the planner's <ui_preview> tag + a watch on .ui-skeleton/).
 
 import { useState, useCallback } from "react";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
