@@ -16,10 +16,10 @@ interface FilesViewProps {
 
 export function FilesView({ small = false, cwd, tree, active }: FilesViewProps) {
   return (
-    <div style={{
+    <div className="mono" style={{
       flex: 1, minHeight: 0, overflow: "auto",
       padding: small ? "6px 4px" : "8px 6px",
-      fontFamily: "var(--mono)", fontSize: small ? 10 : 11, color: "var(--fg-muted)",
+      fontSize: small ? 10 : 11, color: "var(--fg-muted)",
     }}>
       <div style={{
         padding: "2px 8px 6px", color: "var(--fg-dim)", fontSize: small ? 9.5 : 10,

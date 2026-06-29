@@ -15,7 +15,7 @@ export function ContributorsCard({ contributors, loading }: {
         <span className="hint">{loading ? "loading…" : contributors.length > 0 ? `${contributors.length} contributors · all repos` : "no data"}</span>
       </div>
       {contributors.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>
           No contributor data yet — GitHub is computing stats.
         </div>
       )}
@@ -23,11 +23,11 @@ export function ContributorsCard({ contributors, loading }: {
         {contributors.map(p => (
           <div key={p.login} style={{ display: "grid", gridTemplateColumns: "22px 1fr 1fr 80px", gap: 10, alignItems: "center" }}>
             <Avatar login={p.login} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>@{p.login}</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>@{p.login}</span>
             <div style={{ height: 5, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
               <div style={{ width: `${p.commits / maxC * 100}%`, height: "100%", background: "var(--accent)" }} />
             </div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textAlign: "right" }}>{p.commits} commits</span>
+            <span className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", textAlign: "right" }}>{p.commits} commits</span>
           </div>
         ))}
       </div>

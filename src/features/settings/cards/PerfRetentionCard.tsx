@@ -72,10 +72,10 @@ export function PerfRetentionCard() {
               onConfirm={clearHistory}
             />
             {clearStatus === "ok" && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)" }}>Cleared</span>
+              <span className="mono" style={{ fontSize: 11, color: "var(--accent)" }}>Cleared</span>
             )}
             {clearStatus === "err" && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)" }}>Failed</span>
+              <span className="mono" style={{ fontSize: 11, color: "var(--danger)" }}>Failed</span>
             )}
           </div>
         </Row>

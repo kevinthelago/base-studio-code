@@ -25,11 +25,12 @@ export function ThemeCard() {
         {(["dark", "light"] as const).map((t) => (
           <button
             key={t}
+            className="mono"
             aria-pressed={theme === t}
             onClick={() => setTheme(t)}
             style={{
               padding: "6px 18px", borderRadius: 6, cursor: "pointer",
-              fontFamily: "var(--mono)", fontSize: 11.5,
+              fontSize: 11.5,
               background: theme === t ? "var(--accent)" : "var(--bg-elev)",
               color: theme === t ? "#fff" : "var(--fg-muted)",
               border: "1px solid " + (theme === t ? "transparent" : "var(--border-soft)"),

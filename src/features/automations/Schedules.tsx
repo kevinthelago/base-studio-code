@@ -12,7 +12,7 @@ const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 function runsTable(runs: Automation["runs"]) {
   if (runs.length === 0) {
     return (
-      <div style={{ padding: 14, textAlign: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11, border: "1px dashed var(--border)", borderRadius: 6 }}>
+      <div className="mono" style={{ padding: 14, textAlign: "center", color: "var(--fg-dim)", fontSize: 11, border: "1px dashed var(--border)", borderRadius: 6 }}>
         no runs yet
       </div>
     );
@@ -118,7 +118,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
         <>
           <input className="name-input" value={sel.name} onChange={e => updateAutomation(sel.id, { name: e.target.value })} />
           <span className={"toggle" + (sel.armed ? " on" : "")} title="armed" onClick={() => setAutomationArmed(sel.id, !sel.armed)} />
-          <span style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11 }}>{sel.armed ? "armed" : "disarmed"}</span>
+          <span className="mono" style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)", fontSize: 11 }}>{sel.armed ? "armed" : "disarmed"}</span>
         </>
       )}
       body={sel && (
@@ -134,7 +134,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                 ]}
               />
               {sel.when.kind === "simple" ? (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
                   <span>every</span>
                   <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
                     {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
@@ -149,7 +149,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                   )}
                 </div>
               ) : (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
                   <span>cron</span>
                   <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
                     onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
@@ -207,7 +207,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
             <div className="es-lbl muted">history</div>
             <div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
+                <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
                 <span style={{ flex: 1 }} />
                 {sel.runs.length > 0 && <button className="btn ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</button>}
               </div>

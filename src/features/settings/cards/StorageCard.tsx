@@ -63,14 +63,14 @@ export function StorageCard() {
         <div style={{ fontFamily: "var(--sans)", fontSize: 16, color: "var(--fg)", marginBottom: 6 }}>Storage</div>
         <div style={{ fontFamily: "var(--sans)", fontSize: 11.5, lineHeight: 1.5, color: "var(--fg-muted)" }}>
           Each fleet agent builds in its own git worktree, and every worktree accumulates its own{" "}
-          <code style={{ fontFamily: "var(--mono)" }}>target/</code> (build artifacts) — which Cargo never garbage-collects.
+          <code className="mono">target/</code> (build artifacts) — which Cargo never garbage-collects.
           Worktrees are removed automatically when a project is deleted; reclaim them here at any time to free disk space.
           Reclaiming removes a worktree's checkout and its build artifacts (the agent's committed work is on its branch and is preserved).
         </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>
           {rows.length} worktree{rows.length === 1 ? "" : "s"} · {fmtBytes(grandTotal)} total
         </span>
         <span style={{ flex: 1 }} />
@@ -78,7 +78,7 @@ export function StorageCard() {
       </div>
 
       {projects.length === 0 ? (
-        <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-dim)" }}>
+        <div className="mono" style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontSize: 11.5, color: "var(--fg-dim)" }}>
           No fleet worktrees on disk.
         </div>
       ) : (
@@ -87,7 +87,7 @@ export function StorageCard() {
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{p.key}</div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
                   {p.list.length} worktree{p.list.length === 1 ? "" : "s"} · {fmtBytes(p.total)} ({fmtBytes(p.targetTotal)} in target/)
                 </div>
               </div>
@@ -96,9 +96,9 @@ export function StorageCard() {
             {p.list.map((w) => (
               <div key={w.path} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>{w.name}</div>
+                  <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{w.name}</div>
                 </div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
+                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
                   {fmtBytes(w.sizeBytes)}{w.targetBytes > 0 ? ` · ${fmtBytes(w.targetBytes)} target/` : ""}
                 </div>
               </div>
@@ -108,11 +108,11 @@ export function StorageCard() {
       )}
 
       {notice && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", marginTop: 4, wordBreak: "break-all" }}>{notice}</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, wordBreak: "break-all" }}>{notice}</div>
       )}
 
       <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-dim)", marginTop: 12 }}>
-        Worktrees live under <code style={{ fontFamily: "var(--mono)" }}>~/.base-studio-code/worktrees/</code>.
+        Worktrees live under <code className="mono">~/.base-studio-code/worktrees/</code>.
       </div>
     </div>
   );

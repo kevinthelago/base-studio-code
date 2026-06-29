@@ -15,7 +15,7 @@ export const AgentsWorkspace      = lazy(() => import("@/features/agents").then(
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {
   return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
+    <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
       loading…
     </div>
   );

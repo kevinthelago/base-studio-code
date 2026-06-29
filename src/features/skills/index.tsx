@@ -222,13 +222,13 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <button onClick={() => setDigestOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
                 <span style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none", fontSize: 9 }}>▸</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</span>
+                <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</span>
               </button>
-              <span><b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{kpis.total}</b> skills</span>
-              <span><b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{merged.filter((s) => s.enabled).length}</b> enabled</span>
-              <span style={{ color: "var(--accent)" }}>★ <b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{kpis.pinned}</b></span>
-              <span><b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{invToday}</b> today</span>
-              <span><b style={{ fontFamily: "var(--mono)", color: "var(--success)" }}>{kpis.invWeek ? kpis.avgSuccess + "%" : "—"}</b> avg success</span>
+              <span><b className="mono" style={{ color: "var(--fg)" }}>{kpis.total}</b> skills</span>
+              <span><b className="mono" style={{ color: "var(--fg)" }}>{merged.filter((s) => s.enabled).length}</b> enabled</span>
+              <span style={{ color: "var(--accent)" }}>★ <b className="mono" style={{ color: "var(--fg)" }}>{kpis.pinned}</b></span>
+              <span><b className="mono" style={{ color: "var(--fg)" }}>{invToday}</b> today</span>
+              <span><b className="mono" style={{ color: "var(--success)" }}>{kpis.invWeek ? kpis.avgSuccess + "%" : "—"}</b> avg success</span>
             </div>
             {digestOpen && (
               <div className="skills-digest" style={{ display: "flex", gap: 14, padding: "0 18px 14px 18px", alignItems: "stretch" }}>
@@ -238,13 +238,13 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   { label: "Never run", value: String(neverRun), sub: "candidates to prune" },
                 ].map((t) => (
                   <div key={t.label} style={{ flex: "0 0 auto", width: 150, padding: "11px 13px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
-                    <div style={{ fontSize: 10, color: "var(--fg-dim)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: ".06em" }}>{t.label}</div>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, color: "var(--fg)", marginTop: 5 }}>{t.value}</div>
+                    <div className="mono-label">{t.label}</div>
+                    <div className="mono" style={{ fontSize: 20, fontWeight: 600, color: "var(--fg)", marginTop: 5 }}>{t.value}</div>
                     <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 2 }}>{t.sub}</div>
                   </div>
                 ))}
                 <div className="skills-leaderboard" style={{ flex: 1, padding: "10px 14px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
-                  <div style={{ fontSize: 10, color: "var(--fg-dim)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</div>
                   {leaders.length === 0 ? (
                     <div style={{ fontSize: 11, color: "var(--fg-dim)" }}>No invocations yet — run the fleet to populate the leaderboard.</div>
                   ) : (
@@ -254,7 +254,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                         value: s.invocations,
                         color: KIND[s.kind].color,
                         strong: true,
-                        tag: <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: successColor(s.success) }}>{s.success}%</span>,
+                        tag: <span className="mono" style={{ fontSize: 10, color: successColor(s.success) }}>{s.success}%</span>,
                       }))}
                       fmtV={(v) => fmtCount(v) + "×"}
                     />
@@ -270,10 +270,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
               <span style={{ color: "var(--fg-dim)", fontSize: 13 }}>⌕</span>
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
             </div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{filtered.length} <span style={{ color: "var(--fg-dim)" }}>of {kpis.total}</span></span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{filtered.length} <span style={{ color: "var(--fg-dim)" }}>of {kpis.total}</span></span>
             <span style={{ flex: 1 }} />
             <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 10, color: "var(--fg-dim)", fontFamily: "var(--mono)", textTransform: "uppercase" }}>Sort</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase" }}>Sort</span>
               <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <span style={{ color: "var(--fg-dim)", fontSize: 9 }}>▾</span></button>
               {sortOpen && (
                 <div style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
@@ -296,7 +296,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
               {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
               <div style={{ marginBottom: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Groups</span>
+                  <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Groups</span>
                   <span style={{ flex: 1 }} />
                   <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
                 </div>
@@ -305,7 +305,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   <span style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)", fontSize: 11 }}>≡</span>
                   <span style={{ fontSize: 12, color: !groupFilter ? "var(--fg)" : "var(--fg-muted)", fontWeight: !groupFilter ? 600 : 400 }}>All</span>
                   <span style={{ flex: 1 }} />
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{merged.length}</span>
+                  <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{merged.length}</span>
                 </div>
                 {skillGroups.map((g) => { const active = groupFilter === g.id; return (
                   <div key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
@@ -313,21 +313,21 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                     <span style={{ fontSize: 12, color: active ? g.hue : "var(--fg)", fontWeight: active ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
                     {active && <span title="Delete group" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ color: "var(--danger)", fontSize: 11, cursor: "pointer" }}>✕</span>}
                     <span style={{ flex: 1 }} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{groupSkillCount(g, skills)}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{groupSkillCount(g, skills)}</span>
                   </div>
                 ); })}
                 {skillGroups.length === 0 && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</div>}
               </div>
               {facetDefs.map((f) => (
                 <div key={f.key} style={{ marginBottom: 18 }}>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>{f.title}</div>
+                  <div className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>{f.title}</div>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
                     <div key={o.value} onClick={() => toggleFacet(f.key, o.value)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
                       <Checkbox checked={on} />
-                      {o.glyph && <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</span>}
+                      {o.glyph && <span className="mono" style={{ fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</span>}
                       <span style={{ fontSize: 12, color: "var(--fg)", textTransform: "capitalize" }}>{o.label}</span>
                       <span style={{ flex: 1 }} />
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{o.count}</span>
+                      <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{o.count}</span>
                     </div>
                   ); })}
                 </div>
@@ -339,7 +339,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <div style={{ flex: 1, minWidth: 0, overflowY: "auto", paddingBottom: 60 }}>
               {selectMode && (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 18px", padding: "9px 13px", background: tintBg("var(--accent)", 90), border: "1px solid var(--accent-dim)", borderRadius: "var(--r-lg)", flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>{selected.size} selected</span>
+                  <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>{selected.size} selected</span>
                   <span onClick={selectAllMatching} style={{ fontSize: 11, color: "var(--fg-muted)", textDecoration: "underline", cursor: "pointer" }}>Select all {filtered.length} matching</span>
                   <span style={{ flex: 1 }} />
                   <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.enabled) toggleSkill(id); })}>Enable</button>
@@ -399,21 +399,21 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
       {mode === "runs" && (
         <section className="an-page"><div className="an-wrap">
-          <h2 style={{ margin: "0 0 4px", fontFamily: "var(--mono)", fontSize: 18 }}>Runs</h2>
+          <h2 className="mono" style={{ margin: "0 0 4px", fontSize: 18 }}>Runs</h2>
           <div style={{ color: "var(--fg-muted)", fontSize: 12, marginBottom: 14 }}>Live skill invocations from the usage log · last 7 days</div>
           {runRows.length === 0 ? (
             <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
           ) : (
             <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, padding: "8px 12px", background: "var(--bg-panel)", fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
+              <div className="mono" style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, padding: "8px 12px", background: "var(--bg-panel)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
                 <span>skill</span><span style={{ textAlign: "right" }}>invocations</span><span style={{ textAlign: "right" }}>today</span><span style={{ textAlign: "right" }}>success</span><span style={{ textAlign: "right" }}>7-day</span>
               </div>
               {runRows.map((s, i) => { const sc = successColor(s.success); const today = stats[skillSlug(s.name)]?.today ?? 0; return (
                 <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, alignItems: "center", padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); drawer.select(s.id); }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ color: KIND[s.kind].color }}>{KIND[s.kind].glyph}</span><span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span></span>
-                  <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}</span>
-                  <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{today}</span>
-                  <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: sc }}>{s.success}%</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ color: KIND[s.kind].color }}>{KIND[s.kind].glyph}</span><span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span></span>
+                  <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}</span>
+                  <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg-muted)" }}>{today}</span>
+                  <span className="mono" style={{ textAlign: "right", fontSize: 11, color: sc }}>{s.success}%</span>
                   <span style={{ display: "flex", justifyContent: "flex-end" }}>{s.trend.length > 1 ? <Spark data={s.trend} color={KIND[s.kind].color} /> : <span className="hint">—</span>}</span>
                 </div>
               ); })}

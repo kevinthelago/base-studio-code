@@ -24,8 +24,8 @@ export function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
           meta={s.desc || undefined}
           highlight={s.isNew}
           badge={s.isNew && (
-            <span style={{
-              fontFamily: "var(--mono)", fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
+            <span className="mono" style={{
+              fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
               color: "var(--accent-text)", background: "var(--accent)", borderRadius: 4, padding: "1px 5px",
             }}>NEW</span>
           )}

@@ -61,14 +61,14 @@ export function LogsInventoryCard({
           <div key={f.stream} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{f.label}</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
                 {f.exists ? `${fmtBytes(f.sizeBytes)} · ${fmtAgo(f.mtimeMs)}` : "not created yet"}
               </div>
             </div>
             {f.text && <Button size="sm" style={selectedStream === f.stream ? { borderColor: "var(--accent)" } : undefined} onClick={() => onViewStream(f.stream)}>View</Button>}
             {f.exists && <Button size="sm" onClick={() => void exportStream(f.stream)}>Export</Button>}
             {f.stream === "perf"
-              ? <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
+              ? <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
               : <ConfirmButton size="sm" label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
           </div>
         ))}

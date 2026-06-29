@@ -71,7 +71,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
       variant="grouped"
       lead={<span className="pdot running" />}
       title={appSessionTag(p)}
-      subtitle={<span style={{ fontFamily: "var(--mono)" }}>{p.session}</span>}
+      subtitle={<span className="mono">{p.session}</span>}
       titleAside={
         <div className="prof-select" onClick={() => onOpen(p.id)}>
           <span className="sw" style={{ background: p.color }} />
@@ -104,7 +104,7 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
             <span className="cn">system</span>
             <span className="repo">workspace-wide</span>
             <span className="spacer" />
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>launched at startup · not reassignable</span>
+            <span className="hint mono">launched at startup · not reassignable</span>
           </div>
           {roles.map((p) => <AppSessionRow key={p.id} p={p} onOpen={onOpen} />)}
         </div>
@@ -120,7 +120,7 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
                 <span className="cn">{c.name}</span>
                 <span className="repo">{c.repo}</span>
                 <span className="spacer" />
-                <span className="hint" style={{ fontFamily: "var(--mono)" }}>
+                <span className="hint mono">
                   project allow: {(c.projectAllow || []).join(", ") || "—"}{c.repoAllow ? ` · repo: ${c.repoAllow.join(", ")}` : ""}
                 </span>
               </div>
@@ -133,7 +133,7 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
                     variant="grouped"
                     lead={<span className={`pdot ${pane.status}`} />}
                     title={pane.agent}
-                    subtitle={<span style={{ fontFamily: "var(--mono)" }}>{pane.id}</span>}
+                    subtitle={<span className="mono">{pane.id}</span>}
                     titleAside={<ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />}
                     body={
                       <div className="resolved">

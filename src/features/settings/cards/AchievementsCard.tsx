@@ -11,12 +11,12 @@ export function AchievementsCard() {
   return (
     <div style={{ maxWidth: 640 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <h2 style={{ fontFamily: "var(--mono)", fontSize: 16, margin: 0, color: "var(--fg)" }}>Achievements</h2>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+        <h2 className="mono" style={{ fontSize: 16, margin: 0, color: "var(--fg)" }}>Achievements</h2>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>
           {unlockedCount}/{ACHIEVEMENTS.length} unlocked
         </span>
       </div>
-      <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", margin: "0 0 18px" }}>
+      <p className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", margin: "0 0 18px" }}>
         Milestones you have earned. Each unlocks once and is kept across restarts.
       </p>
 
@@ -44,14 +44,14 @@ export function AchievementsCard() {
                 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)" }}>
+                <div className="mono" style={{ fontSize: 13, color: "var(--fg)" }}>
                   {a.title}{!unlocked && <span style={{ color: "var(--fg-dim)", fontSize: 11 }}> · locked</span>}
                 </div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)", marginTop: 2 }}>
+                <div className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2 }}>
                   {a.description}
                 </div>
                 {unlocked && (
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)", marginTop: 4 }}>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--accent)", marginTop: 4 }}>
                     Unlocked {new Date(at).toLocaleDateString()}
                   </div>
                 )}

@@ -115,9 +115,9 @@ export function Seg({ options, value, onChange, tiny }: {
   options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
 }) {
   return (
-    <span style={{
+    <span className="mono" style={{
       display: "inline-flex", border: "1px solid var(--border-soft)",
-      borderRadius: 5, overflow: "hidden", fontFamily: "var(--mono)",
+      borderRadius: 5, overflow: "hidden",
       fontSize: tiny ? 9 : 9.5,
     }}>
       {options.map((o, i) => {

@@ -40,9 +40,9 @@ export function StageScreenFrame({
       display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", background: "var(--bg-panel)",
     }}>
       {!bare && (
-        <div style={{
+        <div className="mono" style={{
           padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
-          display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
+          display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg-muted)",
         }}>
           <span style={{ color: "var(--accent)" }}>▸ {label}</span>
           {badge}

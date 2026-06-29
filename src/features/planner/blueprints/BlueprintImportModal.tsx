@@ -73,7 +73,8 @@ function GistPreview({ entry }: { entry?: PreviewEntry }) {
       <StageSummary sections={sections} />
       <button
         onClick={() => setRaw((r) => !r)}
-        style={{ marginTop: 9, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5 }}
+        className="mono"
+        style={{ marginTop: 9, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--fg-dim)", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5 }}
       ><FileJson size={11} />{raw ? "hide" : "view"} raw JSON</button>
       {raw && (
         <pre style={{ marginTop: 7, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10, lineHeight: 1.5, whiteSpace: "pre" }}>
@@ -182,13 +183,13 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)",
           }}><Download size={16} /></span>
           <div style={{ minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
+            <h2 className="mono" style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
             <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>your published blueprint gists</div>
           </div>
           <span style={{ flex: 1 }} />
-          <span style={{
+          <span className="mono" style={{
             display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 10px", borderRadius: 99,
-            fontFamily: "var(--mono)", fontSize: 10, border: "1px solid var(--border-soft)", background: "var(--bg-elev)", color: "var(--fg-muted)",
+            fontSize: 10, border: "1px solid var(--border-soft)", background: "var(--bg-elev)", color: "var(--fg-muted)",
           }}><Cloud size={11} />gist source · <b style={{ color: "var(--fg)", fontWeight: 600 }}>{source}</b></span>
           <IconButton onClick={load} title="Refresh list" aria-label="Refresh list"><RefreshCw size={14} /></IconButton>
           <Button onClick={onManualImport} title="Import by URL or ID"><Link2 size={13} />URL / ID</Button>
@@ -202,10 +203,11 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             <input
               value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="search blueprints by name, description, owner…"
-              style={{ height: 30, width: "100%", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 11, padding: "0 10px 0 30px", outline: "none" }}
+              className="mono"
+              style={{ height: 30, width: "100%", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", color: "var(--fg)", fontSize: 11, padding: "0 10px 0 30px", outline: "none" }}
             />
           </div>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>{resultLabel}</span>
+          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>{resultLabel}</span>
         </div>
 
         {/* body */}
@@ -213,9 +215,10 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           {importError && (
             <div
               role="alert"
+              className="mono"
               style={{
                 display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 11, padding: "10px 12px",
-                borderRadius: "var(--r-md)", fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.5,
+                borderRadius: "var(--r-md)", fontSize: 11, lineHeight: 1.5,
                 color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)",
                 border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
               }}
@@ -241,7 +244,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                   <div style={{ width: 78, height: 24, borderRadius: "var(--r-md)", background: "var(--bg-elev)" }} />
                 </div>
               ))}
-              <div style={{ textAlign: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div className="mono" style={{ textAlign: "center", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                 <Loader2 size={13} style={spin} />fetching {source}'s blueprint gists…
               </div>
             </>
@@ -270,17 +273,17 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                       animation: "bim-row .26s ease", animationDelay: `${i * 0.035}s`,
                     }}
                   >
-                    <div style={{
+                    <div className="mono" style={{
                       width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
-                      fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13, background: tint(h, 0.16), color: hue(h),
+                      fontWeight: 700, fontSize: 13, background: tint(h, 0.16), color: hue(h),
                     }}>{it.name[0]?.toUpperCase() ?? "B"}</div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                      <div className="mono" style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
                         {!busy && imported && !stale && <span style={pill("var(--success)")}>imported</span>}
                         {!busy && stale && <span style={pill("var(--accent)")}>update available</span>}
                       </div>
-                      <div style={{ fontSize: 10.5, color: "var(--fg-dim)", fontFamily: "var(--mono)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         gist.github.com/{it.owner}/{it.id.slice(0, 7)}{it.updatedAt && ` · updated ${timeAgo(it.updatedAt)}`}
                       </div>
                       {it.description && <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.description.replace(/^blueprint:\s*/i, "")}</div>}
@@ -290,18 +293,19 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                         onClick={() => togglePreview(it)}
                         aria-expanded={expanded}
                         title="Preview the blueprint's contents before importing"
-                        style={{ height: 26, padding: "0 10px", borderRadius: "var(--r-md)", background: expanded ? "var(--bg-elev2)" : "transparent", border: "1px solid var(--border-soft)", color: expanded ? "var(--fg)" : "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
+                        className="mono"
+                        style={{ height: 26, padding: "0 10px", borderRadius: "var(--r-md)", background: expanded ? "var(--bg-elev2)" : "transparent", border: "1px solid var(--border-soft)", color: expanded ? "var(--fg)" : "var(--fg-muted)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
                       ><Eye size={13} />Preview</button>
                       {busy ? (
-                        <button disabled style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.85 }}>
+                        <button disabled className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.85 }}>
                           <Loader2 size={12} style={spin} />importing…
                         </button>
                       ) : imported && !stale ? (
-                        <button disabled title="Already in your library — up to date" style={{ height: 26, padding: "0 11px", borderRadius: "var(--r-md)", background: "transparent", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)", color: "var(--success)", fontFamily: "var(--mono)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <button disabled title="Already in your library — up to date" className="mono" style={{ height: 26, padding: "0 11px", borderRadius: "var(--r-md)", background: "transparent", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)", color: "var(--success)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <Check size={13} />Imported
                         </button>
                       ) : stale ? (
-                        <button onClick={() => void doImport(it)} title="Upstream has newer changes — pull the update" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontFamily: "var(--mono)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <button onClick={() => void doImport(it)} title="Upstream has newer changes — pull the update" className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <ArrowUpCircle size={13} />Update
                         </button>
                       ) : (
@@ -316,7 +320,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 );
               })}
               {rows.length === 0 && (
-                <div style={{ textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "30px 0" }}>No blueprints match “{query}”.</div>
+                <div className="mono" style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)", padding: "30px 0" }}>No blueprints match “{query}”.</div>
               )}
             </>
           )}
@@ -325,7 +329,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-dim)" }}><Inbox size={22} /></div>
               <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>No blueprint gists yet</div>
+                <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>No blueprint gists yet</div>
                 <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 380 }}>
                   <b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.
                 </div>
@@ -338,7 +342,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)", color: "var(--danger)" }}><AlertTriangle size={22} /></div>
               <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>Couldn't reach GitHub</div>
+                <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>Couldn't reach GitHub</div>
                 <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 400 }}>
                   The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry.
                 </div>
@@ -352,7 +356,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
         </div>
 
         {/* footer */}
-        <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+        <div className="mono" style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontSize: 10, color: "var(--fg-dim)" }}>
           <span>importing pulls the gist into your library &amp; links it upstream</span>
           <span style={{ flex: 1 }} />
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -363,11 +367,11 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
 
       {/* toast */}
       {toast && (
-        <div className="above-modal" style={{
+        <div className="above-modal mono" style={{
           position: "fixed", left: "50%", bottom: 40, transform: "translateX(-50%)",
           display: "flex", alignItems: "center", gap: 9, padding: "9px 15px", background: "var(--bg-elev2)",
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
-          fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
+          fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
         }}>
           <StatusDot size={7} color="var(--success)" />{toast}
         </div>

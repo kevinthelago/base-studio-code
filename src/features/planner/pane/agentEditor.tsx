@@ -25,7 +25,7 @@ export function AgentEditor({ a, onFlow, onModel }: {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
               onChange={(v) => { const m = v === "default" ? undefined : tierToModelId(v); setModel(m); onModel(a.id, m); }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+            <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
               {model ? `claude --model ${modelTier(model)}` : "uses the global default"}
             </span>
           </div>
@@ -36,20 +36,20 @@ export function AgentEditor({ a, onFlow, onModel }: {
         <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
+            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
             <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}
               onChange={(v) => { const next = { ...flow, autonomy: v }; setFlow(next); onFlow?.(a.id, next); }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
+            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
             <Seg options={["auto-PR", "push-confirm", "commit-only", "none"]} value={flow.push}
               onChange={(v) => { const next = { ...flow, push: v }; setFlow(next); onFlow?.(a.id, next); }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: "0 0 64px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
+            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
             <Seg options={["soft", "hard"]} value={flow.gate}
               onChange={(v) => { const next = { ...flow, gate: v }; setFlow(next); onFlow?.(a.id, next); }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+            <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
               {flow.gate === "hard" ? "blocks on violation" : "warns, continues"}
             </span>
           </div>
@@ -79,9 +79,9 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
   const running = agents.filter((a) => a.status === "run").length;
   return (
     <div style={{ padding: "4px 0" }}>
-      <div style={{
+      <div className="mono" style={{
         display: "flex", alignItems: "center", gap: 8, padding: "0 2px 8px",
-        fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
+        fontSize: 9.5, color: "var(--fg-dim)",
       }}>
         <span>{agents.length} agents · {running} running</span>
         <span style={{ flex: 1 }} />
@@ -106,13 +106,13 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
                     <RoleChip role={a.role} mute />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                     <PostureBar perm={a.perm} />
-                    <span style={{
-                      fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
+                    <span className="mono" style={{
+                      fontSize: 9, color: "var(--fg-dim)",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>
                       {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
@@ -120,17 +120,17 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
+                  <span className="mono" style={{ fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
                   <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
                 </div>
               </div>
 
               {on && (
                 <>
-                  <div style={{
+                  <div className="mono" style={{
                     display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
                     padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
-                    fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)",
+                    fontSize: 9.5, color: "var(--fg-muted)",
                   }}>
                     <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
                     <span style={{ color: "var(--fg-dim)" }}>·</span>

@@ -49,7 +49,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
         </select>
         <div className="spacer" />
-        <span className="hint" style={{ fontFamily: "var(--mono)" }}>per the configured policy</span>
+        <span className="hint mono">per the configured policy</span>
       </div>
 
       <div className="act-table">
@@ -57,7 +57,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           <span>time</span><span>console › pane</span><span>profile</span><span>command / action</span><span>decision</span>
         </div>
         {shown.length === 0 && (
-          <div style={{ padding: "18px 14px", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-dim)" }}>
+          <div className="mono" style={{ padding: "18px 14px", fontSize: 11.5, color: "var(--fg-dim)" }}>
             No activity yet. Tool attempts are logged once a pane has a profile or role assigned.
           </div>
         )}

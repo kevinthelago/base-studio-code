@@ -35,10 +35,10 @@ export function ActivityFeed({ items, hint, loading, tone, right, actionWidth = 
         {right != null && <><div style={{ flex: 1 }} />{right}</>}
       </div>
       {items.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No recent activity.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No recent activity.</div>
       )}
       {loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>Loading…</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>Loading…</div>
       )}
       {items.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
@@ -50,10 +50,10 @@ export function ActivityFeed({ items, hint, loading, tone, right, actionWidth = 
               gap: 10, alignItems: "center", fontSize: 11,
             }}>
               <Avatar login={e.login} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: tone[e.action] ?? "var(--fg-muted)" }}>{e.action}</span>
+              <span className="mono" style={{ fontSize: 10.5, color: tone[e.action] ?? "var(--fg-muted)" }}>{e.action}</span>
               <span style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.target}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{e.repo}</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{timeAgo(e.createdAt)}</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{e.repo}</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{timeAgo(e.createdAt)}</span>
             </div>
           ))}
         </div>

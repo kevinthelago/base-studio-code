@@ -45,7 +45,7 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
 
   if (rows.length === 0) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
+      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
         No runs yet — armed automations record their runs here.
       </div>
     );

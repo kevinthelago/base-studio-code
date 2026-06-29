@@ -79,9 +79,9 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     const s = mcpStatus[e.name];
     if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
-      return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
+      return <span className="hint mono" style={{ fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
     if (s === undefined || s === "checking" || s === "downloading")
-      return <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>checking…</span>;
+      return <span className="hint mono" style={{ fontSize: 10 }}>checking…</span>;
     const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
     return (
       <button className="btn ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}

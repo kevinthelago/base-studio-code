@@ -21,9 +21,9 @@ const GH_STATUS_GLYPH: Record<GhItemStatus, { icon: string; color: string }> = {
 function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
   const g = GH_STATUS_GLYPH[state.status];
   return (
-    <div style={{
+    <div className="mono" style={{
       display: "flex", alignItems: "baseline", gap: 8,
-      fontFamily: "var(--mono)", fontSize: 10.5,
+      fontSize: 10.5,
       opacity: state.status === "planned" ? 0.6 : 1,
     }}>
       <span style={{ width: 11, textAlign: "center", flexShrink: 0, color: g.color }}>{g.icon}</span>
@@ -49,16 +49,16 @@ function GhGroup({ title, count, nodes, status, empty }: {
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <div style={{
+      <div className="mono" style={{
         display: "flex", alignItems: "center", gap: 6,
-        fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase",
+        fontSize: 9.5, textTransform: "uppercase",
         letterSpacing: ".06em", color: "var(--fg-muted)",
       }}>
         <span>{title}</span>
         {count !== undefined && <span style={{ color: "var(--fg-dim)" }}>{count}</span>}
       </div>
       {nodes.length === 0
-        ? <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>{empty}</div>
+        ? <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>{empty}</div>
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: 8 }}>
             {nodes.map(n => (
@@ -76,16 +76,16 @@ function GhGroup({ title, count, nodes, status, empty }: {
 function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatusMap }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <div style={{
+      <div className="mono" style={{
         display: "flex", alignItems: "center", gap: 6,
-        fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase",
+        fontSize: 9.5, textTransform: "uppercase",
         letterSpacing: ".06em", color: "var(--fg-muted)",
       }}>
         <span>Repositories</span>
         <span style={{ color: "var(--fg-dim)" }}>{repos.length}</span>
       </div>
       {repos.length === 0
-        ? <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>
+        ? <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>
             none linked — ask Claude to create or link repositories
           </div>
         : (
@@ -122,9 +122,9 @@ export function GitHubStructureCard({ structure, status }: { structure: GhStruct
       display: "flex", flexDirection: "column", gap: 12,
       flexShrink: 0,
     }}>
-      <div style={{
+      <div className="mono" style={{
         color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
-        fontFamily: "var(--mono)", fontSize: 10,
+        fontSize: 10,
       }}>
         github structure
       </div>

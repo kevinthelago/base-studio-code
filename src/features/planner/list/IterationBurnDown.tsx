@@ -15,7 +15,7 @@ function BurnCard({ hint, badge, children }: {
         <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
         <span className="hint">{hint}</span>
         <div style={{ flex: 1 }} />
-        {badge && <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
+        {badge && <span className="mono" style={{ fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
       </div>
       {children}
     </div>
@@ -23,7 +23,7 @@ function BurnCard({ hint, badge, children }: {
 }
 
 const burnNote = (text: string): ReactNode => (
-  <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "12px 0" }}>{text}</div>
+  <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "12px 0" }}>{text}</div>
 );
 
 export function IterationBurnDown({ data, loading }: { data: BurndownResult | null; loading: boolean }) {

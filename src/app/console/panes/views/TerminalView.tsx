@@ -731,9 +731,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         />
       )}
       {permsStale && (
-        <div style={{
+        <div className="mono" style={{
           display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
-          fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)",
+          fontSize: 11, color: "var(--accent)",
           background: "color-mix(in oklch, var(--accent), transparent 90%)",
           borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
         }}>

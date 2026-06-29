@@ -16,7 +16,7 @@ function ConnectFlowCard() {
 
   return (
     <Card>
-      <h3 style={{ margin: "0 0 10px", fontFamily: "var(--mono)", fontSize: 14 }}>Connect GitHub account</h3>
+      <h3 className="mono" style={{ margin: "0 0 10px", fontSize: 14 }}>Connect GitHub account</h3>
 
       {clientId ? (
         device ? (
@@ -27,8 +27,8 @@ function ConnectFlowCard() {
             <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
               In the browser tab that just opened, enter this code to authorize:
             </p>
-            <div style={{
-              fontFamily: "var(--mono)", fontSize: 26, fontWeight: 700, letterSpacing: ".18em",
+            <div className="mono" style={{
+              fontSize: 26, fontWeight: 700, letterSpacing: ".18em",
               textAlign: "center", color: "var(--accent)", padding: "10px 0",
               userSelect: "all",
             }}>
@@ -37,7 +37,7 @@ function ConnectFlowCard() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
               <span className="hint" style={{ flex: 1 }}>
                 Waiting for authorization at{" "}
-                <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
+                <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
                   {device.verification_uri.replace(/^https?:\/\//, "")}
                 </span>
                 …
@@ -63,9 +63,9 @@ function ConnectFlowCard() {
             >
               {deviceBusy ? "Starting…" : "Connect with GitHub"}
             </button>
-            <div style={{
+            <div className="mono" style={{
               display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px",
-              color: "var(--fg-dim)", fontSize: 10.5, fontFamily: "var(--mono)",
+              color: "var(--fg-dim)", fontSize: 10.5,
             }}>
               <div style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
               or use a token
@@ -77,7 +77,7 @@ function ConnectFlowCard() {
 
       <p style={{ margin: "0 0 16px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
         Create a <b>Personal Access Token</b> at{" "}
-        <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
+        <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
           github.com/settings/tokens
         </span>{" "}
         with <Chip style={{ fontSize: 10 }}>repo</Chip>{" "}
@@ -108,10 +108,10 @@ function ConnectFlowCard() {
       </div>
 
       {error && (
-        <div style={{
+        <div className="mono" style={{
           marginTop: 10, padding: "8px 12px", borderRadius: 6,
           background: "var(--bg-elev)", border: "1px solid var(--danger)",
-          color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11,
+          color: "var(--danger)", fontSize: 11,
         }}>
           {error}
         </div>
@@ -136,18 +136,18 @@ export function ConnectGithubCard() {
 
   return (
     <Card style={{ display: "flex", alignItems: "center", gap: 16 }}>
-      <div style={{
+      <div className="mono" style={{
         width: 44, height: 44, borderRadius: "50%",
         background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "var(--mono)", fontSize: 18, color: "var(--fg)",
+        fontSize: 18, color: "var(--fg)",
         flexShrink: 0,
       }}>
         {(githubUser.name ?? githubUser.login).charAt(0).toUpperCase()}
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <b style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
+          <b className="mono" style={{ fontSize: 13 }}>
             {githubUser.name ? `${githubUser.name} (${githubUser.login})` : githubUser.login}
           </b>
           <Chip tone="success"><StatusDot style={{ marginRight: 4 }} />connected</Chip>
@@ -156,7 +156,7 @@ export function ConnectGithubCard() {
         <div className="hint" style={{ marginTop: 3 }}>
           {githubRepos.length} {githubRepos.length === 1 ? "repo" : "repos"} accessible
           {githubToken && (
-            <> · token: <span style={{ fontFamily: "var(--mono)", letterSpacing: ".04em" }}>
+            <> · token: <span className="mono" style={{ letterSpacing: ".04em" }}>
               {githubToken.slice(0, 7)}••••••••
             </span></>
           )}

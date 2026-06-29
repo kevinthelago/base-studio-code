@@ -156,11 +156,11 @@ const PaneAt = memo(function PaneAt({
 
 function DisabledConsole({ onEnable }: { onEnable: () => void }) {
   return (
-    <div style={{
+    <div className="mono" style={{
       flex: 1, display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", gap: 12,
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
-      fontFamily: "var(--mono)", fontSize: 11,
+      fontSize: 11,
     }}>
       <span>console disabled · session stopped</span>
       <button className="btn" onClick={onEnable}>enable</button>
@@ -178,10 +178,10 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
     : info.state === "blocked" ? { color: "var(--danger)", label: "■ blocked / failed" }
     : { color: "var(--accent)", label: "▲ stopped early" };
   return (
-    <div style={{
+    <div className="mono" style={{
       flex: 1, display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", gap: 10, padding: 16, textAlign: "center",
-      background: "var(--bg-canvas)", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11,
+      background: "var(--bg-canvas)", color: "var(--fg-dim)", fontSize: 11,
     }}>
       <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
       <span style={{ color: "var(--fg-muted)", maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</span>
@@ -196,11 +196,11 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
  *  conversation), so reaping is non-destructive. */
 function DormantConsole({ onResume }: { onResume: () => void }) {
   return (
-    <div style={{
+    <div className="mono" style={{
       flex: 1, display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", gap: 12,
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
-      fontFamily: "var(--mono)", fontSize: 11,
+      fontSize: 11,
     }}>
       <span>session dormant · reaped after idle to free memory</span>
       <button className="btn" onClick={onResume}>resume</button>
@@ -440,11 +440,11 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
-        <div style={{
+        <div className="mono" style={{
           padding: "3px 14px",
           background: "color-mix(in oklch, var(--accent), transparent 82%)",
           borderBottom: "1px solid var(--accent-dim)",
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)",
+          fontSize: 10, color: "var(--accent)",
           display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
         }}>
           <span>⟳ broadcast · input mirrors to all panes</span>

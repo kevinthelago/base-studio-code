@@ -34,8 +34,8 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
       <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
         <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <span className="mh-ico" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13, background: iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)", color: iconColor ?? "var(--accent)" }}>{icon}</span>
-            <div><h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
+            <span className="mh-ico mono" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, background: iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)", color: iconColor ?? "var(--accent)" }}>{icon}</span>
+            <div><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
             <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
           </div>
           <div className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</div>
@@ -65,7 +65,7 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
             {/* The prompt is the substance of the stage (#1268) — dense text under the row, the
                 icon as its index. pre-wrap keeps the prompt's own line breaks. */}
             {s.prompt?.trim() && (
-              <div style={{ marginLeft: 25, fontFamily: "var(--mono)", fontSize: 10, lineHeight: 1.5, color: "var(--fg-dim)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <div className="mono" style={{ marginLeft: 25, fontSize: 10, lineHeight: 1.5, color: "var(--fg-dim)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {s.prompt.trim()}
               </div>
             )}
@@ -102,7 +102,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
       {phase === "preview" && preview ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <span className="bp-icon" style={{ width: 30, height: 30, flex: "0 0 30px", fontSize: 14, background: tint(preview.h, 0.16), color: hue(preview.h), display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, fontFamily: "var(--mono)", fontWeight: 700 }}>{preview.icon}</span>
+            <span className="bp-icon mono" style={{ width: 30, height: 30, flex: "0 0 30px", fontSize: 14, background: tint(preview.h, 0.16), color: hue(preview.h), display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, fontWeight: 700 }}>{preview.icon}</span>
             <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{preview.name}</div><div className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</div></div>
             <span style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
           </div>
@@ -110,11 +110,11 @@ export function ImportModal({ onClose, onResolve, onImport }: {
         </>
       ) : (
         <div className="field">
-          <label style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Gist URL or ID</label>
+          <label className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Gist URL or ID</label>
           <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
             value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
           <div className="hint" style={{ marginTop: 6 }}>Paste a full URL or the raw gist ID.</div>
-          {phase === "error" && <div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</div>}
+          {phase === "error" && <div className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</div>}
         </div>
       )}
     </Modal>

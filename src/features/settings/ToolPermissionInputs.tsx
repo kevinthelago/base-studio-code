@@ -15,11 +15,11 @@ export function ToolChip({
   label, onRemove,
 }: { label: string; onRemove: () => void }) {
   return (
-    <span style={{
+    <span className="mono" style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       padding: "2px 8px", borderRadius: 4,
       background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-      fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+      fontSize: 10.5, color: "var(--fg-muted)",
     }}>
       {label}
       <span
@@ -37,23 +37,24 @@ export function ChipInput({
   return (
     <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
       <input
-        className="input"
+        className="input mono"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
         placeholder={placeholder}
         list="tool-suggestions"
-        style={{ width: 130, height: 24, padding: "0 8px", fontFamily: "var(--mono)", fontSize: 10.5 }}
+        style={{ width: 130, height: 24, padding: "0 8px", fontSize: 10.5 }}
       />
       <datalist id="tool-suggestions">
         {COMMON_TOOLS.map((t) => <option key={t} value={t} />)}
       </datalist>
       <span
+        className="mono"
         onClick={onAdd}
         style={{
           padding: "2px 8px", borderRadius: 4, cursor: "pointer",
           background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+          fontSize: 10.5, color: "var(--fg-muted)",
         }}
       >+ add</span>
     </div>

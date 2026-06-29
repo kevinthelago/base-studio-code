@@ -87,7 +87,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
       }
       footer={declared.length > 0 && (
         <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
+          <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <span>screens</span>
             <button
               className="btn ghost sm"
@@ -109,10 +109,10 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
               return (
                 <button
                   key={s}
-                  className="btn ghost sm"
+                  className="btn ghost sm mono"
                   onClick={() => setUiScreenApproved(projectKey, s, !ok)}
                   title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
-                  style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontFamily: "var(--mono)", fontSize: 11 }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontSize: 11 }}
                 >
                   <span style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</span>
                   <span style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</span>
@@ -125,14 +125,14 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
     >
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         {status === "fail" ? (
-          <div style={{ padding: 16, fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
+          <div className="mono" style={{ padding: 16, fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
             {run?.message || "Preview failed to build."}
           </div>
         ) : preview?.srcDoc ? (
           <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+            <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
               {status === "running" ? "Bundling…" : "No preview yet"}
             </div>
             <div className="hint" style={{ maxWidth: 280 }}>

@@ -58,9 +58,9 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
       <ModalScrim onDismiss={busy ? undefined : onCancel} blur style={{ padding: 30 }}>
         <div className="modal" role="dialog" aria-label="Download MCP servers" style={{ width: 560, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <span className="mh-ico" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 15, background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)" }}>↓</span>
+            <span className="mh-ico mono" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)" }}>↓</span>
             <div>
-              <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>Download MCP servers</h2>
+              <h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Download MCP servers</h2>
               <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>Your plan uses these MCP servers — review the source, then install.</div>
             </div>
             <IconButton aria-label="cancel" style={{ marginLeft: "auto" }} onClick={onCancel} disabled={busy} />

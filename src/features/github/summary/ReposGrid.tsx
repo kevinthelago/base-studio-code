@@ -19,7 +19,7 @@ export function ReposGrid({ repos, loading }: {
         <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</button>
       </div>
       {repos.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
         {repos.map(r => (
@@ -30,12 +30,12 @@ export function ReposGrid({ repos, loading }: {
           }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.language ? langColor(r.language) : "var(--fg-dim)", flexShrink: 0, display: "inline-block" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{r.full_name}</span>
+              <span className="mono-value">{r.full_name}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(r.lastPush)}</span>
+              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(r.lastPush)}</span>
             </div>
             <div style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 8 }}>{r.description ?? "No description."}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+            <div className="mono" style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 10, color: "var(--fg-muted)" }}>
               <span>⊕ <b style={{ color: "var(--fg)" }}>{loading ? "…" : r.prCount}</b> PR</span>
               <span style={{ color: r.ciStatus === "passing" ? "var(--success)" : r.ciStatus === "failing" ? "var(--danger)" : "var(--fg-dim)" }}>
                 ◉ ci {r.ciStatus}

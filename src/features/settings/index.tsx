@@ -31,16 +31,16 @@ export function SettingsWorkspace() {
         borderRight: "1px solid var(--border-soft)", padding: "16px 8px",
         display: "flex", flexDirection: "column", gap: 2,
       }}>
-        <div style={{
-          fontFamily: "var(--mono)", fontSize: 10, letterSpacing: ".08em",
+        <div className="mono" style={{
+          fontSize: 10, letterSpacing: ".08em",
           color: "var(--fg-dim)", padding: "4px 12px 10px",
         }}>SETTINGS</div>
         {SECTIONS.map(it => {
           const on = it.k === active.k;
           return (
-            <div key={it.k} onClick={() => setSettingsSection(it.k)} style={{
+            <div key={it.k} className="mono" onClick={() => setSettingsSection(it.k)} style={{
               padding: "7px 12px", borderRadius: 6,
-              fontFamily: "var(--mono)", fontSize: 11.5,
+              fontSize: 11.5,
               background: on ? "var(--bg-elev)" : "transparent",
               color: on ? "var(--fg)" : "var(--fg-muted)",
               cursor: "pointer",

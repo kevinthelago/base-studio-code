@@ -59,10 +59,11 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div
         role="alert"
+        className="mono"
         style={{
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 14, height: "100%", minHeight: 240, padding: 32, textAlign: "center",
-          fontFamily: "var(--mono)", color: "var(--fg)",
+          color: "var(--fg)",
         }}
       >
         <div style={{ fontSize: 14, fontWeight: 600 }}>Something went wrong{this.props.label ? ` in ${this.props.label}` : ""}.</div>

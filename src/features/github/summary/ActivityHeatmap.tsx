@@ -45,7 +45,7 @@ export function ActivityHeatmap({
         <h3 style={{ margin: 0 }}>Activity · last 28 weeks</h3>
         <span className="hint">all contributions · GitHub calendar</span>
         <div style={{ flex: 1 }} />
-        <span style={{ display: "flex", gap: 6, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+        <span className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
           less
           {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
             <span key={i} style={{ width: 10, height: 10, borderRadius: 2, display: "inline-block", background: heatFill(v) }} />
@@ -84,10 +84,10 @@ export function ActivityHeatmap({
           </g>
         )}
       </svg>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
+      <div className="mono" style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
         <span>28 weeks ago</span><span>today</span>
       </div>
-      <div style={{ display: "flex", gap: 24, marginTop: 12, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+      <div className="mono" style={{ display: "flex", gap: 24, marginTop: 12, fontSize: 10.5, color: "var(--fg-muted)" }}>
         <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalContribs}</b> contributions</span>
         <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalMerged}</b> PRs merged</span>
       </div>

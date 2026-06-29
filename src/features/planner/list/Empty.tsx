@@ -31,7 +31,7 @@ export function ProjectsEmpty() {
             onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
             style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
           >
-            <span style={{ fontFamily: "var(--mono)", fontSize: 15 }}>⎇</span>
+            <span className="mono" style={{ fontSize: 15 }}>⎇</span>
             Connect with GitHub
           </button>
         }

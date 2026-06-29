@@ -147,7 +147,7 @@ export function ClaudeConfigCard() {
   return (
     <div style={{ maxWidth: 900, display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
-        <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>
+        <h2 className="mono" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
           Claude Configuration
         </h2>
         <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
@@ -157,7 +157,7 @@ export function ClaudeConfigCard() {
 
       {/* Target selector */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+        <div className="mono-label">
           target
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -168,10 +168,11 @@ export function ClaudeConfigCard() {
             return (
               <div
                 key={t}
+                className="mono"
                 onClick={() => setTarget(t)}
                 style={{
                   padding: "5px 12px", borderRadius: 6, cursor: "pointer",
-                  fontFamily: "var(--mono)", fontSize: 11,
+                  fontSize: 11,
                   background: on ? "var(--accent)" : "var(--bg-elev)",
                   color: on ? "#1a120a" : "var(--fg-muted)",
                   border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),
@@ -182,7 +183,7 @@ export function ClaudeConfigCard() {
           })}
         </div>
         {allRepos.length === 0 && (
-          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
+          <div className="mono-caption">
             Resolve repositories on the Projects board to unlock per-repo targets.
           </div>
         )}
@@ -194,7 +195,7 @@ export function ClaudeConfigCard() {
         padding: "10px 14px",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
       }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>profile</span>
+        <span className="mono-label">profile</span>
         <select
           value={activeProfileId ?? ""}
           onChange={(e) => {
@@ -202,10 +203,11 @@ export function ClaudeConfigCard() {
             if (p) loadProfile(p);
             else setActiveProfileId(null);
           }}
+          className="mono"
           style={{
             background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
             borderRadius: 4, padding: "3px 8px",
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)",
+            fontSize: 11, color: "var(--fg)",
           }}
         >
           <option value="">— custom / unsaved —</option>
@@ -226,13 +228,13 @@ export function ClaudeConfigCard() {
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input
-              className="input"
+              className="input mono"
               autoFocus
               value={newProfileName}
               onChange={(e) => setNewProfileName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSaveProfile(); if (e.key === "Escape") setShowSaveDialog(false); }}
               placeholder="profile name…"
-              style={{ width: 160, height: 26, fontFamily: "var(--mono)", fontSize: 10.5 }}
+              style={{ width: 160, height: 26, fontSize: 10.5 }}
             />
             <button className="btn primary" style={{ height: 26, fontSize: 10.5 }} onClick={handleSaveProfile}>save</button>
             <button className="btn ghost" style={{ height: 26, fontSize: 10.5 }} onClick={() => setShowSaveDialog(false)}>cancel</button>
@@ -248,7 +250,7 @@ export function ClaudeConfigCard() {
         )}
 
         <div style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
+        <span className="mono-caption">
           {targetLabel}
         </span>
       </div>
@@ -261,11 +263,11 @@ export function ClaudeConfigCard() {
             background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
             overflow: "hidden",
           }}>
-            <div style={{
+            <div className="mono" style={{
               padding: "8px 14px", borderBottom: "1px solid var(--border-soft)",
               background: "var(--bg-elev)",
               display: "flex", alignItems: "center", gap: 8,
-              fontFamily: "var(--mono)", fontSize: 10,
+              fontSize: 10,
             }}>
               <span style={{ color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>CLAUDE.md</span>
               {reading && <span style={{ color: "var(--fg-dim)" }}>loading…</span>}
@@ -273,6 +275,7 @@ export function ClaudeConfigCard() {
               <span style={{ color: "var(--fg-dim)" }}>{targetLabel}</span>
             </div>
             <textarea
+              className="mono"
               value={instructions}
               onChange={(e) => { setInstructions(e.target.value); setActiveProfileId(null); }}
               placeholder="# Instructions&#10;&#10;Write system-level instructions for Claude in this scope…"
@@ -280,7 +283,7 @@ export function ClaudeConfigCard() {
                 width: "100%", minHeight: 260,
                 background: "var(--bg-canvas)", border: "none", outline: "none",
                 padding: "14px 16px",
-                fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)",
+                fontSize: 11.5, color: "var(--fg)",
                 resize: "vertical", lineHeight: 1.65,
                 boxSizing: "border-box",
               }}
@@ -293,10 +296,10 @@ export function ClaudeConfigCard() {
           background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
           overflow: "hidden",
         }}>
-          <div style={{
+          <div className="mono" style={{
             padding: "8px 14px", borderBottom: "1px solid var(--border-soft)",
             background: "var(--bg-elev)",
-            fontFamily: "var(--mono)", fontSize: 10,
+            fontSize: 10,
             color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em",
           }}>
             Tool permissions
@@ -304,15 +307,16 @@ export function ClaudeConfigCard() {
           <div style={{ padding: "14px 14px", display: "flex", flexDirection: "column", gap: 16 }}>
             {/* Presets */}
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>quick presets</div>
+              <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>quick presets</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 {TOOL_PRESETS.map((p) => (
                   <span
                     key={p.label}
+                    className="mono"
                     onClick={() => applyPreset(p)}
                     style={{
                       padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-                      fontFamily: "var(--mono)", fontSize: 10,
+                      fontSize: 10,
                       background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
                       color: "var(--fg-muted)",
                     }}
@@ -323,10 +327,10 @@ export function ClaudeConfigCard() {
 
             {/* Allow */}
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--success)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>allow</div>
+              <div className="mono" style={{ fontSize: 9.5, color: "var(--success)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>allow</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
                 {allow.length === 0 && (
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>all tools allowed</span>
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>all tools allowed</span>
                 )}
                 {allow.map((t) => (
                   <ToolChip key={t} label={t} onRemove={() => setAllow((a) => a.filter((x) => x !== t))} />
@@ -342,10 +346,10 @@ export function ClaudeConfigCard() {
 
             {/* Deny */}
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--danger)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>deny</div>
+              <div className="mono" style={{ fontSize: 9.5, color: "var(--danger)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>deny</div>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
                 {deny.length === 0 && (
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>nothing denied</span>
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>nothing denied</span>
                 )}
                 {deny.map((t) => (
                   <ToolChip key={t} label={t} onRemove={() => setDeny((d) => d.filter((x) => x !== t))} />
@@ -361,10 +365,10 @@ export function ClaudeConfigCard() {
 
             {/* Settings.json preview */}
             {(allow.length > 0 || deny.length > 0) && (
-              <div style={{
+              <div className="mono" style={{
                 padding: "10px 12px", borderRadius: 6,
                 background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-                fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
+                fontSize: 9.5, color: "var(--fg-dim)",
                 whiteSpace: "pre",
               }}>
                 {JSON.stringify({ permissions: { allow, deny } }, null, 2)}
@@ -381,13 +385,13 @@ export function ClaudeConfigCard() {
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
       }}>
         {writeStatus === "ok" && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--success)" }}>✓ {writeMsg}</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--success)" }}>✓ {writeMsg}</span>
         )}
         {writeStatus === "error" && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)" }}>{writeMsg}</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--danger)" }}>{writeMsg}</span>
         )}
         {writeStatus === "idle" && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>
             CLAUDE.md and .claude/settings.json
           </span>
         )}

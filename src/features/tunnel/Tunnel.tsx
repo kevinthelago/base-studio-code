@@ -185,7 +185,7 @@ export function TunnelSettings() {
 
   return (
     <div style={{ maxWidth: 820 }}>
-      <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Mobile tunnel</h2>
+      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Mobile tunnel</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12, lineHeight: 1.6 }}>
         Pair <code>mobile-studio-code</code> to mirror these consoles from your phone — from
         anywhere. Traffic flows through a <b>zero-knowledge relay</b> you deploy into your own
@@ -206,8 +206,8 @@ export function TunnelSettings() {
         </div>
 
         {err && (
-          <div style={{
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+          <div className="mono" style={{
+            fontSize: 11, color: "var(--danger)",
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: 6, padding: "8px 10px", marginBottom: 14,
           }}>{err}</div>
@@ -260,7 +260,7 @@ export function TunnelSettings() {
                 const { glyph, color } = legGlyph(leg.status);
                 return (
                   <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                    <span style={{ color, fontFamily: "var(--mono)", width: 12, textAlign: "center" }}>{glyph}</span>
+                    <span className="mono" style={{ color, width: 12, textAlign: "center" }}>{glyph}</span>
                     <span style={{ color: leg.status === "fail" ? "var(--danger)" : "var(--fg)", minWidth: 110 }}>{label}</span>
                     {leg.detail && <span style={{ color: "var(--fg-muted)" }}>{leg.detail}</span>}
                   </div>
@@ -278,7 +278,7 @@ export function TunnelSettings() {
               display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
             }}>
               <QRCodeSVG value={qrValue} size={184} bgColor="#ffffff" fgColor="#000000" level="M" />
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "#666", letterSpacing: ".04em" }}>
+              <div className="mono" style={{ fontSize: 9.5, color: "#666", letterSpacing: ".04em" }}>
                 SCAN IN MOBILE-STUDIO-CODE
               </div>
             </div>
@@ -340,7 +340,7 @@ export function TunnelSettings() {
                   </div>
                 </div>
               )}
-              <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>
+              <div className="hint mono" style={{ fontSize: 10.5 }}>
                 The pairing secret is carried inside the QR only — never shown or logged.
               </div>
             </div>

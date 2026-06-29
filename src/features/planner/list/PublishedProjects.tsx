@@ -26,9 +26,9 @@ export function projStatus(p: { closed: boolean }): ProjStatus {
 function FleetPill({ running, paused }: { running: number; paused: number }) {
   if (running === 0 && paused === 0) return null;
   return (
-    <span style={{
+    <span className="mono" style={{
       display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
-      fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--success)",
+      fontSize: 9.5, color: "var(--success)",
       background: "color-mix(in oklch, var(--success), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
     }}>
@@ -44,8 +44,8 @@ function GroupHeader({ label, count, dot }: { label: string; count: number; dot:
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 7px", paddingLeft: 2 }}>
       <span style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</span>
-      <span style={{ padding: "0 5px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
+      <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</span>
+      <span className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
     </div>
   );
 }
@@ -57,7 +57,7 @@ function ProgressBar({ pct }: { pct: number }) {
       <span style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
         <span style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
       </span>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
+      <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
     </span>
   );
 }
@@ -145,7 +145,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5, flexWrap: "wrap" }}>
           <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
           <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{p.title}</h3>
           <Chip tone={tagTone(STATUS_META[status].cls)} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</Chip>
           {repos.slice(0, 2).map(r => <Chip key={r} style={{ fontSize: 9.5 }}>{r}</Chip>)}
@@ -154,7 +154,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
         <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
           {p.shortDescription ?? "No description."}
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
+        <div className="mono" style={{ display: "flex", gap: 16, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
           {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
           {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
           {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
@@ -164,8 +164,8 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <FleetPill running={running} paused={paused} />
-        <span style={{
-          fontFamily: "var(--mono)", fontSize: 10.5, whiteSpace: "nowrap",
+        <span className="mono" style={{
+          fontSize: 10.5, whiteSpace: "nowrap",
           color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
         }}>open planning →</span>
 
@@ -378,7 +378,7 @@ export function PublishedProjects({
   const projectsEmpty = publishedCount === 0 && fDrafts.length === 0;
   const q = query.trim().toLowerCase();
   const sortBtn = (active: boolean) => ({
-    height: 28, padding: "0 11px", border: 0, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
+    height: 28, padding: "0 11px", border: 0, cursor: "pointer", fontSize: 10.5,
     background: active ? "var(--bg-elev2)" : "transparent", color: active ? "var(--fg)" : "var(--fg-dim)",
   } as const);
 
@@ -394,10 +394,10 @@ export function PublishedProjects({
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 19, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
-                <span style={{ padding: "1px 7px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</span>
+                <h2 className="mono" style={{ margin: 0, fontSize: 19, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
+                <span className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</span>
               </div>
-              <div style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontFamily: "var(--mono)" }}>
+              <div className="mono" style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ color: "var(--success)" }}>● github connected</span>
                 <span style={{ color: "var(--fg-dim)" }}>·</span>
                 <span>{totalSummary}</span>
@@ -421,20 +421,21 @@ export function PublishedProjects({
               display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 14,
               background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
             }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
               <input
                 autoFocus
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") handleStartPlanning(); if (e.key === "Escape") setNewOpen(false); }}
                 placeholder="project title…"
+                className="mono"
                 style={{
                   flex: 1, minWidth: 0, background: "none", border: "none", outline: "none",
-                  fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)",
+                  fontSize: 12, color: "var(--fg)",
                 }}
               />
               {titleConflict && (
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
+                <span className="mono" style={{ fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
               )}
               <button
                 onClick={handleStartPlanning}
@@ -453,29 +454,30 @@ export function PublishedProjects({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="search projects & blueprints…"
-                style={{ flex: 1, background: "none", border: "none", outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
+                className="mono"
+                style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 11, color: "var(--fg)" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
               <div style={{ display: "flex", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-                <button onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
+                <button className="mono" onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
                 <span style={{ width: 1, background: "var(--border-soft)" }} />
-                <button onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
+                <button className="mono" onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
               </div>
             </div>
-            {q && <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
+            {q && <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
           </div>
         </div>
 
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <div style={{
+            <div className="mono" style={{
               padding: "12px 16px", borderRadius: 6, marginBottom: 16,
               background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+              fontSize: 11, color: "var(--danger)",
             }}>
               {error.includes("read:project")
                 ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
@@ -484,14 +486,14 @@ export function PublishedProjects({
           )}
 
           {loading && visibleProjects.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+            <div className="mono" style={{ textAlign: "center", padding: "40px 0", fontSize: 12, color: "var(--fg-dim)" }}>
               Loading projects…
             </div>
           )}
 
           {draftError && (
-            <div style={{
-              padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontFamily: "var(--mono)", fontSize: 11,
+            <div className="mono" style={{
+              padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontSize: 11,
               color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
             }}>{draftError}</div>
@@ -500,7 +502,7 @@ export function PublishedProjects({
           {/* drafts — compact chips (click = resume · ✕ = delete) */}
           {fDrafts.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 20, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
                 {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
               </span>
               {fDrafts.map(d => (
@@ -508,7 +510,8 @@ export function PublishedProjects({
                   key={d.key}
                   onClick={() => reopenDraft(d)}
                   title={d.pitch || undefined}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+                  className="mono"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
                 >
                   <span style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
                   {d.title}
@@ -553,11 +556,11 @@ export function PublishedProjects({
           {/* empty (main column only — the rail has its own) */}
           {!loading && projectsEmpty && (
             q ? (
-              <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+              <div className="mono" style={{ textAlign: "center", padding: "48px 0", fontSize: 12, color: "var(--fg-dim)" }}>
                 No projects match “{query}”.
               </div>
             ) : !error && (
-              <div style={{ textAlign: "center", padding: "48px 0", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+              <div className="mono" style={{ textAlign: "center", padding: "48px 0", fontSize: 12, color: "var(--fg-dim)" }}>
                 Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
               </div>
             )
@@ -578,7 +581,7 @@ export function PublishedProjects({
           }}>
             {!confirmDeleteAll ? (
               <>
-                <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)" }}>
+                <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
                   Remove “{deleteTarget.title}”?
                 </h3>
                 <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
@@ -586,11 +589,11 @@ export function PublishedProjects({
                   or delete everything.
                 </p>
                 {deleteError && (
-                  <div style={{
+                  <div className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                    fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+                    fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
                   </div>
@@ -604,7 +607,7 @@ export function PublishedProjects({
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", marginBottom: 10 }}
                 >
                   <span style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</span>
-                  <span style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5, fontFamily: "var(--mono)" }}>
+                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy only. Your GitHub project board, milestones, issues, and repos stay intact.
                   </span>
                 </button>
@@ -618,7 +621,7 @@ export function PublishedProjects({
                   <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
                     <Trash2 size={12} /> Delete everything
                   </span>
-                  <span style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5, fontFamily: "var(--mono)" }}>
+                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy AND deletes the GitHub project board. (Your repos and their code are not deleted.)
                   </span>
                 </button>
@@ -628,7 +631,7 @@ export function PublishedProjects({
               </>
             ) : (
               <>
-                <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--danger)" }}>
+                <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--danger)" }}>
                   Delete everything?
                 </h3>
                 <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
@@ -638,11 +641,11 @@ export function PublishedProjects({
                   only the project board is.
                 </p>
                 {deleteError && (
-                  <div style={{
+                  <div className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                    fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+                    fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
                   </div>

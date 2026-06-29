@@ -83,11 +83,12 @@ function LayoutMenu({ layout, onRename, onPick }: {
             return (
               <button
                 key={l}
+                className="mono"
                 onClick={() => onPick(l)}
                 title={l}
                 style={{
                   padding: "5px 7px", borderRadius: 4, cursor: "pointer",
-                  fontFamily: "var(--mono)", fontSize: 10,
+                  fontSize: 10,
                   background: current ? "color-mix(in oklch, var(--accent), transparent 85%)" : "var(--bg-elev)",
                   border: "1px solid " + (current ? "var(--accent-dim)" : "var(--border-soft)"),
                   color: current ? "var(--accent)" : "var(--fg-muted)",

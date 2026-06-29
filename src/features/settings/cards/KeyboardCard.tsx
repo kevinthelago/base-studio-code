@@ -29,10 +29,10 @@ const labelOf = (id: string) =>
 
 function KeyCap({ children, active }: { children: React.ReactNode; active?: boolean }) {
   return (
-    <kbd style={{
+    <kbd className="mono" style={{
       display: "inline-flex", alignItems: "center", justifyContent: "center",
       minWidth: 20, height: 22, padding: "0 7px",
-      fontFamily: "var(--mono)", fontSize: 11, color: active ? "var(--accent)" : "var(--fg)",
+      fontSize: 11, color: active ? "var(--accent)" : "var(--fg)",
       background: "var(--bg-elev2)",
       border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
       borderRadius: 5, boxShadow: "0 1px 0 var(--border)",
@@ -111,7 +111,7 @@ export function KeyboardCard() {
 
   return (
     <div style={{ maxWidth: 820 }}>
-      <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Keyboard</h2>
+      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Keyboard</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 18px", fontSize: 12 }}>
         Every keyboard shortcut, grouped by what it affects. Click a shortcut and press a new
         combination to rebind it; for number-range shortcuts, pick the modifier leader from the
@@ -121,7 +121,7 @@ export function KeyboardCard() {
       {(overrideCount > 0 || capturingId) && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           {capturingId ? (
-            <span style={{ fontSize: 12, color: "var(--accent)", fontFamily: "var(--mono)" }}>
+            <span className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
               Press a key combination… <span style={{ color: "var(--fg-dim)" }}>(Esc to cancel)</span>
             </span>
           ) : (
@@ -132,8 +132,9 @@ export function KeyboardCard() {
           {overrideCount > 0 && !capturingId && (
             <button
               onClick={() => { resetAllKeybindings(); setError(null); }}
+              className="mono"
               style={{
-                fontSize: 11, fontFamily: "var(--mono)", color: "var(--fg-muted)",
+                fontSize: 11, color: "var(--fg-muted)",
                 background: "transparent", border: "1px solid var(--border)", borderRadius: 5,
                 padding: "3px 9px", cursor: "pointer",
               }}
@@ -177,13 +178,14 @@ export function KeyboardCard() {
                 >
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
                     <span style={{ fontSize: 12, color: "var(--fg)" }}>{s.desc}</span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{s.scope}</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{s.scope}</span>
                     {overridden && (
                       <button
                         onClick={() => { resetKeybinding(id!); setError(null); }}
                         title="Reset to default"
+                        className="mono"
                         style={{
-                          fontSize: 9.5, fontFamily: "var(--mono)", color: "var(--fg-muted)",
+                          fontSize: 9.5, color: "var(--fg-muted)",
                           background: "transparent", border: "none", padding: 0, cursor: "pointer",
                           textDecoration: "underline",
                         }}
@@ -200,7 +202,7 @@ export function KeyboardCard() {
                       style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
                     >
                       {isCapturing
-                        ? <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--accent)" }}>Press keys…</span>
+                        ? <span className="mono" style={{ fontSize: 11, color: "var(--accent)" }}>Press keys…</span>
                         : <Chord caps={caps} active={overridden} />}
                     </button>
                   ) : isLeader && id != null ? (
@@ -209,8 +211,9 @@ export function KeyboardCard() {
                         aria-label={`Leader for ${s.desc}`}
                         value={effectiveLeader(keybindings, id as LeaderId)}
                         onChange={(e) => changeLeader(id as LeaderId, e.target.value)}
+                        className="mono"
                         style={{
-                          fontFamily: "var(--mono)", fontSize: 11,
+                          fontSize: 11,
                           color: overridden ? "var(--accent)" : "var(--fg)",
                           background: "var(--bg-elev2)",
                           border: `1px solid ${overridden ? "var(--accent)" : "var(--border)"}`,

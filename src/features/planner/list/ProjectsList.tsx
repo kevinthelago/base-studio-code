@@ -297,7 +297,7 @@ export function ProjectsList() {
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
           }}>
-            <h3 style={{ margin: "0 0 8px", fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)" }}>
+            <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
               Delete draft?
             </h3>
             <p style={{ margin: "0 0 20px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>

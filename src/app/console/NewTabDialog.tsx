@@ -36,12 +36,13 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
               return (
                 <button
                   key={l}
+                  className="mono"
                   type="button"
                   autoFocus={l === layout}
                   onClick={() => setLayout(l)}
                   style={{
                     padding: "6px 10px", borderRadius: 5, cursor: "pointer",
-                    fontFamily: "var(--mono)", fontSize: 11.5,
+                    fontSize: 11.5,
                     background: active ? "var(--bg-elev2)" : "var(--bg-elev)",
                     border: "1px solid " + (active ? "var(--accent)" : "var(--border-soft)"),
                     color: active ? "var(--accent)" : "var(--fg-muted)",

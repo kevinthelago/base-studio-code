@@ -37,10 +37,11 @@ export function ShellSelectorCard() {
           return (
             <div
               key={o.kind}
+              className="mono"
               onClick={() => choose(o.kind)}
               style={{
                 padding: "6px 12px", borderRadius: 6, cursor: "pointer",
-                fontFamily: "var(--mono)", fontSize: 11,
+                fontSize: 11,
                 background: on ? "var(--accent)" : "var(--bg-elev)",
                 color: on ? "#1a120a" : "var(--fg-muted)",
                 border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),

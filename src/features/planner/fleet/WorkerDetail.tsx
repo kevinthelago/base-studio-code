@@ -48,7 +48,7 @@ function Placeholder({ title, hint, body }: { title: string; hint: string; body:
   return (
     <div className="card">
       <CardHead title={title} hint={hint} />
-      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>{body}</div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>{body}</div>
     </div>
   );
 }
@@ -132,12 +132,12 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             <Avatar login={worker.name} bot size={26} />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 15, color: "var(--fg)" }}>{worker.name}</span>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
+                <span className="mono" style={{ fontSize: 15, color: "var(--fg)" }}>{worker.name}</span>
+                <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, background: paused ? "var(--fg-dim)" : st.color }} />{paused ? "paused" : st.label}
                 </span>
               </div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
+              <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
                 {worker.id} · {worker.repo} · <span style={{ color: worker.profileColor }}>{worker.profileLabel}</span>
               </div>
             </div>
@@ -162,9 +162,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           borderColor: worker.note ? st.color : "var(--border-soft)",
           background: worker.note ? `color-mix(in oklch, ${st.color}, transparent 92%)` : "var(--bg-panel)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>current</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{worker.issue}</span>
-            {worker.note && <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: st.color }}>· {worker.note}</span>}
+            <span className="mono-label">current</span>
+            <span className="mono-value">{worker.issue}</span>
+            {worker.note && <span className="mono" style={{ fontSize: 11, color: st.color }}>· {worker.note}</span>}
           </div>
         </div>
 
@@ -182,13 +182,13 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             <div className="card">
               <CardHead title="Owned issues" hint={`${owned.length} assigned to this stream`} />
               {owned.length === 0
-                ? <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>No issues assigned to this stream.</div>
+                ? <div className="hint mono" style={{ fontSize: 11 }}>No issues assigned to this stream.</div>
                 : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                     {owned.map((ref, i) => (
                       <div key={ref} className="hrow" style={{ display: "grid", gridTemplateColumns: "1fr 70px", gap: 8, alignItems: "center", padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                        <span style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{ref}</span>
-                        <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 10, color: ref === worker.issue ? st.color : "var(--fg-dim)" }}>
+                        <span className="mono" style={{ color: "var(--fg)" }}>{ref}</span>
+                        <span className="mono" style={{ textAlign: "right", fontSize: 10, color: ref === worker.issue ? st.color : "var(--fg-dim)" }}>
                           ● {ref === worker.issue ? worker.status : "owned"}
                         </span>
                       </div>
@@ -202,13 +202,13 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                 hint={ended ? `ended ${ended.state} · ${ended.summary}` : "live snapshot of this worker's output"}
               />
               {!cwd ? (
-                <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>No worktree bound to this pane.</div>
+                <div className="hint mono" style={{ fontSize: 11 }}>No worktree bound to this pane.</div>
               ) : !doneAudit ? (
-                <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>reading the worktree…</div>
+                <div className="hint mono" style={{ fontSize: 11 }}>reading the worktree…</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {/* branch + PR + transcript */}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5 }}>
+                  <div className="mono" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 10.5 }}>
                     {doneAudit.branch && (
                       <span style={{ padding: "2px 8px", borderRadius: 99, border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</span>
                     )}
@@ -216,7 +216,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                       <button
                         onClick={() => openUrl(doneAudit.pr!.url).catch(() => {})}
                         title="Open the pull request"
-                        style={{ padding: "2px 9px", borderRadius: 99, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5,
+                        className="mono"
+                        style={{ padding: "2px 9px", borderRadius: 99, cursor: "pointer", fontSize: 10.5,
                           color: doneAudit.pr.merged ? "var(--success)" : "var(--accent)",
                           background: `color-mix(in oklch, ${doneAudit.pr.merged ? "var(--success)" : "var(--accent)"}, transparent 88%)`,
                           border: `1px solid color-mix(in oklch, ${doneAudit.pr.merged ? "var(--success)" : "var(--accent)"}, transparent 65%)` }}
@@ -234,15 +235,15 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                     )}
                   </div>
                   {/* changed files + commits */}
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
                     {doneAudit.changedFiles.length} uncommitted file{doneAudit.changedFiles.length === 1 ? "" : "s"} · {doneAudit.commits.length} recent commit{doneAudit.commits.length === 1 ? "" : "s"}
                   </div>
                   {doneAudit.commits.length > 0 && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                       {doneAudit.commits.slice(0, 8).map((c, i) => (
                         <div key={c.hash + i} style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 8, alignItems: "center", padding: "7px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{c.hash}</span>
-                          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
+                          <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)" }}>{c.hash}</span>
+                          <span className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
                         </div>
                       ))}
                     </div>
@@ -253,15 +254,15 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             <div className="card">
               <CardHead title="Activity & audit" hint={`this worker · ${audit.length ? "tool attempts, newest first" : "from the bsc-audit log"}`} />
               {audit.length === 0
-                ? <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+                ? <div className="hint mono" style={{ fontSize: 11 }}>
                     No tool attempts logged yet for this worker. Gated panes append one line per tool use here.
                   </div>
                 : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                     {audit.map((a, i) => (
                       <div key={i} className="hrow" style={{ display: "grid", gridTemplateColumns: "62px 1fr", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>{a.toolName}</span>
-                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.target || "—"}</span>
+                        <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)" }}>{a.toolName}</span>
+                        <span className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.target || "—"}</span>
                       </div>
                     ))}
                   </div>
@@ -277,21 +278,21 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 18px", marginBottom: 12 }}>
                     {[perms.slice(0, half), perms.slice(half)].flat().map((r) => (
-                      <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10.5 }}>
+                      <div key={r.key} className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10.5 }}>
                         <span style={{ width: 7, height: 7, borderRadius: 99, background: TIER_COLOR[r.tier], flexShrink: 0 }} />
                         <span style={{ color: "var(--fg)", width: 42 }}>{r.key}</span>
                         <span style={{ color: TIER_COLOR[r.tier] }}>{r.tier}</span>
                       </div>
                     ))}
                   </div>
-                  <div style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+                  <div className="mono" style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6, fontSize: 10, color: "var(--fg-muted)" }}>
                     <div><span style={{ color: "var(--fg-dim)" }}>paths allow </span>{profile.paths.allow.length ? profile.paths.allow.join(", ") : "—"}</div>
                     <div><span style={{ color: "var(--fg-dim)" }}>paths deny </span>{profile.paths.deny.length ? profile.paths.deny.join(", ") : "—"}</div>
                     <div><span style={{ color: "var(--fg-dim)" }}>network </span>{profile.net.allow.length ? profile.net.allow.join(", ") : "none"}</div>
                   </div>
                 </>
               ) : (
-                <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+                <div className="hint mono" style={{ fontSize: 11 }}>
                   This worker runs under its role gate only — no least-privilege profile was assigned during planning.
                 </div>
               )}
@@ -303,8 +304,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
               <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                 {flowRows(flow).map((r, i) => (
                   <div key={r.key} style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{r.key}</span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{r.value}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{r.key}</span>
+                    <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{r.value}</span>
                     <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>{r.desc}</span>
                   </div>
                 ))}
@@ -318,9 +319,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       </div>
 
       {toast && (
-        <div className="above-modal" style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+        <div className="above-modal mono" style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
           background: "var(--bg-elev2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px",
-          fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</div>
+          fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</div>
       )}
 
       {(modal === "steer" || modal === "answer") && (
@@ -330,14 +331,15 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             <button className="btn primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</button>
           </>}>
           {modal === "answer" && worker.note && (
-            <div style={{ padding: "10px 12px", borderRadius: 8, background: `color-mix(in oklch, ${st.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>
+            <div className="mono" style={{ padding: "10px 12px", borderRadius: 8, background: `color-mix(in oklch, ${st.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
               {worker.note}
             </div>
           )}
           <div className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</div>
           <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
-            style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 12, outline: "none" }} />
+            className="mono"
+            style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontSize: 12, outline: "none" }} />
         </Modal>
       )}
       {modal === "stop" && (
@@ -363,9 +365,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                 border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
               }}>
                 <ColorSwatch color={p.color} size={8} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, flex: 1 }}>{p.name}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
-                {p.id === profileId && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: p.color }}>current</span>}
+                <span className="mono" style={{ fontSize: 11.5, flex: 1 }}>{p.name}</span>
+                <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
+                {p.id === profileId && <span className="mono" style={{ fontSize: 9.5, color: p.color }}>current</span>}
               </button>
             ))}
           </div>

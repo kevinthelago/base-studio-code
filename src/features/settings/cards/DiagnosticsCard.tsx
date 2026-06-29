@@ -42,7 +42,7 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
+          <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
           {verdict.ok ? (
             <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</Chip>
           ) : (
@@ -53,12 +53,12 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
             </Chip>
           )}
           {verdict.version && (
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>{verdict.version}</span>
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>{verdict.version}</span>
           )}
         </div>
         {verdict.ok ? (
           verdict.path && (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 3, wordBreak: "break-all" }}>
+            <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 3, wordBreak: "break-all" }}>
               {verdict.path}
             </div>
           )
@@ -71,7 +71,8 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
                 <a
                   onClick={(e) => { e.preventDefault(); openUrl(url); }}
                   href={url}
-                  style={{ color: "var(--accent)", cursor: "pointer", fontFamily: "var(--mono)", fontSize: 10.5 }}
+                  className="mono"
+                  style={{ color: "var(--accent)", cursor: "pointer", fontSize: 10.5 }}
                 >
                   {url.replace(/^https?:\/\//, "")} ↗
                 </a>
@@ -128,11 +129,11 @@ export function DiagnosticsCard() {
             style={{ boxShadow: `0 0 0 3px color-mix(in oklch, ${banner.color}, transparent 82%)` }}
           />
         )}
-        <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>
+        <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)" }}>
           {banner ? banner.text : running ? "Checking…" : "Not checked yet."}
         </span>
         {takenAt && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
             checked {new Date(takenAt).toLocaleTimeString()}
           </span>
         )}
@@ -142,8 +143,8 @@ export function DiagnosticsCard() {
       </div>
 
       {error && (
-        <div style={{
-          padding: "10px 14px", color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11,
+        <div className="mono" style={{
+          padding: "10px 14px", color: "var(--danger)", fontSize: 11,
           borderBottom: "1px solid var(--border-soft)",
         }}>
           Probe failed: {error}
@@ -155,7 +156,7 @@ export function DiagnosticsCard() {
           {report.prereqs.map((v, i) => <PrereqRow key={v.name} verdict={v} alt={i % 2 === 1} />)}
         </div>
       ) : !running && !error ? (
-        <div style={{ padding: "20px 14px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+        <div className="mono" style={{ padding: "20px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
           No prerequisite data yet.
         </div>
       ) : null}

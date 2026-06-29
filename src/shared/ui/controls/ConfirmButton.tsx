@@ -23,6 +23,7 @@ export function ConfirmButton({
   const sm = size === "sm";
   return (
     <button
+      className="mono"
       disabled={disabled}
       onClick={() => { if (armed) { setArmed(false); void onConfirm(); } else { setArmed(true); } }}
       onBlur={() => setArmed(false)}
@@ -31,7 +32,6 @@ export function ConfirmButton({
         padding: sm ? "5px 10px" : "8px 14px",
         borderRadius: 6,
         cursor: disabled ? "default" : "pointer",
-        fontFamily: "var(--mono)",
         fontSize: sm ? 10.5 : 11.5,
         ...(disabled ? { opacity: 0.5 } : {}),
         background: armed && danger ? "var(--danger)" : "var(--bg-elev)",

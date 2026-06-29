@@ -16,8 +16,7 @@ export interface SectionLabelProps {
  *  boilerplate style props into one primitive while keeping per-site spacing via `style` (#1837). */
 export function SectionLabel({ children, size = "md", tone = "dim", className, style }: SectionLabelProps) {
   return (
-    <div className={className} style={{
-      fontFamily: "var(--mono)",
+    <div className={`${className ?? ""} mono`} style={{
       fontSize: size === "sm" ? 9 : 10,
       letterSpacing: size === "sm" ? ".08em" : ".06em",
       textTransform: "uppercase",
