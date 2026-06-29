@@ -13,22 +13,22 @@ import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { usePromptDialog, useConfirmDialog } from "@/shared/ui/promptDialog";
-import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "../lib/agentProfiles";
-import { deriveConsoles } from "../lib/consoleModel";
+import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "./lib/agentProfiles";
+import { deriveConsoles } from "./lib/consoleModel";
 import {
   buildAuditRows, auditDecisionCounts, type AuditDisplayRow, type DecFilter,
-} from "../lib/auditRows";
+} from "./lib/auditRows";
 import { useAppStore } from "@/store";
-import { ProfilesTab } from "../ProfilesTab";
-import { AssignmentsTab } from "../AssignmentsTab";
-import { ActivityTab } from "../ActivityTab";
-import { FlowTab } from "../FlowTab";
-import "../agents.css";
+import { ProfilesTab } from "./ProfilesTab";
+import { AssignmentsTab } from "./AssignmentsTab";
+import { ActivityTab } from "./ActivityTab";
+import { FlowTab } from "./FlowTab";
+import "./agents.css";
 
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
-export { ProfileSelect } from "../AssignmentsTab";
-export { appSessionTag, appSessionOpenLabel, appReachNote } from "../lib/appSession";
+export { ProfileSelect } from "./AssignmentsTab";
+export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
 
 export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");

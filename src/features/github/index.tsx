@@ -3,14 +3,14 @@ import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { GitHubEmpty } from "../Empty";
-import { GitHubSummary } from "../GitHubSummary";
+import { GitHubEmpty } from "./Empty";
+import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
 import { ProjectBoard } from "@/features/planner/github/ProjectBoard";
 import { Roadmap } from "@/features/planner/github/Roadmap";
 import { Issues } from "@/features/planner/github/Issues";
 import { Insights } from "@/features/planner/github/Insights";
-import { Pulse } from "../Pulse";
+import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [
   { id: "summary", label: "Summary", hint: "all repos · analytics" },

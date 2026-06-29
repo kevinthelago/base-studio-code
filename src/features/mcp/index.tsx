@@ -1,23 +1,23 @@
 import { useState, useMemo } from "react";
-import { resolveMcpInstallDir, catalogLink } from "../lib/mcpInstall";
-import { useMcpInstallStatus } from "../useMcpInstallStatus";
-import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "../lib/mcpCatalogView";
+import { resolveMcpInstallDir, catalogLink } from "./lib/mcpInstall";
+import { useMcpInstallStatus } from "./useMcpInstallStatus";
+import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "./lib/mcpCatalogView";
 import { useAppStore } from "@/store";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
-import { McpAnalyticsTab } from "../McpAnalytics";
+import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
-import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "../lib/mcpServers";
-import { hookFromCatalog, blankHook, type Hook } from "../lib/hooks";
+import { mcpFromCatalog, blankMcpServer, type McpServer, type McpTransport } from "./lib/mcpServers";
+import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
-} from "../shared";
+} from "./shared";
 import { Pane } from "@/shared/ui/Pane";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
-import "../mcp.css";
+import "./mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // MCP servers screen — the Rail "MCP" page. Owns the install/version machinery (download, build,
