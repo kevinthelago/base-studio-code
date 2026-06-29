@@ -70,15 +70,20 @@ describe("buildAgentEnv", () => {
 });
 
 describe("buildSessionSettings", () => {
-  it("is unrestricted for an ungated pane (no role, no profile)", () => {
+  it("confines file tools by default on an ungated pane, leaving commands otherwise unrestricted", () => {
     const s = mkStore({ deniedCommands: ["rm -rf"] });
     const out = buildSessionSettings(s, "p");
     expect(out.allowedCommands).toEqual([]);
     expect(out.bashPosture).toBe("allow");
     expect(out.skills).toEqual([]);
     expect(out.deniedCommands).toEqual(["rm -rf"]); // passes the global denies through
-    // Only the always-on turn-activity hooks — no gated/audit/skill hooks.
-    expect(cmds(out)).toEqual(["bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    // FS confinement (bsc-confine, #158) is the DEFAULT deny — present even with no role/profile
+    // (#1916) — alongside the always-on turn-activity hooks. The audit/scope/taint hooks stay gated.
+    expect(cmds(out)).toEqual(["bsc-confine", "bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    // ...and the confinement config is write-protected on every pane, so the agent can't edit
+    // `.claude/**` to remove the hook or widen its own permissions (#1916).
+    expect(out.denyToolRules).toEqual(expect.arrayContaining(
+      ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)", "NotebookEdit(.claude/**)"]));
   });
 
   it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
