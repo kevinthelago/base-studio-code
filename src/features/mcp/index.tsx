@@ -16,6 +16,8 @@ import {
 } from "./shared";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Button } from "@/shared/ui/controls/Button";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
@@ -105,11 +107,11 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     if (mcpServers.length === 0) {
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "64px 24px", textAlign: "center" }}>
-            <h3 style={{ margin: 0 }}>No MCP servers installed</h3>
-            <p className="hint" style={{ maxWidth: 380, margin: 0 }}>Add MCP servers from the catalog to give your agents new tools.</p>
-            <button className="btn primary" onClick={() => select("catalog")}>Browse the catalog →</button>
-          </div>
+          <EmptyState
+            title="No MCP servers installed"
+            description="Add MCP servers from the catalog to give your agents new tools."
+            actions={<Button variant="primary" onClick={() => select("catalog")}>Browse the catalog →</Button>}
+          />
           {builtInSection}
         </>
       );
