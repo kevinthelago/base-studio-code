@@ -1,0 +1,72 @@
+{
+  "id": "gdpr",
+  "domain": "privacy",
+  "name": "GDPR",
+  "version": "2016/679",
+  "jurisdictions": [
+    "eu",
+    "uk",
+    "eea"
+  ],
+  "summary": "EU General Data Protection Regulation — obligations for collecting, processing, and retaining personal data of EU/EEA residents.",
+  "requirements": [
+    {
+      "id": "lawful-basis",
+      "summary": "Establish + record a lawful basis for each processing purpose (Art. 6).",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "consent",
+      "summary": "Where consent is the basis, capture freely-given, specific, opt-in consent and allow withdrawal (Art. 7).",
+      "data_types": [
+        "pii",
+        "tracking"
+      ]
+    },
+    {
+      "id": "transparency",
+      "summary": "Provide a privacy notice describing what's collected, why, retention, and rights (Art. 13–14).",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "data-subject-rights",
+      "summary": "Support access, rectification, erasure, portability, and objection requests (Art. 15–22).",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "minimization",
+      "summary": "Collect only data adequate, relevant, and limited to the purpose (Art. 5(1)(c)).",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "retention",
+      "summary": "Define + enforce retention limits; delete/anonymize when no longer needed (Art. 5(1)(e)).",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "special-category",
+      "summary": "Special-category data (health, biometrics, etc.) needs an Art. 9 condition + heightened safeguards.",
+      "data_types": [
+        "health",
+        "biometric"
+      ]
+    },
+    {
+      "id": "breach-notice",
+      "summary": "Notify the supervisory authority of a breach within 72 hours (Art. 33).",
+      "data_types": [
+        "pii"
+      ]
+    }
+  ]
+}

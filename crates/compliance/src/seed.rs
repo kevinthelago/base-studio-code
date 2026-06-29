@@ -1,133 +1,41 @@
 //! The baseline standards corpus (#1005) — a sensible default set seeded into a fresh store so the
 //! server is useful out of the box: **WCAG 2.2 AA** (accessibility), **GDPR** + **CCPA/CPRA**
-//! (privacy), **SOC 2** (security), and common **user-protection** rules. Pure data — no I/O — so
-//! it's unit-testable and the store layer simply persists it. The user owns + extends the store
-//! afterward (`upsert`), and a corpus version bump means a release isn't needed to refresh rules.
+//! (privacy), **SOC 2** (security), and common **user-protection** rules. The standards live as
+//! versioned, editable **JSON data** under `crates/compliance/corpus/*.json` (#1614, mirroring the
+//! `data/stages/*.json` pattern) — one file per standard, embedded at compile time via `include_dir!`
+//! and deserialized straight into [`Standard`]. Pure data — no runtime I/O — so it's unit-testable
+//! and the store layer simply persists it. The user owns + extends the store afterward (`upsert`),
+//! and a corpus version bump means a release isn't needed to refresh rules.
 
-use crate::types::{Domain, Requirement, Standard};
+use crate::types::Standard;
+use include_dir::{include_dir, Dir};
 
 /// The corpus version stamp written alongside the seed. Bump when the baseline set changes so the
 /// UI can show "standards as of vN" and a re-seed knows whether it's behind. Distinct from a
 /// standard's own `version` (e.g. WCAG `2.2 AA`).
 pub const CORPUS_VERSION: u32 = 1;
 
-/// The baseline standards set seeded into a fresh store.
+/// The baseline standards, one JSON file per standard, embedded at compile time. The single source
+/// of truth for the seeded corpus (#1614) — editable as data without touching Rust.
+static CORPUS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/corpus");
+
+/// The baseline standards set seeded into a fresh store. Loaded from the embedded `corpus/*.json`
+/// files, sorted by id for a deterministic order (the store keys by id, so order is not otherwise
+/// significant). Every packaged file is valid `Standard` JSON, asserted by `seed_corpus_matches`.
 pub fn baseline() -> Vec<Standard> {
-    vec![wcag_22_aa(), gdpr(), ccpa(), soc2(), user_protection()]
-}
-
-fn wcag_22_aa() -> Standard {
-    Standard {
-        id: "wcag-2.2".into(),
-        domain: Domain::Accessibility,
-        name: "WCAG 2.2 Level AA".into(),
-        version: Some("2.2 AA".into()),
-        jurisdictions: vec!["global".into()],
-        summary: "Web Content Accessibility Guidelines 2.2, Level AA — the baseline for accessible UI; \
-                  referenced by the ADA, EN 301 549, and Section 508."
-            .into(),
-        requirements: vec![
-            Requirement::new("1.1.1", "Non-text content has a text alternative (alt text, labels, captions)."),
-            Requirement::new("1.3.1", "Information and relationships conveyed visually are also exposed in markup/semantics."),
-            Requirement::new("1.4.3", "Text has a contrast ratio of at least 4.5:1 (3:1 for large text)."),
-            Requirement::new("1.4.11", "UI components and graphics have at least 3:1 contrast against adjacent colors."),
-            Requirement::new("2.1.1", "All functionality is operable from a keyboard, with no keyboard traps (2.1.2)."),
-            Requirement::new("2.4.7", "The keyboard focus indicator is visible."),
-            Requirement::new("2.5.8", "Target size is at least 24×24 CSS px (WCAG 2.2 addition)."),
-            Requirement::new("3.3.7", "Don't ask users to re-enter info already provided in the same process (Redundant Entry, 2.2)."),
-            Requirement::new("4.1.2", "Name, role, and value of every UI component are programmatically available (ARIA)."),
-        ],
-    }
-}
-
-fn gdpr() -> Standard {
-    Standard {
-        id: "gdpr".into(),
-        domain: Domain::Privacy,
-        name: "GDPR".into(),
-        version: Some("2016/679".into()),
-        jurisdictions: vec!["eu".into(), "uk".into(), "eea".into()],
-        summary: "EU General Data Protection Regulation — obligations for collecting, processing, and \
-                  retaining personal data of EU/EEA residents."
-            .into(),
-        requirements: vec![
-            Requirement::for_data("lawful-basis", "Establish + record a lawful basis for each processing purpose (Art. 6).", &["pii"]),
-            Requirement::for_data("consent", "Where consent is the basis, capture freely-given, specific, opt-in consent and allow withdrawal (Art. 7).", &["pii", "tracking"]),
-            Requirement::for_data("transparency", "Provide a privacy notice describing what's collected, why, retention, and rights (Art. 13–14).", &["pii"]),
-            Requirement::for_data("data-subject-rights", "Support access, rectification, erasure, portability, and objection requests (Art. 15–22).", &["pii"]),
-            Requirement::for_data("minimization", "Collect only data adequate, relevant, and limited to the purpose (Art. 5(1)(c)).", &["pii"]),
-            Requirement::for_data("retention", "Define + enforce retention limits; delete/anonymize when no longer needed (Art. 5(1)(e)).", &["pii"]),
-            Requirement::for_data("special-category", "Special-category data (health, biometrics, etc.) needs an Art. 9 condition + heightened safeguards.", &["health", "biometric"]),
-            Requirement::for_data("breach-notice", "Notify the supervisory authority of a breach within 72 hours (Art. 33).", &["pii"]),
-        ],
-    }
-}
-
-fn ccpa() -> Standard {
-    Standard {
-        id: "ccpa".into(),
-        domain: Domain::Privacy,
-        name: "CCPA / CPRA".into(),
-        version: Some("CPRA 2023".into()),
-        jurisdictions: vec!["us-ca".into()],
-        summary: "California Consumer Privacy Act, as amended by the CPRA — disclosure, deletion, and \
-                  opt-out rights for California residents."
-            .into(),
-        requirements: vec![
-            Requirement::for_data("notice-at-collection", "Disclose at/before collection what personal info is collected and the purposes.", &["pii"]),
-            Requirement::for_data("right-to-know", "Honor requests to know the categories + specific pieces of personal info collected.", &["pii"]),
-            Requirement::for_data("right-to-delete", "Honor verifiable deletion requests, with limited exceptions.", &["pii"]),
-            Requirement::for_data("opt-out-sale-share", "Provide a 'Do Not Sell or Share My Personal Information' opt-out (and honor GPC).", &["pii", "tracking"]),
-            Requirement::for_data("sensitive-pi", "Let consumers limit use of sensitive personal information (CPRA).", &["health", "biometric", "geolocation"]),
-        ],
-    }
-}
-
-fn soc2() -> Standard {
-    Standard {
-        id: "soc2".into(),
-        domain: Domain::Security,
-        name: "SOC 2 (Trust Services Criteria)".into(),
-        version: Some("TSC 2017 (rev. 2022)".into()),
-        jurisdictions: vec!["global".into()],
-        summary: "AICPA SOC 2 Trust Services Criteria — the controls baseline (security, availability, \
-                  confidentiality) an org demonstrates to handle customer data responsibly."
-            .into(),
-        requirements: vec![
-            Requirement::new("access-control", "Enforce least-privilege access with authentication, authorization, and review."),
-            Requirement::new("encryption", "Encrypt data in transit (TLS) and at rest."),
-            Requirement::new("audit-logging", "Log security-relevant events and protect logs from tampering."),
-            Requirement::new("change-management", "Gate changes through review + testing before production."),
-            Requirement::new("incident-response", "Maintain an incident-response process with detection, escalation, and remediation."),
-            Requirement::new("secrets-management", "Store secrets/credentials outside source control in a managed secret store."),
-        ],
-    }
-}
-
-fn user_protection() -> Standard {
-    Standard {
-        id: "user-protection".into(),
-        domain: Domain::UserProtection,
-        name: "User-protection baseline".into(),
-        version: None,
-        jurisdictions: vec!["global".into()],
-        summary: "Common consumer/user-protection rules — anti-dark-pattern, honest defaults, and \
-                  cancellation/consent fairness drawn from FTC guidance, the EU Digital Services Act, \
-                  and the California/Colorado dark-pattern provisions."
-            .into(),
-        requirements: vec![
-            Requirement::new("no-dark-patterns", "No deceptive or manipulative UI (forced action, confirmshaming, disguised ads, sneaking)."),
-            Requirement::new("easy-cancellation", "Cancellation/unsubscribe is at least as easy as sign-up (FTC click-to-cancel)."),
-            Requirement::new("clear-pricing", "Show total price, recurring charges, and renewal terms before purchase."),
-            Requirement::new("honest-consent", "Consent prompts present accept/decline with equal prominence; no pre-checked opt-ins."),
-            Requirement::new("age-appropriate", "If the product is reachable by minors, apply age-appropriate defaults + reduced data collection."),
-        ],
-    }
+    let mut out: Vec<Standard> = CORPUS_DIR
+        .files()
+        .filter(|f| f.path().extension().is_some_and(|e| e == "json"))
+        .filter_map(|f| serde_json::from_slice(f.contents()).ok())
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Domain;
 
     #[test]
     fn baseline_covers_every_domain_with_unique_ids() {
@@ -145,5 +53,52 @@ mod tests {
 
         // Every standard has at least one requirement.
         assert!(std.iter().all(|s| !s.requirements.is_empty()));
+    }
+
+    /// Guard the data extraction (#1614): every packaged JSON file deserializes to a `Standard`, and
+    /// the corpus still carries the full baseline set with its known values — so a future edit to a
+    /// `corpus/*.json` file can't silently drop a standard, a requirement, or change a known field.
+    #[test]
+    fn seed_corpus_matches() {
+        let std = baseline();
+
+        // Count: 5 standards across the 4 domains; 33 requirements total.
+        assert_eq!(std.len(), 5, "five baseline standards");
+        let req_total: usize = std.iter().map(|s| s.requirements.len()).sum();
+        assert_eq!(req_total, 33, "33 requirements across the corpus");
+
+        let by_id = |id: &str| std.iter().find(|s| s.id == id).expect("standard present");
+
+        // WCAG — accessibility, 9 success criteria, the 2.2 AA version stamp.
+        let wcag = by_id("wcag-2.2");
+        assert_eq!(wcag.domain, Domain::Accessibility);
+        assert_eq!(wcag.name, "WCAG 2.2 Level AA");
+        assert_eq!(wcag.version.as_deref(), Some("2.2 AA"));
+        assert_eq!(wcag.requirements.len(), 9);
+        assert_eq!(wcag.requirements[0].id, "1.1.1");
+
+        // GDPR — privacy, 8 obligations, data-typed; the breach-notice rule is pii-scoped.
+        let gdpr = by_id("gdpr");
+        assert_eq!(gdpr.domain, Domain::Privacy);
+        assert_eq!(gdpr.jurisdictions, vec!["eu", "uk", "eea"]);
+        assert_eq!(gdpr.requirements.len(), 8);
+        let special = gdpr.requirements.iter().find(|r| r.id == "special-category").unwrap();
+        assert_eq!(special.data_types, vec!["health", "biometric"]);
+
+        // CCPA / CPRA — privacy, 5 obligations.
+        let ccpa = by_id("ccpa");
+        assert_eq!(ccpa.domain, Domain::Privacy);
+        assert_eq!(ccpa.requirements.len(), 5);
+
+        // SOC 2 — security, 6 controls.
+        let soc2 = by_id("soc2");
+        assert_eq!(soc2.domain, Domain::Security);
+        assert_eq!(soc2.requirements.len(), 6);
+
+        // User-protection — no version stamp; 5 rules.
+        let up = by_id("user-protection");
+        assert_eq!(up.domain, Domain::UserProtection);
+        assert!(up.version.is_none());
+        assert_eq!(up.requirements.len(), 5);
     }
 }

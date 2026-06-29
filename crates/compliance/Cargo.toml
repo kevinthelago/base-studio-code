@@ -34,6 +34,9 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 mcp-rpc = { path = "../mcp-rpc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Embed the baseline standards corpus (`corpus/*.json`) at compile time (#1614), so the seed is
+# versioned, editable data rather than Rust literals — the same pattern as `data/stages/*.json`.
+include_dir = "0.7"
 # Local on-disk store of the standards corpus (keyed by canonical id), so the rules the planner
 # bakes in are user-owned + updatable without an app release. `bundled` matches plandb/research.
 rusqlite = { version = "0.40", features = ["bundled"] }
