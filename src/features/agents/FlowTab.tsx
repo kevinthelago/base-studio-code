@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { Chip } from "@/shared/ui/Chip";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -106,7 +107,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {ready.length > 0 && (
         <>
-          <div className="sec-head"><h3>Ready</h3><span className="hint">dependencies landed — wake the parked pane</span></div>
+          <SectionHeader title="Ready" hint="dependencies landed — wake the parked pane" />
           <div style={{ marginBottom: 14 }}>
             {ready.map((wtr) => (
               <div key={wtr.session} className="card" style={{ marginBottom: 10, borderColor: "var(--success)" }}>
@@ -132,7 +133,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {views.length > 0 && (
         <>
-          <div className="sec-head"><h3>Blocked</h3><span className="hint">parked on a dependency · live from the coordination log</span></div>
+          <SectionHeader title="Blocked" hint="parked on a dependency · live from the coordination log" />
           {views.map((v) => (
             <div key={v.session} className="card" style={{ marginBottom: 10, borderColor: v.deadlocked || v.stalled ? "var(--danger)" : undefined }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -162,7 +163,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {runEntries.length > 0 && (
         <>
-          <div className="sec-head"><h3>Workflows</h3><span className="hint">role-staged work items (#220) · the role each stage runs as</span></div>
+          <SectionHeader title="Workflows" hint="role-staged work items (#220) · the role each stage runs as" />
           {runEntries.map(([id, run]) => {
             const stages = Object.values(run.workflow.stages);
             return (
