@@ -9,13 +9,15 @@ use std::process::ExitCode;
 /// One row per top-level command for the `bsc help` overview. The detailed per-command help comes
 /// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).
 const COMMANDS: &[(&str, &str)] = &[
+    ("plan", "per-project plan store: issues, features, fleet, sections"),
     ("project", "cross-project hub: list local projects + the .published marker"),
     ("skill", "global skills + task-groups store"),
     ("compliance", "compliance standards corpus"),
     ("blueprint", "user blueprint store"),
     ("logs", "unified logs + perf + cost (read-only)"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
-    // Added as the migration lands (#1877): plan · data · mcp
+    ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
+    // Added as the migration lands (#1877): mcp
 ];
 
 fn top_help() -> String {
@@ -36,12 +38,15 @@ fn top_help() -> String {
 
 fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
+        "plan" => plandb::cli::run(rest, "bsc plan"),
         "project" => bsc_project::cli::run(rest, "bsc project"),
         "skill" => skilldb::cli::run(rest, "bsc skill"),
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
+        #[cfg(feature = "data")]
+        "data" => bsc_data::cli::run(rest, "bsc data"),
         "" | "help" | "-h" | "--help" => {
             print!("{}", top_help());
             Ok(())
