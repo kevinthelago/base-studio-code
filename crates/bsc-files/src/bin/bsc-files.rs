@@ -103,27 +103,16 @@ fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
-    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
-    if cmd.is_empty() || cmd == "help" {
-        match args.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-files", TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview("bsc-files", TAGLINE, COMMANDS)),
-        }
-        return Ok(());
-    }
-    // Per-command help: `bsc-files <cmd> help`.
-    if args.positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for("bsc-files", TAGLINE, COMMANDS, &cmd));
+    // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
+    // dispatch in bsc-cli-util; returns Ok once help is printed.
+    if bsc_cli_util::handle_help("bsc-files", TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
     match cmd.as_str() {
         "tree" => cmd_tree(&args),
         "stat" => cmd_stat(&args),
-        other => Err(format!(
-            "unknown command '{other}'\n\n{}",
-            bsc_cli_util::help_overview("bsc-files", TAGLINE, COMMANDS)
-        )),
+        other => Err(bsc_cli_util::unknown_command("bsc-files", TAGLINE, COMMANDS, other)),
     }
 }
 

@@ -171,18 +171,9 @@ fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
-    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
-    // Handled before opening the store (help must work without a store.db).
-    if cmd.is_empty() || cmd == "help" {
-        match args.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview("bsc-compliance", TAGLINE, COMMANDS)),
-        }
-        return Ok(());
-    }
-    // Per-command help: `bsc-compliance <cmd> help`.
-    if args.positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, &cmd));
+    // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
+    // dispatch in bsc-cli-util, run before opening the store (help works without a store.db).
+    if bsc_cli_util::handle_help("bsc-compliance", TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -283,10 +274,7 @@ fn run() -> Result<(), String> {
             print_json(&s.remove(id)?, args.pretty);
             Ok(())
         }
-        other => Err(format!(
-            "unknown command '{other}'\n\n{}",
-            bsc_cli_util::help_overview("bsc-compliance", TAGLINE, COMMANDS)
-        )),
+        other => Err(bsc_cli_util::unknown_command("bsc-compliance", TAGLINE, COMMANDS, other)),
     }
 }
 
