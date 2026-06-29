@@ -6,6 +6,7 @@
 // skill-scope UI, the #1338 promote path).
 
 import { useState, useEffect, useCallback } from "react";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useAppStore } from "@/store";
 import {
   loadPendingLessons, confirmLesson, discardLesson, lessonToSkill, type Lesson,
@@ -81,11 +82,11 @@ export function LessonsTab({ projectKey, projectName }: { projectKey: string; pr
       </div>
 
       {!projectKey ? (
-        <div className="empty"><h3 style={{ margin: 0 }}>No active project</h3><p className="hint" style={{ maxWidth: 440, margin: 0 }}>Open a project to review the lessons its agents have captured. Lessons are scoped to the project that produced them.</p></div>
+        <EmptyState title="No active project" description="Open a project to review the lessons its agents have captured. Lessons are scoped to the project that produced them." />
       ) : loading ? (
         <div className="hint">Loading…</div>
       ) : lessons.length === 0 ? (
-        <div className="empty"><h3 style={{ margin: 0 }}>Nothing to review</h3><p className="hint" style={{ maxWidth: 440, margin: 0 }}>When an agent catches a mistake it runs <code>bsc-learned "&lt;what&gt;" --rule "&lt;fix&gt;"</code> and the candidate lands here for you to confirm. Recurring captures bump a "seen" counter instead of piling up.</p></div>
+        <EmptyState title="Nothing to review" description={<>When an agent catches a mistake it runs <code>bsc-learned "&lt;what&gt;" --rule "&lt;fix&gt;"</code> and the candidate lands here for you to confirm. Recurring captures bump a "seen" counter instead of piling up.</>} />
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {lessons.map((l) => <LessonCard key={l.id} lesson={l} projectKey={projectKey} onResolved={refresh} />)}

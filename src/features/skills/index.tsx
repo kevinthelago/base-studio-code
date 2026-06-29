@@ -402,7 +402,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <h2 style={{ margin: "0 0 4px", fontFamily: "var(--mono)", fontSize: 18 }}>Runs</h2>
           <div style={{ color: "var(--fg-muted)", fontSize: 12, marginBottom: 14 }}>Live skill invocations from the usage log · last 7 days</div>
           {runRows.length === 0 ? (
-            <div className="empty"><h3 style={{ margin: 0 }}>No runs yet</h3><p className="hint" style={{ maxWidth: 420, margin: 0 }}>Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend.</p></div>
+            <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
           ) : (
             <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, padding: "8px 12px", background: "var(--bg-panel)", fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
