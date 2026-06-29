@@ -35,7 +35,7 @@ export function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic, rep
   // the whole project (and the fallback for any repo without its own toggle).
   const visibilityControl = onSetPublic && (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>default</span>
+      <span className="mono-label">default</span>
       <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
         {([[false, "🔒 Private"], [true, "🌐 Public"]] as const).map(([val, label], i) => {
           const on = !!isPublic === val;
@@ -44,9 +44,10 @@ export function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic, rep
               key={label}
               onClick={() => { if (!on) onSetPublic(val); }}
               aria-pressed={on}
+              className="mono"
               style={{
                 height: 24, padding: "0 11px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: on ? "default" : "pointer",
-                fontFamily: "var(--mono)", fontSize: 10.5,
+                fontSize: 10.5,
                 background: on ? "var(--bg-elev2)" : "transparent", color: on ? "var(--fg)" : "var(--fg-dim)",
               }}
             >{label}</button>
@@ -54,7 +55,7 @@ export function FocusedReposBody({ repos, onLinkRepo, isPublic, onSetPublic, rep
         })}
       </div>
       <span style={{ flex: 1 }} />
-      <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+      <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
         default for new repos · override per repo below
       </span>
     </div>

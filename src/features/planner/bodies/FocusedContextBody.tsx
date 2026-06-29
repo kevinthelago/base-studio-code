@@ -12,13 +12,13 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
       cursor: onView ? "pointer" : "default",
     }}>
       <KindDot kind={f.kind} />
-      <span style={{
-        flex: 1, fontFamily: "var(--mono)", fontSize: 10, color: f.pinned ? "var(--fg)" : "var(--fg-muted)",
+      <span className="mono" style={{
+        flex: 1, fontSize: 10, color: f.pinned ? "var(--fg)" : "var(--fg-muted)",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>{f.name}</span>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>{f.tok}</span>
-      <span onClick={(e) => { e.stopPropagation(); onToggle?.(); }} style={{
-        cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11,
+      <span className="mono" style={{ fontSize: 8.5, color: "var(--fg-dim)" }}>{f.tok}</span>
+      <span onClick={(e) => { e.stopPropagation(); onToggle?.(); }} className="mono" style={{
+        cursor: "pointer", fontSize: 11,
         color: f.pinned ? "var(--accent)" : "var(--fg-dim)", width: 14, textAlign: "center",
       }}>
         {f.pinned ? "✦" : "+"}
@@ -31,9 +31,9 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
  *  and whether it's been written yet, so the user sees exactly which files the gate still needs. */
 function RequiredCtxRow({ topic, written }: { topic: string; written: boolean }) {
   return (
-    <div style={{
+    <div className="mono" style={{
       display: "flex", alignItems: "center", gap: 7, padding: "4px 7px", borderRadius: 5,
-      fontFamily: "var(--mono)", fontSize: 10,
+      fontSize: 10,
     }}>
       <span style={{ width: 12, textAlign: "center", color: written ? "var(--success)" : "var(--fg-dim)" }}>
         {written ? "✓" : "○"}
@@ -72,8 +72,8 @@ export function FocusedContextBody({ context, onView, requiredContext }: {
           <div style={{ display: "flex", alignItems: "center", padding: "0 2px 6px", gap: 8 }}>
             <span className="ulabel">required files</span>
             <span style={{ flex: 1 }} />
-            <span style={{
-              fontFamily: "var(--mono)", fontSize: 9,
+            <span className="mono" style={{
+              fontSize: 9,
               color: missingCount === 0 ? "var(--success)" : "var(--fg-dim)",
             }}>
               {required.length - missingCount}/{required.length} written
@@ -87,7 +87,7 @@ export function FocusedContextBody({ context, onView, requiredContext }: {
       <div style={{ display: "flex", alignItems: "center", padding: "0 2px 8px", gap: 8 }}>
         <span className="ulabel">context files</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>
+        <span className="mono" style={{ fontSize: 9, color: "var(--accent)" }}>
           {totalTok.toFixed(1)}k / 200k tok
         </span>
       </div>
