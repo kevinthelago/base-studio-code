@@ -6,7 +6,7 @@
      - inline:  the same 3-zone frame filling its container (no scrim/slide), for master-detail
                 editors (Automations, the planner pane).
    The FRAME is feature-agnostic and lives here; the body's FIELD styling stays screen-scoped (the
-   pane renders inside its screen, so `.ext-screen .field` / `.skills-screen .scope` keep applying). */
+   pane renders inside its screen, so `.ext-workspace .field` / `.skills-workspace .scope` keep applying). */
 
 .pane-scrim { position:absolute; inset:0; background:color-mix(in oklch, #000, transparent 60%); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:4; }
 .pane-scrim.on { opacity:1; pointer-events:auto; }

@@ -59,7 +59,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
 
   return (
     <Screen
-      className="projects-screen"
+      className="projects-workspace"
       bodyClassName="projects-body"
       tabs={tabs}
       active={mode}
