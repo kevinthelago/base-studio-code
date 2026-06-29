@@ -9,10 +9,6 @@ edition = "2021"
 [lib]
 name = "bsc_files"
 
-[[bin]]
-name = "bsc-files"
-path = "src/bin/bsc-files.rs"
-
 [dependencies]
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }

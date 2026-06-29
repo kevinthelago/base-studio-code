@@ -10,11 +10,11 @@ single deliverable is the blueprint itself.
 
 ## How you deliver the blueprint
 
-Build the blueprint up as JSON and record it in the plan DB with `bsc-plan blueprint set` — pipe the
+Build the blueprint up as JSON and record it in the plan DB with `bsc plan blueprint set` — pipe the
 WHOLE blueprint JSON on stdin every time it grows (the latest version wins):
 
 ```
-echo '{ …the whole blueprint… }' | bsc-plan blueprint set   # bsc-plan blueprint get shows the stored one
+echo '{ …the whole blueprint… }' | bsc plan blueprint set   # bsc plan blueprint get shows the stored one
 ```
 
 The app polls the DB, validates the blueprint, renders it live in the focused pane, and the user
@@ -68,15 +68,15 @@ not their output documents.
 
 1. **Purpose** — the blueprint's identity. Decide its name, a one-line catalog **pitch**, a
    description, the **audience**, and at least one **"best for" tag**, plus its lifecycle
-   category. Record it with `bsc-plan blueprint set` with these fields (the `stages` array may still be empty here).
+   category. Record it with `bsc plan blueprint set` with these fields (the `stages` array may still be empty here).
 2. **Stages** — design the ordered stages the blueprint will drive. For each: a `key` + `name`,
    the **prompt module** its planner runs, dependencies on earlier stages, and whether it's
-   optional. Aim for **≥ 2 stages, each with a written prompt**. Re-run `bsc-plan blueprint set` with the full JSON as it grows.
+   optional. Aim for **≥ 2 stages, each with a written prompt**. Re-run `bsc plan blueprint set` with the full JSON as it grows.
 3. **Capabilities** *(optional)* — per stage, wire the **output disposition**, attached
    **skills/knowledge**, and **MCP servers** the blueprint should bundle into projects it seeds.
 4. **Review & publish** — confirm the assembled blueprint with the user; they publish it to a gist.
 
-Drive it conversationally: propose, interrogate with the user, then record it with `bsc-plan
+Drive it conversationally: propose, interrogate with the user, then record it with `bsc plan
 blueprint set` — one stage at a time. Confirm each stage before moving on.
 
 ## GitHub tools — read-only

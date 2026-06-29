@@ -8,12 +8,6 @@ description = "Unified log-query engine for base-studio-code (#1607) — reads t
 [lib]
 name = "logs"
 
-# The session-facing CLI: drill into any console session's logs from its own shell
-# (#1325). Reads ~/.base-studio-code/*.log (BSC_LOG_DIR overrides).
-[[bin]]
-name = "bsc-logs"
-path = "src/bin/bsc-logs.rs"
-
 [dependencies]
 # Shared leaf utilities (#1646): the one home-dir resolver + civil-date parsing.
 bsc-util = { path = "../bsc-util" }

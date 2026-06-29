@@ -37,9 +37,9 @@ ${available}
 
 Each worker sees the **global** servers plus only the servers you assign to its stream. Assign by
 adding the server name to that stream's \`mcp\` list in the fleet plan, e.g. \`"mcp": ["Research"]\`
-(written with \`bsc-plan fleet set\`). Use this to give one worker a tool its lane needs without
+(written with \`bsc plan fleet set\`). Use this to give one worker a tool its lane needs without
 handing it to the whole fleet; for a tool every worker needs, scope it project-wide with
-\`bsc-plan mcp add <name>\` instead.
+\`bsc plan mcp add <name>\` instead.
 
 ## Installing more
 

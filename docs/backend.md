@@ -66,31 +66,34 @@ that block is the canonical index of the backend's command surface.
 Everything in [`crates/`](../crates/) is **Tauri-free** — it depends on neither `tauri` nor
 `src-tauri`. That keeps two things possible: (a) the heavy logic (SQLite/DuckDB stores, the LLM
 layer, the research/compliance sources) compiles + unit-tests without dragging the whole desktop app
-in, and (b) the CLIs/MCP servers spawn **cheaply per session** (a worker's shell execs `bsc-plan`
+in, and (b) the unified `bsc` CLI / the MCP servers spawn **cheaply per session** (a worker's shell execs `bsc`
 thousands of times — it can't pay for a Tauri process each time). The desktop app depends on several
-of these crates and exposes thin command wrappers over them.
+of these crates and exposes thin command wrappers over them. Since #1877 the per-store CLIs are no
+longer separate bins — each crate's CLI is a **subcommand of the one `bsc` binary** (the `bsc` umbrella
+crate dispatches into each lib's `cli::run`); the "CLI" column below is that subcommand.
 
-| Crate | Lib | Binary | Purpose |
+| Crate | Lib | CLI | Purpose |
 |---|---|---|---|
-| [`plandb`](../crates/plandb/) | `plandb` | **`bsc-plan`** | Per-project plan store (SQLite). The single source of truth for issues, features, phases, repos, the fleet, deps, deploy, MCP, context required-set, triage runs, and self-correction "lessons". The desktop's `plan_*` commands and the session-side `bsc-plan` CLI share it; sessions point at their project's DB via `$BSC_PLAN_DB`. |
-| [`data`](../crates/data/) (`bsc-data`) | `bsc_data` | **`bsc-data`** (needs `duckdb-store`) | Canonical Data Model store (DuckDB) + the connector framework + runtime REST presets (#1235). Schema/DDL/connector/coercion logic compiles under `--no-default-features` (no DuckDB); the planner reads the per-project model/scan via `bsc-data model get` / `bsc-data scan get`, and authors runtime REST presets via `bsc-data connector` (which **replaced** the deprecated `bsc-plan integration`, #1721). |
+| [`plandb`](../crates/plandb/) | `plandb` | **`bsc plan`** | Per-project plan store (SQLite). The single source of truth for issues, features, phases, repos, the fleet, deps, deploy, MCP, context required-set, triage runs, and self-correction "lessons". The desktop's `plan_*` commands and the session-side `bsc plan` CLI share it; sessions point at their project's DB via `$BSC_PLAN_DB`. |
+| [`data`](../crates/data/) (`bsc-data`) | `bsc_data` | **`bsc data`** (needs `duckdb-store`) | Canonical Data Model store (DuckDB) + the connector framework + runtime REST presets (#1235). Schema/DDL/connector/coercion logic compiles under `--no-default-features` (no DuckDB); the planner reads the per-project model/scan via `bsc data model get` / `bsc data scan get`, and authors runtime REST presets via `bsc data connector` (which **replaced** the deprecated `bsc plan integration`, #1721). |
 | [`llm`](../crates/llm/) (`bsc-llm`) | `llm` | — | The model-agnostic `LlmProvider` abstraction (Anthropic / OpenAI / Gemini / Local-Ollama). Shared by `llm_complete` and `bsc-agent` so neither depends on the other. |
-| [`skilldb`](../crates/skilldb/) | `skilldb` | **`bsc-skill`** | Global skills + task-groups store (SQLite, #1338). ONE global `skills.db` (`$BSC_SKILL_DB`, default `~/.base-studio-code/skills.db`) shared by the desktop Skills library and every live session; the CLI reads with `bsc-skill get` and prunes with `bsc-skill remove` (with-args; no-args is the Skill-tool telemetry hook). |
-| [`research`](../crates/research/) | `research` | **`bsc-research-mcp`** | Literature research (arXiv · Semantic Scholar · PubMed/PMC · Crossref) + native PDF extraction + citation-grounded semantic search, with an on-disk SQLite cache. Shipped as a bundled stdio MCP server (Tauri `externalBin`) so the planner can ground plans/skills in real sources with no download/build/Docker. |
-| [`compliance`](../crates/compliance/) | `compliance` | **`bsc-compliance-mcp`** + **`bsc-compliance`** | User-updatable store of current compliance standards (WCAG 2.2, GDPR, CCPA, SOC 2, …) in SQLite. Two bins: the bundled stdio MCP server (`bsc-compliance-mcp`, so the planner bakes the right requirements in) and the session-side state CLI (`bsc-compliance standards list/get`), refreshable without an app release. |
-| [`logs`](../crates/logs/) | `logs` | **`bsc-logs`** | The unified log/perf/cost engine (epic #1607): one place for the `bsc-*` TSV readers, the `perf.db` series, and the token price table + usage parser + cost math (`logs::cost`, which `observability/tokens` delegates to, #1686). The session-side `bsc-logs` CLI reads logs + perf from a live shell. |
-| [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc-blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). Shared by the desktop's `project/blueprints.rs` and the session-side `bsc-blueprint` CLI. |
-| [`bsc-project`](../crates/bsc-project/) | `bsc_project` | **`bsc-project`** | Project-hub enumeration store: `bsc-project list` (every local hub) and `bsc-project published` (a hub's `.published` marker), so a live session can introspect the project set. |
+| [`skilldb`](../crates/skilldb/) | `skilldb` | **`bsc skill`** | Global skills + task-groups store (SQLite, #1338). ONE global `skills.db` (`$BSC_SKILL_DB`, default `~/.base-studio-code/skills.db`) shared by the desktop Skills library and every live session; the CLI reads with `bsc skill get` and prunes with `bsc skill remove` (with-args; the no-arg `bsc-skill` shell helper is the Skill-tool telemetry hook). |
+| [`research`](../crates/research/) | `research` | **`bsc mcp research`** | Literature research (arXiv · Semantic Scholar · PubMed/PMC · Crossref) + native PDF extraction + citation-grounded semantic search, with an on-disk SQLite cache. The bundled stdio MCP server (Tauri `externalBin`, spawned via `bsc mcp research`) so the planner can ground plans/skills in real sources with no download/build/Docker. |
+| [`compliance`](../crates/compliance/) | `compliance` | **`bsc mcp compliance`** + **`bsc compliance`** | User-updatable store of current compliance standards (WCAG 2.2, GDPR, CCPA, SOC 2, …) in SQLite. Two surfaces: the bundled stdio MCP server (`bsc mcp compliance`, so the planner bakes the right requirements in) and the session-side state CLI (`bsc compliance standards list/get`), refreshable without an app release. |
+| [`logs`](../crates/logs/) | `logs` | **`bsc logs`** | The unified log/perf/cost engine (epic #1607): one place for the `bsc-*` TSV readers, the `perf.db` series, and the token price table + usage parser + cost math (`logs::cost`, which `observability/tokens` delegates to, #1686). The session-side `bsc logs` CLI reads logs + perf from a live shell. |
+| [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). Shared by the desktop's `project/blueprints.rs` and the session-side `bsc blueprint` CLI. |
+| [`bsc-project`](../crates/bsc-project/) | `bsc_project` | **`bsc project`** | Project-hub enumeration store: `bsc project list` (every local hub) and `bsc project published` (a hub's `.published` marker), so a live session can introspect the project set. |
 | [`mcp-rpc`](../crates/mcp-rpc/) | `mcp_rpc` | — | The shared stdio JSON-RPC scaffold the bundled MCP servers (`research`, `compliance`) build on. |
-| [`bsc-util`](../crates/bsc-util/) · [`bsc-sqlite-util`](../crates/bsc-sqlite-util/) · [`bsc-cli-util`](../crates/bsc-cli-util/) | `bsc_util` · `bsc_sqlite_util` · `bsc_cli_util` | — | Shared internal libraries (no bins): base-dir/path helpers, the common `rusqlite` open/migrate helpers, and the shared CLI arg-parsing used across the `bsc-*` binaries. |
+| [`bsc-util`](../crates/bsc-util/) · [`bsc-sqlite-util`](../crates/bsc-sqlite-util/) · [`bsc-cli-util`](../crates/bsc-cli-util/) | `bsc_util` · `bsc_sqlite_util` · `bsc_cli_util` | — | Shared internal libraries (no bins): base-dir/path helpers, the common `rusqlite` open/migrate helpers, and the shared CLI arg-parsing used across the `bsc` / `bsc-agent` binaries. |
+| [`bsc`](../crates/bsc/) | — | **`bsc`** | The unified state-CLI binary (#1877): the one bundled `bsc` exe that dispatches every per-store subcommand (`plan`/`skill`/`data`/`logs`/`compliance`/`blueprint`/`project`/`files` + `mcp research`/`mcp compliance`) into each lib's `cli::run`. |
 | [`bsc-agent`](../crates/bsc-agent/) | — | **`bsc-agent`** | The model-agnostic agent *runtime* (epic #1078, P2): a lean tokio binary over the `llm` crate. The alternative harness to Claude Code, selected per-console by provider id; runs the agent loop + tools (incl. a `webfetch` on a dedicated thread). |
 
-> **The runtime state-CLI surface (#1325):** every persistent app store is reachable from a live
-> session via its own `bsc-*` sidecar — `bsc-plan` (plan.db), `bsc-skill` (skills.db), `bsc-data`
-> (DuckDB model/scan + `connector`), `bsc-logs` (logs/perf/cost), `bsc-compliance` (standards),
-> `bsc-blueprint` (user blueprints), `bsc-project` (project hubs) — plus the bundled stdio MCP
-> servers `bsc-research-mcp` / `bsc-compliance-mcp`. These bins (and the internal `bsc-util` /
-> `bsc-sqlite-util` / `bsc-cli-util` / `mcp-rpc` libs) are what CLAUDE.md's structure tree has
+> **The runtime state-CLI surface (#1325, unified #1877):** every persistent app store is reachable from a live
+> session via the one `bsc` binary (`$BSC_BIN`) — `bsc plan` (plan.db), `bsc skill` (skills.db), `bsc data`
+> (DuckDB model/scan + `connector`), `bsc logs` (logs/perf/cost), `bsc compliance` (standards),
+> `bsc blueprint` (user blueprints), `bsc project` (project hubs), `bsc files` (file tree) — plus the bundled stdio MCP
+> servers via `bsc mcp research` / `bsc mcp compliance`. This binary (and the model-agnostic `bsc-agent`, plus the internal `bsc-util` /
+> `bsc-sqlite-util` / `bsc-cli-util` / `mcp-rpc` libs) is what CLAUDE.md's structure tree has
 > historically under-enumerated — see [Gotchas](#8-gotchas).
 
 ---
@@ -131,7 +134,7 @@ On boot, `app/run.rs` reaps PTY children leaked by a prior unclean run via `pty_
 Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** (so loops / pipes /
 `&&` chains run without prompts — "start and go") but layer a curated `DEFAULT_DENY` (sudo, `rm -rf /`,
 `dd`, force-push, `curl … | sh`, …) plus any per-session `denied_commands` on top. `MANDATORY_BASH`
-(`gh`, `git`, `bsc-plan`) is always auto-approved. Claude Code precedence is **deny > ask > allow**.
+(`gh`, `git`, `bsc`) is always auto-approved. Claude Code precedence is **deny > ask > allow**.
 The role gate (planner / worker / director / triage / tester / reviewer / conductor / issuer / juror) maps to the
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard
 push-confirm gate.
@@ -263,7 +266,7 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
 - Coordination emitters (#199/#376) on `coord.log`: `bsc-landed`/`bsc-merged`/`bsc-closed`/`bsc-failed`
   (satisfy/fail a dep), `bsc-wait` (paused for the user), `bsc-ask`/`bsc-answer` (worker↔director Q&A),
   `bsc-issue`/`bsc-assign` (capture/route work).
-- `bsc-learned` (#1362) — record a self-correction *candidate* (delegates to `bsc-plan lesson add`),
+- `bsc-learned` (#1362) — record a self-correction *candidate* (delegates to `bsc plan lesson add`),
   queued for the user to confirm/discard — never an auto-committed skill.
 
 > The `bsc-blocked` dependency-wait helper was **removed** (#1039): workers build against the planned

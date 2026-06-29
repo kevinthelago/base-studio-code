@@ -9,13 +9,6 @@ description = "User blueprint store (file CRUD over ~/.base-studio-code/blueprin
 [lib]
 name = "bsc_blueprint"
 
-# The session-facing CLI (#1719, an instance of #1325): injected into EVERY console session so the
-# user blueprint store (~/.base-studio-code/blueprints/<id>.json) is list/get/set/remove-able from a
-# session's own shell — the same store the desktop blueprint library reads/writes.
-[[bin]]
-name = "bsc-blueprint"
-path = "src/bin/bsc-blueprint.rs"
-
 [dependencies]
 # Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so
 # the CLI and the app agree on which blueprint store they read/write.
