@@ -9,14 +9,14 @@ export interface McpSlice {
   // MCP servers the user configures, each scoped via `projects` ([] = global). Written into a
   // launched session's .mcp.json. Persisted.
   mcpServers: McpServer[];
-  addMcpServer: (def: Omit<McpServer, "id">) => void;
+  addMcpServer: (def: Omit<McpServer, "id">) => string;
   updateMcpServer: (id: string, patch: Partial<McpServer>) => void;
   removeMcpServer: (id: string) => void;
   toggleMcpServer: (id: string) => void;
   setMcpServerProjects: (id: string, projects: string[]) => void;
   // Lifecycle hooks, each scoped via `projects`. Written into .claude/settings.json. Persisted.
   hooks: Hook[];
-  addHook: (def: Omit<Hook, "id">) => void;
+  addHook: (def: Omit<Hook, "id">) => string;
   updateHook: (id: string, patch: Partial<Hook>) => void;
   removeHook: (id: string) => void;
   toggleHook: (id: string) => void;
@@ -28,8 +28,11 @@ export interface McpSlice {
 
 export const createMcpSlice: StateCreator<AppStore, [], [], McpSlice> = (set) => ({
   mcpServers: [],
-  addMcpServer: (def) =>
-    set((s) => ({ mcpServers: [...s.mcpServers, { ...def, id: `mcp_${Math.random().toString(36).slice(2, 8)}` }] })),
+  addMcpServer: (def) => {
+    const id = `mcp_${Math.random().toString(36).slice(2, 8)}`;
+    set((s) => ({ mcpServers: [...s.mcpServers, { ...def, id }] }));
+    return id;
+  },
   updateMcpServer: (id, patch) =>
     set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
   removeMcpServer: (id) =>
@@ -39,8 +42,11 @@ export const createMcpSlice: StateCreator<AppStore, [], [], McpSlice> = (set) =>
   setMcpServerProjects: (id, projects) =>
     set((s) => ({ mcpServers: s.mcpServers.map((e) => (e.id === id ? { ...e, projects } : e)) })),
   hooks: [],
-  addHook: (def) =>
-    set((s) => ({ hooks: [...s.hooks, { ...def, id: `hook_${Math.random().toString(36).slice(2, 8)}` }] })),
+  addHook: (def) => {
+    const id = `hook_${Math.random().toString(36).slice(2, 8)}`;
+    set((s) => ({ hooks: [...s.hooks, { ...def, id }] }));
+    return id;
+  },
   updateHook: (id, patch) =>
     set((s) => ({ hooks: s.hooks.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
   removeHook: (id) =>
