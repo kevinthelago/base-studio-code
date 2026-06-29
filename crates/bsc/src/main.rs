@@ -6,6 +6,8 @@
 
 use std::process::ExitCode;
 
+mod hook;
+
 /// One row per top-level command for the `bsc help` overview. The detailed per-command help comes
 /// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).
 const COMMANDS: &[(&str, &str)] = &[
@@ -18,6 +20,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
+    ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
 ];
 
 fn top_help() -> String {
@@ -48,6 +51,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "mcp" => run_mcp(rest),
+        "hook" => hook::run(&rest),
         "" | "help" | "-h" | "--help" => {
             print!("{}", top_help());
             Ok(())

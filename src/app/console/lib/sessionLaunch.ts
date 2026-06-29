@@ -163,6 +163,12 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     // role/profile or not. The deny every session starts with; the OS sandbox (WSL2/Seatbelt) extends
     // the same boundary to Bash (the one tool a PreToolUse hook can't fully confine).
     { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
+    // Dangerous-command floor (#1916): the DEFAULT deny — `bsc-deny` hard-blocks (exit 2) any Bash
+    // command hitting the shared dangerous floor (`bsc_util::dangerous`), enforced via the `bsc`
+    // binary so it survives `bypassPermissions` (where `permissions.deny` is ignored but PreToolUse
+    // hooks still fire+block). The foundation the deny-list switch builds on; reads `$BSC_DENY_BASH`
+    // for the per-session role/user denies wired in at the bypass flip.
+    { event: "PreToolUse", matcher: "Bash", command: "bsc-deny" },
     { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
     { event: "Stop", matcher: "", command: "bsc-activity idle" },
     { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
