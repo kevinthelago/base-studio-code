@@ -6,6 +6,7 @@
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
 import { useState, useEffect, useMemo } from "react";
+import { Banner } from "@/shared/ui/Banner";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Pane } from "@/shared/ui/Pane";
@@ -484,10 +485,10 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
           {/* Project assignment */}
           <div className="field">
             <label>project assignment</label>
-            <div className="global-banner" style={isGlobal ? undefined : { opacity: 0.6 }}>
-              <span className="gd" /><b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><div style={{ flex: 1 }} />
+            <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
+              <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><div style={{ flex: 1 }} />
               <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
-            </div>
+            </Banner>
             {!isGlobal && (projects.length === 0
               ? <div className="hint" style={{ marginTop: 6 }}>No GitHub projects — connect GitHub in Settings to scope per project.</div>
               : <div className="proj-multi" style={{ marginTop: 6 }}>{projects.map((p) => { const sel = s.projects.includes(String(p.number)); return (

@@ -1,0 +1,8 @@
+/* Banner — the shared inline callout strip (#card-unify follow-on). Replaces the per-feature
+   `.sys-banner` (info), `.global-banner` (success), and `.inherit-note` (neutral) strips. */
+.banner { padding: 9px 12px; border-radius: var(--r-md); display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 10.5px; flex-wrap: wrap; }
+.banner.tone-neutral { background: var(--bg-canvas); border: 1px solid var(--border-soft); color: var(--fg-dim); }
+.banner.tone-info { background: color-mix(in oklch, var(--info), transparent 90%); border: 1px solid color-mix(in oklch, var(--info), transparent 72%); color: var(--fg-muted); }
+.banner.tone-success { background: color-mix(in oklch, var(--success), transparent 88%); border: 1px solid color-mix(in oklch, var(--success), transparent 70%); color: var(--fg); }
+.banner.tone-warn { background: color-mix(in oklch, var(--accent), transparent 88%); border: 1px solid color-mix(in oklch, var(--accent), transparent 70%); color: var(--fg-muted); }
+.banner.tone-danger { background: color-mix(in oklch, var(--danger), transparent 88%); border: 1px solid color-mix(in oklch, var(--danger), transparent 70%); color: var(--fg-muted); }

@@ -11,6 +11,7 @@ import { CardListRow } from "@/shared/ui/CardListRow";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { Chip } from "@/shared/ui/Chip";
 import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { Banner } from "@/shared/ui/Banner";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
@@ -113,10 +114,9 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
         </div>
         {isApp && (
           <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 10 }}>
-            <div className="sys-banner">
-              <span className="ico" style={{ background: p.color }}>◆</span>
+            <Banner tone="info" lead={<span style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</span>}>
               <span><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</span>
-            </div>
+            </Banner>
             <div className="owns-card">
               <span className="surf">{p.surfaceGlyph}</span>
               <div style={{ flex: 1 }}>
@@ -167,11 +167,10 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
           ))}
           <button className="cmd-add" onClick={addCmd}>+ add command</button>
         </div>
-        <div className="inherit-note">
-          <span style={{ color: "var(--info)" }}>ℹ</span>
+        <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--info)" }}>ℹ</span>}>
           <span><b style={{ color: "var(--fg-muted)" }}>{GUARANTEED.join(", ")}</b> are always available.</span>
           <span>Effective list also unions the console's project &amp; repo allowlists at run time.</span>
-        </div>
+        </Banner>
       </div>
 
       {/* tools */}
@@ -234,7 +233,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             <button className="cmd-add">+ add host</button>
           </div>
         ) : (
-          <div className="inherit-note"><span style={{ color: "var(--fg-dim)" }}>⊘</span> No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</div>
+          <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--fg-dim)" }}>⊘</span>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
         )}
       </div>
 
@@ -252,10 +251,9 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
               <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>always present</div>
             </div>
           </div>
-          <div className="inherit-note" style={{ marginTop: 8 }}>
-            <span style={{ color: "var(--info)" }}>ℹ</span>
+          <Banner tone="neutral" style={{ marginTop: 8 }} lead={<span style={{ color: "var(--info)" }}>ℹ</span>}>
             <span>{appReachNote(p)}</span>
-          </div>
+          </Banner>
         </div>
       ) : (
         <div className="pd-sec">

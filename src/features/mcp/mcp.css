@@ -144,5 +144,4 @@
 .ext-workspace .proj-multi .pbranch { font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
 .ext-workspace .proj-multi .pside { display:flex; align-items:center; gap:6px; }
 
-.ext-workspace .global-banner { padding:8px 12px; border-radius:var(--r-md); background:color-mix(in oklch, var(--success), transparent 88%); border:1px solid color-mix(in oklch, var(--success), transparent 70%); font-family:var(--mono); font-size:10.5px; color:var(--fg); display:flex; align-items:center; gap:8px; }
-.ext-workspace .global-banner .gd { width:7px; height:7px; border-radius:50%; background:var(--success); }
+/* (.global-banner moved to the shared <Banner tone="success">, #card-unify) */
