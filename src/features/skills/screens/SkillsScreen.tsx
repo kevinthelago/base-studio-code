@@ -30,6 +30,7 @@ import { successColor, tintBg, glyphTile, pill } from "../skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "../SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -485,12 +486,12 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">enabled</span><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">pinned</span><span onClick={() => onPatch({ pinned: !s.pinned })} style={{ fontSize: 14, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span></span>
           </div>
-          <div className="field"><label>kind</label><div className="scope">{KIND_KEYS.map((k) => <button key={k} className={s.kind === k ? "on" : ""} onClick={() => onPatch({ kind: k })}>{KIND[k].label}</button>)}</div></div>
-          <div className="field"><label>source</label><div className="scope">{SOURCE_KEYS.map((src) => <button key={src} className={s.source === src ? "on" : ""} onClick={() => onPatch({ source: src })}>{src}</button>)}</div></div>
+          <div className="field"><label>kind</label><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></div>
+          <div className="field"><label>source</label><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></div>
           <div className="field"><label>description</label><input className="input" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(e) => onPatch({ desc: e.target.value })} /></div>
           <div className="field"><label>procedure — SKILL.md body</label><textarea className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(e) => onPatch({ prompt: e.target.value })} /></div>
           <div className="field"><label>bundled tools (comma-separated)</label><input className="input" value={s.tools.join(", ")} placeholder="create_pr, git_diff" onChange={(e) => onPatch({ tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })} /></div>
-          <div className="field"><label>allowed profiles</label><div className="scope">{PROFILE_KEYS.map((p) => <button key={p} className={s.profiles.includes(p) ? "on" : ""} onClick={() => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] })}>{p}</button>)}</div></div>
+          <div className="field"><label>allowed profiles</label><SegmentedControl options={PROFILE_KEYS.map((p) => ({ label: p, on: s.profiles.includes(p), onClick: () => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] }) }))} /></div>
           {/* Task groups */}
           <div className="field">
             <label>task groups</label>

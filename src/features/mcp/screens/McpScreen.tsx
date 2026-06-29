@@ -16,6 +16,7 @@ import {
 } from "../shared";
 import { Pane } from "@/shared/ui/Pane";
 import { useDraft } from "@/shared/hooks/useDraft";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import "../mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -209,12 +210,14 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
               ) : (
                 <>
                   <span className="hint" style={{ fontFamily: "var(--mono)" }}>{summary}</span>
-                  <span className="scope-label">scope</span>
-                  <div className="scope">
-                    {(["global", "project"] as Scope[]).map(s => (
-                      <button key={s} className={scope === s ? "on" : ""} onClick={() => setScope(s)}>{s.charAt(0).toUpperCase() + s.slice(1)}</button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    label="scope"
+                    options={(["global", "project"] as Scope[]).map(s => ({
+                      label: s.charAt(0).toUpperCase() + s.slice(1),
+                      on: scope === s,
+                      onClick: () => setScope(s),
+                    }))}
+                  />
                   <div style={{ position: "relative" }}>
                     <button className="btn primary" onClick={() => setAddOpen(o => !o)}>+ Add MCP server</button>
                     {addOpen && (
@@ -251,11 +254,13 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
           >
             <div className="field">
               <label>transport</label>
-              <div className="scope">
-                {(["stdio", "http"] as McpTransport[]).map(t => (
-                  <button key={t} className={selected.transport === t ? "on" : ""} onClick={() => updateMcpServer(selected.id, { transport: t })}>{t}</button>
-                ))}
-              </div>
+              <SegmentedControl
+                options={(["stdio", "http"] as McpTransport[]).map(t => ({
+                  label: t,
+                  on: selected.transport === t,
+                  onClick: () => updateMcpServer(selected.id, { transport: t }),
+                }))}
+              />
             </div>
             {selected.transport === "http"
               ? (
