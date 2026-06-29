@@ -8,19 +8,7 @@
 .ext-screen .ext-page { flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
 
 /* scope segmented */
-.ext-screen .scope {
-  display:inline-flex; align-items:center; gap:0;
-  background:var(--bg-elev); border:1px solid var(--border-soft);
-  border-radius:var(--r-md); padding:3px;
-  font-family:var(--mono); font-size:10.5px;
-}
-.ext-screen .scope button {
-  height:22px; padding:0 10px; border:0; background:transparent;
-  color:var(--fg-muted); font-family:var(--mono); font-size:10.5px;
-  cursor:pointer; border-radius:4px; letter-spacing:.02em;
-}
-.ext-screen .scope button.on { background:var(--bg-canvas); color:var(--accent); border:1px solid var(--accent-dim); }
-.ext-screen .scope-label { font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.08em; margin-right:8px; }
+/* (.scope segmented + label moved to the shared <SegmentedControl>, #1874) */
 
 /* sub-tabs (page header) */
 .ext-screen .subtabs {

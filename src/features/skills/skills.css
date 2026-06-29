@@ -22,10 +22,7 @@
 .skills-screen .toggle.on { background:var(--accent); border-color:transparent; }
 .skills-screen .toggle.on::after { left:15px; background:#1a120a; }
 
-/* scope segmented (kind / source pickers in the drawer) */
-.skills-screen .scope { display:inline-flex; align-items:center; gap:0; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:var(--r-md); padding:3px; flex-wrap:wrap; }
-.skills-screen .scope button { height:22px; padding:0 10px; border:0; background:transparent; color:var(--fg-muted); font-family:var(--mono); font-size:10.5px; cursor:pointer; border-radius:4px; letter-spacing:.02em; }
-.skills-screen .scope button.on { background:var(--bg-canvas); color:var(--accent); border:1px solid var(--accent-dim); }
+/* (.scope segmented moved to the shared <SegmentedControl>, #1874) */
 
 /* textarea (prompt body) */
 .skills-screen .ta { min-height:120px; padding:8px 10px; border-radius:var(--r-md); background:var(--bg-canvas); border:1px solid var(--border-soft); color:var(--fg); font-family:var(--mono); font-size:11px; line-height:1.5; width:100%; resize:vertical; }
