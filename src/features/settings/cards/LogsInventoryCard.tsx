@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { SettingsCardHead, settingsBtn as btn } from "../pages/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
+import { Button } from "@/shared/ui/Button";
 
 interface LogFileInfo {
   stream: string; label: string; path: string;
@@ -65,8 +66,8 @@ export function LogsInventoryCard({
                 {f.exists ? `${fmtBytes(f.sizeBytes)} · ${fmtAgo(f.mtimeMs)}` : "not created yet"}
               </div>
             </div>
-            {f.text && <button style={btn(selectedStream === f.stream ? { borderColor: "var(--accent)", color: "var(--fg)" } : {})} onClick={() => onViewStream(f.stream)}>View</button>}
-            {f.exists && <button style={btn()} onClick={() => void exportStream(f.stream)}>Export</button>}
+            {f.text && <Button size="sm" style={selectedStream === f.stream ? { borderColor: "var(--accent)" } : undefined} onClick={() => onViewStream(f.stream)}>View</Button>}
+            {f.exists && <Button size="sm" onClick={() => void exportStream(f.stream)}>Export</Button>}
             {f.stream === "perf"
               ? <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
               : <ConfirmButton size="sm" label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
