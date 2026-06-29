@@ -172,6 +172,7 @@ export function TabBar({
             {t.status !== undefined && <span className={"dot " + t.status} />}
             {editingId === t.id ? (
               <input
+                className="mono"
                 ref={editRef}
                 value={editingName}
                 onChange={(e) => setEditingName(e.target.value)}
@@ -182,7 +183,7 @@ export function TabBar({
                 }}
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                  fontFamily: "var(--mono)", fontSize: 11.5, background: "var(--bg-canvas)",
+                  fontSize: 11.5, background: "var(--bg-canvas)",
                   color: "var(--fg)", border: "1px solid var(--accent-dim)", borderRadius: 3,
                   padding: "1px 4px", width: 100, outline: "none",
                 }}
@@ -218,11 +219,11 @@ export function TabBar({
       )}
 
       {menu && renderMenu && createPortal(
-        <div ref={menuRef} style={{
+        <div ref={menuRef} className="mono" style={{
           position: "fixed", top: menu.y, left: menu.x, zIndex: 2000,
           background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
           borderRadius: "var(--r-md)", boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
-          minWidth: 210, overflow: "hidden", fontFamily: "var(--mono)",
+          minWidth: 210, overflow: "hidden",
         }}>
           {renderMenu(menu.id, {
             close: () => setMenu(null),

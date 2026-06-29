@@ -21,13 +21,14 @@ export function StagePromptHelp({ prompts, onInject }: {
   return (
     <>
       <button
+        className="mono"
         title="Inject a prompt for this stage"
         aria-label="Stage prompt helper"
         onClick={() => setOpen((o) => !o)}
         style={{
           position: "absolute", top: 12, right: 14, zIndex: 42,
           width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center",
-          borderRadius: 999, cursor: "pointer", fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700,
+          borderRadius: 999, cursor: "pointer", fontSize: 14, fontWeight: 700,
           background: open ? "color-mix(in oklch, var(--accent), transparent 84%)" : "var(--bg-elev)",
           border: `1px solid ${open ? "var(--accent)" : "var(--border)"}`,
           color: open ? "var(--accent)" : "var(--fg-muted)",
@@ -42,8 +43,8 @@ export function StagePromptHelp({ prompts, onInject }: {
             background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
             boxShadow: "0 16px 48px rgba(0,0,0,.5)", padding: 6,
           }}>
-            <div style={{
-              padding: "6px 8px 8px", fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".06em",
+            <div className="mono" style={{
+              padding: "6px 8px 8px", fontSize: 9.5, letterSpacing: ".06em",
               textTransform: "uppercase", color: "var(--fg-dim)",
             }}>Inject a prompt for this stage</div>
             {prompts.map((p, i) => (
@@ -57,7 +58,7 @@ export function StagePromptHelp({ prompts, onInject }: {
                   padding: "8px 10px", marginBottom: 5, color: "var(--fg)",
                 }}
               >
-                <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600, marginBottom: 3 }}>{p.label}</div>
+                <div className="mono" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 3 }}>{p.label}</div>
                 <div style={{
                   fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)",
                   display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
@@ -140,10 +141,10 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
       </div>
       <p className="ph-blurb">{phase.blurb}</p>
       {hasReasons && showReasons && (
-        <div role="status" style={{
+        <div role="status" className="mono" style={{
           marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
           background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
+          fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
         }}>
           <div style={{ color: "var(--fg-dim)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
             Still needed to pass this gate

@@ -63,7 +63,7 @@ export function PaneMenu({
   // configured model. Selecting a different row still sets the model for the next launch.
   const selected = runningModel ?? model;
   return (
-    <div style={{
+    <div className="mono" style={{
       width: 268,
       maxHeight,
       background: "var(--bg-panel)",
@@ -73,7 +73,7 @@ export function PaneMenu({
       // Scroll vertically (capped by maxHeight) but keep rounded corners; the menu's
       // own drop shadow is unaffected since overflow only clips descendants.
       overflowX: "hidden", overflowY: "auto",
-      fontFamily: "var(--mono)", fontSize: 11,
+      fontSize: 11,
     }}>
       {/* Header */}
       <div style={{

@@ -162,7 +162,7 @@ export function PaneShell({
   const triggerColor = running ? "var(--accent)" : sm.color;
 
   const chip = (txt: string, bg: string, col: string) => (
-    <span style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9, fontFamily: "var(--mono)" }}>{txt}</span>
+    <span className="mono" style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9 }}>{txt}</span>
   );
 
   return (
@@ -210,7 +210,7 @@ export function PaneShell({
               animation: running && sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none",
             }}
           />
-          <span style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>▾</span>
+          <span className="mono" style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontSize: 10 }}>▾</span>
         </button>
 
         {/* Agent name — double-click to rename */}
@@ -224,8 +224,9 @@ export function PaneShell({
               if (e.key === "Enter") { e.preventDefault(); commitRename(); }
               if (e.key === "Escape") { setDraftName(agent); setEditingName(false); }
             }}
+            className="mono"
             style={{
-              fontFamily: "var(--mono)", fontSize: 12,
+              fontSize: 12,
               background: "var(--bg-canvas)", color: "var(--fg)",
               border: "1px solid var(--accent-dim)", borderRadius: 3,
               padding: "1px 5px", width: 130, outline: "none", flex: "0 0 auto",
@@ -235,8 +236,9 @@ export function PaneShell({
           <span
             onDoubleClick={() => { setDraftName(agent); setEditingName(true); }}
             title="Double-click to rename"
+            className="mono"
             style={{
-              fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "var(--fg)",
+              fontSize: 12.5, fontWeight: 600, color: "var(--fg)",
               whiteSpace: "nowrap", flex: "0 0 auto",
             }}
           >{agent}</span>
@@ -244,20 +246,20 @@ export function PaneShell({
 
         {/* Repo */}
         {repo && (
-          <span style={{
-            fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)",
+          <span className="mono" style={{
+            fontSize: 11, color: "var(--fg-dim)",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto", minWidth: 0,
           }}>· {repo}</span>
         )}
 
         {/* Change / warn badges */}
         {changes > 0 && (
-          <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 10, flex: "0 0 auto" }}>
+          <span className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--fg-muted)", fontSize: 10, flex: "0 0 auto" }}>
             ±{chip(String(changes), "var(--bg-elev2)", "var(--fg-muted)")}
           </span>
         )}
         {warns > 0 && (
-          <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--state-wait)", fontFamily: "var(--mono)", fontSize: 10, flex: "0 0 auto" }}>
+          <span className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--state-wait)", fontSize: 10, flex: "0 0 auto" }}>
             ⚠{chip(String(warns), "color-mix(in oklch, var(--danger), transparent 82%)", "var(--danger)")}
           </span>
         )}
@@ -267,11 +269,11 @@ export function PaneShell({
 
         {/* Role badge */}
         {role && (
-          <span style={{
+          <span className="mono" style={{
             height: 21, padding: "0 7px", display: "flex", alignItems: "center", borderRadius: 6,
             background: role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)",
             color: role === "director" ? "var(--accent-text)" : "var(--fg-muted)",
-            fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
+            fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
             flex: "0 0 auto", whiteSpace: "nowrap",
           }}>{role.toUpperCase()}</span>
         )}

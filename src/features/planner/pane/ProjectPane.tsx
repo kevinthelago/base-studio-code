@@ -116,13 +116,13 @@ export function ProjectPane({
           borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
         }}>
           <KindDot kind={viewing.kind} />
-          <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
-          <span onClick={() => setViewing(null)} style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
+          <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
+          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
+          <span className="mono" onClick={() => setViewing(null)} style={{ cursor: "pointer", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
         </div>
-        <pre style={{
+        <pre className="mono" style={{
           margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
-          fontFamily: "var(--mono)", fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
+          fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>{viewing.content || "(empty)"}</pre>
       </div>

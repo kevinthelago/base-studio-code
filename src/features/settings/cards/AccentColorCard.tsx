@@ -14,6 +14,7 @@ export function AccentColorCard() {
           return (
             <button
               key={p.id}
+              className="mono"
               aria-label={p.label}
               aria-pressed={on}
               title={p.label}
@@ -23,7 +24,7 @@ export function AccentColorCard() {
                 padding: "6px 12px 6px 8px", borderRadius: 99, cursor: "pointer",
                 background: on ? "var(--bg-elev2)" : "var(--bg-elev)",
                 border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
-                fontFamily: "var(--mono)", fontSize: 11,
+                fontSize: 11,
                 color: on ? "var(--fg)" : "var(--fg-muted)",
               }}
             >

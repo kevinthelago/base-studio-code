@@ -20,7 +20,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
     case "projects":    return <ProjectsWorkspace pageOverride={section} />;
     default:
       return (
-        <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
+        <div className="mono" style={{ padding: 24, color: "var(--fg-dim)" }}>
           Unknown detached page: {page}
         </div>
       );

@@ -166,7 +166,7 @@ export function HBars({ rows, fmtV = (v) => v, max: maxOverride }: HBarsProps) {
       {rows.map((r, i) => (
         <div key={i} className="hrow" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 46px", gap: 10, alignItems: "center", padding: "1px 2px", borderRadius: 4 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+            <div className="mono" style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontSize: 10.5, color: "var(--fg-muted)" }}>
               {r.icon}
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: r.strong ? "var(--fg)" : undefined }}>{r.label}</span>
               {r.tag}
@@ -175,7 +175,7 @@ export function HBars({ rows, fmtV = (v) => v, max: maxOverride }: HBarsProps) {
               <i style={{ width: `${(r.value / max) * 100}%`, background: r.color ?? "var(--accent)" }} />
             </div>
           </div>
-          <div style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{fmtV(r.value)}</div>
+          <div className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg)" }}>{fmtV(r.value)}</div>
         </div>
       ))}
     </div>
@@ -269,13 +269,13 @@ export function StackedDayBars({
   return (
     <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>{title}</h3>
+        <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>{title}</h3>
         <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>{subtitle}</span>
         <div style={{ flex: 1 }} />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: upperColor }} />{upperLabel}</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: lowerColor }} />{lowerLabel}</span>
+        <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: upperColor }} />{upperLabel}</span>
+        <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, color: "var(--fg-muted)" }}><span style={{ width: 9, height: 9, borderRadius: 2, background: lowerColor }} />{lowerLabel}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: "var(--mono)" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="mono" style={{ width: "100%", height: "auto", display: "block" }}>
         {gridVals.map((v, i) => {
           const y = baseY - scaleY(v);
           return (
@@ -310,7 +310,7 @@ export function StackedDayBars({
 export interface LegendItem { color: string; label: string; value?: ReactNode }
 export function Legend({ items, style }: { items: LegendItem[]; style?: React.CSSProperties }) {
   return (
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", ...style }}>
+    <div className="mono" style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 10, color: "var(--fg-muted)", ...style }}>
       {items.map((it, i) => (
         <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 9, height: 9, borderRadius: 2, background: it.color, display: "inline-block" }} />

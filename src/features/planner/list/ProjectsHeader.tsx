@@ -83,9 +83,9 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
   const failedRepos    = project.repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
 
   return (
-    <div style={{
+    <div className="mono" style={{
       padding: "5px 24px 0",
-      fontFamily: "var(--mono)", fontSize: 10.5,
+      fontSize: 10.5,
     }}>
       {/* Summary row — always visible */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -94,10 +94,11 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
         {multi ? (
           <button
             onClick={() => setExpanded(e => !e)}
+            className="mono"
             style={{
               background: "none", border: "none", padding: 0, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 6,
-              fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+              fontSize: 10.5, color: "var(--fg-muted)",
             }}
           >
             <span style={{
@@ -150,11 +151,11 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
         {failedRepos.length > 0 && (
           <span
             onClick={() => failedRepos.forEach(r => handleClone(r))}
+            className="mono"
             style={{
               padding: "1px 8px", borderRadius: 3,
               background: "var(--bg-elev)", border: "1px solid var(--border)",
               color: "var(--danger)", cursor: "pointer", fontSize: 10,
-              fontFamily: "var(--mono)",
             }}
           >retry failed →</span>
         )}
@@ -232,19 +233,20 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <BackButton
               variant="text" label="portfolio" onClick={closeGithubBoard} aria-label="Back to portfolio"
+              className="mono"
               style={{
                 background: "none", border: "none", cursor: "pointer",
-                fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)",
+                fontSize: 11, color: "var(--fg-muted)",
                 padding: 0, marginRight: 4,
               }}
             />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
+            <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
+            <h2 className="mono" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <Chip>{project.repo}</Chip>}
             {project.number > 0 && (
-              <span style={{
+              <span className="mono" style={{
                 padding: "1px 6px", borderRadius: 3,
-                fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--info)",
+                fontSize: 9.5, color: "var(--info)",
                 background: "color-mix(in oklch, var(--info), transparent 88%)",
                 border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
               }}>⎇ synced w/ {project.repo}/projects/{project.number}</span>
@@ -256,9 +258,9 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
-            className="btn primary"
+            className="btn primary mono"
             onClick={handlePlan}
-            style={{ fontFamily: "var(--mono)", fontSize: 11 }}
+            style={{ fontSize: 11 }}
           >⌘ plan →</button>
         </div>
       </div>

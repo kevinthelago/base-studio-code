@@ -42,11 +42,11 @@ export function MetricsCollectionCard() {
           hint="Which sources to record. Process = per-agent shell RSS/CPU. Frontend = WebView heap, jank, PTY throughput."
         >
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+            <label className="mono" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <Toggle on={perfConfig.trackProcess} onClick={() => update({ trackProcess: !perfConfig.trackProcess })} />
               Process
             </label>
-            <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+            <label className="mono" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <Toggle on={perfConfig.trackFrontend} onClick={() => update({ trackFrontend: !perfConfig.trackFrontend })} />
               Frontend
             </label>

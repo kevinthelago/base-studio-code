@@ -7,7 +7,7 @@ export function AutomationsPage() {
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   return (
     <div style={{ maxWidth: 820 }}>
-      <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Automations</h2>
+      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Automations</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12 }}>
         How scheduled automations run against your console sessions.
       </p>

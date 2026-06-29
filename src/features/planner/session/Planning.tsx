@@ -616,7 +616,7 @@ export function Planning({ visible }: { visible: boolean }) {
             {isExisting
               ? (
                 <>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{activeProjectNumber}</span>
+                  <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{activeProjectNumber}</span>
                   {/* Published title is editable (#1226): blur/Enter commits to the GitHub board + local name. */}
                   <input
                     value={titleEdit ?? activeProjectName}
@@ -628,9 +628,10 @@ export function Planning({ visible }: { visible: boolean }) {
                     }}
                     title={renameErr ?? activeProjectName}
                     aria-label="Project title"
+                    className="mono"
                     style={{
                       background: "none", border: "none", outline: "none", padding: 0,
-                      margin: 0, fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600,
+                      margin: 0, fontSize: 16, fontWeight: 600,
                       color: renameErr ? "var(--danger)" : "var(--fg)",
                       // Size to the text, capped — a long name stops at the cap instead of pushing
                       // the status pill away; minWidth:0 lets it shrink in a narrow pane.
@@ -651,9 +652,10 @@ export function Planning({ visible }: { visible: boolean }) {
                   }}
                   placeholder="project title…"
                   title={draftTitleErr ?? undefined}
+                  className="mono"
                   style={{
                     background: "none", border: "none", outline: "none",
-                    fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600,
+                    fontSize: 16, fontWeight: 600,
                     color: draftTitleErr ? "var(--danger)" : planningTitle ? "var(--fg)" : "var(--fg-dim)",
                     // Size to the text (snug), with a usable floor and a 400px cap so the status
                     // pill sits right next to the title.
@@ -717,29 +719,30 @@ export function Planning({ visible }: { visible: boolean }) {
         })()}
       </div>
       {triageError && (
-        <div style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)" }}>
+        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12 }}>
           ⚠ {triageError}
         </div>
       )}
       {triageNote && !triageError && (
-        <div style={{ padding: "0 24px 8px", color: "var(--fg-muted)", fontSize: 12, fontFamily: "var(--mono)" }}>
+        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--fg-muted)", fontSize: 12 }}>
           ⏭ {triageNote}
         </div>
       )}
       {featureCycle.length > 0 && (
-        <div style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)" }}>
+        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12 }}>
           ⚠ Feature dependency cycle: {featureCycle.join(" → ")} — break it to complete the Features stage.
         </div>
       )}
       {recoverable > 0 && (
-        <div style={{ padding: "0 24px 8px", display: "flex", alignItems: "center", gap: 10, fontSize: 12, fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>
+        <div className="mono" style={{ padding: "0 24px 8px", display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--fg-muted)" }}>
           <span>⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</span>
           <button
+            className="mono"
             onClick={() => void handleRecover()}
             disabled={recovering}
             style={{
               padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border-soft)",
-              background: "var(--bg-elev2)", color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 11,
+              background: "var(--bg-elev2)", color: "var(--fg)", fontSize: 11,
               cursor: recovering ? "default" : "pointer", opacity: recovering ? 0.6 : 1,
             }}
           >
@@ -848,10 +851,10 @@ export function Planning({ visible }: { visible: boolean }) {
           ) : (
             <>
               {/* Publish progress header */}
-              <div style={{
+              <div className="mono" style={{
                 padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
                 display: "flex", alignItems: "center", gap: 8,
-                fontFamily: "var(--mono)", fontSize: 11,
+                fontSize: 11,
               }}>
                 <span style={{
                   color: publishPhase === "done"  ? "var(--success)"
@@ -865,11 +868,12 @@ export function Planning({ visible }: { visible: boolean }) {
                 <div style={{ flex: 1 }} />
                 {(publishPhase === "done" || publishPhase === "error") && (
                   <button
+                    className="mono"
                     onClick={() => setPublishPhase("idle")}
                     style={{
                       padding: "2px 8px", borderRadius: 3, cursor: "pointer",
                       background: "transparent", border: "1px solid var(--border-soft)",
-                      color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10,
+                      color: "var(--fg-dim)", fontSize: 10,
                     }}
                   >← back to plan</button>
                 )}

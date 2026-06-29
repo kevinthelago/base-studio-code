@@ -23,10 +23,10 @@ interface AvatarProps {
 
 export function Avatar({ login, size = 20, palette = false, bordered = false, ml, fontScale = 0.5 }: AvatarProps) {
   return (
-    <span title={"@" + login} style={{
+    <span title={"@" + login} className="mono" style={{
       width: size, height: size, borderRadius: "50%",
       background: palette ? avatarColor(login) : loginColor(login), color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * fontScale,
+      fontWeight: 700, fontSize: size * fontScale,
       display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
       ...(ml ? { marginLeft: ml } : {}),
       ...(bordered ? { border: "1.5px solid var(--bg-canvas)" } : {}),

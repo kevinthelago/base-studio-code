@@ -36,15 +36,15 @@ function PulseDigest({ kpis, churnAreas, ci, partialDiffs }: { kpis: PulseKpis; 
       border: "1px solid var(--accent-dim)",
     }}>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{
+        <div className="mono" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-          color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13,
+          color: "#1a120a", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>G</div>
         <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</span>
             <span className="hint">live from the GitHub API</span>
           </div>
           <p style={{ margin: 0 }}>
@@ -128,7 +128,7 @@ function ChurnByArea({ areas }: { areas: ChurnArea[] }) {
   if (!areas.length) return null;
   const rows: HBarRow[] = areas.map(a => ({
     label: a.area, value: a.add + a.del, color: a.color, strong: true,
-    tag: <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)" }}>
+    tag: <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
       <span style={{ color: "var(--success)" }}>+{fmt(a.add)}</span> / <span style={{ color: "var(--danger)" }}>−{fmt(a.del)}</span> · {a.files}f
     </span>,
   }));
@@ -153,11 +153,11 @@ function FileChurn({ files }: { files: ChurnFile[] }) {
           const a = 0.16 + 0.74 * t;
           const dark = t > 0.55;
           return (
-            <div key={f.p} title={`${f.p} · ±${f.w}`} style={{
+            <div key={f.p} title={`${f.p} · ±${f.w}`} className="mono" style={{
               padding: "8px 9px", borderRadius: 4, minHeight: 52,
               background: `color-mix(in oklch, var(--accent) ${Math.round(a * 100)}%, var(--bg-elev))`,
               border: "1px solid var(--border-soft)",
-              fontFamily: "var(--mono)", fontSize: 9.5, lineHeight: 1.35,
+              fontSize: 9.5, lineHeight: 1.35,
               display: "flex", flexDirection: "column", justifyContent: "space-between", overflow: "hidden",
             }}>
               <span style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: dark ? "#1a120a" : "var(--fg)" }}>{f.p.split("/").pop()}</span>
@@ -182,7 +182,7 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
   return (
     <div className="card">
       <CardHead title="Contributors" hint="commits · bots vs humans (per GitHub)"
-        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+        right={<span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
           <span style={{ color: "var(--accent)" }}>◆ {botCommits}</span> bot · <span style={{ color: "var(--fg)" }}>{humanCommits}</span> human
         </span>} />
       <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
@@ -193,19 +193,19 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
         {sorted.map(c => (
           <div key={c.name} className="hrow" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 40px", gap: 10, alignItems: "center", padding: "1px 2px", borderRadius: 4 }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>
+              <div className="mono" style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontSize: 10.5, color: "var(--fg)" }}>
                 <Avatar login={c.name} bot={c.bot} size={15} />
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
                 <Chip tone={c.bot ? "accent" : "neutral"} style={{ fontSize: 8.5 }}>{c.bot ? "bot" : "human"}</Chip>
                 {(c.add > 0 || c.del > 0) && (
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>
+                  <span className="mono" style={{ fontSize: 8.5, color: "var(--fg-dim)" }}>
                     <span style={{ color: "var(--success)" }}>+{fmt(c.add)}</span> <span style={{ color: "var(--danger)" }}>−{fmt(c.del)}</span>
                   </span>
                 )}
               </div>
               <div className="meter"><i style={{ width: `${c.commits / max * 100}%`, background: c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)" }} /></div>
             </div>
-            <div style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{c.commits}</div>
+            <div className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg)" }}>{c.commits}</div>
           </div>
         ))}
       </div>
@@ -231,17 +231,17 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
             <Donut slices={slices} size={112} thickness={14} center={{ value: `${ci.passRate}%`, label: "pass" }} />
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
               {slices.map(s => (
-                <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+                <div key={s.name} className="mono" style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
                   <ColorSwatch color={s.color} />
                   <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
                 </div>
               ))}
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {ci.avgMin}m</div>
+              <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {ci.avgMin}m</div>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {workflows.map(w => (
-              <div key={w.name} style={{ display: "grid", gridTemplateColumns: "120px 1fr 34px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+              <div key={w.name} className="mono" style={{ display: "grid", gridTemplateColumns: "120px 1fr 34px", gap: 8, alignItems: "center", fontSize: 10, color: "var(--fg-muted)" }}>
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</span>
                 <div className="meter" style={{ height: 5 }}><i style={{ width: `${w.pass}%`, background: w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)" }} /></div>
                 <span style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</span>
@@ -260,7 +260,7 @@ function Branches({ branches }: { branches: Branch[] }) {
   return (
     <div className="card">
       <CardHead title="Active branches" hint="ahead/behind the default branch"
-        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{branches.length}</span>} />
+        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{branches.length}</span>} />
       <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
         {branches.map((b, i) => {
           const st = BRANCH_STATUS[b.status];
@@ -268,12 +268,12 @@ function Branches({ branches }: { branches: Branch[] }) {
             <div key={b.n} className="hrow" style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                 {b.owner && <Avatar login={b.owner} bot={b.bot} size={15} />}
-                <span style={{ fontFamily: "var(--mono)", color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.n}</span>
+                <span className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.n}</span>
               </div>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
+              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>
                 <span style={{ color: "var(--success)" }}>↑{b.ahead}</span> <span style={{ color: "var(--danger)" }}>↓{b.behind}</span>
               </span>
-              <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 9.5, color: st.color }}>● {st.label}</span>
+              <span className="mono" style={{ textAlign: "right", fontSize: 9.5, color: st.color }}>● {st.label}</span>
             </div>
           );
         })}
@@ -295,7 +295,7 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
         <>
           <Bars labels={buckets.map(b => b.label)} height={116} tip={tip}
             groups={[{ name: "PRs", color: "var(--info)", data: buckets.map(b => b.v) }]} />
-          <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+          <div className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
             median <b style={{ color: "var(--fg)" }}>{medianH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
           </div>
         </>
@@ -309,7 +309,7 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <section className="an-page">
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48, color: "var(--fg-muted)", fontFamily: "var(--mono)", fontSize: 13 }}>
+      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48, color: "var(--fg-muted)", fontSize: 13 }}>
         {children}
       </div>
     </section>
@@ -334,8 +334,8 @@ function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Pulse</h2>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>{r.name}</span>
+              <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Pulse</h2>
+              <span className="mono" style={{ fontSize: 13, color: "var(--fg-muted)" }}>{r.name}</span>
               <Chip tone="accent">● {r.pushedMin}m ago</Chip>
               <Chip>{r.lang}</Chip>
             </div>

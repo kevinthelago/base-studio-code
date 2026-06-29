@@ -34,9 +34,9 @@ export interface FlowTabProps {
 function SessionTag({ session, profile }: { session: string; profile?: AgentProfile }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{session}</h3>
+      <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{session}</h3>
       {profile && (
-        <span className="hint" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontSize: 10 }}>
+        <span className="hint mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10 }}>
           <span className="sw" style={{ background: profile.color, width: 8, height: 8, borderRadius: 2, display: "inline-block" }} />
           {profile.name}
         </span>
@@ -88,7 +88,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {deadlocked > 0 && (
         <div className="card" style={{ margin: "0 0 14px", borderColor: "var(--danger)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 12 }}>
+          <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--danger)", fontSize: 12 }}>
             <span>⚠ deadlock</span>
             <span className="hint" style={{ color: "var(--fg-muted)" }}>
               {deadlocked} session{deadlocked === 1 ? "" : "s"} sit in a wait-for cycle — no producer can move. Escalate to the director / break the cycle (#199).
@@ -97,10 +97,10 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
         </div>
       )}
 
-      {err && <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)", marginBottom: 10 }}>{err}</div>}
+      {err && <div className="mono" style={{ fontSize: 11, color: "var(--danger)", marginBottom: 10 }}>{err}</div>}
 
       {idle && !err && (
-        <div className="hint" style={{ fontFamily: "var(--mono)", fontSize: 11.5, padding: "8px 2px" }}>
+        <div className="hint mono" style={{ fontSize: 11.5, padding: "8px 2px" }}>
           The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>;
           workflow runs appear once a work item is started (Projects → Workflows).
         </div>
@@ -116,7 +116,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                   <SessionTag session={wtr.session} profile={profileFor(wtr.session)} />
                   <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</Chip>
                   <div style={{ flex: 1 }} />
-                  {wtr.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
+                  {wtr.checkpoint && <span className="hint mono" style={{ fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
                   <button
                     className="btn primary"
                     style={{ height: 24, padding: "0 12px", fontSize: 11 }}
@@ -145,12 +145,12 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                     ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</Chip>
                     : <Chip style={{ fontSize: 9.5 }}>waiting</Chip>}
                 <div style={{ flex: 1 }} />
-                {v.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {v.checkpoint}</span>}
+                {v.checkpoint && <span className="hint mono" style={{ fontSize: 10 }}>↺ {v.checkpoint}</span>}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {v.deps.map((d) => (
-                  <span key={d.ref} style={{
-                    fontFamily: "var(--mono)", fontSize: 11, padding: "3px 8px", borderRadius: 5,
+                  <span key={d.ref} className="mono" style={{
+                    fontSize: 11, padding: "3px 8px", borderRadius: 5,
                     border: "1px solid var(--border-soft)", color: depColor(d.status),
                   }}>
                     {d.ref} · {d.status}
@@ -170,12 +170,12 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
             return (
               <div key={id} className="card" style={{ marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{id}</h3>
+                  <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{id}</h3>
                   <span className="hint" style={{ fontSize: 10.5 }}>{run.workflow.name}</span>
                   <Chip style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</Chip>
                   <div style={{ flex: 1 }} />
                   {run.state.escalation && (
-                    <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>
+                    <span className="hint mono" style={{ fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>
                   )}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
@@ -184,9 +184,9 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                     const attempts = run.state.attempts[st.name] ?? 0;
                     return (
                       <span key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {i > 0 && <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 10 }}>→</span>}
-                        <span style={{
-                          fontFamily: "var(--mono)", fontSize: 11, padding: "3px 8px", borderRadius: 5,
+                        {i > 0 && <span className="mono" style={{ color: "var(--fg-dim)", fontSize: 10 }}>→</span>}
+                        <span className="mono" style={{
+                          fontSize: 11, padding: "3px 8px", borderRadius: 5,
                           border: "1px solid " + (current ? "var(--accent)" : "var(--border-soft)"),
                           color: current ? "var(--accent)" : "var(--fg-muted)",
                           background: current ? "var(--bg-elev)" : "transparent",

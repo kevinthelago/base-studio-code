@@ -44,8 +44,8 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
         </>
       ) : (
         <div style={{ display: "grid", gap: 3 }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{mistake || <span className="hint">(no mistake)</span>}</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--accent)" }}>→ {rule || <span className="hint">(no rule)</span>}</span>
+          <span className="mono-value">{mistake || <span className="hint">(no mistake)</span>}</span>
+          <span className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>→ {rule || <span className="hint">(no rule)</span>}</span>
           {lesson.cause.trim() && <span className="hint" style={{ fontSize: 11 }}>{lesson.cause}</span>}
         </div>
       )}
@@ -76,7 +76,7 @@ export function LessonsTab({ projectKey, projectName }: { projectKey: string; pr
 
   return (
     <section className="an-page"><div className="an-wrap">
-      <h2 style={{ margin: "0 0 4px", fontFamily: "var(--mono)", fontSize: 18 }}>Pending lessons</h2>
+      <h2 className="mono" style={{ margin: "0 0 4px", fontSize: 18 }}>Pending lessons</h2>
       <div style={{ color: "var(--fg-muted)", fontSize: 12, marginBottom: 14 }}>
         Mistakes agents caught with <code>bsc-learned</code>{projectName ? <> in <b>{projectName}</b></> : null} — confirm one into a project skill, or discard it. Only you confirm.
       </div>

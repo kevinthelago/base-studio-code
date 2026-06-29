@@ -19,10 +19,10 @@ export function LogView({ small = false, commits }: LogViewProps) {
       padding: small ? "6px 10px" : "10px 14px",
     }}>
       {commits.map((c) => (
-        <div key={c.s} style={{
+        <div key={c.s} className="mono" style={{
           display: "grid", gridTemplateColumns: "16px 50px 1fr auto", gap: 8,
           padding: "4px 0", alignItems: "baseline",
-          fontFamily: "var(--mono)", fontSize: small ? 10 : 11,
+          fontSize: small ? 10 : 11,
         }}>
           <span style={{ color: c.head ? "var(--accent)" : c.merge ? "var(--info)" : "var(--fg-dim)" }}>
             {c.head ? "●" : c.merge ? "◆" : "○"}

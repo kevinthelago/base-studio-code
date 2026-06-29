@@ -39,7 +39,7 @@ export function GitHubEmpty() {
               onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
               style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
             >
-              <span style={{ fontFamily: "var(--mono)", fontSize: 15 }}>⎇</span>
+              <span className="mono" style={{ fontSize: 15 }}>⎇</span>
               Connect with GitHub
             </button>
           }
@@ -56,7 +56,7 @@ export function GitHubEmpty() {
               </div>
               <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5 }}>
                 Create a token at{" "}
-                <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
+                <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
                   github.com/settings/tokens
                 </span>
               </div>
@@ -79,15 +79,15 @@ export function GitHubEmpty() {
               background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
               display: "grid", gridTemplateColumns: "22px 1fr", gap: 10,
             }}>
-              <span style={{
+              <span className="mono" style={{
                 width: 20, height: 20, borderRadius: 5,
                 background: "var(--bg-elev2)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: "var(--accent)", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 11,
+                color: "var(--accent)", fontWeight: 700, fontSize: 11,
                 marginTop: 1,
               }}>{i + 1}</span>
               <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{h}</div>
+                <div className="mono-value">{h}</div>
                 <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.55, marginTop: 2 }}>{b}</div>
               </div>
             </div>

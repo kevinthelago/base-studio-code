@@ -50,7 +50,7 @@ export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDi
         padding: "9px 11px", marginBottom: 8, borderRadius: 8,
         background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
       }}>
-        <span style={{ display: "block", fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".14em", color: "var(--fg-dim)", marginBottom: 9 }}>coordination</span>
+        <span className="mono" style={{ display: "block", fontWeight: 600, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".14em", color: "var(--fg-dim)", marginBottom: 9 }}>coordination</span>
         {/* full-width topology segmented (#1429 reskin) */}
         <div style={{ display: "flex", background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden", marginBottom: 1 }}>
           {TOPOLOGY_OPTS.map((t, i) => {
@@ -61,9 +61,10 @@ export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDi
                 onClick={() => onTopology?.(t.id)}
                 disabled={!onTopology}
                 title={t.hint}
+                className="mono"
                 style={{
                   flex: 1, padding: "7px 0", border: 0, borderLeft: i ? "1px solid var(--border)" : 0, cursor: onTopology ? "pointer" : "default",
-                  fontFamily: "var(--mono)", fontWeight: 600, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase",
+                  fontWeight: 600, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase",
                   background: on ? "var(--bg-elev2)" : "transparent",
                   color: on ? "var(--accent)" : "var(--fg-dim)",
                 }}
@@ -71,13 +72,13 @@ export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDi
             );
           })}
         </div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+        <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
           {TOPOLOGY_OPTS.find((t) => t.id === topology)?.hint} · configure individual relationships on the Structure graph.
         </div>
         {/* Director drive — only when the topology routes through a director (#…). */}
         {hub && (
           <div data-testid="director-drive-control" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}>director drive</span>
+            <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-muted)" }}>director drive</span>
             <div style={{ display: "flex", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
               {DIRECTOR_DRIVES.map((d) => (
                 <button
@@ -85,9 +86,10 @@ export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDi
                   onClick={() => onDirectorDrive?.(d)}
                   disabled={!onDirectorDrive}
                   title={DRIVE_HINTS[d]}
+                  className="mono"
                   style={{
                     height: 24, padding: "0 9px", border: 0, cursor: onDirectorDrive ? "pointer" : "default",
-                    fontFamily: "var(--mono)", fontSize: 9.5,
+                    fontSize: 9.5,
                     background: drive === d ? "var(--bg-elev2)" : "transparent",
                     color: drive === d ? "var(--fg)" : "var(--fg-dim)",
                   }}
@@ -98,8 +100,8 @@ export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDi
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0 9px" }}>
-        <span style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--fg-dim)" }}>permissions</span>
-        <span style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>role-assigned · per stream</span>
+        <span className="mono" style={{ fontWeight: 600, fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--fg-dim)" }}>permissions</span>
+        <span className="mono" style={{ fontWeight: 500, fontSize: 9, color: "var(--fg-dim)" }}>role-assigned · per stream</span>
       </div>
       <AgentsA agents={agents} onFlow={onFlow} onModel={onModel} focusedStream={focusedStream} onSelect={onSelectStream} />
     </div>

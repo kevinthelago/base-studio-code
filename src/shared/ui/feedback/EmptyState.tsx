@@ -34,10 +34,10 @@ export function EmptyState({
   const left = align === "left";
 
   const iconBox = icon != null && (
-    <div style={{
+    <div className="mono" style={{
       width: 54, height: 54, borderRadius: 14, margin: left ? "0 0 18px" : "0 auto 18px",
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "var(--mono)", fontSize: 24,
+      fontSize: 24,
       background: iconVariant === "solid" ? "var(--bg-elev)" : "transparent",
       border: `1px ${iconVariant === "dashed" ? "dashed" : "solid"} var(--border)`,
       color: iconVariant === "solid" ? "var(--accent)" : "var(--fg-dim)",
@@ -47,7 +47,7 @@ export function EmptyState({
   const body = (
     <>
       {iconBox}
-      <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: isCard ? 18 : 15, fontWeight: 600 }}>
+      <h2 className="mono" style={{ margin: 0, fontSize: isCard ? 18 : 15, fontWeight: 600 }}>
         {title}
       </h2>
       {description != null && (

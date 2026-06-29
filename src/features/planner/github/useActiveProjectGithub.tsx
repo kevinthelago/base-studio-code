@@ -44,11 +44,11 @@ export function useActiveProjectGithub<T = { node: Record<string, unknown> }>(
 export function QueryBanner({ error, style }: { error: string | null; style?: CSSProperties }) {
   if (!error) return null;
   return (
-    <div style={{
+    <div className="mono" style={{
       padding: "12px 16px", borderRadius: 6,
       background: "color-mix(in oklch, var(--danger), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-      fontFamily: "var(--mono)", fontSize: 11, color: "var(--danger)",
+      fontSize: 11, color: "var(--danger)",
       ...style,
     }}>{error}</div>
   );

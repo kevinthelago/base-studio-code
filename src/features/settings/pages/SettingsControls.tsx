@@ -8,7 +8,7 @@ export function ToggleRow({ on, onToggle, title, children }: {
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
       <div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+        <div className="mono" style={{ fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
           {title}
         </div>
         <div className="hint">{children}</div>
@@ -41,7 +41,8 @@ export function SettingsSelect({ value, options, onChange }: {
     <select
       value={value}
       onChange={(e) => { const raw = e.target.value; onChange(typeof value === "number" ? Number(raw) : raw); }}
-      style={{ fontFamily: "var(--mono)", fontSize: 11.5, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", cursor: "pointer" }}
+      className="mono"
+      style={{ fontSize: 11.5, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", cursor: "pointer" }}
     >
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>

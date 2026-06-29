@@ -107,15 +107,15 @@ function AISummary() {
       border: "1px solid var(--accent-dim)",
     }}>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{
+        <div className="mono" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-          color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13,
+          color: "#1a120a", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>C</div>
         <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+            <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>
               weekly digest · claude
             </span>
             <span className="hint">generated 02:00 today · run #14</span>
@@ -142,7 +142,7 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
     return (
       <div className="card" style={{ padding: "14px 16px" }}>
         <h3 style={{ margin: 0, marginBottom: 10 }}>Where the team is</h3>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>No active projects with items.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No active projects with items.</div>
       </div>
     );
   }
@@ -158,7 +158,7 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
           <div key={it.n} title={`${it.n} · ${it.pct}%`} style={{ width: `${it.pct}%`, background: it.c }} />
         ))}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+      <div className="mono" style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 10.5, color: "var(--fg-muted)" }}>
         {items.map(it => (
           <div key={it.n} style={{ display: "grid", gridTemplateColumns: "12px 1fr 40px", gap: 8, alignItems: "center" }}>
             <ColorSwatch color={it.c} />
@@ -189,7 +189,7 @@ function VelocityCard({ repoIssues, loading }: {
         <span className="hint">{loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}</span>
       </div>
       {!hasData && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No issue data available.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No issue data available.</div>
       )}
       {(hasData || loading) && (
         <>
@@ -214,7 +214,7 @@ function VelocityCard({ repoIssues, loading }: {
               );
             })}
           </svg>
-          <div style={{ display: "flex", gap: 14, marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+          <div className="mono" style={{ display: "flex", gap: 14, marginTop: 6, fontSize: 10, color: "var(--fg-muted)" }}>
             <span><ColorSwatch color="color-mix(in oklch, var(--info), transparent 50%)" /> opened</span>
             <span><ColorSwatch color="var(--accent)" /> closed</span>
             <div style={{ flex: 1 }} />
@@ -244,14 +244,14 @@ function UpcomingMilestones({ repoMilestones, loading }: {
         <span className="hint">{loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}</span>
         <div style={{ flex: 1 }} />
         {upcoming.length > 0 && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>
+          <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>
             {upcoming.length} due in next 8w
           </span>
         )}
       </div>
 
       {!hasData && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No milestones due in the next 8 weeks.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No milestones due in the next 8 weeks.</div>
       )}
 
       {(hasData || loading) && (
@@ -260,8 +260,8 @@ function UpcomingMilestones({ repoMilestones, loading }: {
             <div />
             <div style={{ position: "relative", height: 18, display: "grid", gridTemplateColumns: "repeat(8, 1fr)" }}>
               {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} style={{
-                  fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)",
+                <div key={i} className="mono" style={{
+                  fontSize: 9.5, color: "var(--fg-dim)",
                   borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
                   paddingLeft: 6, paddingTop: 2,
                 }}>w{i + 1}</div>
@@ -271,7 +271,7 @@ function UpcomingMilestones({ repoMilestones, loading }: {
                 left: 0, width: 0,
                 borderLeft: "1.5px dashed var(--accent)", zIndex: 2,
               }}>
-                <span style={{ position: "absolute", top: -2, left: 4, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>today</span>
+                <span className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</span>
               </div>
             </div>
           </div>
@@ -284,8 +284,8 @@ function UpcomingMilestones({ repoMilestones, loading }: {
               return (
                 <div key={idx} style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, alignItems: "center" }}>
                   <div>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: m.overdue ? "var(--danger)" : "var(--accent)" }}>{m.title}</div>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{m.repo}</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: m.overdue ? "var(--danger)" : "var(--accent)" }}>{m.title}</div>
+                    <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{m.repo}</div>
                   </div>
                   <div style={{ position: "relative", height: 24 }}>
                     {Array.from({ length: 8 }, (_, i) => (
@@ -333,16 +333,16 @@ function RiskRegister() {
         {risks.length > 0 && <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>view all</button>}
       </div>
       {risks.length === 0 ? (
-        <div style={{ padding: "18px 12px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>
+        <div className="mono" style={{ padding: "18px 12px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
           No risks logged yet.
         </div>
       ) : (
         <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-          <div style={{
+          <div className="mono" style={{
             display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
             gap: 8, padding: "7px 12px",
             background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
-            fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+            fontSize: 10, color: "var(--fg-dim)",
             textTransform: "uppercase", letterSpacing: ".06em",
           }}>
             <span>sev</span><span>project</span><span>risk</span><span>owner</span>
@@ -355,10 +355,10 @@ function RiskRegister() {
               borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
               fontSize: 11.5,
             }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
+              <span className="mono" style={{ fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
                 ● {r.sev}
               </span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
               <span style={{ color: "var(--fg)" }}>{r.r}</span>
               <Avatar login={r.own} />
             </div>
@@ -402,7 +402,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
           onClick={openProjects}>view list →</button>
       </div>
       {projects.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No projects found. Create one on GitHub.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No projects found. Create one on GitHub.</div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
@@ -413,15 +413,15 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
           }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
               <ColorSwatch color={c} size={8} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
+              <span className="mono" style={{ fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
               <Chip tone={status === "active" ? "success" : status === "shipped" ? "neutral" : "accent"} style={{ fontSize: 9 }}>{status}</Chip>
             </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginBottom: 8 }}>
+            <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 8 }}>
               {repo}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+            <div className="mono" style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 10, color: "var(--fg-muted)" }}>
               <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(p.updatedAt)}</span>
+              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(p.updatedAt)}</span>
               <div style={{ flex: 1 }} />
               {spark.some(v => v > 0) && <Spark data={spark} color={c} w={80} h={18} fill={false} dot={false} />}
             </div>
@@ -454,7 +454,7 @@ export function ProjectsSummary() {
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Portfolio</h2>
+            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Portfolio</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
               {loading ? "loading…" : `${activeCount} active · ${draftingCount} drafting · ${shippedCount} shipped`}
             </div>
@@ -476,9 +476,9 @@ export function ProjectsSummary() {
             ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
           ] as const).map(([k, v, sub, tone]) => (
             <div key={k} className="card" style={{ padding: "10px 12px" }}>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
-              <div style={{
-                fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, marginTop: 2,
+              <div className="mono-label">{k}</div>
+              <div className="mono" style={{
+                fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : "var(--fg)",
               }}>{v}</div>
               <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>

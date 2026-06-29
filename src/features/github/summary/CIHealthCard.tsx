@@ -13,12 +13,12 @@ export function CIHealthCard({ matrix, loading }: {
         <span className="hint">last 7 days · all branches</span>
       </div>
       {matrix.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No CI runs found.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No CI runs found.</div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {matrix.map(({ name, days }) => (
           <div key={name} style={{ display: "grid", gridTemplateColumns: "80px 1fr 28px", gap: 8, alignItems: "center" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
             <div style={{ display: "flex", gap: 4 }}>
               {days.map((d, i) => (
                 <div key={i} style={{
@@ -28,7 +28,7 @@ export function CIHealthCard({ matrix, loading }: {
                 }} />
               ))}
             </div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", textAlign: "right" }}>
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", textAlign: "right" }}>
               {days.filter(d => d === true).length}/{days.filter(d => d !== null).length}
             </span>
           </div>

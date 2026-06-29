@@ -78,7 +78,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
       title={p.name}
       titleAside={<Chip tone={originTone(obCls)} size="xs">{origin}</Chip>}
       subtitle={
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {isApp
             ? <><span>◆ owns {p.session}</span><span>· always on</span></>
             : <><span>{paneCount(p.id, consoles)} panes</span><span>· {p.commands.length} cmds</span></>}
@@ -120,8 +120,8 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             <div className="owns-card">
               <span className="surf">{p.surfaceGlyph}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Owns {p.owns}</div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</div>
+                <div className="mono-value">Owns {p.owns}</div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</div>
               </div>
               <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</Chip>
             </div>
@@ -248,7 +248,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
                 <span className="cn">{p.session}</span>
                 <div className="pn">{p.surface} · launched at startup · 1 of 1</div>
               </div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>always present</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--success)" }}>always present</div>
             </div>
           </div>
           <Banner tone="neutral" style={{ marginTop: 8 }} lead={<span style={{ color: "var(--info)" }}>ℹ</span>}>
@@ -268,7 +268,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
                     <span className="cn">{c.name} <span style={{ color: "var(--fg-dim)" }}>›</span> {pane.agent}</span>
                     <div className="pn">{c.repo} · {pane.id}</div>
                   </div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>{on ? "this profile" : `→ ${find(pane.profileId)?.name ?? pane.profileId}`}</div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{on ? "this profile" : `→ ${find(pane.profileId)?.name ?? pane.profileId}`}</div>
                 </div>
               );
             }))}

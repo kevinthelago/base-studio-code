@@ -94,9 +94,9 @@ function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: b
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{issue.number}</span>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{issue.number}</span>
         {issue.milestone && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--accent)" }}>{issue.milestone}</span>
+          <span className="mono" style={{ fontSize: 9, color: "var(--accent)" }}>{issue.milestone}</span>
         )}
         <div style={{ flex: 1 }} />
       </div>
@@ -113,17 +113,17 @@ function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: b
         <div style={{ display: "flex" }}>
           {issue.assignees.length > 0
             ? issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={18} ml={i === 0 ? 0 : -6} palette bordered fontScale={0.56} />)
-            : <span style={{
+            : <span className="mono" style={{
                 width: 18, height: 18, borderRadius: "50%",
                 border: "1px dashed var(--border)", color: "var(--fg-dim)",
-                fontFamily: "var(--mono)", fontSize: 10,
+                fontSize: 10,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>?</span>
           }
         </div>
         <div style={{ flex: 1 }} />
         {issue.comments > 0 && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>
+          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>
             💬 {issue.comments}
           </span>
         )}
@@ -146,8 +146,8 @@ function Column({
         padding: "10px 12px", borderBottom: "1px solid var(--border-soft)",
         background: "var(--bg-elev)",
         display: "flex", alignItems: "center", gap: 8,
-        fontFamily: "var(--mono)", fontSize: 11,
-      }}>
+        fontSize: 11,
+      }} className="mono">
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: col.color }} />
         <span style={{ color: "var(--fg)" }}>{col.name}</span>
         <span style={{ color: "var(--fg-dim)" }}>{issues.length}</span>
@@ -162,8 +162,8 @@ function Column({
         <div style={{
           marginTop: 4, padding: "7px 9px",
           border: "1px dashed var(--border)", borderRadius: 5,
-          textAlign: "center", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", cursor: "pointer",
-        }}>+ new card</div>
+          textAlign: "center", fontSize: 10, color: "var(--fg-dim)", cursor: "pointer",
+        }} className="mono">+ new card</div>
       </div>
     </div>
   );
@@ -188,7 +188,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>#{issue.number}</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>#{issue.number}</span>
             <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, color: "var(--fg)" }}>{issue.title}</h3>
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -196,7 +196,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
               ● {issue.state === "OPEN" ? "open" : "closed"}
             </Chip>
             {issue.milestone && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)" }}>{issue.milestone}</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--accent)" }}>{issue.milestone}</span>
             )}
             {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
           </div>
@@ -208,25 +208,25 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
       <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {/* Description */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</div>
+          <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</div>
           {issue.body ? (
             <div style={{ fontFamily: "var(--sans)", fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
               {issue.body.slice(0, 600)}{issue.body.length > 600 ? "…" : ""}
             </div>
           ) : (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>No description.</div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>No description.</div>
           )}
         </div>
 
         {/* Assignees */}
         {issue.assignees.length > 0 && (
           <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>assignees</div>
+            <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>assignees</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {issue.assignees.map(a => (
                 <div key={a.login} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Avatar login={a.login} size={20} palette bordered fontScale={0.56} />
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
                 </div>
               ))}
             </div>
@@ -236,17 +236,17 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
         {/* Claude subtask breakdown (demo) */}
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-            <div style={{
+            <div className="mono" style={{
               width: 20, height: 20, borderRadius: 5,
               background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-              color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 11,
+              color: "#1a120a", fontWeight: 700, fontSize: 11,
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>C</div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg)" }}>Claude · subtask breakdown</span>
+            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>Claude · subtask breakdown</span>
             <div style={{ flex: 1 }} />
             <button className="btn ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ generate</button>
           </div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic", padding: "8px 10px", background: "var(--bg-canvas)", borderRadius: 5 }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic", padding: "8px 10px", background: "var(--bg-canvas)", borderRadius: 5 }}>
             Click "generate" to have Claude break this issue into subtasks.
           </div>
         </div>
@@ -254,9 +254,9 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
         {/* Composer */}
         <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-elev)" }}>
           <textarea
-            className="input"
+            className="input mono"
             placeholder="leave a comment, or /assign, /label, /close, /ai breakdown…"
-            style={{ height: 60, padding: "8px 10px", fontFamily: "var(--mono)", fontSize: 11 }}
+            style={{ height: 60, padding: "8px 10px", fontSize: 11 }}
           />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>✦ ask claude…</button>
@@ -341,8 +341,8 @@ export function ProjectBoard() {
           <div style={{
             position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
             background: "var(--bg-canvas)", zIndex: 5,
-            fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)",
-          }}>
+            fontSize: 12, color: "var(--fg-dim)",
+          }} className="mono">
             Loading board…
           </div>
         )}

@@ -37,15 +37,16 @@ export function LogsViewerCard({
   return (
     <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: 12, marginTop: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{fileLabel}</span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>newest {lines.length}{shown.length !== lines.length ? ` · ${shown.length} shown` : ""}</span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{fileLabel}</span>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>newest {lines.length}{shown.length !== lines.length ? ` · ${shown.length} shown` : ""}</span>
         <span style={{ flex: 1 }} />
         <input
           value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search…"
-          style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg-canvas)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", width: 160 }}
+          className="mono"
+          style={{ fontSize: 11, background: "var(--bg-canvas)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", width: 160 }}
         />
         {isAppLog && (
-          <select value={level} onChange={(e) => setLevel(e.target.value)} style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px" }}>
+          <select value={level} onChange={(e) => setLevel(e.target.value)} className="mono" style={{ fontSize: 11, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px" }}>
             <option value="all">all levels</option>
             {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -53,7 +54,7 @@ export function LogsViewerCard({
         <Button size="sm" onClick={() => void navigator.clipboard?.writeText(shown.join("\n"))}>Copy</Button>
         <Button size="sm" onClick={onClose}>Close</Button>
       </div>
-      <pre style={{ margin: 0, maxHeight: 320, overflow: "auto", fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+      <pre className="mono" style={{ margin: 0, maxHeight: 320, overflow: "auto", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
         {shown.length ? shown.join("\n") : <span style={{ color: "var(--fg-dim)" }}>{lines.length ? "no lines match the filter" : "empty"}</span>}
       </pre>
     </div>

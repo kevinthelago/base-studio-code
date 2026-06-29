@@ -39,7 +39,7 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
         <span className="hint" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</span>
       </div>
       {entries.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No language data available.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No language data available.</div>
       )}
       {entries.length > 0 && (
         <>
@@ -48,7 +48,7 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
               <div key={l.n} title={`${l.n} · ${l.pct}%`} style={{ width: `${l.pct}%`, background: l.c }} />
             ))}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+          <div className="mono" style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 10.5, color: "var(--fg-muted)" }}>
             {entries.map(l => (
               <div key={l.n} style={{ display: "grid", gridTemplateColumns: "12px 1fr 40px", gap: 8, alignItems: "center" }}>
                 <ColorSwatch color={l.c} />

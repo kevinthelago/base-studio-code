@@ -127,8 +127,8 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         }}><Icon size={15} /></span>
         <div className="bp-rail-card-titlewrap" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
           <span className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
-          <span className="bp-rail-card-cat" style={{
-            flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontFamily: "var(--mono)", fontSize: 9, color: hue,
+          <span className="bp-rail-card-cat mono" style={{
+            flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontSize: 9, color: hue,
             background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
           }}>{b.category}</span>
         </div>
@@ -165,7 +165,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         <PlanGateRow sections={b.sections} signals={{}} />
       </div>
       {b.gistLabel && (
-        <div className="bp-rail-card-gist" style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
+        <div className="bp-rail-card-gist mono" style={{ marginTop: 7, fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
           <Link2 size={10} />{b.gistLabel}
         </div>
       )}
@@ -309,8 +309,8 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
             <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
               <Layers size={13} />
             </span>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Blueprints</h3>
-            <span style={{ padding: "0 6px", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
+            <h3 className="mono" style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Blueprints</h3>
+            <span className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
             <span style={{ flex: 1 }} />
             <button
               className="btn ghost"
@@ -333,7 +333,8 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
                 onChange={e => setBpTitle(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") startNewBlueprint(); if (e.key === "Escape") { setBpNewOpen(false); setBpTitle(""); } }}
                 placeholder="blueprint name…"
-                style={{ flex: 1, minWidth: 0, height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)", borderRadius: 6, outline: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}
+                className="mono"
+                style={{ flex: 1, minWidth: 0, height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)", borderRadius: 6, outline: "none", fontSize: 11, color: "var(--fg)" }}
               />
               <button
                 className="btn primary"
@@ -343,11 +344,11 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
               >author →</button>
             </div>
           )}
-          <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</div>
+          <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</div>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
           {fBlueprints.length === 0 ? (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.6, padding: "6px 2px" }}>
+            <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.6, padding: "6px 2px" }}>
               {q ? "No blueprints match your search." : <>No blueprints yet. Press <b style={{ color: "var(--fg-muted)" }}>+</b> to author one.</>}
             </div>
           ) : (

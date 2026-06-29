@@ -94,8 +94,8 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
           borderRight: "1px solid var(--border-soft)", padding: "14px 8px",
           display: "flex", flexDirection: "column", gap: 2, overflow: "auto",
         }}>
-          <div style={{
-            fontFamily: "var(--mono)", fontSize: 10, letterSpacing: ".08em",
+          <div className="mono" style={{
+            fontSize: 10, letterSpacing: ".08em",
             color: "var(--fg-dim)", padding: "2px 12px 8px",
             display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
@@ -109,8 +109,8 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
             </span>
           </div>
           {githubRepos.length === 0 && (
-            <div style={{
-              padding: "12px", fontFamily: "var(--mono)", fontSize: 11,
+            <div className="mono" style={{
+              padding: "12px", fontSize: 11,
               color: "var(--fg-dim)", textAlign: "center",
             }}>
               No repositories found
@@ -130,15 +130,15 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 }}
               >
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span style={{
-                    fontFamily: "var(--mono)", fontSize: 11,
+                  <span className="mono" style={{
+                    fontSize: 11,
                     color: on ? "var(--fg)" : "var(--fg-muted)",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     flex: 1, minWidth: 0,
                   }}>{r.full_name}</span>
                   <Chip style={{ fontSize: 9.5 }}>{langTag(r.language)}</Chip>
                 </div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
+                <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
                   <span>⊕ {r.open_issues_count}</span>
                   {r.private && <Chip style={{ fontSize: 9 }}>private</Chip>}
                 </div>

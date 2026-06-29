@@ -55,7 +55,7 @@ export function HookAnalyticsTab() {
         {/* Fires per hook */}
         <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Fires per hook</h3>
+            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Fires per hook</h3>
             <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>by event · matcher</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
@@ -63,10 +63,10 @@ export function HookAnalyticsTab() {
             {an.perHook.map(h => (
               <div key={h.hook}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{h.hook}</span>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{h.event}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{h.hook}</span>
+                  <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{h.event}</span>
                   <div style={{ flex: 1 }} />
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{h.fires}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{h.fires}</span>
                 </div>
                 <FillBar value={h.fires / maxHookFires} />
               </div>
@@ -77,7 +77,7 @@ export function HookAnalyticsTab() {
         {/* Blocks vs allows */}
         <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Blocks vs allows</h3>
+            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Blocks vs allows</h3>
             <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>PreToolUse hooks only</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -87,10 +87,10 @@ export function HookAnalyticsTab() {
               return (
                 <div key={p.hook}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{p.hook}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{p.hook}</span>
                     <div style={{ flex: 1 }} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>{p.allows} allow</span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{p.blocks} block</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--success)" }}>{p.allows} allow</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{p.blocks} block</span>
                   </div>
                   <div style={{ height: 10, borderRadius: 99, overflow: "hidden", display: "flex", background: "var(--bg-elev2)" }}>
                     <div style={{ height: "100%", width: `${(p.allows / tot) * 100}%`, background: "var(--success)" }} />
@@ -101,7 +101,7 @@ export function HookAnalyticsTab() {
             })}
           </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
-            Parsed from <span style={{ fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>~/.base-studio-code/hooks.log</span> via <span style={{ fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>hookTelemetry.ts</span> — one line per fire (ts · event · hook · outcome).
+            Parsed from <span className="mono" style={{ color: "var(--fg-muted)" }}>~/.base-studio-code/hooks.log</span> via <span className="mono" style={{ color: "var(--fg-muted)" }}>hookTelemetry.ts</span> — one line per fire (ts · event · hook · outcome).
           </div>
         </div>
       </div>

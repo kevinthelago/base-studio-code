@@ -30,7 +30,7 @@ export function PlannerPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
       {/* Planner Header */}
-      <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Planner</h2>
+      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Planner</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
         Manage LLM planning providers, autopilot options, telemetry, performance, and background logs.
       </p>
@@ -60,7 +60,7 @@ export function PlannerPage() {
       />
 
       {notice && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", marginTop: -8, wordBreak: "break-all" }}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: -8, wordBreak: "break-all" }}>
           {notice}
         </div>
       )}

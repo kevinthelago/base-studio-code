@@ -33,7 +33,7 @@ export function GitHubSummary() {
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Across all repositories</h2>
+            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Across all repositories</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
               {githubRepos.length} repo{githubRepos.length !== 1 ? "s" : ""} · 28-week view
             </div>
@@ -52,8 +52,8 @@ export function GitHubSummary() {
           ] as const).map(([k, v, sub, tone]) => (
             <div key={k} className="card" style={{ padding: "10px 12px" }}>
               <SectionLabel>{k}</SectionLabel>
-              <div style={{
-                fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, marginTop: 2,
+              <div className="mono" style={{
+                fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : tone === "info" ? "var(--info)" : "var(--fg)",
               }}>{v}</div>
               <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>

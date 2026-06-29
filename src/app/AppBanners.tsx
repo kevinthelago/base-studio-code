@@ -152,7 +152,7 @@ export function SessionRecoveryBanner() {
             return (
               <div key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg-panel)" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                   <span className="hint" style={{ fontSize: 10.5 }}>{sessions.length}</span>
                   {restorable.length > 0 && (
                     <button className="btn primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
@@ -164,7 +164,7 @@ export function SessionRecoveryBanner() {
                 {sessions.map((s) => (
                   <div key={s.paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 8, alignItems: "center", padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
                     <span style={{ minWidth: 0, display: "grid", gap: 1 }}>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</span>
+                      <span className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</span>
                       <span className="hint" style={{ fontSize: 10 }}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</span>
                     </span>
                     {s.reapOnly ? <span className="hint" style={{ fontSize: 10 }}>reap-only</span> : <span />}

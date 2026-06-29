@@ -70,8 +70,8 @@ function HBar({
   const w = max > 0 ? (count / max) * 100 : 0;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 40px", gap: 10, alignItems: "center" }}>
-      <div style={{
-        fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
+      <div className="mono" style={{
+        fontSize: 10.5, color: "var(--fg-muted)",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>{label}</div>
       <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
@@ -81,7 +81,7 @@ function HBar({
           transition: "width 0.3s ease",
         }} />
       </div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
+      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
         {pct ? `${Math.round(w)}%` : count}
       </div>
     </div>
@@ -260,7 +260,7 @@ export function Insights() {
           <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {isLoading && (
-            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
               Loading insights…
             </div>
           )}
@@ -284,7 +284,7 @@ export function Insights() {
                     <span className="hint">{total} items</span>
                   </div>
                   {statusDist.length === 0 ? (
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>No status field found.</div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No status field found.</div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {statusDist.map(s => (
@@ -301,27 +301,27 @@ export function Insights() {
                     <span className="hint">open issues</span>
                   </div>
                   {assigneeDist.length === 0 ? (
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>No open issues.</div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No open issues.</div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {assigneeDist.map(a => (
                         <div key={a.login} style={{ display: "grid", gridTemplateColumns: "18px 112px 1fr 32px", gap: 8, alignItems: "center" }}>
                           {a.login === "(unassigned)" ? (
-                            <span style={{
+                            <span className="mono" style={{
                               width: 16, height: 16, borderRadius: "50%",
                               border: "1px dashed var(--border)", color: "var(--fg-dim)",
-                              fontFamily: "var(--mono)", fontSize: 9,
+                              fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>?</span>
                           ) : (
-                            <span style={{
+                            <span className="mono" style={{
                               width: 16, height: 16, borderRadius: "50%",
                               background: avatarColor(a.login), color: "#1a120a",
-                              fontFamily: "var(--mono)", fontWeight: 700, fontSize: 9,
+                              fontWeight: 700, fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>{a.login[0]?.toUpperCase()}</span>
                           )}
-                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {a.login}
                           </div>
                           <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
@@ -332,7 +332,7 @@ export function Insights() {
                               borderRadius: 3,
                             }} />
                           </div>
-                          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{a.count}</div>
+                          <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{a.count}</div>
                         </div>
                       ))}
                     </div>
@@ -346,7 +346,7 @@ export function Insights() {
                   <h3 style={{ margin: 0 }}>Weekly activity</h3>
                   <span className="hint">last 8 weeks</span>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: "flex", gap: 14, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+                  <div className="mono" style={{ display: "flex", gap: 14, fontSize: 10, color: "var(--fg-dim)" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--info), transparent 40%)", display: "inline-block" }} />
                       opened

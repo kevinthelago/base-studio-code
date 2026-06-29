@@ -24,9 +24,9 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
       flex: 1, minHeight: 0, overflow: "auto",
       padding: small ? "6px 8px" : "10px 12px",
     }}>
-      <div style={{
+      <div className="mono" style={{
         display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8,
-        fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+        fontSize: 10, color: "var(--fg-dim)",
         textTransform: "uppercase", letterSpacing: ".06em",
       }}>
         <span>{hunks.length} files changed</span>
@@ -41,10 +41,10 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
           marginBottom: 8, borderRadius: 5,
           border: "1px solid var(--border-soft)", overflow: "hidden",
         }}>
-          <div style={{
+          <div className="mono" style={{
             padding: "5px 9px", background: "var(--bg-elev)",
             display: "flex", alignItems: "baseline", gap: 8,
-            fontFamily: "var(--mono)", fontSize: small ? 10 : 11,
+            fontSize: small ? 10 : 11,
           }}>
             <span style={{
               color: "var(--fg)", flex: 1,
@@ -53,9 +53,9 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
             <span style={{ color: "var(--success)", fontSize: small ? 9.5 : 10 }}>+{h.add}</span>
             <span style={{ color: "var(--danger)",  fontSize: small ? 9.5 : 10 }}>−{h.del}</span>
           </div>
-          <pre style={{
+          <pre className="mono" style={{
             margin: 0, padding: "6px 0",
-            fontFamily: "var(--mono)", fontSize: small ? 9.5 : 10.5,
+            fontSize: small ? 9.5 : 10.5,
             lineHeight: 1.5, background: "var(--bg-canvas)",
           }}>
             {h.sample.map((line, j) => (

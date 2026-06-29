@@ -64,10 +64,10 @@ export function RangeToggle({ value, onChange, options = ["7d", "14d", "30d"] }:
 export function Avatar({ login, size = 20, bot = false }: { login: string; size?: number; bot?: boolean }) {
   const color = bot ? "oklch(0.78 0.14 70)" : loginColor(login);
   return (
-    <span title={login} style={{
+    <span title={login} className="mono" style={{
       width: size, height: size, borderRadius: bot ? size * 0.28 : "50%",
       background: color, color: "#1a120a",
-      fontFamily: "var(--mono)", fontWeight: 700, fontSize: size * 0.46,
+      fontWeight: 700, fontSize: size * 0.46,
       display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
     }}>
       {bot ? "◆" : (login.replace(/^@/, "")[0]?.toUpperCase() ?? "?")}

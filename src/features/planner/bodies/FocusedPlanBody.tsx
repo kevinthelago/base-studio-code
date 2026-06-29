@@ -63,8 +63,8 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
           {/* STREAMS — gate pill on the right (#1429 reskin) */}
           <div className="ulabel" style={{ paddingBottom: 9, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <span>streams</span>
-            <span data-testid="relationship-gate" style={{
-              display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
+            <span data-testid="relationship-gate" className="mono" style={{
+              display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
               color: gatePass ? "var(--success)" : "var(--danger)",
               background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`,
               border: `1px solid color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 67%)`,
@@ -86,16 +86,16 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
             />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
               {kindsUsed.map((k) => (
-                <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+                <span key={k} className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
                   <span style={{ width: 11, height: 0, borderTop: `1.6px solid ${EDGE_KIND_META[k].color}` }} />{EDGE_KIND_META[k].label}
                 </span>
               ))}
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--mono)", fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+              <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
                 <span style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
               </span>
             </div>
           </div>
-          <div style={{ fontFamily: "var(--mono)", fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
+          <div className="mono" style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
             <span>{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</span>
             {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
           </div>
@@ -126,14 +126,14 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
                     <span style={{
                       flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontFamily: "var(--mono)", fontSize: 10, fontWeight: 600,
+                      fontSize: 10, fontWeight: 600,
                       color: first ? "var(--accent)" : "var(--fg-muted)",
                       background: first ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev2)",
                       border: "1px solid " + (first ? "color-mix(in oklch, var(--accent), transparent 65%)" : "var(--border)"),
                     }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{p.name}</div>
-                      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
+                      <div className="mono" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{p.name}</div>
+                      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
                         {p.doneWhen ? `done when · ${p.doneWhen}` : `${p.total} issue${p.total === 1 ? "" : "s"}`}
                       </div>
                     </div>

@@ -86,7 +86,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         <span style={glyphTile(st.skill.kind)}>{KIND[st.skill.kind].glyph}</span>
         <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.skill.name}</span>
+            <span className="mono" style={{ fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.skill.name}</span>
             <span style={sourcePill(st.skill.source)}>{SOURCE_TAG[st.skill.source].label}</span>
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -113,9 +113,9 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
             <IconButton aria-label="close" onClick={onClose} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>{sessionLabel || sessionKey}</span>
+            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{sessionLabel || sessionKey}</span>
             <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}><b style={{ fontFamily: "var(--mono)", color: "var(--fg)" }}>{availCount}</b> available · <b style={{ fontFamily: "var(--mono)", color: "var(--accent)" }}>{overrides.length}</b> overrides</span>
+            <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}><b className="mono" style={{ color: "var(--fg)" }}>{availCount}</b> available · <b className="mono" style={{ color: "var(--accent)" }}>{overrides.length}</b> overrides</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13 }}>
             <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
@@ -132,10 +132,10 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
           {/* quick-add a task group */}
           {skillGroups.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Quick-add a task group</span>
+              <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Quick-add a task group</span>
               {skillGroups.map((g) => { const on = groupIds.includes(g.id); return (
                 <button key={g.id} onClick={() => setSessionSkillGroup(sessionKey, g.id, !on)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 99, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", border: "1px solid " + (on ? g.hue : "var(--border)"), background: on ? `color-mix(in oklch, ${g.hue}, transparent 85%)` : "transparent", color: on ? g.hue : "var(--fg-muted)" }}>
-                  <span style={{ opacity: 0.75 }}>⬡</span>{g.name}<span style={{ fontFamily: "var(--mono)", fontSize: 9.5, opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</span>
+                  <span style={{ opacity: 0.75 }}>⬡</span>{g.name}<span className="mono" style={{ fontSize: 9.5, opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</span>
                 </button>
               ); })}
             </div>
@@ -146,11 +146,11 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         <div style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
           {overrideRows.length > 0 && (
             <>
-              <div style={{ padding: "9px 20px 5px 20px", fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--accent)" }}>Overrides · {overrideRows.length}</div>
+              <div className="mono" style={{ padding: "9px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--accent)" }}>Overrides · {overrideRows.length}</div>
               {overrideRows.map((st) => <Row key={st.skill.id} st={st} />)}
             </>
           )}
-          <div style={{ padding: "13px 20px 5px 20px", fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>
+          <div className="mono" style={{ padding: "13px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>
             {tab === "assigned" ? `Assigned to this session · ${restRows.length}` : `All skills · ${restRows.length}`}
           </div>
           {restRows.map((st) => <Row key={st.skill.id} st={st} />)}
@@ -161,7 +161,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
 
         {/* footer */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
-          <span style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.4 }}>Written as <span style={{ fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>.claude/skills/&lt;slug&gt;/SKILL.md</span> on next relaunch.</span>
+          <span style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.4 }}>Written as <span className="mono" style={{ color: "var(--fg-muted)" }}>.claude/skills/&lt;slug&gt;/SKILL.md</span> on next relaunch.</span>
           <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
         </div>

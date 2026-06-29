@@ -243,7 +243,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
         ) : (
           <div className="card" style={{ padding: 11, marginTop: 8 }}>
             <div style={{ ...rowS(0), marginBottom: 6 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-muted)" }}>Add a stage</span>
+              <span className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-muted)" }}>Add a stage</span>
               <span style={{ flex: 1 }} />
               <IconButton aria-label="cancel" onClick={() => setAdding(false)} />
             </div>
@@ -293,14 +293,14 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
             <div style={{ ...rowS(10), padding: "11px 13px", cursor: "pointer" }} onClick={() => toggle(s.uid)}>
               <StageGlyph k={s.key} />
               <div style={{ ...col(2), flex: 1, minWidth: 0 }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>{s.name}</span>
+                <span className="mono-value">{s.name}</span>
                 <span style={{ fontSize: 10, color: "var(--fg-dim)", display: "flex", gap: 8 }}>
                   <span>{attachedSkills.length} skill{attachedSkills.length !== 1 ? "s" : ""}</span>
                   <span>{attachedMcp.length} MCP</span>
                   <span>→ {DISPOSITIONS[s.output ?? ""]?.title ?? "plan file"}</span>
                 </span>
               </div>
-              <span className="dim" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span>
+              <span className="dim mono" style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span>
             </div>
 
             {isOpen && (
@@ -402,7 +402,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
         <span className="hicon" style={{ background: tint(h, 0.16), color: hue(h) }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</span>
         <div className="htxt">
           <div className="heyebrow">blueprint</div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)", marginBottom: 3 }}>{bp.name || "Untitled blueprint"}</div>
+          <div className="mono" style={{ fontSize: 14, color: "var(--fg)", marginBottom: 3 }}>{bp.name || "Untitled blueprint"}</div>
           <div className="hbody">{bp.pitch || "—"}</div>
         </div>
       </div>

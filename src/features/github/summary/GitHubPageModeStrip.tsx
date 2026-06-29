@@ -11,12 +11,12 @@ export function GitHubPageModeStrip() {
     { k: "repos",    label: "Repositories", hint: "progress · changes · CI" },
   ] as const;
   return (
-    <div style={{
+    <div className="mono" style={{
       padding: "0 24px",
       borderBottom: "1px solid var(--border-soft)",
       background: "var(--bg-panel)",
       display: "flex", alignItems: "center", gap: 6,
-      fontFamily: "var(--mono)", fontSize: 11.5,
+      fontSize: 11.5,
       height: 34, flex: "0 0 34px",
     }}>
       {modes.map(m => {
@@ -35,7 +35,7 @@ export function GitHubPageModeStrip() {
         );
       })}
       <div style={{ flex: 1 }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+      <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--fg-dim)" }}>
         <span style={{ color: "var(--success)" }}>● connected</span>
         {githubUser && <><span>·</span><span>{githubUser.login}</span></>}
       </div>

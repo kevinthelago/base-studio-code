@@ -42,17 +42,17 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
       {selectMode && <Checkbox checked={isSel} />}
       <span style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</span>
       <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
         {(groups?.length ?? 0) > 0 && <span title={groups!.map((g) => g.name).join(", ")} style={{ color: "var(--fg-dim)", fontSize: 10 }}>⬡{groups!.length > 1 ? groups!.length : ""}</span>}
       </span>
       <span><span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span></span>
       <span style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
         {s.tools.slice(0, 2).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-        {s.tools.length > 2 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>+{s.tools.length - 2}</span>}
+        {s.tools.length > 2 && <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>+{s.tools.length - 2}</span>}
       </span>
       <span><span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] + (s.projects.length > 1 ? " +" + (s.projects.length - 1) : "") : "global"}</span></span>
       <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)", width: 38, textAlign: "right" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "—"}</span>
+        <span className="mono" style={{ fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)", width: 38, textAlign: "right" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "—"}</span>
         {s.trend.length > 1 ? <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} /> : <span style={{ width: 46 }} />}
       </span>
       <span className="pin-btn" onClick={(e) => { e.stopPropagation(); onTogglePin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
@@ -113,7 +113,7 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
           <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
             <span style={hueTile(sec.hue)}>{sec.glyph}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
+            <span className="mono" style={{ fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
           </div>
           {/* Member rows, indented under the header so they clearly belong to this section. */}
           <div style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
@@ -134,7 +134,7 @@ export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef;
         <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
+            <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
             <span style={{ flex: 1 }} />
             <span onClick={(e) => { e.stopPropagation(); onPin(); }} style={{ fontSize: 13, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
             <Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
@@ -150,10 +150,10 @@ export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef;
         {s.tools.slice(0, 3).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", gap: 5 }}>{s.profiles.map((p: SkillProfile) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</div>
+        <div style={{ display: "flex", gap: 5 }}>{s.profiles.map((p: SkillProfile) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</div>
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</span>
-        {s.invocations > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: sc }}>{s.success}%</span>}
+        <span className="mono" style={{ fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</span>
+        {s.invocations > 0 && <span className="mono" style={{ fontSize: 10, color: sc }}>{s.success}%</span>}
         {s.trend.length > 1 && <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} />}
       </div>
     </div>

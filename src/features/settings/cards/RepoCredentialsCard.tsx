@@ -37,7 +37,7 @@ export function RepoCredentialsCard() {
       </div>
       <div className="hint" style={{ marginTop: 8 }}>
         Create a fine-grained token limited to one repository at{" "}
-        <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>github.com/settings/tokens?type=beta</span>.
+        <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>github.com/settings/tokens?type=beta</span>.
         Stored locally · never logged.
       </div>
 
@@ -45,7 +45,7 @@ export function RepoCredentialsCard() {
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-soft)" }}>
           {scoped.map((r, i) => (
             <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", fontSize: 11.5 }}>
-              <span style={{ fontFamily: "var(--mono)", flex: 1 }}>{r}</span>
+              <span className="mono" style={{ flex: 1 }}>{r}</span>
               <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />scoped token</Chip>
               <button className="btn ghost danger" style={{ height: 24, fontSize: 10.5 }} onClick={() => setRepoGithubToken(r, null)}>remove</button>
             </div>

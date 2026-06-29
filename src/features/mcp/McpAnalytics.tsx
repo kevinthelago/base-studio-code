@@ -74,10 +74,10 @@ export function McpAnalyticsTab() {
         {/* Calls per server */}
         <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Calls per server</h3>
+            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Calls per server</h3>
             <div style={{ flex: 1 }} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</span>
+            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</span>
+            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
             {an.perServer.length === 0 && <span className="hint">No MCP calls recorded yet.</span>}
@@ -87,10 +87,10 @@ export function McpAnalyticsTab() {
               return (
                 <div key={s.server}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{s.server}</span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{transport}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{s.server}</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{transport}</span>
                     <div style={{ flex: 1 }} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>{s.calls}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{s.calls}</span>
                   </div>
                   <FillBar value={s.calls / maxServerCalls} color={c} />
                 </div>
@@ -102,7 +102,7 @@ export function McpAnalyticsTab() {
         {/* Success vs errors */}
         <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Success vs errors</h3>
+            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Success vs errors</h3>
             <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>per server</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -112,10 +112,10 @@ export function McpAnalyticsTab() {
               return (
                 <div key={p.server}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>{p.server}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{p.server}</span>
                     <div style={{ flex: 1 }} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--success)" }}>{p.ok} ok</span>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{p.errors} err</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--success)" }}>{p.ok} ok</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{p.errors} err</span>
                   </div>
                   <div style={{ height: 10, borderRadius: 99, overflow: "hidden", display: "flex", background: "var(--bg-elev2)" }}>
                     <div style={{ height: "100%", width: `${(p.ok / tot) * 100}%`, background: "var(--success)" }} />
@@ -126,7 +126,7 @@ export function McpAnalyticsTab() {
             })}
           </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
-            Parsed from <span style={{ fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>~/.base-studio-code/mcp.log</span> via <span style={{ fontFamily: "var(--mono)", color: "var(--fg-muted)" }}>mcpTelemetry.ts</span> — one line per call (ts · server · tool · outcome · ms).
+            Parsed from <span className="mono" style={{ color: "var(--fg-muted)" }}>~/.base-studio-code/mcp.log</span> via <span className="mono" style={{ color: "var(--fg-muted)" }}>mcpTelemetry.ts</span> — one line per call (ts · server · tool · outcome · ms).
           </div>
         </div>
       </div>
@@ -134,17 +134,18 @@ export function McpAnalyticsTab() {
       {/* Call results log */}
       <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Call results</h3>
+          <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Call results</h3>
           <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>what servers returned to agents</span>
           <div style={{ flex: 1 }} />
-          {errCount > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{errCount} errors</span>}
+          {errCount > 0 && <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{errCount} errors</span>}
           <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {(["all", "ok", "errors"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
+                className="mono"
                 style={{
-                  fontFamily: "var(--mono)", fontSize: 10, padding: "3px 9px", border: 0, cursor: "pointer",
+                  fontSize: 10, padding: "3px 9px", border: 0, cursor: "pointer",
                   background: filter === f ? "var(--bg-elev2)" : "transparent",
                   color: filter === f ? "var(--fg)" : "var(--fg-dim)",
                 }}
@@ -168,7 +169,7 @@ function CallRow({ c }: { c: McpCall }) {
   const dot = c.outcome === "fail" ? "var(--danger)" : c.outcome === "warn" ? "var(--accent)" : "var(--success)";
   const label = c.outcome === "fail" ? "fail" : c.outcome === "warn" ? "warn" : "ok";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: "1px solid var(--border-soft)", fontFamily: "var(--mono)", fontSize: 10.5 }}>
+    <div className="mono" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: "1px solid var(--border-soft)", fontSize: 10.5 }}>
       <span style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts)}</span>
       <span style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{c.server}<span style={{ color: "var(--fg-muted)" }}>.{c.tool}</span></span>
       <span style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</span>

@@ -19,9 +19,9 @@ export function BranchesView({ small = false, branches }: BranchesViewProps) {
       flex: 1, minHeight: 0, overflow: "auto",
       padding: small ? "6px 8px" : "10px 12px",
     }}>
-      <div style={{
+      <div className="mono" style={{
         display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6,
-        fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+        fontSize: 10, color: "var(--fg-dim)",
         textTransform: "uppercase", letterSpacing: ".06em",
       }}>
         <span>{branches.length} branches</span>
@@ -29,11 +29,11 @@ export function BranchesView({ small = false, branches }: BranchesViewProps) {
         <span>{branches.filter((b) => (b.ahead ?? 0) > 0).length} ahead, {branches.filter((b) => b.stale).length} stale</span>
       </div>
       {branches.map((b) => (
-        <div key={b.n} style={{
+        <div key={b.n} className="mono" style={{
           display: "grid", gridTemplateColumns: "14px 1fr auto auto", gap: 8,
           alignItems: "center", padding: "4px 6px", borderRadius: 4,
           background: b.cur ? "color-mix(in oklch, var(--accent), transparent 90%)" : "transparent",
-          fontFamily: "var(--mono)", fontSize: small ? 10 : 11,
+          fontSize: small ? 10 : 11,
         }}>
           <span style={{ color: b.cur ? "var(--accent)" : "var(--fg-dim)" }}>{b.cur ? "●" : "○"}</span>
           <span style={{

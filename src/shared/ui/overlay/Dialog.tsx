@@ -19,8 +19,8 @@ export function Dialog({ title, children, actions, onDismiss, danger }: DialogPr
           borderColor: danger ? "var(--danger)" : undefined,
         }}
       >
-        <h3 style={{
-          margin: "0 0 10px", fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600,
+        <h3 className="mono" style={{
+          margin: "0 0 10px", fontSize: 14, fontWeight: 600,
           color: danger ? "var(--danger)" : "var(--fg)",
         }}>
           {title}

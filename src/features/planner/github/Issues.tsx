@@ -80,7 +80,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)" }}>#{issue.number}</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>#{issue.number}</span>
             <h3 style={{ margin: 0, fontSize: 14, color: "var(--fg)" }}>{issue.title}</h3>
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -88,12 +88,12 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
               ● {issue.state === "OPEN" ? "open" : "closed"}
             </Chip>
             {issue.statusName && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
                 {issue.statusName}
               </span>
             )}
             {issue.milestone && (
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)" }}>{issue.milestone}</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--accent)" }}>{issue.milestone}</span>
             )}
             {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
           </div>
@@ -105,13 +105,13 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
       <div style={{ flex: 1, overflow: "auto" }}>
         {/* Body */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</div>
+          <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</div>
           {issue.body ? (
             <div style={{ fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
               {issue.body.slice(0, 800)}{issue.body.length > 800 ? "…" : ""}
             </div>
           ) : (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>No description.</div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic" }}>No description.</div>
           )}
         </div>
 
@@ -119,18 +119,18 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 10 }}>
           {issue.assignees.length > 0 && (
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>assignees</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>assignees</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {issue.assignees.map(a => (
                   <div key={a.login} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <Avatar login={a.login} size={18} palette bordered fontScale={0.56} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>@{a.login}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <div style={{ display: "flex", gap: 24, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
+          <div className="mono" style={{ display: "flex", gap: 24, fontSize: 11, color: "var(--fg-muted)" }}>
             {issue.comments > 0 && <span>💬 {issue.comments} comment{issue.comments !== 1 ? "s" : ""}</span>}
             <span>updated {timeAgoShort(issue.updatedAt)} ago</span>
           </div>
@@ -139,21 +139,21 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
         {/* Claude breakdown */}
         <div style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{
+            <div className="mono" style={{
               width: 20, height: 20, borderRadius: 5,
               background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-              color: "#1a120a", fontFamily: "var(--mono)", fontWeight: 700, fontSize: 11,
+              color: "#1a120a", fontWeight: 700, fontSize: 11,
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>C</div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)" }}>Claude</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>Claude</span>
             <div style={{ flex: 1 }} />
             <button className="btn ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ break down</button>
             <button className="btn ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>open in pane</button>
           </div>
           <textarea
-            className="input"
+            className="input mono"
             placeholder="ask claude about this issue…"
-            style={{ width: "100%", height: 54, padding: "8px 10px", fontFamily: "var(--mono)", fontSize: 11, boxSizing: "border-box" }}
+            style={{ width: "100%", height: 54, padding: "8px 10px", fontSize: 11, boxSizing: "border-box" }}
           />
         </div>
       </div>
@@ -216,9 +216,10 @@ function FilterBar({
           <button
             key={k}
             onClick={() => onChange({ state: k })}
+            className="mono"
             style={{
               height: 26, padding: "0 10px",
-              fontFamily: "var(--mono)", fontSize: 10.5,
+              fontSize: 10.5,
               background: filters.state === k ? "var(--bg-elev2)" : "var(--bg-elev)",
               border: "none", borderRight: k !== "closed" ? "1px solid var(--border-soft)" : "none",
               color: filters.state === k ? "var(--fg)" : "var(--fg-muted)",
@@ -252,7 +253,7 @@ function FilterBar({
 
       <div style={{ flex: 1 }} />
 
-      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
+      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>
         {shown === total ? `${total} issues` : `${shown} of ${total}`}
       </span>
 
@@ -295,7 +296,7 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
           color={issue.state === "OPEN" ? "var(--success)" : "var(--fg-dim)"}
           title={issue.state === "OPEN" ? "open" : "closed"}
         />
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)" }}>
+        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>
           {issue.number}
         </span>
       </div>
@@ -308,9 +309,9 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
         }}>{issue.title}</div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {issue.statusName && (
-            <span style={{
+            <span className="mono" style={{
               padding: "1px 5px", borderRadius: 3,
-              fontFamily: "var(--mono)", fontSize: 9, color: "var(--fg-dim)",
+              fontSize: 9, color: "var(--fg-dim)",
               background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
             }}>{issue.statusName}</span>
           )}
@@ -323,8 +324,8 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
         {issue.assignees.length > 0 && (
           <div style={{ display: "flex" }}>
             {issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={16} ml={i === 0 ? 0 : -5} palette bordered fontScale={0.56} />)}
-            <span style={{
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)", marginLeft: 6,
+            <span className="mono" style={{
+              fontSize: 10, color: "var(--fg-muted)", marginLeft: 6,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             }}>
               {issue.assignees.map(a => a.login).join(", ")}
@@ -332,19 +333,19 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
           </div>
         )}
         {issue.milestone && (
-          <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)", whiteSpace: "nowrap" }}>
+          <span className="mono" style={{ fontSize: 10, color: "var(--accent)", whiteSpace: "nowrap" }}>
             ◈ {issue.milestone}
           </span>
         )}
       </div>
 
       {/* Comments */}
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-dim)", textAlign: "center" }}>
+      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", textAlign: "center" }}>
         {issue.comments > 0 ? `💬 ${issue.comments}` : "—"}
       </div>
 
       {/* Updated */}
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
+      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
         {timeAgoShort(issue.updatedAt)}
       </div>
 
@@ -452,9 +453,9 @@ export function Issues() {
           gap: 10, padding: "6px 16px",
           borderBottom: "1px solid var(--border-soft)",
           background: "var(--bg-panel)",
-          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+          fontSize: 10, color: "var(--fg-dim)",
           textTransform: "uppercase", letterSpacing: ".05em",
-        }}>
+        }} className="mono">
           <div>#</div>
           <div>title</div>
           <div>assignee · milestone</div>
@@ -465,7 +466,7 @@ export function Issues() {
 
         <div style={{ flex: 1, overflow: "auto", background: "var(--bg-canvas)", position: "relative" }}>
           {loading && rawIssues.length === 0 && (
-            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
               Loading issues…
             </div>
           )}
@@ -473,13 +474,13 @@ export function Issues() {
           <QueryBanner error={error} style={{ margin: 12 }} />
 
           {!loading && !error && filtered.length === 0 && rawIssues.length > 0 && (
-            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
               No issues match the current filters.
             </div>
           )}
 
           {!loading && !error && rawIssues.length === 0 && !error && (
-            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>
+            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
               No issues found in this project.
             </div>
           )}

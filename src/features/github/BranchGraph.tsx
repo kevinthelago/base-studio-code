@@ -138,12 +138,12 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
       </div>
 
       {busy && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0", textAlign: "center" }}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0", textAlign: "center" }}>
           Fetching branch history…
         </div>
       )}
       {!busy && layout && layout.points.length === 0 && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
           No commit history found.
         </div>
       )}
@@ -189,7 +189,7 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
       {layout && layout.laneNames.length > 0 && (
         <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
           {layout.laneNames.map((name, i) => (
-            <span key={name} style={{ display: "inline-flex", gap: 6, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+            <span key={name} className="mono" style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
               <span style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
               {name}
             </span>

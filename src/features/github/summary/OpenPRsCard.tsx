@@ -16,7 +16,7 @@ export function OpenPRsAllRepos({ prs, loading }: {
         <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>filter by reviewer</button>
       </div>
       {prs.length === 0 && !loading && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No open pull requests.</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No open pull requests.</div>
       )}
       {prs.length > 0 && (
         <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
@@ -28,13 +28,13 @@ export function OpenPRsAllRepos({ prs, loading }: {
               gap: 10, alignItems: "baseline", fontSize: 11,
               borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
             }}>
-              <span style={{ fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>{p.n}</span>
+              <span className="mono" style={{ color: "var(--fg-dim)" }}>{p.n}</span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.t}</div>
-                <div style={{ marginTop: 3, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>@{p.who} · {p.repo}</div>
+                <div className="mono" style={{ marginTop: 3, fontSize: 10, color: "var(--fg-dim)" }}>@{p.who} · {p.repo}</div>
               </div>
               {p.draft && <Chip style={{ fontSize: 9.5 }}>draft</Chip>}
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{p.age}</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{p.age}</span>
             </div>
           ))}
         </div>

@@ -20,12 +20,12 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
   return (
     <div className="card">
       <CardHead title="Worker board" hint="one agent per stream · click a worker to open it"
-        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{workers.length} live</span>} />
+        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{workers.length} live</span>} />
       <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-        <div style={{
+        <div className="mono" style={{
           display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "7px 12px",
           background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
-          fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em",
+          fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em",
         }}>
           <span>worker</span><span>status</span><span>current</span><span style={{ textAlign: "right" }}>issues</span><span />
         </div>
@@ -40,24 +40,24 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
               <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                 <Avatar login={w.name} bot size={18} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--mono)", color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: w.profileColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.profileLabel}</div>
+                  <div className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
+                  <div className="mono" style={{ fontSize: 9, color: w.profileColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.profileLabel}</div>
                 </div>
               </div>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 10, color: st.color }}>
+              <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: st.color }}>
                 <span className={`wd ${w.status}`} />{st.label}
               </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.issue}</div>
-                {w.note && <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.note}</div>}
+                {w.note && <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.note}</div>}
               </div>
-              <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>{w.ownedTotal}</span>
-              <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-dim)" }}>›</span>
+              <span className="mono" style={{ textAlign: "right", fontSize: 10.5, color: "var(--fg-muted)" }}>{w.ownedTotal}</span>
+              <span className="mono" style={{ textAlign: "right", fontSize: 13, color: "var(--fg-dim)" }}>›</span>
             </div>
           );
         })}
       </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+      <div className="mono" style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", fontSize: 10, color: "var(--fg-muted)" }}>
         {Object.values(STATUS).map(s => (
           <span key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <ColorSwatch color={s.color} />{s.label}
@@ -78,7 +78,7 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
         <Donut slices={slices} center={{ value: total, label: "workers" }} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
           {slices.map(s => (
-            <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 24px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
+            <div key={s.name} className="mono" style={{ display: "grid", gridTemplateColumns: "12px 1fr 24px", gap: 8, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
               <ColorSwatch color={s.color} />
               <span>{s.name}</span>
               <span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
@@ -133,7 +133,7 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
         : <>
             <Bars labels={gh.timeToLand.map(b => b.label)} height={116} tip={tip}
               groups={[{ name: "PRs", color: "var(--info)", data: gh.timeToLand.map(b => b.v) }]} />
-            <div style={{ marginTop: 6, fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+            <div className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
               median <b style={{ color: "var(--fg)" }}>{gh.medianLandH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
             </div>
           </>}
@@ -147,19 +147,19 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
   return (
     <div className="card">
       <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
-        right={<span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--accent)" }}>{gh.mergeQueue.length}</span>} />
+        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{gh.mergeQueue.length}</span>} />
       {gh.mergeQueue.length === 0
         ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</div>
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
             {gh.mergeQueue.map((q, i) => (
               <div key={`${q.repo}${q.pr}`} className="hrow" style={{ display: "grid", gridTemplateColumns: "42px 1fr 64px", gap: 8, alignItems: "center", padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                <span style={{ fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>{q.pr}</span>
+                <span className="mono" style={{ color: "var(--fg-dim)" }}>{q.pr}</span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.title}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</div>
+                  <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</div>
                 </div>
-                <span style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 10, color: tone[q.state] }}>● {q.state}</span>
+                <span className="mono" style={{ textAlign: "right", fontSize: 10, color: tone[q.state] }}>● {q.state}</span>
               </div>
             ))}
           </div>
@@ -173,7 +173,7 @@ function SpendNote() {
   return (
     <div className="card">
       <CardHead title="Tokens & spend" hint="not measured yet" />
-      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>
+      <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>
         Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
       </div>
     </div>
@@ -201,7 +201,7 @@ export function Fleet() {
     return (
       <section className="an-page">
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 48, textAlign: "center" }}>
-          <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 18 }}>No fleet running</h2>
+          <h2 className="mono" style={{ margin: 0, fontSize: 18 }}>No fleet running</h2>
           <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
             Launch a fleet from a project's plan to orchestrate parallel agents — workers, status, and coordination appear here live.
           </p>
@@ -215,7 +215,7 @@ export function Fleet() {
       <div className="an-wrap">
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Fleet</h2>
+            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Fleet</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </div>

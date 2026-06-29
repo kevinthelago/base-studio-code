@@ -14,7 +14,7 @@ function BurnDown({ open, closed }: { open: number; closed: number }) {
   const total = open + closed;
   if (total === 0) {
     return (
-      <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
+      <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
         No issue data available.
       </div>
     );
@@ -125,11 +125,11 @@ export function Roadmap() {
                 );
                 return (
                   <>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>state</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>state</span>
                     <div style={{ display: "flex", gap: 4 }}>
                       {(["all", "open", "closed"] as const).map(s => chip(stateFilter === s, s, () => setStateFilter(s)))}
                     </div>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginLeft: 6 }}>window</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginLeft: 6 }}>window</span>
                     <div style={{ display: "flex", gap: 4 }}>
                       {WINDOW_PRESETS.map(p => chip(windowWeeks === p.weeks, p.label, () => setWindowWeeks(p.weeks)))}
                     </div>
@@ -139,7 +139,7 @@ export function Roadmap() {
             </div>
 
             {!loading && rows.length === 0 && (
-              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
+              <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
                 No milestones found for {effectiveRepo || "this project"}.
               </div>
             )}
@@ -155,11 +155,11 @@ export function Roadmap() {
                       if (week > totalWeeks) return null;
                       const pct = (week / totalWeeks) * 100;
                       return (
-                        <div key={i} style={{
+                        <div key={i} className="mono" style={{
                           position: "absolute", left: `${pct}%`,
                           top: 0, paddingLeft: 4, paddingTop: 4,
                           borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
-                          fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)",
+                          fontSize: 10, color: "var(--fg-dim)",
                           whiteSpace: "nowrap",
                         }}>
                           {tickLabel(week, origin, tickInterval)}
@@ -172,7 +172,7 @@ export function Roadmap() {
                         left: `${(todayWeek / totalWeeks) * 100}%`,
                         width: 0, borderLeft: "1.5px dashed var(--accent)", zIndex: 2,
                       }}>
-                        <span style={{ position: "absolute", top: -2, left: 4, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--accent)" }}>today</span>
+                        <span className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</span>
                       </div>
                     )}
                   </div>
@@ -184,10 +184,10 @@ export function Roadmap() {
                     <div key={m.id} style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: 14, alignItems: "center" }}>
                       <div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)" }}>M{m.id}</span>
+                          <span className="mono" style={{ fontSize: 11, color: "var(--accent)" }}>M{m.id}</span>
                           <span style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--fg)" }}>{m.title}</span>
                         </div>
-                        <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>
+                        <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>
                           due {m.dueLabel}
                         </div>
                       </div>
@@ -223,9 +223,9 @@ export function Roadmap() {
                               background: "color-mix(in oklch, var(--accent), transparent 40%)",
                             }} />
                           )}
-                          <span style={{
+                          <span className="mono" style={{
                             position: "relative", padding: "0 10px",
-                            fontFamily: "var(--mono)", fontSize: 10.5,
+                            fontSize: 10.5,
                             color: m.state === "backlog" ? "var(--fg-muted)" : "var(--fg)",
                             whiteSpace: "nowrap",
                           }}>
