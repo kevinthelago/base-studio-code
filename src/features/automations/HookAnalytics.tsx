@@ -3,11 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { FillBar } from "@/shared/ui/FillBar";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
-import { Kpi, StackedDayBars } from "@/shared/ui/charts";
+import { StatCard, StackedDayBars } from "@/shared/ui/charts";
 
 // Hook Analytics tab (#865 PR 2) — KPI cards + 3 charts over the hook-fire telemetry
 // (~/.base-studio-code/hooks.log via read_hook_log + hookTelemetry.ts). The over-time chart + KPI
-// cards are shared primitives (StackedDayBars / Kpi); the per-hook/results charts stay local.
+// cards are shared primitives (StackedDayBars / StatCard); the per-hook/results charts stay local.
 // `activeHooks`/`preCount` come from the live store (enabled hooks); the rest from the parsed log.
 // Empty until the hook wrappers emit fires (PR 3) — renders a clean zero state.
 
@@ -38,10 +38,10 @@ export function HookAnalyticsTab() {
     <div style={{ padding: "4px 0 12px" }}>
       {/* KPI cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
-        <Kpi label="Total fires" value={an.total} sub={`last ${DAYS} days`} />
-        <Kpi label="Blocks" value={an.blocks} sub="PreToolUse denied" color="var(--danger)" />
-        <Kpi label="Allow rate" value={`${an.allowRate}%`} sub={`${an.allows} allowed`} color="var(--success)" />
-        <Kpi label="Active hooks" value={activeHooks} sub={`${preCount} PreToolUse`} />
+        <StatCard k="Total fires" v={an.total} sub={`last ${DAYS} days`} />
+        <StatCard k="Blocks" v={an.blocks} sub="PreToolUse denied" tone="danger" />
+        <StatCard k="Allow rate" v={`${an.allowRate}%`} sub={`${an.allows} allowed`} tone="success" />
+        <StatCard k="Active hooks" v={activeHooks} sub={`${preCount} PreToolUse`} />
       </div>
 
       {/* Fires over time */}
