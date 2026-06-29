@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { Card } from "@/shared/ui/Card";
+import { StatTile } from "@/shared/ui/StatTile";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -54,10 +54,10 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
   return (
     <>
       <div className="hist-summary">
-        <Card><div className="k">total runs</div><div className="v">{rows.length}</div><div className="sub">across {automations.length} automations</div></Card>
-        <Card><div className="k">success rate</div><div className="v success">{succRate}%</div><div className="sub">{ok} ok · {skipped} skipped · {fail} fail</div></Card>
-        <Card><div className="k">skipped</div><div className="v">{skipped}</div><div className="sub">target wasn't open</div></Card>
-        <Card><div className="k">failed</div><div className="v danger">{fail}</div><div className="sub">dispatch errored</div></Card>
+        <StatTile k="total runs" v={rows.length} sub={<>across {automations.length} automations</>} />
+        <StatTile k="success rate" v={`${succRate}%`} tone="success" sub={<>{ok} ok · {skipped} skipped · {fail} fail</>} />
+        <StatTile k="skipped" v={skipped} sub="target wasn't open" />
+        <StatTile k="failed" v={fail} tone="danger" sub="dispatch errored" />
       </div>
 
       <div className="history-toolbar">
