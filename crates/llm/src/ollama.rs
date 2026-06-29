@@ -342,6 +342,44 @@ fn native_usage(raw: &Value) -> Value {
     })
 }
 
+/// One parsed line of Ollama's streaming `/api/chat` NDJSON response (#1832).
+struct StreamLine {
+    content: Option<String>,
+    tool_calls: Vec<ToolCall>,
+    done: bool,
+    usage: Value,
+    done_reason: String,
+}
+
+/// Parse one NDJSON line of a streamed `/api/chat` response. `None` for a non-JSON / partial line
+/// (skipped). `content` is this chunk's text fragment; `usage`/`done_reason` are only meaningful when
+/// `done`. Pure → unit-testable. (#1832)
+fn parse_stream_line(line: &str) -> Option<StreamLine> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let content = v["message"]["content"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+    let tool_calls = v["message"]["tool_calls"]
+        .as_array()
+        .map(|calls| {
+            calls
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    let name = c["function"]["name"].as_str().unwrap_or("").to_string();
+                    let args = match &c["function"]["arguments"] {
+                        Value::String(s) => serde_json::from_str(s).unwrap_or(Value::Null),
+                        other => other.clone(),
+                    };
+                    ToolCall { id: format!("ollama-{i}"), name, args }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let done = v["done"].as_bool() == Some(true);
+    let usage = if done { native_usage(&v) } else { Value::Null };
+    let done_reason = v["done_reason"].as_str().unwrap_or("").to_string();
+    Some(StreamLine { content, tool_calls, done, usage, done_reason })
+}
+
 /// For a model without native tool support, append a Hermes-style `<tools>` manifest + call-format
 /// instruction to the system message (inserting one if absent), so it still has a way to call tools.
 fn inject_tools_manifest(body: &mut Value, t: &Turn) {
@@ -404,12 +442,115 @@ impl LlmProvider for OllamaProvider {
         }
         Ok(result)
     }
+
+    async fn turn_streaming(
+        &self,
+        t: &Turn,
+        _api_key: &str,
+        on_chunk: &mut dyn FnMut(&str),
+    ) -> Result<TurnResult, String> {
+        use futures_util::StreamExt;
+        let mut body = build_native_turn_body(
+            t, &self.profile, self.num_ctx, self.keep_alive.as_deref(), self.temperature, self.seed,
+        );
+        body["stream"] = json!(true);
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(super::CONNECT_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(super::REQUEST_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| format!("Request failed: {}", e))?;
+        let resp = client
+            .post(native_chat_url(&self.base_url))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let v = resp.json::<Value>().await.unwrap_or(Value::Null);
+            return Err(super::format_api_error(status, &v));
+        }
+        // Ollama streams the native /api/chat reply as newline-delimited JSON: one object per line,
+        // each carrying a `message.content` fragment (and the final one `done:true` + usage). Emit each
+        // fragment as it arrives; assemble the final TurnResult.
+        let mut text = String::new();
+        let mut tool_calls: Vec<ToolCall> = Vec::new();
+        let mut usage = native_usage(&Value::Null);
+        let mut stop_reason = String::new();
+        let mut buf = String::new();
+        let mut stream = resp.bytes_stream();
+        let mut apply = |line: &str,
+                         text: &mut String,
+                         tool_calls: &mut Vec<ToolCall>,
+                         usage: &mut Value,
+                         stop_reason: &mut String| {
+            if let Some(sl) = parse_stream_line(line) {
+                if let Some(frag) = sl.content {
+                    on_chunk(&frag);
+                    text.push_str(&frag);
+                }
+                if !sl.tool_calls.is_empty() {
+                    *tool_calls = sl.tool_calls;
+                }
+                if sl.done {
+                    *usage = sl.usage;
+                    *stop_reason = sl.done_reason;
+                }
+            }
+        };
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk.map_err(|e| format!("Request failed: {}", e))?;
+            buf.push_str(&String::from_utf8_lossy(&bytes));
+            while let Some(nl) = buf.find('\n') {
+                let line: String = buf.drain(..=nl).collect();
+                let line = line.trim();
+                if !line.is_empty() {
+                    apply(line, &mut text, &mut tool_calls, &mut usage, &mut stop_reason);
+                }
+            }
+        }
+        let tail = buf.trim().to_string();
+        if !tail.is_empty() {
+            apply(&tail, &mut text, &mut tool_calls, &mut usage, &mut stop_reason);
+        }
+        // Recover a tool call emitted as text (non-tool models) — mirrors the non-streaming `turn`.
+        if tool_calls.is_empty() {
+            let recovered = toolparse::recover_tool_calls(&text);
+            if !recovered.is_empty() {
+                text = toolparse::strip_tool_syntax(&text);
+                tool_calls = recovered;
+            }
+        }
+        Ok(TurnResult { text, tool_calls, usage, stop_reason })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Msg, ToolCall, ToolDef};
+
+    #[test]
+    fn parse_stream_line_reads_fragments_calls_and_done() {
+        // A content fragment.
+        let sl = parse_stream_line(r#"{"message":{"content":"hel"},"done":false}"#).unwrap();
+        assert_eq!(sl.content.as_deref(), Some("hel"));
+        assert!(!sl.done);
+        // A tool call (arguments as a native object).
+        let sl = parse_stream_line(r#"{"message":{"content":"","tool_calls":[{"function":{"name":"grep","arguments":{"pattern":"fn"}}}]}}"#).unwrap();
+        assert_eq!(sl.content, None); // empty content ⇒ no fragment emitted
+        assert_eq!(sl.tool_calls.len(), 1);
+        assert_eq!(sl.tool_calls[0].name, "grep");
+        assert_eq!(sl.tool_calls[0].args["pattern"], "fn");
+        // The final line carries done + usage.
+        let sl = parse_stream_line(r#"{"message":{"content":""},"done":true,"done_reason":"stop","prompt_eval_count":12,"eval_count":7}"#).unwrap();
+        assert!(sl.done);
+        assert_eq!(sl.done_reason, "stop");
+        assert_eq!(sl.usage["input_tokens"], 12);
+        assert_eq!(sl.usage["output_tokens"], 7);
+        // A non-JSON / partial line is skipped.
+        assert!(parse_stream_line("{partial").is_none());
+    }
 
     #[test]
     fn native_root_and_urls_strip_v1_suffix() {

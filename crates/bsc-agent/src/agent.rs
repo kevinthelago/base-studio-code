@@ -239,7 +239,22 @@ pub async fn run_agent<P: LlmProvider>(
             // the pane shows nothing while the model thinks — indistinguishable from a hang. Dim, so
             // it doesn't clutter the real output.
             eprintln!("\x1b[2m· thinking (step {}/{max_steps})…\x1b[0m", step + 1);
-            let mut result = turn_with_retry(provider, &turn, api_key, Duration::from_millis(500)).await?;
+            // Stream assistant text to the PTY token-by-token as it's generated (#1832), instead of
+            // dumping the whole answer after the turn settles.
+            let mut streamed_any = false;
+            let mut result = turn_streaming_with_retry(
+                provider,
+                &turn,
+                api_key,
+                Duration::from_millis(500),
+                &mut |chunk| {
+                    use std::io::Write;
+                    print!("{chunk}");
+                    let _ = std::io::stdout().flush();
+                    streamed_any = true;
+                },
+            )
+            .await?;
             // Fallback for local models (#1078): some — notably qwen via Ollama — emit tool calls as
             // TEXT (`<tool_call>{…}</tool_call>` / `<function=name>…</function>`) instead of the
             // structured `tool_calls` field, which the OpenAI-compat endpoint then doesn't convert.
@@ -254,8 +269,10 @@ pub async fn run_agent<P: LlmProvider>(
             }
             // Record every assistant turn to the transcript (cost accounting reads its usage).
             telemetry.record_assistant(model, &result.usage);
-            if !result.text.is_empty() {
-                println!("{}", result.text);
+            // The text was streamed live above (#1832); just terminate the line. (Nothing to print for
+            // a pure tool-call turn that produced no text.)
+            if streamed_any {
+                println!();
             }
             if result.tool_calls.is_empty() {
                 // Final answer for this user turn: record it, persist, stop stepping.
@@ -367,21 +384,32 @@ fn is_transient_error(err: &str) -> bool {
         || err.contains("API error (5")   // 5xx server / overload (status is 3 digits, so "(5" ⇒ 5xx)
 }
 
-/// Run one provider turn, retrying *transient* failures with exponential backoff so a network
-/// blip or rate-limit doesn't abort the whole agent run. Permanent errors (auth, bad request)
-/// return immediately. `base_backoff` is the first delay (doubled each retry); tests pass
-/// `Duration::ZERO`. (#1078 P4 graceful degradation)
-async fn turn_with_retry<P: LlmProvider>(
+/// Run one provider turn — streaming assistant text to `on_chunk` as it generates (#1832) — and retry
+/// *transient* failures with exponential backoff so a network blip or rate-limit doesn't abort the
+/// agent run. Permanent errors (auth, bad request) return immediately; a transient failure is NOT
+/// retried once text has streamed (re-streaming would double what the PTY already showed). `base_backoff`
+/// is the first delay (doubled each retry); tests pass `Duration::ZERO`. (#1078 P4 / #1832)
+async fn turn_streaming_with_retry<P: LlmProvider>(
     provider: &P,
     turn: &Turn,
     api_key: &str,
     base_backoff: Duration,
+    on_chunk: &mut dyn FnMut(&str),
 ) -> Result<TurnResult, String> {
     let mut attempt = 0;
     loop {
-        match provider.turn(turn, api_key).await {
+        // Whether THIS attempt streamed any text — gates retry (see the doc above).
+        let emitted = std::cell::Cell::new(false);
+        let result = {
+            let mut guarded = |c: &str| {
+                emitted.set(true);
+                on_chunk(c);
+            };
+            provider.turn_streaming(turn, api_key, &mut guarded).await
+        };
+        match result {
             Ok(r) => return Ok(r),
-            Err(e) if attempt < MAX_TURN_RETRIES && is_transient_error(&e) => {
+            Err(e) if attempt < MAX_TURN_RETRIES && is_transient_error(&e) && !emitted.get() => {
                 let backoff = base_backoff * (1u32 << attempt); // base, 2x, 4x
                 eprintln!(
                     "bsc-agent: transient provider error (attempt {}/{}), retrying in {}ms: {e}",
@@ -1437,7 +1465,7 @@ mod tests {
     #[tokio::test]
     async fn turn_with_retry_recovers_from_transient_failures() {
         let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 2, err: "API error (503): down".into() };
-        let r = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap();
+        let r = turn_streaming_with_retry(&p, &empty_turn(), "", Duration::ZERO, &mut |_| {}).await.unwrap();
         assert_eq!(r.text, "ok");
         assert_eq!(p.calls.load(Ordering::SeqCst), 3, "two transient failures then success");
     }
@@ -1445,7 +1473,7 @@ mod tests {
     #[tokio::test]
     async fn turn_with_retry_fails_fast_on_permanent_error() {
         let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 9, err: "API error (401): bad key".into() };
-        let err = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap_err();
+        let err = turn_streaming_with_retry(&p, &empty_turn(), "", Duration::ZERO, &mut |_| {}).await.unwrap_err();
         assert!(err.contains("401"));
         assert_eq!(p.calls.load(Ordering::SeqCst), 1, "permanent error is not retried");
     }
@@ -1453,7 +1481,7 @@ mod tests {
     #[tokio::test]
     async fn turn_with_retry_gives_up_after_max_transient() {
         let p = FlakyProvider { calls: AtomicUsize::new(0), fail_times: 99, err: "Request failed: timed out".into() };
-        let err = turn_with_retry(&p, &empty_turn(), "", Duration::ZERO).await.unwrap_err();
+        let err = turn_streaming_with_retry(&p, &empty_turn(), "", Duration::ZERO, &mut |_| {}).await.unwrap_err();
         assert!(err.contains("timed out"));
         // 1 initial attempt + MAX_TURN_RETRIES retries.
         assert_eq!(p.calls.load(Ordering::SeqCst), MAX_TURN_RETRIES + 1);
