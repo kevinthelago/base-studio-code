@@ -732,6 +732,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-project",
+]
+
+[[package]]
 name = "bsc-agent"
 version = "0.1.0"
 dependencies = [
