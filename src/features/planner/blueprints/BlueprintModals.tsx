@@ -5,6 +5,7 @@
 import { useState, type ReactNode } from "react";
 import "../../../styles/blueprints.css";
 import { ModalScrim } from "@/shared/ui/ModalScrim";
+import { Chip } from "@/shared/ui/Chip";
 import { Ic } from "./blueprintIcons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { stageKind, tint, hue } from "./blueprintCatalog";
@@ -59,7 +60,7 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
               <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
               <span style={{ flex: 1 }} />
               {caps > 0 && <span className="hint mono">{caps} attached</span>}
-              {s.gateRule && <span className="tag amber">gate</span>}
+              {s.gateRule && <Chip tone="accent">gate</Chip>}
             </div>
             {/* The prompt is the substance of the stage (#1268) — dense text under the row, the
                 icon as its index. pre-wrap keeps the prompt's own line breaks. */}
@@ -103,7 +104,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <span className="bp-icon" style={{ width: 30, height: 30, flex: "0 0 30px", fontSize: 14, background: tint(preview.h, 0.16), color: hue(preview.h), display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, fontFamily: "var(--mono)", fontWeight: 700 }}>{preview.icon}</span>
             <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{preview.name}</div><div className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</div></div>
-            <span style={{ flex: 1 }} /><span className="tag info">valid blueprint</span>
+            <span style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
           </div>
           <div className="card" style={{ padding: 13 }}><StageSummary sections={preview.sections} /></div>
         </>

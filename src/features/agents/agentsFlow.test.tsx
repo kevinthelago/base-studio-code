@@ -56,8 +56,8 @@ describe("Agents · Flow tab (#199/#220)", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("⚠ deadlock");
     });
-    // Both sessions render a "deadlocked" tag.
-    const tags = Array.from(container.querySelectorAll(".tag")).map((t) => t.textContent ?? "");
+    // Both sessions render a "deadlocked" chip.
+    const tags = Array.from(container.querySelectorAll(".chip")).map((t) => t.textContent ?? "");
     expect(tags.filter((t) => t.includes("deadlocked")).length).toBe(2);
   });
 
