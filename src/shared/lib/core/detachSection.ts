@@ -24,10 +24,11 @@ let seq = 0;
 export function openDetachedSection(page: string, section: string, title?: string, onClose?: () => void): void {
   seq += 1;
   const label = `tab-${page}-${section}-${seq}`.replace(/[^A-Za-z0-9/:_-]/g, "_");
-  const u = new URL(window.location.href);
-  u.hash = "";
-  u.search = `?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
-  invoke("open_detached_window", { label, url: u.href, title: title || section, width: 1100, height: 800 })
+  // App-RELATIVE path so Rust loads it via `WebviewUrl::App` (IPC injected + query
+  // preserved), not an absolute `External` URL that Tauri rewrites to
+  // `tauri://localhost`, dropping the `?detach=`/`?section=` marker (#1870).
+  const path = `index.html?detach=${encodeURIComponent(page)}&section=${encodeURIComponent(section)}`;
+  invoke("open_detached_window", { label, path, title: title || section, width: 1100, height: 800 })
     .then(() => {
       // Re-dock when the detached window closes (best-effort). The Rust command has
       // created the window by the time this resolves, so the handle is findable.
