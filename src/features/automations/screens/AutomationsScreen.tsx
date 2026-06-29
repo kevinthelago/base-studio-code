@@ -7,8 +7,9 @@ import { HookAnalyticsTab } from "../HookAnalytics";
 import { fmtClock } from "../format";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { useDraft } from "@/shared/hooks/useDraft";
 import type { TabItem } from "@/app/chrome/TabBar";
-import type { RunStatus, Every } from "../lib/scheduler";
+import type { RunStatus, Every, Automation } from "../lib/scheduler";
 import "../automations.css";
 
 /**
@@ -17,12 +18,13 @@ import "../automations.css";
  * can be torn off into its own window. `sectionOverride` renders a single section with no tab bar.
  */
 export function AutomationsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
-  const { automations, addAutomation, tabs } = useAppStore();
+  const { automations, addAutomation, updateAutomation, tabs } = useAppStore();
   // Hooks live here (the MCP page is servers-only, #865 / #mcp-hooks-split) — event-triggered
   // automations alongside the time-triggered Schedules.
   const hookCount = useAppStore(s => s.hooks.length);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // One drawer lifecycle for the schedule editor — the shared useDraft/<Pane> system (#1824).
+  const drawer = useDraft<Automation>({ items: automations, onUpdate: updateAutomation });
   const [histStatus, setHistStatus] = useState<"all" | RunStatus>("all");
   const [histSched, setHistSched] = useState<string>("all");
 
@@ -43,15 +45,13 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
   const active = sectionOverride ?? activeId;
 
   function createAndSelect() {
-    addAutomation({
+    const id = addAutomation({
       name: "New automation", armed: false,
       when: { kind: "simple", every: "day" as Every, at: "09:00" },
       targetTab: tabs[0]?.name ?? "", targetPaneIdx: 0,
       action: "command", command: "",
     });
-    const list = useAppStore.getState().automations;
-    const created = list[list.length - 1];
-    if (created) setSelectedId(created.id);
+    drawer.select(id);
     select("schedules");
   }
 
@@ -67,7 +67,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     ? <HooksView />
     : active === "history"
     ? <HistoryTab status={histStatus} setStatus={setHistStatus} sched={histSched} setSched={setHistSched} />
-    : <SchedulesTab selectedId={selectedId} setSelectedId={setSelectedId} onNew={createAndSelect} />;
+    : <SchedulesTab selectedId={drawer.selectedId} onSelect={drawer.select} onNew={createAndSelect} />;
 
   return (
     <TabbedScreen
@@ -88,7 +88,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
         </>
       ) : undefined}
       overlay={active === "schedules"
-        ? <ScheduleDrawer selectedId={selectedId} setSelectedId={setSelectedId} onViewAllHistory={viewAllHistory} />
+        ? <ScheduleDrawer selected={drawer.selected} onClose={drawer.close} onViewAllHistory={viewAllHistory} />
         : undefined}
     >
       {body}
