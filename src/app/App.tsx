@@ -16,7 +16,7 @@ import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
-import { ConsoleScreen } from "@/app/console/ConsoleScreen";
+import { ConsoleScreen } from "@/app/console";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { AutomationsStatus } from "@/features/automations";
 import { SkillsStatus } from "@/features/skills";

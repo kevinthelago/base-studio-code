@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ConsoleScreen } from "@/app/console/ConsoleScreen";
+import { ConsoleScreen } from "@/app/console";
 import { useAppStore } from "@/store";
 import type { ViewKey } from "../viewDefs";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";

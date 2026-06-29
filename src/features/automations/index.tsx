@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { SchedulesTab, ScheduleDrawer } from "../Schedules";
-import { HistoryTab } from "../History";
+import { SchedulesTab, ScheduleDrawer } from "./Schedules";
+import { HistoryTab } from "./History";
 import { HooksView } from "@/features/mcp";
-import { HookAnalyticsTab } from "../HookAnalytics";
-import { fmtClock } from "../format";
+import { HookAnalyticsTab } from "./HookAnalytics";
+import { fmtClock } from "./format";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useDraft } from "@/shared/hooks/useDraft";
 import type { TabItem } from "@/app/chrome/TabBar";
-import type { RunStatus, Every, Automation } from "../lib/scheduler";
-import "../automations.css";
+import type { RunStatus, Every, Automation } from "./lib/scheduler";
+import "./automations.css";
 
 /**
  * Automations screen (#142) — on the shared `<TabbedScreen>` shell (#1821) + the unified tab system
@@ -95,3 +95,7 @@ export function AutomationsScreen({ sectionOverride }: { sectionOverride?: strin
     </TabbedScreen>
   );
 }
+
+// Re-exported feature surface — this index is the automations feature's public API barrel (#1309).
+export { AutomationsStatus } from "./AutomationsStatus";
+export { useScheduler } from "./useScheduler";

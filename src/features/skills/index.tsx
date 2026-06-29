@@ -20,24 +20,24 @@ import {
 import {
   blankSkill, deriveSkillKpis, parseSkillsFile, skillSlug,
   groupSkillCount, type SkillDef, type SkillGroup,
-} from "../lib/skills";
+} from "./lib/skills";
 import {
   mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
   SORTS, type Density, type SortKey, type FacetSelection,
-} from "../lib/skillsFilter";
-import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "../lib/skillTelemetry";
-import { successColor, tintBg, glyphTile, pill } from "../skillStyles";
-import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "../SkillsViews";
+} from "./lib/skillsFilter";
+import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
+import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
+import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { TabbedScreen } from "@/app/chrome/TabbedScreen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
-import { LessonsTab } from "../LessonsTab";
+import { LessonsTab } from "./LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
-import "../skills.css";
+import "./skills.css";
 
 type Mode = "library" | "lessons" | "runs";
 
@@ -518,3 +518,7 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
     </Pane>
   );
 }
+
+// Re-exported feature surface — this index is the skills feature's public API barrel (#1309).
+export { SkillsStatus } from "./SkillsStatus";
+export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkillsModal";
