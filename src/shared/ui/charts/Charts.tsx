@@ -226,8 +226,9 @@ export function Swimlane({ lanes, events, height = 26, tip, marks = [] }: Swimla
 }
 
 // ── inline sparkline ─────────────────────────────────────────────────────────
-interface SparkProps { data: number[]; color: string; w?: number; h?: number }
-export function Spark({ data, color, w = 70, h = 20 }: SparkProps) {
+interface SparkProps { data: number[]; color: string; w?: number; h?: number; fill?: boolean; dot?: boolean }
+export function Spark({ data, color, w = 70, h = 20, fill = true, dot = true }: SparkProps) {
+  if (data.length < 2) return null;
   const max = Math.max(1, ...data), min = Math.min(...data);
   const span = max - min || 1;
   const x = (i: number) => (i / (data.length - 1)) * w;
@@ -235,9 +236,9 @@ export function Spark({ data, color, w = 70, h = 20 }: SparkProps) {
   const line = data.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-      <path d={`${line} L ${w} ${h} L 0 ${h} Z`} fill={color} opacity="0.13" />
+      {fill && <path d={`${line} L ${w} ${h} L 0 ${h} Z`} fill={color} opacity="0.13" />}
       <path d={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="2" fill={color} />
+      {dot && <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="2" fill={color} />}
     </svg>
   );
 }
