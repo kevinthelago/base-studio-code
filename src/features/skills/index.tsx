@@ -30,6 +30,7 @@ import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
+import { Checkbox } from "@/shared/ui/Checkbox";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
@@ -321,7 +322,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>{f.title}</div>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
                     <div key={o.value} onClick={() => toggleFacet(f.key, o.value)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
-                      <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid " + (on ? "var(--accent)" : "var(--border)"), background: on ? "var(--accent)" : "transparent", color: "var(--bg-canvas)", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{on ? "✓" : ""}</span>
+                      <Checkbox checked={on} />
                       {o.glyph && <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</span>}
                       <span style={{ fontSize: 12, color: "var(--fg)", textTransform: "capitalize" }}>{o.label}</span>
                       <span style={{ flex: 1 }} />
