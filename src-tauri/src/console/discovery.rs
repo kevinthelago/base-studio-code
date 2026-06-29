@@ -55,7 +55,7 @@ fn is_orphaned(
     base_dir: &Path,
     fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
 ) -> bool {
-    let Some(key) = crate::pty_ledger::project_key_of(pane_id) else {
+    let Some(key) = crate::console::ledger::project_key_of(pane_id) else {
         return false; // manual / positional panes are never project orphans
     };
     let hub_gone = !base_dir.join("projects").join(key).is_dir();
@@ -195,14 +195,14 @@ fn upsert(
 /// frontend reconciles this against the open tabs and lets the user choose what to restore.
 #[tauri::command]
 pub fn discover_sessions() -> Vec<DiscoveredSession> {
-    let ledger: Vec<(String, u32)> = crate::pty_ledger::ledger_entries()
+    let ledger: Vec<(String, u32)> = crate::console::ledger::ledger_entries()
         .into_iter()
         .map(|e| (e.pane_id, e.pid))
         .collect();
     discover_sessions_impl(
         &crate::bsc_base_dir(),
         &ledger,
-        &|pid| crate::pty_ledger::is_pid_alive(pid),
+        &|pid| crate::console::ledger::is_pid_alive(pid),
         &|key| crate::project::plan_db::fleet_for(key),
     )
 }
@@ -213,7 +213,7 @@ pub fn discover_sessions() -> Vec<DiscoveredSession> {
 /// or branch. Returns true if a live shell was killed. The reconcile is recomputed by the caller.
 #[tauri::command]
 pub fn reap_session(pane_id: String) -> bool {
-    crate::pty_ledger::reap_session(&pane_id)
+    crate::console::ledger::reap_session(&pane_id)
 }
 
 #[cfg(test)]

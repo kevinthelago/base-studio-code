@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
 use crate::fleet::{worktree::*, director::*, inspect::*};
 use crate::github::readiness::*;
@@ -984,7 +984,7 @@ use crate::session::settings::*;
         perms.set_readonly(true);
         std::fs::set_permissions(&f, perms).unwrap();
 
-        crate::project::hub::delete_project_dir_impl(&key, &crate::pty::PtyState::new()).unwrap();
+        crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
         assert!(!proj.exists(), "project dir (incl. read-only files) should be deleted");
 
         std::fs::remove_dir_all(&home).ok();
@@ -1225,7 +1225,7 @@ use crate::session::settings::*;
         perms.set_readonly(true);
         std::fs::set_permissions(&wt_file, perms).unwrap();
 
-        crate::project::hub::delete_project_dir_impl(&key, &crate::pty::PtyState::new()).unwrap();
+        crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
         assert!(!project_dir(&key).exists(), "hub should be deleted");
         assert!(!worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
 

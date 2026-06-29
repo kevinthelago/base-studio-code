@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// The user blueprint store, rooted at `~/.base-studio-code/blueprints/`. File CRUD + the
 /// path-traversal slug guard live in the Tauri-free `bsc-blueprint` crate (shared with the

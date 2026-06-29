@@ -323,7 +323,7 @@ mod tests {
         // Resolve the SAME shell the PTY launches (Git Bash on Windows, never the WSL
         // System32 stub — which can't read a /c/... BASH_ENV path). A bare `bash` would
         // resolve via PATH and may hit that stub, failing for reasons unrelated to the fix.
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_checkpoint subshell test: no usable bash ({shell})");
@@ -392,7 +392,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc issuer-emit subshell test: no usable bash ({shell})");
@@ -444,7 +444,7 @@ mod tests {
         // bsc-fleet (#734): the director's roster view. Joins fleet.roster.tsv with each
         // session's latest own-state event in coord.log → PANE/stream/repo/branch/role/STATE.
         use std::process::{Command, Stdio};
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc-fleet test: no usable bash ({shell})");
@@ -498,7 +498,7 @@ mod tests {
         // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
         // (the exact format! pty_create uses) catches it; per-constant tests do not.
         use std::process::{Command, Stdio};
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
@@ -574,7 +574,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_note subshell test: no usable bash ({shell})");
@@ -624,7 +624,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_skill subshell test: no usable bash ({shell})");
@@ -673,7 +673,7 @@ mod tests {
         // isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_skill dispatch test: no usable bash ({shell})");
@@ -726,7 +726,7 @@ mod tests {
         // provenance came through. Skips where bash isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_learned test: no usable bash ({shell})");
@@ -785,7 +785,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_activity subshell test: no usable bash ({shell})");
@@ -838,7 +838,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_done subshell test: no usable bash ({shell})");
@@ -881,7 +881,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_hook subshell test: no usable bash ({shell})");
@@ -941,7 +941,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_scope subshell test: no usable bash ({shell})");
@@ -997,7 +997,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_taint subshell test: no usable bash ({shell})");
@@ -1055,7 +1055,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_mcp subshell test: no usable bash ({shell})");
@@ -1126,7 +1126,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::shell::resolve_shell();
+        let shell = crate::platform::shell::resolve_shell();
         let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         if !usable {
             eprintln!("skipping bsc_tokens subshell test: no usable bash ({shell})");
@@ -1170,7 +1170,7 @@ mod tests {
         );
         // And the verbatim field decodes to a native Windows path.
         assert_eq!(
-            crate::tokens::json_unescape_path(fields[3]),
+            crate::observability::tokens::json_unescape_path(fields[3]),
             r"C:\Users\k\.claude\projects\p\abc-123.jsonl",
         );
         let _ = std::fs::remove_dir_all(&dir);

@@ -1,4 +1,5 @@
-use crate::*;
+use crate::prelude::*;
+use crate::fleet;
 
 /// Mark a project published (#922): write `projects/<key>/.published`. Unlike the old promote-rename,
 /// this is a file-create INSIDE the hub — allowed even while the planner holds the hub as its cwd,
@@ -21,13 +22,13 @@ pub(crate) fn mark_published(project_key: String) -> Result<(), String> {
 /// it — plan sections, prompts, cloned repos. Best-effort: a missing dir is fine.
 /// Refuses an empty key so it can never wipe the `projects/` root.
 #[tauri::command]
-pub(crate) fn delete_project_dir(project_key: String, pty: tauri::State<'_, crate::pty::PtyState>) -> Result<(), String> {
+pub(crate) fn delete_project_dir(project_key: String, pty: tauri::State<'_, crate::console::pty::PtyState>) -> Result<(), String> {
     delete_project_dir_impl(&project_key, pty.inner())
 }
 
 /// Core of [`delete_project_dir`], taking `&PtyState` directly so it's callable from tests without a
 /// Tauri managed-state handle.
-pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::pty::PtyState) -> Result<(), String> {
+pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::console::pty::PtyState) -> Result<(), String> {
     if sanitize_project_key(project_key).is_empty() {
         return Err("delete_project_dir: empty project_key".to_string());
     }
@@ -36,10 +37,10 @@ pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::pty::PtySt
     // whose pane id is `<key>:…`, releasing the cwd locks they hold on the hub. The ledger reap
     // (#1279) only tree-kills by pid (async, no handle ownership), which races remove_dir_all — so
     // the in-process teardown (the same path app-exit uses) is what actually frees the directory.
-    crate::pty::kill_project_sessions(pty, &safe);
+    crate::console::pty::kill_project_sessions(pty, &safe);
     // Then reap any ORPHANED shells left by a prior run (owner gone) — forgetting their ledger
     // entries so discovery can't surface a deleted project's pid as an unrestorable session.
-    let killed = crate::pty_ledger::reap_project_shells(&safe);
+    let killed = crate::console::ledger::reap_project_shells(&safe);
     if killed > 0 {
         log::info!("delete_project_dir: reaped {killed} orphaned shell(s) of {project_key:?}");
     }

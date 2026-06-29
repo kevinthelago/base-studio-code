@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// Write each resolved Skill as a Claude Code Skill file at
 /// `<cwd_root>/.claude/skills/<slug>/SKILL.md` (slug derived from the name). The
