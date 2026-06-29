@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { IconButton } from "@/shared/ui/IconButton";
+import { ListRow } from "@/shared/ui/ListRow";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -162,24 +163,25 @@ export function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, o
   onToggle: () => void;
 }) {
   return (
-    <div className={"row" + (!on ? " off" : "") + (selected ? " selected" : "")} onClick={onSelect}>
-      <div className={"health " + (on ? "" : "off")} />
-      <div className="row-main">
-        <div className="row-line1">
-          <span className="row-name">{name || "Untitled"}</span>
-          <span className={"tag " + tagCls}>{tagLabel}</span>
-        </div>
-        <div className="row-desc">{desc}</div>
-      </div>
-      <div className="row-aside">
-        <div className="row-stats">
-          <div className="row-chips">{scopeChip}</div>
-          <div>—</div>
-        </div>
-        {aside}
-        <ToggleSwitch on={on} onToggle={onToggle} />
-      </div>
-    </div>
+    <ListRow
+      selected={selected}
+      off={!on}
+      onClick={onSelect}
+      lead={<div className={"health " + (on ? "" : "off")} />}
+      title={name || "Untitled"}
+      badge={<span className={"tag " + tagCls}>{tagLabel}</span>}
+      subtitle={desc}
+      trailing={
+        <>
+          <div className="row-stats">
+            <div className="row-chips">{scopeChip}</div>
+            <div>—</div>
+          </div>
+          {aside}
+          <ToggleSwitch on={on} onToggle={onToggle} />
+        </>
+      }
+    />
   );
 }
 
