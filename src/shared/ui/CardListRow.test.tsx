@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ListRow } from "./ListRow";
+import { CardListRow } from "./CardListRow";
 
-describe("ListRow", () => {
+describe("CardListRow", () => {
   it("renders lead/title/badge/subtitle/trailing and fires onClick", () => {
     const onClick = vi.fn();
     render(
-      <ListRow
+      <CardListRow
         lead={<span data-testid="dot" />}
         title="my-server"
         badge={<span>http</span>}
@@ -24,10 +24,10 @@ describe("ListRow", () => {
   });
 
   it("applies selected + off state classes and omits the subtitle when absent", () => {
-    const { container, rerender } = render(<ListRow title="a" selected />);
+    const { container, rerender } = render(<CardListRow title="a" selected />);
     expect((container.firstChild as HTMLElement).className).toContain("selected");
-    expect(container.querySelector(".lr-desc")).toBeNull();
-    rerender(<ListRow title="a" off />);
+    expect(container.querySelector(".clr-desc")).toBeNull();
+    rerender(<CardListRow title="a" off />);
     expect((container.firstChild as HTMLElement).className).toContain("off");
   });
 });
