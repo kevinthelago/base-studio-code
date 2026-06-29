@@ -2,6 +2,9 @@
 // UNLOCKED state lives in the persisted store (`achievements: id -> unlockedAt`),
 // so an achievement fires exactly once, ever, and survives restarts.
 
+import type { AppStore } from "@/store/types";
+import superUserIcon from "@/assets/super-user-achievement.png";
+
 export interface AchievementDef {
   /** Stable id (the store key). */
   id: string;
@@ -9,9 +12,13 @@ export interface AchievementDef {
   description: string;
   /** Imported image asset shown on the Settings page (and the unlock toast). */
   icon: string;
+  /** Optional unlock-toast sound (defaults to the shared achievement sound). */
+  sound?: string;
+  /** Live unlock condition: a pure store selector that turns true when the achievement should fire.
+   *  Entries with a `trigger` get a live unlock toast (mounted by `<Achievements/>`); ones without
+   *  are unlocked imperatively elsewhere but still appear in the Settings trophy case. */
+  trigger?: (s: AppStore) => boolean;
 }
-
-import superUserIcon from "@/assets/super-user-achievement.png";
 
 export const ACHIEVEMENTS: AchievementDef[] = [
   {
@@ -19,6 +26,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     title: "Claude Super User",
     description: "Run more than 10 agents at once.",
     icon: superUserIcon,
+    trigger: (s) => s.liveAgents > 10,
   },
 ];
 
