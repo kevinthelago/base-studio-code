@@ -3,7 +3,7 @@
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
-import { Sparkline } from "./Sparkline";
+import { Spark } from "@/shared/ui/charts";
 
 export function ReposGrid({ repos, loading }: {
   repos: RepoCardData[];
@@ -41,7 +41,7 @@ export function ReposGrid({ repos, loading }: {
                 ◉ ci {r.ciStatus}
               </span>
               <div style={{ flex: 1 }} />
-              {r.spark.some(v => v > 0) && <Sparkline data={r.spark} />}
+              {r.spark.some(v => v > 0) && <Spark data={r.spark} color="var(--accent)" w={90} h={22} fill={false} />}
             </div>
           </div>
         ))}
