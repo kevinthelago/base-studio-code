@@ -26,26 +26,16 @@ pub struct StoreMeta {
 }
 
 impl Store {
-    /// The default store path: `$BSC_COMPLIANCE_STORE`, else `~/.base-studio-code/compliance/store.db`.
+    /// The default store path: `$BSC_COMPLIANCE_STORE`, else `~/.base-studio-code/compliance/store.db`
+    /// — the shared [`bsc_sqlite_util::default_store_path`] resolver (#1863).
     pub fn default_path() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("BSC_COMPLIANCE_STORE") {
-            let p = p.trim();
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
-        }
-        let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
-        Some(PathBuf::from(home).join(".base-studio-code").join("compliance").join("store.db"))
+        bsc_sqlite_util::default_store_path("BSC_COMPLIANCE_STORE", &["compliance", "store.db"])
     }
 
     /// Open (creating parent dirs + schema, seeding a fresh store) at `path`. Use `":memory:"` for tests.
+    /// The `:memory:`-aware open + error labelling is the shared [`bsc_sqlite_util::open_db_str`] (#1863).
     pub fn open(path: &Path) -> Result<Store, String> {
-        if path.as_os_str() != ":memory:" {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("store dir: {e}"))?;
-            }
-        }
-        let conn = Connection::open(path).map_err(|e| format!("open store: {e}"))?;
+        let conn = bsc_sqlite_util::open_db_str(path, "store")?;
         Store::init(conn)
     }
 
@@ -121,13 +111,9 @@ impl Store {
         Ok(n > 0)
     }
 
-    /// Look up one standard by canonical id.
+    /// Look up one standard by canonical id (the shared lenient JSON-blob read, #1863).
     pub fn get(&self, id: &str) -> Option<Standard> {
-        let json: String = self
-            .conn
-            .query_row("SELECT json FROM standards WHERE id = ?1", [id], |r| r.get(0))
-            .ok()?;
-        serde_json::from_str(&json).ok()
+        bsc_sqlite_util::get_json(&self.conn, "SELECT json FROM standards WHERE id = ?1", id)
     }
 
     /// All standards, ordered by domain then id for a stable listing.
@@ -143,18 +129,10 @@ impl Store {
         )
     }
 
+    /// Run a single-JSON-column query and collect the standards that deserialize (the shared lenient
+    /// list read, #1863) — an odd-shaped row never aborts the listing.
     fn query(&self, sql: &str, params: impl rusqlite::Params) -> Vec<Standard> {
-        let mut out = Vec::new();
-        if let Ok(mut stmt) = self.conn.prepare(sql) {
-            if let Ok(rows) = stmt.query_map(params, |r| r.get::<_, String>(0)) {
-                for json in rows.flatten() {
-                    if let Ok(s) = serde_json::from_str::<Standard>(&json) {
-                        out.push(s);
-                    }
-                }
-            }
-        }
-        out
+        bsc_sqlite_util::list_json(&self.conn, sql, params)
     }
 
     /// The corpus version + last-updated stamp + count.

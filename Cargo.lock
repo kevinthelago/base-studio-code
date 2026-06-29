@@ -812,6 +812,7 @@ name = "bsc-sqlite-util"
 version = "0.1.0"
 dependencies = [
  "bsc-util",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
@@ -4632,6 +4633,7 @@ dependencies = [
 name = "research"
 version = "0.1.0"
 dependencies = [
+ "bsc-sqlite-util",
  "bsc-util",
  "mcp-rpc",
  "pdf-extract",

@@ -26,11 +26,6 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// How long (ms) a connection waits on a locked db before erroring. The desktop app and the
-/// `bsc-plan` CLI share one `plan.db` (a worker writes its status while the app polls), so — like
-/// `skilldb` — a busy_timeout pairs with WAL to keep a quick CLI write from losing to SQLITE_BUSY.
-const BUSY_TIMEOUT_MS: u32 = 5_000;
-
 /// Every plan-store table, in the order `clear()` truncates them — the single source of truth for the
 /// store's table set so a new table is wired into the reset by adding one entry here.
 const ALL_TABLES: &[&str] = &[
@@ -203,19 +198,14 @@ impl Store {
     /// busy_timeout are enabled so the desktop app and the `bsc-plan` CLI can share the db
     /// concurrently without a SQLITE_BUSY race (matches `skilldb`, #1621).
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let conn = Connection::open(path)?;
-        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
+        let conn = bsc_sqlite_util::open_db(path)?;
         migrate(&conn)?;
         Ok(Store { conn })
     }
 
     /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
-        let conn = Connection::open_in_memory()?;
-        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
+        let conn = bsc_sqlite_util::open_in_memory_db()?;
         migrate(&conn)?;
         Ok(Store { conn })
     }
@@ -1083,7 +1073,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let s = Store::open(&path).unwrap();
         let timeout: i64 = s.conn.query_row("PRAGMA busy_timeout", [], |r| r.get(0)).unwrap();
-        assert_eq!(timeout, BUSY_TIMEOUT_MS as i64);
+        assert_eq!(timeout, bsc_sqlite_util::BUSY_TIMEOUT_MS as i64);
         // WAL is on for an on-disk db.
         let mode: String = s.conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
         assert_eq!(mode.to_lowercase(), "wal");

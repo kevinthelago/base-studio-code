@@ -27,7 +27,8 @@ include_dir = "0.7"
 # `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the home-dir / stdin
-# helpers the `bsc-skill` CLI shares with `bsc-plan` / `bsc-logs`.
-bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+# helpers the `bsc-skill` CLI shares with `bsc-plan` / `bsc-logs`. `conn` adds the open + busy_timeout
+# connection plumbing the store shares with plandb/compliance/research (#1863).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
 bsc-cli-util = { path = "../bsc-cli-util" }

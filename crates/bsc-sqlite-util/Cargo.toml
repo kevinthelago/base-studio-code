@@ -8,8 +8,18 @@ description = "Shared helpers for the base-studio-code SQLite CLI+lib trio (plan
 [lib]
 name = "bsc_sqlite_util"
 
+[features]
+# `conn` pulls in rusqlite and the shared connection PLUMBING (open + busy_timeout, `:memory:`-aware
+# string-error open, default-path resolver, JSON-blob row reads) for the SQLite STORES (plandb /
+# skilldb / compliance / research). Off by default so the JSON-only consumers (e.g. the file-based
+# `bsc-blueprint`) don't compile bundled SQLite they never use (#1863).
+conn = ["dep:rusqlite"]
+
 [dependencies]
 # Shared leaf utilities (#1646): the single source of truth for `home_dir` (re-exported below).
 bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only under `conn`: `bundled` compiles SQLite from source (matches plandb/skilldb/compliance/research)
+# for cross-platform reliability. Optional so default builds stay rusqlite-free.
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
