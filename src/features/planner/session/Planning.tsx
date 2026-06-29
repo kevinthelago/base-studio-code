@@ -59,7 +59,7 @@ import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
-import { TERM_THEME, terminalShows } from "./planningTerminal";
+import { TERM_THEME } from "./planningTerminal";
 import { GitHubStructureCard } from "./GitHubStructureCard";
 
 export function Planning({ visible }: { visible: boolean }) {
@@ -564,15 +564,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // prompts (the old "conductor" caused too many problems — it typed over the user, re-sent lost
   // steps, wandered). Instead the focused pane's "?" helper lists each stage's injectable prompts
   // and the USER picks which to inject. Flatten to ONE line so the trailing Enter actually submits
-  // it (a multi-line paste just sits in the input); if it's already in the input bar (pasted but
-  // unsent), submit it instead of pasting a duplicate.
+  // it (a multi-line paste just sits in the input), then type it into the planner session.
+  //
+  // (Was gated behind terminalShows(), which scanned the WHOLE visible terminal — claude's
+  // conversation, not just the input bar — so once the planner had discussed a stage, the prompt's
+  // text in the scrollback false-matched and it sent a BARE Enter instead of the prompt, swallowing
+  // the inject. The "?" helper is the only inject path, so there's no pre-pasted duplicate to guard
+  // against — always write the prompt.)
   const sendPrompt = useCallback((prompt: string) => {
-    const line = flattenPrompt(prompt);
-    if (terminalShows(termRef.current, line.slice(0, 40))) {
-      fireInvoke("pty_write", { paneId, data: "\r" }, console.error); // already there → just submit
-    } else {
-      fireInvoke("pty_write", { paneId, data: line + "\r" }, console.error);
-    }
+    fireInvoke("pty_write", { paneId, data: flattenPrompt(prompt) + "\r" }, console.error);
   }, [paneId]);
 
   // Drain a queued ad-hoc prompt into the live planner (#1371) — e.g. the file-intake "Route to
