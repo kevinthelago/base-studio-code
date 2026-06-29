@@ -3,6 +3,7 @@
 // they read. No state, no effects.
 import type { Posture, Perm, Flow, Agent } from "./projectPaneData";
 import "./projectPane.css";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }
@@ -70,14 +71,15 @@ export function PostureBar({ perm }: { perm: Perm }) {
 
 export function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => void }) {
   return (
-    <span className="tri">
-      {(["allow", "ask", "deny"] as Posture[]).map((v) => (
-        <button key={v} className={(value === v ? "on " : "") + v}
-          onClick={() => onChange && onChange(v)}>
-          {v === "allow" ? "allow" : v === "ask" ? "ask" : "deny"}
-        </button>
-      ))}
-    </span>
+    <SegmentedControl
+      variant="joined"
+      options={(["allow", "ask", "deny"] as Posture[]).map((v) => ({
+        label: v,
+        on: value === v,
+        onClick: () => onChange && onChange(v),
+        tone: v,
+      }))}
+    />
   );
 }
 

@@ -3,6 +3,7 @@ import { paneCount, type Every, type Automation, type SimpleWhen } from "./lib/s
 import { isValidCron } from "./lib/cron";
 import { fmtStamp } from "./format";
 import { Pane } from "@/shared/ui/Pane";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { EmptyState } from "@/shared/ui/EmptyState";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
@@ -125,10 +126,12 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
           <div className="es"><div className="es-row">
             <div className="es-lbl accent">when</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div className="pill-group">
-                <div className={"pill" + (sel.when.kind === "simple" ? " on" : "")} onClick={() => setMode("simple")}>simple</div>
-                <div className={"pill" + (sel.when.kind === "cron" ? " on" : "")} onClick={() => setMode("cron")}>cron</div>
-              </div>
+              <SegmentedControl
+                options={[
+                  { label: "simple", on: sel.when.kind === "simple", onClick: () => setMode("simple") },
+                  { label: "cron", on: sel.when.kind === "cron", onClick: () => setMode("cron") },
+                ]}
+              />
               {sel.when.kind === "simple" ? (
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-muted)" }}>
                   <span>every</span>
