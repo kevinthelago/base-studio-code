@@ -114,8 +114,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            crate::llm::llm_complete,
-            crate::llm::ollama_models,
+            crate::session::llm::llm_complete,
+            crate::session::llm::ollama_models,
             github::github_request,
             github::gist_create,
             github::gist_update,
@@ -170,9 +170,9 @@ pub fn run() {
             fleet::teardown::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
-            agent::claude_config::read_claude_config,
-            agent::claude_config::write_claude_config,
-            console::settings::ensure_session_settings,
+            session::claude_config::read_claude_config,
+            session::claude_config::write_claude_config,
+            session::settings::ensure_session_settings,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,

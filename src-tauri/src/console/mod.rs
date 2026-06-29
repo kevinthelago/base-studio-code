@@ -5,4 +5,3 @@ pub mod pty;
 pub mod ledger;
 pub mod discovery;
 pub mod shell_rc;
-pub mod settings;
