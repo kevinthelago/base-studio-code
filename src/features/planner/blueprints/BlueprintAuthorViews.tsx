@@ -5,6 +5,7 @@
 // <blueprint> tag, so editing and the live session stay in sync. Styling reuses blueprints.css.
 
 import { useState, type CSSProperties } from "react";
+import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Sparkles } from "lucide-react";
 import "../../../styles/blueprints.css";
 import { Ic } from "./blueprintIcons";
@@ -267,8 +268,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
 /* ── 3 · CAPABILITIES (disposition · skills · MCP) ───────────────────────── */
 export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary = [] }: AuthorViewProps) {
   const stages = bp.sections ?? [];
-  const [open, setOpen] = useState<Set<string>>(() => new Set(stages[0] ? [stages[0].uid] : []));
-  const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const { open, toggle } = useExpandable(stages[0] ? [stages[0].uid] : []);
   const setSections = (next: BlueprintStage[]) => onChange({ ...bp, sections: next });
 
   const totalSkills = new Set(stages.flatMap((s) => s.skills ?? [])).size;

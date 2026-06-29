@@ -4,6 +4,7 @@
 // "build" button runs the toolchain build (uv/pnpm) before the fleet can use it. An enabled,
 // project-scoped server reaches the director AND every worker.
 import { useState } from "react";
+import { useExpandable } from "@/shared/hooks/useExpandable";
 import type { McpServer } from "@/features/planner/pane/projectPaneData";
 import type { McpHandlers } from "./focusedHandlers";
 
@@ -24,10 +25,8 @@ export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: 
   servers?: McpServer[];
 }) {
   const list = servers ?? [];
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const { open, toggle: toggleOpen } = useExpandable();
   const [draft, setDraft] = useState("");
-  const toggleOpen = (id: string) =>
-    setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const ready = list.filter((s) => s.enabled && s.status === "ready").length;
   const errored = list.filter((s) => s.enabled && s.status === "error").length;
