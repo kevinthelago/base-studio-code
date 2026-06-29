@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
+import { Chip } from "@/shared/ui/Chip";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
@@ -423,7 +424,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0, display: "inline-block" }} />
               <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
-              <span className={"tag " + (status === "active" ? "green" : status === "shipped" ? "" : "amber")} style={{ fontSize: 9 }}>{status}</span>
+              <Chip tone={status === "active" ? "success" : status === "shipped" ? "neutral" : "accent"} style={{ fontSize: 9 }}>{status}</Chip>
             </div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginBottom: 8 }}>
               {repo}

@@ -80,3 +80,8 @@ export function Chip({
     </span>
   );
 }
+
+/** Map a legacy `.tag` modifier class (green/amber/info/danger) to a Chip tone. */
+export function tagTone(cls?: string): ChipTone {
+  return cls === "green" ? "success" : cls === "amber" ? "accent" : cls === "info" ? "info" : cls === "danger" ? "danger" : "neutral";
+}

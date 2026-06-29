@@ -7,6 +7,7 @@
 // from the store, shows the same approval UI, and uses StageScreenFrame chrome.
 
 import { useState, useEffect, useRef } from 'react';
+import { Chip } from "@/shared/ui/Chip";
 import { invoke } from '@tauri-apps/api/core';
 import { safeInvoke } from '@/shared/lib/core/safeInvoke';
 import { useAppStore } from '../../../store';
@@ -117,7 +118,7 @@ export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
   return (
     <StageScreenFrame
       label="preview"
-      badge={preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
+      badge={preview && <Chip style={{ fontSize: 9 }}>{preview.mode}</Chip>}
       statusLabel={statusLabel}
       statusColor={statusColor}
       onClose={onClose}

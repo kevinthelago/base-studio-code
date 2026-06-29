@@ -3,6 +3,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { timeAgoShort } from "@/shared/lib/core/format";
 import { IconButton } from "@/shared/ui/IconButton";
+import { Chip } from "@/shared/ui/Chip";
 import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
@@ -83,9 +84,9 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
             <h3 style={{ margin: 0, fontSize: 14, color: "var(--fg)" }}>{issue.title}</h3>
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span className={`tag ${issue.state === "OPEN" ? "amber" : ""}`} style={{ fontSize: 9.5 }}>
+            <Chip tone={issue.state === "OPEN" ? "accent" : "neutral"} style={{ fontSize: 9.5 }}>
               ● {issue.state === "OPEN" ? "open" : "closed"}
-            </span>
+            </Chip>
             {issue.statusName && (
               <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>
                 {issue.statusName}

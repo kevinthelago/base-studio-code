@@ -4,6 +4,7 @@
 // files to the right repo is the planner's job (next slice); this is the intake surface.
 
 import { useEffect, useRef, useState } from "react";
+import { Chip } from "@/shared/ui/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -149,7 +150,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
             <div className="ulabel" style={{ color: "var(--fg-dim)" }}>staged · {entries.length}</div>
             {entries.map((e) => (
               <div key={e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
-                <span className="tag" style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</span>
+                <Chip style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</Chip>
                 <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
               </div>
