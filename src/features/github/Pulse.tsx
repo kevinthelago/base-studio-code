@@ -5,6 +5,7 @@
 // loading / empty / error states using the shared chart primitives (#399).
 import { useState } from "react";
 import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LineArea, Bars, Donut, HBars, Legend,
@@ -231,7 +232,7 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
               {slices.map(s => (
                 <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                  <ColorSwatch color={s.color} />
                   <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
                 </div>
               ))}
