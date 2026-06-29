@@ -10,6 +10,7 @@
 //! `WebviewWindowBuilder::additional_browser_args` with the SAME string, sourced from the one constant
 //! below so the two can never drift (guarded by a test against `tauri.conf.json`).
 
+use std::path::PathBuf;
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 /// The WebView2 browser args every window in this app must share. Byte-identical to the main window's
@@ -18,8 +19,15 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 pub(crate) const WEBVIEW_BROWSER_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --no-proxy-server";
 
-/// Open a detached window (tab/section tear-off) loading `url`, with the same browser args as the main
-/// window so its WebView2 process doesn't fail the same-data-dir/same-args constraint on Windows.
+/// Open a detached window (tab/section tear-off) loading the app page at relative `path` (e.g.
+/// `index.html?detachTab=<id>`), with the same browser args as the main window so its WebView2 process
+/// doesn't fail the same-data-dir/same-args constraint on Windows.
+///
+/// `path` is an **app-relative** path (not an absolute URL) so it goes through `WebviewUrl::App` —
+/// Tauri resolves it against the app base exactly like the main window, which keeps the IPC bridge
+/// injected and preserves the query string. An absolute `WebviewUrl::External` URL is NOT equivalent:
+/// for a dev-proxied local URL Tauri rewrites it to `tauri://localhost` and DROPS the query, so the new
+/// window loses its detach marker and renders blank (#1870).
 ///
 /// `label` is the unique Tauri window label (must match a `windows` entry in a capability — `tab-*`).
 /// Best-effort from the caller's view: a build failure returns an `Err` string the frontend logs.
@@ -27,13 +35,12 @@ pub(crate) const WEBVIEW_BROWSER_ARGS: &str =
 pub fn open_detached_window(
     app: AppHandle,
     label: String,
-    url: String,
+    path: String,
     title: String,
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let parsed = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(PathBuf::from(path)))
         .title(&title)
         .inner_size(width, height)
         .decorations(false) // use the app's custom titlebar, not the native OS frame
