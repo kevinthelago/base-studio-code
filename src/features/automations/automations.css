@@ -69,10 +69,7 @@
 .auto-screen .es-lbl.success { color:var(--success); }
 .auto-screen .es-lbl.muted { color:var(--fg-muted); }
 
-.auto-screen .pill-group { display:inline-flex; gap:4px; padding:3px; background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:var(--r-md); }
-.auto-screen .pill { padding:4px 12px; border-radius:4px; cursor:pointer; font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); border:1px solid transparent; }
-.auto-screen .pill:hover { color:var(--fg); }
-.auto-screen .pill.on { background:var(--bg-canvas); color:var(--accent); border-color:var(--accent-dim); }
+/* (.pill-group moved to the shared <SegmentedControl>, #1874) */
 
 .auto-screen .cron-strip { padding:8px 12px; border:1px solid var(--border-soft); border-radius:5px; background:var(--bg-canvas); font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); display:flex; gap:10px; align-items:center; }
 .auto-screen .cron-strip .label { color:var(--fg-dim); }
