@@ -191,7 +191,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
       onReorder={reorder}
       onTearOff={tearOff}
       pageOverride={pageOverride}
-      className="ext-screen"
+      className="ext-workspace"
       bodyClassName="ext-body"
       right={
               tab === "analytics" ? (
@@ -354,7 +354,7 @@ export function HooksView() {
   }
 
   return (
-    <div className="ext-screen">
+    <div className="ext-workspace">
       <div className="ext-page">
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 22px 0" }}>
           <button className="btn ghost" onClick={addCustom}>+ Custom hook</button>

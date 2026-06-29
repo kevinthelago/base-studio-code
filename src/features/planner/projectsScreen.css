@@ -1,9 +1,9 @@
 /* Projects rail screen on the shared <Screen> shell (#1876). The generic `.screen-body` is a
    scrollable block; the planner bodies (the live Planning terminal, the Fleet board) need the same
    height-bounded flex column they had before the migration, so re-establish it here (mirrors the
-   `.ext-screen` body override in mcp.css). Higher specificity than tokens' `.screen .screen-body`
+   `.ext-workspace` body override in mcp.css). Higher specificity than tokens' `.screen .screen-body`
    so it wins regardless of stylesheet order. */
-.screen.projects-screen .screen-body {
+.screen.projects-workspace .screen-body {
   display: flex;
   flex-direction: column;
   min-height: 0;

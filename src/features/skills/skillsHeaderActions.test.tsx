@@ -13,7 +13,7 @@ const LIB = [
 /** Find the page-header (TabBar) right-slot action area, scoping queries off the screen root
  *  so we don't collide with the empty-state's own "+ new skill" button. */
 function header(container: HTMLElement): HTMLElement {
-  return container.querySelector(".skills-screen > *") as HTMLElement; // the TabBar is the first child
+  return container.querySelector(".skills-workspace > *") as HTMLElement; // the TabBar is the first child
 }
 
 describe("SkillsWorkspace — page-header actions (import + '+ skill')", () => {

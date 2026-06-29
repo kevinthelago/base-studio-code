@@ -14,7 +14,7 @@ export interface ScreenProps {
   pageOverride?: string;
   /** Toolbar content on the right of the page-tab bar. */
   right?: ReactNode;
-  /** Extra class on the root — a workspace scoping hook (e.g. `"ext-screen"`) so the workspace's own
+  /** Extra class on the root — a workspace scoping hook (e.g. `"ext-workspace"`) so the workspace's own
    *  scoped CSS keeps applying on top of the shared `.screen` layout. */
   className?: string;
   /** Extra class on the body container (e.g. `"ext-body"` for workspace padding/overrides). */
