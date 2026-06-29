@@ -43,3 +43,19 @@ export function isPathConfined(repoRoot: string, target: string): boolean {
   if (isAbsolute(target)) return underRoot(repoRoot, target);
   return true;
 }
+
+/**
+ * Whether `target` is the session's OWN `.claude/` config (the hook list + permissions) — which the
+ * file tools must never touch, even though it sits INSIDE the repo root (so {@link isPathConfined}
+ * passes it). The `bsc-confine` hook blocks it too (#1916 config self-protection): an agent must not
+ * be able to edit `settings.json` to remove the confinement hooks once a session runs under
+ * `bypassPermissions`, where the `permissions.deny` rule that used to guard it is ignored. Only the
+ * repo-root `.claude` is protected (a nested `src/.claude` is not the session config).
+ */
+export function isConfigProtected(repoRoot: string, target: string): boolean {
+  if (!target) return false;
+  const r = normalize(repoRoot).replace(/\/+$/, "");
+  const t = normalize(target).replace(/\/+$/, "");
+  const rel = (t === r ? "" : t.startsWith(r + "/") ? t.slice(r.length + 1) : t).replace(/^\.\//, "");
+  return rel === ".claude" || rel.startsWith(".claude/");
+}

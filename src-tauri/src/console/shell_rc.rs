@@ -152,15 +152,18 @@ pub(crate) const BSC_DONE_RC: &str = concat!(
     "\n",
 );
 
-/// The `bsc-confine` helper (#158): a PreToolUse hook for the file tools on a gated
-/// pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
-/// `notebook_path`, and BLOCKS (return 2 + stderr) when the path escapes the session's
-/// repo root (`$BSC_REPO_ROOT`) — any `..` segment, or an absolute path not under the
-/// root. Mirrors `src/lib/fsConfine.ts` (the unit-tested decision). String-based + no
-/// realpath so it's portable; `return 2` (not `exit`) so it never kills a shell that
-/// sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
+/// The `bsc-confine` helper (#158/#1916): the DEFAULT PreToolUse hook for the file tools on every
+/// claude-launching pane. It reads Claude Code's tool JSON, extracts the target `file_path` /
+/// `notebook_path`, and BLOCKS (return 2 + stderr) when the path (1) escapes the session's repo root
+/// (`$BSC_REPO_ROOT`) — any `..` segment, or an absolute path not under the root — or (2) is the
+/// session's own `.claude/` config (the hook list + permissions): an in-repo path the escape check
+/// passes, but one an agent must never edit to disable confinement, so it's blocked too (#1916
+/// config-protection, the hook form of the `permissions.deny` rule that `bypassPermissions` ignores).
+/// Mirrors `isPathConfined` / `isConfigProtected` in `src/shared/lib/session/fsConfine.ts` (the
+/// unit-tested decision). String-based + no realpath so it's portable; `return 2` (not `exit`) so it
+/// never kills a shell that sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
 pub(crate) const BSC_CONFINE_RC: &str = concat!(
-    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp rel; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; rel="${fp#"$root"/}"; rel="${rel#./}"; case "$rel" in .claude|.claude/*) echo "blocked: '$fp' is the session's .claude config — #1916 config-protection" >&2; return 2 ;; esac; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
