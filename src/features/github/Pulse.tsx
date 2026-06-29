@@ -4,6 +4,8 @@
 // Fetch + assembly is in hooks/useRepoPulse; this renders the view model with
 // loading / empty / error states using the shared chart primitives (#399).
 import { useState } from "react";
+import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LineArea, Bars, Donut, HBars, Legend,
@@ -194,7 +196,7 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg)" }}>
                 <Avatar login={c.name} bot={c.bot} size={15} />
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
-                <span className={"tag " + (c.bot ? "amber" : "")} style={{ fontSize: 8.5 }}>{c.bot ? "bot" : "human"}</span>
+                <Chip tone={c.bot ? "accent" : "neutral"} style={{ fontSize: 8.5 }}>{c.bot ? "bot" : "human"}</Chip>
                 {(c.add > 0 || c.del > 0) && (
                   <span style={{ fontFamily: "var(--mono)", fontSize: 8.5, color: "var(--fg-dim)" }}>
                     <span style={{ color: "var(--success)" }}>+{fmt(c.add)}</span> <span style={{ color: "var(--danger)" }}>−{fmt(c.del)}</span>
@@ -230,7 +232,7 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
               {slices.map(s => (
                 <div key={s.name} style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color }} />
+                  <ColorSwatch color={s.color} />
                   <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
                 </div>
               ))}
@@ -334,8 +336,8 @@ function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600 }}>Pulse</h2>
               <span style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--fg-muted)" }}>{r.name}</span>
-              <span className="tag amber">● {r.pushedMin}m ago</span>
-              <span className="tag">{r.lang}</span>
+              <Chip tone="accent">● {r.pushedMin}m ago</Chip>
+              <Chip>{r.lang}</Chip>
             </div>
             {r.desc && <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{r.desc}</div>}
           </div>

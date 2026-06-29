@@ -6,6 +6,7 @@
 // unit-testable; styled to match the blueprint modals.
 
 import { ModalScrim } from "@/shared/ui/ModalScrim";
+import { Chip } from "@/shared/ui/Chip";
 import { IconButton } from "@/shared/ui/IconButton";
 
 export type McpDownloadStatus = "pending" | "downloading" | "building" | "ready" | "error";
@@ -70,7 +71,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
               <div key={it.name} className="card" style={{ padding: 13 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
                   <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{it.name}</span>
-                  <span className="tag">first-party</span>
+                  <Chip>first-party</Chip>
                   <span style={{ flex: 1 }} />
                   {it.status !== "pending" && (
                     <span className="mono" style={{ fontSize: 10.5, color: STATUS_COLOR[it.status] }}>{STATUS_LABEL[it.status]}</span>

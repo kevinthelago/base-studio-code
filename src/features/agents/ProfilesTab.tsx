@@ -10,6 +10,7 @@ import { StatusDot } from "@/shared/ui/StatusDot";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
@@ -72,7 +73,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
       accent={p.color}
       selected={on}
       onClick={onClick}
-      lead={<span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, display: "block" }} />}
+      lead={<ColorSwatch color={p.color} radius={3} style={{ display: "block" }} />}
       title={p.name}
       titleAside={<Chip tone={originTone(obCls)} size="xs">{origin}</Chip>}
       subtitle={
@@ -122,7 +123,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
                 <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Owns {p.owns}</div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</div>
               </div>
-              <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</span>
+              <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</Chip>
             </div>
           </div>
         )}

@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { Chip } from "@/shared/ui/Chip";
 import { SectionLabel } from "@/shared/ui/SectionLabel";
 
 /**
@@ -50,7 +51,7 @@ export function GitHubEmpty() {
               <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {["repo", "project", "read:org", "read:user"].map(s => (
-                  <span key={s} className="tag">{s}</span>
+                  <Chip key={s}>{s}</Chip>
                 ))}
               </div>
               <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5 }}>

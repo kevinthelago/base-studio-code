@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { Chip } from "@/shared/ui/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -42,14 +43,13 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
           {verdict.ok ? (
-            <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</span>
+            <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</Chip>
           ) : (
-            <span
-              className="tag"
+            <Chip
               style={{ fontSize: 9.5, color: SEVERITY_COLOR[verdict.severity], borderColor: SEVERITY_COLOR[verdict.severity] }}
             >
               <StatusDot style={{ marginRight: 4 }} />{verdict.severity === "critical" ? "missing" : "attention"}
-            </span>
+            </Chip>
           )}
           {verdict.version && (
             <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>{verdict.version}</span>

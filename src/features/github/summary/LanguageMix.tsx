@@ -1,6 +1,7 @@
 // Language mix card — byte-count breakdown across the sampled repos (#1644).
 
 import { useMemo } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { langColor, SUMMARY_REPO_SAMPLE } from "../lib/githubSummary";
 
 export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
@@ -50,7 +51,7 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
           <div style={{ display: "flex", flexDirection: "column", gap: 5, fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)" }}>
             {entries.map(l => (
               <div key={l.n} style={{ display: "grid", gridTemplateColumns: "12px 1fr 40px", gap: 8, alignItems: "center" }}>
-                <span style={{ width: 9, height: 9, borderRadius: 2, background: l.c, display: "inline-block" }} />
+                <ColorSwatch color={l.c} />
                 <span style={{ color: "var(--fg)" }}>{l.n}</span>
                 <span style={{ textAlign: "right", color: "var(--fg-dim)" }}>{l.pct}%</span>
               </div>

@@ -5,6 +5,7 @@
 // the real triggers (the planner's <ui_preview> tag + a watch on .ui-skeleton/).
 
 import { useState, useCallback } from "react";
+import { Chip } from "@/shared/ui/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -64,7 +65,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
   return (
     <StageScreenFrame
       label="preview"
-      badge={preview && <span className="tag" style={{ fontSize: 9 }}>{preview.mode}</span>}
+      badge={preview && <Chip style={{ fontSize: 9 }}>{preview.mode}</Chip>}
       statusLabel={statusLabel}
       statusColor={statusColor}
       onClose={onClose}
