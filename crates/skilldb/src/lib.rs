@@ -447,6 +447,7 @@ mod tests {
             enabled: true,
             pinned: true,
             packaged: true,
+            ..Default::default()
         })
         .unwrap();
         s.upsert(&mk("triage", "Triage")).unwrap();
