@@ -13,6 +13,18 @@
   overflow: hidden;
 }
 
+/* The library / runs / lessons bodies are height-bounded flex columns (their roots use `flex: 1`
+   — the library shell and `.an-page`), so re-establish the flex-column body the shared `.screen-body`
+   (a scrollable block) doesn't give. Without this the `flex: 1` children don't fill, so the body
+   collapses to content height. Mirrors the planner (projectsScreen.css) + mcp (`.ext-workspace`)
+   overrides; higher specificity than tokens' `.screen .screen-body` so it wins regardless of order. */
+.screen.skills-workspace .screen-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* The edit-drawer frame (.scrim/.drawer/.dr-head/.dr-body/.dr-foot) moved to the shared <Pane>
    (src/shared/ui/pane.css, .pane-* classes). Body-internal styles below stay screen-scoped. */
 
