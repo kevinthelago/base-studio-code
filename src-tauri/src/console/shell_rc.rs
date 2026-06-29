@@ -265,6 +265,17 @@ pub(crate) const BSC_LEARNED_RC: &str = concat!(
     "\n",
 );
 
+/// The `bsc-deny` helper (#1916): a PreToolUse hook for the Bash tool. It pipes Claude Code's tool
+/// JSON to `bsc hook bash-deny`, which exits 2 (block) when the command hits the always-on
+/// dangerous-command floor (`bsc_util::dangerous`) or a `$BSC_DENY_BASH` pattern (the session's
+/// role/user denies). This is the deny enforcement that survives `bypassPermissions` — where
+/// `permissions.deny` is ignored but PreToolUse hooks still fire AND block. Backed by the `bsc`
+/// binary (via the `bsc()` helper), not fragile shell JSON-parsing, so the floor never drifts.
+pub(crate) const BSC_DENY_RC: &str = concat!(
+    r#"bsc-deny() { bsc hook bash-deny; }"#,
+    "\n",
+);
+
 /// The ordered list of every `BSC_*_RC` fragment, in the EXACT sequence the rc file
 /// concatenates them. This is the single source of truth for the concat order: the rc
 /// writer (`wire_bsc_env`) and the `full_bsc_rc_is_syntactically_valid_bash` syntax
@@ -283,6 +294,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_DONE_RC,
     BSC_CONFINE_RC,
     BSC_SCOPE_RC,
+    BSC_DENY_RC,
     BSC_TAINT_RC,
     BSC_COORD_EMIT_RC,
     BSC_DEFER_RC,

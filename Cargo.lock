@@ -749,11 +749,13 @@ dependencies = [
  "bsc-data",
  "bsc-files",
  "bsc-project",
+ "bsc-util",
  "compliance",
  "logs",
  "mcp-rpc",
  "plandb",
  "research",
+ "serde_json",
  "skilldb",
 ]
 

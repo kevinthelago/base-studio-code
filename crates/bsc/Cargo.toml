@@ -18,6 +18,9 @@ data = ["dep:bsc-data"]
 [dependencies]
 # The shared CLI scaffold (#1762): help dispatch + the unknown-command renderer.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The shared dangerous-command registry (#1844) + JSON parsing, for `bsc hook bash-deny` (#1916).
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"
 # Subcommand crates — each exposes `cli::run(args, prog)` (#1877).
 bsc-project = { path = "../bsc-project" }
 skilldb = { path = "../skilldb" }
