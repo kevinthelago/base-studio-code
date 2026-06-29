@@ -3,6 +3,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
+import { StatCard } from "@/shared/ui/charts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -124,21 +125,6 @@ function SparkBars({ weeks }: { weeks: Array<{ label: string; opened: number; cl
         );
       })}
     </svg>
-  );
-}
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-function StatCard({ k, v, sub, tone }: { k: string; v: string; sub: string; tone: "accent" | "info" | "success" | "muted" }) {
-  return (
-    <div className="card" style={{ padding: "10px 14px" }}>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
-      <div style={{
-        fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, marginTop: 2,
-        color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : tone === "success" ? "var(--success)" : "var(--fg)",
-      }}>{v}</div>
-      <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-    </div>
   );
 }
 
@@ -283,7 +269,7 @@ export function Insights() {
             <>
               {/* Stat cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
-                <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="muted"   />
+                <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="fg"      />
                 <StatCard k="completion"    v={`${completionPct}%`} sub={`${closed} of ${total} closed`}          tone="success" />
                 <StatCard k="velocity"      v={`${velocity}/wk`} sub="issues closed · last 4 weeks"               tone="info"    />
                 <StatCard k="open issues"   v={String(open)}     sub={`${total > 0 ? Math.round((open / total) * 100) : 0}% remaining`} tone="accent" />

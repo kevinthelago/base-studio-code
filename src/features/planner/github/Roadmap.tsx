@@ -8,6 +8,7 @@ import {
   WINDOW_PRESETS, DEFAULT_WINDOW_WEEKS,
   type GhMilestone,
 } from "./roadmapGantt";
+import { StatCard } from "@/shared/ui/charts";
 
 function BurnDown({ open, closed }: { open: number; closed: number }) {
   const total = open + closed;
@@ -82,7 +83,7 @@ export function Roadmap() {
     { k: "open issues",   v: loading ? "…" : String(totalOpen),   sub: `of ${totalIssues} total`,  tone: "accent"  },
     { k: "milestones",    v: loading ? "…" : String(filtered.length), sub: `${filtered.filter(m => m.state === "closed").length} closed`, tone: "info" },
     { k: "velocity",      v: loading ? "…" : `${velocity}/wk`,     sub: "issues closed per week",   tone: "success" },
-    { k: "repo",          v: effectiveRepo.split("/")[1] || "—",    sub: effectiveRepo || "no repo", tone: "muted"   },
+    { k: "repo",          v: effectiveRepo.split("/")[1] || "—",    sub: effectiveRepo || "no repo", tone: "fg"      },
   ] as const;
 
   return (
@@ -95,14 +96,7 @@ export function Roadmap() {
           {/* Stat cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
             {stats.map(({ k, v, sub, tone }) => (
-              <div key={k} className="card" style={{ padding: "10px 14px" }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k}</div>
-                <div style={{
-                  fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600, marginTop: 2,
-                  color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : tone === "success" ? "var(--success)" : "var(--fg)",
-                }}>{v}</div>
-                <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-              </div>
+              <StatCard key={k} k={k} v={v} sub={sub} tone={tone} />
             ))}
           </div>
 
