@@ -319,6 +319,31 @@ use crate::session::settings::*;
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// Regression (triage `cargo test` permission prompts): write_session_settings must normalize a
+    /// git-bash drive cwd (`/c/Users/...`, the OSC-7 form the frontend persists + passes) to native
+    /// before resolving the path — so settings.json lands where `pty_create` launches claude (it
+    /// normalizes too), NOT at the bogus `C:\c\Users\...`. Without it the real session dir has no
+    /// settings, so Claude Code treats the workspace as untrusted and prompts on every command.
+    #[test]
+    #[cfg(windows)]
+    fn write_session_settings_normalizes_a_git_bash_drive_cwd() {
+        use crate::session::settings::write_session_settings;
+        let native = std::env::temp_dir().join(format!("bsc-ess-gitbash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&native);
+        std::fs::create_dir_all(&native).unwrap();
+        // The git-bash spelling of the native temp dir: `C:\…\x` → `/c/…/x`.
+        let fwd = native.to_string_lossy().replace('\\', "/"); // C:/Users/…/x
+        let git_bash = format!("/{}{}", fwd[..1].to_lowercase(), &fwd[2..]); // /c/Users/…/x
+        write_session_settings(&git_bash, &[], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        // Lands at the NATIVE dir...
+        assert!(native.join(".claude").join("settings.json").exists(),
+            "settings.json must be written to the native dir, not a bogus C:\\c\\… path");
+        // ...and NOT at the bogus literal `/c/…` path (`C:\c\…` on Windows).
+        assert!(!std::path::PathBuf::from(&git_bash).join(".claude").join("settings.json").exists(),
+            "must not write to the bogus literal `/c/…` path");
+        let _ = std::fs::remove_dir_all(&native);
+    }
+
     #[test]
     fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
         use crate::session::settings::write_session_settings;
