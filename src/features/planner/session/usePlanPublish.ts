@@ -10,6 +10,7 @@ import { useAppStore } from "@/store";
 import { parsePhases } from "../github/ghStructure";
 import type { Section } from "../github/ghStructure";
 import { type GhStatusMap } from "./GitHubStructureCard";
+import { deriveProjectTitle } from "./projectTitle";
 import { parseFeaturesFile } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
@@ -211,7 +212,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     const noRepo       = repos.length === 0;
     const phases       = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
     const goalContent  = sections.find(s => s.k === "goal")?.content ?? "";
-    const projectTitle = planningTitle || goalContent.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+    const projectTitle = deriveProjectTitle(planningTitle, goalContent, activeProjectName);
     const projectDesc  = goalContent.split(/\n/)[0].slice(0, 350);
     const fleet        = planFleet[effectiveProjectId];
     const streams      = fleet?.streams ?? [];
