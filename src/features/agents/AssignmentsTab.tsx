@@ -9,6 +9,7 @@ import { GUARANTEED, resolveAllowlistFrom, type AgentProfile, type ConsoleSessio
 import { appSessionTag } from "./lib/appSession";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { Chip } from "@/shared/ui/Chip";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { modeTone } from "./lib/badgeTone";
 
 export interface AssignmentsTabProps {
@@ -95,12 +96,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
 export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign, onOpen, find }: AssignmentsTabProps) {
   return (
     <>
-      <div className="sec-head">
-        <h3>Application sessions</h3>
-        <span className="hint">always present · one per workspace · role is fixed</span>
-        <div className="spacer" />
-        <span className="meta">{roles.length} system roles</span>
-      </div>
+      <SectionHeader title="Application sessions" hint="always present · one per workspace · role is fixed" meta={<>{roles.length} system roles</>} />
       <div className="asn-grid" style={{ marginBottom: 14 }}>
         <div className="console-card" style={{ borderColor: "color-mix(in oklch, var(--info), transparent 78%)" }}>
           <div className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
@@ -114,12 +110,7 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
         </div>
       </div>
 
-      <div className="sec-head">
-        <h3>Console sessions</h3>
-        <span className="hint">each pane runs under one profile · the resolved command allowlist shows what actually runs there</span>
-        <div className="spacer" />
-        <span className="meta">{consoles.length} consoles · {paneTotal} panes</span>
-      </div>
+      <SectionHeader title="Console sessions" hint="each pane runs under one profile · the resolved command allowlist shows what actually runs there" meta={<>{consoles.length} consoles · {paneTotal} panes</>} />
       <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
         <div className="asn-grid">
           {consoles.map((c) => (
