@@ -110,8 +110,13 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     ...(prof?.deniedCommands ?? []),
   ];
   const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
+  // Confinement self-protection (#1916): the agent must not disable the FS-confinement hook or its own
+  // permission set by editing them. Deny the file-write tools on `.claude/**` — the in-repo config the
+  // bsc-confine hook itself can't catch (it only blocks paths OUTSIDE the repo root). The app stays
+  // authoritative regardless (it re-writes `.claude/settings.json` at every launch). On EVERY pane.
+  const confinementConfigDeny = ["Edit", "Write", "MultiEdit", "NotebookEdit"].map((t) => `${t}(.claude/**)`);
   // Worker sub-agent block (#1036): deny the Task tool for workers. Deny wins over any profile allow.
-  const denyToolRules = [...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
+  const denyToolRules = [...confinementConfigDeny, ...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
   const askToolRules = flowRules.askToolRules;
   // MCP servers + hooks resolved for this session — pre-resolved per pane at tab creation; fall back
   // to globals for ad-hoc consoles.
@@ -129,15 +134,14 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        );
   const skills = toSkillCfgs(skillDefs);
   // Agents audit (#257): on a gated pane (role or profile assigned), install PreToolUse hooks: log
-  // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), confine the file tools (bsc-confine,
-  // #158), enforce the write-scope gate (bsc-scope, #1297), the tainted-turn gate (bsc-taint, #1167),
-  // and the worker-only Stop bounce (bsc-defer, #369).
+  // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), enforce the write-scope gate (bsc-scope,
+  // #1297), the tainted-turn gate (bsc-taint, #1167), and the worker-only Stop bounce (bsc-defer,
+  // #369). FS confinement (bsc-confine, #158) is NOT gated — it's defaulted onto every pane below (#1916).
   const gatedHooks = (cap || prof)
     ? [...hooks,
        { event: "PreToolUse", matcher: "", command: "bsc-audit" },
        { event: "PreToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
        { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
-       { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
        { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
        { event: "PreToolUse", matcher: "", command: "bsc-taint" },
        ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
@@ -154,6 +158,11 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // bsc-defer blocks the stop.
   const sessionHooks = [
     ...skillHooks,
+    // FS confinement (#158/#1916): the DEFAULT, un-gated deny — confine the AI's file tools to this
+    // session's repo root ($BSC_REPO_ROOT, set per-pane in pty_create) on EVERY claude-launching pane,
+    // role/profile or not. The deny every session starts with; the OS sandbox (WSL2/Seatbelt) extends
+    // the same boundary to Bash (the one tool a PreToolUse hook can't fully confine).
+    { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit|Read", command: "bsc-confine" },
     { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
     { event: "Stop", matcher: "", command: "bsc-activity idle" },
     { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
