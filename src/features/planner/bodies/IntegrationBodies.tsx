@@ -3,7 +3,7 @@
 // fills the sink + cadence here; the `destinationDefined` / `syncDefined` gate signals derive from it.
 
 import { useAppStore } from "@/store";
-import { Notice } from "@/shared/ui/Notice";
+import { Banner } from "@/shared/ui/Banner";
 import {
   DESTINATIONS, destinationMeta, WRITE_MODES, SYNC_MODES,
   defaultIntegrationConfig, destinationChecks, syncChecks,
@@ -16,9 +16,9 @@ function Readiness({ checks, label }: { checks: { ok: boolean }[]; label: string
   const ok = checks.filter((c) => c.ok).length;
   const ready = ok === checks.length;
   return (
-    <Notice tone={ready ? "success" : "accent"} dot>
+    <Banner tone={ready ? "success" : "accent"} dot loud>
       {ready ? `${label} defined` : `${ok}/${checks.length} set`}
-    </Notice>
+    </Banner>
   );
 }
 

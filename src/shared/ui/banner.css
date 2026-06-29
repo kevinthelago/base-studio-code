@@ -1,8 +1,29 @@
-/* Banner — the shared inline callout strip (#card-unify follow-on). Replaces the per-feature
-   `.sys-banner` (info), `.global-banner` (success), and `.inherit-note` (neutral) strips. */
+/* Banner — the one status strip (#card-unify follow-on). Inline rounded callout by default; a
+   full-width top-of-app bar with `.bar`. Replaces the per-feature `.sys-banner`/`.global-banner`/
+   `.inherit-note` callouts, the `Notice` status box (`.loud` + `.banner-dot`), and the hand-rolled
+   app banners (`.bar` + `.banner-x`). */
 .banner { padding: 9px 12px; border-radius: var(--r-md); display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 10.5px; flex-wrap: wrap; }
 .banner.tone-neutral { background: var(--bg-canvas); border: 1px solid var(--border-soft); color: var(--fg-dim); }
 .banner.tone-info { background: color-mix(in oklch, var(--info), transparent 90%); border: 1px solid color-mix(in oklch, var(--info), transparent 72%); color: var(--fg-muted); }
 .banner.tone-success { background: color-mix(in oklch, var(--success), transparent 88%); border: 1px solid color-mix(in oklch, var(--success), transparent 70%); color: var(--fg); }
 .banner.tone-warn { background: color-mix(in oklch, var(--accent), transparent 88%); border: 1px solid color-mix(in oklch, var(--accent), transparent 70%); color: var(--fg-muted); }
 .banner.tone-danger { background: color-mix(in oklch, var(--danger), transparent 88%); border: 1px solid color-mix(in oklch, var(--danger), transparent 70%); color: var(--fg-muted); }
+.banner.tone-accent { background: color-mix(in oklch, var(--accent), transparent 88%); border: 1px solid color-mix(in oklch, var(--accent), transparent 70%); color: var(--fg-muted); }
+
+/* Loud — tone-colored text (the Notice status-box look). */
+.banner.loud.tone-info { color: var(--info); }
+.banner.loud.tone-success { color: var(--success); }
+.banner.loud.tone-warn { color: var(--accent); }
+.banner.loud.tone-danger { color: var(--danger); }
+.banner.loud.tone-accent { color: var(--accent); }
+
+/* A tone-colored status dot lead (inherits the row's text color). */
+.banner-dot { width: 7px; height: 7px; border-radius: 99px; flex: 0 0 auto; background: currentColor; }
+
+/* bar — a full-width top-of-app/screen banner: square, no side/top border, a bottom rule, and the
+   readable sans body the app banners use (not the inline callout's compact mono). */
+.banner.bar { width: 100%; border-radius: 0; border: none; border-bottom: 1px solid var(--border-soft); padding: 7px 14px; gap: 12px; flex-wrap: nowrap; font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--fg); }
+
+/* The trailing dismiss ✕. */
+.banner-x { background: transparent; border: none; cursor: pointer; color: var(--fg-muted); padding: 4px; display: inline-flex; align-items: center; font-size: 12px; line-height: 1; }
+.banner-x:hover { color: var(--fg); }
