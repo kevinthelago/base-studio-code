@@ -45,6 +45,18 @@ describe("buildAgentEnv", () => {
     expect(buildAgentEnv(mkStore(), "p", "claude", "tok")).toEqual({ GH_TOKEN: "tok" });
   });
 
+  it("emits BSC_DENY_BASH (user + role denies) for the bsc-deny hook (#1916)", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") }, deniedCommands: ["curl"] });
+    const denies = buildAgentEnv(s, "p", "claude", "")?.BSC_DENY_BASH?.split("\n") ?? [];
+    expect(denies).toContain("curl"); // global user deny
+    const cap = roleCapability("worker", { writeGlobs: [] });
+    for (const d of roleDeniedCommands(cap)) expect(denies).toContain(d); // role denies survive bypass
+  });
+
+  it("does not emit BSC_DENY_BASH when there are no denies", () => {
+    expect(buildAgentEnv(mkStore(), "p", "claude", "tok")?.BSC_DENY_BASH).toBeUndefined();
+  });
+
   describe("bsc-agent provider", () => {
     it("injects the provider/model env", () => {
       const e = buildAgentEnv(mkStore({ llmModel: "gpt-4o", llmProvider: "openai", openaiKey: "sk" }), "p", "bsc-agent", "")!;

@@ -49,6 +49,11 @@ export function buildAgentEnv(
     const sg = scopeWriteGlobs(scopeRole, s.paneRoleGlobs[paneId] ?? []);
     if (sg.length > 0) e.BSC_SCOPE_GLOBS = sg.join(" ");
   }
+  // Deny-list (#1916): the session's role/user/profile deny patterns for the `bsc-deny` PreToolUse
+  // hook (newline-separated; the dangerous floor itself is compiled into `bsc hook bash-deny`). This
+  // carries the role/user denies through the bypassPermissions flip.
+  const denies = sessionDeniedCommands(s, paneId);
+  if (denies.length > 0) e.BSC_DENY_BASH = denies.join("\n");
   if (providerId === "bsc-agent") {
     Object.assign(e, bscAgentEnv(resolveLlmConfig(s)));
     // Gate the runtime by the pane's role (least-privilege parity with Claude); no role ⇒ permissive.
@@ -66,6 +71,24 @@ export function buildAgentEnv(
     if (bscMcp.length > 0) e.BSC_AGENT_MCP = JSON.stringify(bscMcp);
   }
   return Object.keys(e).length > 0 ? e : undefined;
+}
+
+/**
+ * The session's denied Bash command patterns (#1916): the user's global denies + the role's denied
+ * commands (minus the pushes the flow grants back) + the profile's denies. The SINGLE source for both
+ * the `permissions.deny` rules (buildSessionSettings) and the `$BSC_DENY_BASH` env the `bsc-deny`
+ * PreToolUse hook enforces — so role/user denies survive `bypassPermissions`, where `permissions.deny`
+ * is ignored but the hook still fires + blocks.
+ */
+export function sessionDeniedCommands(s: AppStore, paneId: string): string[] {
+  const role = s.paneRoles[paneId];
+  const cap = role ? roleCapability(role, { writeGlobs: s.paneRoleGlobs[paneId] ?? [] }) : null;
+  const profileId = s.paneProfiles[paneId];
+  const profile = profileId ? s.agentProfiles.find((p) => p.id === profileId) : undefined;
+  const prof = profile ? resolveProfileSettings(profile) : null;
+  const granted = flowGrantedPushCommands(s.paneFlows[paneId]);
+  const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
+  return [...s.deniedCommands, ...roleDenies, ...(prof?.deniedCommands ?? [])];
 }
 
 /**
@@ -100,15 +123,9 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve baseline.
   // No profile ⇒ the broad default ("allow").
   const bashPosture = prof?.bashPosture ?? "allow";
-  // Reconcile role gate + flow (#304): the flow owns the two GitHub-propagation writes, so lift them
-  // from the role denies when the flow permits pushing/PRing. Everything else the role denies stays.
-  const granted = flowGrantedPushCommands(paneFlow);
-  const roleDenies = (cap ? roleDeniedCommands(cap) : []).filter((d) => !granted.includes(d));
-  const denied = [
-    ...s.deniedCommands,
-    ...roleDenies,
-    ...(prof?.deniedCommands ?? []),
-  ];
+  // Denied commands (#304/#1916): user + role (minus the flow-granted pushes) + profile denies — the
+  // SAME set wired into `$BSC_DENY_BASH` for the bsc-deny hook (see sessionDeniedCommands).
+  const denied = sessionDeniedCommands(s, paneId);
   const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
   // Confinement self-protection (#1916): the agent must not disable the FS-confinement hook or its own
   // permission set by editing them. Deny the file-write tools on `.claude/**` — the in-repo config the
