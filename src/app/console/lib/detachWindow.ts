@@ -47,14 +47,14 @@ export function detachedSection(search: string = window.location.search): { page
 export function openDetachedTab(tabId: string, title?: string, onClose?: () => void): void {
   seq += 1;
   const label = `tab-${tabId}-${seq}`.replace(/[^A-Za-z0-9/:_-]/g, "_");
-  // Load the SAME app this window is already running, just with the detach marker.
-  // Deriving from window.location is robust across dev (http://localhost:1420) and
-  // prod (the asset protocol) — a bare relative "index.html" doesn't reliably
-  // resolve under the dev server and yields a blank window.
-  const u = new URL(window.location.href);
-  u.hash = "";
-  u.search = `?detachTab=${encodeURIComponent(tabId)}`;
-  invoke("open_detached_window", { label, url: u.href, title: title || "Console", width: 960, height: 720 })
+  // Pass an APP-RELATIVE path (not an absolute URL): the Rust side loads it via
+  // `WebviewUrl::App`, which Tauri resolves against the app base exactly like the
+  // main window — keeping the IPC bridge injected and the `?detachTab=` query
+  // intact. An absolute URL would go through `WebviewUrl::External`, which Tauri
+  // rewrites to `tauri://localhost` for a dev-proxied local URL and DROPS the
+  // query, leaving the new window blank with no detach marker (#1870).
+  const path = `index.html?detachTab=${encodeURIComponent(tabId)}`;
+  invoke("open_detached_window", { label, path, title: title || "Console", width: 960, height: 720 })
     // Re-dock when the detached window closes (best-effort; restart recovers it
     // regardless, since the detached set is session-only). The Rust command has
     // created the window by the time this resolves, so the handle is findable.
