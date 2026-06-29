@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
 import {
   loadShellKind,
   saveShellKind,

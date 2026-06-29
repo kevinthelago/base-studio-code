@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useAppStore } from "@/store";
 import { StatusDot } from "@/shared/ui/StatusDot";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { Chip } from "@/shared/ui/Chip";
+import { SettingsCardHead } from "../pages/SettingsControls";
 
 export function RepoCredentialsCard() {
   const repoGithubTokens = useAppStore((s) => s.repoGithubTokens);
@@ -46,7 +47,7 @@ export function RepoCredentialsCard() {
           {scoped.map((r, i) => (
             <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", fontSize: 11.5 }}>
               <span style={{ fontFamily: "var(--mono)", flex: 1 }}>{r}</span>
-              <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />scoped token</span>
+              <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />scoped token</Chip>
               <button className="btn ghost danger" style={{ height: 24, fontSize: 10.5 }} onClick={() => setRepoGithubToken(r, null)}>remove</button>
             </div>
           ))}

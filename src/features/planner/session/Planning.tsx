@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { Dialog } from "@/shared/ui/Dialog";
+import { Chip } from "@/shared/ui/Chip";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "../github/ghStructure";
@@ -662,7 +663,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 />
               )
             }
-            <span className="tag amber">● {isExisting ? "expanding" : "drafting"}</span>
+            <Chip tone="accent">● {isExisting ? "expanding" : "drafting"}</Chip>
           </div>
           {autopilot.running && (
             <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
@@ -938,7 +939,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 onClick={() => void doSwitchBlueprint(bp.id)}>
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ color: "var(--fg)", fontWeight: 600 }}>{bp.name}</span>
-                  <span className="tag" style={{ fontSize: 9 }}>{blueprintCategory(bp)}</span>
+                  <Chip style={{ fontSize: 9 }}>{blueprintCategory(bp)}</Chip>
                 </span>
                 {bp.desc && <span style={{ color: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--sans)" }}>{bp.desc}</span>}
               </button>

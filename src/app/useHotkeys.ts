@@ -61,8 +61,8 @@ function keyToTermBytes(e: KeyboardEvent): string | null {
 
 export function useHotkeys() {
   const {
-    activeScreen,
-    setScreen,
+    activeWorkspace,
+    setWorkspace,
     tabs,
     activeTabIdx,
     setActiveTab,
@@ -90,7 +90,7 @@ export function useHotkeys() {
     // capture-phase listener used to sit in front of all of them). Both gating values are in this
     // effect's dep array, so changing screen or maximizing/restoring re-runs the effect to
     // attach/detach. Exit maximize via the pane header button (the keyboard toggle is off here too).
-    if (activeScreen !== "console" || fullscreenPaneIdx >= 0) return;
+    if (activeWorkspace !== "console" || fullscreenPaneIdx >= 0) return;
 
     // Resolve the accumulated pane-number buffer and run the focus → fullscreen →
     // restore cycle on it. State is read fresh (the timer fires later) so a stale
@@ -151,7 +151,7 @@ export function useHotkeys() {
       // repaint — the in-app equivalent of dragging the window to un-jumble it. Keys off the STABLE
       // pane id (paneIdFor), the same id the terminal watches.
       if (matchesBinding(e, bindings, "redraw-pane")) {
-        if (activeScreen !== "console") return;
+        if (activeWorkspace !== "console") return;
         e.preventDefault();
         e.stopPropagation();
         const idx = fullscreenPaneIdx >= 0 ? fullscreenPaneIdx : focusedPaneIdx;
@@ -267,7 +267,7 @@ export function useHotkeys() {
       for (const h of SCREEN_HOTKEYS) {
         if (matchesBinding(e, bindings, `screen-${h.screen}` as RebindableId)) {
           e.preventDefault();
-          setScreen(h.screen);
+          setWorkspace(h.screen);
           return;
         }
       }
@@ -356,7 +356,7 @@ export function useHotkeys() {
       if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
     };
   }, [
-    activeScreen, setScreen,
+    activeWorkspace, setWorkspace,
     tabs, activeTabIdx, setActiveTab,
     focusedPaneIdx, fullscreenPaneIdx,
     setFocusedPane, setFullscreenPane,

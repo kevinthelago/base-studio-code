@@ -1,37 +1,49 @@
 use crate::*;
 
-// NOTE: the planner prompts (`data/planner/process.md`, `data/stages/permissions.json`) re-state
-// this same baseline (MANDATORY_BASH + BASELINE_READONLY + BASELINE_BUILD) so the planner authors
-// only stack-specific extras on top. These three consts are the SINGLE SOURCE OF TRUTH; the
-// `baseline_drift_guard` tests below parse those data files and assert they match the consts, so the
-// old "keep them in sync (#1817)" warning is now a CI-caught invariant (#1866, sibling of #1844's
-// deny-floor drift guard). Change a const → the data files must follow or the build fails.
-/// Shell commands every spawned repo/console session auto-approves regardless of
-/// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
-/// depends on them. `gh` is required by triage; `git` by every repo session;
-/// `bsc` is the unified state CLI (#1877) — `bsc plan` (the plan store, #plan-db) plus the
-/// `skill`/`data`/`logs`/… subcommands the planner/director/workers drive — so it must never
-/// prompt (the planner runs it under autopilot); a `Bash(bsc *)` allow covers every `bsc <sub>`.
-pub(crate) const MANDATORY_BASH: &[&str] = &["gh", "git", "bsc"];
-/// Safe read-only inspection / navigation commands auto-approved in every session whose
-/// shell posture is not `deny`, so ordinary work (`ls`, `cat`, `grep`, …) never prompts.
-/// Pure inspection + light scaffolding; the destructive forms are still caught by the shared
-/// dangerous-bash floor (`bsc_util::dangerous`). Written as explicit `Bash(<cmd> *)` rules because Claude Code does NOT
-/// honor a bare `Bash` allow as allow-all — every auto-runnable command must be enumerated.
-pub(crate) const BASELINE_READONLY: &[&str] = &[
-    "ls", "cat", "head", "tail", "grep", "rg", "find", "fd", "pwd", "cd", "echo", "wc",
-    "sort", "uniq", "diff", "tree", "which", "env", "date", "file", "stat", "basename",
-    "dirname", "cut", "sleep", "printf", "test", "sed", "awk", "jq", "tr", "mkdir", "touch",
-];
-/// Common build / test / run toolchains auto-approved for an `allow`-shell agent (a doer —
-/// worker/tester). A coordinator (`ask` shell) does NOT get these (it prompts before
-/// building); a `deny`-shell agent gets neither baseline. The planner grants project-specific
-/// tools beyond this set per stream (the session's `allowed_commands`).
-pub(crate) const BASELINE_BUILD: &[&str] = &[
-    "cargo", "rustc", "rustup", "npm", "pnpm", "yarn", "npx", "node", "deno", "bun",
-    "python", "python3", "pip", "pip3", "pytest", "make", "go", "tsc", "vite", "eslint",
-    "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet", "ollama",
-];
+// Base-level allowed commands are defined ONCE in the backend-owned `data/permissions/base.json`
+// (#1880), embedded here at compile time — the SINGLE SOURCE OF TRUTH. The planner prompts
+// (`data/planner/process.md`, `data/stages/permissions.json`) re-state the same baseline so the
+// planner authors only stack-specific extras on top, and the `baseline_drift_guard` tests below parse
+// those data files and assert they match `base.json` (a CI-caught invariant, #1866 — the ALLOW-baseline
+// sibling of #1844's deny-floor guard). Change `base.json` → the planner prose must follow or the build
+// fails. Written as explicit `Bash(<cmd> *)` rules at launch because Claude Code does NOT honor a bare
+// `Bash` allow as allow-all — every auto-runnable command must be enumerated.
+//
+// The three command tiers are scaled by a session's `bash_posture` (see `write_session_settings`):
+//   - `mandatory` (gh/git/bsc-plan) — ALWAYS allowed: the app's GitHub/plan workflow depends on them
+//     (`gh` for triage/publish, `git` for every repo session, `bsc-plan` for the autopilot plan store).
+//   - `readonly`  — the safe inspection/navigation set (`ls`/`cat`/`grep`/…), added for the `ask` and
+//     `allow` postures so ordinary work never prompts; destructive forms are still caught by the
+//     shared dangerous-bash floor (`bsc_util::dangerous`).
+//   - `build`     — the common build/test toolchains, added for the `allow` posture only (a doer —
+//     worker/tester); an `ask` coordinator prompts before building, a `deny` agent gets neither tier.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaseProfile {
+    command_tiers: CommandTiers,
+}
+#[derive(serde::Deserialize)]
+struct CommandTiers {
+    mandatory: Vec<String>,
+    readonly: Vec<String>,
+    build: Vec<String>,
+}
+/// The parsed, embedded base profile (`data/permissions/base.json`) — the single definition of
+/// base-level allowed commands. Parsed once; an invalid/renamed file is a hard panic at first use
+/// (it's compiled in, so this can only fire on a developer-introduced mistake, never at a user site).
+fn base_profile() -> &'static BaseProfile {
+    static BASE: std::sync::OnceLock<BaseProfile> = std::sync::OnceLock::new();
+    BASE.get_or_init(|| {
+        serde_json::from_str(include_str!("../../data/permissions/base.json"))
+            .expect("data/permissions/base.json must be valid JSON matching BaseProfile")
+    })
+}
+/// Commands guaranteed in every session regardless of posture (gh/git/bsc-plan).
+fn mandatory_bash() -> &'static [String] { &base_profile().command_tiers.mandatory }
+/// The read-only inspection/navigation baseline (granted for the `ask` + `allow` postures).
+fn baseline_readonly() -> &'static [String] { &base_profile().command_tiers.readonly }
+/// The build/test toolchain baseline (granted for the `allow` posture only).
+fn baseline_build() -> &'static [String] { &base_profile().command_tiers.build }
 // Dangerous command patterns denied in every spawned session by default — the always-on floor, now
 // the shared `bsc_util::dangerous` registry (#1844). The Claude harness renders the `Bash(<glob>)`
 // deny rules (`claude_deny_rules`); the bsc-agent runtime renders the substring form from the SAME
@@ -71,7 +83,7 @@ pub(crate) fn ensure_session_settings(
 /// session's `bash_posture` (the agent profile's bash tier): `allow` doers get the bare
 /// `Bash` + the read-only AND build baselines; `ask` coordinators get the read-only baseline
 /// only (build/unlisted commands prompt); `deny` agents get neither. Always added: the
-/// mandatory gh/git/bsc and the per-stream `allowed_commands` the planner granted. A
+/// mandatory gh/git/bsc-plan and the per-stream `allowed_commands` the planner granted. A
 /// curated default deny-list (`bsc_util::dangerous::claude_deny_rules`) plus any user/project `denied_commands`
 /// block the most dangerous direct invocations (deny wins over allow). Merges into existing
 /// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
@@ -103,20 +115,20 @@ pub(crate) fn write_session_settings(
     //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
     //     unlisted commands fall through to a prompt.
     //   - "deny"  (sandboxed): neither baseline.
-    // ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
+    // ALWAYS: mandatory gh/git/bsc-plan + each per-stream granted command (`allowed_commands`).
     let mut allow_rules: Vec<String> = Vec::new();
-    let mut baseline: Vec<&str> = Vec::new();
+    let mut baseline: Vec<String> = Vec::new();
     match bash_posture {
         "deny" => {}
-        "ask" => baseline.extend_from_slice(BASELINE_READONLY),
+        "ask" => baseline.extend(baseline_readonly().iter().cloned()),
         _ /* "allow" */ => {
             allow_rules.push("Bash".to_string());
-            baseline.extend_from_slice(BASELINE_READONLY);
-            baseline.extend_from_slice(BASELINE_BUILD);
+            baseline.extend(baseline_readonly().iter().cloned());
+            baseline.extend(baseline_build().iter().cloned());
         }
     }
-    for c in baseline.iter().map(|s| (*s).to_string())
-        .chain(MANDATORY_BASH.iter().map(|s| (*s).to_string()))
+    for c in baseline.into_iter()
+        .chain(mandatory_bash().iter().cloned())
         .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
     {
         if !c.is_empty() {
@@ -193,7 +205,7 @@ pub(crate) fn write_session_settings(
     write_mcp_json(&root, mcp_servers)?;
     write_session_skills(&root, skills)?;
     // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
-    // `bsc skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
+    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
     // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
     crate::extensions::skills::record_skill_uses(skills);
     git_exclude(&root, ".claude/");
@@ -219,16 +231,16 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
 
 #[cfg(test)]
 mod baseline_drift_guard {
-    //! Drift guard (#1866) for the three baseline ALLOW lists.
+    //! Drift guard (#1866 / #1880) for the three baseline ALLOW tiers.
     //!
-    //! `MANDATORY_BASH` / `BASELINE_READONLY` / `BASELINE_BUILD` are the SINGLE canonical source.
-    //! The planner data (`data/planner/process.md`, `data/stages/permissions.json`) re-states the
-    //! same baseline so the planner authors only stack-specific extras on top — a manual "keep in
-    //! sync (#1817)" that these tests turn into a CI-caught invariant (the ALLOW-baseline sibling of
-    //! #1844's deny-floor guard). The data files are embedded at compile time, so this is a pure
-    //! offline parse — no fixtures, no runtime. The session render path is untouched; these tests
-    //! only pin that the planner-facing copies can't silently drift from the runtime consts.
-    use super::{BASELINE_BUILD, BASELINE_READONLY, MANDATORY_BASH};
+    //! `data/permissions/base.json` is the SINGLE canonical source (embedded + parsed by the
+    //! accessors above). The planner data (`data/planner/process.md`, `data/stages/permissions.json`)
+    //! re-states the same baseline so the planner authors only stack-specific extras on top — a manual
+    //! "keep in sync (#1817)" that these tests turn into a CI-caught invariant (the ALLOW-baseline
+    //! sibling of #1844's deny-floor guard). The data files are embedded at compile time, so this is a
+    //! pure offline parse — no fixtures, no runtime. The session render path is untouched; these tests
+    //! only pin that the planner-facing copies can't silently drift from `base.json`.
+    use super::{baseline_build, baseline_readonly, mandatory_bash};
 
     const PROCESS_MD: &str = include_str!("../../data/planner/process.md");
     const PERMISSIONS_JSON: &str = include_str!("../../data/stages/permissions.json");
@@ -277,38 +289,47 @@ mod baseline_drift_guard {
         &rest[..b]
     }
 
-    fn owned(xs: &[&str]) -> Vec<String> {
-        xs.iter().map(|s| (*s).to_string()).collect()
+    /// `base.json` itself must parse and carry non-empty tiers, with the mandatory set EXACTLY
+    /// gh/git/bsc-plan — a typo, an emptied tier, or a dropped mandatory command (any of which would
+    /// silently widen or break every session's baseline) fails here, at the source.
+    #[test]
+    fn base_json_parses_with_populated_tiers_and_exact_mandatory() {
+        assert_eq!(mandatory_bash().join("/"), "gh/git/bsc-plan");
+        assert!(!baseline_readonly().is_empty(), "base.json readonly tier is empty");
+        assert!(!baseline_build().is_empty(), "base.json build tier is empty");
+        // Spot-check a representative member of each scaled tier.
+        assert!(baseline_readonly().iter().any(|c| c == "grep"));
+        assert!(baseline_build().iter().any(|c| c == "cargo"));
     }
 
     /// `process.md` re-states the FULL baseline as three bullets (so the planner doesn't re-list it
-    /// in a stream's `commands`). Each bullet must match its const EXACTLY — same commands, same
-    /// order — so the planner's "do NOT re-list the baseline" instruction can never go stale.
+    /// in a stream's `commands`). Each bullet must match its `base.json` tier EXACTLY — same commands,
+    /// same order — so the planner's "do NOT re-list the baseline" instruction can never go stale.
     #[test]
-    fn process_md_baseline_bullets_match_the_consts_exactly() {
+    fn process_md_baseline_bullets_match_base_json_exactly() {
         assert_eq!(
             backtick_tokens(&bullet_from(PROCESS_MD, "**Navigation / inspection / text**")),
-            owned(BASELINE_READONLY),
-            "process.md read-only baseline drifted from BASELINE_READONLY",
+            baseline_readonly().to_vec(),
+            "process.md read-only baseline drifted from base.json (readonly tier)",
         );
         assert_eq!(
             backtick_tokens(&bullet_from(PROCESS_MD, "**Build / test toolchains**")),
-            owned(BASELINE_BUILD),
-            "process.md build baseline drifted from BASELINE_BUILD",
+            baseline_build().to_vec(),
+            "process.md build baseline drifted from base.json (build tier)",
         );
         assert_eq!(
             backtick_tokens(&bullet_from(PROCESS_MD, "**Always** (every agent)")),
-            owned(MANDATORY_BASH),
-            "process.md always baseline drifted from MANDATORY_BASH",
+            mandatory_bash().to_vec(),
+            "process.md always baseline drifted from base.json (mandatory tier)",
         );
     }
 
     /// `permissions.json` lists illustrative SUBSETS of the read-only and build baselines (with a
     /// trailing `…`) inline in its directive prose. Every command it names must be a genuine member
-    /// of the corresponding const — so an example can't outlive a const entry it was drawn from.
-    /// The ALWAYS line is the full set, so it's asserted verbatim.
+    /// of the corresponding `base.json` tier — so an example can't outlive a base entry it was drawn
+    /// from. The ALWAYS line is the full set, so it's asserted verbatim.
     #[test]
-    fn permissions_json_baseline_examples_are_drawn_from_the_consts() {
+    fn permissions_json_baseline_examples_are_drawn_from_base_json() {
         let readonly = backtick_tokens(between(
             PERMISSIONS_JSON,
             "read-only navigation/inspection/text tools (",
@@ -317,8 +338,8 @@ mod baseline_drift_guard {
         assert!(!readonly.is_empty(), "permissions.json lists no read-only baseline examples");
         for cmd in &readonly {
             assert!(
-                BASELINE_READONLY.contains(&cmd.as_str()),
-                "permissions.json read-only example `{cmd}` is not in BASELINE_READONLY",
+                baseline_readonly().iter().any(|c| c == cmd),
+                "permissions.json read-only example `{cmd}` is not in base.json (readonly tier)",
             );
         }
 
@@ -326,13 +347,13 @@ mod baseline_drift_guard {
         assert!(!build.is_empty(), "permissions.json lists no build baseline examples");
         for cmd in &build {
             assert!(
-                BASELINE_BUILD.contains(&cmd.as_str()),
-                "permissions.json build example `{cmd}` is not in BASELINE_BUILD",
+                baseline_build().iter().any(|c| c == cmd),
+                "permissions.json build example `{cmd}` is not in base.json (build tier)",
             );
         }
 
         // ALWAYS is the full mandatory set, not an example subset — pin it verbatim.
-        let always = format!("ALWAYS `{}`", MANDATORY_BASH.join("`/`"));
+        let always = format!("ALWAYS `{}`", mandatory_bash().join("`/`"));
         assert!(
             PERMISSIONS_JSON.contains(&always),
             "permissions.json must state the full always-baseline as `{always}`",

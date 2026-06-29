@@ -10,7 +10,7 @@ interface LegacyState {
   extensions?: Array<Record<string, unknown>>;
   mcpServers?: McpServer[];
   hooks?: Hook[];
-  activeScreen?: string;
+  activeWorkspace?: string;
 }
 
 /** Split a persisted `extensions` array into `mcpServers` + `hooks` (by `kind`), mapping the old
@@ -37,5 +37,5 @@ export function migrateLegacyExtensions(stateArg: unknown): void {
     delete state.extensions;
   }
 
-  if (state.activeScreen === "extensions") state.activeScreen = "mcp";
+  if (state.activeWorkspace === "extensions") state.activeWorkspace = "mcp";
 }

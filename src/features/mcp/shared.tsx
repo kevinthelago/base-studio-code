@@ -7,6 +7,8 @@ import { useState, useEffect } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { IconButton } from "@/shared/ui/IconButton";
 import { CardListRow } from "@/shared/ui/CardListRow";
+import { Chip } from "@/shared/ui/Chip";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -65,8 +67,8 @@ export function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => vo
 
 /** The scope summary chips on a row: off / global / named-projects. */
 export function scopeChips(e: { enabled: boolean; projects: string[] }, projects: GhProject[]) {
-  if (!e.enabled) return <span className="tag" style={{ color: "var(--fg-dim)" }}>off</span>;
-  if (e.projects.length === 0) return <span className="tag green"><StatusDot style={{ marginRight: 4 }} />global</span>;
+  if (!e.enabled) return <Chip style={{ color: "var(--fg-dim)" }}>off</Chip>;
+  if (e.projects.length === 0) return <Chip tone="success"><StatusDot style={{ marginRight: 4 }} />global</Chip>;
   const named = e.projects
     .map(pid => projects.find(p => p.id === pid))
     .filter(Boolean) as GhProject[];
@@ -127,7 +129,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
                         <div className="pname">{p.title}</div>
                         <div className="pbranch">#{p.number}</div>
                       </div>
-                      <div className="pside"><span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--accent-dim)" }} /></div>
+                      <div className="pside"><ColorSwatch color="var(--accent-dim)" size={8} /></div>
                     </div>
                   );
                 })}
@@ -169,7 +171,7 @@ export function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, o
       onClick={onSelect}
       lead={<div className={"health " + (on ? "" : "off")} />}
       title={name || "Untitled"}
-      badge={<span className={"tag " + tagCls}>{tagLabel}</span>}
+      badge={<Chip tone={tagCls === "green" ? "success" : tagCls === "info" ? "info" : tagCls === "amber" ? "accent" : "neutral"}>{tagLabel}</Chip>}
       subtitle={desc}
       trailing={
         <>

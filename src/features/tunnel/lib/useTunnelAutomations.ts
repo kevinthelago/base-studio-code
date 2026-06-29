@@ -37,7 +37,7 @@ export function useTunnelAutomations(): void {
       const decision = planArm(s.automations.find((a) => a.id === id), id, armed);
       if (!decision.ok) {
         log.warn(`tunnel: rejecting mobile arm of "${id}" — ${decision.error}`);
-        // Surface the rejection back to the phone (also FCM-pushed, A4).
+        // Workspace the rejection back to the phone (also FCM-pushed, A4).
         await tunnelAutomationFailed(decision.id, Date.now(), decision.error, decision.name).catch(() => {});
         return;
       }

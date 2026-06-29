@@ -5,6 +5,7 @@ import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { IconButton } from "@/shared/ui/IconButton";
+import { Chip } from "@/shared/ui/Chip";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Avatar } from "@/shared/ui/Avatar";
 import { LabelChip } from "@/shared/ui/LabelChip";
@@ -191,9 +192,9 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
             <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, color: "var(--fg)" }}>{issue.title}</h3>
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span className={`tag ${issue.state === "OPEN" ? "amber" : ""}`} style={{ fontSize: 9.5 }}>
+            <Chip tone={issue.state === "OPEN" ? "accent" : "neutral"} style={{ fontSize: 9.5 }}>
               ● {issue.state === "OPEN" ? "open" : "closed"}
-            </span>
+            </Chip>
             {issue.milestone && (
               <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent)" }}>{issue.milestone}</span>
             )}

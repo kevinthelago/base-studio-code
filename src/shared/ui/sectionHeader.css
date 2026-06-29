@@ -1,0 +1,7 @@
+/* SectionHeader (#1874) — the shared uppercase section-title row. Absorbs the agents/mcp `.sec-head`
+   (title · hint · spacer · meta/right). Portable; the hint reuses the global `.hint`. */
+.section-header { display: flex; align-items: baseline; gap: 10px; margin: 16px 0 9px; }
+.section-header:first-child { margin-top: 0; }
+.section-header h3 { margin: 0; font-family: var(--mono); font-size: 10.5px; color: var(--fg); text-transform: uppercase; letter-spacing: .1em; font-weight: 600; }
+.sh-spacer { flex: 1; }
+.sh-meta { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); }

@@ -43,12 +43,10 @@ export interface TabBarProps {
   /** Context-menu body for a tab (e.g. the layout picker). `ctx.startRename`
    *  enters TabBar's inline rename for that tab; `ctx.close` dismisses the menu. */
   renderMenu?: (id: string, ctx: { close: () => void; startRename: () => void }) => ReactNode;
-  /** Trailing actions/stats rendered at the right end of the strip. */
-  right?: ReactNode;
 }
 
 export function TabBar({
-  tabs, activeId, onSelect, onReorder, onTearOff, onClose, onAdd, onRename, renderMenu, right,
+  tabs, activeId, onSelect, onReorder, onTearOff, onClose, onAdd, onRename, renderMenu,
 }: TabBarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -206,7 +204,6 @@ export function TabBar({
           </div>
         ))}
         {onAdd && <button className="tab-add" onClick={onAdd}>+</button>}
-        {right && <><span style={{ flex: 1 }} /><span className="tabbar-right">{right}</span></>}
       </div>
 
       {tearOff && dragIdx !== null && createPortal(

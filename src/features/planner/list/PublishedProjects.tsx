@@ -1,4 +1,5 @@
 import { useState, useRef, type Dispatch, type SetStateAction } from "react";
+import { Chip, tagTone } from "@/shared/ui/Chip";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
@@ -146,9 +147,9 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
           <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
           <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
           <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{p.title}</h3>
-          <span className={"tag " + STATUS_META[status].cls} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</span>
-          {repos.slice(0, 2).map(r => <span key={r} className="tag" style={{ fontSize: 9.5 }}>{r}</span>)}
-          {repos.length > 2 && <span className="tag" style={{ fontSize: 9.5 }}>+{repos.length - 2}</span>}
+          <Chip tone={tagTone(STATUS_META[status].cls)} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</Chip>
+          {repos.slice(0, 2).map(r => <Chip key={r} style={{ fontSize: 9.5 }}>{r}</Chip>)}
+          {repos.length > 2 && <Chip style={{ fontSize: 9.5 }}>+{repos.length - 2}</Chip>}
         </div>
         <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
           {p.shortDescription ?? "No description."}
@@ -238,7 +239,7 @@ export function PublishedProjects({
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
 }: PublishedProjectsProps) {
   const {
-    githubToken, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
+    githubToken, setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
     setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, dismissProject,
     addDraftProject, projectKeyAlias, setProjectBlueprintId, activeBlueprintId,
   } = useAppStore();
@@ -265,7 +266,7 @@ export function PublishedProjects({
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
     setGithubTab("projects"); // so "← portfolio" returns to the Projects tab
-    setScreen("github");
+    setWorkspace("github");
     openGithubBoard("board");
   }
 

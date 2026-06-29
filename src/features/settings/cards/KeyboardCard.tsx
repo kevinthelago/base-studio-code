@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
 import {
   REBINDABLE_IDS,
   chordToCaps,

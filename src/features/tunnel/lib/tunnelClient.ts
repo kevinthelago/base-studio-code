@@ -2,7 +2,7 @@
 //
 // Thin typed bindings to the Rust relay client (`src-tauri/src/tunnel.rs`). Kept apart
 // from `tunnel.ts` so that module stays free of Tauri imports and unit-testable; this
-// one is the side-effecting boundary the Settings card and ConsoleScreen call.
+// one is the side-effecting boundary the Settings card and ConsoleWorkspace call.
 
 import { invoke } from "@tauri-apps/api/core";
 import type {

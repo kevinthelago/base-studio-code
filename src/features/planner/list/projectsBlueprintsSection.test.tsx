@@ -26,7 +26,7 @@ describe("ProjectsList — Blueprints section", () => {
     vi.mocked(invoke).mockReset();
     routeInvoke();
     useAppStore.setState({
-      activeScreen: "projects",
+      activeWorkspace: "projects",
       githubToken: "gho_test",
       localDraftProjects: {},
       projectBlueprintId: {},

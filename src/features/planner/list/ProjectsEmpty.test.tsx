@@ -12,7 +12,7 @@ describe("ProjectsEmpty — Connect with GitHub", () => {
     render(<ProjectsEmpty />);
     fireEvent.click(screen.getByText(/Connect with GitHub/i));
 
-    expect(useAppStore.getState().activeScreen).toBe("settings");
+    expect(useAppStore.getState().activeWorkspace).toBe("settings");
     expect(useAppStore.getState().settingsSection).toBe("github");
   });
 });

@@ -15,15 +15,15 @@ import { canonicalTopicKey } from "../stages/planTopics";
  * silently on error so an offline/empty state never clobbers existing data.
  *
  * Mount this once on the always-mounted Projects screen; the effect keys off
- * `activeScreen` + `activeProjectId`, so it fires on tab open and project switch
+ * `activeWorkspace` + `activeProjectId`, so it fires on tab open and project switch
  * but is inert while other screens are showing.
  */
 export function useProjectScan(): void {
-  const activeScreen    = useAppStore(s => s.activeScreen);
+  const activeWorkspace    = useAppStore(s => s.activeWorkspace);
   const activeProjectId = useAppStore(s => s.activeProjectId);
 
   useEffect(() => {
-    if (activeScreen !== "projects" || !activeProjectId) return;
+    if (activeWorkspace !== "projects" || !activeProjectId) return;
     let cancelled = false;
 
     // Clear the previously-open project's repos BEFORE scanning this one. `activeProjectRepos` is a
@@ -70,5 +70,5 @@ export function useProjectScan(): void {
     })();
 
     return () => { cancelled = true; };
-  }, [activeScreen, activeProjectId]);
+  }, [activeWorkspace, activeProjectId]);
 }

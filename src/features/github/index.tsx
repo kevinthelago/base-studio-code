@@ -1,7 +1,8 @@
 import { useAppStore } from "@/store";
+import { Chip } from "@/shared/ui/Chip";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
@@ -24,7 +25,7 @@ function langTag(lang: string | null): string {
   return map[lang] ?? lang.toLowerCase().slice(0, 4);
 }
 
-export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const {
     githubConnected,
     githubRepos, activeRepoName, setActiveRepo,
@@ -38,7 +39,7 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   // Store-controlled active tab so other screens can deep-link to it (#499).
   const { tabs: ghTabs, activeId, select, reorder, tearOff } =
     usePageTabs("github", GITHUB_TABS, { activeId: githubTab, setActive: setGithubTab });
-  const mode = sectionOverride ?? activeId;
+  const mode = pageOverride ?? activeId;
 
   if (!githubConnected) {
     return (
@@ -51,7 +52,7 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   // A project's board drills in over the whole GitHub page (#498): opening it from
   // the portfolio takes over until "← portfolio" (closeGithubBoard) returns to the
   // tabbed view. Each board view renders its own project header + sub-tabs.
-  if (githubBoardOpen && !sectionOverride) {
+  if (githubBoardOpen && !pageOverride) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         {githubBoardTab === "board"    && <ProjectBoard />}
@@ -65,13 +66,13 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
   const activeRepo = githubRepos.find(r => r.full_name === activeRepoName) ?? githubRepos[0] ?? null;
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={ghTabs}
       active={mode}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
+      pageOverride={pageOverride}
     >
 
       {/* Summary page */}
@@ -135,11 +136,11 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     flex: 1, minWidth: 0,
                   }}>{r.full_name}</span>
-                  <span className="tag" style={{ fontSize: 9.5 }}>{langTag(r.language)}</span>
+                  <Chip style={{ fontSize: 9.5 }}>{langTag(r.language)}</Chip>
                 </div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
                   <span>⊕ {r.open_issues_count}</span>
-                  {r.private && <span className="tag" style={{ fontSize: 9 }}>private</span>}
+                  {r.private && <Chip style={{ fontSize: 9 }}>private</Chip>}
                 </div>
               </div>
             );
@@ -153,6 +154,6 @@ export function GitHubScreen({ sectionOverride }: { sectionOverride?: string } =
           <Pulse repo={activeRepo} />
         </div>
       </div>
-    </TabbedScreen>
+    </Screen>
   );
 }

@@ -2,7 +2,7 @@ import { ConnectGithubCard } from "../cards/ConnectGithubCard";
 import { RepoCredentialsCard } from "../cards/RepoCredentialsCard";
 import { useAppStore } from "@/store";
 
-export function GithubScreen() {
+export function GithubPage() {
   const { githubConnected, githubUser } = useAppStore();
 
   return (

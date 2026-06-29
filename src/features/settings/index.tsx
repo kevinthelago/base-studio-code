@@ -1,25 +1,26 @@
 import { useAppStore } from "@/store";
-import { GeneralScreen } from "./screens/GeneralScreen";
-import { GithubScreen } from "./screens/GithubScreen";
-import { SecurityScreen } from "./screens/SecurityScreen";
-import { PlannerScreen } from "./screens/PlannerScreen";
-import { SkillsScreen as SkillsSettingsScreen } from "./screens/SkillsScreen";
-import { AutomationsScreen } from "./screens/AutomationsScreen";
-import { McpScreen } from "./screens/McpScreen";
+import { GeneralPage } from "./pages/GeneralPage";
+import { GithubPage } from "./pages/GithubPage";
+import { SecurityPage } from "./pages/SecurityPage";
+import { PlannerPage } from "./pages/PlannerPage";
+import { SkillsPage as SkillsSettingsPage } from "./pages/SkillsPage";
+import { AutomationsPage } from "./pages/AutomationsPage";
+import { McpPage } from "./pages/McpPage";
 
 // The settings sections — the SINGLE source for the nav, the known-section guard, and the rendered
-// screen, so the three can't drift. Grouped by app area (mirrors the rail).
+// Page, so the three can't drift. Grouped by app area (mirrors the rail). Each section's body is a
+// Page (the L3 content the Settings Workspace shows one at a time; see docs/frontend-structure.md).
 const SECTIONS = [
-  { k: "general",     label: "General",     Screen: GeneralScreen },
-  { k: "planner",     label: "Planner",     Screen: PlannerScreen },
-  { k: "skills",      label: "Skills",      Screen: SkillsSettingsScreen },
-  { k: "automations", label: "Automations", Screen: AutomationsScreen },
-  { k: "mcp",         label: "MCP",         Screen: McpScreen },
-  { k: "github",      label: "GitHub",      Screen: GithubScreen },
-  { k: "security",    label: "Security",    Screen: SecurityScreen },
+  { k: "general",     label: "General",     Page: GeneralPage },
+  { k: "planner",     label: "Planner",     Page: PlannerPage },
+  { k: "skills",      label: "Skills",      Page: SkillsSettingsPage },
+  { k: "automations", label: "Automations", Page: AutomationsPage },
+  { k: "mcp",         label: "MCP",         Page: McpPage },
+  { k: "github",      label: "GitHub",      Page: GithubPage },
+  { k: "security",    label: "Security",    Page: SecurityPage },
 ] as const;
 
-export function SettingsScreen() {
+export function SettingsWorkspace() {
   const { settingsSection, setSettingsSection } = useAppStore();
   const active = SECTIONS.find((s) => s.k === settingsSection) ?? SECTIONS[0];
 
@@ -50,7 +51,7 @@ export function SettingsScreen() {
         })}
       </aside>
       <section style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
-        <active.Screen />
+        <active.Page />
       </section>
     </div>
   );

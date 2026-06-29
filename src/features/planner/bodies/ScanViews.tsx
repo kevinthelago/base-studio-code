@@ -7,6 +7,7 @@
 // "Source Scan Views".
 
 import { useMemo, useState } from "react";
+import { useExpandable } from "@/shared/hooks/useExpandable";
 import {
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, downstreamImpact,
   type SourceConfig, type ScanViewEntity, type ScanViewField,
@@ -176,8 +177,7 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
 
 // ── List view ───────────────────────────────────────────────────────────────────────────────
 function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set(entities.slice(0, 2).map((e) => e.key)));
-  const toggle = (k: string) => setOpen((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const { open, toggle } = useExpandable(entities.slice(0, 2).map((e) => e.key));
   return (
     <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
       {entities.map((e) => {

@@ -123,7 +123,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
     return out;
   }, [skippedSet]);
   // A gateless ("informational") section is done only once CONFIRMED (#664) — `stageDone` reads a
-  // `confirmed:<key>` signal. Surface those so a confirmed gateless stage (testing, cleanup, the data
+  // `confirmed:<key>` signal. Workspace those so a confirmed gateless stage (testing, cleanup, the data
   // stages, a user-authored stage, …) reads as complete and the frontier advances (#954).
   const confirmSignals = useMemo(() => {
     const out: Record<string, boolean> = {};

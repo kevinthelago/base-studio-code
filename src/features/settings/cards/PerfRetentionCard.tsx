@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 
 export function PerfRetentionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();

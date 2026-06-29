@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { SettingsCardHead, SettingsTextField } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsTextField } from "../pages/SettingsControls";
 
 export function WorkspaceCard() {
   const { bscBaseDir, setBscBaseDir } = useAppStore();

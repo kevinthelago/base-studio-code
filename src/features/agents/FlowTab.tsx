@@ -1,4 +1,4 @@
-// Agents — Flow tab (#1643 split from AgentsScreen).
+// Agents — Flow tab (#1643 split from AgentsWorkspace).
 //
 // The fleet's live work-flow: which sessions are parked on a dependency (#199) and
 // which work items are flowing through their workflow stages (#220) — each cross-
@@ -8,6 +8,8 @@
 
 import { useCallback, useState } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { Chip } from "@/shared/ui/Chip";
+import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -105,13 +107,13 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {ready.length > 0 && (
         <>
-          <div className="sec-head"><h3>Ready</h3><span className="hint">dependencies landed — wake the parked pane</span></div>
+          <SectionHeader title="Ready" hint="dependencies landed — wake the parked pane" />
           <div style={{ marginBottom: 14 }}>
             {ready.map((wtr) => (
               <div key={wtr.session} className="card" style={{ marginBottom: 10, borderColor: "var(--success)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <SessionTag session={wtr.session} profile={profileFor(wtr.session)} />
-                  <span className="tag green" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</span>
+                  <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</Chip>
                   <div style={{ flex: 1 }} />
                   {wtr.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
                   <button
@@ -131,16 +133,16 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {views.length > 0 && (
         <>
-          <div className="sec-head"><h3>Blocked</h3><span className="hint">parked on a dependency · live from the coordination log</span></div>
+          <SectionHeader title="Blocked" hint="parked on a dependency · live from the coordination log" />
           {views.map((v) => (
             <div key={v.session} className="card" style={{ marginBottom: 10, borderColor: v.deadlocked || v.stalled ? "var(--danger)" : undefined }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 <SessionTag session={v.session} profile={profileFor(v.session)} />
                 {v.deadlocked
-                  ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />deadlocked</span>
+                  ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />deadlocked</Chip>
                   : v.stalled
-                    ? <span className="tag" style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</span>
-                    : <span className="tag" style={{ fontSize: 9.5 }}>waiting</span>}
+                    ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</Chip>
+                    : <Chip style={{ fontSize: 9.5 }}>waiting</Chip>}
                 <div style={{ flex: 1 }} />
                 {v.checkpoint && <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10 }}>↺ {v.checkpoint}</span>}
               </div>
@@ -161,7 +163,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {runEntries.length > 0 && (
         <>
-          <div className="sec-head"><h3>Workflows</h3><span className="hint">role-staged work items (#220) · the role each stage runs as</span></div>
+          <SectionHeader title="Workflows" hint="role-staged work items (#220) · the role each stage runs as" />
           {runEntries.map(([id, run]) => {
             const stages = Object.values(run.workflow.stages);
             return (
@@ -169,7 +171,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <h3 style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 13 }}>{id}</h3>
                   <span className="hint" style={{ fontSize: 10.5 }}>{run.workflow.name}</span>
-                  <span className="tag" style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</span>
+                  <Chip style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</Chip>
                   <div style={{ flex: 1 }} />
                   {run.state.escalation && (
                     <span className="hint" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>

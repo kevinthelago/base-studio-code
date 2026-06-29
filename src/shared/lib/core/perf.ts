@@ -85,7 +85,7 @@ export function formatPerfSummary(s: PerfStats, elapsedMs: number, heap?: HeapIn
   if (s.renders > 0) {
     parts.push(`${s.renders} renders`);
   }
-  // Surface the top 2 most-frequently-written store keys — a re-render loop shows
+  // Workspace the top 2 most-frequently-written store keys — a re-render loop shows
   // up here as one key changing hundreds of times per window.
   const top = Object.entries(s.storeWrites).sort((a, b) => b[1] - a[1]).slice(0, 2);
   if (top.length > 0) {
@@ -110,7 +110,7 @@ export function bumpTerminals(delta: number): void {
   stats.terminals = Math.max(0, stats.terminals + delta);
 }
 
-/** Count one React commit of an instrumented component (e.g. ConsoleScreen). */
+/** Count one React commit of an instrumented component (e.g. ConsoleWorkspace). */
 export function recordRender(): void {
   stats.renders += 1;
 }

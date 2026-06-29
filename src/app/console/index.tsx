@@ -41,7 +41,7 @@ interface PaneAtProps {
   status: "run" | "on" | "idle";
   cwd?: string;
   initCmd?: string;
-  // Dispatchers take (tabIdx, paneIdx, …) so a single handler in ConsoleScreen
+  // Dispatchers take (tabIdx, paneIdx, …) so a single handler in ConsoleWorkspace
   // can route events to the right tab. Stable across renders so the memo below
   // holds; PaneAt binds its own (tabIdx, i) into the no-arg callbacks the chrome
   // expects. Background-tab panes are mounted (display:none) so their PTY
@@ -208,9 +208,9 @@ function DormantConsole({ onResume }: { onResume: () => void }) {
   );
 }
 
-export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
+export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
-  // Mounted here because ConsoleScreen stays mounted across every screen (#187).
+  // Mounted here because ConsoleWorkspace stays mounted across every screen (#187).
   useCoordinator();
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
   // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
@@ -333,7 +333,7 @@ export function ConsoleScreen({ tabIdxOverride }: { tabIdxOverride?: number } = 
   // mirror stays current — and includes the planner pane — regardless of the active screen (#801).
 
   // All per-pane handlers are stable (useCallback) so the memoized PaneAt
-  // children don't re-render on every ConsoleScreen commit. Each handler takes
+  // children don't re-render on every ConsoleWorkspace commit. Each handler takes
   // (tabIdx, paneIdx, …) so background-tab events (#186 mounts every tab's
   // panes) route to the right tab's state — never to whichever tab happens to
   // be active. Transient screen-level indices (focus/menu/fullscreen) are read

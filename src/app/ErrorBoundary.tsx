@@ -6,7 +6,7 @@ interface Props {
   /** Optional label for the area this boundary wraps (shown in the fallback + logs). */
   label?: string;
   /** When any value here changes, the boundary clears its error — without remounting the
-   *  children. Pass `[activeScreen]` so navigating away from a crashed view auto-recovers
+   *  children. Pass `[activeWorkspace]` so navigating away from a crashed view auto-recovers
    *  while persistent screens (Projects/Knowledge with live PTY sessions) keep their mount. */
   resetKeys?: unknown[];
 }

@@ -28,16 +28,16 @@ describe("migrateLegacyExtensions", () => {
     expect((state.mcpServers as Array<{ projects: unknown; transport: unknown }>)[0]).toMatchObject({ projects: [], transport: "stdio" });
   });
 
-  it("renames the persisted activeScreen route key extensions → mcp", () => {
-    const state: Record<string, unknown> = { activeScreen: "extensions" };
+  it("renames the persisted activeWorkspace route key extensions → mcp", () => {
+    const state: Record<string, unknown> = { activeWorkspace: "extensions" };
     migrateLegacyExtensions(state);
-    expect(state.activeScreen).toBe("mcp");
+    expect(state.activeWorkspace).toBe("mcp");
   });
 
   it("is a no-op on already-migrated or empty state", () => {
-    const migrated = { mcpServers: [], hooks: [], activeScreen: "console" };
+    const migrated = { mcpServers: [], hooks: [], activeWorkspace: "console" };
     migrateLegacyExtensions(migrated);
-    expect(migrated).toEqual({ mcpServers: [], hooks: [], activeScreen: "console" });
+    expect(migrated).toEqual({ mcpServers: [], hooks: [], activeWorkspace: "console" });
     expect(() => migrateLegacyExtensions(undefined)).not.toThrow();
   });
 });

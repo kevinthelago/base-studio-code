@@ -23,7 +23,7 @@ const BROADCAST_TOGGLE: KeyboardEventInit = { code: "KeyC", ctrlKey: true, shift
 
 beforeEach(() => {
   useAppStore.setState({
-    activeScreen: "console",
+    activeWorkspace: "console",
     fullscreenPaneIdx: -1,
     consoleBroadcast: false,
     keybindings: {},
@@ -34,7 +34,7 @@ afterEach(() => cleanup());
 
 describe("useHotkeys — Console-only listener (#1218)", () => {
   it("does not fire on a non-Console screen (no mutation, no preventDefault)", () => {
-    useAppStore.setState({ activeScreen: "settings" });
+    useAppStore.setState({ activeWorkspace: "settings" });
     renderHook(() => useHotkeys());
 
     const ev = pressKey(BROADCAST_TOGGLE);
@@ -44,17 +44,17 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
   });
 
   it("does not navigate screens from off-Console (F1–F6 are Console-only now)", () => {
-    useAppStore.setState({ activeScreen: "settings" });
+    useAppStore.setState({ activeWorkspace: "settings" });
     renderHook(() => useHotkeys());
 
     const ev = pressKey({ code: "F1" }); // screen-console hotkey
 
-    expect(useAppStore.getState().activeScreen).toBe("settings");
+    expect(useAppStore.getState().activeWorkspace).toBe("settings");
     expect(ev.defaultPrevented).toBe(false);
   });
 
   it("is inert while a console pane is maximized", () => {
-    useAppStore.setState({ activeScreen: "console", fullscreenPaneIdx: 0 });
+    useAppStore.setState({ activeWorkspace: "console", fullscreenPaneIdx: 0 });
     renderHook(() => useHotkeys());
 
     const ev = pressKey(BROADCAST_TOGGLE);
@@ -76,13 +76,13 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
     const { rerender } = renderHook(() => useHotkeys());
 
     // Leave Console → listener detaches → key is inert.
-    act(() => { useAppStore.setState({ activeScreen: "github" }); });
+    act(() => { useAppStore.setState({ activeWorkspace: "github" }); });
     rerender();
     expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(false);
     expect(useAppStore.getState().consoleBroadcast).toBe(false);
 
     // Back to Console → listener re-attaches → key fires again.
-    act(() => { useAppStore.setState({ activeScreen: "console" }); });
+    act(() => { useAppStore.setState({ activeWorkspace: "console" }); });
     rerender();
     expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(true);
     expect(useAppStore.getState().consoleBroadcast).toBe(true);

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { SettingsCardHead, settingsBtn as btn } from "../screens/SettingsControls";
+import { SettingsCardHead, settingsBtn as btn } from "../pages/SettingsControls";
 
 interface LogFileInfo {
   stream: string; label: string; path: string;

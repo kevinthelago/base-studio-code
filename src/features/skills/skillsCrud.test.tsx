@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { SkillsScreen } from "./";
+import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
 import { blankSkill } from "./lib/skills";
 
 const ROW = ".skill-row"; // the redesign's dense list rows (default density)
 
-describe("SkillsScreen — CRUD", () => {
+describe("SkillsWorkspace — CRUD", () => {
   beforeEach(() => {
     // A small, deterministic library; no GitHub token so the projects fetch no-ops.
     useAppStore.setState({
@@ -22,7 +22,7 @@ describe("SkillsScreen — CRUD", () => {
     // The toolbar import/+skill buttons were removed (#…); the remaining draft entry point is the
     // empty-state "+ new skill", shown when no skills match.
     useAppStore.setState({ skills: [] });
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("+ new skill"));
     const drawer = container.querySelector(".pane-drawer.on") as HTMLElement;
     expect(drawer).toBeTruthy();
@@ -39,7 +39,7 @@ describe("SkillsScreen — CRUD", () => {
 
   it("'+ new skill' then 'cancel' creates nothing", () => {
     useAppStore.setState({ skills: [] });
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("+ new skill"));
     const drawer = container.querySelector(".pane-drawer.on") as HTMLElement;
     fireEvent.click(within(drawer).getByText("cancel"));
@@ -48,7 +48,7 @@ describe("SkillsScreen — CRUD", () => {
   });
 
   it("opening a row and editing the name updates the store live", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
     const drawer = container.querySelector(".pane-drawer.on") as HTMLElement;
     fireEvent.change(drawer.querySelector("input.input") as HTMLInputElement, { target: { value: "Open a tidy PR" } });
@@ -56,14 +56,14 @@ describe("SkillsScreen — CRUD", () => {
   });
 
   it("drawer 'remove' deletes the skill", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
     fireEvent.click(screen.getByText("remove"));
     expect(useAppStore.getState().skills.find((s) => s.id === "s1")).toBeUndefined();
   });
 
   it("the pin star toggles pinned without opening the drawer", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     const row = container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement;
     fireEvent.click(row.querySelector(".pin-btn") as HTMLElement);
     expect(useAppStore.getState().skills.find((s) => s.id === "s1")!.pinned).toBe(true);
@@ -71,7 +71,7 @@ describe("SkillsScreen — CRUD", () => {
   });
 
   it("creating a task group and a skill toggles membership from the drawer", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     const gid = useAppStore.getState().addSkillGroup("Release day");
     fireEvent.click(container.querySelector(`${ROW}[data-skill-id="s1"]`) as HTMLElement);
     const drawer = container.querySelector(".pane-drawer.on") as HTMLElement;

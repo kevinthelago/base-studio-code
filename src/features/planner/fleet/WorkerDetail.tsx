@@ -4,6 +4,7 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import { BackButton } from "@/shared/ui/BackButton";
 import { ModalScrim } from "@/shared/ui/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
@@ -57,7 +58,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const profileId   = useAppStore((s) => s.paneProfiles[worker.id]);
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const paneFlow    = useAppStore((s) => s.paneFlows[worker.id]);
-  const setScreen   = useAppStore((s) => s.setScreen);
+  const setWorkspace   = useAppStore((s) => s.setWorkspace);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setFocusedPane = useAppStore((s) => s.setFocusedPane);
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
@@ -101,7 +102,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
 
   function openSession() {
     const c = paneCoords(worker.id);
-    setScreen("console");
+    setWorkspace("console");
     if (c) { setActiveTab(c.tab); setFocusedPane(c.pane); }
     flash(`Opened ${worker.name}'s session`);
   }
@@ -361,7 +362,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                 background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
                 border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
               }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                <ColorSwatch color={p.color} size={8} />
                 <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, flex: 1 }}>{p.name}</span>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
                 {p.id === profileId && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: p.color }}>current</span>}

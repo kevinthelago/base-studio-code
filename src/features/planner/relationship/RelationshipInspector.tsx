@@ -4,6 +4,7 @@
 // Agent Relationships - Swimlanes · inspector().
 
 import type { ReactNode } from "react";
+import { ColorSwatch } from "@/shared/ui/ColorSwatch";
 import {
   EDGE_KIND_META, ARTIFACT_COLOR, ROLE_COLOR, DIRECTOR_COLOR, hardLabel, runtimeNote,
   type RelationshipGraph, type RelFocus,
@@ -35,7 +36,7 @@ function RelRow({ glyph, c, head, detail, onClick }: { glyph: string; c: string;
 function Head({ title, sub, c }: { title: string; sub?: string; c?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
-      <span style={{ width: 8, height: 8, borderRadius: 2, background: c ?? "var(--accent)" }} />
+      <ColorSwatch color={c ?? "var(--accent)"} size={8} />
       <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
       {sub && <span style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-dim)" }}>{sub}</span>}
     </div>

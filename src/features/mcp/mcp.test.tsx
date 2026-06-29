@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import { McpScreen, HooksView } from "./";
+import { McpWorkspace, HooksView } from "./";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { useAppStore } from "@/store";
 import type { McpServer } from "./lib/mcpServers";
@@ -27,7 +27,7 @@ function installedCount(container: HTMLElement): string {
   return installedTab.querySelector(".count")!.textContent ?? "";
 }
 
-describe("McpScreen + HooksView", () => {
+describe("McpWorkspace + HooksView", () => {
   beforeEach(() => {
     // Seed both store slices fresh each test; no GitHub token so the projects fetch is a
     // no-op and the screen falls back to "global only" without crashing.
@@ -39,7 +39,7 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("MCP page shows only MCP servers (hooks live in Automations)", () => {
-    render(<McpScreen />);
+    render(<McpWorkspace />);
     expect(screen.getByText("MCP servers")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
     expect(screen.getByText("Filesystem")).toBeTruthy();
@@ -59,7 +59,7 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("shows the MCP enabled count from the store and decrements it on toggle off", () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     expect(installedCount(container)).toBe(String(MCP_ENABLED)); // 1
     const firstOn = container.querySelector(".row-aside .toggle.on") as HTMLElement;
     fireEvent.click(firstOn);
@@ -70,14 +70,14 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("switches to the catalog tab and renders MCP_CATALOG", () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     expect(screen.getByText("Browse")).toBeTruthy();
     expect(screen.getByText(FIRST_BROWSABLE)).toBeTruthy(); // first downloadable first-party server
   });
 
   it("filters the catalog by the search input", () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]);
     const searchBox = container.querySelector(".ext-body input") as HTMLInputElement;
     fireEvent.change(searchBox, { target: { value: "complexity" } });
@@ -86,7 +86,7 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("downloads a catalog server: one 'download' action (no 'add'), clones + adds to Installed silently (#885)", async () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
     const card = screen.getByText("Dependency Graph").closest(".cat-card") as HTMLElement;
     // A downloadable first-party server shows only "download" — the "add" button is gone.
@@ -102,7 +102,7 @@ describe("McpScreen + HooksView", () => {
       mcpServers: [{ id: "c", name: "Dependency Graph", enabled: true, projects: [], transport: "stdio", command: "node", args: "x", env: [] }],
       githubToken: "",
     });
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     fireEvent.click(container.querySelectorAll(".tabstrip .tab")[1]); // catalog
     expect(screen.queryByText("Dependency Graph")).toBeNull();    // installed → not in the catalog
     expect(screen.getByText("Complexity Analyzer")).toBeTruthy(); // not installed → still listed
@@ -113,13 +113,13 @@ describe("McpScreen + HooksView", () => {
       mcpServers: [{ id: "c", name: "Dependency Graph", enabled: true, projects: [], transport: "stdio", command: "node", args: "x", env: [] }],
       githubToken: "",
     });
-    render(<McpScreen />); // opens on the Installed tab
+    render(<McpWorkspace />); // opens on the Installed tab
     // The control runs the version check on open; with the invoke mock it stays in "checking…".
     expect(await screen.findByText("checking…")).toBeTruthy();
   });
 
   it("opens the config drawer when a row is clicked and closes via the scrim", () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     const drawer = container.querySelector(".pane-drawer") as HTMLElement;
     expect(drawer.className).not.toContain("on");
     fireEvent.click(screen.getByText("GitHub"));
@@ -130,7 +130,7 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("removes the selected server from the store", () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     fireEvent.click(screen.getByText("Filesystem"));
     const drawer = container.querySelector(".pane-drawer") as HTMLElement;
     fireEvent.click(within(drawer).getByText("remove"));
@@ -139,7 +139,7 @@ describe("McpScreen + HooksView", () => {
   });
 
   it("MCP page has an Analytics tab that renders the telemetry surface (zero state)", async () => {
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     const analyticsTab = Array.from(container.querySelectorAll(".tabstrip .tab"))
       .find((t) => t.textContent?.includes("Analytics")) as HTMLElement;
     expect(analyticsTab).toBeTruthy();
@@ -166,7 +166,7 @@ describe("McpScreen + HooksView", () => {
 
   it("opens the first tab; empty installed shows a CTA to the catalog", () => {
     useAppStore.setState({ mcpServers: [], pageTabOrder: {}, detachedSections: {} });
-    const { container } = render(<McpScreen />);
+    const { container } = render(<McpWorkspace />);
     // The page opens its front tab (installed) — empty installed renders a clear CTA.
     expect(container.querySelectorAll(".tabstrip .tab")[0].className).toContain("active");
     expect(screen.getByText("No MCP servers installed")).toBeTruthy();

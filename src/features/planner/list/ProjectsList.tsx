@@ -25,7 +25,7 @@ export { ProjectRow };
  */
 export function ProjectsList() {
   const {
-    githubToken, activeScreen, setProjectsView, hiddenProjectIds, deleteLocalProject,
+    githubToken, activeWorkspace, setProjectsView, hiddenProjectIds, deleteLocalProject,
     localDraftProjects, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId,
     planAuthoredBlueprint, blueprints, setPlanningContext, setPlanningTitle, setPlanningSession,
     setActiveProjectMeta,
@@ -69,8 +69,8 @@ export function ProjectsList() {
   // across navigation, so a plain mount effect wouldn't refresh on re-open) as
   // well as on token change, so newly created/renamed projects appear.
   useEffect(() => {
-    if (activeScreen === "projects") fetchProjects();
-  }, [activeScreen, fetchProjects]);
+    if (activeWorkspace === "projects") fetchProjects();
+  }, [activeWorkspace, fetchProjects]);
 
   // Enumerate on-disk local projects whenever the tab opens, so unpublished local work always
   // shows even when it isn't in the store's draft map or on GitHub (#…).
@@ -82,9 +82,9 @@ export function ProjectsList() {
       .catch(() => { setLocalProjects([]); return []; });
   }, []);
   useEffect(() => {
-    if (activeScreen !== "projects") return;
+    if (activeWorkspace !== "projects") return;
     void refreshLocalProjects();
-  }, [activeScreen, refreshLocalProjects]);
+  }, [activeWorkspace, refreshLocalProjects]);
 
   // Reconcile published markers (#922): a local hub that matches a GitHub board (by title or alias)
   // but isn't yet flagged published gets its in-place `.published` marker stamped. This is what
@@ -95,7 +95,7 @@ export function ProjectsList() {
   // The hub never moves and the marker is written in place, so this can't fail on a cwd lock. Gated
   // on a completed GitHub sync (`lastSync`) so an unloaded board list can't look like "no boards".
   useEffect(() => {
-    if (activeScreen !== "projects" || lastSync === null) return;
+    if (activeWorkspace !== "projects" || lastSync === null) return;
     const publishedTitles = new Set(projects.map(p => p.title.toLowerCase()));
     const toMark = localProjects.filter(lp =>
       !lp.published &&
@@ -109,7 +109,7 @@ export function ProjectsList() {
       }
       await refreshLocalProjects();
     })();
-  }, [activeScreen, lastSync, localProjects, projects, projectKeyAlias, refreshLocalProjects]);
+  }, [activeWorkspace, lastSync, localProjects, projects, projectKeyAlias, refreshLocalProjects]);
 
   // Reconcile legacy board node ids → on-disk folder keys (#…). The alias was never populated, so
   // a project opened from the board keyed its store state under the node id, splitting it from the

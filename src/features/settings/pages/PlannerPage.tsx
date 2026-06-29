@@ -11,7 +11,7 @@ import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
 
-export function PlannerScreen() {
+export function PlannerPage() {
   const [selectedStream, setSelectedStream] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [notice, setNotice] = useState("");

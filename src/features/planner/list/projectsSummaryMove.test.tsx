@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { GitHubPageModeStrip } from "@/features/github/GitHubSummary";
-import { ProjectsPageModeStrip } from "./ProjectsSummary";
+import { PROJECT_MODES } from "./projectModes";
 
 // #421: the Projects portfolio summary moved into the GitHub screen, between
 // Summary and Repositories. The Projects tab drops its Summary mode.
@@ -16,11 +16,11 @@ describe("GitHub mode strip", () => {
   });
 });
 
-describe("Projects mode strip", () => {
-  it("no longer offers Summary — just Planner + Fleet", () => {
-    render(<ProjectsPageModeStrip />);
-    expect(screen.queryByText("Summary")).toBeNull();
-    expect(screen.getByText("Planner")).toBeTruthy();
-    expect(screen.getByText("Fleet")).toBeTruthy();
+describe("Projects modes (#1876)", () => {
+  it("no longer offers Summary — Planner + Fleet (+ Data Models)", () => {
+    const labels = PROJECT_MODES.map((m) => m.label);
+    expect(labels).not.toContain("Summary");
+    expect(labels).toContain("Planner");
+    expect(labels).toContain("Fleet");
   });
 });
