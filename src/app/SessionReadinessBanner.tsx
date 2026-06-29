@@ -6,7 +6,7 @@
 // acknowledged it.
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
-import { Banner } from "@/shared/ui/Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];

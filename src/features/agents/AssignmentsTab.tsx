@@ -7,9 +7,9 @@
 import { useEffect, useState } from "react";
 import { GUARANTEED, resolveAllowlistFrom, type AgentProfile, type ConsoleSession } from "./lib/agentProfiles";
 import { appSessionTag } from "./lib/appSession";
-import { CardListRow } from "@/shared/ui/CardListRow";
-import { Chip } from "@/shared/ui/Chip";
-import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { CardListRow } from "@/shared/ui/data/CardListRow";
+import { Chip } from "@/shared/ui/data/Chip";
+import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { modeTone } from "./lib/badgeTone";
 
 export interface AssignmentsTabProps {

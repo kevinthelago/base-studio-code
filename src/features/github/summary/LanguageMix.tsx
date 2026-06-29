@@ -1,7 +1,7 @@
 // Language mix card — byte-count breakdown across the sampled repos (#1644).
 
 import { useMemo } from "react";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { langColor, SUMMARY_REPO_SAMPLE } from "../lib/githubSummary";
 
 export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {

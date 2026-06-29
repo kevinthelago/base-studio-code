@@ -1,8 +1,8 @@
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
-import { Toggle } from "@/shared/ui/Toggle";
+import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function MetricsCollectionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();

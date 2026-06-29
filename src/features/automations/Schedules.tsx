@@ -2,10 +2,10 @@ import { useAppStore } from "@/store";
 import { paneCount, type Every, type Automation, type SimpleWhen } from "./lib/scheduler";
 import { isValidCron } from "./lib/cron";
 import { fmtStamp } from "./format";
-import { Pane } from "@/shared/ui/Pane";
-import { Chip } from "@/shared/ui/Chip";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl";
-import { EmptyState } from "@/shared/ui/EmptyState";
+import { Pane } from "@/shared/ui/overlay/Pane";
+import { Chip } from "@/shared/ui/data/Chip";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 

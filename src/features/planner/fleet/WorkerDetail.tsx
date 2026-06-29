@@ -4,9 +4,9 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
-import { BackButton } from "@/shared/ui/BackButton";
-import { ModalScrim } from "@/shared/ui/ModalScrim";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { BackButton } from "@/shared/ui/controls/BackButton";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -14,7 +14,7 @@ import { usePoll } from "@/shared/hooks/usePoll";
 import { CardHead, StatCard, Avatar } from "@/shared/ui/charts";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
-import { IconButton } from "@/shared/ui/IconButton";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";

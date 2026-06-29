@@ -4,7 +4,7 @@
 // files to the right repo is the planner's job (next slice); this is the intake surface.
 
 import { useEffect, useRef, useState } from "react";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";

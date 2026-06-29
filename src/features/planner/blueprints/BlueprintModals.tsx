@@ -4,10 +4,10 @@
 
 import { useState, type ReactNode } from "react";
 import "../../../styles/blueprints.css";
-import { ModalScrim } from "@/shared/ui/ModalScrim";
-import { Chip } from "@/shared/ui/Chip";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Chip } from "@/shared/ui/data/Chip";
 import { Ic } from "./blueprintIcons";
-import { IconButton } from "@/shared/ui/IconButton";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";

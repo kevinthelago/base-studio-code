@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { ACCENT_PRESETS, accentVars } from "../lib/appearance";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function AccentColorCard() {
   const { accent, setAccent } = useAppStore();

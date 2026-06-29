@@ -10,10 +10,10 @@ import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, Ale
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
-import { ModalScrim } from "@/shared/ui/ModalScrim";
-import { Button } from "@/shared/ui/Button";
-import { IconButton } from "@/shared/ui/IconButton";
-import { StatusDot } from "@/shared/ui/StatusDot";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Button } from "@/shared/ui/controls/Button";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 

@@ -1,7 +1,7 @@
 // Open pull-requests card — open PRs across all sampled repos (#1644).
 
 import type { OpenPR } from "../lib/githubSummary";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 
 export function OpenPRsAllRepos({ prs, loading }: {
   prs: OpenPR[];

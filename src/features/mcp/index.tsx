@@ -14,11 +14,11 @@ import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
 } from "./shared";
-import { Pane } from "@/shared/ui/Pane";
-import { Chip } from "@/shared/ui/Chip";
-import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { Pane } from "@/shared/ui/overlay/Pane";
+import { Chip } from "@/shared/ui/data/Chip";
+import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { useDraft } from "@/shared/hooks/useDraft";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import "./mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════

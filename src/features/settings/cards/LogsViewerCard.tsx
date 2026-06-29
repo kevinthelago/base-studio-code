@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/shared/ui/Button";
+import { Button } from "@/shared/ui/controls/Button";
 
 const ANSI = /\x1b\[[0-9;]*m/g; // eslint-disable-line no-control-regex
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];

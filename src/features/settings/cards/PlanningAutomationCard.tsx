@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function PlanningAutomationCard() {
   const { autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
