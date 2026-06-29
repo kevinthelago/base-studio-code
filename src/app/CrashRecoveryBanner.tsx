@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useAppStore } from "@/store";
+import { Banner } from "@/shared/ui/Banner";
 
 /**
  * Crash-recovery banner (#1041). After an UNCLEAN shutdown — a crash / kill / power loss / force-quit
@@ -23,32 +24,22 @@ export function CrashRecoveryBanner() {
   if (hidden || !uncleanShutdown || autoResumeClaude || count === 0) return null;
 
   return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", gap: 12, padding: "7px 14px",
-        background: "color-mix(in oklch, var(--accent), transparent 86%)",
-        borderBottom: "1px solid var(--border-soft)",
-        fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.5, color: "var(--fg)",
-      }}
+    <Banner
+      variant="bar"
+      tone="accent"
+      onDismiss={() => setHidden(true)}
+      right={
+        <button
+          className="btn primary"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          onClick={() => { restoreSessionsFromCrash(); setHidden(true); }}
+        >
+          <RotateCcw size={13} /> Restore {count}
+        </button>
+      }
     >
-      <span style={{ flex: 1, minWidth: 0 }}>
-        Your last session ended unexpectedly —{" "}
-        <b>restore {count} session{count === 1 ? "" : "s"}</b> from where {count === 1 ? "it" : "they"} left off?
-      </span>
-      <button
-        className="btn primary"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-        onClick={() => { restoreSessionsFromCrash(); setHidden(true); }}
-      >
-        <RotateCcw size={13} /> Restore {count}
-      </button>
-      <button
-        onClick={() => setHidden(true)}
-        aria-label="Dismiss"
-        style={{ display: "inline-flex", background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-muted)", padding: 4 }}
-      >
-        <X size={15} />
-      </button>
-    </div>
+      Your last session ended unexpectedly —{" "}
+      <b>restore {count} session{count === 1 ? "" : "s"}</b> from where {count === 1 ? "it" : "they"} left off?
+    </Banner>
   );
 }

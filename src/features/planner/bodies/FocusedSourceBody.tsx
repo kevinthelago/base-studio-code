@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { Notice } from "@/shared/ui/Notice";
+import { Banner } from "@/shared/ui/Banner";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
   deriveDataModel, presetToConnector, registerPresetConnectors, proposeFromPitch,
@@ -153,11 +153,11 @@ export function FocusedSourceBody({ projectId }: { projectId?: string }) {
   return (
     <div data-testid="source-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* top readiness banner */}
-      <Notice tone={ready ? "success" : "accent"} dot right={
+      <Banner tone={ready ? "success" : "accent"} dot loud right={
         <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only integrations · credentials never leave this device"}</span>
       }>
         {total === 0 ? "Declare your sources" : ready ? "✓ sources connected" : `${scanned} / ${total} connected`}
-      </Notice>
+      </Banner>
 
       {/* planner-proposed sources */}
       {proposedPending.length > 0 && (

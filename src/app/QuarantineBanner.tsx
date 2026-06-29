@@ -1,5 +1,6 @@
-import { ShieldAlert, X } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { useAppStore } from "@/store";
+import { Banner } from "@/shared/ui/Banner";
 
 /**
  * Warden quarantine banner (#1102). When the warden hard-pauses a worker that drifted off its
@@ -16,30 +17,21 @@ export function QuarantineBanner() {
   if (entries.length === 0) return null;
 
   return (
-    <div
-      style={{
-        display: "flex", flexDirection: "column",
-        background: "color-mix(in oklch, var(--red, #d4554f), transparent 86%)",
-        borderBottom: "1px solid var(--border-soft)",
-        fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.5, color: "var(--fg)",
-      }}
-    >
+    <>
       {entries.map(([paneId, info]) => (
-        <div key={paneId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 14px" }}>
-          <ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />
+        <Banner
+          key={paneId}
+          variant="bar"
+          tone="danger"
+          lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
+          onDismiss={() => clearQuarantine(paneId)}
+        >
           <span style={{ flex: 1, minWidth: 0 }}>
             <b>Worker quarantined</b> — stream <b>{info.streamId}</b> ({paneId}) was paused: {info.summary}.
             Review before relaunching.
           </span>
-          <button
-            onClick={() => clearQuarantine(paneId)}
-            aria-label="Dismiss quarantine"
-            style={{ display: "inline-flex", background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-muted)", padding: 4 }}
-          >
-            <X size={15} />
-          </button>
-        </div>
+        </Banner>
       ))}
-    </div>
+    </>
   );
 }
