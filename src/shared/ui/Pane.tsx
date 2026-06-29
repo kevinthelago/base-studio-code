@@ -33,6 +33,11 @@ export interface PaneProps {
   /** Drop the body's default padding — for bodies whose sections supply their own (e.g. full-bleed
    *  divider rows). */
   flush?: boolean;
+  /** Inline mode only: render children directly in the flex-column frame with NO styled
+   *  head/body/foot wrappers — for content panes whose zones bring their own chrome (e.g. the
+   *  planner `ProjectPane`: seqrail stepper, phase header, advance bar). The editor drawers and the
+   *  styled inline editors use the default framed layout. */
+  bare?: boolean;
   /** Extra class on the frame element (the drawer aside / the inline section). */
   className?: string;
 }
@@ -55,7 +60,7 @@ function StandardFooter({ isDraft, onClose, onRemove, onCommit, commitDisabled }
 }
 
 export function Pane(props: PaneProps) {
-  const { mode = "drawer", open = true, header, body, children, footer, onClose, flush, className } = props;
+  const { mode = "drawer", open = true, header, body, children, footer, onClose, flush, bare, className } = props;
   const content = body ?? children;
   const bodyClass = "pane-body" + (flush ? " flush" : "");
   const foot = footer !== undefined
@@ -63,8 +68,12 @@ export function Pane(props: PaneProps) {
     : mode === "drawer" ? <StandardFooter {...props} /> : null;
 
   if (mode === "inline") {
+    const cls = className ? `pane-inline ${className}` : "pane-inline";
+    // Bare: the content pane owns its own zones (header/body/footer chrome) — the Pane is only the
+    // flex-column frame. Used by ProjectPane so it joins the one Pane component without restyling.
+    if (bare) return <section className={cls}>{content}</section>;
     return (
-      <section className={className ? `pane-inline ${className}` : "pane-inline"}>
+      <section className={cls}>
         {header != null && <div className="pane-head">{header}</div>}
         <div className={bodyClass}>{content}</div>
         {foot != null && <div className="pane-foot">{foot}</div>}
