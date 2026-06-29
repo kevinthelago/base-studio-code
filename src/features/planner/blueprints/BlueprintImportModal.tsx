@@ -11,6 +11,8 @@ import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
 import { ModalScrim } from "@/shared/ui/ModalScrim";
+import { Button } from "@/shared/ui/Button";
+import { IconButton } from "@/shared/ui/IconButton";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
@@ -155,21 +157,6 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
     : `${rows.length} result${rows.length === 1 ? "" : "s"}`;
 
   // ── shared style atoms ──
-  const headBtn: CSSProperties = {
-    height: 28, padding: "0 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)",
-    border: "1px solid var(--border-soft)", color: "var(--fg)", fontFamily: "var(--mono)",
-    fontSize: 11, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6,
-  };
-  const iconBtn: CSSProperties = {
-    width: 28, height: 28, borderRadius: "var(--r-md)", border: "1px solid var(--border-soft)",
-    background: "var(--bg-elev)", color: "var(--fg-muted)", cursor: "pointer",
-    display: "inline-flex", alignItems: "center", justifyContent: "center",
-  };
-  const ctaBtn: CSSProperties = {
-    height: 28, padding: "0 13px", borderRadius: "var(--r-md)", background: "var(--accent)",
-    border: "1px solid transparent", color: "#1a120a", fontWeight: 600, fontFamily: "var(--mono)",
-    fontSize: 11, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6,
-  };
   const pill = (color: string): CSSProperties => ({
     display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 7px", borderRadius: 99,
     fontFamily: "var(--mono)", fontSize: 9, lineHeight: 1.7, color,
@@ -203,9 +190,9 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 10px", borderRadius: 99,
             fontFamily: "var(--mono)", fontSize: 10, border: "1px solid var(--border-soft)", background: "var(--bg-elev)", color: "var(--fg-muted)",
           }}><Cloud size={11} />gist source · <b style={{ color: "var(--fg)", fontWeight: 600 }}>{source}</b></span>
-          <button onClick={load} title="Refresh list" aria-label="Refresh list" style={iconBtn}><RefreshCw size={14} /></button>
-          <button onClick={onManualImport} title="Import by URL or ID" style={headBtn}><Link2 size={13} />URL / ID</button>
-          <button onClick={onClose} title="Close" aria-label="Close" style={{ ...iconBtn, border: "1px solid transparent", background: "transparent", color: "var(--fg-dim)" }}><X size={15} /></button>
+          <IconButton onClick={load} title="Refresh list" aria-label="Refresh list"><RefreshCw size={14} /></IconButton>
+          <Button onClick={onManualImport} title="Import by URL or ID"><Link2 size={13} />URL / ID</Button>
+          <IconButton onClick={onClose} title="Close" aria-label="Close"><X size={15} /></IconButton>
         </div>
 
         {/* sticky search */}
@@ -318,9 +305,9 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                           <ArrowUpCircle size={13} />Update
                         </button>
                       ) : (
-                        <button onClick={() => void doImport(it)} title="Import into your library" style={{ ...ctaBtn, height: 26, padding: "0 13px", fontSize: 10.5 }}>
+                        <Button variant="primary" onClick={() => void doImport(it)} title="Import into your library" style={{ height: 26, padding: "0 13px", fontSize: 10.5 }}>
                           <Download size={13} />Import
-                        </button>
+                        </Button>
                       )}
                     </span>
                   </div>
@@ -343,7 +330,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                   <b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.
                 </div>
               </div>
-              <button onClick={onManualImport} style={ctaBtn}><Link2 size={13} />Import by URL / ID</button>
+              <Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>
             </div>
           )}
 
@@ -357,8 +344,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={load} style={headBtn}><RefreshCw size={13} />Retry</button>
-                <button onClick={onManualImport} style={{ ...headBtn, background: "transparent", color: "var(--fg-muted)" }}>Import by URL / ID</button>
+                <Button onClick={load}><RefreshCw size={13} />Retry</Button>
+                <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
               </div>
             </div>
           )}

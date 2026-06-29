@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { settingsBtn as btn } from "../pages/SettingsControls";
+import { Button } from "@/shared/ui/Button";
 
 const ANSI = /\x1b\[[0-9;]*m/g; // eslint-disable-line no-control-regex
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
@@ -50,8 +50,8 @@ export function LogsViewerCard({
             {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         )}
-        <button style={btn()} onClick={() => void navigator.clipboard?.writeText(shown.join("\n"))}>Copy</button>
-        <button style={btn()} onClick={onClose}>Close</button>
+        <Button size="sm" onClick={() => void navigator.clipboard?.writeText(shown.join("\n"))}>Copy</Button>
+        <Button size="sm" onClick={onClose}>Close</Button>
       </div>
       <pre style={{ margin: 0, maxHeight: 320, overflow: "auto", fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
         {shown.length ? shown.join("\n") : <span style={{ color: "var(--fg-dim)" }}>{lines.length ? "no lines match the filter" : "empty"}</span>}

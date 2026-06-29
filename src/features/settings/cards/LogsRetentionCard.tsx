@@ -2,7 +2,8 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "../pages/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
+import { Button } from "@/shared/ui/Button";
 
 export function LogsRetentionCard({
   onEnforced,
@@ -57,7 +58,7 @@ export function LogsRetentionCard({
           />
         </Row>
         <Row label="Trim logs now" hint="Apply the caps to every telemetry log immediately, instead of waiting for the next startup.">
-          <button style={btn({ color: "var(--fg)" })} disabled={busy} onClick={() => void enforceNow()}>{busy ? "Enforcing…" : "Enforce now"}</button>
+          <Button size="sm" disabled={busy} onClick={() => void enforceNow()}>{busy ? "Enforcing…" : "Enforce now"}</Button>
         </Row>
       </div>
     </div>
