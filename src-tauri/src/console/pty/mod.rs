@@ -7,7 +7,8 @@ use crate::{
     bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
 };
 use crate::console::shell_rc::bsc_rc_body;
-use crate::{perf, tunnel};
+use crate::mobile::tunnel;
+use crate::observability::perf;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -69,7 +70,7 @@ pub(crate) fn kill_all_pty_sessions(state: &PtyState) {
         // and tells the kernel to terminate every descendant still in the job.
     }
     // Clean exit: clear this instance's ledger entries (#1049) so the next boot has nothing to reap.
-    crate::pty_ledger::forget_all_owned();
+    crate::console::ledger::forget_all_owned();
     log::info!("killed {n} PTY session(s) on exit");
 }
 
@@ -111,7 +112,7 @@ pub(crate) fn kill_project_sessions(state: &PtyState, key: &str) -> usize {
         if let Err(e) = session.child.kill() {
             log::warn!("pty[{pane_id}] project-delete kill failed: {e}");
         }
-        crate::pty_ledger::forget_pane(&pane_id);
+        crate::console::ledger::forget_pane(&pane_id);
         // Dropping `session` runs the Job Object / pgid teardown, terminating the whole tree.
     }
     if n > 0 {
@@ -349,7 +350,7 @@ fn wire_bsc_env(
         // `bash` tool never falls through to `Command::new("bash")` → the WSL launcher
         // (System32\bash.exe), which fails `execvpe(/bin/bash)` with no WSL distro. `resolve_shell`
         // already locates Git Bash and avoids that stub.
-        cmd.env("BSC_AGENT_BASH", crate::shell::resolve_shell());
+        cmd.env("BSC_AGENT_BASH", crate::platform::shell::resolve_shell());
         if let Some(p) = crate::bsc_agent_session_path(cwd) {
             cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
         }
@@ -497,16 +498,16 @@ pub(crate) fn pty_create(
 
     // Honor the user's console-shell selection (#447); bash stays the default and
     // keeps the full bsc-* helper experience, PowerShell/cmd run degraded.
-    let resolved_shell = crate::shell::resolve_interactive_shell();
+    let resolved_shell = crate::platform::shell::resolve_interactive_shell();
     let shell = resolved_shell.program.clone();
     let mut cmd = CommandBuilder::new(&shell);
 
     // The session-harness adapter (#1078 P0/P3) — owns the launch + pre-launch host setup. Selected
     // from the console provider id: "bsc-agent" runs the model-agnostic runtime, everything else
     // (incl. None) keeps Claude Code, the default. Boxed so both impls share the call sites below.
-    let harness: Box<dyn crate::harness::HarnessAdapter> = match provider_id.as_deref() {
-        Some("bsc-agent") => Box::new(crate::harness::BscAgentAdapter),
-        _ => Box::new(crate::harness::ClaudeCodeAdapter),
+    let harness: Box<dyn crate::session::harness::HarnessAdapter> = match provider_id.as_deref() {
+        Some("bsc-agent") => Box::new(crate::session::harness::BscAgentAdapter),
+        _ => Box::new(crate::session::harness::ClaudeCodeAdapter),
     };
 
     // Self-heal a corrupt ~/.claude.json before this session can launch claude.
@@ -585,7 +586,7 @@ pub(crate) fn pty_create(
         // Author this spawn in the crash-recovery ledger (#1049): if the app dies ungracefully
         // (skipping the Job Object's clean drop), the next boot reconciles the ledger and tree-kills
         // this orphan. Removed on a clean pty_kill / app exit.
-        crate::pty_ledger::record(pid, &pane_id);
+        crate::console::ledger::record(pid, &pane_id);
     }
 
     let mut writer = pair.master.take_writer()
@@ -639,7 +640,7 @@ pub(crate) fn pty_create(
     // (whole-word match, so prompt text containing the string can't trip it).
     let claude_fn = harness.shell_fn(model_alias.as_deref());
     let init_line = match resolved_shell.kind {
-        crate::shell::ShellKind::Bash => {
+        crate::platform::shell::ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
             // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
             // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
@@ -671,8 +672,8 @@ pub(crate) fn pty_create(
         // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
         // notice (no silent breakage, #447).
-        crate::shell::ShellKind::PowerShell | crate::shell::ShellKind::Cmd => {
-            crate::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
+        crate::platform::shell::ShellKind::PowerShell | crate::platform::shell::ShellKind::Cmd => {
+            crate::platform::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
         }
     };
     writer.write_all(init_line.as_bytes()).ok();
@@ -783,7 +784,7 @@ pub(crate) fn pty_kill(
     // Remove from perf tracker before killing the process.
     perf_state.unregister(&pane_id);
     // Drop the ledger entry (#1049) — a clean kill means there's nothing for the next boot to reap.
-    crate::pty_ledger::forget_pane(&pane_id);
+    crate::console::ledger::forget_pane(&pane_id);
     let session = state.0.lock().unwrap().remove(&pane_id);
     match session {
         Some(mut s) => {

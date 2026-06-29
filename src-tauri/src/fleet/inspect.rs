@@ -2,7 +2,7 @@
 //! — uncommitted changes, current branch, recent commits, the branch's PR, and the raw Claude
 //! transcript path. Fleet owns worktrees, so this audit lives next to the rest of the fleet.
 
-use crate::*;
+use crate::prelude::*;
 
 /// Repo-relative paths a worktree session has touched but not yet committed: tracked changes
 /// vs HEAD (staged + unstaged) plus untracked files. The warden's conformance check (#1102)

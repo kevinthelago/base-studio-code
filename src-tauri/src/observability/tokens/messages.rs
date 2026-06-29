@@ -41,8 +41,8 @@ fn parse_iso_ms(s: &str) -> u64 {
 
 /// Parse a Claude transcript (JSONL) into its user/assistant text turns, keeping the newest
 /// `limit`. Tolerant: malformed lines, non-message types, and empty-text turns are skipped.
-fn parse_transcript_messages(jsonl: &str, limit: usize) -> Vec<crate::tunnel::PlanMessage> {
-    let mut msgs: Vec<crate::tunnel::PlanMessage> = Vec::new();
+fn parse_transcript_messages(jsonl: &str, limit: usize) -> Vec<crate::mobile::tunnel::PlanMessage> {
+    let mut msgs: Vec<crate::mobile::tunnel::PlanMessage> = Vec::new();
     for line in jsonl.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -59,7 +59,7 @@ fn parse_transcript_messages(jsonl: &str, limit: usize) -> Vec<crate::tunnel::Pl
             continue;
         }
         let at = v["timestamp"].as_str().map(parse_iso_ms).unwrap_or(0);
-        msgs.push(crate::tunnel::PlanMessage { role: role.to_string(), text, at });
+        msgs.push(crate::mobile::tunnel::PlanMessage { role: role.to_string(), text, at });
     }
     let n = msgs.len();
     if n > limit { msgs.split_off(n - limit) } else { msgs }
@@ -68,7 +68,7 @@ fn parse_transcript_messages(jsonl: &str, limit: usize) -> Vec<crate::tunnel::Pl
 /// The user/assistant conversation for `pane_id`, from its latest Claude transcript — the
 /// newest `limit` turns, or empty when the pane has no transcript yet (#934).
 #[tauri::command]
-pub(crate) fn read_pane_messages(pane_id: String, limit: usize) -> Vec<crate::tunnel::PlanMessage> {
+pub(crate) fn read_pane_messages(pane_id: String, limit: usize) -> Vec<crate::mobile::tunnel::PlanMessage> {
     let text = std::fs::read_to_string(bsc_base_dir().join("tokens.log")).unwrap_or_default();
     let Some((_, _, tp)) = latest_transcript_per_pane(&text).into_iter().find(|(p, _, _)| *p == pane_id) else {
         return Vec::new();

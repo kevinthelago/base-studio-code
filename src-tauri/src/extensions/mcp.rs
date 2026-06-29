@@ -1,4 +1,5 @@
-use crate::*;
+use crate::prelude::*;
+use crate::console::pty;
 
 /// Resolve a catalog MCP server's download directory under `~/.base-studio-code/mcp/`,
 /// slugifying `name` (`[A-Za-z0-9._-]`, else `_`) so it can never escape the `mcp/` root.

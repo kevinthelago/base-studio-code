@@ -192,9 +192,9 @@ pub fn source_oauth_begin(
     std::thread::spawn(move || {
         let done = match capture_and_exchange(&listener, &token_url, &client_id, &client_secret, &redirect, &verifier, &state) {
             Ok(tok) => {
-                let mut ok = crate::credentials::set_secret(&project, &source_uid, "accessToken", &tok.access).is_ok();
+                let mut ok = crate::sources::credentials::set_secret(&project, &source_uid, "accessToken", &tok.access).is_ok();
                 if let Some(r) = tok.refresh {
-                    ok &= crate::credentials::set_secret(&project, &source_uid, "refreshToken", &r).is_ok();
+                    ok &= crate::sources::credentials::set_secret(&project, &source_uid, "refreshToken", &r).is_ok();
                 }
                 OAuthDone { source_uid: source_uid.clone(), ok, instance: tok.instance, realm: tok.realm, error: None }
             }

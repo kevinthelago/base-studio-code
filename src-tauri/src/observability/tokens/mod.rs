@@ -16,7 +16,7 @@ mod messages;
 // Glob re-export each submodule so the `tokens::*` command paths in `app/run.rs` stay valid —
 // a `#[tauri::command]` generates hidden `__cmd__*` / `__tauri_command_name_*` items next to the
 // fn that `generate_handler!` resolves through the same path, so the whole submodule is re-exported
-// (matching the `github/mod.rs` pattern). This also keeps `crate::tokens::json_unescape_path`
+// (matching the `github/mod.rs` pattern). This also keeps `crate::observability::tokens::json_unescape_path`
 // (console/shell_rc.rs) resolving.
 pub(crate) use activity::*;
 pub(crate) use cost::*;
