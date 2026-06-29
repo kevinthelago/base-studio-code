@@ -127,7 +127,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       <div style={{ position: "sticky", top: 0, zIndex: 50, background: "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", padding: "12px 24px" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <BackButton variant="text" label="fleet" onClick={onBack} aria-label="Back to fleet" className="btn ghost" style={{ height: 26 }} />
+            <BackButton variant="icon" onClick={onBack} aria-label="Back to fleet" />
             <div style={{ width: 1, height: 18, background: "var(--border-soft)" }} />
             <Avatar login={worker.name} bot size={26} />
             <div style={{ minWidth: 0 }}>

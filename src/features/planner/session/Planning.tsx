@@ -609,7 +609,7 @@ export function Planning({ visible }: { visible: boolean }) {
   return (
     <>
       {/* Header */}
-      <div style={{ padding: "14px 24px", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <BackButton variant="icon" onClick={() => setProjectsView("list")} aria-label="Back to Planner" />

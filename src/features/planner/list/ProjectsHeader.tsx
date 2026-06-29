@@ -228,18 +228,10 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
 
   return (
     <>
-      <div style={{ padding: "14px 24px 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ padding: "14px 24px 0 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <BackButton
-              variant="text" label="portfolio" onClick={closeGithubBoard} aria-label="Back to portfolio"
-              className="mono"
-              style={{
-                background: "none", border: "none", cursor: "pointer",
-                fontSize: 11, color: "var(--fg-muted)",
-                padding: 0, marginRight: 4,
-              }}
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <BackButton variant="icon" onClick={closeGithubBoard} aria-label="Back to portfolio" />
             <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
             <h2 className="mono" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
             {project.repo && <Chip>{project.repo}</Chip>}
