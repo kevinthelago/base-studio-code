@@ -1,10 +1,10 @@
 // Import FIRST: self-installs a pure-DOM crash overlay so even module-eval / pre-React failures in
 // this window are visible (a detached window's logs may never reach the Tauri sink — #tab-tearoff).
-import "./fatalOverlay";
+import "./safety/fatalOverlay";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { ErrorBoundary } from "./ErrorBoundary";
+import { ErrorBoundary } from "./safety/ErrorBoundary";
 import { markBoot } from "@/shared/lib/core/startupTrace";
 import "@/styles/tokens.css";
 

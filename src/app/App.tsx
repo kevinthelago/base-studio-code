@@ -4,7 +4,7 @@ import { Rail } from "@/app/chrome/Rail";
 import { workspaceLabel } from "@/app/registry";
 import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
-import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
 import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations/useScheduler";
