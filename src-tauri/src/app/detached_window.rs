@@ -1,16 +1,23 @@
 //! Detached-window creation (#1870). Tab/section tear-off opens a console tab — or a page section —
 //! in its own OS window. These windows MUST be built from Rust, not from the JS `new WebviewWindow()`
-//! API, because of a Windows WebView2 constraint: every webview sharing one user-data directory has to
-//! launch with the SAME additional browser arguments, or the new webview fails to initialize and the
-//! window comes up blank (no JS runs, so even the pure-DOM fatal overlay can't surface it).
+//! API, for two reasons:
 //!
-//! The main window sets custom args in `tauri.conf.json` (`--no-proxy-server`, disabled SmartScreen,
-//! …). The JS `WebviewOptions` API has no `additionalBrowserArgs` field, so a JS-created window gets
-//! wry's DEFAULT args — a different value — and crashes. Building here lets us apply
-//! `WebviewWindowBuilder::additional_browser_args` with the SAME string, sourced from the one constant
-//! below so the two can never drift (guarded by a test against `tauri.conf.json`).
+//! 1. **WebView2 browser args (Windows).** Every webview sharing one user-data directory has to launch
+//!    with the SAME additional browser arguments, or the new webview fails to initialize and the window
+//!    crashes. The main window sets custom args in `tauri.conf.json` (`--no-proxy-server`, disabled
+//!    SmartScreen, …); the JS `WebviewOptions` API has no `additionalBrowserArgs` field, so a JS-created
+//!    window gets wry's DEFAULT args — a different value — and crashes. Building here lets us apply
+//!    `WebviewWindowBuilder::additional_browser_args` with the SAME string, from the one constant below
+//!    (guarded by a test against `tauri.conf.json`).
+//!
+//! 2. **Load the SAME page the main window loads, and pass the marker out-of-band.** The detached window
+//!    must load plain `index.html` via `WebviewUrl::App` — byte-identical to the main window — so the
+//!    bundle loads and React mounts exactly as it does there. Encoding the detach target in the URL query
+//!    instead (`index.html?detachTab=…`, or an absolute `External` URL) does NOT load reliably: Tauri
+//!    rewrites/strips the URL for dev-proxied + custom-protocol app pages, so the page failed to mount and
+//!    the window came up blank white. The detach target is delivered via an **initialization script** that
+//!    sets `window.__BSC_DETACH__` before any page script runs — the frontend reads that, never the URL.
 
-use std::path::PathBuf;
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 /// The WebView2 browser args every window in this app must share. Byte-identical to the main window's
@@ -19,32 +26,40 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 pub(crate) const WEBVIEW_BROWSER_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --no-proxy-server";
 
-/// Open a detached window (tab/section tear-off) loading the app page at relative `path` (e.g.
-/// `index.html?detachTab=<id>`), with the same browser args as the main window so its WebView2 process
-/// doesn't fail the same-data-dir/same-args constraint on Windows.
-///
-/// `path` is an **app-relative** path (not an absolute URL) so it goes through `WebviewUrl::App` —
-/// Tauri resolves it against the app base exactly like the main window, which keeps the IPC bridge
-/// injected and preserves the query string. An absolute `WebviewUrl::External` URL is NOT equivalent:
-/// for a dev-proxied local URL Tauri rewrites it to `tauri://localhost` and DROPS the query, so the new
-/// window loses its detach marker and renders blank (#1870).
+/// Build the document-start init script that hands the detached window its target. `marker` is the
+/// caller's JSON object (e.g. `{"kind":"tab","tabId":"…"}`); it's re-serialized through serde so only
+/// valid JSON is ever injected (no script-injection via a malformed marker). Pure, so it's unit-tested.
+fn detach_init_script(marker: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(marker).map_err(|e| e.to_string())?;
+    let normalized = serde_json::to_string(&value).map_err(|e| e.to_string())?;
+    Ok(format!("window.__BSC_DETACH__ = {normalized};"))
+}
+
+/// Open a detached window (tab/section tear-off). It loads plain `index.html` — the exact page and
+/// `WebviewUrl::App` the main window uses, so the bundle loads and React mounts identically — with the
+/// same WebView2 browser args (the same-data-dir/same-args constraint on Windows). The detach target is
+/// injected as `window.__BSC_DETACH__` via an init script that runs before page scripts, so the new
+/// window never depends on a URL query the webview layer might rewrite or strip (#1870).
 ///
 /// `label` is the unique Tauri window label (must match a `windows` entry in a capability — `tab-*`).
-/// Best-effort from the caller's view: a build failure returns an `Err` string the frontend logs.
+/// `marker` is a JSON object describing what to render. Best-effort from the caller's view: a malformed
+/// marker or a build failure returns an `Err` string the frontend logs.
 #[tauri::command]
 pub fn open_detached_window(
     app: AppHandle,
     label: String,
-    path: String,
+    marker: String,
     title: String,
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(PathBuf::from(path)))
+    let init = detach_init_script(&marker)?;
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
         .title(&title)
         .inner_size(width, height)
         .decorations(false) // use the app's custom titlebar, not the native OS frame
         .additional_browser_args(WEBVIEW_BROWSER_ARGS)
+        .initialization_script(init)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -52,7 +67,7 @@ pub fn open_detached_window(
 
 #[cfg(test)]
 mod tests {
-    use super::WEBVIEW_BROWSER_ARGS;
+    use super::{detach_init_script, WEBVIEW_BROWSER_ARGS};
 
     /// Drift guard: the detached-window args MUST equal the main window's `additionalBrowserArgs` in
     /// `tauri.conf.json`. If they diverge, a torn-off window's WebView2 fails to init on Windows and
@@ -69,5 +84,24 @@ mod tests {
             "detached-window browser args drifted from the main window's tauri.conf.json args; \
              a mismatch crashes torn-off windows on Windows (#1870)"
         );
+    }
+
+    #[test]
+    fn init_script_injects_normalized_marker() {
+        let s = detach_init_script(r#"{"kind":"tab","tabId":"tab_abc"}"#).unwrap();
+        assert!(s.starts_with("window.__BSC_DETACH__ = "));
+        assert!(s.ends_with(';'));
+        // Re-serialized through serde, so the embedded JSON parses back to the same object.
+        let json = s
+            .trim_start_matches("window.__BSC_DETACH__ = ")
+            .trim_end_matches(';');
+        let v: serde_json::Value = serde_json::from_str(json).expect("embedded JSON parses");
+        assert_eq!(v["kind"], "tab");
+        assert_eq!(v["tabId"], "tab_abc");
+    }
+
+    #[test]
+    fn init_script_rejects_malformed_marker() {
+        assert!(detach_init_script("not json").is_err());
     }
 }
