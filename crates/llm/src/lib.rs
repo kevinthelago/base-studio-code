@@ -44,6 +44,23 @@ pub struct LlmRequest {
 pub trait LlmProvider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String>;
     async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String>;
+
+    /// Like [`turn`](Self::turn), but stream assistant TEXT to `on_chunk` as it's generated, so the PTY
+    /// shows tokens live instead of the whole answer at once (#1832). Returns the final [`TurnResult`].
+    /// The default is non-streaming — call `turn`, then emit the whole text once; providers that speak
+    /// SSE/NDJSON (Ollama native) override this for real incremental output.
+    async fn turn_streaming(
+        &self,
+        t: &Turn,
+        api_key: &str,
+        on_chunk: &mut dyn FnMut(&str),
+    ) -> Result<TurnResult, String> {
+        let result = self.turn(t, api_key).await?;
+        if !result.text.is_empty() {
+            on_chunk(&result.text);
+        }
+        Ok(result)
+    }
 }
 
 /// Format the non-2xx error string a provider returns, in the exact shape
@@ -206,6 +223,15 @@ impl LlmProvider for Provider {
             Provider::Gemini(p) => p.turn(t, api_key).await,
             Provider::Local(p) => p.turn(t, api_key).await,
             Provider::Ollama(p) => p.turn(t, api_key).await,
+        }
+    }
+    async fn turn_streaming(&self, t: &Turn, api_key: &str, on_chunk: &mut dyn FnMut(&str)) -> Result<TurnResult, String> {
+        match self {
+            Provider::Anthropic(p) => p.turn_streaming(t, api_key, on_chunk).await,
+            Provider::OpenAi(p) => p.turn_streaming(t, api_key, on_chunk).await,
+            Provider::Gemini(p) => p.turn_streaming(t, api_key, on_chunk).await,
+            Provider::Local(p) => p.turn_streaming(t, api_key, on_chunk).await,
+            Provider::Ollama(p) => p.turn_streaming(t, api_key, on_chunk).await,
         }
     }
 }
