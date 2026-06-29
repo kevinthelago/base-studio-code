@@ -26,10 +26,6 @@ use std::path::Path;
 /// backend-owned `src-tauri/data/skills` tree — the same dir the Vite `@data` alias points at.
 static PACKAGED_SKILLS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/data/skills");
 
-/// How long (ms) a connection waits on a locked db before erroring (the #1325 concurrency
-/// requirement, alongside WAL). Generous so a quick CLI write never loses to the live app.
-const BUSY_TIMEOUT_MS: u32 = 5_000;
-
 fn default_kind() -> String {
     "workflow".into()
 }
@@ -132,11 +128,7 @@ impl Store {
     /// Open (creating + migrating) the skills.db at `path`. Parent dirs are created. WAL mode + a
     /// busy_timeout are enabled so the CLI and the live app can share the db concurrently (#1325).
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let conn = Connection::open(path)?;
-        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
+        let conn = bsc_sqlite_util::open_db(path)?;
         migrate(&conn)?;
         let store = Store { conn };
         // First-run seed (#1715): an on-disk store with no skills yet gets the packaged set from the
@@ -163,8 +155,7 @@ impl Store {
 
     /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
-        let conn = Connection::open_in_memory()?;
-        conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS as u64))?;
+        let conn = bsc_sqlite_util::open_in_memory_db()?;
         migrate(&conn)?;
         Ok(Store { conn })
     }

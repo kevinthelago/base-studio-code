@@ -14,26 +14,16 @@ pub struct Cache {
 }
 
 impl Cache {
-    /// The default cache path: `$BSC_RESEARCH_CACHE`, else `~/.base-studio-code/research/cache.db`.
+    /// The default cache path: `$BSC_RESEARCH_CACHE`, else `~/.base-studio-code/research/cache.db`
+    /// — the shared [`bsc_sqlite_util::default_store_path`] resolver (#1863).
     pub fn default_path() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("BSC_RESEARCH_CACHE") {
-            let p = p.trim();
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
-        }
-        let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
-        Some(PathBuf::from(home).join(".base-studio-code").join("research").join("cache.db"))
+        bsc_sqlite_util::default_store_path("BSC_RESEARCH_CACHE", &["research", "cache.db"])
     }
 
-    /// Open (creating parent dirs + schema) the cache at `path`. Use `":memory:"` for tests.
+    /// Open (creating parent dirs + schema) the cache at `path`. Use `":memory:"` for tests. The
+    /// `:memory:`-aware open + error labelling is the shared [`bsc_sqlite_util::open_db_str`] (#1863).
     pub fn open(path: &Path) -> Result<Cache, String> {
-        if path.as_os_str() != ":memory:" {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("cache dir: {e}"))?;
-            }
-        }
-        let conn = Connection::open(path).map_err(|e| format!("open cache: {e}"))?;
+        let conn = bsc_sqlite_util::open_db_str(path, "cache")?;
         Cache::init(conn)
     }
 
@@ -65,13 +55,9 @@ impl Cache {
         Ok(())
     }
 
-    /// Look up a cached paper by canonical id.
+    /// Look up a cached paper by canonical id (the shared lenient JSON-blob read, #1863).
     pub fn get_paper(&self, id: &str) -> Option<Paper> {
-        let json: String = self
-            .conn
-            .query_row("SELECT json FROM papers WHERE id = ?1", [id], |r| r.get(0))
-            .ok()?;
-        serde_json::from_str(&json).ok()
+        bsc_sqlite_util::get_json(&self.conn, "SELECT json FROM papers WHERE id = ?1", id)
     }
 
     /// Store extracted full text by canonical id.
