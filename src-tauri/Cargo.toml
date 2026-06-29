@@ -82,6 +82,8 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }
+# Mobile-tunnel wire contract + Noise crypto (#1919) — desktop tunnel glue (state/transport/commands) depends on it.
+bsc-tunnel = { path = "../crates/bsc-tunnel" }
 
 # User blueprint store (#1719) — shared with the `bsc-blueprint` session CLI. The blueprint
 # Tauri commands (`list/write/delete_blueprint`) are a thin wrapper over this crate's `Store`,

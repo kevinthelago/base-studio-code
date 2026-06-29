@@ -1,0 +1,12 @@
+[package]
+name = "bsc-tunnel"
+version = "0.1.0"
+edition = "2021"
+
+# The mobile-tunnel wire contract + Noise IK crypto, extracted Tauri-free (#1919) so the byte-exact
+# protocol (shared with mobile-studio-code) and the handshake live in one shareable crate. The
+# desktop bus / transport / commands / FCM push stay in src-tauri and depend on this crate.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+snow = "0.10"

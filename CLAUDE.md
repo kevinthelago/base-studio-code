@@ -70,7 +70,7 @@ base-studio-code/
 │       ├── sources/         #   migration data sources: data, oauth, credentials
 │       ├── extensions/      #   MCP servers, hooks, skills, cfg
 │       ├── observability/   #   logs, perf, tokens, audit
-│       └── mobile/          #   paired companion: push + tunnel/{protocol,noise,transport}
+│       └── mobile/          #   paired companion: push + tunnel/{state,transport,commands} (wire protocol + Noise → crates/bsc-tunnel)
 ├── crates/                  # workspace crates (Tauri-free, CLI-spawnable)
 │   ├── data/                #   canonical Data Model (DuckDB) + connectors (pkg bsc-data, bsc data CLI)
 │   ├── plandb/              #   per-project plan store (SQLite) + bsc plan CLI
@@ -83,6 +83,7 @@ base-studio-code/
 │   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI
 │   ├── bsc-project/         #   project-hub list/published store + bsc project CLI
 │   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
+│   ├── bsc-tunnel/          #   mobile-tunnel wire contract + Noise IK crypto (Tauri-free; shared with mobile-studio-code)
 │   └── bsc-util/ · bsc-sqlite-util/ · bsc-cli-util/   #   shared internal libs (paths, SQLite, CLI arg parsing)
 ├── src/                     # React frontend (TS) — FEATURE-FIRST vertical slices (#1309). The four
 │   │                        #   top-level dirs ARE the architecture; imports use `@/…` → src (no
