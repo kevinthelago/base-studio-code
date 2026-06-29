@@ -148,9 +148,7 @@ pub(crate) fn repair_hub_worktrees(hub: &std::path::Path) {
     for entry in entries.flatten() {
         let repo = entry.path();
         if !repo.join(".git").exists() { continue; }
-        let mut cmd = std::process::Command::new("git");
-        cmd.args(["-C", &repo.to_string_lossy(), "worktree", "repair"]);
-        let _ = no_window(&mut cmd).status();
+        let _ = git_ok(&repo.to_string_lossy(), &["worktree", "repair"]);
     }
 }
 /// Whether a directory looks like a REAL project hub (carries plan/control artifacts) vs an empty
