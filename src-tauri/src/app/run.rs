@@ -1,4 +1,14 @@
-use crate::*;
+use crate::prelude::*;
+// Domain modules whose Tauri commands the invoke handler below registers (#1918): explicit per-domain
+// imports replace the old `use crate::*` glob, so each command path names its domain.
+use crate::{app, extensions, fleet, planner, session};
+use crate::console::{discovery, ledger, pty};
+use crate::github::{self, git_hooks, oauth};
+use crate::mobile::tunnel;
+use crate::observability::{self, logs, perf, tokens};
+use crate::platform::docstore;
+use crate::project::{self, plan_db};
+use crate::sources::{credentials, data, oauth as source_oauth};
 use tauri::{Manager, RunEvent};
 
 pub(crate) fn level_color(level: log::Level) -> &'static str {
@@ -32,7 +42,7 @@ pub fn run() {
     // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
     // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
     // same process) — never the user's terminals. Runs before any session launches.
-    let reaped = pty_ledger::reconcile_on_boot();
+    let reaped = ledger::reconcile_on_boot();
     if reaped > 0 {
         log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
     }
@@ -78,7 +88,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
-        .manage(crate::pty::PtyState::new())
+        .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
         .manage(logs::LogState::new())
@@ -232,14 +242,14 @@ pub fn run() {
             project::hub::project_dir_path,
             project::hub::repo_dir_path,
             observability::logs::append_coord_woke,
-            githooks::read_git_hooks,
+            git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
-            session_discovery::discover_sessions,
-            session_discovery::reap_session,
+            discovery::discover_sessions,
+            discovery::reap_session,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
@@ -298,7 +308,7 @@ pub fn run() {
                 let _ = std::fs::remove_file(session_lock_path());
                 // Signal the tunnel transport (#242b) to close before tearing down PTYs.
                 app_handle.state::<tunnel::TunnelState>().shutdown();
-                crate::pty::kill_all_pty_sessions(app_handle.state::<crate::pty::PtyState>().inner());
+                crate::console::pty::kill_all_pty_sessions(app_handle.state::<crate::console::pty::PtyState>().inner());
             }
         });
 }

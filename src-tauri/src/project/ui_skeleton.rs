@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// Collect a UI-skeleton directory as (relpath, contents) pairs — source files only,
 /// size-capped, recursive. Pure over a path so it's unit-testable (#533). Delegates to the

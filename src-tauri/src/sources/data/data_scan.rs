@@ -312,7 +312,7 @@ pub fn data_platform_scan(
         return Ok(ScanResult::pending(reason));
     }
     let secret = match meta.secret_field {
-        Some(f) => crate::credentials::get_secret(&project, &source_uid, f)
+        Some(f) => crate::sources::credentials::get_secret(&project, &source_uid, f)
             .ok_or_else(|| format!("no stored credential for {connector_id}"))?,
         None => String::new(),
     };
@@ -378,7 +378,7 @@ fn scan_runtime_preset(
 ) -> Result<ScanResult, String> {
     match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).map_err(|e| e.to_string())? {
         Some(preset) => {
-            let secret = crate::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
+            let secret = crate::sources::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
                 .unwrap_or_default();
             scan_rest_preset(&preset, fields, &secret)
         }
@@ -386,7 +386,7 @@ fn scan_runtime_preset(
         // (the 100+ long tail). These connect with a base URL + bearer token from the keychain.
         None => match bsc_data::presets::CATALOG.iter().find(|p| p.id == connector_id) {
             Some(vp) => {
-                let secret = crate::credentials::get_secret(project, source_uid, "token").unwrap_or_default();
+                let secret = crate::sources::credentials::get_secret(project, source_uid, "token").unwrap_or_default();
                 scan_static_preset(vp, fields, &secret)
             }
             None => Err(format!("unknown connector `{connector_id}`")),
