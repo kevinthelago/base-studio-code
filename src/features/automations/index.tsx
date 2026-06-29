@@ -77,7 +77,7 @@ export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string }
       onReorder={reorder}
       onTearOff={tearOff}
       pageOverride={pageOverride}
-      className="auto-screen"
+      className="auto-workspace"
       bodyClassName="auto-body"
       right={active === "schedules" ? (
         <>

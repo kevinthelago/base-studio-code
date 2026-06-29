@@ -209,7 +209,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       onReorder={reorder}
       onTearOff={tearOff}
       pageOverride={pageOverride}
-      className="skills-screen"
+      className="skills-workspace"
       right={mode === "library"
         ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn" onClick={() => fileRef.current?.click()}>import</button>

@@ -59,9 +59,13 @@ This convention lands across two issues (the *codebase refactor & consolidation*
     (`GeneralPage`, `SecurityPage`, `GithubPage`, `McpPage`, `PlannerPage`, `SkillsPage`,
     `AutomationsPage`); the dir is renamed `screens/` → `pages/`.
   - The string keys (`"skills"`, `"console"`, …) are unchanged.
-- **Optional follow-up:** the `.screen*` **CSS classes** (`.screen` / `.screen-page` / `.screen-body`
-  + per-feature `screen-skills`/`screen-console`/…) → `.surface*`/`.workspace*` if desired. Purely
-  visual, zero-semantic, wide; left as-is — the `Screen` shell emitting `.screen` reads fine.
+- **Phase 2c — #1886 (done):** the CSS layer. The `Screen` shell's own structural classes
+  (`.screen` / `.screen-page` / `.screen-body`) **stay** — they correctly name the `Screen` component
+  (like `Dialog`→`.dialog`). The per-**Workspace** scoping classes each Workspace passes as the
+  `Screen`'s `className` were renamed `<x>-screen` → `<x>-workspace`: `auto-workspace` (Automations),
+  `ext-workspace` (the shared full-bleed panel class, used by MCP/Projects/etc.), `projects-workspace`
+  (Projects), `skills-workspace` (Skills) — CSS defs (feature CSS + `tokens.css`) and `className` usages
+  in lockstep. (`screen-reader` and prose were untouched.)
 
 ### "Screen" is overloaded — what was deliberately NOT renamed
 
