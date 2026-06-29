@@ -102,7 +102,13 @@ pub(crate) fn write_session_settings(
     bash_posture: &str,
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
-    let root = std::path::PathBuf::from(cwd);
+    // Normalize a git-bash drive path (`/c/Users/...`, the OSC-7 form the app persists and the frontend
+    // passes here) back to native (`C:/Users/...`) so settings.json lands at the SAME directory
+    // `pty_create` launches claude in — it calls `to_native_path` too (console/pty/mod.rs). Without this,
+    // on Windows `PathBuf::from("/c/Users/...")` resolves to the bogus `C:\c\Users\...`: the real session
+    // dir gets NO settings, so Claude Code treats it as untrusted and prompts on every command (the
+    // triage `cargo test` permission prompts). No-op for already-native paths and off Windows.
+    let root = std::path::PathBuf::from(crate::platform::shell::to_native_path(cwd));
     let settings_path = root.join(".claude").join("settings.json");
 
     let mut config = crate::platform::fsx::read_json_object_or_default(&settings_path);
