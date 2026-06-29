@@ -21,6 +21,10 @@
 //! frontend `parseIssuesFile` expects. Value-list fields are stored as JSON text for now; the
 //! relational `dependsOn` can normalize into a join table later if graph queries want it.
 
+/// The `bsc plan` subcommand (#1877) — the agent-facing CLI extracted from the old `bsc-plan` binary,
+/// dispatched to by the unified `bsc` umbrella and the legacy `bsc-plan` shim.
+pub mod cli;
+
 use bsc_sqlite_util::{arr_to_json, json_to_arr};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};

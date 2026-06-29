@@ -8,6 +8,11 @@
 //! links into the lean session CLI. Both sides resolve the base dir through the ONE shared
 //! `bsc_util::bsc_base_dir()` (#1646), so the app and the CLI always agree on which `projects/`
 //! tree they read.
+//!
+//! The agent-facing CLI lives in [`cli`] (`bsc project …`), dispatched by the unified `bsc` binary
+//! (#1877) and by the legacy `bsc-project` shim.
+
+pub mod cli;
 
 use std::path::PathBuf;
 

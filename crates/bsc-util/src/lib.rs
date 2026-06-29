@@ -15,11 +15,11 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The canonical `bsc-*` bundled-binary registry — the CLI sidecars (#1843, ONE list shared by the
-/// app's env staging, the shell helpers, and the agent's prompt block) plus the bundled MCP-server
-/// binaries (#1848). The single inventory of every binary the app ships beside its exe.
+/// The canonical `bsc` subcommand registry — the unified umbrella binary's state CLIs (#1843/#1877,
+/// ONE list shared by the agent's prompt block + the shell-helper drift guard) plus the `.mcp.json`
+/// command sentinels for the two bundled MCP servers (now `bsc mcp <sub>` subcommands, #1848/#1877).
 pub mod sidecars;
-pub use sidecars::{BundledMcp, Sidecar, BUNDLED_MCP_SERVERS, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
+pub use sidecars::{Sidecar, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
 
 /// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
 /// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).

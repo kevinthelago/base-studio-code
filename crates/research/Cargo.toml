@@ -9,12 +9,6 @@ description = "Native literature research for base-studio-code (#1196) — arXiv
 [lib]
 name = "research"
 
-# The agent-facing MCP server: planner/director/workers call its tools over stdio JSON-RPC.
-# Bundled beside the app exe (Tauri externalBin) and auto-registered in .mcp.json.
-[[bin]]
-name = "bsc-research-mcp"
-path = "src/bin/bsc-research-mcp.rs"
-
 [dependencies]
 # Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
 bsc-util = { path = "../bsc-util" }

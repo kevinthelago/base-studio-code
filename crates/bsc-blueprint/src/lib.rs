@@ -10,6 +10,11 @@
 //! Each blueprint is written **verbatim** (the frontend owns the JSON shape; the store never imposes
 //! a typed schema). The `id` is slugified into a single safe directory segment so it can never escape
 //! the `blueprints/` dir — byte-identical to the Tauri path's `safe_dir_segment` check.
+//!
+//! The agent-facing CLI lives in [`cli`] (`bsc blueprint …`), dispatched by the unified `bsc` binary
+//! (#1877) and by the legacy `bsc-blueprint` shim.
+
+pub mod cli;
 
 use std::path::{Path, PathBuf};
 

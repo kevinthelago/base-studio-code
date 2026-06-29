@@ -1,33 +1,31 @@
-//! `bsc-compliance` — the session-facing CLI over the compliance **standards store** (#1718, an
-//! instance of #1325 "all application state reachable via `bsc-*`"). The corpus
+//! The `bsc compliance` subcommand (#1877) — the session-facing CLI over the compliance **standards
+//! store** (#1718, an instance of #1325 "all application state reachable via `bsc-*`"). The corpus
 //! (`~/.base-studio-code/compliance/store.db`) was previously reachable only through the
 //! `bsc-compliance-mcp` server's READ-only tools, and only from sessions that get `.mcp.json`
 //! (planner/director/workers). This CLI exposes the **same** projections to ANY shell session —
 //! plus the WRITE side the MCP server lacks (`upsert` / `remove` / `reseed`).
 //!
+//! Extracted from the old `bsc-compliance` binary so the unified `bsc` umbrella dispatches into it
+//! via [`run`]; the legacy `bsc-compliance` shim delegates here too.
+//!
 //! The store is located via `--db <path>`, the `BSC_COMPLIANCE_STORE` env var (set per-session at
 //! launch), or the default `~/.base-studio-code/compliance/store.db` (the same precedence
-//! [`compliance::store::Store::default_path`] uses). Output is JSON to stdout — compact by default,
+//! [`crate::store::Store::default_path`] uses). Output is JSON to stdout — compact by default,
 //! indented with `--pretty` (the `--json` flag is accepted as an explicit no-op, since output is
-//! always JSON). Read projections reuse [`compliance::engine::Engine`] / `Store`; nothing is
-//! re-queried by hand.
+//! always JSON). Read projections reuse [`crate::engine::Engine`] / `Store`; nothing is re-queried by
+//! hand.
 //!
 //! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-compliance help              # compact menu (the small "what commands exist" prompt)
-//!   bsc-compliance standards help    # detailed help for ONE command
-//!   bsc-compliance <cmd> help        # same, after any command
+//!   bsc compliance help              # compact menu (the small "what commands exist" prompt)
+//!   bsc compliance standards help    # detailed help for ONE command
+//!   bsc compliance <cmd> help        # same, after any command
 
+use crate::engine::Engine;
+use crate::store::Store;
+use crate::types::{Domain, Standard};
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json};
-use compliance::engine::Engine;
-use compliance::store::Store;
-use compliance::types::{Domain, Standard};
 use std::path::PathBuf;
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-compliance", run)
-}
 
 const TAGLINE: &str = "the compliance standards store — accessibility/privacy/security obligations (#1718)";
 
@@ -40,8 +38,8 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "list/get the raw standards corpus",
         usage: "\
 USAGE:
-  bsc-compliance standards list [--domain <d>]   # every standard, or one domain, JSON
-  bsc-compliance standards get <id>              # one standard's full record (or null)
+  bsc compliance standards list [--domain <d>]   # every standard, or one domain, JSON
+  bsc compliance standards get <id>              # one standard's full record (or null)
 
 <d> is one of: accessibility | privacy | security | user_protection.",
     },
@@ -50,7 +48,7 @@ USAGE:
         summary: "the applicable obligation set, scoped by jurisdiction + data",
         usage: "\
 USAGE:
-  bsc-compliance requirements [--regions a,b] [--data-types x,y] [--domains d1,d2]
+  bsc compliance requirements [--regions a,b] [--data-types x,y] [--domains d1,d2]
 
 The requirements_for projection: the obligations that apply given the regions, data types, and an
 optional domain filter.",
@@ -60,7 +58,7 @@ optional domain filter.",
         summary: "the WCAG checklist a UI target must meet",
         usage: "\
 USAGE:
-  bsc-compliance accessibility <target>
+  bsc compliance accessibility <target>
 
 The WCAG checklist for a UI target (the accessibility_checklist projection).",
     },
@@ -69,7 +67,7 @@ The WCAG checklist for a UI target (the accessibility_checklist projection).",
         summary: "privacy/data-protection obligations for given data types",
         usage: "\
 USAGE:
-  bsc-compliance privacy <data-types> [--regions a,b]
+  bsc compliance privacy <data-types> [--regions a,b]
 
 <data-types> is a positional comma-separated list (e.g. pii,health). Prints the privacy obligations
 for that data, optionally scoped to --regions.",
@@ -79,7 +77,7 @@ for that data, optionally scoped to --regions.",
         summary: "corpus version + last-updated stamp + standard count",
         usage: "\
 USAGE:
-  bsc-compliance meta
+  bsc compliance meta
 
 Prints the corpus metadata: version, last-updated stamp, and standard count.",
     },
@@ -88,7 +86,7 @@ Prints the corpus metadata: version, last-updated stamp, and standard count.",
         summary: "re-apply the baseline corpus; prints count",
         usage: "\
 USAGE:
-  bsc-compliance reseed
+  bsc compliance reseed
 
 Re-applies the baseline corpus (a refresh without a release). Prints the resulting standard count.",
     },
@@ -97,7 +95,7 @@ Re-applies the baseline corpus (a refresh without a release). Prints the resulti
         summary: "upsert Standard(s) from JSON on stdin; prints id(s)",
         usage: "\
 USAGE:
-  bsc-compliance upsert   # a Standard object (or an array) as JSON on stdin
+  bsc compliance upsert   # a Standard object (or an array) as JSON on stdin
 
 Upserts each standard by its (required, non-empty) \"id\". Prints the id(s) written.",
     },
@@ -106,7 +104,7 @@ Upserts each standard by its (required, non-empty) \"id\". Prints the id(s) writ
         summary: "delete a standard; prints whether a row existed",
         usage: "\
 USAGE:
-  bsc-compliance remove <id>
+  bsc compliance remove <id>
 
 Deletes the standard keyed by <id>; prints whether a row existed.",
     },
@@ -167,13 +165,16 @@ fn parse_domain(s: &str) -> Result<Domain, String> {
     })
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `compliance` subcommand entrypoint: `args` is everything after `bsc compliance`; `prog` is the
+/// display name for help/errors (`"bsc compliance"` from the umbrella, `"bsc-compliance"` from the
+/// legacy shim).
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
     // dispatch in bsc-cli-util, run before opening the store (help works without a store.db).
-    if bsc_cli_util::handle_help("bsc-compliance", TAGLINE, COMMANDS, &args.positional) {
+    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -196,19 +197,19 @@ fn run() -> Result<(), String> {
                     Ok(())
                 }
                 "get" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-compliance standards get <id>")?;
+                    let id = args.positional.get(2).ok_or("usage: bsc compliance standards get <id>")?;
                     let s = open_store()?;
-                    // Print `null` for a miss (mirrors `bsc-skill group get`).
+                    // Print `null` for a miss (mirrors `bsc skill group get`).
                     print_json(&s.get(id), args.pretty);
                     Ok(())
                 }
                 "" => Err(format!(
-                    "usage: bsc-compliance standards <list|get>\n\n{}",
-                    bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, "standards")
+                    "usage: bsc compliance standards <list|get>\n\n{}",
+                    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "standards")
                 )),
                 other => Err(format!(
                     "unknown standards command '{other}'\n\n{}",
-                    bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, "standards")
+                    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "standards")
                 )),
             }
         }
@@ -227,7 +228,7 @@ fn run() -> Result<(), String> {
             let target = args
                 .positional
                 .get(1)
-                .ok_or("usage: bsc-compliance accessibility <target>")?;
+                .ok_or("usage: bsc compliance accessibility <target>")?;
             let engine = Engine::with_store(open_store()?);
             print_json(&engine.accessibility_checklist(target), args.pretty);
             Ok(())
@@ -236,7 +237,7 @@ fn run() -> Result<(), String> {
             // `<data-types>` is a positional comma-separated list (e.g. `pii,health`).
             let data_types = csv(args.positional.get(1).map(String::as_str).unwrap_or(""));
             if data_types.is_empty() {
-                return Err("usage: bsc-compliance privacy <data-types> [--regions a,b]".into());
+                return Err("usage: bsc compliance privacy <data-types> [--regions a,b]".into());
             }
             let engine = Engine::with_store(open_store()?);
             print_json(&engine.privacy_requirements(&data_types, &args.regions), args.pretty);
@@ -269,12 +270,12 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(1).ok_or("usage: bsc-compliance remove <id>")?;
+            let id = args.positional.get(1).ok_or("usage: bsc compliance remove <id>")?;
             let s = open_store()?;
             print_json(&s.remove(id)?, args.pretty);
             Ok(())
         }
-        other => Err(bsc_cli_util::unknown_command("bsc-compliance", TAGLINE, COMMANDS, other)),
+        other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
 
@@ -353,16 +354,16 @@ mod tests {
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = bsc_cli_util::help_overview("bsc-compliance", TAGLINE, COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc compliance", TAGLINE, COMMANDS);
         for c in ["standards", "requirements", "accessibility", "privacy", "meta", "reseed", "upsert", "remove"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // `standards help` shows the standards subcommands, not the whole menu.
-        let s = bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, "standards");
-        assert!(s.contains("bsc-compliance standards"));
+        let s = bsc_cli_util::help_for("bsc compliance", TAGLINE, COMMANDS, "standards");
+        assert!(s.contains("bsc compliance standards"));
         assert!(s.contains("get <id>"));
         assert!(!s.contains("reseed"));
         // An unknown command falls back to the overview.
-        assert!(bsc_cli_util::help_for("bsc-compliance", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+        assert!(bsc_cli_util::help_for("bsc compliance", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 }

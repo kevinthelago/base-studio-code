@@ -8,7 +8,7 @@ pub(crate) const PLANNING_PROCESS_MD: &str = include_str!("../../data/planner/pr
 // The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
 // designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
 // the software-planning process block (repos / features / fleet / GitHub publish), which would only
-// mislead it. The `bsc-plan blueprint set` spec + the four authoring stages live in this intro.
+// mislead it. The `bsc plan blueprint set` spec + the four authoring stages live in this intro.
 pub(crate) const PLANNING_BLUEPRINT_INTRO: &str = include_str!("../../data/planner/intro.blueprint.md");
 // Anti prompt-injection framing for the planner (#1107). The planner is the most input-exposed
 // session (it reviews repos + the web) AND a trust amplifier (its output seeds the fleet's trusted

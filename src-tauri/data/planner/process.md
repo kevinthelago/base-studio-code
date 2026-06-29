@@ -2,7 +2,7 @@
 > **Scope is set by the Active planning stages section at the bottom of this file — it is
 > authoritative.** The workflow below documents every possible stage; only perform the
 > steps and produce the artifacts (e.g. the features, phases, and fleet in the plan store
-> via `bsc-plan`) for stages listed there. If a stage isn't listed, skip its steps and DO
+> via `bsc plan`) for stages listed there. If a stage isn't listed, skip its steps and DO
 > NOT create its artifacts. (Issues are never authored during planning — they are generated
 > from the features at GitHub publish.)
 
@@ -32,16 +32,16 @@ right panel. Overwrite to refine — each write replaces the previous version.
   `discovery/stack.md`, `discovery/security.md`, `discovery/observability.md`, or a custom
   `discovery/feature_flags.md`. Every topic you document during the **Discovery** stage
   lives in the `discovery/` subdir; the file stem is the bare canonical key. Shape which
-  topics are REQUIRED with `bsc-plan discovery require <topic>` / `bsc-plan discovery
-  unrequire <topic>` (`bsc-plan discovery list` shows the manifest).
+  topics are REQUIRED with `bsc plan discovery require <topic>` / `bsc plan discovery
+  unrequire <topic>` (`bsc plan discovery list` shows the manifest).
 - Other project-tier files (repo-tier sections) stay at the hub root: `repo__web__api.md`, etc.
-- Structured plan state is the plan DB, not files — repos (`bsc-plan repo`), the roadmap
-  (`bsc-plan phase`), features (`bsc-plan feature`), the fleet (`bsc-plan fleet`), deploy
-  (`bsc-plan deploy`). See "App integration tags".
-- **Reads are lean by default** — `bsc-plan list`/`mine`/`feature list` print a compact table
-  (counts, no bodies) and `bsc-plan summary` gives the one-line plan overview (totals · per-status ·
+- Structured plan state is the plan DB, not files — repos (`bsc plan repo`), the roadmap
+  (`bsc plan phase`), features (`bsc plan feature`), the fleet (`bsc plan fleet`), deploy
+  (`bsc plan deploy`). See "App integration tags".
+- **Reads are lean by default** — `bsc plan list`/`mine`/`feature list` print a compact table
+  (counts, no bodies) and `bsc plan summary` gives the one-line plan overview (totals · per-status ·
   per-stream · per-phase). That's enough to orient and decide. Pull the full record ONLY when you
-  need it: `bsc-plan get <ref>` (one issue, full) or `bsc-plan feature get <slug>`; escalate a list
+  need it: `bsc plan get <ref>` (one issue, full) or `bsc plan feature get <slug>`; escalate a list
   with `--full` / `--fields a,b` / `--limit N` / `--since <epoch>`. Don't dump full lists to skim —
   it wastes the context budget; read lean, then drill in.
 
@@ -59,8 +59,8 @@ gate). Use the **canonical key** as the file stem so the section maps to the rig
 `schema` (not "data-model"), `ux`, `api`, `auth`, `security`, `testing`, etc. The
 **Context** gate requires the project's DYNAMIC required-set — seeded with the baseline
 `goal`, `scope`, `stack`, `architecture`, `users`, `release` (each `discovery/<topic>.md`, in the
-`discovery/` subdir) — which you shape with `bsc-plan discovery require <topic>` /
-`bsc-plan discovery unrequire <topic>` (`bsc-plan discovery list` shows it). Just write the
+`discovery/` subdir) — which you shape with `bsc plan discovery require <topic>` /
+`bsc plan discovery unrequire <topic>` (`bsc plan discovery list` shows it). Just write the
 required files; they don't need confirmation.
 
 **Finish each section** — never leave a deliberate fill-in marker (`TODO`, `TBD`, `FIXME`,
@@ -128,7 +128,7 @@ For each repo `{short}`:
 3. **Note the repo's toolchain commands** the moment you decide its stack — its
    build, test, run, and package-manager binaries (e.g. `cargo`, `npm`, `pnpm`,
    `pytest`, `docker`) plus any project-specific tool a worker runs unattended. Carry
-   them onto the owning stream's `commands` in the fleet plan (`bsc-plan fleet set` —
+   them onto the owning stream's `commands` in the fleet plan (`bsc plan fleet set` —
    see "Allow shell commands"). A safe baseline (read-only inspection + common build
    toolchains) is always allowed, so `commands` only needs the extras; `gh`/`git` are
    always allowed. Required for anything outside the baseline — without it the worker
@@ -160,10 +160,10 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
 - **Extensions / MCP** — every installed MCP server is already exposed to YOU (the planner)
   and the director, so you can call one directly while planning (e.g. research real sources
   before authoring a skill). Your job here is to give each WORKER the servers its lane needs.
-  Two ways: scope a server **project-wide** with `bsc-plan mcp add Postgres` (every build &
+  Two ways: scope a server **project-wide** with `bsc plan mcp add Postgres` (every build &
   triage session gets it — right for a DB or API every worker touches), or assign it to **one
   worker** by adding the server name to that stream's `mcp` list in the fleet plan
-  (`"mcp": ["Research"]`, via `bsc-plan fleet set` — right for a tool only one stream needs).
+  (`"mcp": ["Research"]`, via `bsc plan fleet set` — right for a tool only one stream needs).
   Servers are pre-trusted in each session's `.mcp.json`, so an autonomous agent never blocks
   on a "trust these MCP servers?" prompt. Assign only what each agent needs; never invent
   secret values (tokens/connection strings stay blank for the user to fill in the MCP screen).
@@ -191,7 +191,7 @@ is a hint: image / vector / markup / style / component / data / doc). When the u
 clicks **Route** you are asked to place them; you may also check `design/intake.json`
 whenever the user mentions added files.
 
-For each staged file: examine it, then route it to the right place using `bsc-plan repo list`
+For each staged file: examine it, then route it to the right place using `bsc plan repo list`
 (the linked repos and their roles):
 
 - Pick the relevant repo — e.g. design assets and UI components go to the repo that
@@ -252,7 +252,7 @@ files and rarely need a human.
    reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
    milestones/issues/the board current. It does NOT write feature code.
 6. **Set the fleet in the plan store** — pipe a FleetPlan JSON object to
-   `bsc-plan fleet set` (read it back with `bsc-plan fleet get`). There is no
+   `bsc plan fleet set` (read it back with `bsc plan fleet get`). There is no
    `fleet.json`; the plan store is the authoritative channel and the app polls it.
    Shape:
    ```
@@ -268,7 +268,7 @@ files and rarely need a human.
    ```
    Each stream may carry a **`"flow"`** (#297) — its per-agent execution flow — as a
    NESTED object: `"flow":{"autonomy":…,"push":…,"trigger":…,"gate":…}` (this is the
-   CANONICAL shape; it matches the stored model and round-trips through `bsc-plan fleet
+   CANONICAL shape; it matches the stored model and round-trips through `bsc plan fleet
    get`). `autonomy` = `continuous`|`checkpoint`|`confirm`; `push` =
    `auto-pr`|`self-merge`|`push-confirm`|`commit-only`|`none`; `trigger` =
    `per-issue`|`per-stage`|`on-green`; `gate` = `soft`|`hard`. Omit `flow` (or any of its
@@ -279,7 +279,7 @@ files and rarely need a human.
    **Generating each stream's permission set is a REQUIRED part of defining the stream —
    not a later step, not a manual button.** As you author each stream, DERIVE its
    least-privilege permissions from the project stack + the stream's `owns`/role and write
-   them onto the stream right here, in the same `bsc-plan fleet set` call:
+   them onto the stream right here, in the same `bsc plan fleet set` call:
    - Each stream's **`"commands"`** is the shell toolchain its worker auto-runs without a
      prompt — generate it from the stack + `owns` (a Rust worker → `["cargo"]`; a web worker
      → `["npm","node","vite","tsc"]`; a Python worker → `["python","pytest"]`; add any
@@ -297,7 +297,7 @@ files and rarely need a human.
      + `commands` (the app can also derive a least-privilege profile from exactly those
      inputs — role + `owns` + `commands`), or reuse an existing profile; set each stream's
      `"profile"` field to assign it.
-   This is done AT PLAN TIME via `bsc-plan fleet set` — never deferred to launch or to a
+   This is done AT PLAN TIME via `bsc plan fleet set` — never deferred to launch or to a
    "Generate profiles" click — so every worker boots already allowed to run exactly its own
    toolchain.
    A stream may also carry **`"assignee"`** — a GitHub login the stream's issues are
@@ -387,7 +387,7 @@ feature/issue that carries it, and record any you deliberately skip in `discover
 
 **Compliance & accessibility are owned by the Compliance MCP server — not a context section.** When
 the project has accessibility (WCAG) or regulatory needs (GDPR, SOC 2, ISO 27001, HIPAA, PCI DSS),
-assign it with `bsc-plan mcp add Compliance`: it generates the necessary compliance/accessibility
+assign it with `bsc plan mcp add Compliance`: it generates the necessary compliance/accessibility
 **Skills** during planning and enforces them at runtime. Don't hand-author accessibility sections —
 assign the server and let it own that surface.
 
@@ -408,16 +408,16 @@ and `risks` apply to almost every project.
 
 > **REQUIRED for the Context gate — the DYNAMIC required-set is seeded with the baseline
 > `discovery/goal.md`, `discovery/scope.md`, `discovery/stack.md`, `discovery/architecture.md`,
-> `discovery/users.md`, and `discovery/release.md`.** Write each; shape the set for THIS project with `bsc-plan discovery
-> require <topic>` / `bsc-plan discovery unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
-> platform requires `schema`; `bsc-plan discovery list` shows the required set). The Discovery stage
+> `discovery/users.md`, and `discovery/release.md`.** Write each; shape the set for THIS project with `bsc plan discovery
+> require <topic>` / `bsc plan discovery unrequire <topic>` (a CLI tool unrequires `users`/`ux`; a data
+> platform requires `schema`; `bsc plan discovery list` shows the required set). The Discovery stage
 > completes once every required topic's file exists — discovery files are generated, not confirmed.
 
 - `goal` **(gate-required)** — what it does, who it's for, and the measurable signal of
   success (2–4 sentences). Drives the GitHub project title and description.
 - `users` **(gate-required)** — primary personas, their jobs-to-be-done, and the one workflow each
   cares most about. One tight paragraph. (Unrequire it for a project with no distinct users — a pure
-  CLI or library — with `bsc-plan discovery unrequire users`.)
+  CLI or library — with `bsc plan discovery unrequire users`.)
 - `scope` **(gate-required)** — two lists: **In scope** (concrete deliverables) and **Out of
   scope** (explicit exclusions that prevent scope creep).
 - `stack` **(gate-required)** — one line per layer (runtime, framework, datastore, auth,
@@ -456,7 +456,7 @@ shared contract many features depend on.
 apply each where it matters (folded into the feature/architecture/issues, a Skill, or a short
 section) and record any you skip in `discovery/_skipped.md` — don't silently drop them.
 **`accessibility` and other compliance** (GDPR / SOC 2 / HIPAA / PCI) are owned by the **Compliance
-MCP server** (`bsc-plan mcp add Compliance`, which generates the compliance/accessibility
+MCP server** (`bsc plan mcp add Compliance`, which generates the compliance/accessibility
 Skills) — never a hand-authored context section.
 
 **Genuinely optional — one line in `discovery/_skipped.md` unless the product is centrally about
@@ -480,7 +480,7 @@ for a design tool).
   decides; default = X") so a building session never has to stop and ask.
 - `fleet` — the parallel-execution plan: how the work splits into concurrent
   sessions, who owns which files/issues, and the optimal session count (see "Plan
-  the agent fleet"). Stored via `bsc-plan fleet set`.
+  the agent fleet"). Stored via `bsc plan fleet set`.
 
 Document custom topics beyond this list when the project needs them — name the
 file after the topic (`feature_flags.md`, `offline_sync.md`).
@@ -490,27 +490,27 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
 - **`goal`** — always document it; write its first sentence to read as the
   project's title and its opening line as a one-line description.
 - **`features`** — when the blueprint has a **Features** stage, work **titles-first** via the
-  `bsc-plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
-  one pass — `bsc-plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
+  `bsc plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
+  one pass — `bsc plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
   with the user. THEN fill each in one at a time by slug:
-  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"stream"?}' | bsc-plan feature add`
+  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"stream"?}' | bsc plan feature add`
   (merges in place — never resend the `name`). `dependsOn` is the slugs of OTHER features this one
   builds on — the coarse roadmap **DAG** (keep it acyclic; a cycle holds the gate). A feature may be
   foundational (others depend on it), not just a user-facing capability. Each feature is ALSO its
   fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
-  "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc-plan feature list` shows ✓/·).
+  "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc plan feature list` shows ✓/·).
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
   plan store is the durable artifact. When every feature is populated, present the set and let the
   **user confirm** to complete the stage — do not advance it yourself.
 - **`phases`** — add each phase to the plan store with
-  `echo '{"name":"…","description":"…"}' | bsc-plan phase add` (read back with
-  `bsc-plan phase list`); there is no `phases.json`. Each phase needs a "done when"
+  `echo '{"name":"…","description":"…"}' | bsc plan phase add` (read back with
+  `bsc plan phase list`); there is no `phases.json`. Each phase needs a "done when"
   definition; never include time estimates or week numbers.
 - **issues** — you do NOT author issues during planning. Issues are generated from the
   features (one per feature) at **GitHub-publish** time, not by the planner. Do not write
-  issue files or run `bsc-plan add`. Your Plan-stage job is to **sequence** the features
-  into phases (`bsc-plan phase add`) and give EVERY feature a phase via
-  `echo '{"slug":"…","phase":<n or name>}' | bsc-plan feature add`. A feature's `acceptance`
+  issue files or run `bsc plan add`. Your Plan-stage job is to **sequence** the features
+  into phases (`bsc plan phase add`) and give EVERY feature a phase via
+  `echo '{"slug":"…","phase":<n or name>}' | bsc plan feature add`. A feature's `acceptance`
   / `owns` / `dependsOn` (captured in the Features stage) are what publish turns into the
   issue — so make the FEATURE complete, not a separate issue.
 - **`_skipped`** — the coverage record described under "Coverage" above.
@@ -521,7 +521,7 @@ This is the heart of planning and where the MAJORITY of the session goes. After
 the short orientation, you turn the project into its real structure — the
 features (each a stream), how they depend on each other, and the phased path to
 build them. The output is the **features** (defined in the Features stage) + their
-dependency DAG + the phases (`bsc-plan phase add`); the GitHub issues are generated from the features at
+dependency DAG + the phases (`bsc plan phase add`); the GitHub issues are generated from the features at
 publish, not here. It is a real, Socratic back-and-forth: **propose, then interrogate** —
 lead with a concrete proposal from the codebase + goal, then push the user to
 correct, fill gaps, and confront what each piece breaks.
@@ -536,9 +536,9 @@ nothing is skipped. Do NOT sketch the whole project at once.
 you're using:**
 
 - **A NEW project → go feature by feature.** The features are already a dependency
-  **DAG** (`bsc-plan feature list` shows each feature + its `dependsOn`). Take them ONE
+  **DAG** (`bsc plan feature list` shows each feature + its `dependsOn`). Take them ONE
   at a time **in dependency order** — foundations first, so a feature's deps are decomposed
-  before it. For each: `bsc-plan feature get <slug>` to pull its spec, fully drive it down
+  before it. For each: `bsc plan feature get <slug>` to pull its spec, fully drive it down
   to its issues (see "Drive a unit down" below) with each issue's `dependsOn` realizing the
   feature's edges, write them, and only THEN move to the next. Never batch the depth pass
   across features.
@@ -581,7 +581,7 @@ not a one-off prose sketch it has to re-derive:
    library + version, the algorithm/architecture, the data structures, the known
    pitfalls, and the perf/accuracy constraints.
 2. **Compile Skills from the findings, then refine them with research papers.** Turn
-   what you found into reusable **Skills** — author each with `bsc-skill add` (see
+   what you found into reusable **Skills** — author each with `bsc skill add` (see
    "Manage the Skills library"); a Skill is a capability bundle (prompt + bundled tools
    + profile guardrails) the building agent **invokes** rather than re-deriving. Then
    REFINE each skill against the scientific sources: `search` arXiv / Semantic Scholar /
@@ -635,7 +635,7 @@ it before moving on. Do not move on until ALL of these are concrete:
 - **Dependencies** — which other features this one builds on (its `dependsOn`); the
   files/dirs it owns are assigned to its stream later, in the Permissions stage.
 Capture all of it on the FEATURE the moment it's nailed —
-`echo '{"slug":"…","behavior":"…","acceptance":[…],"approach":"…","tools":[…],"data":"…","dependsOn":[…]}' | bsc-plan feature add`
+`echo '{"slug":"…","behavior":"…","acceptance":[…],"approach":"…","tools":[…],"data":"…","dependsOn":[…]}' | bsc plan feature add`
 (merges in place) — so the structure panel fills in as you go and nothing is lost. Do
 NOT author issues. Then, and only then, move to the next unit.
 
@@ -643,7 +643,7 @@ NOT author issues. Then, and only then, move to the next unit.
 Once every unit (every feature, or every inventoried section) is decomposed, agree
 the ORDER with the user: the first shippable slice, what builds on what, the path
 from nothing to the finished product. Group the ordered work into phases
-(`bsc-plan phase add`) — each a dependency-respecting slice with a crisp "done when,"
+(`bsc plan phase add`) — each a dependency-respecting slice with a crisp "done when,"
 not an arbitrary bucket. Phases span repos; each issue's `phase` names the phase
 it belongs to and its `repo` places it under that repo in the structure.
 
@@ -661,9 +661,9 @@ carrying everything an agent needs to pick it up and finish without asking.
 ## Your outputs are the plan — nothing else
 
 You are plan-only. Your entire job is to produce the plan artifacts: the section
-files, the plan store (the features via `bsc-plan feature`, the phases via
-`bsc-plan phase add`, the fleet via `bsc-plan fleet set`, the linked repos via
-`bsc-plan repo add`), the `prompts/` kickoff scripts, and the app-integration tags.
+files, the plan store (the features via `bsc plan feature`, the phases via
+`bsc plan phase add`, the fleet via `bsc plan fleet set`, the linked repos via
+`bsc plan repo add`), the `prompts/` kickoff scripts, and the app-integration tags.
 Issues are generated from the features at GitHub publish — never authored here. Get
 those right and stop there.
 
@@ -693,10 +693,10 @@ name to that stream's `mcp` list in the fleet plan instead (#1054). You and the 
 already see every installed server. Never put secret values here; the user fills env in the
 MCP screen:
 ```
-bsc-plan mcp add Postgres
+bsc plan mcp add Postgres
 ```
 **Record the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
-(right after Repos). `bsc-plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
+(right after Repos). `bsc plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
 fills the Deploy pane and clears the stage gate. Re-run with the whole config as it firms up (the
 latest one wins). The gate needs a `platform` on every service, ≥2 `environments`, ≥2
 `pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`.
@@ -718,7 +718,7 @@ echo '{
   "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
   "release": {"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
   "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
-}' | bsc-plan deploy set
+}' | bsc plan deploy set
 ```
 **Register a per-repo starting script** (emit once you've written the file to
 `prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
@@ -735,7 +735,7 @@ stream's `owns`/role — the build, test, run, and package-manager binaries (a R
 `["cargo"]`; a web worker → `["npm","node","vite","tsc"]`; a Python worker →
 `["python","pytest"]`; plus any project-specific tool the stream runs unattended:
 `wasm-pack`, `docker`, a repo script, …) — and set them on the stream's **`commands`** array
-in the fleet plan (`bsc-plan fleet set`). They become that worker's auto-approved
+in the fleet plan (`bsc plan fleet set`). They become that worker's auto-approved
 `Bash(<cmd> *)` rules at launch, so it runs its own toolchain without a permission prompt.
 
 **Every worker is automatically granted this baseline — do NOT list any of these in a
@@ -749,7 +749,7 @@ stream's `commands`** (the app pre-approves them at launch from the backend-owne
   `pnpm`, `yarn`, `npx`, `node`, `deno`, `bun`, `python`, `python3`, `pip`, `pip3`,
   `pytest`, `make`, `go`, `tsc`, `vite`, `eslint`, `prettier`, `vitest`, `jest`, `docker`,
   `mvn`, `gradle`, `dotnet`, `ollama`
-- **Always** (every agent): `gh`, `git`, `bsc-plan`
+- **Always** (every agent): `gh`, `git`, `bsc`
 
 So a stream's `commands` lists ONLY the tools its stack needs that are NOT in the baseline
 (e.g. `terraform`, `psql`, `protoc`, `wasm-pack`, `kubectl`, a repo script) — don't re-list
@@ -767,7 +767,7 @@ worker blocks on a permission prompt for that command.
 (There is no `commands.json` file or `<allow_command>` tag — those were retired; the
 stream's `commands` is the only channel.)
 
-**Declare the agent fleet** (the parallel-execution plan). `bsc-plan fleet set` (see
+**Declare the agent fleet** (the parallel-execution plan). `bsc plan fleet set` (see
 "Plan the agent fleet") is the authoritative channel; these tags are the fast path that
 reveals the fleet live. Emit the header once, then one
 `agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
@@ -794,7 +794,7 @@ or `push=none` for a pure reviewer/explorer.
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Author each
-skill with `bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"` — pipe a skill object as
+skill with `bsc skill add --group "$BSC_SESSION_SKILL_GROUP"` — pipe a skill object as
 JSON on stdin (one object, or an array to add several at once); it upserts into the
 global Skills library, prints the assigned id(s), and pairs each one into THIS planning
 session's group. That group (named after the project, persistent across reopens) is how
@@ -802,10 +802,10 @@ the Skills pane highlights what you authored this session. This is where the fea
 workshop's **"dissect hard problems → Skills"** step deposits each capability it distils
 (see "Hard topics"):
 ```
-echo '{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}' | bsc-skill add --group "$BSC_SESSION_SKILL_GROUP"
+echo '{"name":"Open a clean PR","kind":"workflow","description":"<one line>","prompt":"<the procedure the agent follows>","tools":["create_pr","git_diff"],"profiles":["build","auto"],"projects":["<this-project-key>"],"pinned":true}' | bsc skill add --group "$BSC_SESSION_SKILL_GROUP"
 ```
-Curate the session group anytime: `bsc-skill group member "$BSC_SESSION_SKILL_GROUP" <skill-id>`
-adds a skill, the same with `--off` removes it (`bsc-skill group get "$BSC_SESSION_SKILL_GROUP"`
+Curate the session group anytime: `bsc skill group member "$BSC_SESSION_SKILL_GROUP" <skill-id>`
+adds a skill, the same with `--off` removes it (`bsc skill group get "$BSC_SESSION_SKILL_GROUP"`
 shows the current members).
 - `kind` — one of `workflow|scaffold|codemod|review|docs` (defaults to `workflow`).
 - `description` — one line summarizing what the skill does (the parser also accepts `desc`).
@@ -822,7 +822,7 @@ inline tag — a skill's `projects` + `pinned` fields ARE its assignment. Each s
 add lands in the global Skills library and, at fleet launch, every pinned skill scoped
 to this project is copied into each worker's worktree
 (`.claude/skills/<slug>/SKILL.md`), the same way `CLAUDE.local.md` is. So to "hand the
-agent the means to solve a hard unit," `bsc-skill add` the skill with this project's
+agent the means to solve a hard unit," `bsc skill add` the skill with this project's
 key in `projects` and leave it pinned.
 
 ## GitHub tools — read-only orientation

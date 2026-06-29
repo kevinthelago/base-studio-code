@@ -79,8 +79,8 @@ mod tests {
         assert!(ui.contains("Do NOT design"), "ui directive must tell the planner not to design the screens: {ui}");
         // #786: when a Data Model exists, the kickoff is authored FROM it (entities→screens) + the
         // behavior summary — the generation stays the existing Claude Design loop, no new engine.
-        // #1446: the Data Model + behaviors now live in DuckDB, read via the bsc-data CLI (not a file).
-        assert!(ui.contains("bsc-data model get"), "ui directive must read the Data Model via bsc-data: {ui}");
+        // #1446: the Data Model + behaviors now live in DuckDB, read via `bsc data` (not a file).
+        assert!(ui.contains("bsc data model get"), "ui directive must read the Data Model via `bsc data`: {ui}");
         assert!(!ui.contains("datamodel.json"), "the Data Model is in DuckDB now, not a datamodel.json file (#1446): {ui}");
         assert!(ui.contains("Platform Behavior Summary"), "ui directive must fold the captured behaviors into the kickoff: {ui}");
     }
@@ -88,14 +88,14 @@ mod tests {
     #[test]
     fn deploy_directive_ships_only_deps_moved_to_streams() {
         // #1429: dependencies moved Deploy → Streams. The Deploy directive records the deploy config
-        // and gates on shipping ALONE — it must NOT instruct `bsc-plan deps set`; the `streams`
+        // and gates on shipping ALONE — it must NOT instruct `bsc plan deps set`; the `streams`
         // directive owns dependency locking now.
         let dep = stage_directive("deploy");
-        assert!(dep.contains("bsc-plan deploy set"), "deploy directive records the deploy config: {dep}");
-        assert!(!dep.contains("bsc-plan deps set"), "deps moved to Streams — not the deploy directive: {dep}");
+        assert!(dep.contains("bsc plan deploy set"), "deploy directive records the deploy config: {dep}");
+        assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams — not the deploy directive: {dep}");
         assert!(dep.contains("deploymentDefined"), "deploy gates on shipping: {dep}");
         let streams = stage_directive("streams");
-        assert!(streams.contains("bsc-plan deps set") && streams.contains("sharedDepsLocked"),
+        assert!(streams.contains("bsc plan deps set") && streams.contains("sharedDepsLocked"),
             "the streams directive owns dependency locking: {streams}");
     }
 
@@ -106,12 +106,12 @@ mod tests {
         // roadmap (phases) AND the fleet.
         let dep = stage_directive("repos_deploy");
         assert!(dep.contains("Deployment"), "merged stage names itself Deployment: {dep}");
-        assert!(dep.contains("repo_link") && dep.contains("bsc-plan deploy set"),
+        assert!(dep.contains("repo_link") && dep.contains("bsc plan deploy set"),
             "Deployment covers link + deploy: {dep}");
-        assert!(!dep.contains("bsc-plan deps set"), "deps moved to Streams (#1429): {dep}");
+        assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams (#1429): {dep}");
         let streams = stage_directive("streams");
         assert!(streams.contains("Streams"), "merged stage names itself Streams: {streams}");
-        assert!(streams.contains("bsc-plan phase add") && streams.contains("bsc-plan fleet set") && streams.contains("bsc-plan deps set"),
+        assert!(streams.contains("bsc plan phase add") && streams.contains("bsc plan fleet set") && streams.contains("bsc plan deps set"),
             "Streams covers the roadmap, the fleet, AND shared deps: {streams}");
 
         // The merged stages render in the active-stages overview with their merged names.

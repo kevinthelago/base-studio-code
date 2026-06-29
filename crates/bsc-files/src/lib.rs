@@ -8,6 +8,11 @@
 //!   are never followed (closes the junction-traversal hazard the app's own walker guards, #1650).
 //! - A directory node's `size`/`files` are the **aggregate** of everything under it, computed
 //!   bottom-up — so `tree --depth 1` still reports accurate totals for collapsed subtrees.
+//!
+//! The agent-facing CLI lives in [`cli`] (`bsc files …`), dispatched by the unified `bsc` binary
+//! (#1877) and by the legacy `bsc-files` shim.
+
+pub mod cli;
 
 use serde::Serialize;
 use std::path::Path;

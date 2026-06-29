@@ -1,5 +1,5 @@
 // Tauri command surface over the native per-project plan store (#plan-db). The store itself lives in
-// the Tauri-free `plandb` crate (shared with the `bsc-plan` agent CLI); this module only resolves the
+// the Tauri-free `plandb` crate (shared with the `bsc plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
 use plandb::{Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
@@ -273,7 +273,7 @@ pub(crate) fn plan_issues_changed_since(project_key: String, repo: String, since
 }
 
 // ── Self-correction lessons (#1362) ──────────────────────────────────────────────
-// The `bsc-learned` helper captures candidates into plan.db via the `bsc-plan lesson` CLI; these
+// The `bsc-learned` helper captures candidates into plan.db via the `bsc plan lesson` CLI; these
 // commands back the desktop "Pending lessons" review queue. Confirm/discard only set the user's
 // verdict — turning a confirmed lesson INTO a project skill is the frontend's job (it owns the
 // SkillDef shape + the skilldb bridge), so this bridge stays a thin wrapper over the plan store.

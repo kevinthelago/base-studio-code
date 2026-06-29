@@ -1,7 +1,10 @@
-//! `bsc-plan` — the agent-facing CLI over a project's plan.db (#plan-db). The planner writes issues
-//! one at a time; workers read their queue + drive their own status; the director reads the
-//! `complete` queue and marks verified/failed after checking CI. Replaces having every session
-//! read/rewrite issues.json by hand.
+//! The `bsc plan` subcommand (#1877) — the agent-facing CLI over a project's plan.db (#plan-db). The
+//! planner writes issues one at a time; workers read their queue + drive their own status; the
+//! director reads the `complete` queue and marks verified/failed after checking CI. Replaces having
+//! every session read/rewrite issues.json by hand.
+//!
+//! Extracted from the old `bsc-plan` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the legacy `bsc-plan` shim still calls the same entrypoint.
 //!
 //! The DB is located via `--db <path>` or the `BSC_PLAN_DB` env var (set per-session at launch, so
 //! the CLI resolves the hub's plan.db even from a worker's worktree). Default output is human text;
@@ -13,21 +16,16 @@
 //! flags `--full` / `--fields` / `--limit` / `--since` (and `--pretty` to re-indent a JSON read).
 //!
 //! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-plan help            # compact menu (the small "what commands exist" prompt)
-//!   bsc-plan fleet help      # detailed help for ONE command
-//!   bsc-plan <cmd> help      # same, after any command
+//!   bsc plan help            # compact menu (the small "what commands exist" prompt)
+//!   bsc plan fleet help      # detailed help for ONE command
+//!   bsc plan <cmd> help      # same, after any command
 
+use crate::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
-use plandb::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-plan", run)
-}
 
 const TAGLINE: &str = "the project plan store — issues, features, fleet, sections (#plan-db)";
 
@@ -40,7 +38,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "upsert issue(s) from JSON on stdin; prints ref(s)",
         usage: "\
 USAGE:
-  bsc-plan add   # one issue object, or an array, as JSON on stdin
+  bsc plan add   # one issue object, or an array, as JSON on stdin
 
 Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.",
     },
@@ -49,7 +47,7 @@ Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints 
         summary: "print one issue's FULL spec",
         usage: "\
 USAGE:
-  bsc-plan get <ref> [--json] [--pretty]
+  bsc plan get <ref> [--json] [--pretty]
 
 One issue's full spec — the detail the lean `list` omits. --json is compact; --pretty re-indents.",
     },
@@ -58,7 +56,7 @@ One issue's full spec — the detail the lean `list` omits. --json is compact; -
         summary: "plan overview: totals + per-status/stream/phase counts",
         usage: "\
 USAGE:
-  bsc-plan summary [--json] [--pretty]
+  bsc plan summary [--json] [--pretty]
 
 The cheapest \"where does the plan stand\" read: totals plus per-status, per-stream, per-phase counts.",
     },
@@ -67,7 +65,7 @@ The cheapest \"where does the plan stand\" read: totals plus per-status, per-str
         summary: "the issue table (lean by default; escalation flags)",
         usage: "\
 USAGE:
-  bsc-plan list [--status S] [--stream S] [--full] [--fields a,b] [--limit N] [--since EPOCH] [--json|--pretty]
+  bsc plan list [--status S] [--stream S] [--full] [--fields a,b] [--limit N] [--since EPOCH] [--json|--pretty]
 
 Lean by default (#1562): a compact TSV (counts, no body) / compact --json summary. Escalate only
 when needed:
@@ -82,7 +80,7 @@ when needed:
         summary: "your stream's issues (alias for list --stream)",
         usage: "\
 USAGE:
-  bsc-plan mine --stream S [--status S] [--full|--fields a,b|--limit N|--since EPOCH] [--json|--pretty]
+  bsc plan mine --stream S [--status S] [--full|--fields a,b|--limit N|--since EPOCH] [--json|--pretty]
 
 An alias for `list --stream S` — the same lean table + escalation flags, scoped to one stream.",
     },
@@ -91,7 +89,7 @@ An alias for `list --stream S` — the same lean table + escalation flags, scope
         summary: "set an issue's status",
         usage: "\
 USAGE:
-  bsc-plan status <ref> <status>
+  bsc plan status <ref> <status>
 
 Sets one issue's status. <status> is one of: open | in_progress | blocked | complete | verified | failed.",
     },
@@ -100,7 +98,7 @@ Sets one issue's status. <status> is one of: open | in_progress | blocked | comp
         summary: "delete an issue",
         usage: "\
 USAGE:
-  bsc-plan remove <ref>
+  bsc plan remove <ref>
 
 Deletes one issue by ref.",
     },
@@ -109,7 +107,7 @@ Deletes one issue by ref.",
         summary: "print the issues.json projection (full, unchanged)",
         usage: "\
 USAGE:
-  bsc-plan render
+  bsc plan render
 
 Prints the full issues.json projection to stdout (the durable shape, unchanged).",
     },
@@ -118,40 +116,40 @@ Prints the full issues.json projection to stdout (the durable shape, unchanged).
         summary: "the features roster + detail-fill (titles-first)",
         usage: "\
 USAGE:
-  bsc-plan feature add <name>...   # register feature title(s) — the roster (slug from name)
-  bsc-plan feature add             # (no names) merge details from a feature object/array on stdin
-  bsc-plan feature list            # list features (· = title only, ✓ = fully defined)
-  bsc-plan feature get <slug>      # print one feature's full spec
-  bsc-plan feature remove <slug>   # delete a feature",
+  bsc plan feature add <name>...   # register feature title(s) — the roster (slug from name)
+  bsc plan feature add             # (no names) merge details from a feature object/array on stdin
+  bsc plan feature list            # list features (· = title only, ✓ = fully defined)
+  bsc plan feature get <slug>      # print one feature's full spec
+  bsc plan feature remove <slug>   # delete a feature",
     },
     CmdDoc {
         name: "repo",
         summary: "repos linked to the project (durable in plan.db)",
         usage: "\
 USAGE:
-  bsc-plan repo add <owner/repo>...   # link repo(s) to the project
-  bsc-plan repo list                  # list the linked repos
-  bsc-plan repo remove <owner/repo>   # unlink a repo",
+  bsc plan repo add <owner/repo>...   # link repo(s) to the project
+  bsc plan repo list                  # list the linked repos
+  bsc plan repo remove <owner/repo>   # unlink a repo",
     },
     CmdDoc {
         name: "phase",
         summary: "the roadmap phases (referenced by 1-based order)",
         usage: "\
 USAGE:
-  bsc-plan phase add <name> [description...]   # add/merge a roadmap phase (in order)
-  bsc-plan phase list                          # list phases in order
-  bsc-plan phase remove <name>                 # delete a phase",
+  bsc plan phase add <name> [description...]   # add/merge a roadmap phase (in order)
+  bsc plan phase list                          # list phases in order
+  bsc plan phase remove <name>                 # delete a phase",
     },
     CmdDoc {
         name: "fleet",
         summary: "streams + per-stream permissions/flows + director/topology",
         usage: "\
 USAGE:
-  bsc-plan fleet set                  # replace the fleet from a FleetPlan JSON on stdin
-  bsc-plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
-  bsc-plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
-  bsc-plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
-  bsc-plan fleet remove <stream-id>   # drop one stream
+  bsc plan fleet set                  # replace the fleet from a FleetPlan JSON on stdin
+  bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
+  bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
+  bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
+  bsc plan fleet remove <stream-id>   # drop one stream
 
 `fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.",
     },
@@ -160,53 +158,53 @@ USAGE:
         summary: "the Deploy stage's structured config (one blob)",
         usage: "\
 USAGE:
-  bsc-plan deploy set   # replace the deploy config from a DeployConfig JSON on stdin
-  bsc-plan deploy get   # print the deploy config (DeployConfig JSON)",
+  bsc plan deploy set   # replace the deploy config from a DeployConfig JSON on stdin
+  bsc plan deploy get   # print the deploy config (DeployConfig JSON)",
     },
     CmdDoc {
         name: "deps",
         summary: "the locked dependency manifest (one blob)",
         usage: "\
 USAGE:
-  bsc-plan deps set   # replace the manifest from a DependencyManifest JSON on stdin
-  bsc-plan deps get   # print the manifest (a `dependencies` array + a `registries` map)",
+  bsc plan deps set   # replace the manifest from a DependencyManifest JSON on stdin
+  bsc plan deps get   # print the manifest (a `dependencies` array + a `registries` map)",
     },
     CmdDoc {
         name: "mcp",
         summary: "catalog MCP servers scoped to the project",
         usage: "\
 USAGE:
-  bsc-plan mcp add <name>...   # assign MCP server(s) by catalog name
-  bsc-plan mcp list            # list the assigned servers
-  bsc-plan mcp remove <name>   # unassign a server",
+  bsc plan mcp add <name>...   # assign MCP server(s) by catalog name
+  bsc plan mcp list            # list the assigned servers
+  bsc plan mcp remove <name>   # unassign a server",
     },
     CmdDoc {
         name: "blueprint",
         summary: "the blueprint an authoring project is designing (one blob)",
         usage: "\
 USAGE:
-  bsc-plan blueprint set   # replace the blueprint from a Blueprint JSON on stdin
-  bsc-plan blueprint get   # print the blueprint (Blueprint JSON)",
+  bsc plan blueprint set   # replace the blueprint from a Blueprint JSON on stdin
+  bsc plan blueprint get   # print the blueprint (Blueprint JSON)",
     },
     CmdDoc {
         name: "discovery",
         summary: "the Discovery stage's dynamic required-set",
         usage: "\
 USAGE:
-  bsc-plan discovery require <topic>...     # mark topic(s) required for this project
-  bsc-plan discovery unrequire <topic>...   # drop topic(s) from the required set
-  bsc-plan discovery list                   # show the required topic set
+  bsc plan discovery require <topic>...     # mark topic(s) required for this project
+  bsc plan discovery unrequire <topic>...   # drop topic(s) from the required set
+  bsc plan discovery list                   # show the required topic set
 
 Prose lives in discovery/<topic>.md; these files gate on GENERATION (written, not confirmed).",
     },
     CmdDoc {
         name: "integration",
-        summary: "DEPRECATED (#1721) → use `bsc-data connector`",
+        summary: "DEPRECATED (#1721) → use `bsc data connector`",
         usage: "\
 USAGE:
-  bsc-plan integration add|list|get <id>|remove <id>
+  bsc plan integration add|list|get <id>|remove <id>
 
-DEPRECATED (#1721): native REST connector presets are DATA-platform state — use `bsc-data connector`
+DEPRECATED (#1721): native REST connector presets are DATA-platform state — use `bsc data connector`
 instead. This verb still works (same store) but prints a deprecation note to stderr.",
     },
     CmdDoc {
@@ -214,10 +212,10 @@ instead. This verb still works (same store) but prints a deprecation note to std
         summary: "self-correction candidates (the review queue; #1362)",
         usage: "\
 USAGE:
-  bsc-plan lesson add \"<mistake>\" --rule \"<rule>\" [--cause <c>] [--from <prov>]   # capture a candidate
-  bsc-plan lesson list [--status pending|confirmed|discarded]                  # list candidates (JSON)
-  bsc-plan lesson confirm <id> | discard <id>                                  # set the user's verdict
-  bsc-plan lesson remove <id>                                                  # delete a candidate
+  bsc plan lesson add \"<mistake>\" --rule \"<rule>\" [--cause <c>] [--from <prov>]   # capture a candidate
+  bsc plan lesson list [--status pending|confirmed|discarded]                  # list candidates (JSON)
+  bsc plan lesson confirm <id> | discard <id>                                  # set the user's verdict
+  bsc plan lesson remove <id>                                                  # delete a candidate
 
 Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalized mistake|rule key.",
     },
@@ -226,9 +224,9 @@ Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalize
         summary: "the project's flat prose files (goal/scope/stack/…)",
         usage: "\
 USAGE:
-  bsc-plan section list          # list the present prose .md files
-  bsc-plan section get <name>    # print one section (e.g. goal, scope, stack) verbatim
-  bsc-plan section set <name>    # write a section from stdin
+  bsc plan section list          # list the present prose .md files
+  bsc plan section get <name>    # print one section (e.g. goal, scope, stack) verbatim
+  bsc plan section set <name>    # write a section from stdin
 
 Sections live beside plan.db in the hub dir. The `.md` is implied; the name is path-safe (a bare
 name, no traversal).",
@@ -238,31 +236,34 @@ name, no traversal).",
         summary: "read/write automations.md (the named hub doc)",
         usage: "\
 USAGE:
-  bsc-plan automations get   # read automations.md
-  bsc-plan automations set   # write automations.md from stdin",
+  bsc plan automations get   # read automations.md
+  bsc plan automations set   # write automations.md from stdin",
     },
     CmdDoc {
         name: "github-context",
         summary: "read github_context.md (app-generated; read-only)",
         usage: "\
 USAGE:
-  bsc-plan github-context get   # read github_context.md (app-generated; read-only)",
+  bsc plan github-context get   # read github_context.md (app-generated; read-only)",
     },
 ];
 
 /// The compact command menu (the shared help overview) — shown on `help`, on no command, and at the
-/// foot of an unknown-command error.
-fn menu() -> String {
-    bsc_cli_util::help_overview("bsc-plan", TAGLINE, COMMANDS)
+/// foot of an unknown-command error. `prog` is the display name (`"bsc plan"` from the umbrella,
+/// `"bsc-plan"` from the legacy shim).
+fn menu(prog: &str) -> String {
+    bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)
 }
 
 /// One command's detailed help — shown on `<cmd> help` and at the foot of an unknown-subcommand error.
-fn cmd_help(name: &str) -> String {
-    bsc_cli_util::help_for("bsc-plan", TAGLINE, COMMANDS, name)
+fn cmd_help(prog: &str, name: &str) -> String {
+    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, name)
 }
 
 /// Parsed global flags + leftover positional args.
 struct Args {
+    /// The display name threaded into help/error text (`"bsc plan"` or the legacy `"bsc-plan"`).
+    prog: String,
     json: bool,
     db: Option<String>,
     positional: Vec<String>,
@@ -285,7 +286,7 @@ struct Args {
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
-        json: false, db: None, positional: Vec::new(), status: None, stream: None,
+        prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, full: false, fields: None, limit: None,
         since: None, pretty: false,
     };
@@ -319,22 +320,26 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `plan` subcommand entrypoint: `args` is everything after `bsc plan`; `prog` is the display
+/// name for help/errors (`"bsc plan"` from the umbrella, `"bsc-plan"` from the legacy shim). Handles
+/// help (no command / `help` / `help <cmd>` / `<cmd> help`) before any handler opens the DB.
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let mut args = parse_args(args)?;
+    args.prog = prog.to_string();
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
     // Handled before any handler opens the DB (help must work without a plan.db).
     if cmd.is_empty() || cmd == "help" {
         match args.positional.get(1) {
-            Some(name) => print!("{}", cmd_help(name)),
-            None => print!("{}", menu()),
+            Some(name) => print!("{}", cmd_help(prog, name)),
+            None => print!("{}", menu(prog)),
         }
         return Ok(());
     }
-    // Per-command help: `bsc-plan <cmd> help`.
+    // Per-command help: `bsc plan <cmd> help`.
     if args.positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", cmd_help(&cmd));
+        print!("{}", cmd_help(prog, &cmd));
         return Ok(());
     }
 
@@ -362,7 +367,7 @@ fn run() -> Result<(), String> {
         "section" => cmd_section(&args),
         "automations" => cmd_automations(&args),
         "github-context" => cmd_github_context(&args),
-        other => Err(format!("unknown command '{other}'\n\n{}", menu())),
+        other => Err(format!("unknown command '{other}'\n\n{}", menu(prog))),
     }
 }
 
@@ -446,7 +451,7 @@ fn cmd_blob_noun(
             emit_blob_or_null(args.json, args.pretty, get_fn(&s)?, none_text);
             Ok(())
         }
-        other => Err(format!("unknown {verb} command '{other}'\n\n{}", cmd_help(verb))),
+        other => Err(format!("unknown {verb} command '{other}'\n\n{}", cmd_help(&args.prog, verb))),
     }
 }
 
@@ -461,7 +466,7 @@ fn cmd_add_cmd(args: &Args) -> Result<(), String> {
 /// `get <ref>` — one issue's FULL spec (compact `--json` by design; `--pretty` re-indents). An agent
 /// escalates here for the detail the lean list omits.
 fn cmd_get(args: &Args) -> Result<(), String> {
-    let r = args.positional.get(1).ok_or("usage: bsc-plan get <ref>")?;
+    let r = args.positional.get(1).ok_or("usage: bsc plan get <ref>")?;
     let s = open_store(&args.db)?;
     match s.get(r).map_err(|e| e.to_string())? {
         Some(issue) if args.json => print_json(&serde_json::to_value(&issue).unwrap_or_default(), args.pretty),
@@ -522,8 +527,8 @@ fn cmd_list(args: &Args) -> Result<(), String> {
 
 /// `status <ref> <status>` — set an issue's status (validated against {@link STATUSES}).
 fn cmd_status(args: &Args) -> Result<(), String> {
-    let r = args.positional.get(1).ok_or("usage: bsc-plan status <ref> <status>")?;
-    let new = args.positional.get(2).ok_or("usage: bsc-plan status <ref> <status>")?;
+    let r = args.positional.get(1).ok_or("usage: bsc plan status <ref> <status>")?;
+    let new = args.positional.get(2).ok_or("usage: bsc plan status <ref> <status>")?;
     if !is_valid_status(new) {
         return Err(format!("unknown status '{new}' (expected one of {STATUSES:?})"));
     }
@@ -540,7 +545,7 @@ fn cmd_status(args: &Args) -> Result<(), String> {
 
 /// `remove <ref>` — delete one issue.
 fn cmd_remove(args: &Args) -> Result<(), String> {
-    let r = args.positional.get(1).ok_or("usage: bsc-plan remove <ref>")?;
+    let r = args.positional.get(1).ok_or("usage: bsc plan remove <ref>")?;
     let s = open_store(&args.db)?;
     s.remove(r).map_err(|e| e.to_string())?;
     if !args.json {
@@ -583,7 +588,7 @@ fn cmd_feature(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let slug = args.positional.get(2).ok_or("usage: bsc-plan feature get <slug>")?;
+            let slug = args.positional.get(2).ok_or("usage: bsc plan feature get <slug>")?;
             match s.feature_get(slug).map_err(|e| e.to_string())? {
                 Some(f) if args.json => print_json(&serde_json::to_value(&f).unwrap_or_default(), args.pretty),
                 Some(f) => print!("{}", render_feature(&f)),
@@ -592,14 +597,14 @@ fn cmd_feature(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let slug = args.positional.get(2).ok_or("usage: bsc-plan feature remove <slug>")?;
+            let slug = args.positional.get(2).ok_or("usage: bsc plan feature remove <slug>")?;
             s.feature_remove(slug).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("removed {slug}");
             }
             Ok(())
         }
-        other => Err(format!("unknown feature command '{other}'\n\n{}", cmd_help("feature"))),
+        other => Err(format!("unknown feature command '{other}'\n\n{}", cmd_help(&args.prog, "feature"))),
     }
 }
 
@@ -612,7 +617,7 @@ fn cmd_repo(args: &Args) -> Result<(), String> {
         "add" => {
             let names: Vec<&String> = args.positional.iter().skip(2).collect();
             if names.is_empty() {
-                return Err("usage: bsc-plan repo add <owner/repo>...".into());
+                return Err("usage: bsc plan repo add <owner/repo>...".into());
             }
             for n in &names {
                 s.repo_add(n).map_err(|e| e.to_string())?;
@@ -626,14 +631,14 @@ fn cmd_repo(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan repo remove <owner/repo>")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan repo remove <owner/repo>")?;
             s.repo_remove(name).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("unlinked {name}");
             }
             Ok(())
         }
-        other => Err(format!("unknown repo command '{other}'\n\n{}", cmd_help("repo"))),
+        other => Err(format!("unknown repo command '{other}'\n\n{}", cmd_help(&args.prog, "repo"))),
     }
 }
 
@@ -644,7 +649,7 @@ fn cmd_phase(args: &Args) -> Result<(), String> {
     match sub {
         // `phase add <name> [description...]` — name first, the rest joined as the description.
         "add" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan phase add <name> [description]")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan phase add <name> [description]")?;
             let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
             s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
             if !args.json {
@@ -661,14 +666,14 @@ fn cmd_phase(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan phase remove <name>")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan phase remove <name>")?;
             s.phase_remove(name).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("removed {name}");
             }
             Ok(())
         }
-        other => Err(format!("unknown phase command '{other}'\n\n{}", cmd_help("phase"))),
+        other => Err(format!("unknown phase command '{other}'\n\n{}", cmd_help(&args.prog, "phase"))),
     }
 }
 
@@ -712,7 +717,7 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
             }
         },
         "remove" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-plan fleet remove <stream-id>")?;
+            let id = args.positional.get(2).ok_or("usage: bsc plan fleet remove <stream-id>")?;
             s.fleet_stream_remove(id).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("removed {id}");
@@ -724,7 +729,7 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
         // every stream row intact.
         "stream" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
             "set" => {
-                let id = args.positional.get(3).ok_or("usage: bsc-plan fleet stream set <stream-id>")?;
+                let id = args.positional.get(3).ok_or("usage: bsc plan fleet stream set <stream-id>")?;
                 let v: serde_json::Value = read_stdin_json_one("stream JSON")?;
                 s.fleet_stream_set(id, &v).map_err(|e| e.to_string())?;
                 if !args.json {
@@ -732,7 +737,7 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
                 }
                 Ok(())
             }
-            other => Err(format!("unknown fleet stream command '{other}'\n\n{}", cmd_help("fleet"))),
+            other => Err(format!("unknown fleet stream command '{other}'\n\n{}", cmd_help(&args.prog, "fleet"))),
         },
         "meta" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
             "set" => {
@@ -743,9 +748,9 @@ fn cmd_fleet(args: &Args) -> Result<(), String> {
                 }
                 Ok(())
             }
-            other => Err(format!("unknown fleet meta command '{other}'\n\n{}", cmd_help("fleet"))),
+            other => Err(format!("unknown fleet meta command '{other}'\n\n{}", cmd_help(&args.prog, "fleet"))),
         },
-        other => Err(format!("unknown fleet command '{other}'\n\n{}", cmd_help("fleet"))),
+        other => Err(format!("unknown fleet command '{other}'\n\n{}", cmd_help(&args.prog, "fleet"))),
     }
 }
 
@@ -778,7 +783,7 @@ fn cmd_mcp(args: &Args) -> Result<(), String> {
         "add" => {
             let names: Vec<&String> = args.positional.iter().skip(2).collect();
             if names.is_empty() {
-                return Err("usage: bsc-plan mcp add <name>...".into());
+                return Err("usage: bsc plan mcp add <name>...".into());
             }
             for n in &names {
                 s.mcp_add(n).map_err(|e| e.to_string())?;
@@ -792,14 +797,14 @@ fn cmd_mcp(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan mcp remove <name>")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan mcp remove <name>")?;
             s.mcp_remove(name).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("unassigned {name}");
             }
             Ok(())
         }
-        other => Err(format!("unknown mcp command '{other}'\n\n{}", cmd_help("mcp"))),
+        other => Err(format!("unknown mcp command '{other}'\n\n{}", cmd_help(&args.prog, "mcp"))),
     }
 }
 
@@ -827,7 +832,7 @@ fn cmd_discovery(args: &Args) -> Result<(), String> {
         "require" | "unrequire" => {
             let topics: Vec<&String> = args.positional.iter().skip(2).collect();
             if topics.is_empty() {
-                return Err(format!("usage: bsc-plan discovery {sub} <topic>..."));
+                return Err(format!("usage: bsc plan discovery {sub} <topic>..."));
             }
             let required = sub == "require";
             for t in &topics {
@@ -841,7 +846,7 @@ fn cmd_discovery(args: &Args) -> Result<(), String> {
             emit_json_or_lines(args.json, &required, "(no required discovery topics)", |_, t| t.clone());
             Ok(())
         }
-        other => Err(format!("unknown discovery command '{other}'\n\n{}", cmd_help("discovery"))),
+        other => Err(format!("unknown discovery command '{other}'\n\n{}", cmd_help(&args.prog, "discovery"))),
     }
 }
 
@@ -851,10 +856,10 @@ fn cmd_discovery(args: &Args) -> Result<(), String> {
 /// (credentials go to the keychain, #1194).
 ///
 /// **Deprecated (#1721):** the connectors store is DATA-platform state; its CLI access moved to
-/// `bsc-data connector`. This verb still works (delegating to the same `bsc_data::*` functions) so
+/// `bsc data connector`. This verb still works (delegating to the same `bsc_data::*` functions) so
 /// nothing breaks mid-transition, but it prints a one-line deprecation note to stderr.
 fn cmd_integration(args: &Args) -> Result<(), String> {
-    eprintln!("`bsc-plan integration` is deprecated; use `bsc-data connector`");
+    eprintln!("`bsc plan integration` is deprecated; use `bsc data connector`");
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let path = bsc_data::runtime_store_path();
     match sub {
@@ -881,7 +886,7 @@ fn cmd_integration(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-plan integration get <id>")?;
+            let id = args.positional.get(2).ok_or("usage: bsc plan integration get <id>")?;
             match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
                 Some(p) => print_json(&serde_json::to_value(&p).unwrap_or_default(), args.pretty),
                 None if args.json => println!("null"),
@@ -890,14 +895,14 @@ fn cmd_integration(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-plan integration remove <id>")?;
+            let id = args.positional.get(2).ok_or("usage: bsc plan integration remove <id>")?;
             let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("{}", if removed { format!("removed {id}") } else { format!("(no integration '{id}')") });
             }
             Ok(())
         }
-        other => Err(format!("unknown integration command '{other}'\n\n{}", cmd_help("integration"))),
+        other => Err(format!("unknown integration command '{other}'\n\n{}", cmd_help(&args.prog, "integration"))),
     }
 }
 
@@ -928,7 +933,7 @@ fn cmd_lesson(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "confirm" | "discard" => {
-            let id = args.positional.get(2).ok_or(format!("usage: bsc-plan lesson {sub} <id>"))?;
+            let id = args.positional.get(2).ok_or(format!("usage: bsc plan lesson {sub} <id>"))?;
             let status = if sub == "confirm" { "confirmed" } else { "discarded" };
             let n = s.lesson_set_status(id, status).map_err(|e| e.to_string())?;
             if n == 0 {
@@ -940,19 +945,19 @@ fn cmd_lesson(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-plan lesson remove <id>")?;
+            let id = args.positional.get(2).ok_or("usage: bsc plan lesson remove <id>")?;
             s.lesson_remove(id).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("removed {id}");
             }
             Ok(())
         }
-        other => Err(format!("unknown lesson command '{other}'\n\n{}", cmd_help("lesson"))),
+        other => Err(format!("unknown lesson command '{other}'\n\n{}", cmd_help(&args.prog, "lesson"))),
     }
 }
 
 /// `section` — the project's flat prose files (goal/scope/stack/architecture/users/…). They live
-/// beside plan.db in the hub dir, so this is the prose side of the same per-project plan `bsc-plan`
+/// beside plan.db in the hub dir, so this is the prose side of the same per-project plan `bsc plan`
 /// already owns. Path-safe: a name is a bare section (the `.md` implied), never a traversal.
 fn cmd_section(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
@@ -964,14 +969,14 @@ fn cmd_section(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan section get <name>")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan section get <name>")?;
             get_hub_doc(&hub_md_path(&hub, name)?, &format!("section '{name}'"))
         }
         "set" => {
-            let name = args.positional.get(2).ok_or("usage: bsc-plan section set <name>  (content on stdin)")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan section set <name>  (content on stdin)")?;
             set_hub_doc(&hub_md_path(&hub, name)?, args.json)
         }
-        other => Err(format!("unknown section command '{other}'\n\n{}", cmd_help("section"))),
+        other => Err(format!("unknown section command '{other}'\n\n{}", cmd_help(&args.prog, "section"))),
     }
 }
 
@@ -982,7 +987,7 @@ fn cmd_automations(args: &Args) -> Result<(), String> {
     match sub {
         "get" => get_hub_doc(&path, "automations"),
         "set" => set_hub_doc(&path, args.json),
-        other => Err(format!("unknown automations command '{other}'\n\n{}", cmd_help("automations"))),
+        other => Err(format!("unknown automations command '{other}'\n\n{}", cmd_help(&args.prog, "automations"))),
     }
 }
 
@@ -992,7 +997,7 @@ fn cmd_github_context(args: &Args) -> Result<(), String> {
     let path = resolve_hub(&args.db)?.join("github_context.md");
     match sub {
         "get" => get_hub_doc(&path, "github context"),
-        other => Err(format!("unknown github-context command '{other}'\n\n{}", cmd_help("github-context"))),
+        other => Err(format!("unknown github-context command '{other}'\n\n{}", cmd_help(&args.prog, "github-context"))),
     }
 }
 
@@ -1401,7 +1406,7 @@ mod tests {
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = menu();
+        let ov = menu("bsc plan");
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
@@ -1411,12 +1416,12 @@ mod tests {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // `fleet help` shows the fleet subcommands, not the whole menu.
-        let f = cmd_help("fleet");
-        assert!(f.contains("bsc-plan fleet"));
+        let f = cmd_help("bsc plan", "fleet");
+        assert!(f.contains("bsc plan fleet"));
         assert!(f.contains("stream set"));
         assert!(!f.contains("lesson"));
         // An unknown command falls back to the overview.
-        assert!(cmd_help("nope").contains("COMMANDS:"));
+        assert!(cmd_help("bsc plan", "nope").contains("COMMANDS:"));
     }
 
     fn summary(r: &str, stream: Option<&str>, phase: Option<serde_json::Value>, acc: usize) -> IssueSummary {
@@ -1559,7 +1564,7 @@ mod tests {
 
     #[test]
     fn section_list_and_round_trip_over_a_temp_hub() {
-        let dir = std::env::temp_dir().join(format!("bsc-plan-sec-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bsc plan-sec-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // .md files are listed by stem; non-.md + subdirs are not.

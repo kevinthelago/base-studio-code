@@ -11,6 +11,11 @@
 //!
 //! Concurrency (the #1325 crux — the CLI and the live app touch the same db at once): WAL mode +
 //! a busy_timeout are set on open so the two front-ends don't block/corrupt each other.
+//!
+//! The agent-facing CLI lives in [`cli`] (`bsc skill …`), dispatched by the unified `bsc` binary
+//! (#1877) and by the legacy `bsc-skill` shim.
+
+pub mod cli;
 
 use bsc_sqlite_util::{arr_to_json, json_to_arr};
 use include_dir::{include_dir, Dir};

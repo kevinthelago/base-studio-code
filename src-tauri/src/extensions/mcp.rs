@@ -171,17 +171,16 @@ pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg
 }
 /// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
-/// the bundled `bsc-research-mcp` binary's absolute path at write time. Sourced from the canonical
-/// bundled-binary registry (#1848) so the server name is defined ONCE (the frontend sentinel + the
-/// pty path-wrapper agree by construction).
+/// the unified `bsc` binary's absolute path + the `mcp research` subcommand args at write time
+/// (#1877). Sourced from the canonical registry (#1848) so the server name is defined ONCE.
 pub(crate) const RESEARCH_MCP_MARKER: &str = bsc_util::RESEARCH_MCP;
-/// The same sentinel for the built-in Compliance server (#1005) — rewritten to the bundled
-/// `bsc-compliance-mcp` binary's absolute path at write time. From the registry (#1848).
+/// The same sentinel for the built-in Compliance server (#1005) — rewritten to `<bsc> mcp compliance`
+/// at write time (#1877). From the registry (#1848).
 pub(crate) const COMPLIANCE_MCP_MARKER: &str = bsc_util::COMPLIANCE_MCP;
 /// Resolve a stdio MCP command, substituting the bundled-binary absolute path for a built-in MCP
 /// marker (Research #1196, Compliance #1005). A non-marker command passes through unchanged; a
 /// marker falls back to the bare name when its bundled binary can't be located (e.g. a dev build
-/// without the sidecar). Each marker resolves through its own bundled-path lookup.
+/// without the sidecar).
 pub(crate) fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
     if command == RESEARCH_MCP_MARKER || command == COMPLIANCE_MCP_MARKER {
         if let Some(p) = bundled {
@@ -190,6 +189,16 @@ pub(crate) fn resolve_mcp_command(command: &str, bundled: Option<std::path::Path
     }
     command.to_string()
 }
+/// The `bsc mcp <sub>` subcommand args a built-in marker prepends before any user args (#1877): both
+/// bundled servers are now subcommands of the unified `bsc` binary, so the resolved command is the
+/// `bsc` exe and these are the leading args. A non-marker command prepends nothing.
+fn mcp_marker_subargs(command: &str) -> &'static [&'static str] {
+    match command {
+        RESEARCH_MCP_MARKER => &["mcp", "research"],
+        COMPLIANCE_MCP_MARKER => &["mcp", "compliance"],
+        _ => &[],
+    }
+}
 /// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
 pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     if m.transport == "http" {
@@ -197,16 +206,18 @@ pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     }
     let mut v = serde_json::Map::new();
     let raw = m.command.clone().unwrap_or_default();
-    // Each built-in marker rewrites to its own bundled sidecar's absolute path.
-    let bundled = match raw.as_str() {
-        COMPLIANCE_MCP_MARKER => pty::bsc_compliance_mcp_bin_path(),
-        _ => pty::bsc_research_mcp_bin_path(),
-    };
+    // Each built-in marker now resolves to the unified `bsc` binary; its `mcp <sub>` subcommand is
+    // prepended to the args so Claude Code spawns `<bsc> mcp research` / `<bsc> mcp compliance`.
+    let subargs = mcp_marker_subargs(&raw);
+    let bundled = if subargs.is_empty() { None } else { pty::bsc_bin_path() };
     let command = resolve_mcp_command(&raw, bundled);
     v.insert("command".into(), serde_json::Value::String(command));
-    v.insert("args".into(), serde_json::Value::Array(
-        m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
-    ));
+    let args: Vec<serde_json::Value> = subargs
+        .iter()
+        .map(|a| serde_json::Value::String((*a).to_string()))
+        .chain(m.args.iter().map(|a| serde_json::Value::String(a.clone())))
+        .collect();
+    v.insert("args".into(), serde_json::Value::Array(args));
     let env: serde_json::Map<String, serde_json::Value> = m.env.iter()
         .filter(|(k, _)| !k.is_empty())
         .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))

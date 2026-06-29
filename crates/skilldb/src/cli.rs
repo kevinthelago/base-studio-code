@@ -1,29 +1,26 @@
-//! `bsc-skill` — the session-facing CLI over the GLOBAL skills + task-groups store (#1338, an
-//! instance of #1325). Injected into EVERY console session (Solution B-global), so a group authored
-//! in one session (the planner, or any session) is reachable + resolvable by every other live
-//! session, and queryable from a session's own shell.
+//! The `bsc skill` subcommand (#1877) — the session-facing CLI over the GLOBAL skills + task-groups
+//! store (#1338, an instance of #1325). Injected into EVERY console session (Solution B-global), so a
+//! group authored in one session (the planner, or any session) is reachable + resolvable by every
+//! other live session, and queryable from a session's own shell.
+//!
+//! Extracted from the old `bsc-skill` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the legacy `bsc-skill` shim delegates here too.
 //!
 //! The db is located via `--db <path>` or the `BSC_SKILL_DB` env var (set per-session at launch),
-//! defaulting to `~/.base-studio-code/skills.db`. Output is JSON to stdout (like `bsc-plan`) —
-//! **compact by default**, indented with `--pretty` (#1762; it was previously always pretty-printed,
-//! ignoring the flags — the one behavior change). `resolve` prints the group's member skills (the
-//! SKILL.md-bound shape), de-duped + ordered + existence-filtered.
+//! defaulting to `~/.base-studio-code/skills.db`. Output is JSON to stdout (like `bsc plan`) —
+//! **compact by default**, indented with `--pretty` (#1762). `resolve` prints the group's member
+//! skills (the SKILL.md-bound shape), de-duped + ordered + existence-filtered.
 //!
 //! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-skill help          # compact menu (the small "what commands exist" prompt)
-//!   bsc-skill group help    # detailed help for ONE command
-//!   bsc-skill <cmd> help    # same, after any command
+//!   bsc skill help          # compact menu (the small "what commands exist" prompt)
+//!   bsc skill group help    # detailed help for ONE command
+//!   bsc skill <cmd> help    # same, after any command
 
+use crate::{Skill, SkillGroup, Store};
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json};
-use skilldb::{Skill, SkillGroup, Store};
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-skill", run)
-}
 
 const TAGLINE: &str = "the global skills + task-groups store — author/resolve reusable skill bundles (#1338)";
 
@@ -36,7 +33,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "navigate skills — facets, ranked, paginated (JSON)",
         usage: "\
 USAGE:
-  bsc-skill list [--kind k] [--source s] [--project p] [--group g] [--pinned] [--query q]
+  bsc skill list [--kind k] [--source s] [--project p] [--group g] [--pinned] [--query q]
                  [--sort rank|uses|updated|name] [--limit N] [--offset M] [--pretty]
 
 Navigate the library the way the Skills page does. Filters: --kind, --source, --project (global +
@@ -51,7 +48,7 @@ the heavy `prompt` body (one `get <id>` away).",
         summary: "upsert skill(s) from JSON on stdin; prints id(s)",
         usage: "\
 USAGE:
-  bsc-skill add [--group <id>] [--pretty]   # skill JSON (one object or an array) on stdin
+  bsc skill add [--group <id>] [--pretty]   # skill JSON (one object or an array) on stdin
 
 Upserts each skill by its (required, non-empty) \"id\". With --group, each skill is also added to
 that group (the group is created, named after its id, if it does not exist yet).",
@@ -61,7 +58,7 @@ that group (the group is created, named after its id, if it does not exist yet).
         summary: "print one skill (JSON, or null)",
         usage: "\
 USAGE:
-  bsc-skill get <id> [--pretty]
+  bsc skill get <id> [--pretty]
 
 Prints the skill JSON for <id>, or `null` if absent.",
     },
@@ -70,7 +67,7 @@ Prints the skill JSON for <id>, or `null` if absent.",
         summary: "delete one skill by id (no-op if absent)",
         usage: "\
 USAGE:
-  bsc-skill remove <id> [--pretty]
+  bsc skill remove <id> [--pretty]
 
 Deletes the skill keyed by <id>. A no-op (not an error) when it does not exist.",
     },
@@ -79,11 +76,11 @@ Deletes the skill keyed by <id>. A no-op (not an error) when it does not exist."
         summary: "task-group CRUD + membership (named, reusable skill bundles)",
         usage: "\
 USAGE:
-  bsc-skill group add                       # upsert a SkillGroup from JSON on stdin; prints the id
-  bsc-skill group list                      # print every group (JSON)
-  bsc-skill group get <id>                  # print one group (JSON, or null)
-  bsc-skill group remove <id>               # delete a group
-  bsc-skill group member <group> <skill>    # add <skill> to <group> (--off removes); prints ids
+  bsc skill group add                       # upsert a SkillGroup from JSON on stdin; prints the id
+  bsc skill group list                      # print every group (JSON)
+  bsc skill group get <id>                  # print one group (JSON, or null)
+  bsc skill group remove <id>               # delete a group
+  bsc skill group member <group> <skill>    # add <skill> to <group> (--off removes); prints ids
 
 A task group is a named, reusable bundle of skills toggled as one. Members are stored as ids;
 `resolve` expands a group to its actual skills.",
@@ -93,7 +90,7 @@ A task group is a named, reusable bundle of skills toggled as one. Members are s
         summary: "a group's member skills, ordered + paginated (JSON)",
         usage: "\
 USAGE:
-  bsc-skill resolve <group-id> [--limit N] [--offset M] [--pretty]
+  bsc skill resolve <group-id> [--limit N] [--offset M] [--pretty]
 
 \"Display just this group's skills\" — the group's member skills, ordered, de-duped, and
 existence-filtered (the expandGroups semantics the app binds to SKILL.md files). Paginated like
@@ -104,7 +101,7 @@ existence-filtered (the expandGroups semantics the app binds to SKILL.md files).
         summary: "find task groups + their live member counts (JSON)",
         usage: "\
 USAGE:
-  bsc-skill groups [--query q] [--pretty]
+  bsc skill groups [--query q] [--pretty]
 
 Lists every task group with its live member count (id, name, hue, memberCount), optionally filtered
 by --query (name/id substring). The entry point for `resolve <group-id>` (\"show just that group\").",
@@ -114,7 +111,7 @@ by --query (name/id substring). The entry point for `resolve <group-id>` (\"show
         summary: "record a use of a skill (bumps its usage counter)",
         usage: "\
 USAGE:
-  bsc-skill use <id|slug>
+  bsc skill use <id|slug>
 
 Records one use of a skill: increments its usage counter and stamps its last-used time. Accepts a
 stable id or a name-slug. This is the single chokepoint the user (UI/CLI) and an agent both call, so
@@ -135,7 +132,7 @@ struct Args {
     /// the `list --group <id>` membership filter (#A).
     group: Option<String>,
     /// Indent the JSON output (#1762). The default is compact, matching every other `bsc-*` CLI;
-    /// `--json` is accepted as an explicit no-op since `bsc-skill`'s output is always JSON.
+    /// `--json` is accepted as an explicit no-op since `bsc skill`'s output is always JSON.
     pretty: bool,
     // ── navigation facets + pagination (#A): the same axes the user navigates the Skills page by ──
     kind: Option<String>,
@@ -261,13 +258,15 @@ fn paginate(rows: Vec<Skill>, limit: usize, offset: usize, pretty: bool) {
     );
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `skill` subcommand entrypoint: `args` is everything after `bsc skill`; `prog` is the display
+/// name for help/errors (`"bsc skill"` from the umbrella, `"bsc-skill"` from the legacy shim).
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
     // dispatch in bsc-cli-util, run before opening the store (help works without a skills.db).
-    if bsc_cli_util::handle_help("bsc-skill", TAGLINE, COMMANDS, &args.positional) {
+    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -352,7 +351,7 @@ fn run() -> Result<(), String> {
         // Record a USE of a skill (#A): the chokepoint the user (UI/CLI) and an agent both call, so
         // usage is counted uniformly. Accepts a stable id OR a name-slug.
         "use" => {
-            let key = args.positional.get(1).ok_or("usage: bsc-skill use <id|slug>")?;
+            let key = args.positional.get(1).ok_or("usage: bsc skill use <id|slug>")?;
             let s = store()?;
             let id = if s.get(key).map_err(|e| e.to_string())?.is_some() {
                 key.clone()
@@ -386,14 +385,14 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let id = args.positional.get(1).ok_or("usage: bsc-skill get <id>")?;
+            let id = args.positional.get(1).ok_or("usage: bsc skill get <id>")?;
             let s = store()?;
             // `print_json` of the `Option` prints `null` for a miss (the skill JSON for a hit).
             print_json(&s.get(id).map_err(|e| e.to_string())?, args.pretty);
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(1).ok_or("usage: bsc-skill remove <id>")?;
+            let id = args.positional.get(1).ok_or("usage: bsc skill remove <id>")?;
             let s = store()?;
             s.remove(id).map_err(|e| e.to_string())?;
             print_json(&id, args.pretty);
@@ -401,7 +400,7 @@ fn run() -> Result<(), String> {
         }
         // "Display just this group's skills" — the group's member skills, paginated like `list` (#A).
         "resolve" => {
-            let gid = args.positional.get(1).ok_or("usage: bsc-skill resolve <group-id> [--limit N] [--offset M]")?;
+            let gid = args.positional.get(1).ok_or("usage: bsc skill resolve <group-id> [--limit N] [--offset M]")?;
             let s = store()?;
             let skills = s.resolve(gid).map_err(|e| e.to_string())?;
             paginate(skills, args.limit.unwrap_or(DEFAULT_PAGE), args.offset, args.pretty);
@@ -434,21 +433,21 @@ fn run() -> Result<(), String> {
                     Ok(())
                 }
                 "get" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-skill group get <id>")?;
+                    let id = args.positional.get(2).ok_or("usage: bsc skill group get <id>")?;
                     // `print_json` of the `Option` prints `null` for a miss.
                     print_json(&s.group_get(id).map_err(|e| e.to_string())?, args.pretty);
                     Ok(())
                 }
                 "remove" => {
-                    let id = args.positional.get(2).ok_or("usage: bsc-skill group remove <id>")?;
+                    let id = args.positional.get(2).ok_or("usage: bsc skill group remove <id>")?;
                     s.group_remove(id).map_err(|e| e.to_string())?;
                     print_json(&id, args.pretty);
                     Ok(())
                 }
                 // `group member <group> <skill> [--off]` toggles membership; prints the resulting ids.
                 "member" => {
-                    let gid = args.positional.get(2).ok_or("usage: bsc-skill group member <group> <skill> [--off]")?;
-                    let sid = args.positional.get(3).ok_or("usage: bsc-skill group member <group> <skill> [--off]")?;
+                    let gid = args.positional.get(2).ok_or("usage: bsc skill group member <group> <skill> [--off]")?;
+                    let sid = args.positional.get(3).ok_or("usage: bsc skill group member <group> <skill> [--off]")?;
                     let ids = s.group_toggle_member(gid, sid, !args.off).map_err(|e| match e {
                         rusqlite::Error::QueryReturnedNoRows => format!("no group with id '{gid}'"),
                         other => other.to_string(),
@@ -458,11 +457,11 @@ fn run() -> Result<(), String> {
                 }
                 other => Err(format!(
                     "unknown group command '{other}'\n\n{}",
-                    bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "group")
+                    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "group")
                 )),
             }
         }
-        other => Err(bsc_cli_util::unknown_command("bsc-skill", TAGLINE, COMMANDS, other)),
+        other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
 
@@ -520,21 +519,21 @@ mod tests {
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc skill", TAGLINE, COMMANDS);
         for c in ["list", "add", "get", "remove", "group", "groups", "resolve", "use"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // `group help` shows the group command's subcommands, not the whole menu.
-        let g = bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "group");
-        assert!(g.contains("bsc-skill group"));
+        let g = bsc_cli_util::help_for("bsc skill", TAGLINE, COMMANDS, "group");
+        assert!(g.contains("bsc skill group"));
         assert!(g.contains("member"));
         assert!(!g.contains("resolve <group-id>"));
         // The new navigation/usage commands have their own detailed help.
-        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "use").contains("usage counter"));
-        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "groups").contains("member count"));
-        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "list").contains("--sort"));
+        assert!(bsc_cli_util::help_for("bsc skill", TAGLINE, COMMANDS, "use").contains("usage counter"));
+        assert!(bsc_cli_util::help_for("bsc skill", TAGLINE, COMMANDS, "groups").contains("member count"));
+        assert!(bsc_cli_util::help_for("bsc skill", TAGLINE, COMMANDS, "list").contains("--sort"));
         // An unknown command falls back to the overview.
-        assert!(bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+        assert!(bsc_cli_util::help_for("bsc skill", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 
     #[test]

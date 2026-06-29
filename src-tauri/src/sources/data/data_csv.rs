@@ -304,7 +304,7 @@ pub fn data_persist_model(project_key: String, model: DataModel, refined: bool) 
 
 /// The persisted canonical Data Model for a project (from its DuckDB store), or null when none.
 /// Shape: `{ "model": <DataModel>, "refined": <bool> }`. The model pane reads this; the planner
-/// reads it via the `bsc-data` CLI (#1446). Never CREATES the store on a read.
+/// reads it via the `bsc data` CLI (#1446). Never CREATES the store on a read.
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_get_model(project_key: String) -> Result<Option<serde_json::Value>, String> {

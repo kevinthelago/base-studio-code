@@ -1,27 +1,23 @@
-//! `bsc-blueprint` — the session-facing CLI over the USER blueprint store (#1719, an instance of
-//! #1325). Injected into EVERY console session so the user blueprint library
+//! The `bsc blueprint` subcommand (#1877) — the agent-facing CLI over the USER blueprint store
+//! (#1719, an instance of #1325). The user blueprint library
 //! (`~/.base-studio-code/blueprints/<id>.json`) is list/get/set/remove-able from a session's own
 //! shell — the same store the desktop blueprint library reads/writes. Built-in blueprints are
 //! code/JSON-owned and out of scope; this is the user store only.
 //!
+//! Extracted from the old `bsc-blueprint` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the per-command help (#1762) is unchanged:
+//!   bsc blueprint help          # compact menu (the small "what commands exist" prompt)
+//!   bsc blueprint get help      # detailed help for ONE command
+//!   bsc blueprint <cmd> help    # same, after any command
+//!
 //! The store is located via `--dir <path>` or the `BSC_BLUEPRINT_DIR` env var (set per-session at
 //! launch), defaulting to `~/.base-studio-code/blueprints/`. Output is JSON to stdout (like
-//! `bsc-plan` / `bsc-skill`): compact by default, indented with `--pretty`.
-//!
-//! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-blueprint help          # compact menu (the small "what commands exist" prompt)
-//!   bsc-blueprint get help      # detailed help for ONE command
-//!   bsc-blueprint <cmd> help    # same, after any command
+//! `bsc plan` / `bsc skill`): compact by default, indented with `--pretty`.
 
-use bsc_blueprint::Store;
+use crate::Store;
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json};
-use std::process::ExitCode;
 use serde_json::Value;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-blueprint", run)
-}
 
 const TAGLINE: &str = "the user blueprint store — list/get/set/remove ~/.base-studio-code/blueprints (#1719)";
 
@@ -33,7 +29,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "every user blueprint's {id, name} (JSON)",
         usage: "\
 USAGE:
-  bsc-blueprint list [--pretty]
+  bsc blueprint list [--pretty]
 
 Prints every user blueprint's { id, name } as JSON (compact; --pretty for indented). The full
 blueprint JSON is one `get <id>` away.",
@@ -43,7 +39,7 @@ blueprint JSON is one `get <id>` away.",
         summary: "print one blueprint (JSON, verbatim) or null",
         usage: "\
 USAGE:
-  bsc-blueprint get <id> [--pretty]
+  bsc blueprint get <id> [--pretty]
 
 Prints the stored blueprint JSON for <id> verbatim, or `null` if absent.",
     },
@@ -52,7 +48,7 @@ Prints the stored blueprint JSON for <id> verbatim, or `null` if absent.",
         summary: "upsert from blueprint JSON on stdin; prints id(s)",
         usage: "\
 USAGE:
-  bsc-blueprint set [--pretty]   # blueprint JSON (one object or an array) on stdin
+  bsc blueprint set [--pretty]   # blueprint JSON (one object or an array) on stdin
 
 Upserts each blueprint by its (required, non-empty) \"id\" field, written verbatim. Prints the
 id(s) written.",
@@ -62,7 +58,7 @@ id(s) written.",
         summary: "delete a blueprint (no-op if absent)",
         usage: "\
 USAGE:
-  bsc-blueprint remove <id> [--pretty]
+  bsc blueprint remove <id> [--pretty]
 
 Deletes the blueprint keyed by <id>. A no-op (not an error) when it does not exist.",
     },
@@ -91,13 +87,17 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `blueprint` subcommand entrypoint: `args` is everything after `bsc blueprint`; `prog` is the
+/// display name for help/errors (`"bsc blueprint"` from the umbrella, `"bsc-blueprint"` from the
+/// legacy shim). Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any store
+/// read.
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
     // dispatch in bsc-cli-util, run BEFORE resolving the store (help works without a blueprint dir).
-    if bsc_cli_util::handle_help("bsc-blueprint", TAGLINE, COMMANDS, &args.positional) {
+    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -113,7 +113,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let id = args.positional.get(1).ok_or("usage: bsc-blueprint get <id>")?;
+            let id = args.positional.get(1).ok_or("usage: bsc blueprint get <id>")?;
             match store.get(id)? {
                 // Print the stored JSON verbatim (it's already JSON), or `null` when absent.
                 Some(json) => println!("{}", json.trim_end()),
@@ -135,12 +135,12 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(1).ok_or("usage: bsc-blueprint remove <id>")?;
+            let id = args.positional.get(1).ok_or("usage: bsc blueprint remove <id>")?;
             store.remove(id)?;
             print_json(&id, args.pretty);
             Ok(())
         }
-        other => Err(bsc_cli_util::unknown_command("bsc-blueprint", TAGLINE, COMMANDS, other)),
+        other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
 
@@ -226,14 +226,14 @@ mod tests {
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = bsc_cli_util::help_overview("bsc-blueprint", TAGLINE, COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc blueprint", TAGLINE, COMMANDS);
         for c in ["list", "get", "set", "remove"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
-        let one = bsc_cli_util::help_for("bsc-blueprint", TAGLINE, COMMANDS, "set");
-        assert!(one.contains("bsc-blueprint set"));
+        let one = bsc_cli_util::help_for("bsc blueprint", TAGLINE, COMMANDS, "set");
+        assert!(one.contains("bsc blueprint set"));
         assert!(one.contains("stdin"));
         // An unknown command falls back to the overview.
-        assert!(bsc_cli_util::help_for("bsc-blueprint", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+        assert!(bsc_cli_util::help_for("bsc blueprint", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 }

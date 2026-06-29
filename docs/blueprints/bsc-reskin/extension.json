@@ -103,7 +103,7 @@
         "gate": "fleet planned",
         "deps": ["structure"],
         "blurb": "Plan the least-privilege agent that executes the reskin.",
-        "prompt": "Plan the agent fleet that executes the reskin — typically a single worker scoped to `src/styles/**` (+ `index.html` for fonts), least-privilege, with `design/` explicitly out of its write boundary. Pipe the FleetPlan to `bsc-plan fleet set`."
+        "prompt": "Plan the agent fleet that executes the reskin — typically a single worker scoped to `src/styles/**` (+ `index.html` for fonts), least-privilege, with `design/` explicitly out of its write boundary. Pipe the FleetPlan to `bsc plan fleet set`."
       },
       {
         "key": "deploy",
