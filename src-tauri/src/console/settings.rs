@@ -1,8 +1,11 @@
 use crate::*;
 
-// NOTE: the planner prompts (`data/planner/process.md`, `data/stages/permissions.json`) declare
+// NOTE: the planner prompts (`data/planner/process.md`, `data/stages/permissions.json`) re-state
 // this same baseline (MANDATORY_BASH + BASELINE_READONLY + BASELINE_BUILD) so the planner authors
-// only stack-specific extras on top — keep them in sync if these three constants change (#1817).
+// only stack-specific extras on top. These three consts are the SINGLE SOURCE OF TRUTH; the
+// `baseline_drift_guard` tests below parse those data files and assert they match the consts, so the
+// old "keep them in sync (#1817)" warning is now a CI-caught invariant (#1866, sibling of #1844's
+// deny-floor drift guard). Change a const → the data files must follow or the build fails.
 /// Shell commands every spawned repo/console session auto-approves regardless of
 /// the user's allowlist — the app's GitHub workflow (triage, publish, repo ops)
 /// depends on them. `gh` is required by triage; `git` by every repo session;
@@ -210,5 +213,128 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
         arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
     for r in rules {
         if seen.insert(r.clone()) { arr.push(serde_json::Value::String(r.clone())); }
+    }
+}
+
+#[cfg(test)]
+mod baseline_drift_guard {
+    //! Drift guard (#1866) for the three baseline ALLOW lists.
+    //!
+    //! `MANDATORY_BASH` / `BASELINE_READONLY` / `BASELINE_BUILD` are the SINGLE canonical source.
+    //! The planner data (`data/planner/process.md`, `data/stages/permissions.json`) re-states the
+    //! same baseline so the planner authors only stack-specific extras on top — a manual "keep in
+    //! sync (#1817)" that these tests turn into a CI-caught invariant (the ALLOW-baseline sibling of
+    //! #1844's deny-floor guard). The data files are embedded at compile time, so this is a pure
+    //! offline parse — no fixtures, no runtime. The session render path is untouched; these tests
+    //! only pin that the planner-facing copies can't silently drift from the runtime consts.
+    use super::{BASELINE_BUILD, BASELINE_READONLY, MANDATORY_BASH};
+
+    const PROCESS_MD: &str = include_str!("../../data/planner/process.md");
+    const PERMISSIONS_JSON: &str = include_str!("../../data/stages/permissions.json");
+
+    /// The backtick-quoted tokens in `s`, in order: "`ls`, `cat`" → ["ls", "cat"].
+    fn backtick_tokens(s: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest = s;
+        while let Some(open) = rest.find('`') {
+            let after = &rest[open + 1..];
+            match after.find('`') {
+                Some(close) => {
+                    out.push(after[..close].to_string());
+                    rest = &after[close + 1..];
+                }
+                None => break,
+            }
+        }
+        out
+    }
+
+    /// The slice of `md` from `marker` to the end of that markdown bullet — i.e. up to the next
+    /// `\n- ` list item or the next blank line, whichever comes first (continuation lines are
+    /// indented, so they don't terminate the bullet).
+    fn bullet_from(md: &str, marker: &str) -> String {
+        let start = md
+            .find(marker)
+            .unwrap_or_else(|| panic!("process.md missing baseline bullet marker: {marker}"));
+        let tail = &md[start..];
+        let next_item = tail.get(1..).and_then(|t| t.find("\n- ")).map(|i| i + 1);
+        let blank = tail.find("\n\n");
+        let end = [next_item, blank].into_iter().flatten().min().unwrap_or(tail.len());
+        tail[..end].to_string()
+    }
+
+    /// The text of `s` after `open` up to the first following `close`.
+    fn between<'a>(s: &'a str, open: &str, close: &str) -> &'a str {
+        let a = s
+            .find(open)
+            .unwrap_or_else(|| panic!("permissions.json missing marker: {open}"))
+            + open.len();
+        let rest = &s[a..];
+        let b = rest
+            .find(close)
+            .unwrap_or_else(|| panic!("permissions.json missing close `{close}` after `{open}`"));
+        &rest[..b]
+    }
+
+    fn owned(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// `process.md` re-states the FULL baseline as three bullets (so the planner doesn't re-list it
+    /// in a stream's `commands`). Each bullet must match its const EXACTLY — same commands, same
+    /// order — so the planner's "do NOT re-list the baseline" instruction can never go stale.
+    #[test]
+    fn process_md_baseline_bullets_match_the_consts_exactly() {
+        assert_eq!(
+            backtick_tokens(&bullet_from(PROCESS_MD, "**Navigation / inspection / text**")),
+            owned(BASELINE_READONLY),
+            "process.md read-only baseline drifted from BASELINE_READONLY",
+        );
+        assert_eq!(
+            backtick_tokens(&bullet_from(PROCESS_MD, "**Build / test toolchains**")),
+            owned(BASELINE_BUILD),
+            "process.md build baseline drifted from BASELINE_BUILD",
+        );
+        assert_eq!(
+            backtick_tokens(&bullet_from(PROCESS_MD, "**Always** (every agent)")),
+            owned(MANDATORY_BASH),
+            "process.md always baseline drifted from MANDATORY_BASH",
+        );
+    }
+
+    /// `permissions.json` lists illustrative SUBSETS of the read-only and build baselines (with a
+    /// trailing `…`) inline in its directive prose. Every command it names must be a genuine member
+    /// of the corresponding const — so an example can't outlive a const entry it was drawn from.
+    /// The ALWAYS line is the full set, so it's asserted verbatim.
+    #[test]
+    fn permissions_json_baseline_examples_are_drawn_from_the_consts() {
+        let readonly = backtick_tokens(between(
+            PERMISSIONS_JSON,
+            "read-only navigation/inspection/text tools (",
+            ")",
+        ));
+        assert!(!readonly.is_empty(), "permissions.json lists no read-only baseline examples");
+        for cmd in &readonly {
+            assert!(
+                BASELINE_READONLY.contains(&cmd.as_str()),
+                "permissions.json read-only example `{cmd}` is not in BASELINE_READONLY",
+            );
+        }
+
+        let build = backtick_tokens(between(PERMISSIONS_JSON, "build/test toolchains (", ")"));
+        assert!(!build.is_empty(), "permissions.json lists no build baseline examples");
+        for cmd in &build {
+            assert!(
+                BASELINE_BUILD.contains(&cmd.as_str()),
+                "permissions.json build example `{cmd}` is not in BASELINE_BUILD",
+            );
+        }
+
+        // ALWAYS is the full mandatory set, not an example subset — pin it verbatim.
+        let always = format!("ALWAYS `{}`", MANDATORY_BASH.join("`/`"));
+        assert!(
+            PERMISSIONS_JSON.contains(&always),
+            "permissions.json must state the full always-baseline as `{always}`",
+        );
     }
 }
