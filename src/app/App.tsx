@@ -14,7 +14,7 @@ import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations/AutomationsStatus";
 import { SkillsStatus } from "@/features/skills/SkillsStatus";
-import { SuperUserAchievement } from "@/app/SuperUserAchievement";
+import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
@@ -93,7 +93,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <SuperUserAchievement />
+      <Achievements />
       <Titlebar workspace={titleWorkspace} />
       <AppBanners />
       <div className="shell">
