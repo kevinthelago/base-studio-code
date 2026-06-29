@@ -11,7 +11,7 @@ import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 
-export function ProjectsScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
   useProjectScan();
 

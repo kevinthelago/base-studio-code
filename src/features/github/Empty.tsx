@@ -12,7 +12,7 @@ import { SectionLabel } from "@/shared/ui/SectionLabel";
  * lives where its content actually applies.
  */
 export function GitHubEmpty() {
-  const setScreen = useAppStore((s) => s.setScreen);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
@@ -36,7 +36,7 @@ export function GitHubEmpty() {
             <button
               className="btn primary"
               // Land on the GitHub settings tab, not just the Settings screen.
-              onClick={() => { setSettingsSection("github"); setScreen("settings"); }}
+              onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
               style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
             >
               <span style={{ fontFamily: "var(--mono)", fontSize: 15 }}>⎇</span>

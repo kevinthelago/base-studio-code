@@ -32,7 +32,7 @@ function mcpLabel(e: McpServer): string {
   return e.transport === "http" ? "mcp · http" : "mcp · stdio";
 }
 
-export function McpScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const mcpServers          = useAppStore(s => s.mcpServers);
   const addMcpServer        = useAppStore(s => s.addMcpServer);
   const updateMcpServer     = useAppStore(s => s.updateMcpServer);

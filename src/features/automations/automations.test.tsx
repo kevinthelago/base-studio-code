@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AutomationsScreen } from "./";
+import { AutomationsWorkspace } from "./";
 import { useAppStore } from "@/store";
 
 beforeEach(() => {
@@ -20,14 +20,14 @@ const seed = (over = {}) =>
     ...over,
   });
 
-describe("AutomationsScreen (wired to the store)", () => {
+describe("AutomationsWorkspace (wired to the store)", () => {
   it("shows an empty state with no automations", () => {
-    render(<AutomationsScreen />);
+    render(<AutomationsWorkspace />);
     expect(screen.getByText("No automations yet")).toBeTruthy();
   });
 
   it("creates an automation and edits its name", () => {
-    const { container } = render(<AutomationsScreen />);
+    const { container } = render(<AutomationsWorkspace />);
     fireEvent.click(screen.getByText("+ New automation"));
     expect(useAppStore.getState().automations.length).toBe(1);
 
@@ -40,7 +40,7 @@ describe("AutomationsScreen (wired to the store)", () => {
 
   it("arms an automation, which schedules a next run", () => {
     seed();
-    const { container } = render(<AutomationsScreen />);
+    const { container } = render(<AutomationsWorkspace />);
     fireEvent.click(screen.getByText("X")); // open the editor drawer for the seeded automation
     expect(useAppStore.getState().automations[0].nextRunAt).toBeNull();
     fireEvent.click(container.querySelector(".pane-head .toggle") as HTMLElement);
@@ -50,7 +50,7 @@ describe("AutomationsScreen (wired to the store)", () => {
 
   it("switches an automation to cron recurrence", () => {
     seed();
-    const { container } = render(<AutomationsScreen />);
+    const { container } = render(<AutomationsWorkspace />);
     fireEvent.click(screen.getByText("X")); // open the editor drawer for the seeded automation
     fireEvent.click(screen.getByText("cron")); // the "cron" mode pill
     expect(useAppStore.getState().automations[0].when.kind).toBe("cron");
@@ -61,7 +61,7 @@ describe("AutomationsScreen (wired to the store)", () => {
 
   it("opens the slide-in editor drawer on select, closes on done, removes on remove", () => {
     seed();
-    const { container } = render(<AutomationsScreen />);
+    const { container } = render(<AutomationsWorkspace />);
     // closed until a schedule is selected
     expect(container.querySelector(".pane-drawer.on")).toBeNull();
     fireEvent.click(screen.getByText("X"));
@@ -84,7 +84,7 @@ describe("AutomationsScreen (wired to the store)", () => {
     useAppStore.getState().recordAutomationRun(id, { at: t, status: "ok", note: "ran command" });
     useAppStore.getState().recordAutomationRun(id, { at: t + 1, status: "skipped", note: "target not open" });
 
-    const { container } = render(<AutomationsScreen />);
+    const { container } = render(<AutomationsWorkspace />);
     fireEvent.click(screen.getByText("History")); // switch to the History tab
     expect(screen.getByText("success rate")).toBeTruthy();
     const dataRows = () => container.querySelectorAll(".hist-table .hist-row:not(.head)").length;

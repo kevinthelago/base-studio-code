@@ -1,19 +1,19 @@
-import { SCREENS, type Screen } from "@/app/registry";
+import { WORKSPACES, type Workspace } from "@/app/registry";
 
-// Re-export so existing `import type { Screen } from ".../components/chrome/Rail"` keeps resolving
+// Re-export so existing `import type { Workspace } from ".../components/chrome/Rail"` keeps resolving
 // (the type's home is now the screen registry — the single source of truth for screens).
-export type { Screen } from "@/app/registry";
+export type { Workspace } from "@/app/registry";
 
 interface RailProps {
-  active: Screen;
-  onNavigate: (screen: Screen) => void;
+  active: Workspace;
+  onNavigate: (screen: Workspace) => void;
 }
 
 export function Rail({ active, onNavigate }: RailProps) {
   return (
     <div className="rail">
       <div className="logo">b.</div>
-      {SCREENS.map(({ key, Icon, label }) => (
+      {WORKSPACES.map(({ key, Icon, label }) => (
         <button
           key={key}
           className={key === active ? "active" : ""}

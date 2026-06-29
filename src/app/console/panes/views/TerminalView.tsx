@@ -214,7 +214,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // type here and no startup race to manage.
       claudeActiveRef.current = "idle";
       onStatusChangeRef.current?.("idle");
-      // Focus is decided by ConsoleScreen — handleStatusChange enqueues this
+      // Focus is decided by ConsoleWorkspace — handleStatusChange enqueues this
       // pane on idle and the user steps through with Ctrl+Shift+N (or auto-
       // advance-on-reply). Only first-idle ever enqueues a pane, so a cold-
       // starting grid can't yank the cursor around. We don't focus here.
@@ -725,7 +725,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
           onDismiss={() => setWarnDismissed(true)}
           onSignInGitHub={
             warningChecks.some((c) => c.id === "gh-auth")
-              ? () => { useAppStore.getState().setScreen("settings"); }
+              ? () => { useAppStore.getState().setWorkspace("settings"); }
               : undefined
           }
         />

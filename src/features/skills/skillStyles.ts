@@ -1,4 +1,4 @@
-// Shared inline-style factories for the Skills screen (#1706). Pulled out of SkillsScreen.tsx so
+// Shared inline-style factories for the Skills screen (#1706). Pulled out of SkillsWorkspace.tsx so
 // the screen, the view-mode renderers (SkillsViews.tsx), and the edit drawer all share one source
 // of the pill / tile / scope-color styling. Pure CSSProperties builders (the only React coupling is
 // the type import).

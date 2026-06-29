@@ -25,7 +25,7 @@ function langTag(lang: string | null): string {
   return map[lang] ?? lang.toLowerCase().slice(0, 4);
 }
 
-export function GitHubScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const {
     githubConnected,
     githubRepos, activeRepoName, setActiveRepo,

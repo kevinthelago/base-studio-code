@@ -5,7 +5,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { LayoutGrid } from "lucide-react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
-import { screenLabel } from "@/app/registry";
+import { workspaceLabel } from "@/app/registry";
 import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { Dialog } from "@/shared/ui/Dialog";
@@ -16,7 +16,7 @@ import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
-import { ConsoleScreen } from "@/app/console";
+import { ConsoleWorkspace } from "@/app/console";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { AutomationsStatus } from "@/features/automations";
 import { SkillsStatus } from "@/features/skills";
@@ -33,16 +33,16 @@ import { accentVars } from "@/features/settings/lib/appearance";
 // Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle.
-const GitHubScreen      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubScreen })));
-const AutomationsScreen = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsScreen })));
-const McpScreen         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpScreen })));
-const SettingsScreen    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsScreen })));
-const ProjectsScreen    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsScreen })));
-const SkillsScreen      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsScreen })));
-const AgentsScreen      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsScreen })));
+const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubWorkspace })));
+const AutomationsWorkspace = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsWorkspace })));
+const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpWorkspace })));
+const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
+const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
+const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
+const AgentsWorkspace      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsWorkspace })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
-function ScreenFallback() {
+function WorkspaceFallback() {
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
       loading…
@@ -158,12 +158,12 @@ function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
 // lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
-    case "automations": return <AutomationsScreen pageOverride={section} />;
-    case "skills":      return <SkillsScreen pageOverride={section} />;
-    case "mcp":         return <McpScreen pageOverride={section} />;
-    case "agents":      return <AgentsScreen pageOverride={section} />;
-    case "github":      return <GitHubScreen pageOverride={section} />;
-    case "projects":    return <ProjectsScreen pageOverride={section} />;
+    case "automations": return <AutomationsWorkspace pageOverride={section} />;
+    case "skills":      return <SkillsWorkspace pageOverride={section} />;
+    case "mcp":         return <McpWorkspace pageOverride={section} />;
+    case "agents":      return <AgentsWorkspace pageOverride={section} />;
+    case "github":      return <GitHubWorkspace pageOverride={section} />;
+    case "projects":    return <ProjectsWorkspace pageOverride={section} />;
     default:
       return (
         <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>
@@ -185,7 +185,7 @@ export default function App() {
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
 
   const {
-    activeScreen, setScreen,
+    activeWorkspace, setWorkspace,
     tabs, activeTabIdx, setActiveTab,
     addTab, closeTab, renameTab, setTabLayout, moveTab,
     detachedTabIds, setTabDetached,
@@ -221,11 +221,11 @@ export default function App() {
   // Lazy-mount Projects on first visit, then keep it mounted so its local state + PTY survive
   // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
   const projectsEverShown = useRef(false);
-  if (activeScreen === "projects") projectsEverShown.current = true;
+  if (activeWorkspace === "projects") projectsEverShown.current = true;
 
   // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
   // window renders only that console tab — pinned by stable id (resolved to an
-  // index for ConsoleScreen's override). Computed once per window load.
+  // index for ConsoleWorkspace's override). Computed once per window load.
   const [detachId] = useState(() => detachedTabId());
   const detachIdx = detachId !== null ? tabs.findIndex((t) => t.id === detachId) : -1;
   // Detached page-section window (#463): ?detach=<page>&section=<id> renders just
@@ -275,8 +275,8 @@ export default function App() {
   // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
   // tab/agent, repo, sub-section). Only the DETAIL lives here; the page NAME is never hardcoded.
   const titleWorkspace = (() => {
-    const parts: string[] = [screenLabel(activeScreen)];
-    switch (activeScreen) {
+    const parts: string[] = [workspaceLabel(activeWorkspace)];
+    switch (activeWorkspace) {
       case "console":
         if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
         if (focusedAgentName) parts.push(focusedAgentName);
@@ -303,14 +303,14 @@ export default function App() {
   // Also handle ⌘T hotkey for new tab
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "t" && activeScreen === "console") {
+      if ((e.metaKey || e.ctrlKey) && e.key === "t" && activeWorkspace === "console") {
         e.preventDefault();
         setShowNewTab(true);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeScreen]);
+  }, [activeWorkspace]);
 
   function killTabPtys(tabIdx: number, layout: string) {
     const [c, r] = layout.split("×").map(Number);
@@ -373,7 +373,7 @@ export default function App() {
         <div className="shell">
           <div className="main">
             <div className="page">
-              {hasHydrated && <Suspense fallback={<ScreenFallback />}>{renderDetachedSection(detSection.page, detSection.section)}</Suspense>}
+              {hasHydrated && <Suspense fallback={<WorkspaceFallback />}>{renderDetachedSection(detSection.page, detSection.section)}</Suspense>}
             </div>
           </div>
         </div>
@@ -391,7 +391,7 @@ export default function App() {
             <div className="page">
               {hasHydrated && detachIdx >= 0 && (
                 <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
-                  <ConsoleScreen tabIdxOverride={detachIdx} />
+                  <ConsoleWorkspace tabIdxOverride={detachIdx} />
                 </div>
               )}
             </div>
@@ -409,9 +409,9 @@ export default function App() {
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <div className="shell">
-        <Rail active={activeScreen} onNavigate={setScreen} />
+        <Rail active={activeWorkspace} onNavigate={setWorkspace} />
         <div className="main">
-          {activeScreen === "console" && (
+          {activeWorkspace === "console" && (
             <Tabstrip
               tabs={tabs}
               activeIdx={activeTabIdx}
@@ -436,44 +436,44 @@ export default function App() {
               }}
             />
           )}
-          {/* ConsoleScreen stays mounted across all screen navigations so xterm
+          {/* ConsoleWorkspace stays mounted across all screen navigations so xterm
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
           <div className="page">
-          <ErrorBoundary label="this view" resetKeys={[activeScreen]}>
+          <ErrorBoundary label="this view" resetKeys={[activeWorkspace]}>
           {tabs.length > 0 && (
             <div style={{
-              display: activeScreen === "console" ? "flex" : "none",
+              display: activeWorkspace === "console" ? "flex" : "none",
               flex: 1, flexDirection: "column", minHeight: 0,
             }}>
-              <ConsoleScreen />
+              <ConsoleWorkspace />
             </div>
           )}
-          {activeScreen === "console" && tabs.length === 0 && (
+          {activeWorkspace === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={() => setShowNewTab(true)} />
           )}
           {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
               sessions survive screen switches (CSS hides it when inactive). */}
           {projectsEverShown.current && (
-            <div style={{ display: activeScreen === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-              <Suspense fallback={<ScreenFallback />}><ProjectsScreen /></Suspense>
+            <div style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+              <Suspense fallback={<WorkspaceFallback />}><ProjectsWorkspace /></Suspense>
             </div>
           )}
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
-          <Suspense fallback={<ScreenFallback />}>
-            {activeScreen === "github"     && <GitHubScreen />}
-            {activeScreen === "automation" && <AutomationsScreen />}
-            {activeScreen === "mcp" && <McpScreen />}
-            {activeScreen === "skills"     && <SkillsScreen />}
-            {activeScreen === "agents"     && <AgentsScreen />}
-            {activeScreen === "settings"   && <SettingsScreen />}
+          <Suspense fallback={<WorkspaceFallback />}>
+            {activeWorkspace === "github"     && <GitHubWorkspace />}
+            {activeWorkspace === "automation" && <AutomationsWorkspace />}
+            {activeWorkspace === "mcp" && <McpWorkspace />}
+            {activeWorkspace === "skills"     && <SkillsWorkspace />}
+            {activeWorkspace === "agents"     && <AgentsWorkspace />}
+            {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>
           </div>
           <StatusBar extra={
-            activeScreen === "automation"
+            activeWorkspace === "automation"
               ? <AutomationsStatus />
-            : activeScreen === "skills"
+            : activeWorkspace === "skills"
               ? <SkillsStatus />
               : undefined
           } />

@@ -54,7 +54,7 @@ const MODES: Array<{ k: Mode; label: string }> = [
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
-export function SkillsScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const skills = useAppStore((s) => s.skills);
   const addSkill = useAppStore((s) => s.addSkill);
   const updateSkill = useAppStore((s) => s.updateSkill);

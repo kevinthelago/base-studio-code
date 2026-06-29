@@ -30,7 +30,7 @@ import "./agents.css";
 export { ProfileSelect } from "./AssignmentsTab";
 export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
 
-export function AgentsScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
   const [actDecision, setActDecision] = useState<DecFilter>("all");
   const [actConsole, setActConsole] = useState("all");

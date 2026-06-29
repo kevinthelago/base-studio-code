@@ -14,10 +14,10 @@ export interface ScreenProps {
   pageOverride?: string;
   /** Toolbar content on the right of the page-tab bar. */
   right?: ReactNode;
-  /** Extra class on the root — a surface scoping hook (e.g. `"ext-screen"`) so the surface's own
+  /** Extra class on the root — a workspace scoping hook (e.g. `"ext-screen"`) so the workspace's own
    *  scoped CSS keeps applying on top of the shared `.screen` layout. */
   className?: string;
-  /** Extra class on the body container (e.g. `"ext-body"` for surface padding/overrides). */
+  /** Extra class on the body container (e.g. `"ext-body"` for workspace padding/overrides). */
   bodyClassName?: string;
   /** The active page's body. */
   children: ReactNode;
@@ -26,15 +26,15 @@ export interface ScreenProps {
 }
 
 /**
- * The shared **Screen** shell (#1821, renamed #1878) — the root tabbed device every rail Surface
- * renders through. Collapses the boilerplate every tabbed surface repeated — the conditional
+ * The shared **Screen** shell (#1821, renamed #1878) — the root tabbed device every rail Workspace
+ * renders through. Collapses the boilerplate every tabbed workspace repeated — the conditional
  * `<TabBar>` (the **PageTabs** strip, hidden in a torn-off page) wrapped in the
- * `.screen / .screen-page / .screen-body` layout. **Controlled**: the surface owns the page-tab
- * state (`usePageTabs`) so it stays available to the surface's own effects / handlers / toolbar,
- * and passes it down here. A surface's existing scoping class rides along via `className` /
+ * `.screen / .screen-page / .screen-body` layout. **Controlled**: the workspace owns the page-tab
+ * state (`usePageTabs`) so it stays available to the workspace's own effects / handlers / toolbar,
+ * and passes it down here. A workspace's existing scoping class rides along via `className` /
  * `bodyClassName` (so its component CSS is untouched), and a drawer/scrim mounts via `overlay`.
  *
- * Vocabulary (#1878): the **Rail** switches **Surfaces**; a Surface is composed of a **Screen** that
+ * Vocabulary (#1878): the **Rail** switches **Workspaces**; a Workspace is composed of a **Screen** that
  * shows one **Page** at a time; the page-tab strip is **PageTabs**. See `docs/frontend-structure.md`.
  */
 export function Screen({

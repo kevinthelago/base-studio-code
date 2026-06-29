@@ -239,7 +239,7 @@ export function PublishedProjects({
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
 }: PublishedProjectsProps) {
   const {
-    githubToken, setScreen, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
+    githubToken, setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
     setPlanningContext, setPlanningTitle, setPlanningSession, deleteLocalProject, dismissProject,
     addDraftProject, projectKeyAlias, setProjectBlueprintId, activeBlueprintId,
   } = useAppStore();
@@ -266,7 +266,7 @@ export function PublishedProjects({
     const repos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
     setGithubTab("projects"); // so "← portfolio" returns to the Projects tab
-    setScreen("github");
+    setWorkspace("github");
     openGithubBoard("board");
   }
 

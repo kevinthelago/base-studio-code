@@ -50,7 +50,7 @@ export const useAppStore = create<AppStore>()(
       storage: createJSONStorage(() => persistStorage),
       // Exclude transient UI-only state from the persisted snapshot.
       partialize: (s) => ({
-        activeScreen:    s.activeScreen,
+        activeWorkspace:    s.activeWorkspace,
         tabs:            s.tabs,
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,

@@ -386,11 +386,11 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
   repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { setProjectsPageMode, setScreen, setActiveProjectMeta, openGithubBoard } = useAppStore();
+  const { setProjectsPageMode, setWorkspace, setActiveProjectMeta, openGithubBoard } = useAppStore();
   // This portfolio lives in the GitHub screen (#421); "view list" jumps to the
   // Projects tab for planning, while opening a card shows that project's board
   // right here on the GitHub page (#498).
-  const openProjects = () => { setScreen("projects"); setProjectsPageMode("projects"); };
+  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
   const openBoard = (p: GhProject) => {
     const repos = p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
@@ -445,9 +445,9 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function ProjectsSummary() {
-  const { setProjectsPageMode, setScreen } = useAppStore();
+  const { setProjectsPageMode, setWorkspace } = useAppStore();
   // Hosted in the GitHub screen (#421) — "browse projects" jumps to the Projects tab.
-  const openProjects = () => { setScreen("projects"); setProjectsPageMode("projects"); };
+  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
   const { loading, projects, events, repoMilestones, repoIssues, burndown } = useProjectsSummaryData();
 
   const activeProjects = projects.filter(p => !p.closed);

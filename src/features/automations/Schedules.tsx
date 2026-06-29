@@ -86,7 +86,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
 }
 
 /** The slide-in editor for the selected schedule — the unified <Pane> drawer (#1824), the same
- *  chrome as the MCP server/hook + Skills drawers. Rendered in the AutomationsScreen overlay. */
+ *  chrome as the MCP server/hook + Skills drawers. Rendered in the AutomationsWorkspace overlay. */
 export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
   selected: Automation | null;
   onClose: () => void;

@@ -1,4 +1,4 @@
-// "Skills for this session" — Surface B of the Skills redesign (#skills-groups). An overlay that
+// "Skills for this session" — Workspace B of the Skills redesign (#skills-groups). An overlay that
 // chooses which skills ONE session (a console pane, a fleet worker, a triage pane) can invoke,
 // over the inherit-then-override model: each row shows its effective state + why (global / pinned /
 // project-scoped / group / out-of-scope), and a per-skill toggle layers an add/remove override. A

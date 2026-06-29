@@ -17,7 +17,7 @@ import "./automations.css";
  * (#463): tab order persists per page, the page opens whatever tab is first, tabs reorder, and each
  * can be torn off into its own window. `pageOverride` renders a single section with no tab bar.
  */
-export function AutomationsScreen({ pageOverride }: { pageOverride?: string } = {}) {
+export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const { automations, addAutomation, updateAutomation, tabs } = useAppStore();
   // Hooks live here (the MCP page is servers-only, #865 / #mcp-hooks-split) — event-triggered
   // automations alongside the time-triggered Schedules.
