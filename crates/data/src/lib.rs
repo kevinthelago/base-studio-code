@@ -9,6 +9,12 @@
 //! Migration is strictly **read-only** from the source (decided #782): connectors
 //! only read; the store only loads into the Data Model — nothing writes back.
 
+// The `bsc data` subcommand (#1877) — extracted from the old `bsc-data` binary. Needs the
+// DuckDB-backed MetaStore/DataStore, so it's gated like the store (mirrors the bin's
+// `required-features = ["duckdb-store"]`).
+#[cfg(feature = "duckdb-store")]
+pub mod cli;
+
 pub mod schema;
 pub mod ddl;
 pub mod connector;
