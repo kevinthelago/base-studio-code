@@ -4,11 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { FillBar } from "@/shared/ui/FillBar";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
-import { Kpi, StackedDayBars } from "@/shared/ui/charts";
+import { StatCard, StackedDayBars } from "@/shared/ui/charts";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). The over-time chart +
-// KPI cards are shared primitives (StackedDayBars / Kpi); the per-server/results charts stay local.
+// KPI cards are shared primitives (StackedDayBars / StatCard); the per-server/results charts stay local.
 // Transport per server is joined from the live extensions store; the rest comes from the parsed log.
 // Empty until the bsc-mcp hook pair emits calls (PR 2) — renders a clean zero state.
 
@@ -57,10 +57,10 @@ export function McpAnalyticsTab() {
     <div style={{ padding: "4px 0 12px" }}>
       {/* KPI cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
-        <Kpi label="Total calls" value={an.total} sub={`last ${DAYS} days`} />
-        <Kpi label="Errors" value={an.errors} sub="failed calls" color="var(--danger)" />
-        <Kpi label="Success rate" value={`${an.successRate}%`} sub={`${an.ok} ok`} color="var(--success)" />
-        <Kpi label="Active servers" value={an.activeServers} sub={`${an.healthyServers} healthy`} />
+        <StatCard k="Total calls" v={an.total} sub={`last ${DAYS} days`} />
+        <StatCard k="Errors" v={an.errors} sub="failed calls" tone="danger" />
+        <StatCard k="Success rate" v={`${an.successRate}%`} sub={`${an.ok} ok`} tone="success" />
+        <StatCard k="Active servers" v={an.activeServers} sub={`${an.healthyServers} healthy`} />
       </div>
 
       {/* Calls over time */}

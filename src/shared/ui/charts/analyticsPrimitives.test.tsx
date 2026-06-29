@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Kpi, StackedDayBars, type StackedDay } from "./index";
+import { StatCard, StackedDayBars, type StackedDay } from "./index";
 
-describe("Kpi", () => {
-  it("renders label, value and sub", () => {
-    render(<Kpi label="Total calls" value={42} sub="last 14 days" />);
+describe("StatCard", () => {
+  it("renders label (k), value (v) and sub", () => {
+    render(<StatCard k="Total calls" v={42} sub="last 14 days" />);
     expect(screen.getByText("Total calls")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("last 14 days")).toBeTruthy();
   });
 
-  it("applies a custom value color", () => {
-    render(<Kpi label="Errors" value={3} sub="failed" color="var(--danger)" />);
+  it("colors the value from `tone`", () => {
+    render(<StatCard k="Errors" v={3} sub="failed" tone="danger" />);
     expect((screen.getByText("3") as HTMLElement).style.color).toBe("var(--danger)");
   });
 });
