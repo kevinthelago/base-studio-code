@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
-import { SettingsCardHead } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 import {
   REBINDABLE_IDS,
   chordToCaps,
@@ -149,8 +149,7 @@ export function KeyboardCard() {
       )}
 
       {SHORTCUT_GROUPS.map((group) => (
-        <div key={group.title} className="card" style={{ marginBottom: 16 }}>
-          <SettingsCardHead title={group.title} />
+        <Card key={group.title} title={group.title} style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
             {group.items.map((s, i) => {
               const isChord = s.id != null && REBINDABLE_SET.has(s.id);
@@ -232,7 +231,7 @@ export function KeyboardCard() {
               );
             })}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   );

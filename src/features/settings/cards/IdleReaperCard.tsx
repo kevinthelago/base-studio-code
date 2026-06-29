@@ -1,6 +1,7 @@
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/Toggle";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
+import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function IdleReaperCard() {
   const idleReaper = useAppStore((s) => s.idleReaper);
@@ -8,8 +9,7 @@ export function IdleReaperCard() {
   const MIN = 60_000;
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Reap idle background sessions" />
+    <Card title="Reap idle background sessions">
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         <Row
           label="Enable idle reaper"
@@ -42,6 +42,6 @@ export function IdleReaperCard() {
           />
         </Row>
       </div>
-    </div>
+    </Card>
   );
 }

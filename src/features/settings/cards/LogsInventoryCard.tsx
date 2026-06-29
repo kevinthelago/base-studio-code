@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { SettingsCardHead } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 import { Button } from "@/shared/ui/Button";
 
 interface LogFileInfo {
@@ -55,8 +55,7 @@ export function LogsInventoryCard({
   }, [flash]);
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Log streams" />
+    <Card title="Log streams">
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         {files.map((f) => (
           <div key={f.stream} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
@@ -74,6 +73,6 @@ export function LogsInventoryCard({
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

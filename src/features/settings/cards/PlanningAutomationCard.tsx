@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead, ToggleRow } from "../pages/SettingsControls";
+import { ToggleRow } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function PlanningAutomationCard() {
   const { autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
@@ -9,8 +10,7 @@ export function PlanningAutomationCard() {
   const setAllowGateOverride = useAppStore(s => s.setAllowGateOverride);
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Planning automation" />
+    <Card title="Planning automation">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <ToggleRow
           on={autoPlanWithClaude}
@@ -42,6 +42,6 @@ export function PlanningAutomationCard() {
           can click to move on anyway. Off by default — only the user can override, never the planner.
         </ToggleRow>
       </div>
-    </div>
+    </Card>
   );
 }

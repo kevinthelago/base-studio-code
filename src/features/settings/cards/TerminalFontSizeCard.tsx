@@ -3,14 +3,13 @@ import {
   MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE,
   adjustFontSize,
 } from "@/app/console/lib/terminal";
-import { SettingsCardHead } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function TerminalFontSizeCard() {
   const { terminalFontSize, setTerminalFontSize } = useAppStore();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Terminal font size" hint="also bound to Ctrl + / Ctrl - / Ctrl 0" />
+    <Card title="Terminal font size" hint="also bound to Ctrl + / Ctrl - / Ctrl 0">
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <button
           className="btn"
@@ -51,6 +50,6 @@ export function TerminalFontSizeCard() {
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}
       >$ claude — the quick brown fox jumps over 1234567890</div>
-    </div>
+    </Card>
   );
 }

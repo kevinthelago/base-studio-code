@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SettingsCardHead } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";
@@ -20,8 +20,7 @@ export function ThemeCard() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Theme" />
+    <Card title="Theme">
       <div style={{ display: "flex", gap: 8 }}>
         {(["dark", "light"] as const).map((t) => (
           <button
@@ -42,6 +41,6 @@ export function ThemeCard() {
         Persisted across restarts. Light mode moves all surfaces to the token layer —
         a few hardcoded terminal palette values may still appear dark.
       </div>
-    </div>
+    </Card>
   );
 }

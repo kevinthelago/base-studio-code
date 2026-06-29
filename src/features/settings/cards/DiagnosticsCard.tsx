@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { Chip } from "@/shared/ui/Chip";
+import { Card } from "@/shared/ui/Card";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -115,7 +116,7 @@ export function DiagnosticsCard() {
     : null;
 
   return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+    <Card style={{ padding: 0, overflow: "hidden" }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
         borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
@@ -158,6 +159,6 @@ export function DiagnosticsCard() {
           No prerequisite data yet.
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }

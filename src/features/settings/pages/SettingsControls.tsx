@@ -18,18 +18,6 @@ export function ToggleRow({ on, onToggle, title, children }: {
 }
 
 
-/** A settings-card header: a title, an optional inline hint, and an optional right-aligned control.
- *  The `.card` wrapper stays at the call site (it is a single class, not worth wrapping). */
-export function SettingsCardHead({ title, hint, right }: { title: string; hint?: ReactNode; right?: ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-      <h3 style={{ margin: 0 }}>{title}</h3>
-      {hint && <span className="hint">{hint}</span>}
-      {right && <><span style={{ flex: 1 }} />{right}</>}
-    </div>
-  );
-}
-
 /** A settings row: label (+ optional hint) stacked on the left, a control on the right, divider beneath. */
 export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (

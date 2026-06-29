@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
+import { Card } from "@/shared/ui/Card";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],
@@ -64,12 +65,7 @@ export function LlmProviderCard() {
   };
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
-        <h3 style={{ margin: 0 }}>LLM provider</h3>
-        <span className="hint">Powers planning &amp; assistant calls (autopilot, grader, cleanup).</span>
-      </div>
-
+    <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14 }}>
         <div className="field">
           <label>Provider</label>
@@ -174,6 +170,6 @@ export function LlmProviderCard() {
           <div className="hint">Off for haiku regardless of this setting.</div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -1,13 +1,12 @@
 import { useAppStore } from "@/store";
 import { ACCENT_PRESETS, accentVars } from "../lib/appearance";
-import { SettingsCardHead } from "../pages/SettingsControls";
+import { Card } from "@/shared/ui/Card";
 
 export function AccentColorCard() {
   const { accent, setAccent } = useAppStore();
 
   return (
-    <div className="card">
-      <SettingsCardHead title="Accent color" hint="the highlight color used across the app" />
+    <Card title="Accent color" hint="the highlight color used across the app">
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {ACCENT_PRESETS.map((p) => {
           const on = p.id === accent;
@@ -37,6 +36,6 @@ export function AccentColorCard() {
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }

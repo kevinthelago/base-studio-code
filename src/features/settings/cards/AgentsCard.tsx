@@ -1,6 +1,7 @@
 // Settings → Agents. Command auto-approval moved to per-agent profiles (#1457) — the standalone
 // global/project/repo allowlist editor was retired. This section now points to the Permissions
 // screen (where profiles live) and hosts session-wide agent defaults.
+import { Card } from "@/shared/ui/Card";
 
 export function AgentsCard() {
   return (
@@ -11,8 +12,7 @@ export function AgentsCard() {
       </p>
 
       {/* Command permissions now live in profiles ─────────────────── */}
-      <div className="card">
-        <h3 style={{ margin: "0 0 6px" }}>Command permissions</h3>
+      <Card title="Command permissions">
         <p style={{ margin: 0, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
           Auto-approved shell commands are now part of each agent's <strong>profile</strong> (managed on
           the <strong>Permissions</strong> screen), alongside its tool and file-write posture. A session
@@ -21,24 +21,22 @@ export function AgentsCard() {
           <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>bsc-plan</code> are always enabled by
           the backend. A curated set of dangerous commands is always blocked.
         </p>
-      </div>
+      </Card>
 
       {/* Placeholder cards for future agent-level settings */}
       <div style={{ height: 18 }} />
-      <div className="card" style={{ opacity: 0.5 }}>
-        <h3 style={{ margin: "0 0 6px" }}>Default system prompt</h3>
+      <Card style={{ opacity: 0.5 }} title="Default system prompt">
         <p style={{ margin: 0, color: "var(--fg-muted)", fontSize: 12 }}>
           Prepended to every new session's system prompt. · coming soon
         </p>
-      </div>
+      </Card>
 
       <div style={{ height: 12 }} />
-      <div className="card" style={{ opacity: 0.5 }}>
-        <h3 style={{ margin: "0 0 6px" }}>Auto-context injection</h3>
+      <Card style={{ opacity: 0.5 }} title="Auto-context injection">
         <p style={{ margin: 0, color: "var(--fg-muted)", fontSize: 12 }}>
           Automatically inject relevant knowledge blocks based on the active repo's tech stack. · coming soon
         </p>
-      </div>
+      </Card>
     </div>
   );
 }
