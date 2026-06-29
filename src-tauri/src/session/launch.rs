@@ -25,7 +25,7 @@ pub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {
 /// non-alphanumeric character replaced by `-`
 /// (e.g. `C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
 ///
-/// NOT to be confused with [`crate::agent::claude_config::claude_project_key`] (`claude_config.rs`):
+/// NOT to be confused with [`crate::session::claude_config::claude_project_key`] (`claude_config.rs`):
 /// that produces the cwd's *key in the `projects` map of `~/.claude.json`* — a slash-normalised path
 /// (`C:/Users/Kevin/foo`), a different transform for a different on-disk Claude Code contract. Both
 /// names are frozen to match what Claude Code writes; do not "unify" them.
