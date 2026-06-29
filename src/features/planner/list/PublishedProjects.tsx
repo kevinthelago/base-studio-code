@@ -181,12 +181,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
           </button>
 
           {isOpen && (
-            <div style={{
-              position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
-              background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 178,
-              boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
-            }}>
+            <div className="menu" style={{ minWidth: 178 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> open board on GitHub
               </button>

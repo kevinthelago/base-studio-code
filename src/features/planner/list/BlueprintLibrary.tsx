@@ -140,11 +140,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
             title="More options"
           ><MoreHorizontal size={13} /></button>
           {isOpen && (
-            <div style={{
-              position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
-              background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-md)", padding: "4px 0", minWidth: 158, boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
-            }}>
+            <div className="menu" style={{ minWidth: 158 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
                 <Check size={12} /> use for new projects
               </button>
