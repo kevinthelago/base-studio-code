@@ -4,8 +4,8 @@
 // Fetch + assembly is in hooks/useRepoPulse; this renders the view model with
 // loading / empty / error states using the shared chart primitives (#399).
 import { useState } from "react";
-import { Chip } from "@/shared/ui/Chip";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { Chip } from "@/shared/ui/data/Chip";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LineArea, Bars, Donut, HBars, Legend,

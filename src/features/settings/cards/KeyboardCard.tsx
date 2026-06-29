@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 import {
   REBINDABLE_IDS,
   chordToCaps,

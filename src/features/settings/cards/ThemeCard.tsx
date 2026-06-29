@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";

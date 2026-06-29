@@ -4,7 +4,7 @@
 // the per-card UI in `summary/*`, and the React-free shaping in `lib/githubSummary.ts`.
 
 import { useAppStore } from "@/store";
-import { SectionLabel } from "@/shared/ui/SectionLabel";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { useGithubSummary } from "./useGithubSummary";
 import { ActivityHeatmap } from "./summary/ActivityHeatmap";
 import { LanguageMix } from "./summary/LanguageMix";

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
-import { Avatar } from "@/shared/ui/Avatar";
-import { Chip } from "@/shared/ui/Chip";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { Avatar } from "@/shared/ui/data/Avatar";
+import { Chip } from "@/shared/ui/data/Chip";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";

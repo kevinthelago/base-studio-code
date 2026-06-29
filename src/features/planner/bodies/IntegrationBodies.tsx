@@ -3,13 +3,13 @@
 // fills the sink + cadence here; the `destinationDefined` / `syncDefined` gate signals derive from it.
 
 import { useAppStore } from "@/store";
-import { Banner } from "@/shared/ui/Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import {
   DESTINATIONS, destinationMeta, WRITE_MODES, SYNC_MODES,
   defaultIntegrationConfig, destinationChecks, syncChecks,
   type IntegrationConfig, type DestinationConfig, type SyncConfig, type DestinationType, type WriteMode, type SyncMode,
 } from "../lib/integrationConfig";
-import { Toggle as Switch } from "@/shared/ui/Toggle";
+import { Toggle as Switch } from "@/shared/ui/controls/Toggle";
 import { MONO, grpLabel } from "./bodyStyles";
 
 function Readiness({ checks, label }: { checks: { ok: boolean }[]; label: string }) {

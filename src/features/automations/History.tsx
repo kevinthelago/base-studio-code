@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { StatTile } from "@/shared/ui/StatTile";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 

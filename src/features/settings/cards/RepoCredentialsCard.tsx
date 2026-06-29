@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useAppStore } from "@/store";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { Chip } from "@/shared/ui/Chip";
-import { Card } from "@/shared/ui/Card";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Chip } from "@/shared/ui/data/Chip";
+import { Card } from "@/shared/ui/data/Card";
 
 export function RepoCredentialsCard() {
   const repoGithubTokens = useAppStore((s) => s.repoGithubTokens);

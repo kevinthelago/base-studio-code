@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { invoke } from "@tauri-apps/api/core";
-import { FillBar } from "@/shared/ui/FillBar";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
 import { StatCard, StackedDayBars } from "@/shared/ui/charts";

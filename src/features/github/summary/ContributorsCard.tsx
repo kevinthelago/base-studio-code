@@ -1,6 +1,6 @@
 // Top-contributors card — commit counts across the sampled repos (#1644).
 
-import { Avatar } from "@/shared/ui/Avatar";
+import { Avatar } from "@/shared/ui/data/Avatar";
 import type { Contributor } from "../lib/githubSummary";
 
 export function ContributorsCard({ contributors, loading }: {

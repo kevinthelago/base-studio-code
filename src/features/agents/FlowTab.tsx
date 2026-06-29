@@ -7,10 +7,10 @@
 // needs no store wiring. Summary + status colors are pure (./lib/flowModel).
 
 import { useCallback, useState } from "react";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { Chip } from "@/shared/ui/Chip";
-import { StatTile } from "@/shared/ui/StatTile";
-import { SectionHeader } from "@/shared/ui/SectionHeader";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Chip } from "@/shared/ui/data/Chip";
+import { StatTile } from "@/shared/ui/data/StatTile";
+import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import {

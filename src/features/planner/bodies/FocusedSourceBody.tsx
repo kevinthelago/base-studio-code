@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { Banner } from "@/shared/ui/Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import {
   CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
   deriveDataModel, presetToConnector, registerPresetConnectors, proposeFromPitch,

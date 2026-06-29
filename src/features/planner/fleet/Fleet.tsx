@@ -4,7 +4,7 @@
 // the fleet's repos (#415). No fabrication — tokens/spend still need per-session
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";

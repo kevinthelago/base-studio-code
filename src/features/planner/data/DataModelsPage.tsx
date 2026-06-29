@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { IconButton } from "@/shared/ui/IconButton";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 import {
   FIELD_TYPES, checkDataModel, addEntity, removeEntity, addField, removeField, toggleIdentity,
   type DataModel, type Field,

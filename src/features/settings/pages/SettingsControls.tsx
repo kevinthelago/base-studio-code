@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Toggle } from "@/shared/ui/Toggle";
+import { Toggle } from "@/shared/ui/controls/Toggle";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: ReactNode;
@@ -50,5 +50,5 @@ export function SettingsSelect({ value, options, onChange }: {
 
 // The labelled-field helpers were promoted to shared/ui (#1891) — the `.field` stack (label · input ·
 // hint) is generic, not settings-specific. Re-exported under their `Settings*` names so the existing
-// call sites keep working; new code should import `TextField`/`SelectField` from `@/shared/ui/Field`.
-export { TextField as SettingsTextField, SelectField as SettingsSelectField } from "@/shared/ui/Field";
+// call sites keep working; new code should import `TextField`/`SelectField` from `@/shared/ui/controls/Field`.
+export { TextField as SettingsTextField, SelectField as SettingsSelectField } from "@/shared/ui/controls/Field";

@@ -7,7 +7,7 @@
 // from the store, shows the same approval UI, and uses StageScreenFrame chrome.
 
 import { useState, useEffect, useRef } from 'react';
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 import { invoke } from '@tauri-apps/api/core';
 import { safeInvoke } from '@/shared/lib/core/safeInvoke';
 import { useAppStore } from '../../../store';

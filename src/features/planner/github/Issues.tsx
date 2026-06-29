@@ -2,12 +2,12 @@ import { useState, useMemo } from "react";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { timeAgoShort } from "@/shared/lib/core/format";
-import { IconButton } from "@/shared/ui/IconButton";
-import { Chip } from "@/shared/ui/Chip";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Chip } from "@/shared/ui/data/Chip";
 import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
-import { Avatar } from "@/shared/ui/Avatar";
-import { LabelChip } from "@/shared/ui/LabelChip";
-import { StatusDot } from "@/shared/ui/StatusDot";
+import { Avatar } from "@/shared/ui/data/Avatar";
+import { LabelChip } from "@/shared/ui/data/LabelChip";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

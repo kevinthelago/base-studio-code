@@ -4,11 +4,11 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { IconButton } from "@/shared/ui/IconButton";
-import { Chip } from "@/shared/ui/Chip";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Chip } from "@/shared/ui/data/Chip";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
-import { Avatar } from "@/shared/ui/Avatar";
-import { LabelChip } from "@/shared/ui/LabelChip";
+import { Avatar } from "@/shared/ui/data/Avatar";
+import { LabelChip } from "@/shared/ui/data/LabelChip";
 import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── GitHub data types ─────────────────────────────────────────────────────────

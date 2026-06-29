@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";

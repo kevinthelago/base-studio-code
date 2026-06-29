@@ -5,9 +5,9 @@
 // confirmation. Presentational + self-contained (the parent owns the clone/build + status) so it's
 // unit-testable; styled to match the blueprint modals.
 
-import { ModalScrim } from "@/shared/ui/ModalScrim";
-import { Chip } from "@/shared/ui/Chip";
-import { IconButton } from "@/shared/ui/IconButton";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Chip } from "@/shared/ui/data/Chip";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 
 export type McpDownloadStatus = "pending" | "downloading" | "building" | "ready" | "error";
 

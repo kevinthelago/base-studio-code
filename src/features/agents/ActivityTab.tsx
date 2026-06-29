@@ -8,7 +8,7 @@ import {
   filterAuditRows, fmtAuditTime, type AuditDisplayRow, type DecFilter,
 } from "./lib/auditRows";
 import type { AgentProfile, ConsoleSession } from "./lib/agentProfiles";
-import { StatTile } from "@/shared/ui/StatTile";
+import { StatTile } from "@/shared/ui/data/StatTile";
 
 export interface ActivityTabProps {
   rows: AuditDisplayRow[];

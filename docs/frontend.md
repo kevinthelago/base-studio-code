@@ -179,7 +179,15 @@ All color, type, radius, and base component styling is driven by CSS custom prop
 
 Components mostly use these tokens via inline styles and shared CSS classes (`.btn`, `.field`, etc.). Match the `design/` prototype for new screens (it is reference-only — do not edit it).
 
-Shared presentational primitives live in **`src/shared/ui/`**:
+Shared presentational primitives live in **`src/shared/ui/`**, grouped into intent-based subfolders (#1902) — import via `@/shared/ui/<group>/<Name>`:
+- **`controls/`** — Button, IconButton, BackButton, ConfirmButton, Checkbox, Toggle, SegmentedControl, Field, ColorSwatch
+- **`overlay/`** — Dialog, ModalScrim, promptDialog, Pane
+- **`feedback/`** — Banner, EmptyState, StatusDot
+- **`data/`** — Chip, LabelChip, Avatar, Card, CardListRow, DataTableRow, StatTile, FillBar, ActivityFeed
+- **`layout/`** — SectionHeader, SectionLabel
+- **`charts/`** (the analytics set) and **`icons.tsx`** stay at the `ui/` root.
+
+Highlights:
 - **`Dialog`** + the underlying **`ModalScrim`** — the single centered-overlay wrapper (scrim + z-index + Escape/overlay-click dismiss) that every modal now builds on (#1776); and the promise-returning **`usePromptDialog`/`useConfirmDialog`** hooks that replaced blocking native `window.prompt`/`window.confirm` (#1738).
 - **`BackButton`** — the canonical left-chevron back control (icon + text variants), over the shared **`icons.tsx`** (`Ic`/`ICONS`, moved out of the planner so `shared/` may use them) (#1752).
 - **`IconButton`** — one close/✕ glyph + consistent hit-area, replacing the scattered hand-rolled closes (#1753).

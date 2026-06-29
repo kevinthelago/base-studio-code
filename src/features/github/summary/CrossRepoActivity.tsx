@@ -1,7 +1,7 @@
 // Cross-repo activity feed — recent mapped events across all connected repos (#1644).
 // A thin wrapper over the shared <ActivityFeed>; only the hint, filter, and column width differ.
 
-import { ActivityFeed } from "@/shared/ui/ActivityFeed";
+import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { EVENT_TONE, type CrossRepoEvent } from "../lib/githubSummary";
 
 export function CrossRepoActivity({ events, loading }: {

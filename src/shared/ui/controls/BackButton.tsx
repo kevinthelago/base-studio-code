@@ -7,7 +7,7 @@
 //                     its own look by passing `className`/`style` (e.g. "nav-btn", "btn ghost", or the
 //                     inline header-link style); this component only standardizes the glyph + layout.
 import type { CSSProperties } from "react";
-import { Ic } from "./icons";
+import { Ic } from "@/shared/ui/icons";
 
 interface BackButtonProps {
   onClick: () => void;

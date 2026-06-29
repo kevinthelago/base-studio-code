@@ -8,7 +8,7 @@
 // actions · close), a body slot (`children`), and an optional footer slot.
 
 import type { ReactNode } from "react";
-import { IconButton } from "@/shared/ui/IconButton";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 
 export function StageScreenFrame({
   label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,

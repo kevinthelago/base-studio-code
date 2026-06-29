@@ -4,8 +4,8 @@ import { useAppStore } from "@/store";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { openDetachedTab } from "@/app/console/lib/detachWindow";
 import type { Tab } from "@/app/chrome/Tabstrip";
-import { Dialog } from "@/shared/ui/Dialog";
-import { Button } from "@/shared/ui/Button";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
+import { Button } from "@/shared/ui/controls/Button";
 import { NewTabDialog } from "./NewTabDialog";
 
 /** The next free `tab-N` name (the highest existing N + 1). */

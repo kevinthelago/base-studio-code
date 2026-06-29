@@ -8,8 +8,8 @@
 // which toggles the same groups onto a stream.
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
-import { Toggle } from "@/shared/ui/Toggle";
-import { IconButton } from "@/shared/ui/IconButton";
+import { Toggle } from "@/shared/ui/controls/Toggle";
+import { IconButton } from "@/shared/ui/controls/IconButton";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import { pill, sourcePill } from "./skillStyles";
 import {

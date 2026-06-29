@@ -2,9 +2,9 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
-import { ConfirmButton } from "@/shared/ui/ConfirmButton";
+import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function PerfRetentionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();

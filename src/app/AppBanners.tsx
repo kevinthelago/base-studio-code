@@ -7,7 +7,7 @@ import {
   discoverSessions, reconcileSessions, type RecoverableSession,
 } from "@/app/console/lib/sessionRecovery";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
-import { Banner } from "@/shared/ui/Banner";
+import { Banner } from "@/shared/ui/feedback/Banner";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // App banners — the full-width status strips pinned at the top of the app shell. Each is a small

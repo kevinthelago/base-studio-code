@@ -3,7 +3,7 @@
 // projectsSummaryDerive.ts (buildActivityFeed).
 
 import { useMemo } from "react";
-import { ActivityFeed } from "@/shared/ui/ActivityFeed";
+import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import type { GHEvent } from "@/shared/lib/github/types";
 import { buildActivityFeed, EVENT_TONE, type GhProject } from "./projectsSummaryDerive";
 

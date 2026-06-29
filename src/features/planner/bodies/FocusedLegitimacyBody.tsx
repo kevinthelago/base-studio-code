@@ -9,7 +9,7 @@
 import { useStageJson } from "./useStageJson";
 import { type Licensing, type ClearStatus } from "./dataCollection";
 import { Card, ModeChip, SourceHead, Readiness } from "./bodyPrimitives";
-import { Chip } from "@/shared/ui/Chip";
+import { Chip } from "@/shared/ui/data/Chip";
 
 const mono = "var(--mono)";
 

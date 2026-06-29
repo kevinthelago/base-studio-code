@@ -4,9 +4,9 @@
 
 import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/shared/data/skills";
 import { Spark } from "@/shared/ui/charts";
-import { Toggle } from "@/shared/ui/Toggle";
-import { Checkbox } from "@/shared/ui/Checkbox";
-import { DataTableRow, DataTableHeader } from "@/shared/ui/DataTableRow";
+import { Toggle } from "@/shared/ui/controls/Toggle";
+import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { DataTableRow, DataTableHeader } from "@/shared/ui/data/DataTableRow";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
 import { glyphTile, hueTile, pill, tintBg, sourcePill, scopePill, successColor } from "./skillStyles";

@@ -1,6 +1,6 @@
 // Tool-permission inputs for the Claude Config editor (#1709), extracted from ClaudeConfig.tsx.
 //
-// ToolChip is intentionally NOT based on the shared `@/shared/ui/Chip` (#1713): that chip is a
+// ToolChip is intentionally NOT based on the shared `@/shared/ui/data/Chip` (#1713): that chip is a
 // color-mix translucent pill (radius 99, no remove affordance), whereas this one is a solid
 // `--bg-elev` fill at radius 4 with an inline × remove control. Folding it in would change its
 // rendering (the #1635/#1713 lesson), so it stays local.

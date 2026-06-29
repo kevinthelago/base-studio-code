@@ -2,7 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { Dialog } from "@/shared/ui/Dialog";
-import { Chip } from "@/shared/ui/Chip";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
+import { Chip } from "@/shared/ui/data/Chip";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { buildGhStructure, parsePhases } from "../github/ghStructure";
@@ -30,7 +30,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
-import { BackButton } from "@/shared/ui/BackButton";
+import { BackButton } from "@/shared/ui/controls/BackButton";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";

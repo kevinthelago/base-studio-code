@@ -2,9 +2,9 @@ import { useAppStore } from "@/store";
 import { clearGithubCache } from "@/shared/lib/github/github";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubConnect } from "../lib/useGithubConnect";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { Chip } from "@/shared/ui/Chip";
-import { Card } from "@/shared/ui/Card";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Chip } from "@/shared/ui/data/Chip";
+import { Card } from "@/shared/ui/data/Card";
 
 function ConnectFlowCard() {
   const {

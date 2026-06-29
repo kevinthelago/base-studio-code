@@ -1,5 +1,5 @@
 import { useState, useRef, type Dispatch, type SetStateAction } from "react";
-import { Chip, tagTone } from "@/shared/ui/Chip";
+import { Chip, tagTone } from "@/shared/ui/data/Chip";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";

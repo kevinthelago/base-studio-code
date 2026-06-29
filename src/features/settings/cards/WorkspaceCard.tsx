@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { SettingsTextField } from "../pages/SettingsControls";
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function WorkspaceCard() {
   const { bscBaseDir, setBscBaseDir } = useAppStore();

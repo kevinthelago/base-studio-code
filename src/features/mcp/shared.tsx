@@ -4,12 +4,12 @@
 // and the env-var editor. Kept here so neither feature owns the other's vocabulary.
 
 import { useState, useEffect } from "react";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { IconButton } from "@/shared/ui/IconButton";
-import { CardListRow } from "@/shared/ui/CardListRow";
-import { Chip } from "@/shared/ui/Chip";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
-import { Banner } from "@/shared/ui/Banner";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { CardListRow } from "@/shared/ui/data/CardListRow";
+import { Chip } from "@/shared/ui/data/Chip";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";

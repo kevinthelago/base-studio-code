@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Dialog } from "@/shared/ui/Dialog";
-import { Button } from "@/shared/ui/Button";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
+import { Button } from "@/shared/ui/controls/Button";
 
 /** The console grid layouts a new tab can open with. */
 export const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];

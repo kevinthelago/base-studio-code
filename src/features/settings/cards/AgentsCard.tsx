@@ -1,7 +1,7 @@
 // Settings → Agents. Command auto-approval moved to per-agent profiles (#1457) — the standalone
 // global/project/repo allowlist editor was retired. This section now points to the Permissions
 // screen (where profiles live) and hosts session-wide agent defaults.
-import { Card } from "@/shared/ui/Card";
+import { Card } from "@/shared/ui/data/Card";
 
 export function AgentsCard() {
   return (

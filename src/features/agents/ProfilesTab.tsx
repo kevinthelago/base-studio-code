@@ -6,12 +6,12 @@
 // transforms live in ./lib.
 
 import { type CSSProperties } from "react";
-import { StatusDot } from "@/shared/ui/StatusDot";
-import { CardListRow } from "@/shared/ui/CardListRow";
-import { SegmentedControl } from "@/shared/ui/SegmentedControl";
-import { Chip } from "@/shared/ui/Chip";
-import { ColorSwatch } from "@/shared/ui/ColorSwatch";
-import { Banner } from "@/shared/ui/Banner";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { CardListRow } from "@/shared/ui/data/CardListRow";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { Chip } from "@/shared/ui/data/Chip";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,

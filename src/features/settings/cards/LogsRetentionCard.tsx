@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
-import { Button } from "@/shared/ui/Button";
-import { Card } from "@/shared/ui/Card";
+import { Button } from "@/shared/ui/controls/Button";
+import { Card } from "@/shared/ui/data/Card";
 
 export function LogsRetentionCard({
   onEnforced,

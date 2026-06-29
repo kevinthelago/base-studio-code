@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ConfirmButton } from "@/shared/ui/ConfirmButton";
+import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
-import { Button } from "@/shared/ui/Button";
+import { Button } from "@/shared/ui/controls/Button";
 
 // TODO: Refactor this storage card into the fleet tab.
 // Currently removed from settings/PlannerPage but kept intact for the future refactor.

@@ -3,7 +3,7 @@
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { useState } from "react";
-import { BackButton } from "@/shared/ui/BackButton";
+import { BackButton } from "@/shared/ui/controls/BackButton";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "../stages/focusedPlan";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
