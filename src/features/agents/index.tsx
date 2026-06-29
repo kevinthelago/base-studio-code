@@ -170,25 +170,6 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       pageOverride={pageOverride}
       className="agents-page"
       bodyClassName="body"
-      right={
-        <>
-          {tab === "profiles" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>{roles.length} application · {profiles.length} custom roles</span>
-            <button className="btn primary" onClick={createProfile}>+ New role</button>
-          </>}
-          {tab === "assignments" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>resolved · guaranteed ∪ profile ∪ project ∪ repo</span>
-            <button className="btn">apply to all panes…</button>
-          </>}
-          {tab === "activity" && <>
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · last 1h</span>
-            <button className="btn">pause feed</button>
-          </>}
-          {tab === "flow" && (
-            <span className="hint" style={{ fontFamily: "var(--mono)" }}>live · #199 latches + #220 stages</span>
-          )}
-        </>
-      }
       overlay={<>{promptDialog}{confirmDialog}</>}
     >
       {tab === "profiles" && (
