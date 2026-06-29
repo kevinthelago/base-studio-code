@@ -10,8 +10,8 @@ use crate::*;
 // `Bash` allow as allow-all — every auto-runnable command must be enumerated.
 //
 // The three command tiers are scaled by a session's `bash_posture` (see `write_session_settings`):
-//   - `mandatory` (gh/git/bsc-plan) — ALWAYS allowed: the app's GitHub/plan workflow depends on them
-//     (`gh` for triage/publish, `git` for every repo session, `bsc-plan` for the autopilot plan store).
+//   - `mandatory` (gh/git/bsc) — ALWAYS allowed: the app's GitHub/plan workflow depends on them
+//     (`gh` for triage/publish, `git` for every repo session, `bsc` (the unified CLI) for the autopilot plan store).
 //   - `readonly`  — the safe inspection/navigation set (`ls`/`cat`/`grep`/…), added for the `ask` and
 //     `allow` postures so ordinary work never prompts; destructive forms are still caught by the
 //     shared dangerous-bash floor (`bsc_util::dangerous`).
@@ -38,7 +38,7 @@ fn base_profile() -> &'static BaseProfile {
             .expect("data/permissions/base.json must be valid JSON matching BaseProfile")
     })
 }
-/// Commands guaranteed in every session regardless of posture (gh/git/bsc-plan).
+/// Commands guaranteed in every session regardless of posture (gh/git/bsc).
 fn mandatory_bash() -> &'static [String] { &base_profile().command_tiers.mandatory }
 /// The read-only inspection/navigation baseline (granted for the `ask` + `allow` postures).
 fn baseline_readonly() -> &'static [String] { &base_profile().command_tiers.readonly }
@@ -83,7 +83,7 @@ pub(crate) fn ensure_session_settings(
 /// session's `bash_posture` (the agent profile's bash tier): `allow` doers get the bare
 /// `Bash` + the read-only AND build baselines; `ask` coordinators get the read-only baseline
 /// only (build/unlisted commands prompt); `deny` agents get neither. Always added: the
-/// mandatory gh/git/bsc-plan and the per-stream `allowed_commands` the planner granted. A
+/// mandatory gh/git/bsc and the per-stream `allowed_commands` the planner granted. A
 /// curated default deny-list (`bsc_util::dangerous::claude_deny_rules`) plus any user/project `denied_commands`
 /// block the most dangerous direct invocations (deny wins over allow). Merges into existing
 /// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
@@ -115,7 +115,7 @@ pub(crate) fn write_session_settings(
     //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
     //     unlisted commands fall through to a prompt.
     //   - "deny"  (sandboxed): neither baseline.
-    // ALWAYS: mandatory gh/git/bsc-plan + each per-stream granted command (`allowed_commands`).
+    // ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
     let mut allow_rules: Vec<String> = Vec::new();
     let mut baseline: Vec<String> = Vec::new();
     match bash_posture {
@@ -290,11 +290,11 @@ mod baseline_drift_guard {
     }
 
     /// `base.json` itself must parse and carry non-empty tiers, with the mandatory set EXACTLY
-    /// gh/git/bsc-plan — a typo, an emptied tier, or a dropped mandatory command (any of which would
+    /// gh/git/bsc — a typo, an emptied tier, or a dropped mandatory command (any of which would
     /// silently widen or break every session's baseline) fails here, at the source.
     #[test]
     fn base_json_parses_with_populated_tiers_and_exact_mandatory() {
-        assert_eq!(mandatory_bash().join("/"), "gh/git/bsc-plan");
+        assert_eq!(mandatory_bash().join("/"), "gh/git/bsc");
         assert!(!baseline_readonly().is_empty(), "base.json readonly tier is empty");
         assert!(!baseline_build().is_empty(), "base.json build tier is empty");
         // Spot-check a representative member of each scaled tier.
