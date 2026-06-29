@@ -10,7 +10,7 @@ import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { usePromptDialog, useConfirmDialog } from "@/shared/ui/promptDialog";
 import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "./lib/agentProfiles";
@@ -30,7 +30,7 @@ import "./agents.css";
 export { ProfileSelect } from "./AssignmentsTab";
 export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
 
-export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function AgentsScreen({ pageOverride }: { pageOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
   const [actDecision, setActDecision] = useState<DecFilter>("all");
   const [actConsole, setActConsole] = useState("all");
@@ -73,7 +73,7 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
     { id: "flow", label: "Flow", count: Object.keys(workflowRuns).length, hint: "· coordination & workflows" },
   ], [roles.length, profiles.length, consoles.length, auditRows.length, workflowRuns]);
   const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
-  const tab = sectionOverride ?? activeId; // active section
+  const tab = pageOverride ?? activeId; // active section
 
   usePoll(async (isCancelled) => {
     if (tab !== "activity") return;
@@ -161,13 +161,13 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
   const { allow, ask, block } = auditDecisionCounts(auditRows);
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={agentTabs}
       active={tab}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
+      pageOverride={pageOverride}
       className="agents-page"
       bodyClassName="body"
       right={
@@ -217,6 +217,6 @@ export function AgentsScreen({ sectionOverride }: { sectionOverride?: string } =
       {tab === "flow" && (
         <FlowTab runs={workflowRuns} wakePane={wakePane} profileFor={profileFor} />
       )}
-    </TabbedScreen>
+    </Screen>
   );
 }

@@ -32,7 +32,7 @@ import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
@@ -54,7 +54,7 @@ const MODES: Array<{ k: Mode; label: string }> = [
 ];
 const SKILL_TABS: TabItem[] = MODES.map((m) => ({ id: m.k, label: m.label }));
 
-export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function SkillsScreen({ pageOverride }: { pageOverride?: string } = {}) {
   const skills = useAppStore((s) => s.skills);
   const addSkill = useAppStore((s) => s.addSkill);
   const updateSkill = useAppStore((s) => s.updateSkill);
@@ -73,7 +73,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const toggleSkillGroupMember = useAppStore((s) => s.toggleSkillGroupMember);
 
   const { tabs: skillTabs, activeId, select, reorder, tearOff } = usePageTabs("skills", SKILL_TABS);
-  const mode: Mode = (sectionOverride ?? activeId) as Mode;
+  const mode: Mode = (pageOverride ?? activeId) as Mode;
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("Most invoked");
@@ -202,13 +202,13 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
   const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={skillTabs}
       active={mode}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
+      pageOverride={pageOverride}
       className="skills-screen"
       right={mode === "library"
         ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -442,7 +442,7 @@ export function SkillsScreen({ sectionOverride }: { sectionOverride?: string } =
         </div></section>
       )}
 
-    </TabbedScreen>
+    </Screen>
   );
 }
 

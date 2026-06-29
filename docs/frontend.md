@@ -86,7 +86,9 @@ The shell is the chrome around the screens plus the console execution surface.
 
 ### Chrome — `app/chrome/`
 
-`Rail.tsx` (left nav), `Titlebar.tsx`, `Tabstrip.tsx` + `TabBar.tsx` (console workspace tabs, with tear-off-to-window support), `StatusBar.tsx`.
+`Rail.tsx` (left nav), `Titlebar.tsx`, **`Screen.tsx`** (the shared tabbed shell — a `PageTabs` strip over one active `Page` — that the rail Surfaces render through, #1878), `Tabstrip.tsx` + `TabBar.tsx` (console workspace tabs, with tear-off-to-window support), `StatusBar.tsx`.
+
+> **Page-structure vocabulary (#1878):** the Rail switches **Surfaces**; a Surface is composed of a **Screen** that shows one **Page** at a time over **PageTabs**. Console keeps its own nested **Tab → Pane → View**. The L1 `Screen → Surface` rename is the Phase 2 follow-up (#1879). Full convention: [`docs/frontend-structure.md`](frontend-structure.md).
 
 ### The console pane system — `app/console/`
 

@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useAppStore } from "@/store";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
@@ -11,7 +11,7 @@ import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 
-export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function ProjectsScreen({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
   useProjectScan();
 
@@ -27,7 +27,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
     projectKeyAlias,
   } = useAppStore();
 
-  // The page modes ride the shared <TabbedScreen> shell (#1876), store-controlled so the tab bar and
+  // The page modes ride the shared <Screen> shell (#1876), store-controlled so the tab bar and
   // the bodies share one source of truth — the same pattern the GitHub board uses (#499). usePageTabs
   // adds persisted order + per-mode tear-off into its own window (#430/#463).
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("projects", PROJECT_MODES, {
@@ -35,7 +35,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
     setActive: (id) => setProjectsPageMode(id as typeof projectsPageMode),
   });
   // A torn-off section window forces that one mode (and the bar is hidden).
-  const mode = sectionOverride ?? activeId;
+  const mode = pageOverride ?? activeId;
 
   const planningEverShown = useRef(false);
   if (projectsView === "planning") planningEverShown.current = true;
@@ -49,7 +49,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
 
   // Not connected (main window only): the connect prompt owns the whole screen, no tabs. A detached
   // section window still renders its body (it shares the connected store).
-  if (!githubConnected && !sectionOverride) {
+  if (!githubConnected && !pageOverride) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <ProjectsEmpty />
@@ -58,7 +58,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
   }
 
   return (
-    <TabbedScreen
+    <Screen
       className="projects-screen"
       bodyClassName="projects-body"
       tabs={tabs}
@@ -66,7 +66,7 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
+      pageOverride={pageOverride}
     >
       {/* Fleet — live orchestration; the worker board opens a per-agent page (#499). Mounts on demand. */}
       {mode === "fleet" && (
@@ -85,9 +85,9 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
       {/* Planner — kept MOUNTED (CSS-hidden) in the main window so the live planning PTY survives a
           mode switch. A torn-off projects section shows just the list (a live planning PTY can't
           follow into a second window, #430/#463). */}
-      {(!sectionOverride || sectionOverride === "projects") && (
+      {(!pageOverride || pageOverride === "projects") && (
         <div style={{ display: mode === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-          {sectionOverride ? (
+          {pageOverride ? (
             <ProjectsList />
           ) : (
             <>
@@ -104,6 +104,6 @@ export function ProjectsScreen({ sectionOverride }: { sectionOverride?: string }
           )}
         </div>
       )}
-    </TabbedScreen>
+    </Screen>
   );
 }

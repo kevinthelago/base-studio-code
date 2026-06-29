@@ -4,7 +4,7 @@ import { useMcpInstallStatus } from "./useMcpInstallStatus";
 import { builtInCatalog, browsableCatalog, catalogTabCount, filterCatalog } from "./lib/mcpCatalogView";
 import { useAppStore } from "@/store";
 import { type TabItem } from "@/app/chrome/TabBar";
-import { TabbedScreen } from "@/app/chrome/TabbedScreen";
+import { Screen } from "@/app/chrome/Screen";
 import { McpAnalyticsTab } from "./McpAnalytics";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { SCOPE_COPY, type CatalogItem } from "@/shared/data/mcpCatalog";
@@ -32,7 +32,7 @@ function mcpLabel(e: McpServer): string {
   return e.transport === "http" ? "mcp · http" : "mcp · stdio";
 }
 
-export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}) {
+export function McpScreen({ pageOverride }: { pageOverride?: string } = {}) {
   const mcpServers          = useAppStore(s => s.mcpServers);
   const addMcpServer        = useAppStore(s => s.addMcpServer);
   const updateMcpServer     = useAppStore(s => s.updateMcpServer);
@@ -62,7 +62,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
     ];
   }, [mcpServers]);
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("mcp", tabDefs);
-  const tab = sectionOverride ?? activeId;
+  const tab = pageOverride ?? activeId;
   const selected = drawer.selected;
 
   /** Add a catalog item as an installed server, with `{dir}` resolved to its on-disk download
@@ -184,13 +184,13 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   ), [scope]);
 
   return (
-    <TabbedScreen
+    <Screen
       tabs={tabs}
       active={tab}
       onSelect={select}
       onReorder={reorder}
       onTearOff={tearOff}
-      sectionOverride={sectionOverride}
+      pageOverride={pageOverride}
       className="ext-screen"
       bodyClassName="ext-body"
       right={
@@ -270,7 +270,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
       }
     >
       {body}
-    </TabbedScreen>
+    </Screen>
   );
 }
 

@@ -158,12 +158,12 @@ function ConsoleEmptyState({ onNew }: { onNew: () => void }) {
 // lookup keyed by the URL-supplied `page`) so there's no user-controlled dispatch.
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
-    case "automations": return <AutomationsScreen sectionOverride={section} />;
-    case "skills":      return <SkillsScreen sectionOverride={section} />;
-    case "mcp":         return <McpScreen sectionOverride={section} />;
-    case "agents":      return <AgentsScreen sectionOverride={section} />;
-    case "github":      return <GitHubScreen sectionOverride={section} />;
-    case "projects":    return <ProjectsScreen sectionOverride={section} />;
+    case "automations": return <AutomationsScreen pageOverride={section} />;
+    case "skills":      return <SkillsScreen pageOverride={section} />;
+    case "mcp":         return <McpScreen pageOverride={section} />;
+    case "agents":      return <AgentsScreen pageOverride={section} />;
+    case "github":      return <GitHubScreen pageOverride={section} />;
+    case "projects":    return <ProjectsScreen pageOverride={section} />;
     default:
       return (
         <div style={{ padding: 24, fontFamily: "var(--mono)", color: "var(--fg-dim)" }}>

@@ -90,7 +90,7 @@ base-studio-code/
 │   ├── app/                 # the SHELL — knows every feature; features don't know it
 │   │   ├── main.tsx  App.tsx   #   Vite entry + the Titlebar/Rail/screen-switcher shell
 │   │   ├── registry.ts      #   canonical Screen → {label, icon}; the rail + titlebar both read it
-│   │   ├── chrome/          #   Rail, Titlebar, Tabstrip, TabBar, StatusBar
+│   │   ├── chrome/          #   Rail, Titlebar, Screen (shared tabbed shell, #1878), Tabstrip, TabBar, StatusBar
 │   │   ├── console/         #   the execution surface: ConsoleScreen + panes/ + lib/ (pane system)
 │   │   └── *Banner.tsx · ErrorBoundary   #   crash/quarantine/readiness banners, error boundary
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
@@ -118,6 +118,11 @@ The frontend is **feature-first vertical slices** — `app/` (shell) · `feature
 feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`components/`, `lib/`,
 `hooks/`, `screens/`, `data/` are gone). Rules:
 
+- **Page-structure vocabulary (#1878):** one word per level — the **Rail** switches **Surfaces**; a
+  Surface is composed of a **Screen** (the shared tabbed shell, `app/chrome/Screen.tsx`) that shows one
+  **Page** at a time over a **PageTabs** strip (`usePageTabs` + `TabBar`). Console keeps its own nested
+  **Tab → Pane → View**. The full convention + the L1 `Screen → Surface` follow-up (#1879) live in
+  [`docs/frontend-structure.md`](docs/frontend-structure.md).
 - **A feature owns everything it needs:** `features/<x>/` holds the UI, a `lib/` of pure (React-free)
   domain logic, a `store.ts` (its Zustand slice + slice interface), colocated tests, and an `index.ts`
   barrel that is the feature's public API. Import a feature's UI via `@/features/<x>`; import its pure
