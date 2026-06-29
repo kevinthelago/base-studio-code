@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import "./cardListRow.css";
 
 export interface CardListRowProps {
@@ -22,6 +22,8 @@ export interface CardListRowProps {
   off?: boolean;
   /** "card" (default) = bordered card; "grouped" = no border, top-separator, inherits the parent bg. */
   variant?: "card" | "grouped";
+  /** A left-rail accent colour, shown when the row is `selected` (e.g. a profile colour). */
+  accent?: string;
   onClick?: () => void;
   className?: string;
 }
@@ -30,17 +32,20 @@ export interface CardListRowProps {
  *  card. The card-list archetype of the row vocabulary (#1865); its sibling is <DataTableRow> for
  *  columnar tables. Every card-list (mcp servers/hooks, agent profiles, …) composes this with its own
  *  slot content, so the kit/SDK emits one row shape rather than N bespoke rows. */
-export function CardListRow({ lead, title, badge, titleAside, subtitle, body, trailing, selected, off, variant = "card", onClick, className }: CardListRowProps) {
+export function CardListRow({ lead, title, badge, titleAside, subtitle, body, trailing, selected, off, variant = "card", accent, onClick, className }: CardListRowProps) {
   return (
     <div
       className={
         "card-list-row" +
         (variant === "grouped" ? " grouped" : "") +
         (body != null ? " has-body" : "") +
+        (accent != null ? " has-accent" : "") +
+        (onClick ? " clickable" : "") +
         (selected ? " selected" : "") +
         (off ? " off" : "") +
         (className ? ` ${className}` : "")
       }
+      style={accent != null ? ({ ["--clr-accent" as string]: accent } as CSSProperties) : undefined}
       onClick={onClick}
     >
       <div className="clr-lead">{lead}</div>
