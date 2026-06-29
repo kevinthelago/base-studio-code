@@ -135,14 +135,14 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
           }}
         >
           <span style={{ fontSize: 22 }}>⬇</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>Drop design files or a folder here</span>
+          <span className="mono-value">Drop design files or a folder here</span>
           <span className="hint">or click to browse a folder — images, SVG, components, markup, anything</span>
           {/* The drop box IS the browse affordance: clicking it opens the native folder picker
               (webkitdirectory is set on this input via the effect above). Files can also be dragged in. */}
           <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
 
-        {error &&<div style={{ color: "var(--danger)", fontFamily: "var(--mono)", fontSize: 11 }}>{error}</div>}
+        {error &&<div className="mono" style={{ color: "var(--danger)", fontSize: 11 }}>{error}</div>}
 
         {/* Staged files */}
         {entries.length > 0 && (
@@ -151,8 +151,8 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
             {entries.map((e) => (
               <div key={e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
                 <Chip style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</Chip>
-                <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
+                <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
               </div>
             ))}
             <button
