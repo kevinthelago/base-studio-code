@@ -7,6 +7,7 @@
 
 import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { CardListRow } from "@/shared/ui/CardListRow";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
   type AgentProfile, type ConsoleSession, type Tier, type ToolKey,
@@ -63,21 +64,23 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
   const origin = isApp ? "application" : p.category === "generated" ? "generated" : (p.origin === "built-in" ? "built-in" : "user-defined");
   const obCls = isApp ? "approle" : p.category === "generated" ? "gen" : "";
   return (
-    <div className={`prof-row ${isApp ? "approle" : ""} ${on ? "on" : ""}`} onClick={onClick} style={{ ["--pc" as string]: p.color }}>
-      <div className="l1">
-        <span className="swatch" style={{ background: p.color }} />
-        <span className="pname">{p.name}</span>
-        <span className="spacer" />
-        <span className={`origin-badge ${obCls}`}>{origin}</span>
-      </div>
-      <div className="l2">
-        {isApp
-          ? <><span className="sys-pin">◆ owns {p.session}</span><span>· always on</span></>
-          : <><span>{paneCount(p.id, consoles)} panes</span><span>· {p.commands.length} cmds</span></>}
-        <span className="spacer" style={{ flex: 1 }} />
-        <span className={`mode-badge ${p.mode}`} style={{ fontSize: 8.5 }}>{p.mode}</span>
-      </div>
-    </div>
+    <CardListRow
+      variant="grouped"
+      accent={p.color}
+      selected={on}
+      onClick={onClick}
+      lead={<span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, display: "block" }} />}
+      title={p.name}
+      titleAside={<span className={`origin-badge ${obCls}`}>{origin}</span>}
+      subtitle={
+        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {isApp
+            ? <><span>◆ owns {p.session}</span><span>· always on</span></>
+            : <><span>{paneCount(p.id, consoles)} panes</span><span>· {p.commands.length} cmds</span></>}
+        </span>
+      }
+      trailing={<span className={`mode-badge ${p.mode}`} style={{ fontSize: 8.5 }}>{p.mode}</span>}
+    />
   );
 }
 

@@ -31,15 +31,18 @@ describe("CardListRow", () => {
     expect((container.firstChild as HTMLElement).className).toContain("off");
   });
 
-  it("renders titleAside + body and applies the grouped variant", () => {
+  it("renders titleAside + body and applies grouped/accent/clickable classes", () => {
     const { container } = render(
-      <CardListRow title="t" titleAside={<span>aside</span>} body={<span>body-content</span>} variant="grouped" />,
+      <CardListRow title="t" titleAside={<span>aside</span>} body={<span>body-content</span>} variant="grouped" accent="#abc" onClick={() => {}} />,
     );
     expect(screen.getByText("aside")).toBeInTheDocument();
     expect(screen.getByText("body-content")).toBeInTheDocument();
     expect(container.querySelector(".clr-body")).not.toBeNull();
-    const cls = (container.firstChild as HTMLElement).className;
-    expect(cls).toContain("grouped");
-    expect(cls).toContain("has-body");
+    const el = container.firstChild as HTMLElement;
+    expect(el.className).toContain("grouped");
+    expect(el.className).toContain("has-body");
+    expect(el.className).toContain("has-accent");
+    expect(el.className).toContain("clickable");
+    expect(el.style.getPropertyValue("--clr-accent")).toBe("#abc");
   });
 });
