@@ -15,6 +15,7 @@ import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard, type Scope,
 } from "../shared";
 import { Pane } from "@/shared/ui/Pane";
+import { useDraft } from "@/shared/hooks/useDraft";
 import "../mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -39,7 +40,7 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   const bscBaseDir          = useAppStore(s => s.bscBaseDir);
 
   const [scope, setScope] = useState<Scope>("global");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const drawer = useDraft<McpServer>({ items: mcpServers, onUpdate: updateMcpServer });
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
 
@@ -59,25 +60,18 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
   }, [mcpServers]);
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("mcp", tabDefs);
   const tab = sectionOverride ?? activeId;
-  const selected = selectedId ? mcpServers.find(e => e.id === selectedId) ?? null : null;
+  const selected = drawer.selected;
 
   /** Add a catalog item as an installed server, with `{dir}` resolved to its on-disk download
    *  path (#859). `select` opens it in the drawer; the download flow adds silently (#885). */
   function addFromCatalog(item: CatalogItem, openDrawer = true) {
     const def = resolveMcpInstallDir(mcpFromCatalog(item.name), item.name, bscBaseDir);
-    addMcpServer(def);
-    if (openDrawer) {
-      const created = useAppStore.getState().mcpServers;
-      const last = created[created.length - 1];
-      if (last) setSelectedId(last.id);
-    }
+    const id = addMcpServer(def);
+    if (openDrawer) drawer.select(id);
   }
 
   function addCustom() {
-    addMcpServer(blankMcpServer());
-    const created = useAppStore.getState().mcpServers;
-    const last = created[created.length - 1];
-    if (last) setSelectedId(last.id);
+    drawer.select(addMcpServer(blankMcpServer()));
     setAddOpen(false);
   }
 
@@ -148,8 +142,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
                 scopeChip={scopeChips(e, projects)}
                 aside={updateControl(e)}
                 on={e.enabled}
-                selected={selectedId === e.id}
-                onSelect={() => setSelectedId(e.id)}
+                selected={drawer.selectedId === e.id}
+                onSelect={() => drawer.select(e.id)}
                 onToggle={() => toggleMcpServer(e.id)}
               />
             ))}
@@ -237,8 +231,8 @@ export function McpScreen({ sectionOverride }: { sectionOverride?: string } = {}
       overlay={
         <Pane
         open={!!selected}
-        onClose={() => setSelectedId(null)}
-        onRemove={() => { if (selected) { removeMcpServer(selected.id); setSelectedId(null); } }}
+        onClose={drawer.close}
+        onRemove={() => { if (selected) { removeMcpServer(selected.id); drawer.close(); } }}
         header={selected && (
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
@@ -304,23 +298,17 @@ export function HooksView() {
   const setHookProjects  = useAppStore(s => s.setHookProjects);
   const githubToken      = useAppStore(s => s.githubToken);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const drawer = useDraft<Hook>({ items: hooks, onUpdate: updateHook });
   const [search, setSearch] = useState("");
   const projects = useGhProjects(githubToken);
-  const selected = selectedId ? hooks.find(e => e.id === selectedId) ?? null : null;
+  const selected = drawer.selected;
 
   function addFromCatalog(item: CatalogItem) {
-    addHook(hookFromCatalog(item.name));
-    const created = useAppStore.getState().hooks;
-    const last = created[created.length - 1];
-    if (last) setSelectedId(last.id);
+    drawer.select(addHook(hookFromCatalog(item.name)));
   }
 
   function addCustom() {
-    addHook(blankHook());
-    const created = useAppStore.getState().hooks;
-    const last = created[created.length - 1];
-    if (last) setSelectedId(last.id);
+    drawer.select(addHook(blankHook()));
   }
 
   function installedView() {
@@ -346,8 +334,8 @@ export function HooksView() {
               desc={<>{e.command || "no command set"}{e.matcher ? ` · ${e.matcher}` : ""}</>}
               scopeChip={scopeChips(e, projects)}
               on={e.enabled}
-              selected={selectedId === e.id}
-              onSelect={() => setSelectedId(e.id)}
+              selected={drawer.selectedId === e.id}
+              onSelect={() => drawer.select(e.id)}
               onToggle={() => toggleHook(e.id)}
             />
           ))}
@@ -396,8 +384,8 @@ export function HooksView() {
 
       <Pane
         open={!!selected}
-        onClose={() => setSelectedId(null)}
-        onRemove={() => { if (selected) { removeHook(selected.id); setSelectedId(null); } }}
+        onClose={drawer.close}
+        onRemove={() => { if (selected) { removeHook(selected.id); drawer.close(); } }}
         header={selected && (
           <>
             <div className={"health " + (selected.enabled ? "" : "off")} />
