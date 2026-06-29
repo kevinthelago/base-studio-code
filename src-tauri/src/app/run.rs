@@ -133,7 +133,6 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             app::dialog::pick_directory,
-            app::detached_window::open_detached_window,
             data::pick_csv_file,
             data::data_preview_csv,
             data::data_load_csv,
