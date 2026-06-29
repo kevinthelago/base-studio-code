@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { Card } from "@/shared/ui/Card";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -53,10 +54,10 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
   return (
     <>
       <div className="hist-summary">
-        <div className="card"><div className="k">total runs</div><div className="v">{rows.length}</div><div className="sub">across {automations.length} automations</div></div>
-        <div className="card"><div className="k">success rate</div><div className="v success">{succRate}%</div><div className="sub">{ok} ok · {skipped} skipped · {fail} fail</div></div>
-        <div className="card"><div className="k">skipped</div><div className="v">{skipped}</div><div className="sub">target wasn't open</div></div>
-        <div className="card"><div className="k">failed</div><div className="v danger">{fail}</div><div className="sub">dispatch errored</div></div>
+        <Card><div className="k">total runs</div><div className="v">{rows.length}</div><div className="sub">across {automations.length} automations</div></Card>
+        <Card><div className="k">success rate</div><div className="v success">{succRate}%</div><div className="sub">{ok} ok · {skipped} skipped · {fail} fail</div></Card>
+        <Card><div className="k">skipped</div><div className="v">{skipped}</div><div className="sub">target wasn't open</div></Card>
+        <Card><div className="k">failed</div><div className="v danger">{fail}</div><div className="sub">dispatch errored</div></Card>
       </div>
 
       <div className="history-toolbar">
