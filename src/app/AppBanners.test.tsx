@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionRecoveryBanner } from "./SessionRecoveryBanner";
+import { SessionRecoveryBanner } from "./AppBanners";
 import { useAppStore } from "@/store";
 
 const DISCOVERED = [
