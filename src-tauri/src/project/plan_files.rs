@@ -1,4 +1,5 @@
-use crate::*;
+use crate::prelude::*;
+use crate::project::plan_db;
 
 /// Clear every project's plan files for a from-scratch dev reset, WITHOUT touching
 /// the cloned repos. Deletes only the top-level `.md` / `.json` plan files in each

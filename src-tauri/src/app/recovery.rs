@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// Path of the session-lock marker (#1041).
 pub(crate) fn session_lock_path() -> std::path::PathBuf {

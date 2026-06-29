@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::{broadcast, mpsc, watch};
 
-use crate::fcm::{self, FcmSender, SendOutcome};
+use crate::mobile::fcm::{self, FcmSender, SendOutcome};
 
 use super::noise;
 use super::protocol::*;

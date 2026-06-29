@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 // Base-level allowed commands are defined ONCE in the backend-owned `data/permissions/base.json`
 // (#1880), embedded here at compile time — the SINGLE SOURCE OF TRUTH. The planner prompts

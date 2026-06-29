@@ -56,7 +56,8 @@ base-studio-code/
 │   ├── tauri.conf.json
 │   └── src/                 # ONE FOLDER PER SUBSYSTEM — the folder tree IS the architecture
 │       ├── main.rs          #   binary entry → app::run()
-│       ├── lib.rs           #   crate root: module declarations + re-exports only (63 LOC)
+│       ├── lib.rs           #   crate root: module decls + the leaf-helper prelude (#1918; no module aliases)
+│       ├── prelude.rs        #   the crate's named leaf-helper prelude (paths/git/shell/fs/…), `use crate::prelude::*`
 │       ├── tests.rs         #   cross-cutting test module (+ testutil.rs)
 │       ├── platform/        #   OS primitives: paths, git, shell, process, fsx, docstore
 │       ├── app/             #   Tauri shell: run(), state, recovery, dialog

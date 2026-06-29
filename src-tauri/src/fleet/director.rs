@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 use crate::fleet::protocols::append_section_once;
 
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the

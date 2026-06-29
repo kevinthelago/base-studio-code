@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 use std::collections::HashMap;
 
 /// Markers the GitHub-readiness probe echoes when each check passes (#297). Plain
@@ -33,7 +33,7 @@ pub(crate) fn github_readiness(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<serde_json::Value, String> {
-    let shell = crate::shell::resolve_shell();
+    let shell = crate::platform::shell::resolve_shell();
     let script = format!(
         "command -v git >/dev/null 2>&1 && echo {GIT_PATH_MARK}; \
          command -v gh  >/dev/null 2>&1 && echo {GH_PATH_MARK}; \
@@ -45,7 +45,7 @@ pub(crate) fn github_readiness(
         cmd.current_dir(&cwd);
     }
     let env_map = env.unwrap_or_default();
-    for (k, v) in crate::pty::session_env(&env_map) {
+    for (k, v) in crate::console::pty::session_env(&env_map) {
         cmd.env(k, v);
     }
     let (gh, git, auth) = match no_window(&mut cmd).output() {
@@ -163,7 +163,7 @@ pub(crate) fn interpret_preflight(stdout: &str, git_bash: GitBashProbe) -> Vec<P
 pub(crate) fn detect_git_bash() -> GitBashProbe {
     #[cfg(windows)]
     {
-        match crate::shell::find_git_bash() {
+        match crate::platform::shell::find_git_bash() {
             Some(p) => GitBashProbe::Found(p),
             None => GitBashProbe::Missing,
         }
@@ -185,7 +185,7 @@ pub(crate) fn preflight(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<PrereqStatus>, String> {
-    let shell = crate::shell::resolve_shell();
+    let shell = crate::platform::shell::resolve_shell();
     // One tab-delimited line per tool: BSC_PREREQ <name> <path> <version>. `tr` drops
     // CRs/tabs so a Windows version string can't break the field layout.
     let script = format!(
@@ -202,7 +202,7 @@ pub(crate) fn preflight(
         cmd.current_dir(&cwd);
     }
     let env_map = env.unwrap_or_default();
-    for (k, v) in crate::pty::session_env(&env_map) {
+    for (k, v) in crate::console::pty::session_env(&env_map) {
         cmd.env(k, v);
     }
     let stdout = match no_window(&mut cmd).output() {
@@ -218,15 +218,15 @@ pub(crate) fn preflight(
 /// Returns the lowercase kind string (`auto`/`bash`/`powershell`/`cmd`).
 #[tauri::command]
 pub(crate) fn get_preferred_shell() -> String {
-    crate::shell::read_shell_pref().as_str().to_string()
+    crate::platform::shell::read_shell_pref().as_str().to_string()
 }
 /// Persist the console-shell preference (#447). Takes the frontend `ShellKind`
 /// string; an unrecognized value is normalized to `auto` so the file always holds a
 /// valid token. The next session launch reads it via `resolve_interactive_shell`.
 #[tauri::command]
 pub(crate) fn set_preferred_shell(kind: String) -> Result<(), String> {
-    let pref = crate::shell::ShellPref::parse(&kind);
+    let pref = crate::platform::shell::ShellPref::parse(&kind);
     let base = bsc_base_dir();
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    std::fs::write(crate::shell::shell_pref_path(), pref.as_str()).map_err(|e| e.to_string())
+    std::fs::write(crate::platform::shell::shell_pref_path(), pref.as_str()).map_err(|e| e.to_string())
 }
