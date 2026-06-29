@@ -5,11 +5,10 @@
 // half-clipped "tucked under the divider" look from #508: the 12px pills sit in a 6px
 // clipping strip, so only their top rounded half shows.
 
-import { Fragment, type CSSProperties } from "react";
 import { stageStatus, type BlueprintStage } from "../stages/blueprints";
 import type { PlanSignals } from "../stages/stageGate";
 import { stageKind } from "../blueprints/blueprintCatalog";
-import { Ic } from "../blueprints/blueprintIcons";
+import { ProgressionRail, type RailNode, type RailStatus } from "./ProgressionRail";
 
 function fillColor(status: string): string {
   switch (status) {
@@ -58,65 +57,44 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
   );
 }
 
-/** Per-status node styling for {@link PlanGateRow} — mirrors the focused-pane stepper's
- *  seqrail node (complete = filled success, locked = soft-ringed dim, else accent-ringed). */
-function nodeStyle(status: string): CSSProperties {
-  const base: CSSProperties = {
-    width: 24, height: 24, flex: "0 0 24px", borderRadius: 7,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontFamily: "var(--mono)", fontSize: 13, lineHeight: 1, fontWeight: 700,
-  };
-  switch (status) {
-    case "complete":
-      return { ...base, background: "var(--success)", color: "oklch(0.20 0.04 145)" };
-    case "locked":
-      return { ...base, background: "var(--bg-elev2)", color: "var(--fg-dim)", boxShadow: "inset 0 0 0 1.5px var(--border)" };
-    default: // in-progress / available
-      return { ...base, background: "var(--bg-elev2)", color: "var(--accent)", boxShadow: "inset 0 0 0 1.5px var(--accent-dim)" };
-  }
+/** Map the blueprint section render-status onto the rail's unified status set. "in-progress" (the
+ *  current/available stage) becomes "active" — rendered as a static accent ring on the card (the
+ *  stepper variant is what pulses it). "complete"/"locked" pass through; "na" is filtered upstream. */
+function railStatus(status: string): RailStatus {
+  return status === "complete" ? "complete" : status === "locked" ? "locked" : "active";
 }
 
 /**
  * A compact gated-icon progression for cards (#blueprints): one node per enabled, applicable
- * section, showing that stage's icon, status-colored like the focused-pane stepper, and joined by
- * connectors. Each node's `title` carries the stage name + blurb + gate (the on-hover help text).
- * Driven by blueprint data + the signal bag — on a signal-less blueprint card it reads as the
- * lifecycle's stage sequence; each gate adds width, so the host pane widens with it.
+ * section, showing that stage's icon, status-colored, joined by connectors — a preview of the
+ * lifecycle this blueprint walks through. A thin adapter over the shared {@link ProgressionRail}
+ * (#1869): it maps the blueprint's sections (via {@link stageStatus}) into rail nodes. Each node's
+ * `title` carries the stage name + blurb + gate (the on-hover help text).
  *
  * The icon is resolved through the built-in stage→icon map ({@link stageKind}, keyed by
- * `section.key`) and rendered as inline SVG via {@link Ic}, exactly like every other blueprint
- * surface (the editor, StageSummary, the catalog preview). It is deliberately NOT the per-section
- * `glyph` string: an imported / authored blueprint's sections carry untrusted (or empty) glyph
- * values, so reading the map keyed by the stage's identity guarantees a real icon for every known
- * stage and a `category` fallback otherwise — never a blank or a stray literal character.
+ * `section.key`) — exactly like every other blueprint surface (the editor, StageSummary, the catalog
+ * preview). It is deliberately NOT the per-section `glyph` string: an imported / authored blueprint's
+ * sections carry untrusted (or empty) glyph values, so reading the map keyed by the stage's identity
+ * guarantees a real icon for every known stage and a `category` fallback otherwise — never a blank.
  */
 export function PlanGateRow({ sections, signals }: {
   sections: BlueprintStage[];
   signals: PlanSignals;
 }) {
-  const segments = sections
+  const nodes: RailNode[] = sections
     .filter((s) => s.enabled)
     .map((section) => ({ section, ...stageStatus(section, sections, signals) }))
-    .filter((s) => s.status !== "na");
-  if (segments.length === 0) return null;
+    .filter((s) => s.status !== "na")
+    .map(({ section, status }) => ({
+      key: section.key,
+      status: railStatus(status),
+      icon: stageKind(section.key).glyph,
+      title: `${section.name} · ${status}\n${section.blurb}${section.gate ? `\nGate: ${section.gate}` : ""}`,
+    }));
+  if (nodes.length === 0) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: 11 }}>
-      {segments.map(({ section, status }, i) => (
-        <Fragment key={section.key}>
-          <span
-            title={`${section.name} · ${status}\n${section.blurb}${section.gate ? `\nGate: ${section.gate}` : ""}`}
-            style={nodeStyle(status)}
-          >
-            {status === "complete" ? "✓" : <Ic n={stageKind(section.key).glyph} size={13} />}
-          </span>
-          {i < segments.length - 1 && (
-            <span style={{
-              flex: "1 1 0", minWidth: 6, height: 2, margin: "0 2px", borderRadius: 2,
-              background: status === "complete" ? "var(--success)" : "var(--border-soft)",
-            }} />
-          )}
-        </Fragment>
-      ))}
+    <div style={{ marginTop: 11 }}>
+      <ProgressionRail nodes={nodes} variant="compact" />
     </div>
   );
 }
