@@ -3,6 +3,7 @@ import { clearGithubCache } from "@/shared/lib/github/github";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubConnect } from "../lib/useGithubConnect";
 import { StatusDot } from "@/shared/ui/StatusDot";
+import { Chip } from "@/shared/ui/Chip";
 
 function ConnectFlowCard() {
   const {
@@ -78,10 +79,10 @@ function ConnectFlowCard() {
         <span style={{ fontFamily: "var(--mono)", color: "var(--accent)", fontSize: 11 }}>
           github.com/settings/tokens
         </span>{" "}
-        with <span className="tag" style={{ fontSize: 10 }}>repo</span>{" "}
-        <span className="tag" style={{ fontSize: 10 }}>read:org</span>{" "}
-        <span className="tag" style={{ fontSize: 10 }}>read:user</span>{" "}
-        <span className="tag" style={{ fontSize: 10 }}>project</span> scopes, then paste it below.
+        with <Chip style={{ fontSize: 10 }}>repo</Chip>{" "}
+        <Chip style={{ fontSize: 10 }}>read:org</Chip>{" "}
+        <Chip style={{ fontSize: 10 }}>read:user</Chip>{" "}
+        <Chip style={{ fontSize: 10 }}>project</Chip> scopes, then paste it below.
       </p>
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -148,8 +149,8 @@ export function ConnectGithubCard() {
           <b style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
             {githubUser.name ? `${githubUser.name} (${githubUser.login})` : githubUser.login}
           </b>
-          <span className="tag green"><StatusDot style={{ marginRight: 4 }} />connected</span>
-          <span className="tag">scopes: repo · read:org · read:user · project</span>
+          <Chip tone="success"><StatusDot style={{ marginRight: 4 }} />connected</Chip>
+          <Chip>scopes: repo · read:org · read:user · project</Chip>
         </div>
         <div className="hint" style={{ marginTop: 3 }}>
           {githubRepos.length} {githubRepos.length === 1 ? "repo" : "repos"} accessible

@@ -3,6 +3,7 @@ import { paneCount, type Every, type Automation, type SimpleWhen } from "./lib/s
 import { isValidCron } from "./lib/cron";
 import { fmtStamp } from "./format";
 import { Pane } from "@/shared/ui/Pane";
+import { Chip } from "@/shared/ui/Chip";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { EmptyState } from "@/shared/ui/EmptyState";
 
@@ -64,7 +65,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
               <div className="l1">
                 <span className={"dot" + (a.armed ? "" : " off")} />
                 <span className="spacer" />
-                <span className="tag" style={{ fontSize: 9.5 }}>{a.action}</span>
+                <Chip style={{ fontSize: 9.5 }}>{a.action}</Chip>
               </div>
               <div className="name">{a.name}</div>
               <div className="meta">
