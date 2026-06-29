@@ -124,6 +124,42 @@ pub fn help_for(prog: &str, tagline: &str, cmds: &[CmdDoc], name: &str) -> Strin
     }
 }
 
+/// The shared top-level + per-command **help dispatch** every `CmdDoc`-driven `bsc-*` CLI runs at the
+/// top of `run()` (#1862). Returns `true` when it printed help — the caller then `return Ok(())`s —
+/// or `false` when `positional[0]` is a real command to dispatch on. `positional` is the parsed
+/// leftover-args vector (verb + subcommands), with `-h`/`--help` already folded to a leading `help`
+/// token by each bin's arg parser.
+///
+/// The contract is byte-for-byte what the bins inlined:
+/// - no command, or `help` → the compact [`help_overview`]; `help <name>` → that command's detail;
+/// - `<cmd> help` → that command's detail (`help_for` falls back to the overview for an unknown name).
+///
+/// Help is resolved **before** any store is opened, so `<prog> help` works without a db/dir. CLIs
+/// whose help semantics differ — a bare invocation that defaults to a verb (`bsc-logs`), or a
+/// hand-rolled menu (`bsc-plan`) — keep their own block rather than route through this.
+pub fn handle_help(prog: &str, tagline: &str, cmds: &[CmdDoc], positional: &[String]) -> bool {
+    let cmd = positional.first().map(String::as_str).unwrap_or("");
+    if cmd.is_empty() || cmd == "help" {
+        match positional.get(1) {
+            Some(name) => print!("{}", help_for(prog, tagline, cmds, name)),
+            None => print!("{}", help_overview(prog, tagline, cmds)),
+        }
+        return true;
+    }
+    if positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", help_for(prog, tagline, cmds, cmd));
+        return true;
+    }
+    false
+}
+
+/// The shared **unknown-command** error string: the offending `cmd` plus the compact
+/// [`help_overview`] — the exact text each `CmdDoc`-driven bin builds in its dispatch fallthrough
+/// (#1862), so the message stays uniform (and in sync with the command catalog) across the CLIs.
+pub fn unknown_command(prog: &str, tagline: &str, cmds: &[CmdDoc], cmd: &str) -> String {
+    format!("unknown command '{cmd}'\n\n{}", help_overview(prog, tagline, cmds))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +242,35 @@ mod tests {
         let miss = help_for("bsc-x", "a test tool", DOCS, "nope");
         assert!(miss.contains("COMMANDS:"));
         assert!(miss.contains("tree"));
+    }
+
+    fn pos(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn handle_help_claims_the_help_forms_and_passes_real_commands_through() {
+        // No command (bare invocation) → the overview is printed and the caller returns.
+        assert!(handle_help("bsc-x", "t", DOCS, &pos(&[])));
+        // `help` and `help <name>` → handled.
+        assert!(handle_help("bsc-x", "t", DOCS, &pos(&["help"])));
+        assert!(handle_help("bsc-x", "t", DOCS, &pos(&["help", "tree"])));
+        // The trailing `<cmd> help` form → handled (even for an unknown <cmd>, mirroring the inlined
+        // block: `help_for` falls back to the overview for an unknown name).
+        assert!(handle_help("bsc-x", "t", DOCS, &pos(&["tree", "help"])));
+        assert!(handle_help("bsc-x", "t", DOCS, &pos(&["nope", "help"])));
+        // A real command → NOT handled, so the caller dispatches it.
+        assert!(!handle_help("bsc-x", "t", DOCS, &pos(&["tree"])));
+        assert!(!handle_help("bsc-x", "t", DOCS, &pos(&["stat", "src/x"])));
+    }
+
+    #[test]
+    fn unknown_command_names_the_command_and_appends_the_overview() {
+        let msg = unknown_command("bsc-x", "a test tool", DOCS, "bogus");
+        assert!(msg.starts_with("unknown command 'bogus'"));
+        // It carries the full compact overview so the message stays in sync with the catalog.
+        assert_eq!(msg, format!("unknown command 'bogus'\n\n{}", help_overview("bsc-x", "a test tool", DOCS)));
+        assert!(msg.contains("COMMANDS:"));
+        assert!(msg.contains("tree"));
     }
 }

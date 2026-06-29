@@ -265,18 +265,9 @@ fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
-    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
-    // Handled before opening the store (help must work without a skills.db).
-    if cmd.is_empty() || cmd == "help" {
-        match args.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS)),
-        }
-        return Ok(());
-    }
-    // Per-command help: `bsc-skill <cmd> help`.
-    if args.positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for("bsc-skill", TAGLINE, COMMANDS, &cmd));
+    // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
+    // dispatch in bsc-cli-util, run before opening the store (help works without a skills.db).
+    if bsc_cli_util::handle_help("bsc-skill", TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -471,10 +462,7 @@ fn run() -> Result<(), String> {
                 )),
             }
         }
-        other => Err(format!(
-            "unknown command '{other}'\n\n{}",
-            bsc_cli_util::help_overview("bsc-skill", TAGLINE, COMMANDS)
-        )),
+        other => Err(bsc_cli_util::unknown_command("bsc-skill", TAGLINE, COMMANDS, other)),
     }
 }
 

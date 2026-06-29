@@ -95,18 +95,9 @@ fn run() -> Result<(), String> {
     let args = parse_args(std::env::args().skip(1).collect())?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
-    // Top-level help / no command → the compact menu, or one command's detail via `help <cmd>`.
-    // Handled BEFORE resolving the store (help must work even without a blueprint dir).
-    if cmd.is_empty() || cmd == "help" {
-        match args.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-blueprint", TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview("bsc-blueprint", TAGLINE, COMMANDS)),
-        }
-        return Ok(());
-    }
-    // Per-command help: `bsc-blueprint <cmd> help`.
-    if args.positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for("bsc-blueprint", TAGLINE, COMMANDS, &cmd));
+    // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
+    // dispatch in bsc-cli-util, run BEFORE resolving the store (help works without a blueprint dir).
+    if bsc_cli_util::handle_help("bsc-blueprint", TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -149,10 +140,7 @@ fn run() -> Result<(), String> {
             print_json(&id, args.pretty);
             Ok(())
         }
-        other => Err(format!(
-            "unknown command '{other}'\n\n{}",
-            bsc_cli_util::help_overview("bsc-blueprint", TAGLINE, COMMANDS)
-        )),
+        other => Err(bsc_cli_util::unknown_command("bsc-blueprint", TAGLINE, COMMANDS, other)),
     }
 }
 
