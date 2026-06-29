@@ -3,7 +3,7 @@ import { act, render } from "@testing-library/react";
 import { useAppStore } from "./";
 
 /**
- * Pins the per-slice selector pattern ConsoleScreen relies on (#52). A
+ * Pins the per-slice selector pattern ConsoleWorkspace relies on (#52). A
  * whole-store read (`useAppStore()`) re-renders the consumer on every
  * mutation anywhere in the store because Zustand's shallow merge produces a
  * new top-level state object each time. Per-slice selectors compare only the
@@ -14,7 +14,7 @@ describe("useAppStore selectors vs whole-store reads", () => {
     let renderCount = 0;
     function Probe() {
       renderCount++;
-      // Mirrors the per-slice pattern ConsoleScreen now uses.
+      // Mirrors the per-slice pattern ConsoleWorkspace now uses.
       useAppStore((s) => s.tabs);
       useAppStore((s) => s.activeTabIdx);
       return null;
@@ -44,7 +44,7 @@ describe("useAppStore selectors vs whole-store reads", () => {
     render(<Probe />);
     const initial = renderCount;
 
-    // The exact behavior the ConsoleScreen refactor eliminates: an unrelated
+    // The exact behavior the ConsoleWorkspace refactor eliminates: an unrelated
     // store mutation forces a re-render of every whole-store consumer.
     act(() => { useAppStore.setState({ terminalFontSize: 18 }); });
     expect(renderCount).toBeGreaterThan(initial);

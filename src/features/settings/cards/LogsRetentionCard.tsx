@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type { LogConfig } from "@/store";
-import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsRow as Row, SettingsSelect as Select, settingsBtn as btn } from "../pages/SettingsControls";
 
 export function LogsRetentionCard({
   onEnforced,

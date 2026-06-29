@@ -2,7 +2,7 @@
 // worker the DIRECTOR has answered. It no longer auto-wakes on dependency-landed — the runtime
 // dependency-WAIT was removed: planning already defines the integration contracts/seams between
 // streams, so workers build against the contract IN PARALLEL rather than parking until an upstream
-// lands (see fleet-protocol.md). Mount once (ConsoleScreen stays mounted across screens, so the
+// lands (see fleet-protocol.md). Mount once (ConsoleWorkspace stays mounted across screens, so the
 // coordinator runs regardless of the active screen).
 //
 // What remains:

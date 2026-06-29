@@ -59,7 +59,7 @@ describe("ProjectsList — published delete (Keep vs Delete, #1216)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     useAppStore.setState({
-      activeScreen: "projects",
+      activeWorkspace: "projects",
       githubToken: "gho_test",
       localDraftProjects: {},
       hiddenProjectIds: [],
@@ -127,7 +127,7 @@ describe("ProjectsList — draft delete now requires confirmation (#1216)", () =
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     useAppStore.setState({
-      activeScreen: "projects",
+      activeWorkspace: "projects",
       githubToken: "gho_test",
       localDraftProjects: { my_draft: { title: "My Draft", pitch: "a pitch", createdAt: 1 } },
       hiddenProjectIds: [],

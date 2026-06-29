@@ -7,12 +7,12 @@
 //
 // Pure data (no React / DOM) so it's unit-testable and importable anywhere.
 
-import type { Screen } from "@/app/chrome/Rail";
+import type { Workspace } from "@/app/chrome/Rail";
 
 /** A function-key → screen binding, shown in the catalog and used by useHotkeys. */
 export interface ScreenHotkey {
   key: string;
-  screen: Screen;
+  screen: Workspace;
   label: string;
 }
 
@@ -31,7 +31,7 @@ export const SCREEN_HOTKEYS: ScreenHotkey[] = [
 
 /** Lookup form for the keydown handler: `e.key` → screen. Derived from
  *  {@link SCREEN_HOTKEYS} so the two can never disagree. */
-export const SCREEN_KEY_MAP: Record<string, Screen> =
+export const SCREEN_KEY_MAP: Record<string, Workspace> =
   Object.fromEntries(SCREEN_HOTKEYS.map((h) => [h.key, h.screen]));
 
 /** One documented shortcut: the key caps of its primary chord + what it does. */
@@ -100,7 +100,7 @@ export interface ShortcutDef {
   label: string;
   keys: string;
   description: string;
-  /** Screen context where the shortcut is active; undefined means global. */
+  /** Workspace context where the shortcut is active; undefined means global. */
   context?: string;
 }
 

@@ -69,11 +69,11 @@ The shell is the chrome around the screens plus the console execution surface.
 - **`app/App.tsx`** — the top-level shell: the Titlebar, the left Rail, the console Tabstrip, the StatusBar, the crash/recovery/quarantine banners, the `ErrorBoundary`, and the screen switcher. It holds first paint until the persisted store has hydrated (`hasHydrated`) to avoid a defaults flash. It wires always-on hooks (`useScheduler`, `useTunnelSync`, `useWarden`, `useWorkerAutoEnd`, tunnel control hooks).
 - **Lazy screens:** only the Console mounts at boot. Every other screen is `React.lazy`-imported from its feature barrel and code-split, so the heavy planner chunk loads on first navigation, not cold start. Projects lazy-mounts on first visit then *stays mounted* (CSS-hidden) so its local state + PTYs survive; the console likewise stays mounted across all navigations so xterm/PTY sessions are never torn down.
 
-### Navigation — the screen registry
+### Navigation — the Workspace registry
 
-- **`app/registry.ts`** is the single source of truth for the eight top-level screens. `Screen` is the union type; `SCREENS` is the ordered `{ key, label, Icon }` list (rail order is product-locked by `rail.test.tsx`); `screenLabel()` is the canonical display name read by both the rail tooltip and the titlebar "you are here" crumb (so they can't drift). `app/chrome/Rail.tsx` re-exports `Screen` for back-compat.
+- **`app/registry.ts`** is the single source of truth for the eight top-level **Workspaces** (rail destinations; see [`frontend-structure.md`](frontend-structure.md)). `Workspace` is the union type; `WORKSPACES` is the ordered `{ key, label, Icon }` list (rail order is product-locked by `rail.test.tsx`); `workspaceLabel()` is the canonical display name read by both the rail tooltip and the titlebar "you are here" crumb (so they can't drift). `app/chrome/Rail.tsx` re-exports `Workspace`. The store nav field is `activeWorkspace`/`setWorkspace`; the components are `*Workspace` (`ConsoleWorkspace`, `SkillsWorkspace`, …).
 
-| Screen key | Label | Notes |
+| Workspace key | Label | Notes |
 |---|---|---|
 | `console` | Console | the execution surface (always mounted) |
 | `projects` | Projects | the planner — flagship feature |
@@ -86,7 +86,9 @@ The shell is the chrome around the screens plus the console execution surface.
 
 ### Chrome — `app/chrome/`
 
-`Rail.tsx` (left nav), `Titlebar.tsx`, `Tabstrip.tsx` + `TabBar.tsx` (console workspace tabs, with tear-off-to-window support), `StatusBar.tsx`.
+`Rail.tsx` (left nav), `Titlebar.tsx`, **`Screen.tsx`** (the shared tabbed shell — a `PageTabs` strip over one active `Page` — that each rail Workspace renders through, #1878/#1879), `Tabstrip.tsx` + `TabBar.tsx` (console workspace tabs, with tear-off-to-window support), `StatusBar.tsx`.
+
+> **Page-structure vocabulary (#1878):** the Rail switches **Workspaces**; a Workspace is composed of a **Screen** that shows one **Page** at a time over **PageTabs**. Console keeps its own nested **Tab → Pane → View**. The L1 `Screen → Workspace` rename + Settings→Page landed in #1879. Full convention: [`docs/frontend-structure.md`](frontend-structure.md).
 
 ### The console pane system — `app/console/`
 
@@ -118,7 +120,7 @@ features/<x>/
 
 ### The real features
 
-| Feature | Screen | What it is |
+| Feature | Workspace | What it is |
 |---|---|---|
 | **`planner/`** | Projects | **the flagship** — the app-owned planning session that turns a pitch or repo set into an executable plan. See below. |
 | `skills/` | Skills | the **Skills library** — reusable markdown context blocks (the injectable-context system that superseded the old Knowledge Base), written into a session's `.claude/skills/`. Source of truth is the global `skills.db`; the slice is a write-through cache (`hydrateSkills`). The **packaged** built-ins live as data at `src-tauri/data/skills/*.json` — a dual consumer like blueprints/stages: the frontend reads them via `import.meta.glob` (`shared/data/skills.ts`) and the Rust `skilldb` seeds a fresh DB from the same files via `include_dir!` (CLI/planner parity without a UI boot), #1715. |
@@ -126,8 +128,8 @@ features/<x>/
 | `automations/` | Automations | cron-triggered rules (`useScheduler`) that dispatch a command into a console pane. |
 | `github/` | GitHub | GitHub OAuth, repo selection, the Projects v2 board (the board moved here, #498). |
 | `agents/` | Permissions | least-privilege `AgentProfile`s (commands / tools / write-paths / net) applied per stream at launch (#289). |
-| `tunnel/` | — (no screen) | the mobile-pairing relay client UI + sync hooks (`useTunnelSync`, etc.); QR pairing. |
-| `settings/` | Settings | appearance (accent), keybindings, LLM provider config, integrations, perf/log config. |
+| `tunnel/` | — (no workspace) | the mobile-pairing relay client UI + sync hooks (`useTunnelSync`, etc.); QR pairing. |
+| `settings/` | Settings | appearance (accent), keybindings, LLM provider config, integrations, perf/log config. Its left-nav sections are **Pages** (`features/settings/pages/*Page`). |
 
 > Barrels are `index.ts` for every feature **except `planner`, which is `index.tsx`** (it exports a component).
 

@@ -3,7 +3,7 @@ import {
   MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE,
   adjustFontSize,
 } from "@/app/console/lib/terminal";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
 
 export function TerminalFontSizeCard() {
   const { terminalFontSize, setTerminalFontSize } = useAppStore();

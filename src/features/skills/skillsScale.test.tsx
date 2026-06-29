@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SkillsScreen } from "./";
+import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
 import { blankSkill, skillSlug } from "./lib/skills";
 
@@ -26,7 +26,7 @@ function logFor(entries: Array<{ name: string; n: number; ok: number }>): string
   return lines;
 }
 
-describe("SkillsScreen — KPI leaderboard digest", () => {
+describe("SkillsWorkspace — KPI leaderboard digest", () => {
   beforeEach(() => {
     useAppStore.setState({ skills: LIB, skillGroups: [], sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
     vi.mocked(invoke).mockReset();
@@ -34,7 +34,7 @@ describe("SkillsScreen — KPI leaderboard digest", () => {
   });
 
   it("the digest is collapsed by default — no leaderboard until expanded", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     expect(container.querySelector(".skills-leaderboard")).toBeNull();
     expect(container.querySelector(".skills-digest")).toBeNull();
   });
@@ -45,7 +45,7 @@ describe("SkillsScreen — KPI leaderboard digest", () => {
         ? logFor([{ name: "Cut a release", n: 12, ok: 12 }, { name: "Open a clean PR", n: 5, ok: 4 }])
         : null,
     );
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     // telemetry merges asynchronously; wait for the usage to land.
     await waitFor(() => expect(screen.getByText("12×")).toBeTruthy());
 
@@ -63,13 +63,13 @@ describe("SkillsScreen — KPI leaderboard digest", () => {
   });
 
   it("with no invocations the expanded leaderboard shows an empty hint", () => {
-    render(<SkillsScreen />);
+    render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Fleet digest · 7d"));
     expect(screen.getByText(/No invocations yet/)).toBeTruthy();
   });
 });
 
-describe("SkillsScreen — bulk Set scope + Export", () => {
+describe("SkillsWorkspace — bulk Set scope + Export", () => {
   beforeEach(() => {
     useAppStore.setState({ skills: LIB, skillGroups: [], sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
     vi.mocked(invoke).mockReset();
@@ -82,7 +82,7 @@ describe("SkillsScreen — bulk Set scope + Export", () => {
   };
 
   it("the bulk bar exposes Set scope… and Export (matching the design)", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     enterSelectAndPick(container, ["w1"]);
     expect(screen.getByText("Set scope…")).toBeTruthy();
     expect(screen.getByText("Export")).toBeTruthy();
@@ -92,7 +92,7 @@ describe("SkillsScreen — bulk Set scope + Export", () => {
     useAppStore.setState({
       skills: LIB.map((s) => (s.id === "w1" || s.id === "w2" ? { ...s, projects: ["42"] } : s)),
     });
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     enterSelectAndPick(container, ["w1", "w2"]);
     fireEvent.click(screen.getByText("Set scope…"));
     fireEvent.click(screen.getByText("Global (all projects)"));
@@ -110,7 +110,7 @@ describe("SkillsScreen — bulk Set scope + Export", () => {
     (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeURL;
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     enterSelectAndPick(container, ["w1", "r1"]);
     fireEvent.click(screen.getByText("Export"));
 
@@ -128,7 +128,7 @@ describe("SkillsScreen — bulk Set scope + Export", () => {
     (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     enterSelectAndPick(container, ["w1", "r1"]);
     fireEvent.click(screen.getByText("Export"));
 

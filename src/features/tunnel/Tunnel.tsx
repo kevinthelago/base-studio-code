@@ -89,7 +89,7 @@ export function TunnelSettings() {
   // until the desktop responds (#B-wan-viewonly). Cleared once input is granted/revoked.
   const [inputRequested, setInputRequested] = useState(false);
 
-  // Mirror the Rust client's running state into the store so ConsoleScreen knows
+  // Mirror the Rust client's running state into the store so ConsoleWorkspace knows
   // whether to push live pane metadata.
   const sync = useCallback((s: TunnelStatus) => {
     setStatus(s);

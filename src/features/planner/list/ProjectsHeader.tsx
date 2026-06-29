@@ -204,7 +204,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
     setProjectsView, setPlanningContext, setPlanningSession, projectKeyAlias,
-    setScreen, githubBoardTab, setGithubBoardTab, closeGithubBoard,
+    setWorkspace, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
     usePageTabs("github-board", GITHUB_BOARD_TABS,
@@ -221,7 +221,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
     // fallback keeps their existing title-keyed behavior. The node id stays in activeProjectId.
     setPlanningSession(projectKeyAlias[project.id] ?? project.name);
     // Planning lives on the Projects page; from the GitHub board, jump there.
-    setScreen("projects");
+    setWorkspace("projects");
     setProjectsView("planning");
   }
 

@@ -8,7 +8,7 @@ import { ThemeCard } from "../cards/ThemeCard";
 import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 
-export function GeneralScreen() {
+export function GeneralPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
       {/* General */}

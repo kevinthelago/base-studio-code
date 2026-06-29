@@ -4,7 +4,7 @@
 // failed -> fix + push) and nudges the director to merge on green. App-side because CI is an
 // external event no one can push -- something has to watch it; doing it here means the worker
 // stops (no idle tokens) and is resumed only when there is something to do. Mounted once in
-// ConsoleScreen. Pure rollup/prompts live in ciStatus.ts; this is the Tauri/React actuator.
+// ConsoleWorkspace. Pure rollup/prompts live in ciStatus.ts; this is the Tauri/React actuator.
 import { useRef } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";

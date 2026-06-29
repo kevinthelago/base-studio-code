@@ -12,7 +12,7 @@
 //  2. NOTIFICATIONS + HEARTBEAT (cursor-based) -- landed/blocked/failed activity and the
 //     periodic sweep, via decideDirectorAction (idle-gated).
 //
-// Mounted once in ConsoleScreen (which stays mounted across screens). Pure logic lives in
+// Mounted once in ConsoleWorkspace (which stays mounted across screens). Pure logic lives in
 // directorDrive.ts + coordination.ts; this is the thin Tauri/React actuator.
 import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/store";
