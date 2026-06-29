@@ -223,13 +223,13 @@ export default function App() {
   const projectsEverShown = useRef(false);
   if (activeScreen === "projects") projectsEverShown.current = true;
 
-  // Detached tab window (#430): when opened via tear-off (?detachTab=<id>), this
-  // window renders only that console tab — pinned by stable id (resolved to an
-  // index for ConsoleScreen's override). Computed once per window load.
+  // Detached tab window (#430): when opened via tear-off, the Rust command injects a
+  // `window.__BSC_DETACH__` marker; this window renders only that console tab — pinned
+  // by stable id (resolved to an index for ConsoleScreen's override). Read once per load.
   const [detachId] = useState(() => detachedTabId());
   const detachIdx = detachId !== null ? tabs.findIndex((t) => t.id === detachId) : -1;
-  // Detached page-section window (#463): ?detach=<page>&section=<id> renders just
-  // that page's section, no chrome. Computed once per window load.
+  // Detached page-section window (#463): the injected marker names a page + section, so
+  // this window renders just that section, no chrome. Read once per window load.
   const [detSection] = useState(() => detachedSection());
 
   // Fetch the app-managed base directory once so the rest of the UI can
