@@ -535,6 +535,7 @@ dependencies = [
  "bsc-data",
  "bsc-llm",
  "bsc-project",
+ "bsc-tunnel",
  "bsc-util",
  "futures-util",
  "include_dir",
@@ -843,6 +844,14 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-tunnel"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "snow",
 ]
 
 [[package]]

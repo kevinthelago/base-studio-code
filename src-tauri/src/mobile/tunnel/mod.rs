@@ -16,8 +16,11 @@
 //
 // See docs/tunnel-protocol.md.
 
-mod protocol;
-pub mod noise;
+// The wire protocol + Noise crypto moved to the Tauri-free `bsc-tunnel` crate (#1919); re-export them
+// here so the desktop glue below (state / transport / commands / tests) keeps referencing
+// `super::protocol` / `super::noise` and external consumers keep `crate::mobile::tunnel::<WireType>`.
+pub use bsc_tunnel::noise;
+pub(crate) use bsc_tunnel::protocol;
 mod transport;
 mod state;
 mod commands;
