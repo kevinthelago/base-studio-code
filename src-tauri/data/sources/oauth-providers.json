@@ -1,0 +1,42 @@
+[
+  {
+    "id": "salesforce",
+    "authorize_url": "https://login.salesforce.com/services/oauth2/authorize",
+    "token_url": "https://login.salesforce.com/services/oauth2/token",
+    "scopes": "api refresh_token",
+    "client_id_env": "BSC_OAUTH_SALESFORCE_CLIENT_ID",
+    "client_secret_env": "BSC_OAUTH_SALESFORCE_CLIENT_SECRET"
+  },
+  {
+    "id": "quickbooks",
+    "authorize_url": "https://appcenter.intuit.com/connect/oauth2",
+    "token_url": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+    "scopes": "com.intuit.quickbooks.accounting",
+    "client_id_env": "BSC_OAUTH_QUICKBOOKS_CLIENT_ID",
+    "client_secret_env": "BSC_OAUTH_QUICKBOOKS_CLIENT_SECRET"
+  },
+  {
+    "id": "hubspot",
+    "authorize_url": "https://app.hubspot.com/oauth/authorize",
+    "token_url": "https://api.hubapi.com/oauth/v1/token",
+    "scopes": "crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read",
+    "client_id_env": "BSC_OAUTH_HUBSPOT_CLIENT_ID",
+    "client_secret_env": "BSC_OAUTH_HUBSPOT_CLIENT_SECRET"
+  },
+  {
+    "id": "monday",
+    "authorize_url": "https://auth.monday.com/oauth2/authorize",
+    "token_url": "https://auth.monday.com/oauth2/token",
+    "scopes": "boards:read",
+    "client_id_env": "BSC_OAUTH_MONDAY_CLIENT_ID",
+    "client_secret_env": "BSC_OAUTH_MONDAY_CLIENT_SECRET"
+  },
+  {
+    "id": "dynamics365",
+    "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    "scopes": "offline_access openid",
+    "client_id_env": "BSC_OAUTH_DYNAMICS_CLIENT_ID",
+    "client_secret_env": "BSC_OAUTH_DYNAMICS_CLIENT_SECRET"
+  }
+]

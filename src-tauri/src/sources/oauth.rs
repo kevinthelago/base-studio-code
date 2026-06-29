@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -22,63 +23,38 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
-/// An OAuth provider for a source connector.
+/// An OAuth provider descriptor for a source connector. The descriptors are versioned, editable
+/// **data** in `src-tauri/data/sources/oauth-providers.json` (#1614, mirroring `data/stages/*.json`)
+/// — best-effort defaults (like the connector presets) that may need per-tenant tuning. Note
+/// Dynamics 365's resource scope is org-specific (`{org}.crm.dynamics.com/.default`); set
+/// `BSC_OAUTH_DYNAMICS_SCOPE` to override the packaged default per tenant.
+#[derive(serde::Deserialize)]
 struct OAuthProvider {
-    id: &'static str,
-    authorize_url: &'static str,
-    token_url: &'static str,
-    scopes: &'static str,
-    client_id_env: &'static str,
-    client_secret_env: &'static str,
+    id: String,
+    authorize_url: String,
+    token_url: String,
+    scopes: String,
+    client_id_env: String,
+    client_secret_env: String,
 }
 
-const PROVIDERS: &[OAuthProvider] = &[
-    OAuthProvider {
-        id: "salesforce",
-        authorize_url: "https://login.salesforce.com/services/oauth2/authorize",
-        token_url: "https://login.salesforce.com/services/oauth2/token",
-        scopes: "api refresh_token",
-        client_id_env: "BSC_OAUTH_SALESFORCE_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_SALESFORCE_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "quickbooks",
-        authorize_url: "https://appcenter.intuit.com/connect/oauth2",
-        token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-        scopes: "com.intuit.quickbooks.accounting",
-        client_id_env: "BSC_OAUTH_QUICKBOOKS_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_QUICKBOOKS_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "hubspot",
-        authorize_url: "https://app.hubspot.com/oauth/authorize",
-        token_url: "https://api.hubapi.com/oauth/v1/token",
-        scopes: "crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read",
-        client_id_env: "BSC_OAUTH_HUBSPOT_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_HUBSPOT_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "monday",
-        authorize_url: "https://auth.monday.com/oauth2/authorize",
-        token_url: "https://auth.monday.com/oauth2/token",
-        scopes: "boards:read",
-        client_id_env: "BSC_OAUTH_MONDAY_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_MONDAY_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        // Dynamics 365's resource scope is org-specific ({org}.crm.dynamics.com/.default) — set
-        // BSC_OAUTH_DYNAMICS_SCOPE to override the default below per tenant.
-        id: "dynamics365",
-        authorize_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        scopes: "offline_access openid",
-        client_id_env: "BSC_OAUTH_DYNAMICS_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_DYNAMICS_CLIENT_SECRET",
-    },
-];
+/// The packaged provider descriptors, embedded at compile time and parsed once on first lookup.
+const PROVIDERS_JSON: &str = include_str!("../../data/sources/oauth-providers.json");
+
+/// The parsed provider table (lazily initialized; `'static` for the program's lifetime so lookups
+/// can hand out `'static` references). Panics on first use if the packaged JSON is malformed — a
+/// build-data error, guarded by `providers_json_parses`.
+fn providers() -> &'static [OAuthProvider] {
+    static PROVIDERS: OnceLock<Vec<OAuthProvider>> = OnceLock::new();
+    PROVIDERS
+        .get_or_init(|| {
+            serde_json::from_str(PROVIDERS_JSON).expect("oauth-providers.json is valid JSON")
+        })
+        .as_slice()
+}
 
 fn provider(id: &str) -> Option<&'static OAuthProvider> {
-    PROVIDERS.iter().find(|p| p.id == id)
+    providers().iter().find(|p| p.id == id)
 }
 
 const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -158,11 +134,11 @@ fn build_authorize_url(
     challenge: &str,
     env: Option<&str>,
 ) -> String {
-    let base = host_for_env(p.authorize_url, connector_id, env);
+    let base = host_for_env(&p.authorize_url, connector_id, env);
     let scope = std::env::var("BSC_OAUTH_DYNAMICS_SCOPE")
         .ok()
         .filter(|_| connector_id == "dynamics365")
-        .unwrap_or_else(|| p.scopes.to_string());
+        .unwrap_or_else(|| p.scopes.clone());
     format!(
         "{base}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
         enc(client_id), enc(redirect), enc(&scope), enc(state), enc(challenge)
@@ -200,9 +176,9 @@ pub fn source_oauth_begin(
     env: Option<String>,
 ) -> Result<OAuthBegin, String> {
     let p = provider(&connector_id).ok_or_else(|| format!("no OAuth provider for `{connector_id}`"))?;
-    let client_id = std::env::var(p.client_id_env)
+    let client_id = std::env::var(&p.client_id_env)
         .map_err(|_| format!("OAuth not configured: set {}", p.client_id_env))?;
-    let client_secret = std::env::var(p.client_secret_env).unwrap_or_default();
+    let client_secret = std::env::var(&p.client_secret_env).unwrap_or_default();
 
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -212,7 +188,7 @@ pub fn source_oauth_begin(
     let authorize_url =
         build_authorize_url(p, &connector_id, &client_id, &redirect, &state, &challenge, env.as_deref());
 
-    let token_url = host_for_env(p.token_url, &connector_id, env.as_deref());
+    let token_url = host_for_env(&p.token_url, &connector_id, env.as_deref());
     std::thread::spawn(move || {
         let done = match capture_and_exchange(&listener, &token_url, &client_id, &client_secret, &redirect, &verifier, &state) {
             Ok(tok) => {
@@ -384,5 +360,29 @@ mod tests {
     fn provider_lookup() {
         assert!(provider("salesforce").is_some());
         assert!(provider("quickbase").is_none()); // token connector, not OAuth
+    }
+
+    /// Guard the data extraction (#1614): the packaged `oauth-providers.json` parses, carries every
+    /// known provider, and preserves their URLs/scopes/env-var names — so an edit to the JSON can't
+    /// silently drop a provider or corrupt a descriptor.
+    #[test]
+    fn providers_json_parses() {
+        let all = providers();
+        assert_eq!(all.len(), 5, "five OAuth providers");
+
+        let mut ids: Vec<&str> = all.iter().map(|p| p.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, ["dynamics365", "hubspot", "monday", "quickbooks", "salesforce"]);
+
+        let sf = provider("salesforce").unwrap();
+        assert_eq!(sf.authorize_url, "https://login.salesforce.com/services/oauth2/authorize");
+        assert_eq!(sf.token_url, "https://login.salesforce.com/services/oauth2/token");
+        assert_eq!(sf.scopes, "api refresh_token");
+        assert_eq!(sf.client_id_env, "BSC_OAUTH_SALESFORCE_CLIENT_ID");
+        assert_eq!(sf.client_secret_env, "BSC_OAUTH_SALESFORCE_CLIENT_SECRET");
+
+        let dyn365 = provider("dynamics365").unwrap();
+        assert_eq!(dyn365.scopes, "offline_access openid");
+        assert_eq!(dyn365.client_id_env, "BSC_OAUTH_DYNAMICS_CLIENT_ID");
     }
 }

@@ -1,0 +1,48 @@
+{
+  "id": "wcag-2.2",
+  "domain": "accessibility",
+  "name": "WCAG 2.2 Level AA",
+  "version": "2.2 AA",
+  "jurisdictions": [
+    "global"
+  ],
+  "summary": "Web Content Accessibility Guidelines 2.2, Level AA — the baseline for accessible UI; referenced by the ADA, EN 301 549, and Section 508.",
+  "requirements": [
+    {
+      "id": "1.1.1",
+      "summary": "Non-text content has a text alternative (alt text, labels, captions)."
+    },
+    {
+      "id": "1.3.1",
+      "summary": "Information and relationships conveyed visually are also exposed in markup/semantics."
+    },
+    {
+      "id": "1.4.3",
+      "summary": "Text has a contrast ratio of at least 4.5:1 (3:1 for large text)."
+    },
+    {
+      "id": "1.4.11",
+      "summary": "UI components and graphics have at least 3:1 contrast against adjacent colors."
+    },
+    {
+      "id": "2.1.1",
+      "summary": "All functionality is operable from a keyboard, with no keyboard traps (2.1.2)."
+    },
+    {
+      "id": "2.4.7",
+      "summary": "The keyboard focus indicator is visible."
+    },
+    {
+      "id": "2.5.8",
+      "summary": "Target size is at least 24×24 CSS px (WCAG 2.2 addition)."
+    },
+    {
+      "id": "3.3.7",
+      "summary": "Don't ask users to re-enter info already provided in the same process (Redundant Entry, 2.2)."
+    },
+    {
+      "id": "4.1.2",
+      "summary": "Name, role, and value of every UI component are programmatically available (ARIA)."
+    }
+  ]
+}

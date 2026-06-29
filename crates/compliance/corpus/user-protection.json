@@ -1,0 +1,31 @@
+{
+  "id": "user-protection",
+  "domain": "user_protection",
+  "name": "User-protection baseline",
+  "jurisdictions": [
+    "global"
+  ],
+  "summary": "Common consumer/user-protection rules — anti-dark-pattern, honest defaults, and cancellation/consent fairness drawn from FTC guidance, the EU Digital Services Act, and the California/Colorado dark-pattern provisions.",
+  "requirements": [
+    {
+      "id": "no-dark-patterns",
+      "summary": "No deceptive or manipulative UI (forced action, confirmshaming, disguised ads, sneaking)."
+    },
+    {
+      "id": "easy-cancellation",
+      "summary": "Cancellation/unsubscribe is at least as easy as sign-up (FTC click-to-cancel)."
+    },
+    {
+      "id": "clear-pricing",
+      "summary": "Show total price, recurring charges, and renewal terms before purchase."
+    },
+    {
+      "id": "honest-consent",
+      "summary": "Consent prompts present accept/decline with equal prominence; no pre-checked opt-ins."
+    },
+    {
+      "id": "age-appropriate",
+      "summary": "If the product is reachable by minors, apply age-appropriate defaults + reduced data collection."
+    }
+  ]
+}

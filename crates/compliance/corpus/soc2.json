@@ -1,0 +1,36 @@
+{
+  "id": "soc2",
+  "domain": "security",
+  "name": "SOC 2 (Trust Services Criteria)",
+  "version": "TSC 2017 (rev. 2022)",
+  "jurisdictions": [
+    "global"
+  ],
+  "summary": "AICPA SOC 2 Trust Services Criteria — the controls baseline (security, availability, confidentiality) an org demonstrates to handle customer data responsibly.",
+  "requirements": [
+    {
+      "id": "access-control",
+      "summary": "Enforce least-privilege access with authentication, authorization, and review."
+    },
+    {
+      "id": "encryption",
+      "summary": "Encrypt data in transit (TLS) and at rest."
+    },
+    {
+      "id": "audit-logging",
+      "summary": "Log security-relevant events and protect logs from tampering."
+    },
+    {
+      "id": "change-management",
+      "summary": "Gate changes through review + testing before production."
+    },
+    {
+      "id": "incident-response",
+      "summary": "Maintain an incident-response process with detection, escalation, and remediation."
+    },
+    {
+      "id": "secrets-management",
+      "summary": "Store secrets/credentials outside source control in a managed secret store."
+    }
+  ]
+}

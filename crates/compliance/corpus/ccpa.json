@@ -1,0 +1,50 @@
+{
+  "id": "ccpa",
+  "domain": "privacy",
+  "name": "CCPA / CPRA",
+  "version": "CPRA 2023",
+  "jurisdictions": [
+    "us-ca"
+  ],
+  "summary": "California Consumer Privacy Act, as amended by the CPRA — disclosure, deletion, and opt-out rights for California residents.",
+  "requirements": [
+    {
+      "id": "notice-at-collection",
+      "summary": "Disclose at/before collection what personal info is collected and the purposes.",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "right-to-know",
+      "summary": "Honor requests to know the categories + specific pieces of personal info collected.",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "right-to-delete",
+      "summary": "Honor verifiable deletion requests, with limited exceptions.",
+      "data_types": [
+        "pii"
+      ]
+    },
+    {
+      "id": "opt-out-sale-share",
+      "summary": "Provide a 'Do Not Sell or Share My Personal Information' opt-out (and honor GPC).",
+      "data_types": [
+        "pii",
+        "tracking"
+      ]
+    },
+    {
+      "id": "sensitive-pi",
+      "summary": "Let consumers limit use of sensitive personal information (CPRA).",
+      "data_types": [
+        "health",
+        "biometric",
+        "geolocation"
+      ]
+    }
+  ]
+}
