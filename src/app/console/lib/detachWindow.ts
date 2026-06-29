@@ -7,6 +7,7 @@
 // same sessions rather than forking them.
 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 
 let seq = 0;
 
@@ -37,6 +38,11 @@ export function detachedSection(search: string = window.location.search): { page
 /**
  * Open tab `idx` in its own OS window. Best-effort: logs and swallows failures
  * so a denied/edge case never breaks the drag gesture.
+ *
+ * Built via the Rust `open_detached_window` command, NOT `new WebviewWindow()`:
+ * on Windows every webview sharing the app's user-data dir must launch with the
+ * same WebView2 args as the main window, and the JS API can't set them — a
+ * mismatch crashes the torn-off window before any JS runs (#1870).
  */
 export function openDetachedTab(tabId: string, title?: string, onClose?: () => void): void {
   seq += 1;
@@ -48,18 +54,18 @@ export function openDetachedTab(tabId: string, title?: string, onClose?: () => v
   const u = new URL(window.location.href);
   u.hash = "";
   u.search = `?detachTab=${encodeURIComponent(tabId)}`;
-  try {
-    const w = new WebviewWindow(label, {
-      url: u.href,
-      title: title || "Console",
-      width: 960,
-      height: 720,
-      decorations: false, // use the app's custom titlebar, not the native OS frame
-    });
+  invoke("open_detached_window", { label, url: u.href, title: title || "Console", width: 960, height: 720 })
     // Re-dock when the detached window closes (best-effort; restart recovers it
-    // regardless, since the detached set is session-only).
-    if (onClose) w.once("tauri://destroyed", () => onClose());
-  } catch (e) {
-    console.error("openDetachedTab failed:", e);
-  }
+    // regardless, since the detached set is session-only). The Rust command has
+    // created the window by the time this resolves, so the handle is findable.
+    .then(() => { if (onClose) attachRedock(label, onClose); })
+    .catch((e) => console.error("openDetachedTab failed:", e));
+}
+
+/** Best-effort re-dock: fire `onClose` when the detached window with `label` is
+ *  destroyed. Swallows lookup/listen failures (the detached set is session-only). */
+function attachRedock(label: string, onClose: () => void): void {
+  WebviewWindow.getByLabel(label)
+    .then((w) => { void w?.once("tauri://destroyed", () => onClose()); })
+    .catch((e) => console.error("openDetachedTab re-dock listener failed:", e));
 }
