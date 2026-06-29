@@ -30,9 +30,9 @@ function runsTable(runs: Automation["runs"]) {
 
 /** The Schedules tab — the full-width list of automations. Selecting one opens the slide-in
  *  <ScheduleDrawer> (rendered in the screen overlay), matching the MCP + Skills editor drawers (#1824). */
-export function SchedulesTab({ selectedId, setSelectedId, onNew }: {
+export function SchedulesTab({ selectedId, onSelect, onNew }: {
   selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
+  onSelect: (id: string) => void;
   onNew: () => void;
 }) {
   const automations = useAppStore(s => s.automations);
@@ -59,7 +59,7 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew }: {
         </div>
         <div className="scroll">
           {automations.map(a => (
-            <div key={a.id} className={"sched-row" + (a.id === selectedId ? " on" : "")} onClick={() => setSelectedId(a.id)}>
+            <div key={a.id} className={"sched-row" + (a.id === selectedId ? " on" : "")} onClick={() => onSelect(a.id)}>
               <div className="l1">
                 <span className={"dot" + (a.armed ? "" : " off")} />
                 <span className="spacer" />
@@ -85,14 +85,14 @@ export function SchedulesTab({ selectedId, setSelectedId, onNew }: {
 
 /** The slide-in editor for the selected schedule — the unified <Pane> drawer (#1824), the same
  *  chrome as the MCP server/hook + Skills drawers. Rendered in the AutomationsScreen overlay. */
-export function ScheduleDrawer({ selectedId, setSelectedId, onViewAllHistory }: {
-  selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
+export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
+  selected: Automation | null;
+  onClose: () => void;
   onViewAllHistory: (id: string) => void;
 }) {
-  const { automations, updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames } = useAppStore();
-  const sel = selectedId ? automations.find(a => a.id === selectedId) ?? null : null;
-  const close = () => setSelectedId(null);
+  const { updateAutomation, setAutomationArmed, removeAutomation, tabs, paneNames } = useAppStore();
+  const sel = selected;
+  const close = onClose;
 
   const tabIdx = sel ? tabs.findIndex(t => t.name === sel.targetTab) : -1;
   const paneOpts = tabIdx >= 0 ? Array.from({ length: paneCount(tabs[tabIdx].layout) }, (_, i) => i) : [];
