@@ -42,6 +42,7 @@ import { usePlanMcpDownloads } from "./usePlanMcpDownloads";
 import { usePlanSkillsManagement } from "./usePlanSkillsManagement";
 import { usePlanMcpManagement } from "./usePlanMcpManagement";
 import { usePlanPublish } from "./usePlanPublish";
+import { deriveProjectTitle } from "./projectTitle";
 import { usePlannerBlueprint } from "./usePlannerBlueprint";
 import { usePlanGates } from "./usePlanGates";
 import { usePlanningModals } from "./usePlanningModals";
@@ -247,7 +248,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // Title + derived GitHub object graph that the structure card renders and the
   // publish flow fills in. Kept in sync with handlePublish's own derivation.
   const goalForTitle = sections.find(s => s.k === "goal")?.content ?? "";
-  const projectTitle = planningTitle || goalForTitle.split(/[.!?\n]/)[0].trim() || activeProjectName || "New project";
+  const projectTitle = deriveProjectTitle(planningTitle, goalForTitle, activeProjectName);
 
   // Planner session skill-group + live skills refresh (#1474, usePlanSkillsManagement).
   usePlanSkillsManagement(sessionGroupId, projectTitle);
