@@ -1,5 +1,5 @@
 import { useAppStore } from "@/store";
-import { SettingsCardHead, ToggleRow } from "../screens/SettingsControls";
+import { SettingsCardHead, ToggleRow } from "../pages/SettingsControls";
 
 export function PlanningAutomationCard() {
   const { autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();

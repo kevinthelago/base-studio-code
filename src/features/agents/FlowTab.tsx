@@ -1,4 +1,4 @@
-// Agents — Flow tab (#1643 split from AgentsScreen).
+// Agents — Flow tab (#1643 split from AgentsWorkspace).
 //
 // The fleet's live work-flow: which sessions are parked on a dependency (#199) and
 // which work items are flowing through their workflow stages (#220) — each cross-

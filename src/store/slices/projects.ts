@@ -3,7 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
-import type { Screen } from "@/app/chrome/Rail";
+import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
 import { startRun } from "@/shared/lib/fleet/conductor";
@@ -345,7 +345,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneStatus: clearTabStatusesPure(s.paneStatus, existingIdx >= 0 ? s.tabs[existingIdx] : newTab, newTabIdx),
             paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
-            activeScreen: "console" as Screen,
+            activeWorkspace: "console" as Workspace,
           };
         }),
 
@@ -610,7 +610,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             disabledPanes: newDisabledPanes,
             paneStatus: newPaneStatus,
             paneNames: newPaneNames,
-            activeScreen: "console" as Screen,
+            activeWorkspace: "console" as Workspace,
           };
         });
         // The caller persists these to the hub (publishFleetRoster) — the store stays

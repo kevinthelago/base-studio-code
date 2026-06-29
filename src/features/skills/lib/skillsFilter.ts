@@ -1,5 +1,5 @@
 // Pure facet / filter / sort logic for the Skills library screen (#1706). Extracted from
-// SkillsScreen.tsx so the search + multi-facet filtering, the five sort orders, the facet
+// SkillsWorkspace.tsx so the search + multi-facet filtering, the five sort orders, the facet
 // definitions (with their live counts), the grouped/kind sectioning, and the telemetry merge
 // are all unit-testable in isolation, free of React.
 //

@@ -1,6 +1,6 @@
 import { useAppStore } from "@/store";
 import { MODELS, type ModelId } from "@/app/console/lib/models";
-import { SettingsCardHead, SettingsSelectField } from "../screens/SettingsControls";
+import { SettingsCardHead, SettingsSelectField } from "../pages/SettingsControls";
 
 export function DefaultModelCard() {
   const { defaultModel, setDefaultModel } = useAppStore();

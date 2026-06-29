@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "@/store";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { Chip } from "@/shared/ui/Chip";
-import { SettingsCardHead } from "../screens/SettingsControls";
+import { SettingsCardHead } from "../pages/SettingsControls";
 
 export function RepoCredentialsCard() {
   const repoGithubTokens = useAppStore((s) => s.repoGithubTokens);

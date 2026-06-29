@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { SkillsScreen } from "./";
+import { SkillsWorkspace } from "./";
 import { useAppStore } from "@/store";
 import { blankSkill } from "./lib/skills";
 
@@ -22,11 +22,11 @@ const GROUPS = [
 const setLib = (groups = GROUPS) =>
   useAppStore.setState({ skills: LIB, skillGroups: groups, sessionSkillGroups: {}, paneSkills: {}, githubToken: "" });
 
-describe("SkillsScreen — left-nav Groups section (#skills-groups-nav)", () => {
+describe("SkillsWorkspace — left-nav Groups section (#skills-groups-nav)", () => {
   beforeEach(() => setLib());
 
   it("lists a 'Groups' header, an 'All' row, and a row per task group with its member count", () => {
-    render(<SkillsScreen />);
+    render(<SkillsWorkspace />);
     expect(screen.getByText("⬡ Groups")).toBeTruthy();
     // both group names show in the left nav (no section headers in list density).
     expect(screen.getByText("Release day")).toBeTruthy();
@@ -37,12 +37,12 @@ describe("SkillsScreen — left-nav Groups section (#skills-groups-nav)", () => 
   });
 
   it("the top quick-filter bar was removed (no '⬡ Task groups' header)", () => {
-    render(<SkillsScreen />);
+    render(<SkillsWorkspace />);
     expect(screen.queryByText("⬡ Task groups")).toBeNull();
   });
 
   it("selecting a group row filters the library to that group's members; re-clicking clears it", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Release day"));
     expect(container.querySelectorAll(ROW).length).toBe(2); // w1 + w2
     // re-click clears (single-select toggle) → back to all four.
@@ -51,7 +51,7 @@ describe("SkillsScreen — left-nav Groups section (#skills-groups-nav)", () => 
   });
 
   it("the 'All' row clears an active group filter", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Security sweep"));
     expect(container.querySelectorAll(ROW).length).toBe(1); // r1 only
     fireEvent.click(screen.getByText("All"));
@@ -59,14 +59,14 @@ describe("SkillsScreen — left-nav Groups section (#skills-groups-nav)", () => 
   });
 
   it("'＋ New group' opens the new-group dialog", () => {
-    render(<SkillsScreen />);
+    render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("＋ New group"));
     expect(screen.getByText("New task group")).toBeTruthy();
   });
 
   it("the active group exposes a delete affordance that removes only the group", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<SkillsScreen />);
+    render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Release day"));
     // the ✕ delete affordance only renders on the active group row.
     const relRow = document.querySelector('[data-group-id="rel"]') as HTMLElement;
@@ -81,11 +81,11 @@ describe("SkillsScreen — left-nav Groups section (#skills-groups-nav)", () => 
   });
 });
 
-describe("SkillsScreen — distinct grouped / kind sections", () => {
+describe("SkillsWorkspace — distinct grouped / kind sections", () => {
   beforeEach(() => setLib());
 
   it("Group density renders one bordered section per task group plus an Ungrouped section", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("⬡ Group"));
     const sections = Array.from(container.querySelectorAll(SECTION));
     // Release day, Security sweep, Ungrouped — every skill is grouped except sc1.
@@ -96,7 +96,7 @@ describe("SkillsScreen — distinct grouped / kind sections", () => {
   });
 
   it("each Group section contains exactly its member rows (rows clearly belong to it)", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("⬡ Group"));
     const rel = container.querySelector(`${SECTION}[data-section-id="rel"]`) as HTMLElement;
     const sec = container.querySelector(`${SECTION}[data-section-id="sec"]`) as HTMLElement;
@@ -106,7 +106,7 @@ describe("SkillsScreen — distinct grouped / kind sections", () => {
   });
 
   it("Kind density renders one section per non-empty kind with the kind's own glyph header", () => {
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("⊟ Kind"));
     const ids = Array.from(container.querySelectorAll(SECTION)).map((s) => s.getAttribute("data-section-id"));
     expect(ids).toContain("workflow");
@@ -124,7 +124,7 @@ describe("SkillsScreen — distinct grouped / kind sections", () => {
 
   it("Group density with no task groups shows a hint and a single Ungrouped section", () => {
     setLib([]);
-    const { container } = render(<SkillsScreen />);
+    const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("⬡ Group"));
     expect(screen.getByText(/No task groups yet/)).toBeTruthy();
     const sections = Array.from(container.querySelectorAll(SECTION));

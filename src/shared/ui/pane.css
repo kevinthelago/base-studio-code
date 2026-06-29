@@ -1,7 +1,7 @@
 /* Pane (#1824) — the ONE detail/editor pane frame. A single header / scrollable-body / footer
    skeleton shared by every "select an item → edit its fields" surface, in two modes:
      - drawer:  a slide-over (scrim + slide-in from the right), anchored to the nearest positioned
-                ancestor — the `.screen` container (TabbedScreen root, position:relative). Replaces
+                ancestor — the `.screen` container (Screen root, position:relative). Replaces
                 the byte-identical `.drawer`/`.scrim`/`.dr-*` copies mcp.css + skills.css each carried.
      - inline:  the same 3-zone frame filling its container (no scrim/slide), for master-detail
                 editors (Automations, the planner pane).

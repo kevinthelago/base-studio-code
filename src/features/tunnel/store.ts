@@ -6,7 +6,7 @@ import type { PaneDescriptor } from "./lib/tunnel";
 
 export interface TunnelSlice {
   // The relay Worker URL is persisted (the user's BYO relay); `tunnelRunning` mirrors the Rust
-  // client's connected state (transient) so ConsoleScreen knows whether to push live pane metadata.
+  // client's connected state (transient) so ConsoleWorkspace knows whether to push live pane metadata.
   tunnelRelayUrl: string;
   setTunnelRelayUrl: (url: string) => void;
   tunnelRunning: boolean;

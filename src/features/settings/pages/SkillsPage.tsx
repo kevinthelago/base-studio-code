@@ -3,8 +3,8 @@ import { SettingsCardHead } from "./SettingsControls";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
-export function SkillsScreen() {
-  const setScreen = useAppStore((s) => s.setScreen);
+export function SkillsPage() {
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
   return (
     <div style={{ maxWidth: 820 }}>
       <h2 style={{ fontFamily: "var(--mono)", fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Skills</h2>
@@ -31,7 +31,7 @@ export function SkillsScreen() {
             Browse the library, edit skills, manage task-groups, and assign them per session on the
             Skills screen.
           </p>
-          <button className="btn" onClick={() => setScreen("skills")}>Open Skills library →</button>
+          <button className="btn" onClick={() => setWorkspace("skills")}>Open Skills library →</button>
         </div>
       </div>
     </div>

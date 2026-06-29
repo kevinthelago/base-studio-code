@@ -1,6 +1,6 @@
 // The idle-reaper actuator (#849): on a slow tick, kill the PTY of each pane the pure
 // `panesToReap` decision selects (idle, non-focused, role-eligible, past threshold) and mark
-// it dormant. Mounted once in ConsoleScreen (which stays mounted across screens). The pure
+// it dormant. Mounted once in ConsoleWorkspace (which stays mounted across screens). The pure
 // decision + thresholds live in idleReaper.ts; this is the thin Tauri/React side.
 
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";

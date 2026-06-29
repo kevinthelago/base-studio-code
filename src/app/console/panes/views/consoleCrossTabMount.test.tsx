@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { ConsoleScreen } from "@/app/console";
+import { ConsoleWorkspace } from "@/app/console";
 import { useAppStore } from "@/store";
 import type { ViewKey } from "../viewDefs";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
@@ -46,17 +46,17 @@ const RESET = {
   autoAdvanceOnReply: true,
 };
 
-describe("ConsoleScreen cross-tab pane mounting (#186)", () => {
+describe("ConsoleWorkspace cross-tab pane mounting (#186)", () => {
   beforeEach(() => { useAppStore.setState(RESET); });
 
   it("renders one console-grid per tab, not just the active one", () => {
-    const { container } = render(<ConsoleScreen />);
+    const { container } = render(<ConsoleWorkspace />);
     const grids = container.querySelectorAll(".console-grid");
     expect(grids.length).toBe(2);
   });
 
   it("mounts every tab's panes so background-tab terminals stay alive", () => {
-    const { container } = render(<ConsoleScreen />);
+    const { container } = render(<ConsoleWorkspace />);
     // Tab 0 (alpha) has a 2×2 grid → 4 panes; tab 1 (beta) has 1×1 → 1 pane.
     expect(container.querySelector(`[data-testid='term-t0p0']`)).toBeTruthy();
     expect(container.querySelector(`[data-testid='term-t0p3']`)).toBeTruthy();
@@ -64,14 +64,14 @@ describe("ConsoleScreen cross-tab pane mounting (#186)", () => {
   });
 
   it("shows the active tab's grid (display:grid) and hides the rest (display:none)", () => {
-    const { container } = render(<ConsoleScreen />);
+    const { container } = render(<ConsoleWorkspace />);
     const grids = Array.from(container.querySelectorAll(".console-grid")) as HTMLElement[];
     expect(grids[0].style.display).toBe("grid"); // active
     expect(grids[1].style.display).toBe("none");
   });
 
   it("switching tabs swaps display without remounting the DOM nodes", () => {
-    const { container } = render(<ConsoleScreen />);
+    const { container } = render(<ConsoleWorkspace />);
     const gridsBefore = Array.from(container.querySelectorAll(".console-grid")) as HTMLElement[];
     const termBefore  = container.querySelector(`[data-testid='term-t1p0']`);
 
@@ -91,7 +91,7 @@ describe("ConsoleScreen cross-tab pane mounting (#186)", () => {
   });
 
   it("passes visible=false to background-tab panes so render pauses (#185 pairs here)", () => {
-    const { container } = render(<ConsoleScreen />);
+    const { container } = render(<ConsoleWorkspace />);
     // Tab 1 is the background tab on initial render.
     const bgTerm     = container.querySelector(`[data-testid='term-t1p0']`) as HTMLElement;
     const activeTerm = container.querySelector(`[data-testid='term-t0p0']`) as HTMLElement;

@@ -1,6 +1,6 @@
 // Console domain — navigation + the tabs/panes/focus core app state, plus the pane-lifecycle
 // value types (warden quarantine, auto-ended workers). Split from store/types (#1634).
-import type { Screen } from "@/app/chrome/Rail";
+import type { Workspace } from "@/app/chrome/Rail";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
 import type { ReaperConfig } from "@/app/console/lib/idleReaper";
@@ -43,8 +43,8 @@ export interface EndedInfo {
 /** Console domain slice of {@link AppStore}: navigation + the tabs/panes/focus core app state. */
 export interface ConsoleState {
   // Navigation
-  activeScreen: Screen;
-  setScreen: (screen: Screen) => void;
+  activeWorkspace: Workspace;
+  setWorkspace: (screen: Workspace) => void;
   // True once the async persisted state has rehydrated (transient — NOT persisted).
   // The app shell holds its first paint until this flips, to avoid a defaults flash.
   hasHydrated: boolean;
@@ -65,7 +65,7 @@ export interface ConsoleState {
   focusQueue: QueuedPane[];
   // Enqueue / remove take (tab, pane) so background-tab status changes can
   // participate too — every tab's TerminalView is mounted after #187, so
-  // ConsoleScreen sees idle transitions for all panes and routes them here (#77).
+  // ConsoleWorkspace sees idle transitions for all panes and routes them here (#77).
   enqueueFocus: (tab: number, pane: number) => void;
   removeFocus: (tab: number, pane: number) => void;
   // Role-aware focus targeting (#392, persisted). Which panes the autofocus queue

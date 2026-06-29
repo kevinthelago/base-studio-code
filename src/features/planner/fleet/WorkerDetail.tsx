@@ -58,7 +58,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const profileId   = useAppStore((s) => s.paneProfiles[worker.id]);
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const paneFlow    = useAppStore((s) => s.paneFlows[worker.id]);
-  const setScreen   = useAppStore((s) => s.setScreen);
+  const setWorkspace   = useAppStore((s) => s.setWorkspace);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setFocusedPane = useAppStore((s) => s.setFocusedPane);
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
@@ -102,7 +102,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
 
   function openSession() {
     const c = paneCoords(worker.id);
-    setScreen("console");
+    setWorkspace("console");
     if (c) { setActiveTab(c.tab); setFocusedPane(c.pane); }
     flash(`Opened ${worker.name}'s session`);
   }
