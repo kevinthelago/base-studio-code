@@ -23,4 +23,13 @@ describe("Chip", () => {
     expect(el.style.background).toContain("transparent 88%"); // bgAlpha
     expect(el.style.border).toContain("transparent 70%"); // borderAlpha distinct from bg
   });
+
+  it("renders a semantic tone as a class-based chip with an optional dot", () => {
+    const { getByText, container } = render(<Chip tone="success" size="sm" dot>ok</Chip>);
+    const el = getByText("ok");
+    expect(el.className).toContain("chip");
+    expect(el.className).toContain("tone-success");
+    expect(el.className).toContain("size-sm");
+    expect(container.querySelector(".chip-dot")).not.toBeNull();
+  });
 });

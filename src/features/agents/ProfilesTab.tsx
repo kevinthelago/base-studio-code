@@ -9,6 +9,8 @@ import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { CardListRow } from "@/shared/ui/CardListRow";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
+import { Chip } from "@/shared/ui/Chip";
+import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
   type AgentProfile, type ConsoleSession, type Tier, type ToolKey,
@@ -72,7 +74,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
       onClick={onClick}
       lead={<span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, display: "block" }} />}
       title={p.name}
-      titleAside={<span className={`origin-badge ${obCls}`}>{origin}</span>}
+      titleAside={<Chip tone={originTone(obCls)} size="xs">{origin}</Chip>}
       subtitle={
         <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {isApp
@@ -80,7 +82,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
             : <><span>{paneCount(p.id, consoles)} panes</span><span>· {p.commands.length} cmds</span></>}
         </span>
       }
-      trailing={<span className={`mode-badge ${p.mode}`} style={{ fontSize: 8.5 }}>{p.mode}</span>}
+      trailing={<Chip tone={modeTone(p.mode)} size="xs">{p.mode}</Chip>}
     />
   );
 }
@@ -99,8 +101,8 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
           <div className="pt">
             <div className="nm">
               {p.name}{" "}
-              {isApp && <span className="origin-badge approle" style={{ verticalAlign: "middle" }}>application role</span>}
-              {p.category === "generated" && <span className="origin-badge gen" style={{ verticalAlign: "middle" }}>generated</span>}
+              {isApp && <Chip tone="info" size="xs" style={{ verticalAlign: "middle" }}>application role</Chip>}
+              {p.category === "generated" && <Chip tone="accent" size="xs" style={{ verticalAlign: "middle" }}>generated</Chip>}
             </div>
             <div className="ds">{p.desc}</div>
           </div>
