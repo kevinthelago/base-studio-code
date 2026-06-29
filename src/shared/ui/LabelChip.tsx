@@ -2,20 +2,14 @@
 // 6-hex color. Consolidates the near-identical copies in the planner Issues / ProjectBoard views.
 
 import type { GhLabel } from "@/shared/lib/github/types";
+import { Chip } from "./Chip";
 
 export function LabelChip({ label }: { label: GhLabel }) {
-  const color = `#${label.color}`;
+  // A GitHub label's colour is dynamic (6-hex) → the Chip `color` path. bg/border alphas approximate
+  // the old `${color}22`/`${color}55` tints.
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "1px 6px", borderRadius: 99,
-      fontFamily: "var(--mono)", fontSize: 9,
-      background: `${color}22`, color,
-      border: `1px solid ${color}55`,
-      whiteSpace: "nowrap",
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color }} />
+    <Chip color={`#${label.color}`} dot gap={4} padding="1px 6px" fontSize={9} bgAlpha={87} borderAlpha={67}>
       {label.name}
-    </span>
+    </Chip>
   );
 }
