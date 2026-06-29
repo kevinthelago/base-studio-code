@@ -741,6 +741,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc"
+version = "0.1.0"
+dependencies = [
+ "bsc-blueprint",
+ "bsc-cli-util",
+ "bsc-data",
+ "bsc-files",
+ "bsc-project",
+ "compliance",
+ "logs",
+ "mcp-rpc",
+ "plandb",
+ "research",
+ "skilldb",
+]
+
+[[package]]
 name = "bsc-agent"
 version = "0.1.0"
 dependencies = [

@@ -8,12 +8,6 @@ description = "Native per-project plan store (SQLite) for base-studio-code (#pla
 [lib]
 name = "plandb"
 
-# The agent-facing CLI: planner writes, workers/director read + drive status. Installed per-session
-# and pointed at the project's plan.db via the BSC_PLAN_DB env var (so it works from a worktree).
-[[bin]]
-name = "bsc-plan"
-path = "src/bin/bsc-plan.rs"
-
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

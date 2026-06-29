@@ -11,6 +11,11 @@
 //! so their events attribute to a session too. The parser stays backward-compatible with the legacy
 //! column-less `mcp.log`/`hooks.log` lines already on disk — detected by column count, those resolve
 //! to the unattributed session `"?"` (excluded from a `--session` query and the `sessions` rollup).
+//!
+//! The agent-facing CLI lives in [`cli`] (`bsc logs …`), dispatched by the unified `bsc` binary
+//! (#1877) and by the legacy `bsc-logs` shim.
+
+pub mod cli;
 
 use std::path::{Path, PathBuf};
 

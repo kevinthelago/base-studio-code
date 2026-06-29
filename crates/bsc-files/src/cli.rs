@@ -1,24 +1,20 @@
-//! `bsc-files` — the agent-facing filesystem/structure CLI. Standalone (usable from any terminal)
-//! and installed per-session like the other `bsc-*` helpers (execed by absolute path from
-//! `$BSC_FILES_BIN`). It gives a model a cheap, structured view of a codebase: the folder tree with
-//! file **metrics** (sizes, line counts, language) and single-path `stat`.
+//! The `bsc files` subcommand (#1877) — the agent-facing filesystem/structure CLI. Standalone
+//! (usable from any terminal) and installed per-session like the other `bsc-*` helpers (execed by
+//! absolute path from `$BSC_FILES_BIN`). It gives a model a cheap, structured view of a codebase:
+//! the folder tree with file **metrics** (sizes, line counts, language) and single-path `stat`.
 //!
-//! Help is per-command so a model loads only what it needs:
-//!   bsc-files help            # compact menu (the small "what tools exist" prompt)
-//!   bsc-files tree help       # detailed help for ONE command
-//!   bsc-files <cmd> help      # same, after any command
+//! Extracted from the old `bsc-files` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the per-command help is unchanged:
+//!   bsc files help            # compact menu (the small "what tools exist" prompt)
+//!   bsc files tree help       # detailed help for ONE command
+//!   bsc files <cmd> help      # same, after any command
 //!
 //! Root resolution is standalone-friendly: `--root <path>` wins, else the current working directory
 //! (which, inside the app, is the session's repo/worktree — bash `cd`s there before launch).
 
+use crate::{build_tree, human_size, render_tree, stat, TreeOpts};
 use bsc_cli_util::CmdDoc;
-use bsc_files::{build_tree, human_size, render_tree, stat, TreeOpts};
 use std::path::PathBuf;
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-files", run)
-}
 
 const TAGLINE: &str = "folder structure with file metrics, for agents (read-only)";
 
@@ -30,7 +26,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "folder structure with sizes, file counts, language",
         usage: "\
 USAGE:
-  bsc-files tree [subpath] [flags]
+  bsc files tree [subpath] [flags]
 
 Prints the folder tree under the root (or root/<subpath>), with each directory's aggregate size +
 file count and each file's size. Respects .gitignore and skips hidden/.git by default.
@@ -49,7 +45,7 @@ FLAGS:
         summary: "size + language (+ lines) for one path",
         usage: "\
 USAGE:
-  bsc-files stat <path> [--lines] [--json|--pretty] [--root <p>]
+  bsc files stat <path> [--lines] [--json|--pretty] [--root <p>]
 
 Reports a single file or directory's size, language (by extension), last-modified epoch, and — with
 --lines — its line count. <path> is resolved relative to the root.",
@@ -99,20 +95,23 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `files` subcommand entrypoint: `args` is everything after `bsc files`; `prog` is the display
+/// name for help/errors (`"bsc files"` from the umbrella, `"bsc-files"` from the legacy shim).
+/// Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any work.
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
     // dispatch in bsc-cli-util; returns Ok once help is printed.
-    if bsc_cli_util::handle_help("bsc-files", TAGLINE, COMMANDS, &args.positional) {
+    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
     match cmd.as_str() {
         "tree" => cmd_tree(&args),
         "stat" => cmd_stat(&args),
-        other => Err(bsc_cli_util::unknown_command("bsc-files", TAGLINE, COMMANDS, other)),
+        other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
 
@@ -151,7 +150,7 @@ fn cmd_tree(args: &Args) -> Result<(), String> {
 
 fn cmd_stat(args: &Args) -> Result<(), String> {
     let root = resolve_root(&args.root)?;
-    let rel = args.positional.get(1).ok_or("usage: bsc-files stat <path>")?;
+    let rel = args.positional.get(1).ok_or("usage: bsc files stat <path>")?;
     let full = root.join(rel);
     let st = stat(&full, args.lines)?;
     bsc_cli_util::emit(args.pretty, args.json, &st, || st.lean());
@@ -188,5 +187,20 @@ mod tests {
         assert!(parse_args(vec!["tree".into(), "--nope".into()]).is_err());
         assert!(parse_args(vec!["--depth".into()]).is_err()); // missing value
         assert!(parse_args(vec!["tree".into(), "--depth".into(), "x".into()]).is_err()); // non-numeric
+    }
+
+    #[test]
+    fn help_overview_lists_commands_and_per_command_help_drills_in() {
+        let ov = bsc_cli_util::help_overview("bsc files", TAGLINE, COMMANDS);
+        assert!(ov.contains("tree"));
+        assert!(ov.contains("stat"));
+        // Per-command help shows that one command's detail.
+        let one = bsc_cli_util::help_for("bsc files", TAGLINE, COMMANDS, "tree");
+        assert!(one.contains("bsc files tree"));
+        assert!(one.contains("--depth"));
+        assert!(!one.contains("size + language"));
+        // An unknown command falls back to the overview.
+        let miss = bsc_cli_util::help_for("bsc files", TAGLINE, COMMANDS, "nope");
+        assert!(miss.contains("COMMANDS:"));
     }
 }

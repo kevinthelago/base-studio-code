@@ -7,7 +7,7 @@
   ],
   "optional": true,
   "blurb": "External tools + data the fleet's agents can call.",
-  "prompt": "Connect the external tools and data sources the fleet's agents need via MCP servers.\nAssign one with `bsc-plan mcp add \"…\"` (e.g. `bsc-plan mcp add Compliance`): a first-party server\n(Compliance, Complexity Analyzer, Dependency Graph) downloads automatically — the user builds it\nonce in the MCP panel and it's scoped to every session this plan launches (the director AND every\nworker). `bsc-plan mcp list` shows the assigned servers. Assign only the servers the agents\nactually need.\n\nGate: the project's agents have the MCP servers they need (optional).",
+  "prompt": "Connect the external tools and data sources the fleet's agents need via MCP servers.\nAssign one with `bsc plan mcp add \"…\"` (e.g. `bsc plan mcp add Compliance`): a first-party server\n(Compliance, Complexity Analyzer, Dependency Graph) downloads automatically — the user builds it\nonce in the MCP panel and it's scoped to every session this plan launches (the director AND every\nworker). `bsc plan mcp list` shows the assigned servers. Assign only the servers the agents\nactually need.\n\nGate: the project's agents have the MCP servers they need (optional).",
   "icon": "lan",
   "hue": 200
 }

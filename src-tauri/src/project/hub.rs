@@ -5,7 +5,7 @@ use crate::*;
 /// instant, and the cwd never changes so Claude's `--continue` history survives. Idempotent.
 ///
 /// The create-dir + marker-write is delegated to `bsc_project::mark_published` (#1761) so the
-/// `.published` logic lives in ONE place, shared with the `bsc-project` session CLI. The key is
+/// `.published` logic lives in ONE place, shared with the `bsc project` session CLI. The key is
 /// sanitized here (the app boundary) before delegating, since the crate treats it as opaque.
 #[tauri::command]
 pub(crate) fn mark_published(project_key: String) -> Result<(), String> {

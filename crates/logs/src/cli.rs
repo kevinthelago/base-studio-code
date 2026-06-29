@@ -1,21 +1,22 @@
-//! `bsc-logs` — drill into any console session's logs from its own shell (#1607, #1325).
+//! The `bsc logs` subcommand (#1877) — drill into any console session's logs from its own shell
+//! (#1607, #1325).
 //!
 //! A read-only query over the app's per-session event streams (tools / skills / mcp / hooks /
 //! cost / coord / activity) under `~/.base-studio-code/` (`$BSC_LOG_DIR` overrides). Mirrors
-//! `bsc-plan`'s house style: lean TSV with a header by default, `--json` (compact) / `--pretty`,
+//! `bsc plan`'s house style: lean TSV with a header by default, `--json` (compact) / `--pretty`,
 //! `--session` / `--stream` / `--since` / `--limit`.
 //!
-//! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-logs help            # compact menu (the small "what commands exist" prompt)
-//!   bsc-logs session help    # detailed help for ONE command
-//!   bsc-logs <cmd> help      # same, after any command
-//! (no-arg `bsc-logs` keeps its established default: list every session.)
+//! Extracted from the old `bsc-logs` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the per-command help (#1762) is unchanged:
+//!   bsc logs help            # compact menu (the small "what commands exist" prompt)
+//!   bsc logs session help    # detailed help for ONE command
+//!   bsc logs <cmd> help      # same, after any command
+//! (no-arg `bsc logs` keeps its established default: list every session.)
 
 use std::path::PathBuf;
-use std::process::ExitCode;
 
+use crate::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
 use bsc_cli_util::{emit, CmdDoc};
-use logs::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
 
 const TAGLINE: &str = "query a console session's logs — tools/skills/mcp/hooks/cost/coord/activity + perf (read-only, #1607)";
 
@@ -28,7 +29,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "every console session, one line each (the default)",
         usage: "\
 USAGE:
-  bsc-logs sessions [--json|--pretty]
+  bsc logs sessions [--json|--pretty]
 
 One row per console session: role, per-stream event counts, cost, and last activity. This is also
 the no-argument default.",
@@ -38,7 +39,7 @@ the no-argument default.",
         summary: "one session's full, time-merged story",
         usage: "\
 USAGE:
-  bsc-logs session <id> [--since <epochMs>] [--limit N] [--json|--pretty]
+  bsc logs session <id> [--since <epochMs>] [--limit N] [--json|--pretty]
 
 Every event for <id> across all streams, merged into one timeline, plus its token/cost rollup.",
     },
@@ -47,7 +48,7 @@ Every event for <id> across all streams, merged into one timeline, plus its toke
         summary: "one event category: audit|skill|mcp|hook|coord|activity|done",
         usage: "\
 USAGE:
-  bsc-logs <stream> [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
+  bsc logs <stream> [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
 
 The verb is the category name itself — one of: audit, skill, mcp, hook, coord, activity, done.
 Prints that stream's events (optionally filtered to one --session).",
@@ -57,7 +58,7 @@ Prints that stream's events (optionally filtered to one --session).",
         summary: "token + cost rollup",
         usage: "\
 USAGE:
-  bsc-logs cost [--session <id>] [--json|--pretty]
+  bsc logs cost [--session <id>] [--json|--pretty]
 
 Per-session token usage (in/out/cache) and USD cost; filter to one --session.",
     },
@@ -66,7 +67,7 @@ Per-session token usage (in/out/cache) and USD cost; filter to one --session.",
         summary: "recent perf.db samples (rss/cpu/threads)",
         usage: "\
 USAGE:
-  bsc-logs perf [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
+  bsc logs perf [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
 
 Recent process metrics sampled into perf.db (the one binary-SQLite stream): rss, cpu%, threads.",
     },
@@ -75,7 +76,7 @@ Recent process metrics sampled into perf.db (the one binary-SQLite stream): rss,
         summary: "a one-line recap for a session",
         usage: "\
 USAGE:
-  bsc-logs summary --session <id> [--json|--pretty]
+  bsc logs summary --session <id> [--json|--pretty]
 
 A compact one-line recap of a session: role, event counts, cost, last activity.",
     },
@@ -92,7 +93,7 @@ struct Args {
     dir: Option<PathBuf>,
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         positional: vec![],
         session: None,
@@ -103,7 +104,7 @@ fn parse_args() -> Result<Args, String> {
         pretty: false,
         dir: None,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--json" => a.json = true,
@@ -128,25 +129,31 @@ fn hms(ms: i64) -> String {
     format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
 }
 
-fn run() -> Result<(), String> {
-    let a = parse_args()?;
+/// The `logs` subcommand entrypoint: `args` is everything after `bsc logs`; `prog` is the display
+/// name for help/errors (`"bsc logs"` from the umbrella, `"bsc-logs"` from the legacy shim).
+///
+/// Help (`help` / `help <cmd>` / `<cmd> help`) is resolved before touching the log dir. Unlike the
+/// `handle_help`-driven CLIs, a BARE invocation does NOT print help — it keeps `bsc logs`'
+/// established default of listing every session (the `sessions` verb).
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let a = parse_args(args)?;
 
     // Help surface — handled before touching the log dir (help must work anywhere). `help` /
-    // `help <cmd>` and the trailing `<cmd> help` form; a bare `bsc-logs` keeps its `sessions` default.
+    // `help <cmd>` and the trailing `<cmd> help` form; a bare `bsc logs` keeps its `sessions` default.
     if a.positional.first().map(String::as_str) == Some("help") {
         match a.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS)),
+            Some(name) => print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, name)),
+            None => print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)),
         }
         return Ok(());
     }
     if a.positional.get(1).map(String::as_str) == Some("help") {
         let name = a.positional[0].clone();
-        print!("{}", bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, &name));
+        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, &name));
         return Ok(());
     }
 
-    let dir = a.dir.clone().unwrap_or_else(logs::log_dir);
+    let dir = a.dir.clone().unwrap_or_else(crate::log_dir);
     let streams: Vec<&'static str> = match &a.stream {
         Some(s) => vec![canonical_stream(s).ok_or_else(|| format!("unknown stream '{s}'"))?],
         None => vec![],
@@ -168,7 +175,7 @@ fn run() -> Result<(), String> {
         // One session's full, time-merged story across every stream.
         "session" => {
             let id = a.positional.get(1).cloned().or(a.session.clone())
-                .ok_or("usage: bsc-logs session <id>")?;
+                .ok_or("usage: bsc logs session <id>")?;
             let events = query(&dir, &streams, Some(&id), a.since, a.limit);
             let c = cost::cost_for_session(&dir, &id);
             #[derive(serde::Serialize)]
@@ -216,7 +223,7 @@ fn run() -> Result<(), String> {
         // A one-line recap for a session.
         "summary" => {
             let id = a.session.clone().or_else(|| a.positional.get(1).cloned())
-                .ok_or("usage: bsc-logs summary --session <id>")?;
+                .ok_or("usage: bsc logs summary --session <id>")?;
             let r = sessions(&dir).into_iter().find(|r| r.session == id).unwrap_or(SessionRow {
                 session: id.clone(), role: role_of(&id), tools: 0, skills: 0, mcp: 0, coord: 0, cost_usd: 0.0, activity: String::new(),
             });
@@ -229,7 +236,7 @@ fn run() -> Result<(), String> {
             let s = canonical_stream(other).ok_or_else(|| {
                 format!(
                     "unknown command/stream '{other}'\n\n{}",
-                    bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS)
+                    bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)
                 )
             })?;
             let events = query(&dir, &[s], a.session.as_deref(), a.since, a.limit);
@@ -243,26 +250,22 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-logs", run)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{COMMANDS, TAGLINE};
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = bsc_cli_util::help_overview("bsc-logs", TAGLINE, COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc logs", TAGLINE, COMMANDS);
         for c in ["sessions", "session", "cost", "perf", "summary", "<stream>"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // Per-command help shows that one command's detail only.
-        let one = bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, "perf");
-        assert!(one.contains("bsc-logs perf"));
+        let one = bsc_cli_util::help_for("bsc logs", TAGLINE, COMMANDS, "perf");
+        assert!(one.contains("bsc logs perf"));
         assert!(one.contains("perf.db"));
         assert!(!one.contains("token + cost rollup"));
         // An unknown command falls back to the overview.
-        assert!(bsc_cli_util::help_for("bsc-logs", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+        assert!(bsc_cli_util::help_for("bsc logs", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 }

@@ -1,27 +1,23 @@
-//! `bsc-data` — read/write a project's canonical **Data Model** + **Platform Behavior Summary** in
-//! its per-project DuckDB store (#1446), and read the materialized **DataStore** — the typed entity
-//! tables + lineage (#1717). The desktop app writes them; the **planner** reads them at the
-//! UI-kickoff stage to drive data-driven screens (it can't query DuckDB directly, so this CLI is its
-//! accessor — the #1325 pattern, mirroring `bsc-plan` / `bsc-skill`).
+//! The `bsc data` subcommand (#1877) — read/write a project's canonical **Data Model** + **Platform
+//! Behavior Summary** in its per-project DuckDB store (#1446), and read the materialized **DataStore**
+//! — the typed entity tables + lineage (#1717). The desktop app writes them; the **planner** reads
+//! them at the UI-kickoff stage to drive data-driven screens (it can't query DuckDB directly, so this
+//! CLI is its accessor — the #1325 pattern, mirroring `bsc plan` / `bsc skill`).
 //!
-//! The store is located via `--db <path>` or the `BSC_DATA_DB` env var (set per-session at launch).
-//!
-//! Reading is lean by default; `--json` emits compact JSON and `--pretty` re-indents it.
+//! Extracted from the old `bsc-data` binary so the unified `bsc` umbrella dispatches into it via
+//! [`run`]; the legacy `bsc-data` shim also calls it. The store is located via `--db <path>` or the
+//! `BSC_DATA_DB` env var (set per-session at launch). Reading is lean by default; `--json` emits
+//! compact JSON and `--pretty` re-indents it.
 //!
 //! Help is per-command so a model loads only what it needs (#1762):
-//!   bsc-data help            # compact menu (the small "what commands exist" prompt)
-//!   bsc-data model help      # detailed help for ONE command
-//!   bsc-data <cmd> help      # same, after any command
+//!   bsc data help            # compact menu (the small "what commands exist" prompt)
+//!   bsc data model help      # detailed help for ONE command
+//!   bsc data <cmd> help      # same, after any command
 
+use crate::{DataModel, DataStore, MetaStore, PlatformScan};
 use bsc_cli_util::{emit, CmdDoc};
-use bsc_data::{DataModel, DataStore, MetaStore, PlatformScan};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    bsc_cli_util::cli_main("bsc-data", run)
-}
 
 const TAGLINE: &str = "the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)";
 
@@ -34,8 +30,8 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "read/write the canonical Data Model",
         usage: "\
 USAGE:
-  bsc-data model get                 # print {\"model\":<DataModel>,\"refined\":<bool>} (or null)
-  bsc-data model set [--refined]     # upsert the DataModel JSON on stdin
+  bsc data model get                 # print {\"model\":<DataModel>,\"refined\":<bool>} (or null)
+  bsc data model set [--refined]     # upsert the DataModel JSON on stdin
 
 Needs a store (--db <path> or $BSC_DATA_DB).",
     },
@@ -44,8 +40,8 @@ Needs a store (--db <path> or $BSC_DATA_DB).",
         summary: "read/write the Platform Behavior Summary (PlatformScan)",
         usage: "\
 USAGE:
-  bsc-data scan get                  # print the PlatformScan JSON (or null)
-  bsc-data scan set                  # upsert the PlatformScan JSON on stdin
+  bsc data scan get                  # print the PlatformScan JSON (or null)
+  bsc data scan set                  # upsert the PlatformScan JSON on stdin
 
 Needs a store (--db <path> or $BSC_DATA_DB).",
     },
@@ -54,7 +50,7 @@ Needs a store (--db <path> or $BSC_DATA_DB).",
         summary: "list entity tables + row counts",
         usage: "\
 USAGE:
-  bsc-data tables [--json|--pretty]
+  bsc data tables [--json|--pretty]
 
 Lists every entity table in the materialized DataStore with its row count.",
     },
@@ -63,7 +59,7 @@ Lists every entity table in the materialized DataStore with its row count.",
         summary: "sample rows from an entity table (default 20)",
         usage: "\
 USAGE:
-  bsc-data rows <entity> [--limit N] [--json|--pretty]
+  bsc data rows <entity> [--limit N] [--json|--pretty]
 
 A small sample of rows from <entity> — capped at --limit (default 20) so an agent reads a peek,
 not a dump.",
@@ -73,7 +69,7 @@ not a dump.",
         summary: "row count for an entity",
         usage: "\
 USAGE:
-  bsc-data count <entity> [--json|--pretty]
+  bsc data count <entity> [--json|--pretty]
 
 The row count for one entity table.",
     },
@@ -82,7 +78,7 @@ The row count for one entity table.",
         summary: "NULL counts — all fields, or just <field>",
         usage: "\
 USAGE:
-  bsc-data nulls <entity> [<field>] [--json|--pretty]
+  bsc data nulls <entity> [<field>] [--json|--pretty]
 
 NULL counts for an entity: every field, or just <field> when given.",
     },
@@ -91,7 +87,7 @@ NULL counts for an entity: every field, or just <field> when given.",
         summary: "per-row + per-field lineage counts for an entity",
         usage: "\
 USAGE:
-  bsc-data lineage <entity> [--json|--pretty]
+  bsc data lineage <entity> [--json|--pretty]
 
 The per-row and per-field lineage counts recorded for an entity.",
     },
@@ -100,10 +96,10 @@ The per-row and per-field lineage counts recorded for an entity.",
         summary: "runtime REST connector presets (no --db needed)",
         usage: "\
 USAGE:
-  bsc-data connector list            # list the runtime connectors
-  bsc-data connector get <id>        # print one connector (RuntimePreset JSON)
-  bsc-data connector add             # upsert a RuntimePreset JSON on stdin (validated, secret-free)
-  bsc-data connector remove <id>     # delete a runtime connector
+  bsc data connector list            # list the runtime connectors
+  bsc data connector get <id>        # print one connector (RuntimePreset JSON)
+  bsc data connector add             # upsert a RuntimePreset JSON on stdin (validated, secret-free)
+  bsc data connector remove <id>     # delete a runtime connector
 
 Runtime REST connector presets live in ~/.base-studio-code/connectors.json ($BSC_CONNECTORS
 overrides) — the app-wide store, NOT the per-project DuckDB, so `connector` needs no --db.",
@@ -176,18 +172,21 @@ fn open_data_store(db: &Path) -> Result<DataStore, String> {
         meta.get_model()
             .map_err(|e| e.to_string())?
             .map(|(m, _refined)| m)
-            .ok_or("no Data Model in the store — run `bsc-data model set` first")?
+            .ok_or("no Data Model in the store — run `bsc data model set` first")?
     };
     DataStore::open(db, model).map_err(|e| e.to_string())
 }
 
-fn run() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+/// The `data` subcommand entrypoint: `args` is everything after `bsc data`; `prog` is the display
+/// name for help/errors (`"bsc data"` from the umbrella, `"bsc-data"` from the legacy shim). Handles
+/// help before resolving any store, then dispatches via the `(cmd, sub)` tuple match.
+pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
     // Top-level + per-command help (no command / `help` / `help <cmd>` / `<cmd> help`) — the shared
     // dispatch in bsc-cli-util, run before resolving any store (help works without a --db).
-    if bsc_cli_util::handle_help("bsc-data", TAGLINE, COMMANDS, &args.positional) {
+    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args.positional) {
         return Ok(());
     }
 
@@ -195,7 +194,7 @@ fn run() -> Result<(), String> {
     // `connector` reaches the runtime REST connector store (~/.base-studio-code/connectors.json),
     // NOT the per-project DuckDB — so it must NOT require --db / BSC_DATA_DB. Dispatch it first.
     if cmd == "connector" {
-        return cmd_connector(&args);
+        return cmd_connector(&args, prog);
     }
     let db = resolve_db(&args.db)?;
     match (cmd.as_str(), sub) {
@@ -249,7 +248,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ("rows", _) => {
-            let entity = args.positional.get(1).ok_or("usage: bsc-data rows <entity> [--limit N]")?;
+            let entity = args.positional.get(1).ok_or("usage: bsc data rows <entity> [--limit N]")?;
             let store = open_data_store(&db)?;
             let (cols, data) =
                 store.sample(entity, args.limit.unwrap_or(DEFAULT_ROW_LIMIT)).map_err(|e| e.to_string())?;
@@ -277,14 +276,14 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ("count", _) => {
-            let entity = args.positional.get(1).ok_or("usage: bsc-data count <entity>")?;
+            let entity = args.positional.get(1).ok_or("usage: bsc data count <entity>")?;
             let store = open_data_store(&db)?;
             let n = store.count(entity).map_err(|e| e.to_string())?;
             emit(args.pretty, args.json, &serde_json::json!({ "entity": entity, "rows": n }), || n.to_string());
             Ok(())
         }
         ("nulls", _) => {
-            let entity = args.positional.get(1).ok_or("usage: bsc-data nulls <entity> [<field>]")?;
+            let entity = args.positional.get(1).ok_or("usage: bsc data nulls <entity> [<field>]")?;
             let store = open_data_store(&db)?;
             match args.positional.get(2) {
                 Some(field) => {
@@ -322,7 +321,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         ("lineage", _) => {
-            let entity = args.positional.get(1).ok_or("usage: bsc-data lineage <entity>")?;
+            let entity = args.positional.get(1).ok_or("usage: bsc data lineage <entity>")?;
             let store = open_data_store(&db)?;
             if store.model().entity(entity).is_none() {
                 return Err(format!("unknown entity `{entity}`"));
@@ -339,27 +338,27 @@ fn run() -> Result<(), String> {
         }
         _ => Err(format!(
             "unknown command: {cmd} {sub}\n\n{}",
-            bsc_cli_util::help_overview("bsc-data", TAGLINE, COMMANDS)
+            bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)
         )),
     }
 }
 
 /// `connector` — runtime (planner/user-authored) REST connector presets (#1235, relocated #1721).
 /// These live in the app-wide connectors store (`~/.base-studio-code/connectors.json`, via
-/// [`bsc_data::runtime_store_path`] — `$BSC_CONNECTORS` overrides) — NOT the per-project DuckDB — so
+/// [`crate::runtime_store_path`] — `$BSC_CONNECTORS` overrides) — NOT the per-project DuckDB — so
 /// an authored connector becomes a native, app-wide integration like the built-ins. The spec is
 /// validated + **secret-free** on add (credentials go to the keychain, #1194). This is the same store
-/// and semantics the deprecated `bsc-plan integration` reaches.
-fn cmd_connector(args: &Args) -> Result<(), String> {
+/// and semantics the deprecated `bsc plan integration` reaches.
+fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let path = bsc_data::runtime_store_path();
+    let path = crate::runtime_store_path();
     match sub {
         // `connector add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
         "add" => {
-            let preset: bsc_data::RuntimePreset =
+            let preset: crate::RuntimePreset =
                 serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
             let id = preset.id.clone();
-            bsc_data::upsert_runtime_preset(&path, preset)?;
+            crate::upsert_runtime_preset(&path, preset)?;
             if args.json {
                 println!("{}", serde_json::to_string(&id).unwrap_or_default());
             } else {
@@ -368,7 +367,7 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "list" => {
-            let presets = bsc_data::load_runtime_presets(&path).map_err(|e| e.to_string())?;
+            let presets = crate::load_runtime_presets(&path).map_err(|e| e.to_string())?;
             let value = serde_json::to_value(&presets).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
             emit(args.pretty, args.json, &value, || {
                 if presets.is_empty() {
@@ -384,8 +383,8 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "get" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-data connector get <id>")?;
-            match bsc_data::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
+            let id = args.positional.get(2).ok_or("usage: bsc data connector get <id>")?;
+            match crate::find_runtime_preset(&path, id).map_err(|e| e.to_string())? {
                 Some(p) => {
                     let value = serde_json::to_value(&p).unwrap_or(serde_json::Value::Null);
                     emit(args.pretty, args.json, &value, || {
@@ -398,8 +397,8 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
             Ok(())
         }
         "remove" => {
-            let id = args.positional.get(2).ok_or("usage: bsc-data connector remove <id>")?;
-            let removed = bsc_data::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
+            let id = args.positional.get(2).ok_or("usage: bsc data connector remove <id>")?;
+            let removed = crate::remove_runtime_preset(&path, id).map_err(|e| e.to_string())?;
             if !args.json {
                 println!("{}", if removed { format!("removed {id}") } else { format!("(no connector '{id}')") });
             }
@@ -407,7 +406,7 @@ fn cmd_connector(args: &Args) -> Result<(), String> {
         }
         other => Err(format!(
             "unknown connector command '{other}'\n\n{}",
-            bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "connector")
+            bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "connector")
         )),
     }
 }
@@ -418,17 +417,17 @@ mod tests {
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
-        let ov = bsc_cli_util::help_overview("bsc-data", TAGLINE, COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc data", TAGLINE, COMMANDS);
         for c in ["model", "scan", "tables", "rows", "count", "nulls", "lineage", "connector"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // `connector help` shows the connector subcommands, not the whole menu.
-        let c = bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "connector");
-        assert!(c.contains("bsc-data connector"));
+        let c = bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "connector");
+        assert!(c.contains("bsc data connector"));
         assert!(c.contains("remove <id>"));
         assert!(!c.contains("sample rows"));
         // An unknown command falls back to the overview.
-        assert!(bsc_cli_util::help_for("bsc-data", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+        assert!(bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 
     #[test]
@@ -490,29 +489,29 @@ mod tests {
         };
 
         // list against an absent store: Ok (empty), and crucially no --db required.
-        assert!(cmd_connector(&conn(&["connector", "list"])).is_ok());
+        assert!(cmd_connector(&conn(&["connector", "list"]), "bsc data").is_ok());
 
         // seed via the same functions the verb calls, then get/remove through the verb.
-        let preset = bsc_data::RuntimePreset {
+        let preset = crate::RuntimePreset {
             id: "acme-crm".into(),
             label: "Acme".into(),
             category: "crm".into(),
             base_url: Some("https://acme.example.com/api".into()),
             auth: "token".into(),
-            resources: vec![bsc_data::RuntimeResource {
+            resources: vec![crate::RuntimeResource {
                 name: "contacts".into(),
                 path: "contacts".into(),
                 array_key: Some("data".into()),
             }],
         };
-        bsc_data::upsert_runtime_preset(&store, preset).unwrap();
+        crate::upsert_runtime_preset(&store, preset).unwrap();
 
-        assert!(cmd_connector(&conn(&["connector", "get", "acme-crm"])).is_ok());
-        assert!(cmd_connector(&conn(&["connector", "remove", "acme-crm"])).is_ok());
-        assert_eq!(bsc_data::load_runtime_presets(&store).unwrap().len(), 0);
+        assert!(cmd_connector(&conn(&["connector", "get", "acme-crm"]), "bsc data").is_ok());
+        assert!(cmd_connector(&conn(&["connector", "remove", "acme-crm"]), "bsc data").is_ok());
+        assert_eq!(crate::load_runtime_presets(&store).unwrap().len(), 0);
 
         // an unknown sub is an error.
-        assert!(cmd_connector(&conn(&["connector", "frobnicate"])).is_err());
+        assert!(cmd_connector(&conn(&["connector", "frobnicate"]), "bsc data").is_err());
 
         std::env::remove_var("BSC_CONNECTORS");
         let _ = std::fs::remove_file(&store);

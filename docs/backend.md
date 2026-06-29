@@ -131,7 +131,7 @@ On boot, `app/run.rs` reaps PTY children leaked by a prior unclean run via `pty_
 Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** (so loops / pipes /
 `&&` chains run without prompts — "start and go") but layer a curated `DEFAULT_DENY` (sudo, `rm -rf /`,
 `dd`, force-push, `curl … | sh`, …) plus any per-session `denied_commands` on top. The mandatory tier
-(`gh`, `git`, `bsc-plan`) from the backend-owned `data/permissions/base.json` is always auto-approved.
+(`gh`, `git`, `bsc`) from the backend-owned `data/permissions/base.json` is always auto-approved.
 Claude Code precedence is **deny > ask > allow**.
 The role gate (planner / worker / director / triage / tester / reviewer / conductor / issuer / juror) maps to the
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard

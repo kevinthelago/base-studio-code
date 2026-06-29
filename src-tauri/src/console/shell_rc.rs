@@ -5,26 +5,17 @@
 // helper functions glue together and the whole rc breaks with a bash syntax error
 // (#296) — the full_bsc_rc_is_syntactically_valid_bash test guards this.
 
-/// Emit a sidecar-exec rc fragment (#1756): the near-byte-identical shell function shared by every
-/// compiled-binary helper (`bsc-plan`/`bsc-data`/`bsc-logs`/`bsc-compliance`/`bsc-blueprint`/
-/// `bsc-project`). Given the CLI name and its `$BSC_*_BIN` var, it produces — via `concat!`, so the
-/// result is a `&'static str` — a function that errors `127` on a missing/0-byte sidecar stub and
-/// otherwise execs the absolute-path binary (falling back to the bare name on PATH). The mandatory
-/// trailing `"\n"` (the #296 glue contract) is baked in here once, so a new sidecar helper can never
-/// forget it. The output is byte-identical to the hand-written fragments it replaced.
-///
-/// NOT for `bsc-skill` / `bsc-learned`: those are a different shape (argc-dispatched / a `bsc-plan`
-/// wrapper, no 0-byte check) and stay hand-written.
-macro_rules! bsc_sidecar_rc {
-    ($cli:literal, $bin:literal) => {
-        concat!(
-            $cli, "() { if [ -n \"${", $bin, ":-}\" ] && [ ! -s \"$", $bin,
-            "\" ]; then echo \"", $cli, ": ", $bin, " ($", $bin,
-            ") is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; ",
-            "return 127; fi; \"${", $bin, ":-", $cli, "}\" \"$@\"; }\n",
-        )
-    };
-}
+/// The `bsc` shell helper (#1877): the ONE compiled-binary helper. The app ships a single umbrella
+/// binary that dispatches every state CLI as a subcommand (`bsc plan …`, `bsc skill …`, `bsc logs …`,
+/// `bsc data …`, `bsc compliance …`, `bsc blueprint …`, `bsc project …`, `bsc files …`, `bsc mcp …`).
+/// This function execs the absolute-path binary in `$BSC_BIN` (set per-session in `pty_create`,
+/// alongside the per-store env like `$BSC_PLAN_DB`/`$BSC_DATA_DB`) — no PATH changes, no copies. It
+/// errors `127` on a missing/0-byte staged stub and otherwise execs `$BSC_BIN`, falling back to a bare
+/// `bsc` on PATH when the var is unset (e.g. the test target where the sidecar isn't staged). The
+/// mandatory trailing `"\n"` is the #296 glue contract. Replaced the eight per-CLI `bsc-*` helpers
+/// (`bsc-plan`/`bsc-data`/… each execing its own `$BSC_*_BIN`) that #1843 had funneled through a macro.
+pub(crate) const BSC_RC: &str =
+    "bsc() { if [ -n \"${BSC_BIN:-}\" ] && [ ! -s \"$BSC_BIN\" ]; then echo \"bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_BIN:-bsc}\" \"$@\"; }\n";
 
 /// The `bsc-checkpoint` helper: reads stdin and overwrites the per-repo checkpoint
 /// doc named by `$BSC_CHECKPOINT_DOC` (creating its parent dir). Installed via an rc
@@ -66,11 +57,13 @@ pub(crate) const BSC_AUDIT_RC: &str = concat!(
 /// The `bsc-skill` helper — one name, two roles, dispatched on argument count:
 ///
 /// * **With a subcommand** (`bsc-skill list` / `add` / `group …` / `resolve …`, #1338): the global
-///   skills-library CLI. Runs the `$BSC_SKILL_BIN` sidecar (an absolute path — invoking it directly,
-///   NOT the bare name, so it never recurses into this function) against the one global skills.db
-///   (`$BSC_SKILL_DB`). This is the #1325 runtime surface: any live session can read/author skills +
-///   task-groups from its own shell. If `$BSC_SKILL_BIN` is unset (no sidecar staged) it errors
-///   rather than falling back to a bare `bsc-skill` (which would re-enter this function).
+///   skills-library CLI. Execs the unified `bsc` binary's `skill` subcommand (`"$BSC_BIN" skill …`,
+///   an absolute path — invoking it directly, NOT the bare name, so it never recurses into this
+///   function) against the one global skills.db (`$BSC_SKILL_DB`). This is the #1325 runtime surface:
+///   any live session can read/author skills + task-groups from its own shell. If `$BSC_BIN` is unset
+///   (no sidecar staged) it errors rather than falling back to a bare `bsc-skill` (which would
+///   re-enter this function). (#1877: one `bsc` binary replaced the per-CLI `$BSC_SKILL_BIN`; this
+///   `bsc-skill` name is kept as the no-arg telemetry hook + a back-compat alias for `bsc skill`.)
 /// * **With no arguments** (#406): the original Skill-tool telemetry hook. A PreToolUse/PostToolUse
 ///   hook pipes Claude Code's hook JSON into this on stdin; it extracts ONLY the skill name
 ///   (`skill_name`) + the hook event (`hook_event_name`) and appends one TAB-separated line —
@@ -81,7 +74,7 @@ pub(crate) const BSC_AUDIT_RC: &str = concat!(
 /// Claude Code always fires the hook with NO args (data arrives on stdin), so argc is a reliable
 /// discriminator. A raw string keeps the embedded quotes/regex readable.
 pub(crate) const BSC_SKILL_RC: &str = concat!(
-    r#"bsc-skill() { if [ "$#" -gt 0 ]; then b="${BSC_SKILL_BIN:-}"; if [ -n "$b" ]; then "$b" "$@"; return $?; fi; echo "bsc-skill: library CLI unavailable (BSC_SKILL_BIN unset)" >&2; return 127; fi; l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
+    r#"bsc-skill() { if [ "$#" -gt 0 ]; then b="${BSC_BIN:-}"; if [ -n "$b" ]; then "$b" skill "$@"; return $?; fi; echo "bsc-skill: library CLI unavailable (BSC_BIN unset)" >&2; return 127; fi; l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
     "\n",
 );
 
@@ -259,64 +252,16 @@ pub(crate) const BSC_FLEET_RC: &str = concat!(
     "\n",
 );
 
-/// The `bsc-plan` wrapper (#plan-db): a thin shell function over the compiled plan-store CLI, so the
-/// planner/director/workers invoke it like any other bsc-* helper — no PATH changes. Unlike the
-/// others it can't be pure shell (it needs SQLite), so the function execs the real binary by its
-/// absolute path in `$BSC_PLAN_BIN` (set per-session in pty_create, alongside `$BSC_PLAN_DB` = the
-/// project's plan.db). Falls back to a bare `bsc-plan` on PATH if the var is unset.
-pub(crate) const BSC_PLAN_RC: &str = bsc_sidecar_rc!("bsc-plan", "BSC_PLAN_BIN");
-
-/// The `bsc-data` shell helper (#1446) — execs the bundled per-project Data Model + PlatformScan
-/// CLI ($BSC_DATA_BIN); the planner reads them with `bsc-data model get` / `bsc-data scan get`.
-pub(crate) const BSC_DATA_RC: &str = bsc_sidecar_rc!("bsc-data", "BSC_DATA_BIN");
-
-/// The `bsc-logs` shell helper (#1716) — execs the bundled unified log-query CLI ($BSC_LOGS_BIN); a
-/// live session reads its own audit/skill/mcp/hook/coord/activity streams + token cost + `perf.db`
-/// (`bsc-logs perf`) from its own shell. The directory it reads is $BSC_LOG_DIR (set per-session).
-/// Read-only. Mirrors the `bsc-plan`/`bsc-data` sidecar-helper shape exactly (it needs SQLite for the
-/// `perf` verb, so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_LOGS_RC: &str = bsc_sidecar_rc!("bsc-logs", "BSC_LOGS_BIN");
-
-/// The `bsc-compliance` shell helper (#1718) — execs the bundled compliance standards-store CLI
-/// ($BSC_COMPLIANCE_BIN) so a live session can query (and refresh) the WCAG/GDPR/CCPA/SOC2/…
-/// corpus the planner bakes into plans — the same projections as the `bsc-compliance-mcp` server,
-/// plus the write side (upsert/remove/reseed). The store it reads is $BSC_COMPLIANCE_STORE (set
-/// per-session). Mirrors the `bsc-plan`/`bsc-data`/`bsc-logs` sidecar-helper shape exactly (SQLite,
-/// so it can't be pure shell): execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_COMPLIANCE_RC: &str = bsc_sidecar_rc!("bsc-compliance", "BSC_COMPLIANCE_BIN");
-
-/// The `bsc-blueprint` shell helper (#1719) — execs the bundled user-blueprint-store CLI
-/// ($BSC_BLUEPRINT_BIN); a live session lists/gets/sets/removes the user blueprint library
-/// (~/.base-studio-code/blueprints/) from its own shell — the same store the desktop library uses.
-/// Mirrors the `bsc-logs`/`bsc-plan` sidecar-helper shape exactly (a compiled bin, not pure shell):
-/// execs the absolute-path binary, or errors on a 0-byte stub; falls back to a PATH `bsc-blueprint`.
-pub(crate) const BSC_BLUEPRINT_RC: &str = bsc_sidecar_rc!("bsc-blueprint", "BSC_BLUEPRINT_BIN");
-
-/// The `bsc-project` shell helper (#1720) — execs the bundled cross-project hub-lifecycle CLI
-/// ($BSC_PROJECT_BIN): `bsc-project list` + `bsc-project published get|set <key>` over EVERY
-/// `~/.base-studio-code/projects/<key>/` hub (not tied to one plan.db, unlike `bsc-plan`). It walks
-/// the projects dir + reads/writes the `.published` marker — sharing the app's path logic, so it
-/// execs a compiled binary, not pure shell. Mirrors the `bsc-plan`/`bsc-logs` sidecar-helper shape
-/// exactly: execs the absolute-path binary, or errors on a 0-byte stub.
-pub(crate) const BSC_PROJECT_RC: &str = bsc_sidecar_rc!("bsc-project", "BSC_PROJECT_BIN");
-
-/// The `bsc-files` shell helper — execs the bundled filesystem/structure CLI ($BSC_FILES_BIN) so a
-/// live session can read the folder tree with file metrics (`bsc-files tree`) + single-path `stat`
-/// from its own shell. Standalone (no store/env required; defaults the root to the shell's cwd, which
-/// the app `cd`s to the session repo). Mirrors the `bsc-plan`/`bsc-project` sidecar-helper shape
-/// exactly: execs the absolute-path binary, or errors on a 0-byte stub; falls back to a PATH lookup.
-pub(crate) const BSC_FILES_RC: &str = bsc_sidecar_rc!("bsc-files", "BSC_FILES_BIN");
-
 /// The `bsc-learned` capture helper (#1362): the session-facing front door for self-correction. When
 /// an agent catches a mistake mid-session it records it as a reviewable CANDIDATE — never an
 /// auto-committed skill. `bsc-learned "<what went wrong>" --rule "<corrective rule>" [--cause "<why>"]`
 /// tags the lesson with the session's provenance ($BSC_AUDIT_PANE + $BSC_REPO_ROOT) and delegates to
-/// `bsc-plan lesson add`, which stores + de-dupes it in THIS project's plan.db (so it's queued for the
-/// user to confirm/discard). A thin wrapper over the existing `bsc-plan` helper — no new env, no PATH
-/// changes. Only meaningful in a project/fleet session (one with a $BSC_PLAN_DB); elsewhere bsc-plan
-/// reports no plan store. A raw string keeps the embedded quotes readable.
+/// `bsc plan lesson add`, which stores + de-dupes it in THIS project's plan.db (so it's queued for the
+/// user to confirm/discard). A thin wrapper over the unified `bsc` helper — no new env, no PATH
+/// changes. Only meaningful in a project/fleet session (one with a $BSC_PLAN_DB); elsewhere `bsc plan`
+/// reports no plan store. A raw string keeps the embedded quotes readable. (#1877: `bsc-plan` → `bsc plan`.)
 pub(crate) const BSC_LEARNED_RC: &str = concat!(
-    r#"bsc-learned() { m="$1"; shift 2>/dev/null; r=""; c=""; while [ "$#" -gt 0 ]; do case "$1" in --rule) r="${2:-}"; shift 2 2>/dev/null || shift ;; --cause) c="${2:-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; if [ -z "$m" ] && [ -z "$r" ]; then echo 'bsc-learned: usage: bsc-learned "<mistake>" --rule "<rule>" [--cause "<why>"]' >&2; return 2; fi; p="pane ${BSC_AUDIT_PANE:-?}"; [ -n "${BSC_REPO_ROOT:-}" ] && p="$p, repo ${BSC_REPO_ROOT}"; bsc-plan lesson add "$m" --rule "$r" --cause "$c" --from "$p"; }"#,
+    r#"bsc-learned() { m="$1"; shift 2>/dev/null; r=""; c=""; while [ "$#" -gt 0 ]; do case "$1" in --rule) r="${2:-}"; shift 2 2>/dev/null || shift ;; --cause) c="${2:-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; if [ -z "$m" ] && [ -z "$r" ]; then echo 'bsc-learned: usage: bsc-learned "<mistake>" --rule "<rule>" [--cause "<why>"]' >&2; return 2; fi; p="pane ${BSC_AUDIT_PANE:-?}"; [ -n "${BSC_REPO_ROOT:-}" ] && p="$p, repo ${BSC_REPO_ROOT}"; bsc plan lesson add "$m" --rule "$r" --cause "$c" --from "$p"; }"#,
     "\n",
 );
 
@@ -342,13 +287,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_COORD_EMIT_RC,
     BSC_DEFER_RC,
     BSC_FLEET_RC,
-    BSC_PLAN_RC,
-    BSC_DATA_RC,
-    BSC_LOGS_RC,
-    BSC_COMPLIANCE_RC,
-    BSC_BLUEPRINT_RC,
-    BSC_PROJECT_RC,
-    BSC_FILES_RC,
+    BSC_RC,
     BSC_LEARNED_RC,
 ];
 
@@ -586,87 +525,45 @@ mod tests {
     }
 
     #[test]
-    fn bsc_sidecar_macro_output_is_byte_identical_to_the_hand_written_fragment() {
-        // #1756: the 6 sidecar-exec consts are now macro-generated. Pin the macro's output for one
-        // representative CLI to the EXACT bytes the fragment had before the refactor — including the
-        // mandatory trailing newline (#296) — so a change to the macro that drifts the wire bytes is
-        // caught here, not in a downstream session. The other 5 differ only by CLI name + BIN var.
+    fn bsc_rc_execs_the_one_umbrella_binary_via_bsc_bin() {
+        // #1877: the eight per-CLI `bsc-*` exec helpers collapsed into ONE `bsc` function that execs
+        // the unified umbrella binary in $BSC_BIN (every state CLI is now `bsc <sub>`). Pin its EXACT
+        // bytes — including the mandatory trailing newline (#296) — so a drift in the wire bytes is
+        // caught here, not in a downstream session.
         assert_eq!(
-            super::BSC_PLAN_RC,
-            "bsc-plan() { if [ -n \"${BSC_PLAN_BIN:-}\" ] && [ ! -s \"$BSC_PLAN_BIN\" ]; then echo \"bsc-plan: BSC_PLAN_BIN ($BSC_PLAN_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_PLAN_BIN:-bsc-plan}\" \"$@\"; }\n",
+            super::BSC_RC,
+            "bsc() { if [ -n \"${BSC_BIN:-}\" ] && [ ! -s \"$BSC_BIN\" ]; then echo \"bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_BIN:-bsc}\" \"$@\"; }\n",
         );
-        // Every sidecar fragment must define its hyphenated helper, exec its $BSC_*_BIN, and end in a
-        // trailing newline — the macro bakes all three in, for every CLI it generates.
-        for (rc, name, bin) in [
-            (super::BSC_PLAN_RC, "bsc-plan", "BSC_PLAN_BIN"),
-            (super::BSC_DATA_RC, "bsc-data", "BSC_DATA_BIN"),
-            (super::BSC_LOGS_RC, "bsc-logs", "BSC_LOGS_BIN"),
-            (super::BSC_COMPLIANCE_RC, "bsc-compliance", "BSC_COMPLIANCE_BIN"),
-            (super::BSC_BLUEPRINT_RC, "bsc-blueprint", "BSC_BLUEPRINT_BIN"),
-            (super::BSC_PROJECT_RC, "bsc-project", "BSC_PROJECT_BIN"),
-        ] {
-            assert!(rc.starts_with(&format!("{name}() {{")), "{name}: defines its helper");
-            assert!(rc.contains(bin), "{name}: execs its {bin} sidecar var");
-            assert!(rc.ends_with('\n'), "{name}: ends with a trailing newline (#296)");
-        }
-    }
-
-    #[test]
-    fn bsc_logs_rc_execs_the_sidecar_and_is_in_the_concat_body() {
-        // #1716: the `bsc-logs` helper mirrors bsc-plan/bsc-data — it execs the absolute-path
-        // sidecar in $BSC_LOGS_BIN (falling back to a bare `bsc-logs` on PATH) so a live session can
-        // read its own log streams + perf.db from its own shell. It must end in a trailing newline
-        // (the #296 glue contract) and land in the single-source-of-truth concat body.
-        let rc = super::BSC_LOGS_RC;
-        assert!(rc.contains("bsc-logs()"), "rc must define the hyphenated helper");
-        assert!(rc.contains("BSC_LOGS_BIN"), "rc must exec the staged sidecar binary");
-        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
+        let rc = super::BSC_RC;
+        assert!(rc.starts_with("bsc() {"), "defines the single `bsc` helper");
+        assert!(rc.contains("${BSC_BIN:-bsc}"), "execs $BSC_BIN, falling back to a bare `bsc` on PATH");
+        assert!(rc.ends_with('\n'), "ends with a trailing newline (#296)");
         // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
-        assert!(super::bsc_rc_body().contains("bsc-logs()"), "bsc-logs must be in the concat body");
+        assert!(super::bsc_rc_body().contains("bsc() {"), "the `bsc` helper must be in the concat body");
     }
 
     #[test]
-    fn registry_standard_sidecars_each_have_a_helper_in_the_rc_body() {
-        // #1843: the bsc-* sidecar set is the single `bsc_util::SIDECARS` registry. Every `standard_rc`
-        // sidecar in it must have its shell helper defined in the concat body (and exec its $BSC_*_BIN),
-        // so adding a CLI to the registry forces adding its rc fragment here — the list (staging +
-        // prompt block) and the helpers can't drift apart. (bsc-skill's bespoke helper + the
-        // bsc-agent runtime, which has no helper, are `standard_rc: false` and so not required here.)
+    fn the_one_bsc_helper_covers_every_advertised_subcommand() {
+        // #1877: there is no longer a per-CLI rc helper — the single `bsc` function dispatches every
+        // `bsc_util::SIDECARS` subcommand (`bsc plan`, `bsc skill`, …) through `$BSC_BIN`. Assert the
+        // unified helper is present (so the registry + the runtime can't drift) and that the legacy
+        // per-CLI `bsc-plan()`/`bsc-data()`/… function definitions are gone from the body.
         let body = super::bsc_rc_body();
-        for s in bsc_util::SIDECARS.iter().filter(|s| s.standard_rc) {
-            assert!(body.contains(&format!("{}() {{", s.name)), "registry sidecar {} has no rc helper", s.name);
-            assert!(body.contains(s.bin_env), "rc helper for {} must exec {}", s.name, s.bin_env);
+        assert!(body.contains("bsc() {"), "the unified `bsc` helper must be defined");
+        assert!(body.contains("${BSC_BIN:-bsc}"), "and exec the staged $BSC_BIN");
+        assert!(!bsc_util::SIDECARS.is_empty(), "the registry still drives the advertised inventory");
+        // The legacy per-CLI EXEC helpers (`bsc-plan()`/`bsc-data()`/…) are gone — every subcommand is
+        // now reached through the single `bsc` function. `bsc-skill` is the ONE exception: its name is
+        // kept as the no-arg telemetry hook (+ back-compat alias), so it's excluded here.
+        for s in bsc_util::SIDECARS.iter().filter(|s| s.name != "skill") {
+            assert!(
+                !body.contains(&format!("bsc-{}() {{", s.name)),
+                "legacy per-CLI helper bsc-{}() must be gone (#1877)", s.name,
+            );
         }
-    }
-
-    #[test]
-    fn bsc_blueprint_rc_execs_the_sidecar_and_is_in_the_concat_body() {
-        // #1719: the `bsc-blueprint` helper mirrors bsc-logs/bsc-plan — it execs the absolute-path
-        // sidecar in $BSC_BLUEPRINT_BIN (falling back to a bare `bsc-blueprint` on PATH) so a live
-        // session can list/get/set/remove the user blueprint store from its own shell. It must end in
-        // a trailing newline (the #296 glue contract) and land in the single-source-of-truth body.
-        let rc = super::BSC_BLUEPRINT_RC;
-        assert!(rc.contains("bsc-blueprint()"), "rc must define the hyphenated helper");
-        assert!(rc.contains("BSC_BLUEPRINT_BIN"), "rc must exec the staged sidecar binary");
-        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
-        // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
-        assert!(
-            super::bsc_rc_body().contains("bsc-blueprint()"),
-            "bsc-blueprint must be in the concat body"
-        );
-    }
-
-    #[test]
-    fn bsc_project_rc_execs_the_sidecar_and_is_in_the_concat_body() {
-        // #1720: the `bsc-project` helper mirrors bsc-plan/bsc-logs — it execs the absolute-path
-        // sidecar in $BSC_PROJECT_BIN (falling back to a bare `bsc-project` on PATH) so a live session
-        // can list local projects + read/set `.published` across ALL projects from its own shell. It
-        // must end in a trailing newline (the #296 glue contract) and land in the single-source concat.
-        let rc = super::BSC_PROJECT_RC;
-        assert!(rc.contains("bsc-project()"), "rc must define the hyphenated helper");
-        assert!(rc.contains("BSC_PROJECT_BIN"), "rc must exec the staged sidecar binary");
-        assert!(rc.ends_with('\n'), "rc must end with a trailing newline (#296)");
-        assert!(super::bsc_rc_body().contains("bsc-project()"), "bsc-project must be in the concat body");
+        // bsc-skill keeps its name (the no-arg telemetry hook + back-compat alias), now over $BSC_BIN.
+        assert!(body.contains("bsc-skill()"), "bsc-skill (telemetry hook) stays");
+        assert!(!body.contains("BSC_SKILL_BIN"), "bsc-skill's CLI branch now execs $BSC_BIN skill, not $BSC_SKILL_BIN");
     }
 
     #[test]
@@ -769,10 +666,11 @@ mod tests {
 
     #[test]
     fn bsc_skill_with_args_execs_the_cli_not_the_hook() {
-        // #1338: `bsc-skill <subcommand …>` (ANY args) must run the $BSC_SKILL_BIN library CLI, NOT
-        // the #406 telemetry hook. Point BSC_SKILL_BIN at a stub that records its args, run
-        // `bsc-skill list myskill`, and assert the stub saw `list myskill` while the telemetry log was
-        // never written. Skips where bash isn't on PATH (same gating as the other helper-run tests).
+        // #1338/#1877: `bsc-skill <subcommand …>` (ANY args) must run the library CLI via the unified
+        // `$BSC_BIN skill …` binary, NOT the #406 telemetry hook. Point BSC_BIN at a stub that records
+        // its args, run `bsc-skill list myskill`, and assert the stub saw `skill list myskill` (the
+        // `skill` subcommand prepended) while the telemetry log was never written. Skips where bash
+        // isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
         let shell = crate::shell::resolve_shell();
@@ -807,7 +705,7 @@ mod tests {
         let status = Command::new(&shell)
             .arg("-c").arg("bsc-skill list myskill")
             .env("BASH_ENV", &rc_bash)
-            .env("BSC_SKILL_BIN", &stub_bash)
+            .env("BSC_BIN", &stub_bash)
             .env("BSC_SKILL_LOG", &log_bash)
             .env("BSC_AUDIT_PANE", "t0p1")
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
@@ -815,17 +713,17 @@ mod tests {
         assert!(status.success(), "bsc-skill list should exec the CLI stub successfully");
 
         let got = std::fs::read_to_string(&argsfile).unwrap_or_default();
-        assert_eq!(got.trim(), "list myskill", "the CLI stub should receive the subcommand args");
+        assert_eq!(got.trim(), "skill list myskill", "the CLI stub should receive `skill` + the subcommand args");
         assert!(!log.exists(), "the telemetry log must NOT be written when bsc-skill runs with args");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn bsc_learned_delegates_to_bsc_plan_lesson_add() {
-        // #1362: `bsc-learned "<mistake>" --rule "<rule>"` must capture the lesson by delegating to
-        // `bsc-plan lesson add …` — the plan-store CLI ($BSC_PLAN_BIN). We stub that binary to record
-        // its args and assert the verb + mistake + rule + provenance came through. Skips where bash
-        // isn't on PATH (same gating as the other helper-run tests).
+        // #1362/#1877: `bsc-learned "<mistake>" --rule "<rule>"` must capture the lesson by delegating
+        // to `bsc plan lesson add …` — the plan-store CLI via the unified `$BSC_BIN` binary. We stub
+        // that binary to record its args and assert the `plan` subcommand + verb + mistake + rule +
+        // provenance came through. Skips where bash isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
         let shell = crate::shell::resolve_shell();
@@ -839,11 +737,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        // bsc-learned delegates to the `bsc-plan` helper, so install BOTH rc fragments.
-        std::fs::write(&rc, format!("{}{}", super::BSC_PLAN_RC, super::BSC_LEARNED_RC)).unwrap();
+        // bsc-learned delegates to the unified `bsc` helper (`bsc plan …`), so install BOTH fragments.
+        std::fs::write(&rc, format!("{}{}", super::BSC_RC, super::BSC_LEARNED_RC)).unwrap();
 
-        // Stub `bsc-plan` ($BSC_PLAN_BIN): write its args, one per line, to args.txt.
-        let stub = dir.join("bsc-plan-stub.sh");
+        // Stub `bsc` ($BSC_BIN): write its args, one per line, to args.txt.
+        let stub = dir.join("bsc-stub.sh");
         let argsfile = dir.join("args.txt");
         let argsfile_bash = crate::to_bash_path(&argsfile.to_string_lossy());
         std::fs::write(&stub, format!("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '{argsfile_bash}'\n")).unwrap();
@@ -859,16 +757,17 @@ mod tests {
         let status = Command::new(&shell)
             .arg("-c").arg(r#"bsc-learned "broke the build" --rule "verify after the merge""#)
             .env("BASH_ENV", &rc_bash)
-            .env("BSC_PLAN_BIN", &stub_bash)
+            .env("BSC_BIN", &stub_bash)
             .env("BSC_AUDIT_PANE", "t0p2")
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
             .status().unwrap();
         assert!(status.success(), "bsc-learned should delegate successfully");
 
-        // Args land one-per-line; the value-bearing flags keep their argument as the NEXT line.
+        // Args land one-per-line; the value-bearing flags keep their argument as the NEXT line. The
+        // unified binary sees the `plan` subcommand prepended (#1877): `plan lesson add <mistake> …`.
         let got = std::fs::read_to_string(&argsfile).unwrap_or_default();
         let lines: Vec<&str> = got.lines().collect();
-        assert_eq!(&lines[0..3], &["lesson", "add", "broke the build"], "verb + mistake passed through: {lines:?}");
+        assert_eq!(&lines[0..4], &["plan", "lesson", "add", "broke the build"], "subcommand + verb + mistake passed through: {lines:?}");
         let rule_i = lines.iter().position(|l| *l == "--rule").expect("--rule present");
         assert_eq!(lines[rule_i + 1], "verify after the merge", "the rule value passed through");
         let from_i = lines.iter().position(|l| *l == "--from").expect("--from present");
