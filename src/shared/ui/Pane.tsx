@@ -35,7 +35,7 @@ export interface PaneProps {
   flush?: boolean;
   /** Inline mode only: render children directly in the flex-column frame with NO styled
    *  head/body/foot wrappers — for content panes whose zones bring their own chrome (e.g. the
-   *  planner `ProjectPane`: seqrail stepper, phase header, advance bar). The editor drawers and the
+   *  planner `ProjectPane`: progression rail, phase header, advance bar). The editor drawers and the
    *  styled inline editors use the default framed layout. */
   bare?: boolean;
   /** Extra class on the frame element (the drawer aside / the inline section). */

@@ -2,9 +2,11 @@
 // navigable stepper, the phase header with gate pill, lock/done banners, and the footer
 // advance bar. Pure presentational (props in, callbacks out); the phase model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { BackButton } from "@/shared/ui/BackButton";
 import { connectorKind, type Phase, type GatePill, type FooterKind } from "../stages/focusedPlan";
+import { stageKind } from "../blueprints/blueprintCatalog";
+import { ProgressionRail, type RailNode } from "./ProgressionRail";
 import type { StagePrompt } from "../session/plannerConductor";
 
 /** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no
@@ -74,44 +76,36 @@ function reasonText(u: { label: string; detail?: string }): string {
   return u.detail ? `${u.label} (${u.detail})` : u.label;
 }
 
-/** The node glyph: ✓ for done (in-sequence or banked-ahead), ↷ for a skipped optional
- *  stage, ◆ for the current one, a number while pending. */
-function nodeGlyph(p: Phase, i: number): string {
-  if (p.status === "complete" || p.status === "ahead") return "✓";
-  if (p.status === "active") return "◆";
-  if (p.status === "skipped") return "↷";
-  return String(i + 1);
-}
-
 /**
- * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors
- * trace the in-sequence path walked so far; the current node pulses (accent ring); a
- * banked-ahead node (gate met out of sequence) is green-ringed, reached by a dashed
- * connector. Each node's glyph (◆ current · ↷ skipped · ✓ done) carries its state.
- * `highlight` pulses phases the user still has to finish.
+ * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors trace the
+ * in-sequence path walked so far; the current node pulses (accent ring); a banked-ahead node (gate
+ * met out of sequence) is green-ringed, reached by a dashed connector. `highlight` pulses phases the
+ * user still has to finish.
+ *
+ * A thin adapter over the shared {@link ProgressionRail} (#1869): it maps each {@link Phase} to a
+ * rail node (the phase's status IS the rail status), labels it with the phase name, shows the stage
+ * icon (✓ once done — the card look we standardized on), and hands the rail the focused-plan
+ * {@link connectorKind} so the dashed banked / solid walked / dim upcoming connectors are preserved.
  */
 export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
   phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
 }) {
+  const nodes: RailNode[] = phases.map((p) => ({
+    key: p.key,
+    status: p.status,
+    icon: stageKind(p.key).glyph,
+    label: p.name,
+    title: p.name,
+  }));
   return (
-    <div className="seqrail-wrap">
-      <div className="seqrail">
-        {phases.map((p, i) => (
-          <Fragment key={p.key}>
-            <button
-              type="button"
-              className={`seqrail-seg ${p.status}${i === selectedIdx ? " sel" : ""}${highlight?.has(p.key) ? " attn" : ""}`}
-              onClick={() => onSelect(i)}
-              title={p.name}
-            >
-              <span className="seqrail-node">{nodeGlyph(p, i)}</span>
-              <span className="seqrail-label">{p.name}</span>
-            </button>
-            {i < phases.length - 1 && <span className={"seqrail-conn " + connectorKind(phases, i)} />}
-          </Fragment>
-        ))}
-      </div>
-    </div>
+    <ProgressionRail
+      nodes={nodes}
+      variant="stepper"
+      selectedIdx={selectedIdx}
+      onSelect={onSelect}
+      highlight={highlight}
+      connectorKind={(_, i) => connectorKind(phases, i)}
+    />
   );
 }
 

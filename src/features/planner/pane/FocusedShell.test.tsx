@@ -8,7 +8,9 @@ const phase = (over: Partial<Phase> = {}): Phase => ({
   index: 0, total: 3, status: "active", fraction: 0.5, ...over,
 });
 
-describe("Stepper (#652)", () => {
+// The Stepper now delegates to the shared <ProgressionRail> (#1869) — the focused-pane variant
+// ("stepper") of the unified rail standardized on the blueprint-card look (square icon nodes).
+describe("Stepper (#652, #1869)", () => {
   const phases = [phase({ key: "a", name: "A", status: "complete", index: 0 }),
     phase({ key: "b", name: "B", status: "active", index: 1 }),
     phase({ key: "c", name: "C", status: "locked", index: 2 })];
@@ -24,33 +26,35 @@ describe("Stepper (#652)", () => {
 
   it("marks the selected rail node", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={2} onSelect={vi.fn()} />);
-    expect(container.querySelector(".seqrail-seg.locked.sel")).toBeTruthy();
+    expect(container.querySelector(".prail-seg.locked.sel")).toBeTruthy();
   });
 
-  // #1074: after #1072's column rework the per-node .seqrail-label stopped rendering.
-  // Guard that every seg still carries its stage-title label.
+  // #1074: every seg must carry its stage-title label (the label regressed once before, #1072).
   it("renders a stage-title label under every rail node (#1074)", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={1} onSelect={vi.fn()} />);
-    const labels = Array.from(container.querySelectorAll(".seqrail-seg .seqrail-label"));
+    const labels = Array.from(container.querySelectorAll(".prail-seg .prail-label"));
     expect(labels).toHaveLength(phases.length);
     expect(labels.map((l) => l.textContent)).toEqual(["A", "B", "C"]);
   });
 
   it("pulses highlighted (incomplete) nodes via the attn class", () => {
     const { container } = render(<Stepper phases={phases} selectedIdx={0} onSelect={vi.fn()} highlight={new Set(["c"])} />);
-    expect(container.querySelector(".seqrail-seg.locked.attn")).toBeTruthy();
-    expect(container.querySelector(".seqrail-seg.complete.attn")).toBeNull(); // only highlighted keys
+    expect(container.querySelector(".prail-seg.locked.attn")).toBeTruthy();
+    expect(container.querySelector(".prail-seg.complete.attn")).toBeNull(); // only highlighted keys
   });
 
-  it("renders a skipped optional node with the ↷ glyph (#678)", () => {
+  it("renders a skipped optional node, its state shown by the node ring + stage icon (#678, #1869)", () => {
     const skipped = [
       phase({ key: "a", name: "A", status: "complete", index: 0 }),
       phase({ key: "ui", name: "UI", status: "skipped", index: 1 }),
       phase({ key: "b", name: "B", status: "active", index: 2 }),
     ];
     const { container } = render(<Stepper phases={skipped} selectedIdx={2} onSelect={vi.fn()} />);
-    expect(container.querySelector(".seqrail-seg.skipped")).toBeTruthy();
-    expect(screen.getByText("↷")).toBeInTheDocument(); // state shown by the node glyph, not a marker
+    const seg = container.querySelector(".prail-seg.skipped");
+    expect(seg).toBeTruthy();
+    // state carried by the .skipped ring color; the node shows the stage icon (not a ✓ — done only),
+    // matching the card look we standardized on.
+    expect(seg!.querySelector("svg")).toBeTruthy();
   });
 
   it("renders an ahead (banked) node reached by a dashed connector", () => {
@@ -60,8 +64,8 @@ describe("Stepper (#652)", () => {
       phase({ key: "c", name: "C", status: "ahead", index: 2 }),
     ];
     const { container } = render(<Stepper phases={aheadPhases} selectedIdx={0} onSelect={vi.fn()} />);
-    expect(container.querySelector(".seqrail-seg.ahead")).toBeTruthy();
-    expect(container.querySelector(".seqrail-conn.dashed")).toBeTruthy(); // connector into the banked node
+    expect(container.querySelector(".prail-seg.ahead")).toBeTruthy();
+    expect(container.querySelector(".prail-conn.dashed")).toBeTruthy(); // connector into the banked node
   });
 });
 
