@@ -30,4 +30,16 @@ describe("CardListRow", () => {
     rerender(<CardListRow title="a" off />);
     expect((container.firstChild as HTMLElement).className).toContain("off");
   });
+
+  it("renders titleAside + body and applies the grouped variant", () => {
+    const { container } = render(
+      <CardListRow title="t" titleAside={<span>aside</span>} body={<span>body-content</span>} variant="grouped" />,
+    );
+    expect(screen.getByText("aside")).toBeInTheDocument();
+    expect(screen.getByText("body-content")).toBeInTheDocument();
+    expect(container.querySelector(".clr-body")).not.toBeNull();
+    const cls = (container.firstChild as HTMLElement).className;
+    expect(cls).toContain("grouped");
+    expect(cls).toContain("has-body");
+  });
 });

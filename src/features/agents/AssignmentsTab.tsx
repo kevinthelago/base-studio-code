@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { GUARANTEED, resolveAllowlistFrom, type AgentProfile, type ConsoleSession } from "./lib/agentProfiles";
 import { appSessionTag } from "./lib/appSession";
+import { CardListRow } from "@/shared/ui/CardListRow";
 
 export interface AssignmentsTabProps {
   roles: AgentProfile[]; consoles: ConsoleSession[]; paneTotal: number;
@@ -63,31 +64,29 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
     ...p.commands.map((c) => ({ cmd: c, origin: "profile" as const })),
   ];
   return (
-    <div className="pane-row">
-      <div className="pident">
-        <span className="pdot running" />
-        {/* Title (type) over subtitle (session) so longer names don't clip (#740). */}
-        <div className="psess">
-          <span className="pa">{appSessionTag(p)}</span>
-          <span className="pstat">{p.session}</span>
+    <CardListRow
+      variant="grouped"
+      lead={<span className="pdot running" />}
+      title={appSessionTag(p)}
+      subtitle={<span style={{ fontFamily: "var(--mono)" }}>{p.session}</span>}
+      titleAside={
+        <div className="prof-select" onClick={() => onOpen(p.id)}>
+          <span className="sw" style={{ background: p.color }} />
+          <span className="nm">{p.name}</span>
+          <span className="origin-badge approle" style={{ marginLeft: 2 }}>locked</span>
         </div>
-      </div>
-      <div className="prof-select" onClick={() => onOpen(p.id)}>
-        <span className="sw" style={{ background: p.color }} />
-        <span className="nm">{p.name}</span>
-        <span className="origin-badge approle" style={{ marginLeft: 2 }}>locked</span>
-      </div>
-      <div className="resolved">
-        <span className="lbl">runs:</span>
-        {all.map((r) => (
-          <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
-        ))}
-        <span className="rchip" style={{ borderStyle: "dashed" }}>owns {p.surface}</span>
-      </div>
-      <div style={{ justifySelf: "end" }}>
-        <button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</button>
-      </div>
-    </div>
+      }
+      body={
+        <div className="resolved">
+          <span className="lbl">runs:</span>
+          {all.map((r) => (
+            <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
+          ))}
+          <span className="rchip" style={{ borderStyle: "dashed" }}>owns {p.surface}</span>
+        </div>
+      }
+      trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</button>}
+    />
   );
 }
 
@@ -136,24 +135,24 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
                 const p = find(pane.profileId);
                 const resolved = resolveAllowlistFrom(c, p);
                 return (
-                  <div className="pane-row" key={pane.id}>
-                    <div className="pident">
-                      <span className={`pdot ${pane.status}`} />
-                      <span className="pa">{pane.agent}</span>
-                      <span className="pstat">{pane.id}</span>
-                    </div>
-                    <ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />
-                    <div className="resolved">
-                      <span className="lbl">runs:</span>
-                      {resolved.map((r) => (
-                        <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
-                      ))}
-                      {resolved.length === 0 && <span className="rchip">— prompt for everything —</span>}
-                    </div>
-                    <div style={{ justifySelf: "end" }}>
-                      <button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</button>
-                    </div>
-                  </div>
+                  <CardListRow
+                    key={pane.id}
+                    variant="grouped"
+                    lead={<span className={`pdot ${pane.status}`} />}
+                    title={pane.agent}
+                    subtitle={<span style={{ fontFamily: "var(--mono)" }}>{pane.id}</span>}
+                    titleAside={<ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />}
+                    body={
+                      <div className="resolved">
+                        <span className="lbl">runs:</span>
+                        {resolved.map((r) => (
+                          <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
+                        ))}
+                        {resolved.length === 0 && <span className="rchip">— prompt for everything —</span>}
+                      </div>
+                    }
+                    trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</button>}
+                  />
                 );
               })}
             </div>

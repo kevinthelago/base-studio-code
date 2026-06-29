@@ -18,3 +18,18 @@
 .card-list-row.off .clr-name { color: var(--fg-muted); }
 .clr-desc { font-family: var(--sans); font-size: 11.5px; color: var(--fg-muted); line-height: 1.5; }
 .clr-aside { display: flex; align-items: center; gap: 14px; }
+.clr-spacer { flex: 1; }
+.clr-body { margin-top: 6px; min-width: 0; }
+
+/* a body makes the row multi-line — top-align the lead + trailing columns with the header */
+.card-list-row.has-body { align-items: start; }
+
+/* grouped variant — rows grouped under a parent card (no border of their own, top-separated),
+   inheriting the card's background. Matches the ex-`.pane-row` look. */
+.card-list-row.grouped {
+  background: transparent; border: 0; border-top: 1px solid var(--border-soft); border-radius: 0;
+  padding: 11px 16px; cursor: default;
+}
+.card-list-row.grouped:first-of-type { border-top: 0; }
+.card-list-row.grouped:hover { border-color: var(--border-soft); background: transparent; }
+.card-list-row.grouped.selected { background: transparent; border-color: var(--border-soft); }

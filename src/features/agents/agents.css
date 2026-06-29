@@ -118,19 +118,12 @@
 .agents-page .console-card .ch .cn { font-family: var(--mono); font-size: 13px; color: var(--fg); font-weight: 600; }
 .agents-page .console-card .ch .repo { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
 .agents-page .console-card .ch .spacer { flex: 1; }
-.agents-page .pane-row { display: grid; grid-template-columns: 188px 200px 1fr auto; gap: 14px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--border-soft); }
-.agents-page .pane-row:first-of-type { border-top: 0; }
-.agents-page .pane-row .pident { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* Title (type) stacked over subtitle (session) so neither clips the other (#740). */
-.agents-page .pane-row .psess { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.agents-page .pane-row .psess .pa,
-.agents-page .pane-row .psess .pstat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.agents-page .pane-row .pdot { width: 7px; height: 7px; border-radius: 50%; }
-.agents-page .pane-row .pdot.running { background: var(--success); }
-.agents-page .pane-row .pdot.awaiting { background: var(--accent); }
-.agents-page .pane-row .pdot.idle { background: var(--fg-dim); }
-.agents-page .pane-row .pa { font-family: var(--mono); font-size: 12px; color: var(--fg); }
-.agents-page .pane-row .pstat { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); }
+/* status dot for the assignment rows — rescoped off the retired `.pane-row` so it works inside the
+   shared <CardListRow> slots (#1865 Phase 4). */
+.agents-page .pdot { width: 7px; height: 7px; border-radius: 50%; }
+.agents-page .pdot.running { background: var(--success); }
+.agents-page .pdot.awaiting { background: var(--accent); }
+.agents-page .pdot.idle { background: var(--fg-dim); }
 .agents-page .prof-select { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-soft); cursor: pointer; font-family: var(--mono); font-size: 11px; }
 .agents-page .prof-select .sw { width: 9px; height: 9px; border-radius: 3px; }
 .agents-page .prof-select .nm { color: var(--fg); }
