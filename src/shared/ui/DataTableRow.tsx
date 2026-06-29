@@ -31,13 +31,15 @@ export interface DataTableRowProps {
   /** Fixed row height in px (default 37 via CSS). */
   height?: number;
   className?: string;
+  /** Extra attributes spread onto the row element — e.g. `{ "data-skill-id": id }` for targeting. */
+  attrs?: Record<string, string | number>;
 }
 
 /** DataTableRow — one columnar row of a data table: the columnar archetype of the row vocabulary
  *  (#1865; sibling: CardListRow). A shared `template` with the <DataTableHeader> aligns the columns;
  *  the row supplies zebra striping + hover + selection chrome. Cell content is the caller's, so any
  *  table (skills library, agent assignments, …) composes ONE row primitive rather than a bespoke one. */
-export function DataTableRow({ template, children, index, selected, off, onClick, height, className }: DataTableRowProps) {
+export function DataTableRow({ template, children, index, selected, off, onClick, height, className, attrs }: DataTableRowProps) {
   return (
     <div
       className={
@@ -49,6 +51,7 @@ export function DataTableRow({ template, children, index, selected, off, onClick
       }
       style={{ gridTemplateColumns: template, ...(height != null ? { height: `${height}px` } : {}) }}
       onClick={onClick}
+      {...attrs}
     >
       {children}
     </div>

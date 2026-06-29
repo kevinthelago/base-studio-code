@@ -5,6 +5,7 @@
 import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/shared/data/skills";
 import { Spark } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
+import { DataTableRow, DataTableHeader } from "@/shared/ui/DataTableRow";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
 import { glyphTile, hueTile, pill, tintBg, sourcePill, scopePill, successColor } from "./skillStyles";
@@ -29,8 +30,14 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
   const isSel = selected.has(s.id);
   const groups = groupsBySkill.get(s.id);
   return (
-    <div className="skill-row" data-skill-id={s.id} onClick={() => (selectMode ? onSelect(s.id) : onOpen(s.id))}
-      style={{ display: "grid", gridTemplateColumns: colTemplate(selectMode), alignItems: "center", gap: 10, height: 37, padding: "0 18px", background: i % 2 ? "var(--bg-elev)" : "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", cursor: "pointer", opacity: s.enabled ? 1 : 0.55 }}>
+    <DataTableRow
+      className="skill-row"
+      attrs={{ "data-skill-id": s.id }}
+      template={colTemplate(selectMode)}
+      index={i}
+      off={!s.enabled}
+      onClick={() => (selectMode ? onSelect(s.id) : onOpen(s.id))}
+    >
       {selectMode && <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid " + (isSel ? "var(--accent)" : "var(--border)"), background: isSel ? "var(--accent)" : "transparent", color: "var(--bg-canvas)", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>{isSel ? "✓" : ""}</span>}
       <span style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</span>
       <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
@@ -49,7 +56,7 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
       </span>
       <span className="pin-btn" onClick={(e) => { e.stopPropagation(); onTogglePin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
       <span style={{ display: "flex", justifyContent: "center" }}><Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(s.id); }} /></span>
-    </div>
+    </DataTableRow>
   );
 }
 
@@ -57,9 +64,9 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
 export function SkillsListView({ filtered, h }: { filtered: SkillDef[]; h: SkillRowHandlers }) {
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: colTemplate(h.selectMode), alignItems: "center", gap: 10, height: 32, padding: "0 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", fontFamily: "var(--mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-dim)", position: "sticky", top: 0, zIndex: 6 }}>
+      <DataTableHeader template={colTemplate(h.selectMode)}>
         {h.selectMode && <span />}<span /><span>Skill</span><span>Source</span><span>Tools</span><span>Scope</span><span style={{ textAlign: "right" }}>Usage</span><span style={{ textAlign: "center" }}>Pin</span><span style={{ textAlign: "center" }}>On</span>
-      </div>
+      </DataTableHeader>
       {filtered.map((s, i) => <SkillRow key={s.id} s={s} i={i} h={h} />)}
     </div>
   );
