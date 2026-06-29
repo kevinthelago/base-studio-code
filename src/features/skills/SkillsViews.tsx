@@ -5,6 +5,7 @@
 import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/shared/data/skills";
 import { Spark } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/Toggle";
+import { Checkbox } from "@/shared/ui/Checkbox";
 import { DataTableRow, DataTableHeader } from "@/shared/ui/DataTableRow";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
@@ -38,7 +39,7 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
       off={!s.enabled}
       onClick={() => (selectMode ? onSelect(s.id) : onOpen(s.id))}
     >
-      {selectMode && <span style={{ width: 14, height: 14, borderRadius: 4, border: "1px solid " + (isSel ? "var(--accent)" : "var(--border)"), background: isSel ? "var(--accent)" : "transparent", color: "var(--bg-canvas)", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>{isSel ? "✓" : ""}</span>}
+      {selectMode && <Checkbox checked={isSel} />}
       <span style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</span>
       <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
         <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
