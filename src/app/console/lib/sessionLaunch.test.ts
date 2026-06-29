@@ -77,9 +77,10 @@ describe("buildSessionSettings", () => {
     expect(out.bashPosture).toBe("allow");
     expect(out.skills).toEqual([]);
     expect(out.deniedCommands).toEqual(["rm -rf"]); // passes the global denies through
-    // FS confinement (bsc-confine, #158) is the DEFAULT deny — present even with no role/profile
-    // (#1916) — alongside the always-on turn-activity hooks. The audit/scope/taint hooks stay gated.
-    expect(cmds(out)).toEqual(["bsc-confine", "bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    // FS confinement (bsc-confine, #158) + the dangerous-command floor (bsc-deny, #1916) are the
+    // DEFAULT denies — present even with no role/profile — alongside the always-on turn-activity
+    // hooks. The audit/scope/taint hooks stay gated.
+    expect(cmds(out)).toEqual(["bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
     // ...and the confinement config is write-protected on every pane, so the agent can't edit
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
     expect(out.denyToolRules).toEqual(expect.arrayContaining(
@@ -90,7 +91,7 @@ describe("buildSessionSettings", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
     const c = cmds(out);
-    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-scope", "bsc-taint", "bsc-defer"]));
+    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-defer"]));
     // turn-activity hooks remain last (after bsc-defer) so a worker's Stop still records idle.
     expect(c.slice(-3)).toEqual(["bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
     // role denies flow through; Task is denied for a worker (sub-agent block #1036).
