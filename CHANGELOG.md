@@ -17,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **More large-file decomposition** — `handlePublish` extracted into a testable, React-free `publishSteps.ts` (`usePlanPublish` 688 → 358 LOC, #1749); `FocusedBodies.tsx` split into per-body files (1129 → 159 LOC, #1757)
 
 ### Fixed
+- **Tab/section tear-off crashed the new window on Windows** — detached windows were created from the JS `new WebviewWindow()` API, which can't set `additionalBrowserArgs`, so the torn-off window's WebView2 launched with different args than the main window and failed the shared-user-data-dir constraint (blank window, no logs). They're now built from a Rust `open_detached_window` command that applies the same browser args, guarded by a drift test against `tauri.conf.json` (#1870)
 - **Console pane status & broadcast keyed off positional ids** instead of the stable `paneIdFor` id — manual and fleet/triage tab activity dots, broadcast, and clear-input now target the right PTYs (#1729)
 
 ### Added

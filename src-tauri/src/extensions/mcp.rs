@@ -15,9 +15,7 @@ pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
     let dir_str = dir.to_string_lossy().into_owned();
     if dir.join(".git").exists() {
         // Already downloaded — fast-forward to the latest default branch (best-effort).
-        let mut pull = std::process::Command::new("git");
-        pull.args(["-C", &dir_str, "pull", "--ff-only"]);
-        let _ = no_window(&mut pull).status();
+        let _ = git_ok(&dir_str, &["pull", "--ff-only"]);
         log::info!("mcp_clone: updated {name} at {dir_str}");
         return Ok(dir_str);
     }
@@ -26,7 +24,7 @@ pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
     }
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", "--depth", "1", &url, &dir_str]);
-    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
+    let status = crate::platform::process::run_status(&mut cmd).map_err(|e| e.to_string())?;
     if !status.success() {
         log::warn!("mcp_clone: git clone failed for {url}");
         return Err(format!("git clone failed for {url}"));
@@ -84,7 +82,8 @@ pub(crate) fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let (shell, flag) = ("sh", "-c");
     let mut cmd = std::process::Command::new(shell);
     cmd.current_dir(&dir).args([flag, &command]);
-    let output = no_window(&mut cmd).output().map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
+    let output = crate::platform::process::run_output(&mut cmd)
+        .map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
     // Truncate captured output so a noisy build log doesn't bloat the IPC payload.
     let cap = |b: &[u8]| {
         let s = String::from_utf8_lossy(b);

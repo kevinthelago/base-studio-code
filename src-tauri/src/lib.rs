@@ -35,7 +35,7 @@ pub(crate) use platform::paths::{
     plan_dir_for, discovery_dir_for, is_published, legacy_draft_dir,
     nearest_existing_ancestor,
 };
-pub(crate) use platform::git::{git_lines, git_output, git_exclude};
+pub(crate) use platform::git::{git_lines, git_output, git_exclude, git_ok, git_run};
 pub(crate) use platform::process::no_window;
 pub(crate) use platform::fsx::{is_safe_relpath, read_files_dir, read_text_files, ingest_section_files, sanitize_project_key, worktree_slug};
 pub(crate) use platform::shell::{split_utf8_at_boundary, to_bash_path, to_native_path, bash_ansi_c_quote};
