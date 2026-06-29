@@ -1,19 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { ProjectsPageModeStrip } from "./ProjectsSummary";
+import { PROJECT_MODES } from "./projectModes";
 
-describe("ProjectsPageModeStrip (#548)", () => {
-  it("renders the mode tabs", () => {
-    render(<ProjectsPageModeStrip />);
-    expect(screen.getByText("Planner")).toBeTruthy();
-    expect(screen.getByText("Fleet")).toBeTruthy();
-    expect(screen.getByText("Data Models")).toBeTruthy();
-    // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints).
-    expect(screen.queryByText("Blueprints")).toBeNull();
+// #548 / #1876: the Projects page modes — formerly the `ProjectsPageModeStrip`, now the data behind
+// the shared <TabbedScreen> tab bar (`PROJECT_MODES`, rendered in features/planner/index.tsx).
+describe("Projects page modes (#548, #1876)", () => {
+  it("offers Planner · Fleet · Data Models in that order", () => {
+    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Planner", "Fleet", "Data Models"]);
   });
 
-  it("no longer renders the fake '● github sync' indicator (#548)", () => {
-    render(<ProjectsPageModeStrip />);
-    expect(screen.queryByText(/github sync/)).toBeNull();
+  it("does not include the retired Blueprints / Summary modes", () => {
+    // Blueprints folded into the Planner tab's blueprint rail; Summary moved to the GitHub screen.
+    const labels = PROJECT_MODES.map((m) => m.label);
+    expect(labels).not.toContain("Blueprints");
+    expect(labels).not.toContain("Summary");
   });
 });

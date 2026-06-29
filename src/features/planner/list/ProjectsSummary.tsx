@@ -4,8 +4,6 @@ import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/Avatar";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
-import { openDetachedSection } from "@/shared/lib/core/detachSection";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
 import { PROJECTS_SUMMARY_QUERY, PROJECT_ITERATION_QUERY } from "./projectsSummaryQueries";
 import {
@@ -92,30 +90,6 @@ function useProjectsSummaryData() {
   }, [githubToken, githubUser?.login]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { loading, projects, events, repoMilestones, repoIssues, burndown };
-}
-
-// ── Shared page-mode strip ────────────────────────────────────────────────────
-
-/** The page-mode tabs. Same TabBar the other pages use, so each mode can be torn off
- *  into its own window (#430/#463) by dragging it out of the strip. */
-const PROJECT_MODES: TabItem[] = [
-  { id: "projects",   label: "Planner",     hint: "plan a project" },
-  { id: "fleet",      label: "Fleet",       hint: "live orchestration" },
-  { id: "dataModels", label: "Data Models", hint: "canonical schemas" },
-];
-
-export function ProjectsPageModeStrip() {
-  const { projectsPageMode, setProjectsPageMode } = useAppStore();
-  return (
-    <TabBar
-      tabs={PROJECT_MODES}
-      activeId={projectsPageMode}
-      onSelect={(id) => setProjectsPageMode(id as typeof projectsPageMode)}
-      onTearOff={(id) => openDetachedSection(
-        "projects", id, PROJECT_MODES.find(m => m.id === id)?.label,
-      )}
-    />
-  );
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
