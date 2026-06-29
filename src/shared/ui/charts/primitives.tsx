@@ -34,18 +34,6 @@ export function StatCard({ k, v, sub, tone, delta }: StatCardProps) {
   );
 }
 
-/** A compact KPI card (mono uppercase label · large value · sub) used on the Mcp/Hook
- *  analytics tabs. Distinct from StatCard (which uses the .statcard class + delta chip). */
-export function Kpi({ label, value, sub, color }: { label: string; value: ReactNode; sub: string; color?: string }) {
-  return (
-    <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "10px 14px" }}>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, color: color ?? "var(--fg)", marginTop: 2 }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-    </div>
-  );
-}
-
 export function CardHead({ title, hint, right }: { title: string; hint?: ReactNode; right?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>

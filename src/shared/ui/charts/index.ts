@@ -9,5 +9,5 @@ export {
   type HBarRow, type SwimLane, type SwimEvent, type SwimMark, type LegendItem, type StackedDay,
 } from "./Charts";
 export {
-  fmt, StatCard, CardHead, Kpi, RangeToggle, Avatar, useTip, type StatTone,
+  fmt, StatCard, CardHead, RangeToggle, Avatar, useTip, type StatTone,
 } from "./primitives";
