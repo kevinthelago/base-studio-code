@@ -31,6 +31,15 @@ pub struct Permissions {
     /// of these globs (e.g. `["src/**", "*.md"]`). Empty ⇒ no write-path restriction.
     #[serde(default)]
     pub write_globs: Vec<String>,
+    /// The session's repo root (`$BSC_REPO_ROOT`). When non-empty, the file tools
+    /// (`read_file`/`write_file`/`edit_file`) are confined to this subtree — the `bsc-agent`
+    /// equivalent of the Claude `bsc-confine` PreToolUse hook (#158/#1916), mirroring
+    /// `isPathConfined` in `src/shared/lib/session/fsConfine.ts` so both runtimes confine
+    /// identically. Set from the environment in [`Permissions::from_env`], NOT from the perms
+    /// JSON (`#[serde(skip)]`). Empty ⇒ no confinement (a bare CLI run where `$BSC_REPO_ROOT`
+    /// is unset), preserving the permissive default.
+    #[serde(skip)]
+    pub repo_root: String,
 }
 
 impl Permissions {
@@ -38,13 +47,18 @@ impl Permissions {
     /// JSON; otherwise parse the value itself as inline JSON. Unset / empty / unparseable
     /// ⇒ the permissive default.
     pub fn from_env() -> Permissions {
-        let raw = match std::env::var("BSC_AGENT_PERMS") {
-            Ok(v) if !v.trim().is_empty() => v,
-            _ => return Permissions::default(),
+        let mut perms = match std::env::var("BSC_AGENT_PERMS") {
+            Ok(v) if !v.trim().is_empty() => {
+                // A path to a readable file wins; otherwise treat the value as inline JSON.
+                let json = std::fs::read_to_string(&v).unwrap_or(v);
+                serde_json::from_str(&json).unwrap_or_default()
+            }
+            _ => Permissions::default(),
         };
-        // A path to a readable file wins; otherwise treat the value as inline JSON.
-        let json = std::fs::read_to_string(&raw).unwrap_or(raw);
-        serde_json::from_str(&json).unwrap_or_default()
+        // The confinement root is independent of the perms doc — read it from the env ALWAYS, so even
+        // an unconfigured session (no `$BSC_AGENT_PERMS`) is still confined to its worktree (#1916).
+        perms.repo_root = std::env::var("BSC_REPO_ROOT").unwrap_or_default();
+        perms
     }
 
     /// Whether `tool_name` (with the model-supplied `args`) is permitted. `Err(reason)`
@@ -53,6 +67,21 @@ impl Permissions {
     pub fn check(&self, tool_name: &str, args: &Value) -> Result<(), String> {
         if self.deny_tools.iter().any(|t| t == tool_name) {
             return Err(format!("permission denied: tool '{tool_name}' is not allowed"));
+        }
+        // FS confinement (#158/#1916): when a repo root is set, the file tools must stay within it —
+        // mirrors the Claude `bsc-confine` hook + `fsConfine.ts` so the two runtimes confine identically.
+        // Covers `read_file`/`write_file`/`edit_file` (the same tool set the Claude hook matches); `bash`
+        // is the OS sandbox's job (a pure path check can't follow a subprocess), not gated here.
+        if !self.repo_root.is_empty()
+            && matches!(tool_name, "read_file" | "write_file" | "edit_file")
+        {
+            let path = args["path"].as_str().unwrap_or("");
+            if !path_confined(&self.repo_root, path) {
+                return Err(format!(
+                    "permission denied: '{path}' is outside the session's repo root ({}) — #158 FS confinement",
+                    self.repo_root
+                ));
+            }
         }
         match tool_name {
             "bash" => {
@@ -80,6 +109,37 @@ impl Permissions {
         }
         Ok(())
     }
+}
+
+/// Whether a file-tool `target` stays within `root` — mirrors `isPathConfined` in
+/// `src/shared/lib/session/fsConfine.ts` (#158) so the `bsc-agent` runtime and the Claude
+/// `bsc-confine` hook confine identically: empty → confined; any `..` segment → NOT confined
+/// (rejected conservatively, even within-repo); absolute path → confined only if under `root`;
+/// plain relative → confined (resolved against the repo-root cwd). String-based, no realpath,
+/// portable across OSes.
+fn path_confined(root: &str, target: &str) -> bool {
+    if target.is_empty() {
+        return true;
+    }
+    let norm = target.replace('\\', "/");
+    if norm.split('/').any(|seg| seg == "..") {
+        return false;
+    }
+    if is_absolute(target) {
+        let r = root.replace('\\', "/");
+        let r = r.trim_end_matches('/');
+        return norm == r || norm.starts_with(&format!("{r}/"));
+    }
+    true
+}
+
+/// Absolute paths: POSIX (`/…`), home (`~…`), Windows drive (`C:…`), or UNC (`\\…`).
+/// Mirrors `isAbsolute` in `fsConfine.ts`.
+fn is_absolute(p: &str) -> bool {
+    p.starts_with('/')
+        || p.starts_with('~')
+        || p.starts_with("\\\\")
+        || (p.len() >= 2 && p.as_bytes()[0].is_ascii_alphabetic() && p.as_bytes()[1] == b':')
 }
 
 #[cfg(test)]
@@ -146,5 +206,47 @@ mod tests {
     fn empty_write_globs_means_no_write_restriction() {
         let p = Permissions::default();
         assert!(p.check("write_file", &json!({ "path": "/anywhere/x" })).is_ok());
+    }
+
+    #[test]
+    fn repo_root_confines_the_file_tools() {
+        // The bsc-agent mirror of the Claude `bsc-confine` hook (#158/#1916): file tools must stay
+        // within $BSC_REPO_ROOT. In-repo relative + absolute-under-root pass...
+        let p = Permissions { repo_root: "/work/repo".into(), ..Default::default() };
+        assert!(p.check("read_file", &json!({ "path": "src/lib.rs" })).is_ok());
+        assert!(p.check("write_file", &json!({ "path": "/work/repo/src/x.rs" })).is_ok());
+        assert!(p.check("edit_file", &json!({ "path": "/work/repo" })).is_ok());
+        // ...escapes are denied: `..` traversal, absolute outside the root, a sibling repo sharing a
+        // path prefix, and home-relative paths.
+        assert!(p.check("read_file", &json!({ "path": "../other/secret" })).is_err());
+        assert!(p.check("write_file", &json!({ "path": "/etc/passwd" })).is_err());
+        assert!(p.check("read_file", &json!({ "path": "/work/repo-sibling/x" })).is_err());
+        assert!(p.check("edit_file", &json!({ "path": "~/.ssh/id_rsa" })).is_err());
+        // a `..` anywhere is rejected even if it would resolve back inside the root.
+        assert!(p.check("write_file", &json!({ "path": "src/../../escape" })).is_err());
+        // bash is NOT path-confined here (the OS sandbox's job, not a pure check).
+        assert!(p.check("bash", &json!({ "command": "cat ../other/secret" })).is_ok());
+    }
+
+    #[test]
+    fn no_repo_root_means_no_confinement() {
+        // A bare CLI run (no $BSC_REPO_ROOT ⇒ empty repo_root) stays permissive.
+        let p = Permissions::default();
+        assert!(p.check("read_file", &json!({ "path": "/etc/passwd" })).is_ok());
+        assert!(p.check("write_file", &json!({ "path": "../anywhere" })).is_ok());
+    }
+
+    #[test]
+    fn confinement_composes_with_write_globs() {
+        // Both gates apply (deny wins): inside the root AND matching a glob passes; inside the root
+        // but outside the globs is denied by the glob check; outside the root is denied by confinement.
+        let p = Permissions {
+            repo_root: "/work/repo".into(),
+            write_globs: vec!["src/**".into()],
+            ..Default::default()
+        };
+        assert!(p.check("write_file", &json!({ "path": "src/a.rs" })).is_ok());
+        assert!(p.check("write_file", &json!({ "path": "docs/a.md" })).is_err()); // glob
+        assert!(p.check("write_file", &json!({ "path": "/etc/x" })).is_err());     // confinement
     }
 }
