@@ -1,0 +1,9 @@
+/* StatTile — the metric tile's label/value/sub, scoped under `.stat-tile`. Replaces the per-feature
+   `.summary .k/.v/.sub` + `.hist-summary .k/.v/.sub` rules that were re-declared verbatim (#card-unify). */
+.card.stat-tile { padding: 10px 14px; }
+.stat-tile .k { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .06em; }
+.stat-tile .v { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--fg); margin-top: 2px; }
+.stat-tile .v.success { color: var(--success); }
+.stat-tile .v.accent { color: var(--accent); }
+.stat-tile .v.danger { color: var(--danger); }
+.stat-tile .sub { font-size: 10.5px; color: var(--fg-muted); margin-top: 1px; }

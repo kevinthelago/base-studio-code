@@ -8,7 +8,7 @@ import {
   filterAuditRows, fmtAuditTime, type AuditDisplayRow, type DecFilter,
 } from "./lib/auditRows";
 import type { AgentProfile, ConsoleSession } from "./lib/agentProfiles";
-import { Card } from "@/shared/ui/Card";
+import { StatTile } from "@/shared/ui/StatTile";
 
 export interface ActivityTabProps {
   rows: AuditDisplayRow[];
@@ -29,10 +29,10 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
   return (
     <>
       <div className="summary">
-        <Card><div className="k">decisions</div><div className="v">{rows.length}</div><div className="sub">across {consoles.length} consoles</div></Card>
-        <Card><div className="k">auto-allowed</div><div className="v success">{allow}</div><div className="sub">ran without a prompt</div></Card>
-        <Card><div className="k">prompted</div><div className="v accent">{ask}</div><div className="sub">you confirmed</div></Card>
-        <Card><div className="k">blocked</div><div className="v danger">{block}</div><div className="sub">policy denied</div></Card>
+        <StatTile k="decisions" v={rows.length} sub={<>across {consoles.length} consoles</>} />
+        <StatTile k="auto-allowed" v={allow} tone="success" sub="ran without a prompt" />
+        <StatTile k="prompted" v={ask} tone="accent" sub="you confirmed" />
+        <StatTile k="blocked" v={block} tone="danger" sub="policy denied" />
       </div>
 
       <div className="act-toolbar">

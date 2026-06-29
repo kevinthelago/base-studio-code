@@ -136,10 +136,4 @@
 .agents-page .act-row .prof .sw { width: 8px; height: 8px; border-radius: 2px; }
 
 .agents-page .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
-.agents-page .summary .card { padding: 10px 14px; }
-.agents-page .summary .k { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .06em; }
-.agents-page .summary .v { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--fg); margin-top: 2px; }
-.agents-page .summary .v.success { color: var(--success); }
-.agents-page .summary .v.accent { color: var(--accent); }
-.agents-page .summary .v.danger { color: var(--danger); }
-.agents-page .summary .sub { font-size: 10.5px; color: var(--fg-muted); margin-top: 1px; }
+/* (.summary stat-tile styling moved to the shared <StatTile>, #card-unify) */

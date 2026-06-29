@@ -112,13 +112,7 @@
 .auto-workspace .status-chip[data-st="fail"] .dot { background:var(--danger); }
 
 .auto-workspace .hist-summary { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:12px; }
-.auto-workspace .hist-summary .card { padding:10px 14px; }
-.auto-workspace .hist-summary .k { font-family:var(--mono); font-size:10px; color:var(--fg-dim); text-transform:uppercase; letter-spacing:.06em; }
-.auto-workspace .hist-summary .v { font-family:var(--mono); font-size:18px; font-weight:600; color:var(--fg); margin-top:2px; }
-.auto-workspace .hist-summary .v.accent { color:var(--accent); }
-.auto-workspace .hist-summary .v.success { color:var(--success); }
-.auto-workspace .hist-summary .v.danger { color:var(--danger); }
-.auto-workspace .hist-summary .sub { font-size:10.5px; color:var(--fg-muted); margin-top:1px; }
+/* (.hist-summary stat-tile styling moved to the shared <StatTile>, #card-unify) */
 
 .auto-workspace .hist-table { border-radius:var(--r-md); border:1px solid var(--border-soft); background:var(--bg-panel); overflow:auto; flex:1; min-height:0; }
 .auto-workspace .hist-row { display:grid; grid-template-columns:150px 1fr 170px 96px 1.6fr; gap:12px; padding:11px 14px; align-items:baseline; font-size:11px; font-family:var(--mono); border-bottom:1px solid var(--border-soft); cursor:pointer; }

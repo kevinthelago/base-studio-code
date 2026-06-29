@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { Chip } from "@/shared/ui/Chip";
+import { StatTile } from "@/shared/ui/StatTile";
 import { SectionHeader } from "@/shared/ui/SectionHeader";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
@@ -79,10 +80,10 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
   return (
     <div style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
       <div className="summary">
-        <div className="card"><div className="k">ready</div><div className="v success">{ready.length}</div><div className="sub">deps landed — wake</div></div>
-        <div className="card"><div className="k">blocked</div><div className="v accent">{views.length}</div><div className="sub">parked on a dep</div></div>
-        <div className="card"><div className="k">stalled / deadlocked</div><div className="v danger">{stalled + deadlocked}</div><div className="sub">{deadlocked} cyclic · escalate</div></div>
-        <div className="card"><div className="k">workflows</div><div className="v">{runEntries.length}</div><div className="sub">work items flowing</div></div>
+        <StatTile k="ready" v={ready.length} tone="success" sub="deps landed — wake" />
+        <StatTile k="blocked" v={views.length} tone="accent" sub="parked on a dep" />
+        <StatTile k="stalled / deadlocked" v={stalled + deadlocked} tone="danger" sub={<>{deadlocked} cyclic · escalate</>} />
+        <StatTile k="workflows" v={runEntries.length} sub="work items flowing" />
       </div>
 
       {deadlocked > 0 && (
