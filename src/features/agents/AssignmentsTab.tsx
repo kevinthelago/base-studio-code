@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import { GUARANTEED, resolveAllowlistFrom, type AgentProfile, type ConsoleSession } from "./lib/agentProfiles";
 import { appSessionTag } from "./lib/appSession";
 import { CardListRow } from "@/shared/ui/CardListRow";
+import { Chip } from "@/shared/ui/Chip";
+import { modeTone } from "./lib/badgeTone";
 
 export interface AssignmentsTabProps {
   roles: AgentProfile[]; consoles: ConsoleSession[]; paneTotal: number;
@@ -34,7 +36,7 @@ export function ProfileSelect({ current, profiles, onPick }: {
     <div className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
       <span className="sw" style={{ background: current?.color }} />
       <span className="nm">{current?.name ?? "—"}</span>
-      {current && <span className={`mode-badge ${current.mode}`} style={{ marginLeft: 2 }}>{current.mode}</span>}
+      {current && <Chip tone={modeTone(current.mode)} size="sm" style={{ marginLeft: 2 }}>{current.mode}</Chip>}
       <span className="cv">▾</span>
       {open && (
         <div className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
@@ -49,7 +51,7 @@ export function ProfileSelect({ current, profiles, onPick }: {
             >
               <span className="sw" style={{ background: p.color }} />
               <span className="nm">{p.name}</span>
-              <span className={`mode-badge ${p.mode}`}>{p.mode}</span>
+              <Chip tone={modeTone(p.mode)} size="sm">{p.mode}</Chip>
             </button>
           ))}
         </div>
@@ -73,7 +75,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
         <div className="prof-select" onClick={() => onOpen(p.id)}>
           <span className="sw" style={{ background: p.color }} />
           <span className="nm">{p.name}</span>
-          <span className="origin-badge approle" style={{ marginLeft: 2 }}>locked</span>
+          <Chip tone="info" size="xs" style={{ marginLeft: 2 }}>locked</Chip>
         </div>
       }
       body={

@@ -30,14 +30,7 @@
 .agents-page .list-label { padding: 11px 14px 5px; font-family: var(--mono); font-size: 9px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .1em; }
 /* (.prof-row styling retired — ProfRow now composes the shared <CardListRow> grouped + accent, #1865) */
 
-.agents-page .mode-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 99px; font-family: var(--mono); font-size: 9px; line-height: 1.6; }
-.agents-page .mode-badge.deny { color: var(--danger); background: color-mix(in oklch, var(--danger), transparent 90%); border: 1px solid color-mix(in oklch, var(--danger), transparent 72%); }
-.agents-page .mode-badge.ask { color: var(--accent); background: color-mix(in oklch, var(--accent), transparent 90%); border: 1px solid color-mix(in oklch, var(--accent), transparent 72%); }
-.agents-page .mode-badge.allow { color: var(--success); background: color-mix(in oklch, var(--success), transparent 90%); border: 1px solid color-mix(in oklch, var(--success), transparent 72%); }
-
-.agents-page .origin-badge { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 99px; font-family: var(--mono); font-size: 8.5px; line-height: 1.7; border: 1px solid var(--border-soft); color: var(--fg-dim); background: var(--bg-elev); }
-.agents-page .origin-badge.approle { color: var(--info); border-color: color-mix(in oklch, var(--info), transparent 72%); background: color-mix(in oklch, var(--info), transparent 90%); }
-.agents-page .origin-badge.gen { color: var(--accent); border-color: color-mix(in oklch, var(--accent), transparent 72%); background: color-mix(in oklch, var(--accent), transparent 90%); }
+/* (.mode-badge + .origin-badge moved to the shared <Chip tone>, #1874) */
 .agents-page .sys-banner { padding: 10px 14px; border-radius: var(--r-md); display: flex; align-items: center; gap: 10px; background: color-mix(in oklch, var(--info), transparent 90%); border: 1px solid color-mix(in oklch, var(--info), transparent 72%); font-family: var(--mono); font-size: 10.5px; color: var(--fg-muted); }
 .agents-page .sys-banner .ico { width: 22px; height: 22px; border-radius: 6px; flex: 0 0 22px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; color: #11100e; }
 .agents-page .owns-card { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--r-md); background: var(--bg-canvas); border: 1px solid var(--border-soft); }

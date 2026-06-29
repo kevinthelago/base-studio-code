@@ -9,27 +9,49 @@
 //   • mcp scopeChips — className-based (`tag`/`ptag`) multi-element helper, not an inline pill.
 // Those stay local to their feature.
 
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
+import "./chip.css";
 
 const MONO = "var(--mono)";
 
+export type ChipTone = "neutral" | "accent" | "success" | "info" | "danger";
+
+/** Chip — the one pill (#1874). Two paths:
+ *  - `tone` (default): a semantic class-based pill (theme-able via chip.css) — absorbs `.tag` + the
+ *    feature badges (mode/origin/…).
+ *  - `color`: the translucent color-mix pill rendered inline — for DYNAMIC colours (GitHub labels,
+ *    profile colours). Overrides `tone`; the original Chip behaviour, preserved. */
 export function Chip({
-  color,
   children,
+  tone = "neutral",
+  color,
+  dot,
+  size = "sm",
+  title,
+  className,
+  style,
   bgAlpha = 88,
   borderAlpha = 72,
   gap = 6,
-  padding = "3px 9px",
+  padding,
   radius = 99,
-  fontSize = 9.5,
+  fontSize,
   alignSelf,
 }: {
-  /** The chip's text color; also the base hue mixed into the translucent bg + border. */
-  color: string;
   children: ReactNode;
-  /** transparent-% in the background color-mix (higher = fainter fill). */
+  /** Semantic tone (class-based). Ignored when `color` is set. */
+  tone?: ChipTone;
+  /** An explicit colour — renders the inline color-mix pill (dynamic colours). Overrides `tone`. */
+  color?: string;
+  /** A leading dot in the current colour. */
+  dot?: boolean;
+  /** "xs" (8.5px) · "sm" (10px, default, = the old `.tag`) · "md" (10.5px). */
+  size?: "xs" | "sm" | "md";
+  title?: string;
+  className?: string;
+  style?: CSSProperties;
+  // ── inline `color`-path knobs (the dynamic-colour pill) ──
   bgAlpha?: number;
-  /** transparent-% in the border color-mix. */
   borderAlpha?: number;
   gap?: number;
   padding?: string;
@@ -37,12 +59,24 @@ export function Chip({
   fontSize?: number;
   alignSelf?: "flex-start" | "center" | "flex-end" | "stretch";
 }) {
+  if (color) {
+    return (
+      <span title={title} className={className} style={{
+        display: "inline-flex", alignSelf, alignItems: "center", gap, fontFamily: MONO,
+        fontSize: fontSize ?? 9.5, color,
+        background: `color-mix(in oklch, ${color}, transparent ${bgAlpha}%)`,
+        border: `1px solid color-mix(in oklch, ${color}, transparent ${borderAlpha}%)`,
+        borderRadius: radius, padding: padding ?? "3px 9px", ...style,
+      }}>
+        {dot && <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flex: "0 0 5px" }} />}
+        {children}
+      </span>
+    );
+  }
   return (
-    <span style={{
-      display: "inline-flex", alignSelf, alignItems: "center", gap, fontFamily: MONO, fontSize, color,
-      background: `color-mix(in oklch, ${color}, transparent ${bgAlpha}%)`,
-      border: `1px solid color-mix(in oklch, ${color}, transparent ${borderAlpha}%)`,
-      borderRadius: radius, padding,
-    }}>{children}</span>
+    <span title={title} style={style} className={`chip tone-${tone} size-${size}` + (className ? ` ${className}` : "")}>
+      {dot && <span className="chip-dot" />}
+      {children}
+    </span>
   );
 }
