@@ -1,0 +1,20 @@
+/* CardListRow — the shared selectable card-list row (portable; not feature-scoped). The card-list
+   archetype of the row vocabulary (#1865; sibling: DataTableRow). Chrome was the ex-`.ext-screen .row`
+   mcp.css rule; feature content (health dot, scope chips, toggle) keeps its own screen-scoped styling
+   inside the slots. */
+.card-list-row {
+  background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-md);
+  padding: 10px 14px; display: grid; grid-template-columns: 18px 1fr auto;
+  align-items: center; gap: 14px; cursor: pointer; transition: border-color .1s, background .1s;
+}
+.card-list-row:hover { border-color: var(--border); }
+.card-list-row.selected { border-color: var(--accent-dim); background: var(--bg-elev); }
+.card-list-row.off { opacity: .55; }
+
+.clr-lead { display: flex; align-items: center; justify-content: center; }
+.clr-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.clr-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clr-name { font-family: var(--mono); font-size: 12.5px; font-weight: 500; color: var(--fg); }
+.card-list-row.off .clr-name { color: var(--fg-muted); }
+.clr-desc { font-family: var(--sans); font-size: 11.5px; color: var(--fg-muted); line-height: 1.5; }
+.clr-aside { display: flex; align-items: center; gap: 14px; }

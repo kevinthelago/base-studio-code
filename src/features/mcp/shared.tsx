@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { StatusDot } from "@/shared/ui/StatusDot";
 import { IconButton } from "@/shared/ui/IconButton";
-import { ListRow } from "@/shared/ui/ListRow";
+import { CardListRow } from "@/shared/ui/CardListRow";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -163,7 +163,7 @@ export function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, o
   onToggle: () => void;
 }) {
   return (
-    <ListRow
+    <CardListRow
       selected={selected}
       off={!on}
       onClick={onSelect}
