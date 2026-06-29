@@ -330,7 +330,12 @@ html, body {
 @keyframes attn-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 .attn-pulse { animation: attn-pulse 0.75s ease-in-out 4; }
 
-/* ===== dropdown menu items ===== */
+/* ===== dropdown menu (panel + items) ===== */
+.menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 100;
+  background: var(--bg-elev); border: 1px solid var(--border-soft);
+  border-radius: var(--r-md); padding: 4px 0; box-shadow: 0 6px 22px rgba(0,0,0,0.45);
+}
 .menu-item {
   width: 100%; padding: 7px 14px; border: none; background: transparent;
   color: var(--fg-muted); font-family: var(--mono); font-size: 11px;
