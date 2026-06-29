@@ -48,7 +48,7 @@ pub(crate) fn sanitize_claude_config() {
 /// `C:\Users\Kevin\proj` → `C:/Users/Kevin/proj`). The key must match exactly
 /// or Claude Code treats the directory as unseen and re-shows the trust prompt.
 ///
-/// NOT to be confused with [`crate::agent::launch::claude_project_dir_name`] (`launch.rs`): that maps
+/// NOT to be confused with [`crate::session::launch::claude_project_dir_name`] (`launch.rs`): that maps
 /// the same cwd to the *directory name* under `~/.claude/projects/` (every non-alnum char → `-`,
 /// `C:/Users/Kevin/proj` → `C--Users-Kevin-proj`). Two deliberately distinct cwd→identifier transforms
 /// for two distinct Claude Code on-disk contracts (the `~/.claude.json` map key vs. the projects dir).

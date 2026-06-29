@@ -31,7 +31,7 @@ pub(crate) fn setup_workspaces(
     authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
-    crate::agent::claude_config::sanitize_claude_config();
+    crate::session::claude_config::sanitize_claude_config();
     // Planner session CWD = the project hub (`projects/<key>`), holding plan
     // sections + control files FLAT alongside the project's CLAUDE.md.
     let safe_key     = sanitize_project_key(&project_key);

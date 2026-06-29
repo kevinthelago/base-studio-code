@@ -3,7 +3,7 @@ use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code
 use crate::fleet::{worktree::*, director::*, inspect::*};
 use crate::github::readiness::*;
 use crate::extensions::{mcp::*, cfg::*};
-use crate::console::settings::*;
+use crate::session::settings::*;
 
     use crate::testutil::{ENV_LOCK, temp_home, write_file};
 
@@ -236,7 +236,7 @@ use crate::console::settings::*;
 
     #[test]
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {
-        use crate::console::settings::write_session_settings;
+        use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
         let settings = dir.join(".claude").join("settings.json");
         let _ = std::fs::remove_dir_all(&dir);
@@ -291,7 +291,7 @@ use crate::console::settings::*;
     /// always present.
     #[test]
     fn write_session_settings_bash_posture_scales_the_baseline() {
-        use crate::console::settings::write_session_settings;
+        use crate::session::settings::write_session_settings;
         let base = std::env::temp_dir().join(format!("bsc-ess-posture-{}", std::process::id()));
         let read_allow = |dir: &std::path::Path| -> Vec<String> {
             let v: serde_json::Value = serde_json::from_str(
@@ -321,7 +321,7 @@ use crate::console::settings::*;
 
     #[test]
     fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
-        use crate::console::settings::write_session_settings;
+        use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-ask-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".claude")).unwrap();
@@ -357,7 +357,7 @@ use crate::console::settings::*;
 
     #[test]
     fn write_session_settings_merges_verbatim_tool_rules() {
-        use crate::console::settings::write_session_settings;
+        use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".claude")).unwrap();
@@ -397,7 +397,7 @@ use crate::console::settings::*;
 
     #[test]
     fn write_session_settings_replace_drops_removed_permissions() {
-        use crate::console::settings::write_session_settings;
+        use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-replace-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".claude")).unwrap();
@@ -684,7 +684,7 @@ use crate::console::settings::*;
         assert_eq!(unique.len(), colors.len());
     }
 
-    use crate::agent::launch::has_claude_history;
+    use crate::session::launch::has_claude_history;
 
     #[test]
     fn has_claude_history_detects_jsonl_in_project_dir() {
