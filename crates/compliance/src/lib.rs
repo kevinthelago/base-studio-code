@@ -11,6 +11,7 @@
 //! the baseline corpus; [`store`] is the SQLite source of truth (seeded on first open, user-editable);
 //! [`engine`] is the query + scoping logic; and [`mcp`] exposes the five tools the planner calls.
 
+pub mod cli;
 pub mod engine;
 pub mod mcp;
 pub mod seed;
