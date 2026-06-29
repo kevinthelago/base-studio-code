@@ -3,6 +3,7 @@
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
 // so the planning workflow is one focused phase at a time.
 import { useState, useEffect } from "react";
+import { Pane } from "@/shared/ui/Pane";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
@@ -134,7 +135,7 @@ export function ProjectPane({
     const active   = focus.phases[focus.activeIdx];
     const isLocked = focus.selectedIdx > focus.activeIdx;
     return (
-      <div className="pp fp">
+      <Pane mode="inline" bare className="pp fp">
         <FocusedStepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
         <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
@@ -145,7 +146,7 @@ export function ProjectPane({
         </div>
         <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
-      </div>
+      </Pane>
     );
   }
 
