@@ -183,7 +183,13 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
       clearQuarantine: (paneId) =>
         set((s) => {
           if (!s.quarantinedPanes[paneId]) return {};
-          return { quarantinedPanes: deleteMapEntry(s.quarantinedPanes, paneId) };
+          // Stamp the warden floor to NOW on dismiss — otherwise the next warden tick re-reads the
+          // same (still-logged) denied command from the audit log and immediately re-quarantines the
+          // pane, so the banner keeps reappearing. Only NEW drift past this point re-pauses it.
+          return {
+            quarantinedPanes: deleteMapEntry(s.quarantinedPanes, paneId),
+            wardenSince: setMapEntry(s.wardenSince, paneId, Date.now()),
+          };
         }),
       wardenSince: {},
       clearProjectQuarantine: (projectKey, panes, since) =>
