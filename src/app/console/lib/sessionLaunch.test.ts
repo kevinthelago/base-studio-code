@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "./sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, SCOPE_DENY_ALL } from "./sessionLaunch";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
@@ -43,6 +43,14 @@ describe("buildAgentEnv", () => {
 
   it("does not emit BSC_SCOPE_GLOBS for an ungated pane", () => {
     expect(buildAgentEnv(mkStore(), "p", "claude", "tok")).toEqual({ GH_TOKEN: "tok" });
+  });
+
+  it("emits the deny-all sentinel for a code:none role with no write globs (#1916 Step 3.5)", () => {
+    // triage / reviewer / director-without-commons (code:none, empty globs) → bsc-scope hard-blocks ALL
+    // writes, surviving bypassPermissions (where the role's permissions.deny write rule is ignored).
+    expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
+    // A worker (code:write) with no globs is NOT deny-all — it writes code within its worktree.
+    expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBeUndefined();
   });
 
   it("emits BSC_DENY_BASH (user + role denies) for the bsc-deny hook (#1916)", () => {
