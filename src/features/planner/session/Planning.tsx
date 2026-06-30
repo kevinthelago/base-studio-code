@@ -522,11 +522,12 @@ export function Planning({ visible }: { visible: boolean }) {
     return enabledOrderedStages(canonicalStageConfig(st.planStageConfig[key]) ?? defaultStageConfig()).map(s => s.id);
   };
 
-  // ── Context-updated badge (#175/#756, useSetupSignature #1775) ───────────────
+  // ── Setup signatures (#175/#756, useSetupSignature #1775) ────────────────────
   // currentSig (live inputs, computed in Rust) vs lastSetupSig (the baseline setup_workspaces last
-  // wrote); when they diverge the "context updated · refresh" badge offers a regenerating restart.
+  // wrote). These feed usePlanningModals' version-mismatch auto-open (the manual header "blueprint
+  // updated · review" badge was removed — that prompt lives elsewhere now).
   // refreshSetupSig re-reads the baseline (called after every workspace setup).
-  const { currentSig, lastSetupSig, refreshSetupSig, contextStale } =
+  const { currentSig, lastSetupSig, refreshSetupSig } =
     useSetupSignature(effectiveProjectId, linkedRepos, stageIdsFor);
 
   // The planner's xterm terminal + PTY lifecycle (#1775, usePlannerTerminal): mount/spawn claude in
@@ -707,15 +708,6 @@ export function Planning({ visible }: { visible: boolean }) {
             </div>
           )}
         </div>
-        {contextStale && (
-          <button
-            className="btn"
-            style={{ borderColor: "var(--accent-dim)", color: "var(--accent)" }}
-            disabled={restarting}
-            onClick={() => setShowBlueprintModal(true)}
-            title="The project's blueprint / planner template changed since this session started — choose how to update (#827)"
-          >{restarting ? "restarting…" : "blueprint updated · review"}</button>
-        )}
         <button className="btn ghost" onClick={handleRestart} disabled={restarting}
           title="Restart the planner session (re-spawns Claude)">
           {restarting ? "restarting…" : "↺ restart"}
