@@ -26,8 +26,8 @@ export function useFleetLive(): UseFleetLive {
   const { state: coord } = useCoordLog({ limit: 1000, ms: 4000 });
 
   const workers = useMemo(
-    () => buildLiveWorkers({ fleetPaneStreams, paneStatus, coord, tabCount: tabs.length, disabledPanes, profiles }),
-    [fleetPaneStreams, paneStatus, coord, tabs.length, disabledPanes, profiles],
+    () => buildLiveWorkers({ fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles }),
+    [fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles],
   );
   const kpis = useMemo(() => deriveFleetKpis(workers), [workers]);
   const counts = useMemo(() => statusCounts(workers), [workers]);
