@@ -169,10 +169,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // Full_names that are both linked to this project and known to be cloned. Read the persisted
   // set under BOTH keys (title-derived + node id) so it matches effectiveRepos — otherwise a
   // repo linked under the other key is in effectiveRepos but missing here (#881).
-  const linkedRepos: string[] =
-    localReposFor(projectLocalRepos, effectiveProjectId, activeProjectId).filter(r =>
-      effectiveRepos.includes(r)
-    );
+  // Memoized like `effectiveRepos` above (#…): a fresh array ref each render re-fired every
+  // linkedRepos-keyed effect — notably useSetupSignature's `compute_context_signature` call, whose
+  // varying/failing results made the header's "context updated" badge (`contextStale`) flicker.
+  const linkedRepos: string[] = useMemo(
+    () => localReposFor(projectLocalRepos, effectiveProjectId, activeProjectId).filter(r =>
+      effectiveRepos.includes(r),
+    ),
+    [projectLocalRepos, effectiveProjectId, activeProjectId, effectiveRepos],
+  );
 
   // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): owns the
   // <repo_link>-surfaced repo set and clones each linked repo into the project dir as it appears.
