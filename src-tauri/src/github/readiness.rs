@@ -180,8 +180,19 @@ pub(crate) fn detect_git_bash() -> GitBashProbe {
 /// exactly what to install. Runs through the SAME resolved shell + caller env as
 /// agent subshells (login shell, so profile PATH additions count). Best-effort: a
 /// spawn failure reports the CLI tools as missing rather than erroring.
+/// Async + `spawn_blocking` so the (blocking) shell spawn + `<tool> --version` calls run OFF the main
+/// thread — a synchronous command froze the UI while the probe shell ran (#1916 perf).
 #[tauri::command]
-pub(crate) fn preflight(
+pub(crate) async fn preflight(
+    cwd: String,
+    env: Option<std::collections::HashMap<String, String>>,
+) -> Result<Vec<PrereqStatus>, String> {
+    tauri::async_runtime::spawn_blocking(move || preflight_inner(cwd, env))
+        .await
+        .map_err(|e| format!("preflight task failed: {e}"))?
+}
+
+fn preflight_inner(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<PrereqStatus>, String> {
