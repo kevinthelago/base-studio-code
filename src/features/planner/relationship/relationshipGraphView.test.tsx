@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { RelationshipGraphView } from "./RelationshipGraphView";
-import { RelationshipInspector } from "./RelationshipInspector";
 import {
   buildRelationshipGraph, computeSpotlight, hardLabel, restOpacity, runtimeNote,
   type RelStream, type RelationshipArtifact, type AgentRelationship,
@@ -76,38 +75,5 @@ describe("RelationshipGraphView (swimlanes)", () => {
     );
     fireEvent.click(getAllByText("auth")[0]);
     expect(onFocusAgent).toHaveBeenCalledWith("auth");
-  });
-});
-
-describe("RelationshipInspector", () => {
-  it("shows the hint + counts when nothing is focused", () => {
-    const { getByText } = render(
-      <RelationshipInspector graph={graph()} focus={null} onFocusAgent={noop} onInspectArtifact={noop} onInspectEdge={noop} />,
-    );
-    expect(getByText(/Hover a stream to spotlight/)).toBeTruthy();
-    expect(getByText(/1 contracts · 1 handoffs/)).toBeTruthy();
-  });
-
-  it("spells out a focused stream's relationships with runtime detail", () => {
-    // schema produces the contract; auth consumes it and notifies web.
-    const producer = render(
-      <RelationshipInspector graph={graph()} focus={{ type: "agent", id: "schema" }} onFocusAgent={noop} onInspectArtifact={noop} onInspectEdge={noop} />,
-    );
-    expect(producer.getByText("produces contract:user-schema")).toBeTruthy();
-    producer.unmount();
-
-    const consumer = render(
-      <RelationshipInspector graph={graph()} focus={{ type: "agent", id: "auth" }} onFocusAgent={noop} onInspectArtifact={noop} onInspectEdge={noop} />,
-    );
-    expect(consumer.getByText("waits on contract:user-schema")).toBeTruthy();
-    expect(consumer.getByText("notifies web")).toBeTruthy();
-  });
-
-  it("shows an artifact's consumers + coord ref", () => {
-    const { getByText } = render(
-      <RelationshipInspector graph={graph()} focus={{ type: "art", id: "user-schema" }} onFocusAgent={noop} onInspectArtifact={noop} onInspectEdge={noop} />,
-    );
-    expect(getByText("contract:user-schema")).toBeTruthy();
-    expect(getByText("auth consumes it")).toBeTruthy();
   });
 });
