@@ -45,7 +45,12 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
       capability: roleCapability(role, { writeGlobs: stream.owns }),
       flow: stream.flow,
     },
-    activity: { changedFiles: changedFiles ?? [], commands: parseAuditCommands(auditLines ?? [], paneId) },
+    activity: {
+      changedFiles: changedFiles ?? [],
+      // Ignore audit commands from before this pane's warden floor (set on triage relaunch) so a
+      // prior run's denied command doesn't re-quarantine the freshly relaunched worker.
+      commands: parseAuditCommands(auditLines ?? [], paneId, st.wardenSince[paneId] ?? 0),
+    },
   };
 }
 
