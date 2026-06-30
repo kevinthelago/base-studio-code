@@ -4,6 +4,7 @@
 import { useState, useMemo } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { RelationshipGraphView } from "@/features/planner/relationship/RelationshipGraphView";
+import { RelationshipInspector } from "@/features/planner/relationship/RelationshipInspector";
 import {
   buildRelationshipGraph, EDGE_KIND_META,
   type Topology, type RelFocus,
@@ -97,6 +98,18 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
           <div className="mono" style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
             <span>{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</span>
             {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
+          </div>
+
+          {/* INSPECTOR */}
+          <div className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</div>
+          <div style={{ padding: "12px 13px", borderRadius: 9, background: "var(--bg-elev)", border: "1px solid var(--border)" }}>
+            <RelationshipInspector
+              graph={relGraph}
+              focus={focus}
+              onFocusAgent={(id) => setFocus({ type: "agent", id })}
+              onInspectArtifact={(id) => setFocus({ type: "art", id })}
+              onInspectEdge={(id) => setFocus({ type: "edge", id })}
+            />
           </div>
         </div>
       )}
