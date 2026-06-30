@@ -395,6 +395,29 @@ fn provision_native_deps() -> Result<String, String> {
     }
 }
 
+/// Run a one-shot `command` inside the sealed `bsc-agent-sandbox` distro (#1988) at distro-native
+/// `cwd` (empty ⇒ the agent's `~`) and return its stdout. This is the exact spawn recipe
+/// (`wsl.exe -d <distro> --cd … -- bash -lc`) the PTY session launch will use (Phase 2) — landed first
+/// as a verifiable command so the recipe is proven before it's threaded through the central PTY path.
+#[tauri::command]
+pub(crate) fn sandbox_run(cwd: String, command: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let (program, args) = crate::platform::shell::wsl_invocation(AGENT_SANDBOX_DISTRO, &cwd, &command);
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(&args).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd)
+        .map_err(|e| format!("wsl exec failed to start: {e}"))?;
+    let stdout = decode_wsl(&out.stdout);
+    if out.status.success() {
+        Ok(stdout)
+    } else {
+        let stderr = decode_wsl(&out.stderr);
+        Err(format!("exit {}: {}", out.status.code().unwrap_or(-1), stderr.trim()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
