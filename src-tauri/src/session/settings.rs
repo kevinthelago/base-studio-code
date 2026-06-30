@@ -66,6 +66,7 @@ pub(crate) fn ensure_session_settings(
     skills: Option<Vec<SkillCfg>>,
     replace_permissions: Option<bool>,
     bash_posture: Option<String>,
+    bypass: Option<bool>,
 ) -> Result<(), String> {
     write_session_settings(
         &cwd, &allowed_commands, &denied_commands,
@@ -75,6 +76,7 @@ pub(crate) fn ensure_session_settings(
         &skills.unwrap_or_default(),
         replace_permissions.unwrap_or(false),
         bash_posture.as_deref().unwrap_or("allow"),
+        bypass.unwrap_or(true),
     )
 }
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
@@ -101,6 +103,7 @@ pub(crate) fn write_session_settings(
     skills: &[SkillCfg],
     replace_permissions: bool,
     bash_posture: &str,
+    bypass: bool,
 ) -> Result<(), String> {
     if cwd.is_empty() { return Ok(()); }
     // Normalize a git-bash drive path (`/c/Users/...`, the OSC-7 form the app persists and the frontend
@@ -196,13 +199,14 @@ pub(crate) fn write_session_settings(
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
     merge_permission_list(&mut config, "ask", &ask_rules);
-    // THE FLIP (#1916 Step 4): every session runs in bypassPermissions — auto-run without prompts,
-    // gated by the PreToolUse HOOKS that fire AND block even under bypass (the dangerous floor + role/
-    // user denies via bsc-deny, FS confinement + .claude protection via bsc-confine, code:none/write-
-    // scope via bsc-scope). `ask` rules (the push-confirm hard gate) still prompt natively. The allow/
-    // deny lists above are now belt-and-suspenders — ignored under bypass; Step 5 stops emitting them.
-    // Applies to EVERY pane: fleet workers, the director, triage, AND manual consoles.
-    {
+    // Permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions auto-run,
+    // the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the enumerated
+    // allow/deny lists require approval). Default is bypass. Either way the hooks (dangerous floor +
+    // role/user denies via bsc-deny, FS confinement + .claude via bsc-confine, code:none/write-scope via
+    // bsc-scope) still fire+block — they survive bypass, where `permissions.deny` is ignored — and `ask`
+    // (push-confirm) still prompts natively. The allow-list machinery (base.json tiers, posture scaling)
+    // STAYS: it's the engine for allow-list mode. Applies to EVERY pane (workers, director, triage, manual).
+    if bypass {
         let obj = config.as_object_mut().unwrap();
         let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
         crate::platform::fsx::ensure_object(permissions);
@@ -210,6 +214,9 @@ pub(crate) fn write_session_settings(
             "defaultMode".into(),
             serde_json::Value::String("bypassPermissions".into()),
         );
+    } else if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
+        // Allow-list posture: drop any stale bypass left by a prior bypass launch so the toggle takes.
+        perms.remove("defaultMode");
     }
 
     // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
@@ -422,6 +429,7 @@ mod tests {
             &[],
             false,
             "allow",
+            true,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -429,6 +437,12 @@ mod tests {
         // THE FLIP (#1916 Step 4): every session is emitted in bypassPermissions — the PreToolUse
         // hooks (not the allow/deny lists) do the gating.
         assert_eq!(v["permissions"]["defaultMode"], "bypassPermissions");
+        // Allow-list posture (#1916): bypass=false omits defaultMode (and clears a stale one), so Claude's
+        // `default` mode enforces the enumerated allow/deny lists — the require-approval option we keep.
+        write_session_settings(&dir.to_string_lossy(), &[], &[], &[], &[], &[], &[], &[], &[], false, "allow", false).unwrap();
+        let v2: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert!(v2["permissions"]["defaultMode"].is_null(), "allow-list posture must omit defaultMode");
         let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
         let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
@@ -474,7 +488,7 @@ mod tests {
             std::fs::create_dir_all(dir.join(".claude")).unwrap();
             // Grant a project-specific command in every posture — it must ALWAYS be present.
             write_session_settings(&dir.to_string_lossy(), &["terraform".into()], &[],
-                &[], &[], &[], &[], &[], &[], false, posture).unwrap();
+                &[], &[], &[], &[], &[], &[], false, posture, true).unwrap();
             let allow = read_allow(&dir);
             assert_eq!(allow.contains(&"Bash(ls *)".to_string()), want_ro, "{posture}: read-only baseline");
             assert_eq!(allow.contains(&"Bash(cargo *)".to_string()), want_build, "{posture}: build baseline");
@@ -503,7 +517,7 @@ mod tests {
         // The git-bash spelling of the native temp dir: `C:\…\x` → `/c/…/x`.
         let fwd = native.to_string_lossy().replace('\\', "/"); // C:/Users/…/x
         let git_bash = format!("/{}{}", fwd[..1].to_lowercase(), &fwd[2..]); // /c/Users/…/x
-        write_session_settings(&git_bash, &[], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        write_session_settings(&git_bash, &[], &[], &[], &[], &[], &[], &[], &[], false, "allow", true).unwrap();
         // Lands at the NATIVE dir...
         assert!(native.join(".claude").join("settings.json").exists(),
             "settings.json must be written to the native dir, not a bogus C:\\c\\… path");
@@ -534,6 +548,7 @@ mod tests {
             &[],
             false,
             "allow",
+            true,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -570,6 +585,7 @@ mod tests {
             &[],
             false,
             "allow",
+            true,
         ).unwrap();
 
         let v: serde_json::Value =
@@ -604,11 +620,11 @@ mod tests {
 
         // First pass grants a custom command (merge mode). Use a command NOT in the baselines
         // (`terraform`) so the drop is observable — a baseline command would be re-added anyway.
-        write_session_settings(&cwd, &["terraform".into()], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        write_session_settings(&cwd, &["terraform".into()], &[], &[], &[], &[], &[], &[], &[], false, "allow", true).unwrap();
         assert!(read().contains(&"Bash(terraform *)".to_string()));
 
         // Re-apply with the command REMOVED — replace mode must drop it (merge would keep it).
-        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true, "allow").unwrap();
+        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true, "allow", true).unwrap();
         let allow = read();
         assert!(!allow.contains(&"Bash(terraform *)".to_string()), "replace must drop the removed command (#799)");
         assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
@@ -636,7 +652,7 @@ mod tests {
         let hooks = vec![HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false, "allow").unwrap();
+        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false, "allow", true).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =
