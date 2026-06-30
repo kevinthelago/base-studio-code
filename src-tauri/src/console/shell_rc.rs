@@ -229,6 +229,7 @@ bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
 bsc-failed() { r="$(cat)"; __bsc_coord failed "$1" "$r"; }
 bsc-wait() { r="$(cat)"; __bsc_coord waiting "$r" "${BSC_CHECKPOINT_DOC:-}"; }
+bsc-maintain() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord maintain "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-ask() { r="$(cat | tr '\t\n' '  ')"; __bsc_coord ask "$r" "${BSC_CHECKPOINT_DOC:-}"; }
 bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" "$a"; }
 bsc-issue() { t=""; s=""; id=""; while [ $# -gt 0 ]; do case "$1" in --title) t="$2"; shift 2 ;; --suggested) s="$2"; shift 2 ;; --id) id="$2"; shift 2 ;; *) shift ;; esac; done; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; s="$(printf '%s' "$s" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "issue	$t	$b	$s	$id"; }
@@ -240,7 +241,7 @@ bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ];
 /// otherwise it returns a `block` decision that pushes the worker to keep going or defer
 /// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
 pub(crate) const BSC_DEFER_RC: &str = concat!(
-    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop. Drive every owned issue to its open PR yourself: implement it, run the full local gate, then -- under the default auto-pr policy -- push your branch and open a PR to develop, pipe the issue into bsc-landed, and immediately pick up your next owned issue. The DIRECTOR reviews, merges, and closes your PR; never run gh pr merge or gh pr close on it yourself, and never wait on the user, on CI, or on the director. Keep going until EVERY owned issue has its work pushed and its PR open with the gate green and nothing remains. For a decision you genuinely cannot make yourself, pipe a one-line question into bsc-ask so the director answers and resumes you."}'; }"#,
+    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop. Drive every owned issue to its open PR yourself: implement it, run the full local gate, then -- under the default auto-pr policy -- push your branch and open a PR to develop, pipe the issue into bsc-landed, and immediately pick up your next owned issue. The DIRECTOR reviews, merges, and closes your PR; never run gh pr merge or gh pr close on it yourself, and never wait on the user, on CI, or on the director. Keep going until EVERY owned issue has its work pushed and its PR open with the gate green. THEN, when nothing remains, do NOT end -- enter MAINTENANCE: pipe a one-line standing note into bsc-maintain (it parks you alive and ready) and stay available; the director will dispatch new or regressed work in your lane and resume you. For a decision you genuinely cannot make yourself, pipe a one-line question into bsc-ask so the director answers and resumes you."}'; }"#,
     "\n",
 );
 
@@ -251,7 +252,7 @@ pub(crate) const BSC_DEFER_RC: &str = concat!(
 /// `<session>` argument the director feeds to bsc-answer / bsc-assign -- so this is how it
 /// knows which worker to reach. State comes from each session's latest OWN-state coord event.
 pub(crate) const BSC_FLEET_RC: &str = concat!(
-    r#"bsc-fleet() { r="${BSC_FLEET_ROSTER:-$PWD/fleet.roster.tsv}"; l="${BSC_COORD_LOG:-}"; if [ ! -f "$r" ]; then echo "bsc-fleet: no roster at $r (run from the project hub while a fleet is live)"; return 1; fi; printf 'PANE   STREAM             REPO                       BRANCH           ROLE     STATE\n'; awk -F'\t' -v LOG="$l" 'BEGIN { if (LOG != "") { while ((getline ln < LOG) > 0) { split(ln, a, "\t"); k=a[3]; if (k=="blocked"||k=="waiting"||k=="ask"||k=="woke") { st[a[2]]=k; on[a[2]]=(k=="blocked"||k=="ask")?a[4]:"" } } close(LOG) } } { s=st[$1]; if (s=="") s="idle"; if (s=="woke") s="active"; ex=(on[$1]!="")?" -> " on[$1]:""; printf "%-6s %-18s %-26s %-16s %-8s %s%s\n", $1, $2, $3, $4, $5, s, ex }' "$r"; }"#,
+    r#"bsc-fleet() { r="${BSC_FLEET_ROSTER:-$PWD/fleet.roster.tsv}"; l="${BSC_COORD_LOG:-}"; if [ ! -f "$r" ]; then echo "bsc-fleet: no roster at $r (run from the project hub while a fleet is live)"; return 1; fi; printf 'PANE   STREAM             REPO                       BRANCH           ROLE     STATE\n'; awk -F'\t' -v LOG="$l" 'BEGIN { if (LOG != "") { while ((getline ln < LOG) > 0) { split(ln, a, "\t"); k=a[3]; if (k=="blocked"||k=="waiting"||k=="ask"||k=="woke"||k=="maintain") { st[a[2]]=k; on[a[2]]=(k=="blocked"||k=="ask")?a[4]:"" } } close(LOG) } } { s=st[$1]; if (s=="") s="idle"; if (s=="woke") s="active"; if (s=="maintain") s="maintenance"; ex=(on[$1]!="")?" -> " on[$1]:""; printf "%-6s %-18s %-26s %-16s %-8s %s%s\n", $1, $2, $3, $4, $5, s, ex }' "$r"; }"#,
     "\n",
 );
 

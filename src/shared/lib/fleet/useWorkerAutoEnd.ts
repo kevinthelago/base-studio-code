@@ -126,6 +126,7 @@ export function useWorkerAutoEnd(): void {
       const act = activity.find((a) => a.pane === paneId);
       if (act?.state === "run") { nudgedRef.current.delete(paneId); resurfacedRef.current.delete(paneId); continue; } // working → re-arm
       if (coord.waiting.some((w) => w.session === paneId)) continue;             // paused for the user → leave it
+      if (coord.maintaining.some((m) => m.session === paneId)) { nudgedRef.current.delete(paneId); continue; } // in MAINTENANCE (#1957) — stay alive + ready, never nudge to close
       if (!coord.asking.some((a) => a.session === paneId)) resurfacedRef.current.delete(paneId); // ask answered → re-arm resurface
       const stream = s.fleetPaneStreams[paneId];
       const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
