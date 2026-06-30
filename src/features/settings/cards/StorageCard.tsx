@@ -1,11 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
-
-// TODO: Refactor this storage card into the fleet tab.
-// Currently removed from settings/PlannerPage but kept intact for the future refactor.
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -23,22 +20,55 @@ interface SandboxDisk {
   tarballBytes: number;
 }
 
+// The disk scan is heavy (a recursive walk of every worktree's target/). Cache the last result so the
+// card shows instantly on mount, and only re-scan in the BACKGROUND when the cache is missing or stale
+// — a normal Planner visit within a few minutes pays nothing. "Refresh" + a reclaim always re-scan.
+const STORAGE_CACHE_KEY = "bsc:storageDisk";
+const STALE_MS = 5 * 60_000;
+interface StorageCache { rows: WorktreeUsage[]; sandbox: SandboxDisk | null; takenAt: number }
+
+function loadStorageCache(): StorageCache | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as StorageCache) : null;
+  } catch { return null; }
+}
+function saveStorageCache(c: StorageCache): void {
+  try { localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(c)); } catch { /* quota / disabled */ }
+}
+
 export function StorageCard() {
-  const [rows, setRows] = useState<WorktreeUsage[]>([]);
-  const [sandbox, setSandbox] = useState<SandboxDisk | null>(null);
+  const initialCache = useMemo(loadStorageCache, []);
+  const [rows, setRows] = useState<WorktreeUsage[]>(initialCache?.rows ?? []);
+  const [sandbox, setSandbox] = useState<SandboxDisk | null>(initialCache?.sandbox ?? null);
+  const [takenAt, setTakenAt] = useState<number | null>(initialCache?.takenAt ?? null);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [notice, setNotice] = useState("");
 
   const flash = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(""), 6000); };
 
+  // A full re-scan. The commands now run off the main thread (#1916), so this never blocks the UI; it
+  // updates the rows + the cache when it lands.
   const refresh = useCallback(async () => {
-    try { setRows(await invoke<WorktreeUsage[]>("worktrees_disk_usage")); }
-    catch { setRows([]); }
+    setScanning(true);
+    let nextRows: WorktreeUsage[] = [];
+    let nextSandbox: SandboxDisk | null = null;
+    try { nextRows = await invoke<WorktreeUsage[]>("worktrees_disk_usage"); } catch { /* keep empty */ }
     // The WSL2 agent sandbox lives outside the worktrees tree, so it needs its own scan (#1988).
-    try { setSandbox(await invoke<SandboxDisk>("sandbox_disk_usage")); }
-    catch { setSandbox(null); }
+    try { nextSandbox = await invoke<SandboxDisk>("sandbox_disk_usage"); } catch { /* keep null */ }
+    const now = Date.now();
+    setRows(nextRows);
+    setSandbox(nextSandbox);
+    setTakenAt(now);
+    saveStorageCache({ rows: nextRows, sandbox: nextSandbox, takenAt: now });
+    setScanning(false);
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
+
+  // Cached numbers render instantly (state init); only re-scan when there's no cache or it's stale.
+  useEffect(() => {
+    if (!initialCache || Date.now() - initialCache.takenAt > STALE_MS) void refresh();
+  }, [initialCache, refresh]);
 
   // Reclaim every worktree of one project (drops the dir + git admin records + build artifacts).
   const reclaim = useCallback(async (projectKey: string) => {
@@ -96,12 +126,17 @@ export function StorageCard() {
           {rows.length} worktree{rows.length === 1 ? "" : "s"} · {fmtBytes(grandTotal)} total
         </span>
         <span style={{ flex: 1 }} />
-        <Button size="sm" disabled={busy} onClick={() => void refresh()}>Refresh</Button>
+        {scanning ? (
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>scanning…</span>
+        ) : takenAt ? (
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>checked {new Date(takenAt).toLocaleTimeString()}</span>
+        ) : null}
+        <Button size="sm" disabled={busy || scanning} onClick={() => void refresh()}>Refresh</Button>
       </div>
 
       {projects.length === 0 ? (
         <div className="mono" style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontSize: 11.5, color: "var(--fg-dim)" }}>
-          No fleet worktrees on disk.
+          {scanning ? "Scanning…" : "No fleet worktrees on disk."}
         </div>
       ) : (
         projects.map((p) => (

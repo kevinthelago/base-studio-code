@@ -481,9 +481,16 @@ pub(crate) struct SandboxDisk {
 }
 
 /// Report the WSL2 agent sandbox's disk usage (the distro image + the cached rootfs tarball under
-/// `~/.base-studio-code/wsl/`), so Settings → General → Storage can surface + reclaim it (#1988).
+/// `~/.base-studio-code/wsl/`), so Settings → Planner → Storage can surface + reclaim it (#1988).
+/// Async + `spawn_blocking` so the distro-image size walk runs OFF the main thread (#1916 perf).
 #[tauri::command]
-pub(crate) fn sandbox_disk_usage() -> SandboxDisk {
+pub(crate) async fn sandbox_disk_usage() -> SandboxDisk {
+    tauri::async_runtime::spawn_blocking(sandbox_disk_usage_inner)
+        .await
+        .unwrap_or(SandboxDisk { installed: false, distro_bytes: 0, tarball_bytes: 0 })
+}
+
+fn sandbox_disk_usage_inner() -> SandboxDisk {
     let install_dir = sandbox_install_dir();
     SandboxDisk {
         installed: install_dir.exists(),

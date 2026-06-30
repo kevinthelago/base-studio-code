@@ -327,10 +327,14 @@ pub(crate) fn reclaim_worktrees(project_key: String) -> usize {
 }
 
 /// Disk footprint of every fleet worktree across every project — the Settings "reclaim space"
-/// surface (#1080). Sorted biggest-first.
+/// surface (#1080). Sorted biggest-first. Async + `spawn_blocking` so the recursive size walk (every
+/// file in every worktree's `target/` — potentially hundreds of thousands) runs OFF the main thread
+/// instead of freezing the window while Settings → Planner → Storage mounts (#1916 perf).
 #[tauri::command]
-pub(crate) fn worktrees_disk_usage() -> Vec<WorktreeUsage> {
-    worktrees_disk_usage_impl(&crate::bsc_base_dir())
+pub(crate) async fn worktrees_disk_usage() -> Vec<WorktreeUsage> {
+    tauri::async_runtime::spawn_blocking(|| worktrees_disk_usage_impl(&crate::bsc_base_dir()))
+        .await
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

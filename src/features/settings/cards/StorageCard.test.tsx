@@ -15,6 +15,7 @@ const USAGE = [
 const SANDBOX = { installed: true, distroBytes: 300_000_000, tarballBytes: 205_000_000 };
 
 beforeEach(() => {
+  localStorage.clear(); // the card caches its last scan in localStorage — isolate each test
   mockInvoke.mockReset();
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === "worktrees_disk_usage") return Promise.resolve(USAGE);
@@ -82,5 +83,20 @@ describe("StorageCard", () => {
     render(<StorageCard />);
     await waitFor(() => expect(screen.getByText(/No fleet worktrees on disk/)).toBeInTheDocument());
     expect(screen.queryByText("Agent sandbox (WSL2)")).not.toBeInTheDocument();
+  });
+
+  it("renders a fresh cache instantly and skips the mount scan", () => {
+    localStorage.setItem("bsc:storageDisk", JSON.stringify({ rows: USAGE, sandbox: SANDBOX, takenAt: Date.now() }));
+    render(<StorageCard />);
+    // Cached rows show without waiting on any scan…
+    expect(screen.getByText("proj-a")).toBeInTheDocument();
+    // …and the heavy disk scan is NOT fired while the cache is fresh.
+    expect(mockInvoke.mock.calls.filter((c) => c[0] === "worktrees_disk_usage").length).toBe(0);
+  });
+
+  it("re-scans on mount when the cache is stale", async () => {
+    localStorage.setItem("bsc:storageDisk", JSON.stringify({ rows: [], sandbox: null, takenAt: Date.now() - 10 * 60_000 }));
+    render(<StorageCard />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("worktrees_disk_usage"));
   });
 });
