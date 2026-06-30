@@ -39,6 +39,14 @@ describe("buildWorkerScope (#844)", () => {
     expect(md).toMatch(/let the director close it/i);
   });
 
+  it("maintenance mode (#1957): leads with the stand-by banner, off by default", () => {
+    const md = buildWorkerScope(stream(), [], true);
+    expect(md).toContain("MAINTENANCE mode");
+    expect(md).toContain("bsc-maintain");
+    expect(md).toMatch(/do NOT[\s\S]*rebuild/i);
+    expect(buildWorkerScope(stream())).not.toContain("MAINTENANCE mode"); // off by default
+  });
+
   it("renders explicit placeholders for empty fields rather than leaving them blank", () => {
     const md = buildWorkerScope(stream({ owns: [], issues: [], dependsOn: [] }));
     expect(md).toContain("none assigned");

@@ -43,6 +43,10 @@ export interface CoordState {
   asking: AskingSession[];
   /** New work the ISSUER captured (#376), pending the director's routing decision. */
   issues: PendingIssue[];
+  /** Workers in MAINTENANCE (#1957): they finished every owned issue and parked alive + ready
+   *  instead of ending — the director routes new/regressed lane work to them via `bsc-assign`.
+   *  Cleared when the worker is dispatched (assign/answer) or resumes (woke). */
+  maintaining: MaintainingSession[];
 }
 
 /** A shaped issue the issuer captured, awaiting the director's `bsc-assign` (#376). The
@@ -90,6 +94,16 @@ export interface WaitingSession {
   at: number;
 }
 
+/** A worker in MAINTENANCE (#1957): it finished every owned issue and, instead of ending, parked
+ *  alive in a ready posture. Unlike a user-wait it needs no human action — it idles cheaply until
+ *  the director dispatches new lane work (`bsc-assign`) or a regression wakes it. */
+export interface MaintainingSession {
+  session: string;
+  /** The standing note (the `bsc-maintain` message), e.g. "owned issues complete — standing by". */
+  note: string;
+  at: number;
+}
+
 /** A session parked on a `bsc-ask` question to the director (#369). Unlike a user-wait,
  *  it is resumed automatically when the director answers via `bsc-answer <session>`. */
 export interface AskingSession {
@@ -121,6 +135,8 @@ export type CoordEvent =
   // Issuer flow (#376): the issuer captures new work; the director routes it to a worker.
   | { type: "issue"; session: string; id: string; title: string; body?: string; suggested?: string; at: number }
   | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }
+  // Maintenance mode (#1957): a finished worker parks alive + ready instead of ending.
+  | { type: "maintain"; session: string; note?: string; at: number }
   // Verification jury (#394): a juror reports a structured verdict on a landing; the
   // foreman tallies them and, on reject, drives the existing revert+ping reflex.
   | { type: "verdict"; juror: string; target: string; verdict: JuryVerdict; reason?: string; relevant?: boolean; at: number };

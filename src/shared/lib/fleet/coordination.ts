@@ -44,7 +44,7 @@ import type {
 export type * from "./coordination.types";
 
 export function emptyCoordState(): CoordState {
-  return { latches: {}, waiters: [], waiting: [], asking: [], issues: [] };
+  return { latches: {}, waiters: [], waiting: [], asking: [], issues: [], maintaining: [] };
 }
 
 /** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
@@ -115,6 +115,7 @@ export function registerWaiter(s: CoordState, w: Waiter): { state: CoordState; r
     waiting: s.waiting,
     asking: s.asking,
     issues: s.issues,
+    maintaining: s.maintaining,
   };
   return { state, ready };
 }
@@ -131,10 +132,10 @@ export function satisfy(
   at: number,
 ): { state: CoordState; woken: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "satisfied" as const, source, at } };
-  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues };
+  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining };
   const woken = s.waiters.filter((w) => isReady(probe, w));
   const wokenIds = new Set(woken.map((w) => w.session));
-  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking, issues: s.issues }, woken };
+  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining }, woken };
 }
 
 /**
@@ -149,7 +150,7 @@ export function fail(
   at: number,
 ): { state: CoordState; stalled: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "failed" as const, reason, at } };
-  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues };
+  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining };
   return { state: next, stalled: stalledWaiters(next, ref) };
 }
 
@@ -210,6 +211,8 @@ export function parseCoordLine(line: string): CoordEvent | null {
       if (!target) return null;
       return { type: "assign", session, target, body: rest[1] ?? "", issueId: rest[2]?.trim() || undefined, title: rest[3]?.trim() || undefined, at };
     }
+    case "maintain":
+      return { type: "maintain", session, note: rest[0]?.trim() || undefined, at };
     case "verdict": {
       // payload = <target> \t <pass|reject> \t <reason?> \t <relevant?>; the juror is the session column.
       const target = (rest[0] ?? "").trim();
@@ -254,7 +257,9 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
       return { state: r.state, woken: [], ready: false, stalled: r.stalled, answered: [], assigned: [] };
     }
     case "woke": {
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+      // `maintaining` is carried (not cleared): once a worker enters maintenance it STAYS a
+      // maintenance worker across dispatches — auto-end permanently skips it (that IS the mode).
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -310,6 +315,19 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
           issues: e.issueId ? s.issues.filter((i) => i.id !== e.issueId) : s.issues,
         },
         woken: [], ready: false, stalled: [], answered: [], assigned,
+      };
+    }
+    case "maintain": {
+      // A finished worker parks alive in maintenance (#1957). Replace any prior entry for it, and
+      // drop it from waiting/asking — it's idle-ready, not waiting on a human. It stays maintaining
+      // across dispatches, so `useWorkerAutoEnd` never nudges it to close.
+      const maintaining = [
+        ...s.maintaining.filter((m) => m.session !== e.session),
+        { session: e.session, note: e.note ?? "", at: e.at },
+      ];
+      return {
+        state: { ...s, maintaining, waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session) },
+        woken: [], ready: false, stalled: [], answered: [], assigned: [],
       };
     }
     case "verdict":

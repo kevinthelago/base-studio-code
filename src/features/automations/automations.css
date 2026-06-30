@@ -4,29 +4,6 @@
    (.btn/.input/.card/.tag/.field/.hint/.kbd) come from tokens.css. */
 
 .auto-workspace { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
-.auto-workspace .auto-page { flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
-
-/* subtabs (page header) */
-.auto-workspace .subtabs {
-  height:46px; flex:0 0 46px; background:var(--bg-panel);
-  border-bottom:1px solid var(--border-soft);
-  padding:0 22px; display:flex; align-items:end; gap:2px;
-  font-family:var(--mono); font-size:11.5px;
-}
-.auto-workspace .subtabs .t {
-  padding:0 14px; height:32px; display:flex; align-items:center; gap:8px;
-  border-top-left-radius:6px; border-top-right-radius:6px;
-  border:1px solid transparent; border-bottom:0;
-  color:var(--fg-muted); cursor:pointer;
-}
-.auto-workspace .subtabs .t.on { background:var(--bg-canvas); color:var(--fg); border-color:var(--border-soft); }
-.auto-workspace .subtabs .t .count { padding:0 6px; border-radius:3px; background:var(--bg-elev2); color:var(--fg-dim); font-size:10px; }
-.auto-workspace .subtabs .t.on .count { background:color-mix(in oklch, var(--accent), transparent 85%); color:var(--accent); }
-.auto-workspace .subtabs .t .hint-inline { color:var(--fg-dim); font-size:10px; margin-left:2px; }
-.auto-workspace .subtabs .right { display:flex; align-items:center; gap:10px; margin-left:auto; padding-bottom:6px; }
-.auto-workspace .subtabs .right .quick-stat { font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); display:inline-flex; align-items:center; gap:5px; }
-.auto-workspace .subtabs .right .quick-stat b { color:var(--fg); font-weight:500; }
-.auto-workspace .subtabs .right .quick-stat i { width:6px; height:6px; border-radius:50%; background:var(--success); display:inline-block; }
 
 .auto-workspace .auto-body { flex:1; overflow:hidden; padding:14px 22px; min-width:0; display:flex; flex-direction:column; }
 
@@ -76,11 +53,6 @@
 .auto-workspace .cron-strip .expr { color:var(--accent); }
 .auto-workspace .cron-strip b { color:var(--fg); font-weight:500; }
 
-.auto-workspace .script-box { border:1px solid var(--border-soft); border-radius:6px; background:var(--bg-canvas); overflow:hidden; }
-.auto-workspace .script-box .head { padding:6px 10px; background:var(--bg-elev); border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
-.auto-workspace .script-box .head .fire { color:var(--accent); cursor:pointer; }
-.auto-workspace .script-box pre { margin:0; padding:10px 12px; font-family:var(--mono); font-size:11.5px; color:var(--fg); line-height:1.55; white-space:pre-wrap; }
-.auto-workspace .script-box pre .prompt { color:var(--accent); }
 
 .auto-workspace .guards { display:flex; gap:14px; align-items:center; font-size:11.5px; flex-wrap:wrap; color:var(--fg-muted); font-family:var(--mono); }
 .auto-workspace .guards label { display:flex; gap:6px; align-items:center; cursor:pointer; }

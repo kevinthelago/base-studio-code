@@ -25,7 +25,7 @@ import { COMMONS_STREAM_ID } from "./commonsGate";
  * within your owned paths" so the worker isn't left guessing whether the field was
  * omitted or genuinely empty.
  */
-export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = []): string {
+export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [], maintenance = false): string {
   const owns = stream.owns.length
     ? stream.owns.map((g) => `\`${g}\``).join(", ")
     : "(none assigned — confirm your lane with the director before writing)";
@@ -36,9 +36,18 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
   const contractDeps = stream.dependsOn.filter((d) => d !== COMMONS_STREAM_ID);
   const streamDeps = contractDeps.length ? contractDeps.join(", ") : "none";
 
-  const lines = [
-    `# Your scope — ${stream.name}`,
-    "",
+  const lines: string[] = [`# Your scope — ${stream.name}`, ""];
+  if (maintenance) {
+    lines.push(
+      "**You are in MAINTENANCE mode (#1957).** Every issue you owned is already complete — do NOT",
+      "rebuild, reopen, or re-land them. Stand by: run `bsc-maintain` (e.g. `echo \"owned issues",
+      "complete — standing by\" | bsc-maintain`) to park alive + ready, then wait. The director will",
+      "dispatch any new or regressed work in your lane (`bsc-assign`) and resume you; pick it up, carry",
+      "it through your normal loop, then return to maintenance the same way.",
+      "",
+    );
+  }
+  lines.push(
     "You are one of several Claude sessions building this project in parallel, working in your",
     `own git worktree on branch \`${stream.id}\`. This file is your lane — not the full plan.`,
     "",
@@ -62,7 +71,7 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
     "the way your kickoff says (open your PR / `bsc-landed`) and let the director close it — do",
     "not run `gh issue close`/`reopen`/`edit` (you have GitHub read access only; the role gate",
     "blocks the write, so attempting it just wastes a turn).",
-  ];
+  );
 
   const depBlock = buildWorkerDependencyBlock(deps);
   if (depBlock) lines.push("", depBlock);

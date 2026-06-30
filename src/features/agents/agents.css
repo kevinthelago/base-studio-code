@@ -4,14 +4,6 @@
 
 .agents-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
-.agents-page .subtabs { height: 46px; flex: 0 0 46px; background: var(--bg-panel); border-bottom: 1px solid var(--border-soft); padding: 0 22px; display: flex; align-items: end; gap: 2px; font-family: var(--mono); font-size: 11.5px; }
-.agents-page .subtabs .t { padding: 0 14px; height: 32px; display: flex; align-items: center; gap: 8px; border-top-left-radius: 6px; border-top-right-radius: 6px; border: 1px solid transparent; border-bottom: 0; color: var(--fg-muted); cursor: pointer; }
-.agents-page .subtabs .t.on { background: var(--bg-canvas); color: var(--fg); border-color: var(--border-soft); }
-.agents-page .subtabs .t .count { padding: 0 6px; border-radius: 3px; background: var(--bg-elev2); color: var(--fg-dim); font-size: 10px; }
-.agents-page .subtabs .t.on .count { background: color-mix(in oklch, var(--accent), transparent 85%); color: var(--accent); }
-.agents-page .subtabs .t .hint-inline { color: var(--fg-dim); font-size: 10px; margin-left: 2px; }
-.agents-page .subtabs .right { display: flex; align-items: center; gap: 10px; margin-left: auto; padding-bottom: 6px; }
-
 .agents-page .body { flex: 1; overflow: hidden; padding: 14px 22px; min-width: 0; display: flex; flex-direction: column; }
 
 /* (.sec-head moved to the shared <SectionHeader>, #1874) */

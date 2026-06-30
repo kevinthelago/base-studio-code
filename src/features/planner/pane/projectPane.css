@@ -31,7 +31,6 @@
 .sec-head .t { color: var(--fg); text-transform: uppercase; letter-spacing: .07em; }
 .sec-head .count { color: var(--fg-dim); }
 .sec-head .spacer { flex: 1; }
-.sec-body { padding: 4px 12px 14px; }
 
 .ulabel {
   font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim);
@@ -65,15 +64,6 @@
 .posture i.deny  { background: color-mix(in oklch, var(--danger), transparent 25%); }
 .posture i.off   { background: var(--bg-elev2); }
 
-.mcell {
-  width: 100%; height: 17px; border-radius: 3px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 9px; cursor: pointer;
-}
-.mcell.allow { background: color-mix(in oklch, var(--success), transparent 78%); color: var(--success); }
-.mcell.ask   { background: color-mix(in oklch, var(--accent),  transparent 76%); color: var(--accent); }
-.mcell.deny  { background: color-mix(in oklch, var(--danger),  transparent 82%); color: color-mix(in oklch, var(--danger), var(--fg) 20%); }
-
 .fbadge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 1px 6px; border-radius: 4px;
@@ -101,15 +91,6 @@
 .track > i { display: block; height: 100%; background: var(--accent); }
 .track > i.green { background: var(--success); }
 
-.trow {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 7px; border-radius: 4px;
-  font-family: var(--mono); font-size: 11px; color: var(--fg-muted);
-  cursor: pointer;
-}
-.trow:hover { background: var(--bg-elev); }
-.trow.sel { background: color-mix(in oklch, var(--accent), transparent 90%); }
-
 .mini {
   padding: 2px 8px; border-radius: 4px;
   background: var(--bg-elev); border: 1px solid var(--border-soft);
@@ -132,71 +113,29 @@
   background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
 }
 
-.branch-chip {
-  font-family: var(--mono); font-size: 8.5px;
-  padding: 1px 6px; border-radius: 3px;
-  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
-  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-}
-
 /* ----------------------------------------------------------------
-   Repos pane (#811) — mirrors the design's ReposView / planner.css.
-   All classes scoped under .repos-view so the generic names
-   (.tiles/.tile/.chip/.dropzone) never leak to the rest of the app.
+   Features board tiles + chips (#811) — the shared base, formerly co-scoped with the now-removed
+   Repos pane (its `.repos-view` classes went dead after the focused-pane refactor #652).
    ---------------------------------------------------------------- */
-.repos-view { display: flex; flex-direction: column; gap: 12px; }
-
-.repos-view .tiles, .features-view .tiles {
+.features-view .tiles {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px;
 }
-.repos-view .tile, .features-view .tile {
+.features-view .tile {
   padding: 10px 12px; border-radius: 8px;
   background: var(--bg-canvas); border: 1px solid var(--border-soft);
 }
-.repos-view .tile .v, .features-view .tile .v { font-family: var(--mono); font-size: 19px; color: var(--fg); line-height: 1.1; }
-.repos-view .tile .k, .features-view .tile .k {
+.features-view .tile .v { font-family: var(--mono); font-size: 19px; color: var(--fg); line-height: 1.1; }
+.features-view .tile .k {
   font-family: var(--mono); font-size: 9px; color: var(--fg-dim);
   text-transform: uppercase; letter-spacing: .06em; margin-top: 3px;
 }
 
-.repos-view .repo-card {
-  padding: 12px 13px; border-radius: 9px;
-  background: var(--bg-canvas); border: 1px solid var(--border-soft);
-}
-.repos-view .repo-card.primary { border-color: color-mix(in oklch, var(--accent), transparent 65%); }
-.repos-view .repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
-.repos-view .repo-row { display: flex; align-items: center; gap: 8px; }
-.repos-view .repo-branchline { margin-top: 9px; }
-.repos-view .repo-desc { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); margin: 7px 0 0; }
-.repos-view .repo-stat { font-family: var(--mono); font-size: 9px; white-space: nowrap; }
-.repos-view .repo-agents { display: inline-flex; align-items: center; }
-.repos-view .repo-branches { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
-
-.repos-view .chip, .features-view .chip {
+.features-view .chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 1px 7px; border-radius: 99px;
   font-family: var(--mono); font-size: 9px;
   background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
 }
-.repos-view .chip.accent { color: var(--accent); border-color: var(--accent-dim); }
-
-.repos-view .dropzone {
-  width: 100%; border: 1px dashed var(--border); border-radius: 8px; padding: 14px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  font-family: var(--mono); font-size: 10px; color: var(--fg-dim);
-  background: repeating-linear-gradient(135deg, transparent 0 8px,
-    color-mix(in oklch, var(--fg), transparent 95%) 8px 9px);
-  cursor: pointer; transition: border-color .12s, color .12s;
-}
-.repos-view .dropzone:hover { border-color: var(--accent-dim); color: var(--fg-muted); }
-
-.repos-view .repo-linkrow { display: flex; gap: 6px; align-items: center; }
-.repos-view .repo-linkrow input {
-  flex: 1; height: 26px; padding: 0 8px; border-radius: 6px;
-  background: var(--bg-canvas); border: 1px solid var(--border-soft); color: var(--fg);
-  font-family: var(--mono); font-size: 10px; outline: none;
-}
-.repos-view .repo-linkrow input:focus { border-color: var(--accent-dim); }
 
 /* ----------------------------------------------------------------
    Features workshop board (#811-followup) — expandable capability
@@ -268,19 +207,6 @@
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
 /* ----------------------------------------------------------------
-   Stage header (#652)
-   ---------------------------------------------------------------- */
-.stage-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px 8px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-canvas);
-}
-
-/* ----------------------------------------------------------------
    Footer advance bar (#652)
    ---------------------------------------------------------------- */
 .advance-bar {
@@ -314,16 +240,6 @@
    the inner .pp-scroll actually scroll. */
 .fp { display: flex; flex-direction: column; flex: 1 1 0; height: 100%; background: var(--bg-panel);
   min-height: 0; overflow: hidden; }
-
-/* pane identity header */
-.fp .fp-top { flex: 0 0 auto; padding: 9px 14px; background: var(--bg-elev);
-  border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; gap: 9px; }
-.fp .fp-top .glyph { width: 9px; height: 9px; border-radius: 2px;
-  background: linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50)); }
-.fp .fp-top .name { font-family: var(--mono); font-size: 12px; color: var(--fg); }
-.fp .fp-top .id { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); }
-.fp .fp-top .pulse { display: inline-flex; align-items: center; gap: 5px;
-  font-family: var(--mono); font-size: 9px; color: var(--fg-muted); }
 
 /* The sequenced rail (#668) is now the shared <ProgressionRail> (#1869) — its styles live in
    progressionRail.css (the .prail-* classes), self-contained and imported by the component. */

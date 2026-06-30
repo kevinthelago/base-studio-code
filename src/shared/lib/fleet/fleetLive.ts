@@ -39,12 +39,6 @@ function hashColor(s: string): string {
   return `oklch(0.72 0.13 ${hashString(s) % 360})`;
 }
 
-/** Parse the tab index out of a pane id ("t{tab}p{pane}"), or -1. */
-export function tabOfPane(paneId: string): number {
-  const m = /^t(\d+)p\d+$/.exec(paneId);
-  return m ? Number(m[1]) : -1;
-}
-
 /**
  * The live status for a worker pane: coordination wins (a parked worker is
  * asking / waiting / blocked), otherwise the raw run/idle from `paneStatus`
@@ -56,7 +50,10 @@ export function statusForPane(
   if (coord.asking.some(a => a.session === paneId)) return "asking";
   if (coord.waiting.some(w => w.session === paneId)) return "waiting";
   if (coord.waiters.some(w => w.session === paneId)) return "blocked";
-  return paneStatus[paneId] === "run" ? "running" : "idle";
+  if (paneStatus[paneId] === "run") return "running"; // active work wins (a dispatched maintenance worker)
+  // Otherwise, a finished worker parked in maintenance (#1957) shows as `maintenance`, not plain idle.
+  if (coord.maintaining.some(m => m.session === paneId)) return "maintenance";
+  return "idle";
 }
 
 /** The parked-state note for a pane (question / wait reason / block deps), or "". */
@@ -70,16 +67,18 @@ function noteForPane(paneId: string, coord: CoordState): string {
     const deps = blocked.deps.map(d => (d.kind === "issue" ? `#${d.number}` : d.kind === "contract" ? `contract:${d.name}` : d.kind)).join(", ");
     return deps ? `blocked on ${deps}` : "blocked";
   }
+  const maint = coord.maintaining.find(m => m.session === paneId);
+  if (maint) return maint.note || "owned issues complete — standing by";
   return "";
 }
 
 export interface BuildWorkersInput {
-  /** the launched fleet: pane id → its stream. */
+  /** the launched fleet: pane id → its stream, keyed by the #1176 IDENTITY id (`<key>:<stream>`). */
   fleetPaneStreams: Record<string, AgentStream>;
   paneStatus: Record<string, "run" | "on" | "idle">;
   coord: CoordState;
-  /** tab count, so panes on closed tabs are dropped. */
-  tabCount: number;
+  /** The open tabs (with their minted `paneIds`), so a worker whose tab was closed is dropped. */
+  tabs: { paneIds?: string[] }[];
   disabledPanes: Record<string, boolean>;
   profiles: ProfileLike[];
 }
@@ -87,12 +86,16 @@ export interface BuildWorkersInput {
 /** Build the live worker roster from the running fleet. Only panes whose tab is
  *  still open and not disabled are included (a launched-then-closed fleet drops). */
 export function buildLiveWorkers(input: BuildWorkersInput): LiveWorker[] {
-  const { fleetPaneStreams, paneStatus, coord, tabCount, disabledPanes, profiles } = input;
+  const { fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles } = input;
   const profById = new Map(profiles.map(p => [p.id, p]));
+  // A worker is live only while its pane is still one of an OPEN tab's minted cells (#1176): the
+  // fleet/triage launch records each pane's IDENTITY id (`<key>:<stream>`) on the tab's `paneIds`, so
+  // a closed tab drops its workers. (The old positional `tabOfPane` parse matched only `t<idx>p<idx>`
+  // and so silently dropped EVERY identity-keyed pane — the "No fleet running" bug.)
+  const livePaneIds = new Set(tabs.flatMap(t => t.paneIds ?? []));
   const workers: LiveWorker[] = [];
   for (const [paneId, stream] of Object.entries(fleetPaneStreams)) {
-    const tab = tabOfPane(paneId);
-    if (tab < 0 || tab >= tabCount || disabledPanes[paneId]) continue;
+    if (!livePaneIds.has(paneId) || disabledPanes[paneId]) continue;
     const prof = stream.profile ? profById.get(stream.profile) : undefined;
     workers.push({
       id: paneId,
