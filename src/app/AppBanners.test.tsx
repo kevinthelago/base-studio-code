@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionRecoveryBanner } from "./AppBanners";
+import { SessionRecoveryBanner, SandboxSetupBanner } from "./AppBanners";
 import { useAppStore } from "@/store";
 
 const DISCOVERED = [
@@ -60,5 +60,42 @@ describe("SessionRecoveryBanner (#1266)", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "reap_session")).toBe(true));
     const reap = calls.find((c) => c.cmd === "reap_session");
     expect((reap!.args as { paneId: string }).paneId).toBe("man:t0:p1");
+  });
+});
+
+describe("SandboxSetupBanner (#1916)", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "wsl_sandbox_status" ? { ready: false, detail: "bubblewrap not installed" } : undefined,
+    );
+    useAppStore.setState({ bypassPermissions: true, sandboxNudgeDismissed: false });
+  });
+
+  it("nudges when the deny-list posture is on and the sandbox isn't ready", async () => {
+    render(<SandboxSetupBanner />);
+    await waitFor(() => expect(screen.getByText(/Agent sandbox not set up/)).toBeTruthy());
+  });
+
+  it("'Set up' deep-links to Settings → Security and dismisses", async () => {
+    render(<SandboxSetupBanner />);
+    await waitFor(() => expect(screen.getByText("Set up")).toBeTruthy());
+    fireEvent.click(screen.getByText("Set up"));
+    const s = useAppStore.getState();
+    expect(s.activeWorkspace).toBe("settings");
+    expect(s.settingsSection).toBe("security");
+    expect(s.sandboxNudgeDismissed).toBe(true);
+  });
+
+  it("stays hidden once dismissed", async () => {
+    useAppStore.setState({ sandboxNudgeDismissed: true });
+    render(<SandboxSetupBanner />);
+    await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
+  });
+
+  it("stays hidden in the allow-list posture", async () => {
+    useAppStore.setState({ bypassPermissions: false });
+    render(<SandboxSetupBanner />);
+    await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
   });
 });

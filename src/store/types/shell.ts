@@ -27,6 +27,9 @@ export interface ShellState {
   // Settings
   settingsSection: string;
   setSettingsSection: (section: string) => void;
+  /** First-run OS-sandbox setup nudge (#1916): once dismissed, the banner stays hidden across launches. */
+  sandboxNudgeDismissed: boolean;
+  dismissSandboxNudge: () => void;
 
   // Performance monitoring (#569)
   perfConfig: PerfConfig;
