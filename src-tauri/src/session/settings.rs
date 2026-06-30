@@ -288,7 +288,7 @@ mod baseline_drift_guard {
             .unwrap_or_else(|| panic!("process.md missing baseline bullet marker: {marker}"));
         let tail = &md[start..];
         let next_item = tail.get(1..).and_then(|t| t.find("\n- ")).map(|i| i + 1);
-        let blank = tail.find("\n\n");
+        let blank = tail.find("\n\n").or_else(|| tail.find("\n\r\n")); // LF or CRLF blank line
         let end = [next_item, blank].into_iter().flatten().min().unwrap_or(tail.len());
         tail[..end].to_string()
     }
@@ -423,7 +423,7 @@ mod tests {
         assert!(allow.contains(&"Bash".to_string()));
         assert!(allow.contains(&"Bash(gh *)".to_string()));
         assert!(allow.contains(&"Bash(git *)".to_string()));
-        assert!(allow.contains(&"Bash(bsc-plan *)".to_string())); // the plan-store CLI (#plan-db)
+        assert!(allow.contains(&"Bash(bsc *)".to_string())); // the unified bsc state CLI (#1877)
         assert!(allow.contains(&"Bash(cargo *)".to_string()));
         assert_eq!(allow.iter().filter(|r| *r == "Bash(git *)").count(), 1);
         // Curated dangerous defaults plus the user deny are present.

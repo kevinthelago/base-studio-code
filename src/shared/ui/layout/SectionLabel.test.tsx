@@ -7,7 +7,8 @@ describe("SectionLabel", () => {
     render(<SectionLabel>Scopes requested</SectionLabel>);
     const el = screen.getByText("Scopes requested");
     expect(el.style.textTransform).toBe("uppercase");
-    expect(el.style.fontFamily).toBe("var(--mono)");
+    // The mono font-family now comes from the `mono` utility class, not an inline style.
+    expect(el.classList.contains("mono")).toBe(true);
     expect(el.style.color).toBe("var(--fg-dim)");
   });
 

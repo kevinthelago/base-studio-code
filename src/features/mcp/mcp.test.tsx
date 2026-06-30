@@ -61,7 +61,7 @@ describe("McpWorkspace + HooksView", () => {
   it("shows the MCP enabled count from the store and decrements it on toggle off", () => {
     const { container } = render(<McpWorkspace />);
     expect(installedCount(container)).toBe(String(MCP_ENABLED)); // 1
-    const firstOn = container.querySelector(".row-aside .toggle.on") as HTMLElement;
+    const firstOn = container.querySelector(".clr-aside .toggle.on") as HTMLElement;
     fireEvent.click(firstOn);
     expect(installedCount(container)).toBe(String(MCP_ENABLED - 1)); // 0
     // The store's mcpServers slice was flipped; the hook (a separate slice) is untouched.

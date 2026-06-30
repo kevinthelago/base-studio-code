@@ -48,8 +48,8 @@ export function stageKind(key: string): StageKindMeta {
  *  blueprint resolves a real icon for every stage without those flooding the palette. */
 export const STAGE_KIND_KEYS = [
   "discovery", "deployment", "users", "ui", "stack", "architecture", "schema", "api",
-  "streams", "automations", "skills", "testing", "security",
-  "observability", "infra", "cicd", "docs", "cleanup",
+  "streams", "automations", "skills", "security",
+  "observability", "infra", "cicd", "docs",
 ];
 
 // ── output dispositions: what happens to a stage's artifact ───────────────────

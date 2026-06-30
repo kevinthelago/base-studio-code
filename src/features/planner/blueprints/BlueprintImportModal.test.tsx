@@ -68,7 +68,7 @@ describe("BlueprintImportModal", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^preview$/i })[0]);
     expect(onPreview).toHaveBeenCalledWith("g-fresh");
     expect(await screen.findByText("Discovery")).toBeTruthy(); // the blueprint's stages render
-    expect(screen.getByText("Repos")).toBeTruthy();
+    expect(screen.getByText("Deployment")).toBeTruthy();
     expect(screen.getByText("Establish the goal, users, and scope.")).toBeTruthy(); // the stage PROMPT, under its row (#1268)
     expect(screen.getByText(/view raw JSON/i)).toBeTruthy();  // the literal file is one click away
     expect(onImport).not.toHaveBeenCalled();                  // previewing never imports

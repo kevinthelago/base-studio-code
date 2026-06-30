@@ -78,10 +78,12 @@ describe("Fleet screen", () => {
   });
 
   it("renders the live worker board when a fleet is launched", () => {
+    // #1176: fleet panes key off IDENTITY ids (`<key>:<stream>`) recorded on the tab's `paneIds`;
+    // buildLiveWorkers drops any worker not on an open tab's paneIds.
     useAppStore.setState({
-      fleetPaneStreams: { t0p0: stream({ name: "api", issues: ["#1"] }) },
-      paneStatus: { t0p0: "run" },
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run" }] as never,
+      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1"] }) },
+      paneStatus: { "proj:api": "run" },
+      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
       disabledPanes: {},
       agentProfiles: [] as never,
     });
@@ -93,9 +95,9 @@ describe("Fleet screen", () => {
 
   it("opens a worker's per-agent page and returns via '← fleet' (#499)", () => {
     useAppStore.setState({
-      fleetPaneStreams: { t0p0: stream({ name: "api", issues: ["#1", "#2"], profile: "pf_build" }) },
-      paneStatus: { t0p0: "run" },
-      paneProfiles: { t0p0: "pf_build" } as never,
+      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1", "#2"], profile: "pf_build" }) },
+      paneStatus: { "proj:api": "run" },
+      paneProfiles: { "proj:api": "pf_build" } as never,
       paneFlows: {} as never,
       agentProfiles: [{
         id: "pf_build", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",
@@ -103,7 +105,7 @@ describe("Fleet screen", () => {
         tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
         paths: { allow: ["src/**"], deny: ["**/.env"] }, net: { allow: ["crates.io"] }, builtin: false,
       }] as never,
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run" }] as never,
+      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
       disabledPanes: {},
     });
     render(<Fleet />);
@@ -121,9 +123,9 @@ describe("Fleet screen", () => {
 
   it("per-agent pause/resume + profile modal are wired to the store (#499)", () => {
     useAppStore.setState({
-      fleetPaneStreams: { t0p0: stream({ name: "api", issues: ["#1"], profile: "pf_build" }) },
-      paneStatus: { t0p0: "run" },
-      paneProfiles: { t0p0: "pf_build" } as never,
+      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1"], profile: "pf_build" }) },
+      paneStatus: { "proj:api": "run" },
+      paneProfiles: { "proj:api": "pf_build" } as never,
       paneFlows: {} as never,
       agentProfiles: [{
         id: "pf_build", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",
@@ -131,14 +133,14 @@ describe("Fleet screen", () => {
         tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
         paths: { allow: ["src/**"], deny: ["**/.env"] }, net: { allow: ["crates.io"] }, builtin: false,
       }] as never,
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run" }] as never,
+      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
       disabledPanes: {},
     });
     render(<Fleet />);
     fireEvent.click(screen.getByText("api"));
     // Pause disables the pane in the store.
     fireEvent.click(screen.getByText("⏸ pause"));
-    expect(useAppStore.getState().disabledPanes.t0p0).toBe(true);
+    expect(useAppStore.getState().disabledPanes["proj:api"]).toBe(true);
     // Profile modal lists the profiles.
     fireEvent.click(screen.getByText("⛉ profile"));
     expect(screen.getByText("Change profile")).toBeTruthy();
