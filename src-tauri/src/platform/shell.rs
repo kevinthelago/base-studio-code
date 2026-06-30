@@ -388,19 +388,32 @@ pub(crate) fn wsl_invocation(distro: &str, cwd: &str, command: &str) -> (String,
 }
 
 /// The interactive-shell init line for a session running INSIDE the sealed WSL2 distro (#1988).
-/// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch) but bakes the
-/// distro's own `bsc`/`bsc-agent` paths into the env — the host env does not cross the wsl boundary —
-/// and sources no host rc. `cwd` is a distro-native path (`/home/agent/...`); `launch` (e.g. a
+/// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch). The host env
+/// does NOT traverse the wsl boundary, so this exports `env` (the session env — e.g. bsc-agent's
+/// provider/model/key + `GH_TOKEN`) INTO the distro shell, then bakes the distro's own `bsc`/`bsc-agent`
+/// paths over the top. Sources no host rc. `cwd` is distro-native (`/home/agent/...`); `launch` (e.g. a
 /// `bsc-agent …` command) is appended to start the agent. (In-distro bsc-* helper rc is a follow-up.)
-pub(crate) fn sandbox_init_line(cwd: &str, launch: Option<&str>) -> String {
+pub(crate) fn sandbox_init_line(
+    cwd: &str,
+    launch: Option<&str>,
+    env: &std::collections::HashMap<String, String>,
+) -> String {
     let cd = if cwd.is_empty() {
         String::new()
     } else {
         format!("cd \"{cwd}\" 2>/dev/null; ")
     };
+    // Cross the session env in. Only valid shell identifiers; the distro's own BSC_BIN/BSC_AGENT_BIN
+    // below override any crossed value, so the distro's sidecars always win.
+    let mut env_exports = String::new();
+    for (k, v) in env {
+        if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            env_exports.push_str(&format!("export {k}={}; ", bash_ansi_c_quote(v)));
+        }
+    }
     let launch_suffix = launch.map(|s| format!("; {s}")).unwrap_or_default();
     format!(
-        "export BSC_BIN=/usr/local/bin/bsc BSC_AGENT_BIN=/usr/local/bin/bsc-agent; \
+        "{env_exports}export BSC_BIN=/usr/local/bin/bsc BSC_AGENT_BIN=/usr/local/bin/bsc-agent; \
          {cd}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
          __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
          PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
@@ -451,13 +464,19 @@ mod tests {
     #[test]
     fn sandbox_init_line_bakes_distro_env_cwd_and_launch() {
         use super::sandbox_init_line;
-        let l = sandbox_init_line("/home/agent/projects/p", Some("bsc-agent"));
+        let mut env = std::collections::HashMap::new();
+        env.insert("BSC_AGENT_PROVIDER".to_string(), "openai".to_string());
+        env.insert("GH_TOKEN".to_string(), "tok".to_string());
+        let l = sandbox_init_line("/home/agent/projects/p", Some("bsc-agent"), &env);
+        // The session env crosses into the distro (so a sandboxed agent has its config).
+        assert!(l.contains("export BSC_AGENT_PROVIDER="));
+        assert!(l.contains("export GH_TOKEN="));
         assert!(l.contains("export BSC_BIN=/usr/local/bin/bsc"));
         assert!(l.contains("BSC_AGENT_BIN=/usr/local/bin/bsc-agent"));
         assert!(l.contains("cd \"/home/agent/projects/p\""));
         assert!(l.trim_end().ends_with("; bsc-agent"));
         // Empty cwd ⇒ no cd; no launch ⇒ no trailing command.
-        let bare = sandbox_init_line("", None);
+        let bare = sandbox_init_line("", None, &std::collections::HashMap::new());
         assert!(!bare.contains("cd \""));
         assert!(bare.trim_end().ends_with("\\033[H"));
     }

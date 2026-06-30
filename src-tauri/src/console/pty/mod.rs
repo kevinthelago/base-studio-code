@@ -667,7 +667,7 @@ pub(crate) fn pty_create(
     let claude_fn = harness.shell_fn(model_alias.as_deref());
     // #1988: a distro session always runs the distro's bash — bake its env + cd into the init line.
     let init_line = if into_sandbox.is_some() {
-        crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref())
+        crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref(), &env_map)
     } else { match resolved_shell.kind {
         crate::platform::shell::ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
