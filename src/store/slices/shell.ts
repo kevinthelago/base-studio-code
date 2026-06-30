@@ -8,7 +8,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { setMapEntry } from "../updateHelpers";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissed" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -37,8 +37,8 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       settingsSection: "github",
       setSettingsSection: (section) => set({ settingsSection: section }),
 
-      sandboxNudgeDismissed: false,
-      dismissSandboxNudge: () => set({ sandboxNudgeDismissed: true }),
+      sandboxNudgeDismissCount: 0,
+      dismissSandboxNudge: () => set((s) => ({ sandboxNudgeDismissCount: s.sandboxNudgeDismissCount + 1 })),
 
       perfConfig: DEFAULT_PERF_CONFIG,
       setPerfConfig: (config) => {

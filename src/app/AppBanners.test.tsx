@@ -71,7 +71,7 @@ describe("SandboxSetupBanner (#1916)", () => {
         ? { ready: false, detail: "bubblewrap not installed", autoInstallable: true, needsWsl: false }
         : undefined,
     );
-    useAppStore.setState({ bypassPermissions: true, sandboxNudgeDismissed: false });
+    useAppStore.setState({ bypassPermissions: true, sandboxNudgeDismissCount: 0 });
   });
 
   it("nudges when the deny-list posture is on and the sandbox isn't ready", async () => {
@@ -93,8 +93,21 @@ describe("SandboxSetupBanner (#1916)", () => {
     await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith("provision_sandbox"));
   });
 
-  it("stays hidden once dismissed", async () => {
-    useAppStore.setState({ sandboxNudgeDismissed: true });
+  it("counts the ✕ dismissal and then stays hidden on later launches", async () => {
+    // First launch: shows. Pressing the ✕ (aria-label "Dismiss") records the dismissal…
+    const first = render(<SandboxSetupBanner />);
+    await screen.findByText(/Agent sandbox not set up/);
+    fireEvent.click(screen.getByLabelText("Dismiss"));
+    await waitFor(() => expect(useAppStore.getState().sandboxNudgeDismissCount).toBe(1));
+    first.unmount();
+
+    // A later launch (count now at the cap): the nudge stays hidden.
+    render(<SandboxSetupBanner />);
+    await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
+  });
+
+  it("stays hidden once the dismiss count has reached the cap", async () => {
+    useAppStore.setState({ sandboxNudgeDismissCount: 1 });
     render(<SandboxSetupBanner />);
     await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
   });
@@ -104,4 +117,5 @@ describe("SandboxSetupBanner (#1916)", () => {
     render(<SandboxSetupBanner />);
     await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
   });
+
 });
