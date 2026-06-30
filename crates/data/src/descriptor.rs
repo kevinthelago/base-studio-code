@@ -7,11 +7,10 @@
 //!
 //! A connector is one of two kinds:
 //! - [`ConnectorKind::Rest`] — pure DATA: the generic [`RestConnector`] over a fixed resource list.
-//!   Covers the long-tail vendor presets and any user-authored REST source. Built here via
-//!   [`ConnectorDescriptor::build_rest`].
-//! - [`ConnectorKind::Native`] — a first-party connector with bespoke transport (Salesforce SOQL,
-//!   monday GraphQL, OData, FHIR, …) or a placeholder pending a live transport. Built by the host's
-//!   native dispatch (`sources/data.rs`), not here — `build_rest` returns `None` for it.
+//!   Covers any user/agent-authored REST source. Built here via [`ConnectorDescriptor::build_rest`].
+//! - [`ConnectorKind::Native`] — a first-party connector with bespoke transport built by a host's
+//!   native dispatch, not here — `build_rest` returns `None` for it. No native connectors ship today
+//!   (#1976 removed them), but the variant stays for a future bespoke transport.
 //!
 //! Pure: transport + auth live in the `fetch` closure the host supplies (built per the descriptor's
 //! [`SourceAuth`]); the crate never touches HTTP or the keychain (#1194).
@@ -20,16 +19,15 @@ use crate::connector::{Connector, FetchFn};
 use crate::source_meta::{LiveSupport, SourceAuth};
 use crate::rest::{RestConnector, RestResource};
 
-/// One declarative REST resource: `(object name, request path/segment, array_key envelope)` — the
-/// same shape [`crate::presets`] uses. `array_key` is where the record array lives in the response
-/// (a dot-path like `_embedded.leads`), or `None` when the body itself is the array.
+/// One declarative REST resource: `(object name, request path/segment, array_key envelope)`.
+/// `array_key` is where the record array lives in the response (a dot-path like `_embedded.leads`),
+/// or `None` when the body itself is the array.
 pub type ResourceDef = (&'static str, &'static str, Option<&'static str>);
 
 /// Anything that can describe a fixed set of REST resources gets the generic [`RestConnector`]
-/// builder for free. The single source of the `connector()` build: the compiled-in
-/// [`VendorPreset`](crate::presets::VendorPreset), the runtime
-/// [`RuntimePreset`](crate::runtime::RuntimePreset), and the `Rest` resource list of a
-/// [`ConnectorDescriptor`] all reach the same code path.
+/// builder for free. The single source of the `connector()` build: the runtime
+/// [`RuntimePreset`](crate::runtime::RuntimePreset) and the `Rest` resource list of a
+/// [`ConnectorDescriptor`] both reach the same code path.
 pub trait RestPreset {
     /// This preset's resources as [`RestResource`]s.
     fn rest_resources(&self) -> Vec<RestResource>;
@@ -87,29 +85,12 @@ impl ConnectorDescriptor {
     }
 }
 
-/// The packaged built-in source-connector catalog — the single source of truth for the connectors
-/// the Source pane offers (mirrors the frontend `CONNECTORS`). Every built-in is [`ConnectorKind::Native`]:
-/// each has a bespoke transport (or is a pending placeholder) built by the host's dispatch. The
-/// long-tail vendor presets ([`crate::presets`]) are the `Rest` connectors.
-pub const BUILTINS: &[ConnectorDescriptor] = &[
-    // OAuth connectors store their access token in the keychain under `accessToken` (minted by the
-    // source_oauth flow); the scan builds a bearer transport from it.
-    ConnectorDescriptor { id: "quickbooks", label: "QuickBooks", category: "erp", auth: SourceAuth::OAuth, secret_field: Some("accessToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "quickbase", label: "Quickbase", category: "erp", auth: SourceAuth::Token, secret_field: Some("userToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "salesforce", label: "Salesforce", category: "crm", auth: SourceAuth::OAuth, secret_field: Some("accessToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "hubspot", label: "HubSpot", category: "crm", auth: SourceAuth::OAuth, secret_field: Some("accessToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "monday", label: "monday.com", category: "crm", auth: SourceAuth::OAuth, secret_field: Some("accessToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "dynamics365", label: "Dynamics 365", category: "crm", auth: SourceAuth::OAuth, secret_field: Some("accessToken"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "netsuite", label: "NetSuite", category: "erp", auth: SourceAuth::Token, secret_field: Some("token"), live: LiveSupport::Pending("token-based-auth signing not yet wired"), kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "sap-odata", label: "SAP OData", category: "erp", auth: SourceAuth::Basic, secret_field: Some("password"), live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "sql", label: "SQL database", category: "database", auth: SourceAuth::Password, secret_field: Some("password"), live: LiveSupport::Pending("database driver not yet wired"), kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "rest", label: "REST / OpenAPI", category: "generic", auth: SourceAuth::ApiKey, secret_field: Some("apiKey"), live: LiveSupport::Pending("OpenAPI resource discovery not yet wired"), kind: ConnectorKind::Native },
-    // Healthcare (#1311): HL7 FHIR R4 over an open sandbox base URL (public test server). Read-only;
-    // the live transport reads the FHIR root from the `baseUrl` field. SMART-on-FHIR bearer auth +
-    // DICOMweb are gated follow-ups (live PHI is held behind the compliance bar).
-    ConnectorDescriptor { id: "fhir", label: "HL7 FHIR (R4)", category: "healthcare", auth: SourceAuth::Open, secret_field: None, live: LiveSupport::Live, kind: ConnectorKind::Native },
-    ConnectorDescriptor { id: "csv", label: "CSV export", category: "file", auth: SourceAuth::Upload, secret_field: None, live: LiveSupport::Pending("uses the file-upload path"), kind: ConnectorKind::Native },
-];
+/// The packaged built-in source-connector catalog. The native pre-built connectors were removed
+/// (#1976) — every source connector is now agent-authored as a runtime
+/// [`RuntimePreset`](crate::runtime::RuntimePreset) (a REST manifest, #1235), so this ships empty.
+/// It stays referenced (the runtime-preset id-collision guard calls [`find`]); a future packaged
+/// connector would be added here as a [`ConnectorKind::Rest`] descriptor.
+pub const BUILTINS: &[ConnectorDescriptor] = &[];
 
 /// Look up a built-in source connector by id.
 pub fn find(id: &str) -> Option<&'static ConnectorDescriptor> {
@@ -150,46 +131,14 @@ mod tests {
         assert!(d.build_rest("salesforce", fake_fetch()).is_none());
     }
 
+    /// The native pre-built connectors were removed (#1976): no built-ins ship, every source
+    /// connector is now an agent-authored runtime preset. `find` returns `None` for any id, and
+    /// the (still-referenced) catalog is empty.
     #[test]
-    fn lookup_and_uniqueness() {
+    fn builtins_are_empty_after_native_removal() {
+        assert!(BUILTINS.is_empty());
+        assert!(find("salesforce").is_none());
+        assert!(find("quickbase").is_none());
         assert!(find("does-not-exist").is_none());
-        let qb = find("quickbase").unwrap();
-        assert_eq!(qb.auth, SourceAuth::Token);
-        assert_eq!(qb.secret_field, Some("userToken"));
-        assert_eq!(qb.live, LiveSupport::Live);
-
-        // ids are unique
-        let mut ids: Vec<&str> = BUILTINS.iter().map(|c| c.id).collect();
-        let n = ids.len();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), n);
-    }
-
-    #[test]
-    fn credential_connectors_declare_a_secret_field() {
-        for c in BUILTINS {
-            match c.auth {
-                // credential + oauth connectors all resolve a secret from the keychain.
-                SourceAuth::Token | SourceAuth::Password | SourceAuth::ApiKey | SourceAuth::Basic | SourceAuth::OAuth => {
-                    assert!(c.secret_field.is_some(), "{} must declare a secret field", c.id);
-                }
-                // open (FHIR sandbox) + upload (CSV) carry no secret.
-                SourceAuth::Open | SourceAuth::Upload => assert!(c.secret_field.is_none()),
-            }
-        }
-    }
-
-    #[test]
-    fn at_least_one_connector_has_live_transport() {
-        assert!(BUILTINS.iter().any(|c| c.live == LiveSupport::Live));
-    }
-
-    #[test]
-    fn fhir_is_an_open_live_connector_with_no_secret() {
-        let fhir = find("fhir").expect("FHIR connector registered (#1311)");
-        assert_eq!(fhir.auth, SourceAuth::Open);
-        assert_eq!(fhir.secret_field, None);
-        assert_eq!(fhir.live, LiveSupport::Live);
     }
 }
