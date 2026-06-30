@@ -1,148 +1,20 @@
-// Migration SOURCE catalog (#source-pane) — the connector catalog and resolution behind the
-// planner's Source stage: the first-party connectors, the packaged vendor presets (#1288), the
-// per-connector resolver/colors, the sample scan inventory, the pitch→proposal keyword scan, and the
-// redacted handle the planner is allowed to see. Split out of sourceConfig.ts (#1638); the type
+// Migration SOURCE catalog (#source-pane) — connector resolution behind the planner's Source stage:
+// the per-connector resolver/colors, the sample scan inventory, the pitch→proposal keyword scan, and
+// the redacted handle the planner is allowed to see. Split out of sourceConfig.ts (#1638); the type
 // model lives in sourceSpecs.ts and the gate/derivation helpers in sourceGate.ts /
 // dataModelDerivation.ts / sourceScanViews.ts.
+//
+// The native pre-built connectors were removed (#1976): the agent authors every connector as a
+// runtime REST preset (#1235), so there is no static `CONNECTORS` catalog. {@link connector}
+// resolves any id to a generic fallback shape so a declared runtime source still renders.
 
-import type {
-  ConnectionSpec, Connector, ConnectorCatalogEntry, DeclaredSource, DiscoveredObject, SourceBehavior,
-} from "./sourceSpecs";
+import type { Connector, DeclaredSource, DiscoveredObject, SourceBehavior } from "./sourceSpecs";
 
-/** Build a Source-pane {@link Connector} from a backend preset entry (#1288): a generic-REST
- *  connector declared with a base URL + bearer token, described by what the preset pulls. */
-export function presetToConnector(e: ConnectorCatalogEntry): Connector {
-  const badge = e.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "··";
-  return {
-    id: e.id,
-    name: e.name,
-    badge,
-    authLabel: "token",
-    category: e.category,
-    preset: true,
-    spec: {
-      auth: "token",
-      fields: [
-        { key: "baseUrl", label: "base URL", placeholder: "https://api.vendor.com" },
-        { key: "token", label: "API token", secret: true },
-      ],
-      contributes: e.contributes || "resources discovered from the API",
-    },
-  };
-}
-
-const oauth = (label: string, contributes: string, envs = true): ConnectionSpec => ({ auth: "oauth", fields: [], oauthLabel: label, envs, contributes });
-
-/** The connector catalog (#source-pane). Each declared source renders its own page from `spec`. */
-export const CONNECTORS: Connector[] = [
-  {
-    id: "quickbooks", name: "QuickBooks", badge: "QB", authLabel: "OAuth",
-    spec: oauth("Connect to QuickBooks", "Customers · Invoices · Items · Payments + recurring-invoice rules"),
-  },
-  {
-    id: "quickbase", name: "Quickbase", badge: "Qk", authLabel: "token",
-    spec: {
-      auth: "token",
-      fields: [
-        { key: "realm", label: "realm hostname", placeholder: "acme.quickbase.com" },
-        { key: "appId", label: "App ID / DBID", optional: true, hint: "scopes the scan", placeholder: "bqr2x4n8" },
-        { key: "userToken", label: "User Token", secret: true },
-      ],
-      contributes: "Projects · Tickets · Vendors + form rules · Pipelines",
-    },
-  },
-  {
-    id: "salesforce", name: "Salesforce", badge: "SF", authLabel: "OAuth",
-    spec: oauth("Connect to Salesforce", "objects + custom fields + validation rules · Flows / Process Builder · approval processes"),
-  },
-  {
-    id: "hubspot", name: "HubSpot", badge: "HS", authLabel: "OAuth / token",
-    spec: oauth("Connect to HubSpot", "Contacts · Companies · Deals · Tickets + workflows"),
-  },
-  {
-    id: "monday", name: "monday.com", badge: "Mo", authLabel: "OAuth / token",
-    spec: oauth("Connect to monday.com", "Boards · Items · Columns + automations"),
-  },
-  {
-    id: "dynamics365", name: "Dynamics 365", badge: "Dy", authLabel: "OAuth",
-    spec: oauth("Connect to Dynamics 365", "Accounts · Contacts · Opportunities + business rules"),
-  },
-  {
-    id: "netsuite", name: "NetSuite", badge: "NS", authLabel: "token",
-    spec: {
-      auth: "token",
-      fields: [
-        { key: "accountId", label: "Account ID", placeholder: "1234567" },
-        { key: "token", label: "Token-based auth secret", secret: true },
-      ],
-      contributes: "Customers · Transactions · Items + saved searches",
-    },
-  },
-  {
-    id: "sap-odata", name: "SAP OData", badge: "SAP", authLabel: "basic / OAuth",
-    spec: {
-      auth: "basic",
-      fields: [
-        { key: "serviceUrl", label: "OData service URL", placeholder: "https://sap.acme.com/odata" },
-        { key: "user", label: "User" },
-        { key: "password", label: "Password", secret: true },
-      ],
-      contributes: "entity sets + associations",
-    },
-  },
-  {
-    id: "sql", name: "SQL database", badge: "SQL", authLabel: "password",
-    spec: {
-      auth: "password",
-      fields: [
-        { key: "host", label: "host", placeholder: "db.acme.com:5432" },
-        { key: "database", label: "database", placeholder: "production" },
-        { key: "user", label: "user" },
-        { key: "password", label: "password", secret: true },
-      ],
-      contributes: "tables + foreign keys + views",
-    },
-  },
-  {
-    id: "rest", name: "REST / OpenAPI", badge: "{ }", authLabel: "API key",
-    spec: {
-      auth: "apiKey",
-      fields: [
-        { key: "baseUrl", label: "base URL", placeholder: "https://api.acme.com" },
-        { key: "apiKey", label: "API key", secret: true },
-      ],
-      contributes: "resources discovered from the OpenAPI spec",
-    },
-  },
-  {
-    id: "fhir", name: "HL7 FHIR (R4)", badge: "FH", authLabel: "open / SMART",
-    spec: {
-      auth: "open",
-      fields: [
-        { key: "baseUrl", label: "FHIR base URL", placeholder: "https://hapi.fhir.org/baseR4" },
-      ],
-      contributes: "patients, encounters, observations/labs, conditions, medications, procedures, reports",
-    },
-  },
-  {
-    id: "csv", name: "CSV export", badge: "CSV", authLabel: "upload",
-    spec: { auth: "upload", fields: [], contributes: "columns inferred from the file" },
-  },
-];
-
-/** Look up a connector by id, with a safe fallback so an unknown id still renders. */
-/** Runtime registry of packaged vendor presets loaded from the backend catalog (#1288). Lets the
- *  static {@link connector} resolver return a declared preset's connect spec (base URL + token)
- *  everywhere — the preset list isn't known at module load (it comes from `data_connector_catalog`). */
-const PRESET_REGISTRY = new Map<string, Connector>();
-
-/** Register the loaded preset connectors so {@link connector} can resolve their specs (#1288). */
-export function registerPresetConnectors(list: Connector[]): void {
-  for (const c of list) PRESET_REGISTRY.set(c.id, c);
-}
-
+/** Resolve a connector by id to a generic fallback shape so any declared source still renders. With
+ *  the native catalog gone (#1976), every connector is agent-authored, so there is no rich per-id
+ *  spec here — the pane renders a simple token form (no fields ⇒ a one-click connect + sample scan). */
 export function connector(id: string): Connector {
-  return CONNECTORS.find((c) => c.id === id) ?? PRESET_REGISTRY.get(id) ?? {
+  return {
     id, name: id, badge: id.slice(0, 2).toUpperCase(), authLabel: "custom",
     spec: { auth: "token", fields: [], contributes: "—" },
   };
@@ -193,7 +65,7 @@ export function sampleScan(connectorId: string): { objects: DiscoveredObject[]; 
 // ── Propose sources from the pitch (#1349) ───────────────────────────────────────────────────────
 // The Source stage's "Confirm N sources" banner is seeded from the planner's pitch BEFORE any live
 // `<source_config>` tag arrives: a keyword scan over the pitch prose maps mentioned legacy systems to
-// catalog connector ids. This makes the stage open with the user CONFIRMING the obvious migration
+// connector ids. This makes the stage open with the user CONFIRMING the obvious migration
 // sources rather than hunting the catalog. The match is conservative (word-boundary aliases) so an
 // unrelated mention doesn't propose a source; the user can always edit the selection or add more.
 
@@ -217,18 +89,17 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Connector ids to propose from a planner pitch: any catalog connector whose alias appears in the
- *  prose (word-boundary, case-insensitive), deduped and in catalog order. Empty for an empty/blank
+/** Connector ids to propose from a planner pitch: any id whose alias appears in the prose
+ *  (word-boundary, case-insensitive), deduped and in {@link PITCH_ALIASES} order. With the static
+ *  catalog gone (#1976) the alias table is the source of proposable ids. Empty for an empty/blank
  *  pitch or one that mentions no known system. */
 export function proposeFromPitch(pitch: string | undefined): string[] {
   const text = (pitch ?? "").toLowerCase();
   if (!text.trim()) return [];
   const ids: string[] = [];
-  for (const c of CONNECTORS) {
-    const aliases = PITCH_ALIASES[c.id];
-    if (!aliases) continue;
+  for (const [id, aliases] of Object.entries(PITCH_ALIASES)) {
     const hit = aliases.some((a) => new RegExp(`(^|[^a-z0-9])${escapeRe(a)}([^a-z0-9]|$)`, "i").test(text));
-    if (hit) ids.push(c.id);
+    if (hit) ids.push(id);
   }
   return ids;
 }

@@ -7,69 +7,21 @@ import { SourceBody } from "./FocusedSourceBody";
 
 // The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so
 // each starts from an empty config.
+//
+// The native pre-built connector catalog was removed (#1976): there is no picker/search. Sources are
+// proposed from the pitch (the ★ banner) and confirmed; each connector is a generic one-click token
+// connector (agent-authored at runtime). These tests cover that surviving propose → declare → scan flow.
 beforeEach(() => {
   useAppStore.setState({ planSourceConfig: {}, planningPitch: "" });
 });
 
-describe("SourceBody — catalog → declare", () => {
-  it("shows the connector catalog and read-only reassurance when nothing is declared", () => {
+describe("SourceBody — empty state", () => {
+  it("shows the read-only reassurance and no catalog when nothing is declared", () => {
     render(<SourceBody projectId="p1" />);
-    expect(screen.getByTestId("connector-catalog")).toBeTruthy();
-    expect(screen.getByTestId("connector-tile-quickbase")).toBeTruthy();
+    expect(screen.getByText("Declare your sources")).toBeTruthy();
     expect(screen.getByText(/credentials never leave this device/i)).toBeTruthy();
-  });
-
-  it("declaring a connector adds its card and collapses the catalog into a chip-bar", () => {
-    render(<SourceBody projectId="p1" />);
-    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
-    // A card appears…
-    expect(screen.getByTestId(/^source-card-/)).toBeTruthy();
-    // …the chip-bar replaces the always-on catalog…
-    expect(screen.getByTestId("source-chips")).toBeTruthy();
+    // The catalog picker is gone (#1976).
     expect(screen.queryByTestId("connector-catalog")).toBeNull();
-    // …and the config was persisted to the store.
-    expect(useAppStore.getState().planSourceConfig.p1.sources).toHaveLength(1);
-  });
-
-  it("search filters the catalog", () => {
-    render(<SourceBody projectId="p1" />);
-    fireEvent.change(screen.getByPlaceholderText("Search connectors…"), { target: { value: "salesforce" } });
-    expect(screen.getByTestId("connector-tile-salesforce")).toBeTruthy();
-    expect(screen.queryByTestId("connector-tile-quickbase")).toBeNull();
-  });
-});
-
-describe("SourceBody — spec-driven connect (token)", () => {
-  it("requires the realm + secret, then connects → scans → shows discovered objects", async () => {
-    render(<SourceBody projectId="p1" />);
-    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
-
-    const connectBtn = screen.getByRole("button", { name: /save & connect/i }) as HTMLButtonElement;
-    expect(connectBtn.disabled).toBe(true); // fields empty
-
-    fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
-    fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "b2a7c91f" } });
-    expect((screen.getByRole("button", { name: /save & connect/i }) as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
-
-    // The connect → scanning → scanned surfaces the discovered inventory (in the source card
-    // grid and the aggregate ScanViews — so it can appear more than once).
-    await waitFor(() => expect(screen.getAllByText("Projects").length).toBeGreaterThan(0));
-    expect(screen.getByText(/feeds the «your Data Model» Data Model/)).toBeTruthy();
-    // The secret value is NEVER persisted into the config.
-    const persisted = useAppStore.getState().planSourceConfig.p1.sources[0];
-    expect(persisted.status).toBe("scanned");
-    expect(JSON.stringify(persisted)).not.toContain("b2a7c91f");
-  });
-
-  it("reveal toggles the secret field between password and text", () => {
-    render(<SourceBody projectId="p1" />);
-    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
-    const secret = screen.getByLabelText("User Token") as HTMLInputElement;
-    expect(secret.type).toBe("password");
-    fireEvent.click(screen.getByRole("button", { name: /reveal user token/i }));
-    expect((screen.getByLabelText("User Token") as HTMLInputElement).type).toBe("text");
   });
 });
 
@@ -98,31 +50,40 @@ describe("SourceBody — planner-proposed", () => {
   it("does not seed when the pitch names no known system", async () => {
     useAppStore.setState({ planningPitch: "A brand-new greenfield app with no legacy systems." });
     render(<SourceBody projectId="pitch2" />);
-    // Nothing proposed → no banner, the catalog shows instead.
-    await waitFor(() => expect(screen.getByTestId("connector-catalog")).toBeTruthy());
+    // Nothing proposed → no banner; the empty-state prompt shows instead.
+    await waitFor(() => expect(screen.getByText("Declare your sources")).toBeTruthy());
     expect(screen.queryByTestId("proposed-confirm")).toBeNull();
   });
 });
 
-describe("SourceBody — readiness", () => {
-  it("readiness reaches all-connected once an OAuth source scans", async () => {
+describe("SourceBody — connect & scan", () => {
+  it("connecting a declared source (one-click) scans it and surfaces the discovered inventory", async () => {
+    useAppStore.getState().setPlanSourceConfig("p1", { ...defaultSourceConfig(), proposed: ["quickbase"] });
+    render(<SourceBody projectId="p1" />);
+    fireEvent.click(screen.getByTestId("proposed-confirm"));
+    // A generic connector connects in one click (no per-vendor secret form); the card auto-expands.
+    fireEvent.click(screen.getByTestId("connect-src-quickbase-1"));
+    // connect → scanning → scanned surfaces the discovered inventory (card grid + aggregate ScanViews).
+    await waitFor(() => expect(screen.getAllByText("Projects").length).toBeGreaterThan(0));
+    const persisted = useAppStore.getState().planSourceConfig.p1.sources[0];
+    expect(persisted.status).toBe("scanned");
+  });
+
+  it("readiness reaches all-connected once a declared source scans", async () => {
+    useAppStore.getState().setPlanSourceConfig("p3", { ...defaultSourceConfig(), proposed: ["salesforce"] });
     render(<SourceBody projectId="p3" />);
-    fireEvent.click(screen.getByTestId("connector-tile-salesforce"));
-    // OAuth connectors connect with one click (no secret form).
-    fireEvent.click(screen.getByRole("button", { name: /connect to salesforce/i }));
-    // The top banner flips to the all-connected state once the source scans (the bottom
-    // readiness banner that duplicated this counter was removed).
+    fireEvent.click(screen.getByTestId("proposed-confirm"));
+    fireEvent.click(screen.getByTestId("connect-src-salesforce-1"));
     await waitFor(() => expect(screen.getByText(/sources connected/i)).toBeTruthy());
   });
 });
 
 describe("SourceBody — closes the data-dictates-structure loop (#1205)", () => {
   it("once every source is scanned, persists the derived model + shows the downstream-impact recap", async () => {
+    useAppStore.getState().setPlanSourceConfig("p1", { ...defaultSourceConfig(), proposed: ["quickbase"] });
     render(<SourceBody projectId="p1" />);
-    fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
-    fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
-    fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "tok" } });
-    fireEvent.click(screen.getByRole("button", { name: /save & connect/i }));
+    fireEvent.click(screen.getByTestId("proposed-confirm"));
+    fireEvent.click(screen.getByTestId("connect-src-quickbase-1"));
 
     // The scanned-result visualizations appear once the source is scanned (gate met); their header
     // carries the downstream-impact recap …

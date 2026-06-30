@@ -21,16 +21,17 @@
 //   - sourceCoerce.ts         — the lenient `<source_config>` planner-channel coercion (#1712)
 
 export type {
-  AuthMethod, SpecField, ConnectionSpec, Connector, ConnectorCatalogEntry,
+  AuthMethod, SpecField, ConnectionSpec, Connector,
   DiscoveredField, DiscoveredObject, SourceBehavior,
   ScanAutomationKind, ScanAutomation, ScanBusinessProcess, ScanDerivedKind, ScanDerivedLogic, PlatformScanView,
   SourceStatus, DeclaredSource, SourceConfig,
 } from "./sourceSpecs";
 export { defaultSourceConfig, newDeclaredSource } from "./sourceSpecs";
 
+// The native pre-built connectors were removed (#1976): there is no static catalog or backend preset
+// catalog, so `connector(id)` resolves any id to a generic fallback shape (a one-click token connector).
 export {
-  presetToConnector, CONNECTORS, registerPresetConnectors, connector, connectorColor,
-  sampleScan, proposeFromPitch, redactedHandle,
+  connector, connectorColor, sampleScan, proposeFromPitch, redactedHandle,
 } from "./sourceCatalog";
 
 export {
