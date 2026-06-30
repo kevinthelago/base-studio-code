@@ -2,8 +2,8 @@
 // must NOT restart a worker whose work is already done. These pure helpers decide, from the current
 // issue statuses, which streams have finished and which still have outstanding work to (re)launch.
 
-import type { AgentStream } from "./planFleet";
-import type { PlanIssue } from "../issues/planIssues";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 
 /** Refs of issues a worker has nothing left to do on — `complete` (landed) or `verified` (accepted). */
 export function doneIssueRefs(issues: PlanIssue[]): Set<string> {
@@ -36,4 +36,23 @@ export function pruneCompletedStreams(
   const maintenance: AgentStream[] = [];
   for (const st of streams) (streamComplete(st, done) ? maintenance : active).push(st);
   return { active, maintenance };
+}
+
+/**
+ * Of the live worker panes (`fleetPaneStreams`: pane id → its stream), the ones whose stream has
+ * finished every owned issue — so the always-on warden must NOT quarantine them: they're in
+ * maintenance (#1957), not building, so post-completion activity is expected, not drift. The warden
+ * also lifts any existing quarantine on these. `doneFor(paneId)` yields that pane's project's
+ * done-issue refs (the warden reads issue statuses from plan.db per project). Pure (no IPC/store).
+ */
+export function completedWorkerPanes(
+  fleetPaneStreams: Record<string, AgentStream>,
+  doneFor: (paneId: string) => Set<string> | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  for (const [paneId, stream] of Object.entries(fleetPaneStreams)) {
+    const done = doneFor(paneId);
+    if (done && streamComplete(stream, done)) out.add(paneId);
+  }
+  return out;
 }

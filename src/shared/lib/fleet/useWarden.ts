@@ -17,6 +17,8 @@ import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
 import { oneShotComplete } from "../core/claudeComplete";
 import { planWarden, parseAuditCommands, type WardenSession } from "./warden";
 import { buildJudgePrompt, parseJudgeVerdict, selectForJudging } from "./wardenJudge";
+import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { log } from "../core/log";
 
 const POLL_MS = 6000;   // heavier than the coord loop (reads a git diff per worker) — every ~6s
@@ -106,8 +108,30 @@ export function useWarden(): void {
     const panes = Object.keys(st.fleetPaneStreams);
     if (panes.length === 0) return;
 
-    const quarantined = new Set([...Object.keys(st.quarantinedPanes), ...inFlight.current]);
-    const sessions = (await Promise.all(panes.map(buildSession))).filter((s): s is WardenSession => s !== null);
+    // A worker that finished every owned issue is in MAINTENANCE (#1957), not building — its
+    // post-completion activity is expected, not drift, so the warden must NOT quarantine it, and any
+    // existing quarantine on it is lifted. Read each project's issue statuses once per tick (deduped by
+    // project key — a worker pane id is `<projectKey>:<streamId>`).
+    const projectKeys = [...new Set(panes.map((p) => p.split(":")[0]).filter(Boolean))];
+    const doneByProject = new Map<string, Set<string>>();
+    await Promise.all(projectKeys.map(async (key) => {
+      const issues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: key }, []);
+      doneByProject.set(key, doneIssueRefs(issues ?? []));
+    }));
+    if (isCancelled()) return;
+    const completed = completedWorkerPanes(st.fleetPaneStreams, (paneId) => doneByProject.get(paneId.split(":")[0]));
+    for (const paneId of completed) {
+      if (st.quarantinedPanes[paneId]) {
+        st.clearQuarantine(paneId);
+        log.info(`warden: lifted quarantine for ${paneId} — its issues are complete (in maintenance)`);
+      }
+    }
+
+    const fresh = useAppStore.getState();
+    const quarantined = new Set([...Object.keys(fresh.quarantinedPanes), ...inFlight.current]);
+    // Skip completed workers entirely — they must not be (re)quarantined while standing by.
+    const sessions = (await Promise.all(panes.filter((p) => !completed.has(p)).map(buildSession)))
+      .filter((s): s is WardenSession => s !== null);
     if (isCancelled()) return;
 
     // Layer 1 — deterministic hard-pause (every tick, free).
