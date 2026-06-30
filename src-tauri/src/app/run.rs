@@ -188,6 +188,8 @@ pub fn run() {
             session::sandbox::sandbox_run,
             session::sandbox::sandbox_disk_usage,
             session::sandbox::remove_sandbox,
+            session::sandbox::setup_sandbox_hub,
+            session::sandbox::sandbox_read_file,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
