@@ -96,3 +96,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&hub);
     }
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn read_skeleton_dir_collects_source_files_recursively() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("bsc_skel_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("parts")).unwrap();
+        fs::write(root.join("Login.jsx"), "export default () => null;").unwrap();
+        fs::write(root.join("parts/Field.tsx"), "export const F = 1;").unwrap();
+        fs::write(root.join("notes.md"), "ignore me").unwrap();        // wrong ext → skipped
+        fs::write(root.join("data.json"), "{}").unwrap();
+
+        let files = read_skeleton_dir(&root);
+        let keys: Vec<&str> = files.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"Login.jsx"), "got {keys:?}");
+        assert!(keys.contains(&"parts/Field.tsx"), "nested + forward-slash relpath");
+        assert!(keys.contains(&"data.json"));
+        assert!(!keys.iter().any(|k| k.ends_with(".md")), "non-source files skipped");
+
+        // Missing folder → empty, never panics.
+        assert!(read_skeleton_dir(&root.join("nope")).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+}

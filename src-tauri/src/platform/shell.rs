@@ -524,3 +524,54 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn osc7_path_strip_removes_scheme_and_host() {
+        // Mirrors what TerminalView.tsx does in the browser:
+        // data.replace(/^file:\/\/[^/]*/, "")
+        let input = "file://localhost/c/Users/Kevin/project";
+        let stripped = input.trim_start_matches("file://").split_once('/')
+            .map(|(_, rest)| format!("/{}", rest))
+            .unwrap_or_default();
+        assert_eq!(stripped, "/c/Users/Kevin/project");
+    }
+    #[test]
+    fn to_native_path_resolves_git_bash_drive_paths_on_windows() {
+        // The OSC-7 cwd a bash shell reports (and the app persists) — must round back to a native
+        // path so pty_create's is_dir/Command::cwd resolve an EXISTING worktree on restore (#979).
+        let bash = "/c/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience";
+        let got = to_native_path(bash);
+        if cfg!(windows) {
+            assert_eq!(got, "C:/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience");
+        } else {
+            assert_eq!(got, bash); // no-op off Windows
+        }
+        // Non-drive POSIX paths and already-native paths pass through unchanged everywhere.
+        assert_eq!(to_native_path("/usr/local/bin"), "/usr/local/bin");
+        assert_eq!(to_native_path("C:/already/native"), "C:/already/native");
+    }
+    #[test]
+    fn ansi_c_quote_wraps_plain_text() {
+        assert_eq!(bash_ansi_c_quote("triage the issues"), "$'triage the issues'");
+    }
+    #[test]
+    fn ansi_c_quote_escapes_newlines_quotes_and_backslashes() {
+        // Newlines collapse to \n so the whole token stays on one physical line;
+        // single quotes and backslashes are escaped. $ and backticks pass through
+        // literally (ANSI-C quoting does not expand them).
+        assert_eq!(
+            bash_ansi_c_quote("line1\nit's $HOME `cmd` \\x"),
+            "$'line1\\nit\\'s $HOME `cmd` \\\\x'"
+        );
+    }
+}

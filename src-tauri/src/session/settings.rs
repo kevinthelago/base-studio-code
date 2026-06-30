@@ -366,3 +366,265 @@ mod baseline_drift_guard {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_session_settings_merges_mandatory_and_custom_commands() {
+        use crate::session::settings::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
+        let settings = dir.join(".claude").join("settings.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        // Seed an existing setting that must be preserved (not clobbered).
+        std::fs::write(
+            &settings,
+            r#"{"model":"claude-sonnet-4-6","permissions":{"allow":["Read"],"deny":["WebSearch"]}}"#,
+        ).unwrap();
+
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &["cargo".into(), "git".into()],
+            &["scp".into()],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            false,
+            "allow",
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Pre-existing entries are preserved (merged, not clobbered).
+        assert!(allow.contains(&"Read".to_string()));
+        assert!(deny.contains(&"WebSearch".to_string()));
+        assert_eq!(v["model"], "claude-sonnet-4-6");
+        // Bash is allowed broadly (start-and-go) plus explicit gh/git/custom rules.
+        assert!(allow.contains(&"Bash".to_string()));
+        assert!(allow.contains(&"Bash(gh *)".to_string()));
+        assert!(allow.contains(&"Bash(git *)".to_string()));
+        assert!(allow.contains(&"Bash(bsc-plan *)".to_string())); // the plan-store CLI (#plan-db)
+        assert!(allow.contains(&"Bash(cargo *)".to_string()));
+        assert_eq!(allow.iter().filter(|r| *r == "Bash(git *)").count(), 1);
+        // Curated dangerous defaults plus the user deny are present.
+        assert!(deny.contains(&"Bash(sudo *)".to_string()));
+        assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
+        assert!(deny.contains(&"Bash(scp *)".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1572: bash_posture scales the auto-approve set — `allow` doers get the read-only AND
+    /// build baselines + the bare `Bash`; `ask` coordinators get read-only only (build/unlisted
+    /// prompt); `deny` gets neither baseline. The mandatory + per-stream granted commands are
+    /// always present.
+    #[test]
+    fn write_session_settings_bash_posture_scales_the_baseline() {
+        use crate::session::settings::write_session_settings;
+        let base = std::env::temp_dir().join(format!("bsc-ess-posture-{}", std::process::id()));
+        let read_allow = |dir: &std::path::Path| -> Vec<String> {
+            let v: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+            v["permissions"]["allow"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        };
+        for (posture, want_ro, want_build, want_bare) in [
+            ("allow", true, true, true),
+            ("ask",   true, false, false),
+            ("deny",  false, false, false),
+        ] {
+            let dir = base.join(posture);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join(".claude")).unwrap();
+            // Grant a project-specific command in every posture — it must ALWAYS be present.
+            write_session_settings(&dir.to_string_lossy(), &["terraform".into()], &[],
+                &[], &[], &[], &[], &[], &[], false, posture).unwrap();
+            let allow = read_allow(&dir);
+            assert_eq!(allow.contains(&"Bash(ls *)".to_string()), want_ro, "{posture}: read-only baseline");
+            assert_eq!(allow.contains(&"Bash(cargo *)".to_string()), want_build, "{posture}: build baseline");
+            assert_eq!(allow.contains(&"Bash".to_string()), want_bare, "{posture}: bare Bash");
+            assert!(allow.contains(&"Bash(terraform *)".to_string()), "{posture}: granted command always present");
+            assert!(allow.contains(&"Bash(git *)".to_string()), "{posture}: mandatory git always present");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Regression (triage `cargo test` permission prompts): write_session_settings must normalize a
+    /// git-bash drive cwd (`/c/Users/...`, the OSC-7 form the frontend persists + passes) to native
+    /// before resolving the path — so settings.json lands where `pty_create` launches claude (it
+    /// normalizes too), NOT at the bogus `C:\c\Users\...`. Without it the real session dir has no
+    /// settings, so Claude Code treats the workspace as untrusted and prompts on every command.
+    #[test]
+    #[cfg(windows)]
+    fn write_session_settings_normalizes_a_git_bash_drive_cwd() {
+        use crate::session::settings::write_session_settings;
+        let native = std::env::temp_dir().join(format!("bsc-ess-gitbash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&native);
+        std::fs::create_dir_all(&native).unwrap();
+        // The git-bash spelling of the native temp dir: `C:\…\x` → `/c/…/x`.
+        let fwd = native.to_string_lossy().replace('\\', "/"); // C:/Users/…/x
+        let git_bash = format!("/{}{}", fwd[..1].to_lowercase(), &fwd[2..]); // /c/Users/…/x
+        write_session_settings(&git_bash, &[], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        // Lands at the NATIVE dir...
+        assert!(native.join(".claude").join("settings.json").exists(),
+            "settings.json must be written to the native dir, not a bogus C:\\c\\… path");
+        // ...and NOT at the bogus literal `/c/…` path (`C:\c\…` on Windows).
+        assert!(!std::path::PathBuf::from(&git_bash).join(".claude").join("settings.json").exists(),
+            "must not write to the bogus literal `/c/…` path");
+        let _ = std::fs::remove_dir_all(&native);
+    }
+
+    #[test]
+    fn write_session_settings_writes_ask_tier_for_hard_push_gate() {
+        use crate::session::settings::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // A hard push-confirm flow (#297) asks before push/PR: the rules land in
+        // permissions.ask (deny > ask > allow), so they prompt under the broad Bash allow.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+            &[],
+            false,
+            "allow",
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let ask: Vec<String> = v["permissions"]["ask"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(ask.contains(&"Bash(git push *)".to_string()));
+        assert!(ask.contains(&"Bash(gh pr create *)".to_string()));
+        // Bash stays broadly allowed; ask only narrows the two push writes.
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(allow.contains(&"Bash".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_merges_verbatim_tool_rules() {
+        use crate::session::settings::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // The role write-path guard: deny every write tool (planner/director/triage),
+        // and auto-approve a worker's boundary glob.
+        write_session_settings(
+            &dir.to_string_lossy(),
+            &[],
+            &[],
+            &[],
+            &[],
+            &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
+            &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            &[],
+            &[],
+            false,
+            "allow",
+        ).unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        // Tool rules land verbatim — NOT wrapped in Bash(...).
+        assert!(allow.contains(&"Edit(src/auth/**)".to_string()));
+        assert!(allow.contains(&"Write(src/auth/**)".to_string()));
+        assert!(!allow.iter().any(|r| r.contains("Bash(Edit")));
+        assert!(deny.contains(&"Edit".to_string()));
+        assert!(deny.contains(&"Write".to_string()));
+        assert!(deny.contains(&"MultiEdit".to_string()));
+        assert!(deny.contains(&"NotebookEdit".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_replace_drops_removed_permissions() {
+        use crate::session::settings::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        let cwd = dir.to_string_lossy();
+        let read = || -> Vec<String> {
+            let v: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+            v["permissions"]["allow"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        };
+
+        // First pass grants a custom command (merge mode). Use a command NOT in the baselines
+        // (`terraform`) so the drop is observable — a baseline command would be re-added anyway.
+        write_session_settings(&cwd, &["terraform".into()], &[], &[], &[], &[], &[], &[], &[], false, "allow").unwrap();
+        assert!(read().contains(&"Bash(terraform *)".to_string()));
+
+        // Re-apply with the command REMOVED — replace mode must drop it (merge would keep it).
+        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true, "allow").unwrap();
+        let allow = read();
+        assert!(!allow.contains(&"Bash(terraform *)".to_string()), "replace must drop the removed command (#799)");
+        assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_session_settings_writes_mcp_servers_and_hooks() {
+        let dir = std::env::temp_dir().join(format!("bsc-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mcp = vec![
+            McpServerCfg {
+                name: "filesystem".into(), transport: "stdio".into(),
+                command: Some("npx".into()), args: vec!["-y".into(), "@mcp/fs".into()],
+                url: None, env: vec![("ROOT".into(), "/tmp".into())],
+            },
+            McpServerCfg {
+                name: "sentry".into(), transport: "http".into(),
+                command: None, args: vec![], url: Some("https://mcp.sentry.dev/sse".into()), env: vec![],
+            },
+        ];
+        let hooks = vec![HookCfg {
+            event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
+        }];
+        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false, "allow").unwrap();
+
+        // .mcp.json carries both servers in the right transport shapes.
+        let mcp_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".mcp.json")).unwrap()).unwrap();
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["command"], "npx");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["args"][1], "@mcp/fs");
+        assert_eq!(mcp_json["mcpServers"]["filesystem"]["env"]["ROOT"], "/tmp");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["type"], "http");
+        assert_eq!(mcp_json["mcpServers"]["sentry"]["url"], "https://mcp.sentry.dev/sse");
+
+        // settings.json gates the servers + carries the hook grouped by event.
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let enabled: Vec<String> = settings["enabledMcpjsonServers"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(enabled.contains(&"filesystem".to_string()) && enabled.contains(&"sentry".to_string()));
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["matcher"], "Write|Edit");
+        assert_eq!(settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "format.sh");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+}
