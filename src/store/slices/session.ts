@@ -10,7 +10,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -37,6 +37,8 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       // resolved). Default OFF = acknowledge-to-clear (findings surfaced; the user reviews + proceeds).
       injectionHardGate: false,
       setInjectionHardGate: (v) => set({ injectionHardGate: v }),
+      bypassPermissions: true,
+      setBypassPermissions: (v) => set({ bypassPermissions: v }),
 
       autoPlanWithClaude: false,
       setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),
