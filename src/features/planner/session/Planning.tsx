@@ -594,6 +594,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const {
     handlePublish, launchTriage, handleRecover,
     triaging, triageError, triageNote, recoverable, recovering, publishPhase, setPublishPhase, ghStatus,
+    quarantineDialog,
   } = usePlanPublish({
     isAuthoring, githubToken, publishRepos, injectionGateState, sections, planningTitle,
     activeProjectName, planFleet, effectiveProjectId, activeProjectId, activeProjectNumber,
@@ -943,6 +944,10 @@ export function Planning({ visible }: { visible: boolean }) {
           </div>
         </Dialog>
       )}
+
+      {/* Triage: confirm + clear stale warden quarantines so a prior run's denied command can't
+          immediately re-pause the relaunched worker. Self-rendering (null when no dialog is open). */}
+      {quarantineDialog}
     </>
   );
 }
