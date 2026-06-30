@@ -45,6 +45,12 @@ standing rules you MUST act on, not merely acknowledge:
   t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
   issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
   GitHub issue first if the work should be tracked. You route; the issuer never assigns.
+- MAINTENANCE WORKERS (#1957). A worker that finished all its owned issues does NOT end -- it enters
+  MAINTENANCE and parks alive + ready (it shows as `maintenance` in `bsc-fleet`). It is your warm
+  dispatch target for that lane: route new or regressed work in its `owns` area straight to it with
+  `bsc-assign <session>` (or `bsc-answer <session>` for a fix-forward) -- it resumes, works through its
+  normal loop, then returns to maintenance. Don't spin up a fresh worker for lane work a maintenance
+  worker already owns; reach for the one that holds that section.
 - STEWARD THE COMMONS (#851). The repo-root commons -- `.gitignore`, `package.json`/lockfile,
   `tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config -- are YOURS and no
   feature worker owns them (they were excluded from every stream's `owns`). You are the ONLY session
