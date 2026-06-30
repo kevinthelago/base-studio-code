@@ -324,7 +324,7 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
   });
 
   it("Deploy gates on shipping only — dependencies moved to the Streams stage (#1429)", () => {
-    const gate = STAGE_DEFS.deploy.gateRule!;
+    const gate = STAGE_DEFS.deployment.gateRule!;
     const signals = gate.require.map((r) => r.signal);
     expect(signals).toContain("deploymentDefined");
     expect(signals).not.toContain("dependenciesDefined"); // deps no longer gate Deploy
@@ -396,7 +396,7 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
 
 describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#1392)", () => {
   it("maps a merged stage to its combined directive id, leaving plain stages alone", () => {
-    expect(stageDirectiveId(mkStage("repos", { ship: true }))).toBe("repos_deploy");
+    expect(stageDirectiveId(mkStage("repos", { ship: true }))).toBe("deployment");
     expect(stageDirectiveId(mkStage("repos"))).toBe("repos");          // transform: link-only, no deploy
     expect(stageDirectiveId(mkStage("structure", { fleet: true }))).toBe("streams");
     expect(stageDirectiveId(mkStage("structure"))).toBe("structure");  // plan-only
@@ -407,7 +407,7 @@ describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#13
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
     const overview = complete.sections.filter((s) => s.enabled).map(stageDirectiveId);
     expect(overview).toEqual(
-      ["discovery", "repos_deploy", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
+      ["discovery", "deployment", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
     );
   });
 

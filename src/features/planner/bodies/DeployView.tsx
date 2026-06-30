@@ -12,11 +12,10 @@
 // (pipeline · environments · config · rollout) in `deployShipSections`. This file is now the
 // composition shell — the per-repo card and the top-level body that owns the open/expand state.
 
-import { useState } from "react";
 import {
   platform, WORKLOAD,
   serviceReady, serviceMode, serviceTargetDefined,
-  type DeployConfig, type DeployService,
+  type DeployService,
 } from "../lib/deployConfig";
 import { MONO } from "./bodyStyles";
 import { chip } from "./deployPrimitives";
@@ -75,42 +74,6 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, traili
           {targeted && <ServiceDeploySections svc={svc} setSvc={setSvc} />}
         </div>
       )}
-    </div>
-  );
-}
-
-/** The Deployment stage body (#1421) — one collapsible card per repo, each a self-contained
- *  deployable unit (target & build · pipeline · environments · config & secrets · rollout).
- *  Dependencies live OUTSIDE this pane now (#1429) — they're locked by the planner and gate
- *  separately. No in-body header (#1430): the focused pane's phase header already titles the stage. */
-export function FocusedDeployBody({ deploy, onChange }: {
-  deploy?: DeployConfig;
-  onChange?: (next: DeployConfig) => void;
-}) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  if (!deploy) {
-    return <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg-dim)", padding: "8px 2px" }}>Deployment config loads once the repos are linked.</div>;
-  }
-  const d = deploy;
-  const setSvcFor = (id: string, patch: Partial<DeployService>) =>
-    onChange?.({ ...d, services: d.services.map((s) => s.id === id ? { ...s, ...patch } : s) });
-
-  if (d.services.length === 0) {
-    return (
-      <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
-        <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
-        <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      {d.services.map((svc) => (
-        <RepoDeployCard key={svc.id} svc={svc} setSvc={(patch) => setSvcFor(svc.id, patch)}
-          open={openId === svc.id} onToggle={() => setOpenId((cur) => (cur === svc.id ? null : svc.id))} />
-      ))}
     </div>
   );
 }

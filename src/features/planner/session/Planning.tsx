@@ -75,7 +75,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
     planSourceConfig, planIntegrationConfig,
-    reposPublic, setReposPublic, repoPublic, setRepoPublic,
+    reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
     planSkippedSections, skipPlanSection,
     planFleet,
@@ -339,15 +339,6 @@ export function Planning({ visible }: { visible: boolean }) {
     }),
     [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
   );
-
-  // Per-repo visibility overrides for THIS project (#1227): the `repoPublic` slice re-keyed by
-  // repo full-name, so the Repos cards resolve each card's toggle (override ?? project default).
-  const repoOverrides = useMemo(() => {
-    const prefix = `${effectiveProjectId}::`;
-    const out: Record<string, boolean> = {};
-    for (const [k, v] of Object.entries(repoPublic)) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = v;
-    return out;
-  }, [repoPublic, effectiveProjectId]);
 
   // The planner MCP install lifecycle (#1474, usePlanMcpManagement). mcpInstallState stays here
   // (it feeds paneData); the hook writes it via setMcpInstallState.
@@ -794,10 +785,6 @@ export function Planning({ visible }: { visible: boolean }) {
               })}
               onModel={(id, m) => setPlanAgentStreamModel(effectiveProjectId, id, m)}
               onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
-              reposPublic={reposPublic[effectiveProjectId] ?? false}
-              onSetReposPublic={(isPublic) => setReposPublic(effectiveProjectId, isPublic)}
-              repoOverrides={repoOverrides}
-              onSetRepoPublic={(repoId, isPublic) => setRepoPublic(effectiveProjectId, repoId, isPublic)}
               onDeployChange={(next) => setPlanDeployConfig(effectiveProjectId, next)}
               onTopology={(t) => setPlanFleetTopology(effectiveProjectId, t)}
               onDirectorDrive={(d) => setPlanFleetDirectorDrive(effectiveProjectId, d)}
