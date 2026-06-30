@@ -186,6 +186,8 @@ pub fn run() {
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,
+            session::sandbox::sandbox_disk_usage,
+            session::sandbox::remove_sandbox,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
