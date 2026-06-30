@@ -533,9 +533,10 @@ fn sh_squote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Write `content` to `linux_path` inside the sandbox distro, creating parent dirs — via `wsl` exec
-/// (content on stdin; the path is embedded + escaped in the script, since `\\wsl$` is unreliable).
-fn sandbox_write(linux_path: &str, content: &str) -> Result<(), String> {
+/// Write `content` bytes to `linux_path` inside the sandbox distro, creating parent dirs — via `wsl`
+/// exec (content on stdin; the path is embedded + escaped in the script, since `\\wsl$` is unreliable).
+/// Bytes (not text) so binary files like `plan.db` copy intact.
+fn sandbox_write(linux_path: &str, content: &[u8]) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
     let dir = linux_path.rsplit_once('/').map(|(d, _)| d).unwrap_or(".");
@@ -549,7 +550,7 @@ fn sandbox_write(linux_path: &str, content: &str) -> Result<(), String> {
         .map_err(|e| format!("wsl spawn failed: {e}"))?;
     {
         let mut si = child.stdin.take().ok_or("no stdin handle")?;
-        si.write_all(content.as_bytes()).map_err(|e| format!("write stdin: {e}"))?;
+        si.write_all(content).map_err(|e| format!("write stdin: {e}"))?;
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if out.status.success() {
@@ -571,17 +572,46 @@ fn sandbox_read(linux_path: &str) -> Result<String, String> {
     }
 }
 
-/// Create a project hub INSIDE the sandbox distro (#1988) and seed its `CLAUDE.md`, returning the
-/// hub's distro-native path — the cwd a sandboxed planner/triage session launches at (`pty_create`'s
-/// `wsl_distro`). The relocation kernel; the launch + plan-file wiring builds on it.
+/// Recursively copy a host directory tree INTO the sandbox distro (each file's bytes piped through
+/// `wsl` exec). Skips `.git` internals and any **linked-repo** subdir (one containing a `.git`) — a
+/// repo is git-cloned in the distro later, not file-copied (copying a full clone over `wsl` exec would
+/// be impractically slow). Binary-safe, so `plan.db` copies intact.
+fn copy_dir_to_sandbox(host_dir: &std::path::Path, distro_dir: &str) -> Result<(), String> {
+    let entries = std::fs::read_dir(host_dir).map_err(|e| format!("read {}: {e}", host_dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        let child_distro = format!("{distro_dir}/{name}");
+        if ft.is_dir() {
+            if name == ".git" || entry.path().join(".git").exists() {
+                continue;
+            }
+            copy_dir_to_sandbox(&entry.path(), &child_distro)?;
+        } else if ft.is_file() {
+            let bytes = std::fs::read(entry.path()).map_err(|e| format!("read {}: {e}", entry.path().display()))?;
+            sandbox_write(&child_distro, &bytes)?;
+        }
+    }
+    Ok(())
+}
+
+/// Replicate a project's host hub (`projects/<key>/` — CLAUDE.md, plan section files, plan.db, …) INTO
+/// the sandbox distro (#1988), returning the hub's distro-native path — the cwd a sandboxed
+/// planner/triage session launches at (`pty_create`'s `wsl_distro`). The relocation kernel: the host
+/// builds the hub as usual (`setup_workspaces`), then this mirrors it onto the distro's ext4 so the
+/// sealed session has its real files. Call AFTER `setup_workspaces`. Linked repos are skipped (cloned
+/// in-distro separately — a follow-on); a greenfield hub has none, so it copies whole.
 #[tauri::command]
-pub(crate) fn setup_sandbox_hub(key: String, claude_md: String) -> Result<String, String> {
+pub(crate) fn setup_sandbox_hub(key: String) -> Result<String, String> {
     if !cfg!(windows) {
         return Err("The WSL2 agent sandbox is Windows-only.".into());
     }
-    let hub = sandbox_project_path(&key);
-    sandbox_write(&format!("{hub}/CLAUDE.md"), &claude_md)?;
-    Ok(hub)
+    let host_hub = crate::platform::paths::project_dir(&key);
+    let distro_hub = sandbox_project_path(&key);
+    copy_dir_to_sandbox(&host_hub, &distro_hub)?;
+    Ok(distro_hub)
 }
 
 /// Read a file from the sandbox distro (#1988) — e.g. a relocated hub's plan section, for the UI.
