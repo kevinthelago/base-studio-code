@@ -118,3 +118,64 @@ pub(crate) fn read_plan_sections(project_key: String) -> Result<std::collections
     ingest_section_files(&discovery_dir_for(&project_key), &mut sections);
     Ok(sections)
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn clear_project_plan_files_removes_md_and_json_only() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("cpf");
+        let key = "test-plan-clear".to_string();
+        let proj = bsc_base_dir().join("projects").join(&key);
+        let sub = proj.join("my-repo");
+        std::fs::create_dir_all(&sub).unwrap();
+        write_file(&proj.join("goal.md"), "goal");
+        write_file(&proj.join("phases.json"), "[]");
+        write_file(&sub.join("README.md"), "# repo"); // inside subdir -- preserved
+        // a generated UI skeleton that must be wiped too (#650)
+        let skel = proj.join(".ui-skeleton");
+        std::fs::create_dir_all(&skel).unwrap();
+        write_file(&skel.join("Home.jsx"), "export default () => null");
+
+        let removed = clear_project_plan_files(key.clone()).unwrap();
+        assert_eq!(removed, 3, "goal.md + phases.json + .ui-skeleton removed");
+        assert!(!proj.join("goal.md").exists());
+        assert!(!proj.join("phases.json").exists());
+        assert!(!skel.exists(), ".ui-skeleton dir wiped");
+        assert!(sub.join("README.md").exists(), "subdir entry preserved");
+
+        // Missing project -> Ok(0), no panic.
+        let n = clear_project_plan_files("no-such-bsc-cpf-key".to_string()).unwrap();
+        assert_eq!(n, 0);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn clear_project_plan_files_empties_the_plan_db() {
+        // The plan now lives in plan.db, not files — clearing must empty it too, or the next poll
+        // re-reads the DB and the plan reappears (#plan-db).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("cpfdb");
+        let key = "test-clear-plan-db".to_string();
+        let db = project_dir(&key).join("plan.db");
+        {
+            let store = plandb::Store::open(&db).unwrap();
+            store.upsert(&plandb::PlanIssue { r#ref: "F1".into(), title: "issue".into(), ..Default::default() }).unwrap();
+            store.feature_upsert(&plandb::PlanFeature { name: "Feature".into(), ..Default::default() }).unwrap();
+        }
+        clear_project_plan_files(key.clone()).unwrap();
+        let store = plandb::Store::open(&db).unwrap();
+        assert!(store.list(None, None).unwrap().is_empty(), "issues cleared from the DB");
+        assert!(store.feature_list().unwrap().is_empty(), "features cleared from the DB");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+}

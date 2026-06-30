@@ -312,3 +312,29 @@ pub fn run() {
             }
         });
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn level_color_is_distinct_per_level() {
+        let colors = [
+            level_color(log::Level::Error),
+            level_color(log::Level::Warn),
+            level_color(log::Level::Info),
+            level_color(log::Level::Debug),
+            level_color(log::Level::Trace),
+        ];
+        // every code is a non-empty ANSI escape, and all five are distinct
+        assert!(colors.iter().all(|c| c.starts_with("\x1b[")));
+        let unique: std::collections::HashSet<_> = colors.iter().collect();
+        assert_eq!(unique.len(), colors.len());
+    }
+}

@@ -390,3 +390,82 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn worktree_slug_keeps_only_branch_safe_chars() {
+        // The slug doubles as a git branch name + worktree dir, and must match the
+        // frontend `worktreeSlug` (replace anything outside [A-Za-z0-9._-] with '-').
+        assert_eq!(worktree_slug("auth-ui"), "auth-ui");
+        assert_eq!(worktree_slug("a.b_c-d"), "a.b_c-d");
+        assert_eq!(worktree_slug("API client/2"), "API-client-2");
+    }
+    #[test]
+    fn sanitize_preserves_ascii_alphanumerics_and_dash() {
+        assert_eq!(sanitize_project_key("my-project-123"), "my-project-123");
+    }
+    #[test]
+    fn sanitize_replaces_punctuation_and_whitespace_with_underscore() {
+        // Slashes, spaces, colons, dots → '_'.
+        assert_eq!(sanitize_project_key("acme/api"), "acme_api");
+        assert_eq!(sanitize_project_key("title::pitch"), "title__pitch");
+        assert_eq!(sanitize_project_key("Studio Code v2.0"), "Studio_Code_v2_0");
+    }
+    #[test]
+    fn sanitize_preserves_github_project_node_id() {
+        // Project v2 node ids (underscores stay underscores, dash stays) are ASCII-safe.
+        assert_eq!(sanitize_project_key("PVT_kwHOA_-LFc4BYsJC"), "PVT_kwHOA_-LFc4BYsJC");
+    }
+    #[test]
+    fn sanitize_drops_unicode_letters_to_match_js_regex() {
+        // The frontend's /[^a-zA-Z0-9-]/ is ASCII-only; café → caf_ (not café),
+        // so the PTY id and planning directory stay byte-for-byte identical.
+        assert_eq!(sanitize_project_key("café"), "caf_");
+    }
+    #[test]
+    fn sanitize_truncates_to_80_chars() {
+        let long = "a".repeat(200);
+        assert_eq!(sanitize_project_key(&long).len(), 80);
+    }
+    #[test]
+    fn ingest_section_files_reads_both_dirs_and_discovery_wins() {
+        use std::collections::HashMap;
+        let root = std::env::temp_dir().join(format!("bsc-ingest-{}", std::process::id()));
+        let discovery = root.join("discovery");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&discovery).unwrap();
+
+        // Hub root: a manifest (json) + a stale flat copy of `stack` + a control file.
+        std::fs::write(root.join("phases.json"), r#"{"phases":[]}"#).unwrap();
+        std::fs::write(root.join("stack.md"), "OLD flat stack").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "the planner spec").unwrap();
+        // An empty section is a created-but-unwritten ghost and must be dropped.
+        std::fs::write(root.join("empty.md"), "   \n").unwrap();
+        // discovery/: the discovery sections (one shadows the stale root `stack`).
+        std::fs::write(discovery.join("goal.md"), "ship it").unwrap();
+        std::fs::write(discovery.join("stack.md"), "NEW discovery stack").unwrap();
+
+        let mut sections: HashMap<String, String> = HashMap::new();
+        ingest_section_files(&root, &mut sections);
+        ingest_section_files(&discovery, &mut sections);
+
+        assert_eq!(sections.get("phases").map(String::as_str), Some(r#"{"phases":[]}"#));
+        assert_eq!(sections.get("goal").map(String::as_str), Some("ship it"));
+        // discovery/ is ingested last, so its section wins over the stale flat copy.
+        assert_eq!(sections.get("stack").map(String::as_str), Some("NEW discovery stack"));
+        // Control files and empty sections never become sections.
+        assert!(!sections.contains_key("CLAUDE"));
+        assert!(!sections.contains_key("empty"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

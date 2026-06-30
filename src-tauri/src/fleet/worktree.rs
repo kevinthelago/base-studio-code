@@ -486,3 +486,142 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
+    /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's
+    /// diff — quarantining every fleet worker for an "out-of-lane" edit it never made. git_exclude
+    /// must resolve the real (common-dir) exclude so the app-managed file is hidden from git, and
+    /// thus from read_worktree_changes (the warden's trusted signal).
+    #[test]
+    fn git_exclude_hides_mcp_json_in_a_worktree() {
+        // Needs the git binary; skip gracefully where it's absent rather than failing the suite.
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("bsc-gx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let main = base.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(cwd).args(args).output().unwrap()
+        };
+        git(&main, &["init", "-q"]);
+        git(&main, &["config", "user.email", "t@t.t"]);
+        git(&main, &["config", "user.name", "t"]);
+        std::fs::write(main.join("README.md"), "x").unwrap();
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-qm", "init"]);
+
+        // A linked worktree: its `.git` is a FILE, the layout that broke the old exclude.
+        let wt = base.join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+        assert!(wt.join(".git").is_file(), "worktree .git should be a file, not a dir");
+
+        // App writes the session's MCP config + asks git to exclude it (mirrors the launch path).
+        std::fs::write(wt.join(".mcp.json"), "{}").unwrap();
+        git_exclude(&wt, ".mcp.json");
+
+        // The warden's signal must NOT see it — pre-fix this listed ".mcp.json" and tripped a trip.
+        let changes = read_worktree_changes(wt.to_string_lossy().into_owned());
+        assert!(
+            !changes.iter().any(|f| f == ".mcp.json"),
+            "worktree .mcp.json must be git-excluded, but read_worktree_changes returned {changes:?}",
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+    #[test]
+    fn inject_skills_inlines_hub_skills_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injectskills");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let wt_local = home.join("CLAUDE.local.md");
+        std::fs::write(&wt_local, "# repo plan\n").unwrap();
+
+        // No skills.md ⇒ no-op.
+        inject_skills(&hub, &wt_local);
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# repo plan\n");
+
+        // With skills.md ⇒ inlined under its heading.
+        std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
+        inject_skills(&hub, &wt_local);
+        let after = std::fs::read_to_string(&wt_local).unwrap();
+        assert!(after.contains("# repo plan"), "keeps the plan");
+        assert!(after.contains("Use OAuth."), "inlines the skills");
+
+        // Second call ⇒ idempotent (not appended twice).
+        inject_skills(&hub, &wt_local);
+        assert_eq!(after, std::fs::read_to_string(&wt_local).unwrap());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn worker_context_appends_injection_resistance_idempotently() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("injresist");
+        let wt = home.join("wt");
+        let clone = home.join("clone");
+        let hub = home.join("hub");
+        for d in [&wt, &clone, &hub] { std::fs::create_dir_all(d).unwrap(); }
+
+        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let md = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert!(md.contains("# scope: owns src/api/**"), "keeps the worker scope");
+        assert!(md.contains(INJECTION_RESISTANCE_MARKER), "appends the injection-resistance preamble");
+        assert!(md.contains("untrusted data"), "carries the untrusted-input rule");
+
+        // Re-running converges (the preamble isn't appended twice).
+        write_worker_context(&wt, &clone, &hub, Some("# scope: owns src/api/**"));
+        let again = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+        assert_eq!(again.matches(INJECTION_RESISTANCE_MARKER).count(), 1, "preamble appears once");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn write_worker_context_leads_with_scope_then_repo_ctx_protocol_skills() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("workerctx");
+        let wt = home.join("wt");
+        let clone = home.join("clone");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::create_dir_all(&clone).unwrap();
+        std::fs::create_dir_all(&hub).unwrap();
+        // Per-repo app-managed context (untracked in the clone) + attached skills at the hub.
+        std::fs::write(clone.join("CLAUDE.local.md"), "# repo notes\nUse the shared client.\n").unwrap();
+        std::fs::write(hub.join("skills.md"), "# Attached skills & knowledge\n\n### Auth\nUse OAuth.\n").unwrap();
+
+        let scope = "# Your scope\n\nYou own `src/auth/**`. Issues: #12, #13.";
+        write_worker_context(&wt, &clone, &hub, Some(scope));
+        let out = std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap();
+
+        // Scope leads, then per-repo context, then protocol, then skills — in that order.
+        let i_scope = out.find("You own `src/auth/**`").expect("scope present");
+        let i_repo = out.find("Use the shared client").expect("repo ctx present");
+        let i_proto = out.find("## Fleet coordination protocol").expect("protocol present");
+        let i_skills = out.find("Use OAuth.").expect("skills inlined");
+        assert!(i_scope < i_repo, "scope must lead the per-repo context");
+        assert!(i_repo < i_proto, "per-repo context must precede the protocol");
+        assert!(i_proto < i_skills, "protocol must precede the skills");
+        // The full planner spec is NOT here — only the worker's scope.
+        assert!(!out.contains("Project Planner"), "must not carry the planner spec");
+
+        // Idempotent: a second launch converges to identical content (protocol/skills not doubled).
+        write_worker_context(&wt, &clone, &hub, Some(scope));
+        assert_eq!(out, std::fs::read_to_string(wt.join("CLAUDE.local.md")).unwrap());
+        assert_eq!(out.matches("## Fleet coordination protocol").count(), 1);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+}
