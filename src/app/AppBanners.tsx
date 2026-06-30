@@ -194,9 +194,11 @@ export function SessionRecoveryBanner() {
  */
 function QuarantineBanner() {
   const quarantinedPanes = useAppStore((s) => s.quarantinedPanes);
-  const clearQuarantine = useAppStore((s) => s.clearQuarantine);
+  const acknowledgeQuarantine = useAppStore((s) => s.acknowledgeQuarantine);
 
-  const entries = Object.entries(quarantinedPanes);
+  // Hide acknowledged quarantines — dismissing acknowledges (the worker stays paused + the warden
+  // keeps skipping it), so a still-present out-of-lane edit can't re-trip and re-show the banner.
+  const entries = Object.entries(quarantinedPanes).filter(([, info]) => !info.acknowledged);
   if (entries.length === 0) return null;
 
   return (
@@ -207,7 +209,7 @@ function QuarantineBanner() {
           variant="bar"
           tone="danger"
           lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
-          onDismiss={() => clearQuarantine(paneId)}
+          onDismiss={() => acknowledgeQuarantine(paneId)}
         >
           <span style={{ flex: 1, minWidth: 0 }}>
             <b>Worker quarantined</b> — stream <b>{info.streamId}</b> ({paneId}) was paused: {info.summary}.

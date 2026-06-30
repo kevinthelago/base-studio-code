@@ -1581,9 +1581,9 @@ describe("pane status — store single source of truth (#435)", () => {
     expect(st.wardenSince[other]).toBeUndefined();     // other project not floored
   });
 
-  it("clearQuarantine removes the pane AND stamps a warden floor (so the banner doesn't reappear)", () => {
-    // Dismissing the quarantine banner must floor the warden — otherwise the next tick re-reads the
-    // same (still-logged) denied command from the audit log and re-quarantines the pane.
+  it("clearQuarantine fully removes the pane AND stamps a warden floor (completion / relaunch lift)", () => {
+    // clearQuarantine is the FULL clear (the warden lifts a completed worker; triage relaunch clears it).
+    // It floors the warden so a stale denied command can't immediately re-trip a re-evaluated pane.
     const p = "STEM:data";
     useAppStore.setState((s) => ({
       quarantinedPanes: { ...s.quarantinedPanes, [p]: { streamId: "data", summary: "ran denied cmd", at: 1 } },
@@ -1594,8 +1594,24 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().clearQuarantine(p);
     const st = useAppStore.getState();
 
-    expect(st.quarantinedPanes[p]).toBeUndefined();           // cleared
+    expect(st.quarantinedPanes[p]).toBeUndefined();           // fully removed
     expect(st.wardenSince[p]).toBeGreaterThanOrEqual(before); // and the warden is floored to ~now
+  });
+
+  it("acknowledgeQuarantine keeps the pane quarantined (banner hidden) so the warden still skips it", () => {
+    // Dismissing the banner must NOT un-quarantine the pane — its PTY is already dead (paused), and the
+    // warden's skip-set is the quarantinedPanes keys, so keeping the entry (just acknowledged) stops a
+    // still-present out-of-lane diff edit from re-tripping the warden and re-showing the banner.
+    const p = "STEM:data";
+    useAppStore.setState((s) => ({
+      quarantinedPanes: { ...s.quarantinedPanes, [p]: { streamId: "data", summary: "edited out-of-lane X.tsx", at: 1 } },
+    }));
+
+    useAppStore.getState().acknowledgeQuarantine(p);
+    const st = useAppStore.getState();
+
+    expect(st.quarantinedPanes[p]).toBeDefined();           // STILL quarantined (so the warden skips it)
+    expect(st.quarantinedPanes[p].acknowledged).toBe(true); // but acknowledged → the banner hides
   });
 });
 

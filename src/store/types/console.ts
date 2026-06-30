@@ -20,6 +20,11 @@ export interface QuarantineInfo {
   summary: string;
   /** Epoch ms when it was quarantined. */
   at: number;
+  /** Dismissed from the banner: the user acknowledged it. The banner hides, but the pane STAYS
+   *  quarantined (its PTY is already dead, so it's paused) and the warden keeps skipping it — so a
+   *  still-present out-of-lane edit in its diff can't re-trip and re-show the banner. Cleared for
+   *  real only on relaunch / completion. */
+  acknowledged?: boolean;
 }
 
 /** The resting state a finished fleet worker lands in, classified from plan.db owned-issue
@@ -125,6 +130,9 @@ export interface ConsoleState {
   quarantinedPanes: Record<string, QuarantineInfo>;
   markQuarantine: (paneId: string, info: QuarantineInfo) => void;
   clearQuarantine: (paneId: string) => void;
+  /** Dismiss the banner WITHOUT un-quarantining the pane (the worker stays paused, the warden keeps
+   *  skipping it). Distinct from clearQuarantine, which fully removes it (relaunch / completion). */
+  acknowledgeQuarantine: (paneId: string) => void;
   /** Per-pane warden "since" floor (epoch ms): the warden ignores `bsc-audit` commands logged BEFORE
    *  this, so a denied command from a PRIOR run can't re-quarantine a relaunched worker. Triage stamps
    *  it; persisted alongside quarantinedPanes. */

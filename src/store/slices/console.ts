@@ -15,7 +15,7 @@ import { newTabId } from "../helpers";
 import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "../updateHelpers";
 
 type ConsoleSlice = Pick<AppStore,
-  "activeWorkspace" | "setWorkspace" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
+  "activeWorkspace" | "setWorkspace" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "acknowledgeQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
 >;
 
 export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = (set, get) => ({
@@ -180,16 +180,26 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
         set((s) => (s.quarantinedPanes[paneId]
           ? {} // already quarantined — never re-mark (the warden's planWarden also dedupes)
           : { quarantinedPanes: setMapEntry(s.quarantinedPanes, paneId, info) })),
+      // FULLY remove a pane's quarantine — the warden lifts it for a completed worker, and triage
+      // relaunch clears it. Stamps the warden floor too, so a stale denied command can't immediately
+      // re-trip if the pane is re-evaluated. (Banner dismiss does NOT call this — see acknowledgeQuarantine.)
       clearQuarantine: (paneId) =>
         set((s) => {
           if (!s.quarantinedPanes[paneId]) return {};
-          // Stamp the warden floor to NOW on dismiss — otherwise the next warden tick re-reads the
-          // same (still-logged) denied command from the audit log and immediately re-quarantines the
-          // pane, so the banner keeps reappearing. Only NEW drift past this point re-pauses it.
           return {
             quarantinedPanes: deleteMapEntry(s.quarantinedPanes, paneId),
             wardenSince: setMapEntry(s.wardenSince, paneId, Date.now()),
           };
+        }),
+      // Banner dismiss: acknowledge WITHOUT un-quarantining. The pane's PTY is already dead (paused),
+      // so we keep it in quarantinedPanes — which the warden's skip-set already honors — and only hide
+      // the banner. This stops a still-present out-of-lane edit in the diff from re-tripping every tick
+      // and re-showing the banner. A real clear happens on relaunch / completion.
+      acknowledgeQuarantine: (paneId) =>
+        set((s) => {
+          const info = s.quarantinedPanes[paneId];
+          if (!info || info.acknowledged) return {};
+          return { quarantinedPanes: setMapEntry(s.quarantinedPanes, paneId, { ...info, acknowledged: true }) };
         }),
       wardenSince: {},
       clearProjectQuarantine: (projectKey, panes, since) =>
