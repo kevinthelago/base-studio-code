@@ -27,8 +27,15 @@ export interface ShellState {
   // Settings
   settingsSection: string;
   setSettingsSection: (section: string) => void;
-  /** First-run OS-sandbox setup nudge (#1916): once dismissed, the banner stays hidden across launches. */
-  sandboxNudgeDismissed: boolean;
+  /**
+   * First-run OS-sandbox setup nudge (#1916). How many times the user has DISMISSED the banner
+   * (pressed the ✕). The banner shows on launch while the deny-list posture is on and the sandbox
+   * isn't ready, and stays hidden once this reaches `SANDBOX_NUDGE_MAX_DISMISSALS`. Counting
+   * dismissals (not shows) means the nudge persists across launches until the user actually
+   * acknowledges it, rather than silently vanishing after a render they may have missed.
+   */
+  sandboxNudgeDismissCount: number;
+  /** Record a ✕ dismissal of the sandbox nudge. */
   dismissSandboxNudge: () => void;
 
   // Performance monitoring (#569)

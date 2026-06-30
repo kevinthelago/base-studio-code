@@ -227,18 +227,25 @@ function QuarantineBanner() {
  * is on and the probe (#1982) says the sandbox isn't ready, surface a one-time, dismissible nudge that
  * does the install **right here**: the step's action button (Install bubblewrap on Linux / Install
  * sandbox on Windows) runs `provision_sandbox` with a live progress bar, via the shared
- * `useSandboxReadiness` hook (same engine as the Settings posture card). Dismiss is persisted
- * (`sandboxNudgeDismissed`) so it's first-run, not every launch; it auto-hides once the sandbox is
- * ready or the user switches to the allow-list posture. A step the app can't auto-install (e.g. WSL
- * not present) shows the manual next step from the probe's `detail` instead of a dead button.
+ * `useSandboxReadiness` hook (same engine as the Settings posture card). It auto-hides once the
+ * sandbox is ready or the user switches to the allow-list posture. A step the app can't auto-install
+ * (e.g. WSL not present) shows the manual next step from the probe's `detail` instead of a dead button.
+ *
+ * It SELF-LIMITS by counting DISMISSALS: each ✕ press bumps the persisted `sandboxNudgeDismissCount`,
+ * and once that reaches `SANDBOX_NUDGE_MAX_DISMISSALS` the nudge stays hidden across launches. Counting
+ * dismissals (not shows) keeps the nudge visible on every launch until the user actually acknowledges
+ * it, rather than vanishing after one render they may have missed. (Settings still surfaces the same
+ * install action permanently, so the user can always set it up there.)
  */
+const SANDBOX_NUDGE_MAX_DISMISSALS = 1;
+
 export function SandboxSetupBanner() {
   const bypassPermissions = useAppStore((s) => s.bypassPermissions);
-  const dismissed = useAppStore((s) => s.sandboxNudgeDismissed);
+  const dismissCount = useAppStore((s) => s.sandboxNudgeDismissCount);
   const dismiss = useAppStore((s) => s.dismissSandboxNudge);
   const { sandbox, installing, installMsg, install } = useSandboxReadiness();
 
-  if (dismissed || !bypassPermissions || !sandbox || sandbox.ready) return null;
+  if (dismissCount >= SANDBOX_NUDGE_MAX_DISMISSALS || !bypassPermissions || !sandbox || sandbox.ready) return null;
 
   const label = sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap";
   return (
