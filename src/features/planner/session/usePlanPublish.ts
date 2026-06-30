@@ -133,15 +133,20 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // worktrees/branches persist untouched); launch only the streams with outstanding work, plus the
       // director if enabled. On a first launch nothing is done, so every stream stays active.
       const dbIssues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId }, []);
-      const { active, skipped } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
-      const launchPlan = { ...fullPlan, streams: active };
-      if (active.length === 0 && !launchPlan.director.enabled) {
-        setTriageError("Every worker's issues are already complete — nothing to relaunch.");
+      // #1957: completed workers no longer skip — they relaunch INTO maintenance (alive + ready for the
+      // director to dispatch new lane work), so launch BOTH active and maintenance streams. The
+      // maintenance set drives a maintenance scope banner (buildWorkerScope) so they stand by, not rebuild.
+      const { active, maintenance } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
+      const maintenanceIds = new Set(maintenance.map(s => s.id));
+      const launchPlan = { ...fullPlan, streams: [...active, ...maintenance] };
+      if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
+        setTriageError("No workers to launch.");
         return;
       }
-      if (skipped.length > 0) {
-        setTriageNote(`Skipped ${skipped.length} completed worker${skipped.length === 1 ? "" : "s"} `
-          + `(${skipped.map(s => s.id).join(", ")}) — relaunching ${active.length}.`);
+      if (maintenance.length > 0) {
+        setTriageNote(`${maintenance.length} completed worker${maintenance.length === 1 ? "" : "s"} `
+          + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
+          + (active.length > 0 ? `; ${active.length} active.` : "."));
       }
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
@@ -150,7 +155,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
         // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
         // the hub so the planner spec is no longer an ancestor (#844).
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st, depsForRepo(planDependencies, st.repo)) })
+        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id)) })
           .then(path => ({ id: st.id, path, err: null as string | null }))
           .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
       ));
