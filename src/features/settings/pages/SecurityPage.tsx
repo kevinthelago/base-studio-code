@@ -1,5 +1,6 @@
 import { IssueSecurityCard } from "../cards/IssueSecurityCard";
 import { AgentsCard } from "../cards/AgentsCard";
+import { PermissionPostureCard } from "../cards/PermissionPostureCard";
 
 export function SecurityPage() {
   return (
@@ -13,6 +14,7 @@ export function SecurityPage() {
 
       {/* Security Cards */}
       <AgentsCard />
+      <PermissionPostureCard />
       <IssueSecurityCard />
     </div>
   );
