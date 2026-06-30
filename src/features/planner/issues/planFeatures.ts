@@ -1,9 +1,7 @@
 // Per-repo feature plans (#177). The planner's per-repo pass can now go down to the
 // FEATURE level: for each repo it writes one plan section per feature, namespaced
-// `repo__{short}__feat__{slug}`, carrying the feature's approach, a phase marker, and
-// (optionally) acceptance criteria. At publish each feature section becomes one real
-// GitHub issue under its milestone — supplementing, not replacing, the per-phase
-// tracking issues.
+// `repo__{short}__feat__{slug}`, carrying the feature's approach and (optionally)
+// acceptance criteria. At publish each feature section becomes one real GitHub issue.
 //
 // Rather than thread a parallel "feature" object through the structure builder and the
 // publisher, a feature section is converted into a synthetic {@link PlanIssue}: it then
@@ -44,11 +42,9 @@ function humanizeSlug(slug: string): string {
 }
 
 export interface ParsedFeature {
-  /** Phase the feature belongs to (1-based number or milestone name), or undefined. */
-  phase?: number | string;
   /** Feature title — the section's first heading, else the humanized slug. */
   title: string;
-  /** The feature's approach/body, with the phase marker + leading title heading stripped. */
+  /** The feature's approach/body, with the leading title heading stripped. */
   body: string;
   /** Acceptance items pulled from `- [ ]` checkbox lines, if any. */
   acceptance: string[];
@@ -58,9 +54,6 @@ export interface ParsedFeature {
  * Parse a feature section's markdown into its structured parts. Tolerant of how the
  * planner writes it:
  *
- * - **Phase marker** — the first line matching `phase: <n|name>` (also `phase = …` and
- *   an HTML-comment `<!-- phase: … -->`). A bare number → a 1-based phase index;
- *   anything else → a milestone name. Dropped from the body.
  * - **Title** — the first markdown heading (`# …`), else the humanized `slug`. A
  *   leading heading used as the title is dropped from the body (a deeper/later heading
  *   is kept).
@@ -71,7 +64,6 @@ export interface ParsedFeature {
  * Everything else is preserved as the body (the approach).
  */
 export function parseFeatureSection(content: string, slug: string): ParsedFeature {
-  let phase: number | string | undefined;
   let title = "";
   const acceptance: string[] = [];
   const bodyLines: string[] = [];
@@ -79,14 +71,6 @@ export function parseFeatureSection(content: string, slug: string): ParsedFeatur
 
   for (const raw of content.split(/\r?\n/)) {
     const line = raw.trim();
-
-    const pm = line.match(/^(?:<!--\s*)?phase\s*[:=]\s*(.+?)\s*(?:-->)?$/i);
-    if (pm && phase === undefined) {
-      const v = pm[1].trim();
-      const n = Number(v);
-      phase = v !== "" && Number.isFinite(n) ? n : v;
-      continue; // metadata, not approach — drop from the body
-    }
 
     // The FIRST heading, before any other content, is the feature title.
     const hm = line.match(/^#{1,6}\s+(.+?)\s*$/);
@@ -106,7 +90,7 @@ export function parseFeatureSection(content: string, slug: string): ParsedFeatur
   }
 
   if (!title) title = humanizeSlug(slug);
-  return { phase, title, body: bodyLines.join("\n").trim(), acceptance };
+  return { title, body: bodyLines.join("\n").trim(), acceptance };
 }
 
 // ── Discovery rubric (#490) ────────────────────────────────────────────────────
@@ -178,7 +162,6 @@ export function featureSectionsToIssues(sections: FeatureSectionInput[], repos: 
     out.push({
       ref: `feat:${short}:${slug}`,
       title: parsed.title,
-      phase: parsed.phase,
       acceptance: parsed.acceptance,
       owns: [],
       dependsOn: [],

@@ -15,15 +15,12 @@ const REAL_CONTENT = {
   scope: "## In scope\n- up/down/status commands\n- cross-platform binary\n\n## Out of scope\n- GUI, managed hosting",
   stack: "| Layer | Choice |\n|---|---|\n| Runtime | Node.js 22 |\n| Datastore | Postgres via sqlx |\n| CLI | clap v4 |",
   architecture: "Two components: **runner** (executes migrations in order) and **reporter** (streams status). They communicate via an in-process channel.",
-  phases: JSON.stringify([{ name: "Phase 1 — Working CLI", description: "up/down/status work against a real Postgres" }]),
 };
 
 const VALID_ISSUES = JSON.stringify([
-  { ref: "F1", title: "Add up command", phase: 1, acceptance: ["applies pending migrations", "returns 200"], owns: ["src/up.ts"], dependsOn: [], labels: ["scope:core"] },
-  { ref: "F2", title: "Add status command", phase: 1, acceptance: ["lists pending + applied"], owns: ["src/status.ts"], dependsOn: ["F1"], labels: [] },
+  { ref: "F1", title: "Add up command", acceptance: ["applies pending migrations", "returns 200"], owns: ["src/up.ts"], dependsOn: [], labels: ["scope:core"] },
+  { ref: "F2", title: "Add status command", acceptance: ["lists pending + applied"], owns: ["src/status.ts"], dependsOn: ["F1"], labels: [] },
 ]);
-
-const VALID_PHASES = JSON.stringify([{ name: "Phase 1 — Working CLI", description: "Working CLI" }]);
 
 const VALID_FLEET = JSON.stringify({
   recommended: 2,
@@ -40,7 +37,6 @@ function validArtifacts(overrides: Partial<PlanArtifacts> = {}): PlanArtifacts {
     sections: { ...REAL_CONTENT },
     confirmedSections: ["goal", "scope", "stack", "architecture"],
     issuesJson: VALID_ISSUES,
-    phasesJson: VALID_PHASES,
     fleetJson: VALID_FLEET,
     ...overrides,
   };
@@ -143,18 +139,9 @@ describe("checkPlanContract — issues.json violations", () => {
     expect(r.violations.some(v => v.code === "ISSUES_DANGLING_DEP")).toBe(true);
   });
 
-  it("flags an unknown phase reference when phases are defined", () => {
-    const unknownPhase = JSON.stringify([
-      { ref: "F1", title: "A", acceptance: ["x"], owns: [], dependsOn: [], labels: [], phase: "Nonexistent Phase" },
-    ]);
-    const r = checkPlanContract(validArtifacts({ issuesJson: unknownPhase }));
-    expect(r.ok).toBe(false);
-    expect(r.violations.some(v => v.code === "ISSUES_UNKNOWN_PHASE")).toBe(true);
-  });
-
-  it("issues with valid phase numbers pass", () => {
+  it("a clean issue set with resolvable deps passes", () => {
     const valid = JSON.stringify([
-      { ref: "F1", title: "A", acceptance: ["x"], owns: [], dependsOn: [], labels: [], phase: 1 },
+      { ref: "F1", title: "A", acceptance: ["x"], owns: [], dependsOn: [], labels: [] },
     ]);
     const r = checkPlanContract(validArtifacts({ issuesJson: valid }));
     expect(r.ok).toBe(true);
@@ -215,7 +202,7 @@ describe("checkPlanContract — custom blueprint", () => {
       stages: DEFAULT_BLUEPRINT.stages.map(s => ({ ...s, enabled: false })),
     };
     // Even with a plan missing all sections, disabled stages don't fire.
-    const r = checkPlanContract({ sections: {}, confirmedSections: [], issuesJson: "", phasesJson: "", fleetJson: "" }, blueprint);
+    const r = checkPlanContract({ sections: {}, confirmedSections: [], issuesJson: "", fleetJson: "" }, blueprint);
     // Only fleet/issues checks could fire here (but those artifacts are also empty).
     expect(r.violations.filter(v => v.code.startsWith("STAGE_"))).toHaveLength(0);
   });

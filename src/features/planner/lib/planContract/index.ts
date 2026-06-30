@@ -2,7 +2,7 @@
 //
 // Asserts structural correctness of a planner's output artifacts:
 //   - required/enabled stage sections present, non-empty, and confirmed
-//   - issues.json agent-ready (unique refs, deps resolve, resolvable phase)
+//   - issues.json agent-ready (unique refs, deps resolve)
 //   - fleet.json stream `owns` globs pairwise disjoint
 //   - no placeholder gaps in required sections
 //
@@ -11,7 +11,6 @@
 
 import { parseIssuesFile, validateIssues } from "@/features/planner/issues/planIssues";
 import { parseFleetFile } from "@/features/planner/fleet/planFleet";
-import { parsePhases } from "@/features/planner/github/ghStructure";
 
 // ── Blueprint types ─────────────────────────────────────────────────────────────
 
@@ -49,7 +48,7 @@ export const DEFAULT_BLUEPRINT: PlanBlueprint = {
     {
       name: "Structure",
       enabled: true,
-      requiredSections: ["phases"],
+      requiredSections: [],
       requiredConfirmed: [],
     },
   ],
@@ -67,8 +66,6 @@ export interface PlanArtifacts {
   confirmedSections: string[];
   /** Raw JSON content of `issues.json`; empty string if absent. */
   issuesJson: string;
-  /** Raw JSON content of `phases.json`; empty string if absent. */
-  phasesJson: string;
   /** Raw JSON content of `fleet.json`; empty string if absent. */
   fleetJson: string;
 }
@@ -230,18 +227,13 @@ export function checkPlanContract(
   if (blueprint.requiresAgentReadyIssues && artifacts.issuesJson.trim()) {
     const issues = parseIssuesFile(artifacts.issuesJson);
     if (issues.length > 0) {
-      const phases = parsePhases(artifacts.phasesJson);
-      const phaseNames = phases.map((p) => p.name);
-      const v = validateIssues(issues, phaseNames);
+      const v = validateIssues(issues);
 
       for (const ref of v.duplicateRefs) {
         violations.push({ code: "ISSUES_DUPLICATE_REF", message: `issues.json: duplicate ref "${ref}"` });
       }
       for (const { ref, dependsOn } of v.danglingDependencies) {
         violations.push({ code: "ISSUES_DANGLING_DEP", message: `issues.json: "${ref}" depends on unknown ref "${dependsOn}"` });
-      }
-      for (const { ref, phase } of v.unknownPhases) {
-        violations.push({ code: "ISSUES_UNKNOWN_PHASE", message: `issues.json: "${ref}" references unknown phase "${phase}"` });
       }
       for (const ref of v.missingAcceptance) {
         warnings.push({ code: "ISSUES_MISSING_ACCEPTANCE", message: `issues.json: "${ref}" has no acceptance criteria (not agent-ready)` });

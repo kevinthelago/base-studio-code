@@ -54,8 +54,6 @@ export interface PlanStageState {
   /** Dependencies (#1111/#1191): how many libraries the planner has locked in the dependency manifest
    *  (plan.db, via `bsc-plan deps set`). The Dependencies gate passes once ≥1 is defined. */
   dependencies: { count: number };
-  /** Structure/Plan: the roadmap is confirmed and granular issues exist. */
-  phasesConfirmed: boolean;
   issueCount: number;
   /** Fleet: streams defined, and each has a profile/flow set. */
   fleet: { streams: number; profilesComplete: boolean };
@@ -232,7 +230,6 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     ui: p.ui ?? { approved: 0, total: 0, routed: false },
     features: p.features ?? { count: 0, allConfirmed: false },
     dependencies: p.dependencies ?? { count: 0 },
-    phasesConfirmed: p.phasesConfirmed ?? false,
     issueCount: p.issueCount ?? 0,
     fleet: p.fleet ?? { streams: 0, profilesComplete: false },
     automationsAck: p.automationsAck ?? false,

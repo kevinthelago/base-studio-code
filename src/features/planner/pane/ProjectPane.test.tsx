@@ -238,17 +238,16 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onModel).toHaveBeenCalledWith("auth", undefined);  // back to the global default
   });
 
-  it("renders the Plan review (phases + seam graph) with no in-body approve button (#949)", () => {
+  it("renders the Plan review (seam graph) with no in-body approve button (#949)", () => {
     // The Structure stage's only approve control is the footer's "approve & continue" — the
-    // duplicate in-body "Approve milestones & seams" button was removed (#949).
+    // duplicate in-body "Approve milestones & seams" button was removed (#949). Milestone phases
+    // were removed (#1912), so the Plan body no longer renders a phase roadmap.
     const data = { agents: [], repos: [], structure: [], context: [], issues: [],
-      phaseStructure: [{ id: "p1", name: "Phase 1 — MVP", total: 3, issues: [], closed: 0, pct: 0, order: 0, doneWhen: "" }],
       seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus({
       phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
-    expect(screen.getByText("Phase 1 — MVP")).toBeInTheDocument();
     expect(screen.queryByText(/Approve milestones/)).not.toBeInTheDocument();
   });
 

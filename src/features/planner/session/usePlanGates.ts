@@ -15,7 +15,7 @@ import { skippedSignal, confirmedSignal, planStagesComplete, authoringSignals } 
 import { derivePlanStageState, planStateToSignals } from "../stages/planStageDerive";
 import { FEATURES_KEY } from "../stages/planTopics";
 import { parseIssuesFile } from "../issues/planIssues";
-import { featuresGateComplete, featuresAllPhased, featuresSummary } from "../issues/featureList";
+import { featuresGateComplete, featuresSummary } from "../issues/featureList";
 import { findPlanGaps } from "../lib/lintPlan";
 import { findPlanInjections, injectionGate } from "../lib/planInjection";
 import { deploymentDefined } from "../lib/deployConfig";
@@ -44,7 +44,6 @@ interface PlanGatesDeps {
   sourceCfg: Parameters<typeof migrationActive>[0];
   injectionHardGate: boolean;
   planInjectionAck: Record<string, string>;
-  planFeatures: Parameters<typeof featuresAllPhased>[0];
   deployCfg: Parameters<typeof deploymentDefined>[0];
   intgCfg: Parameters<typeof destinationDefined>[0];
   /** From usePlannerBlueprint. */
@@ -57,7 +56,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, intgCfg, isAuthoring, authoringSig,
   } = deps;
 
   // The live snapshot the declarative section gates read.
@@ -136,8 +135,12 @@ export function usePlanGates(deps: PlanGatesDeps) {
     const repoStreams: Record<string, string[]> = {};
     for (const s of (planFleet[effectiveProjectId]?.streams ?? [])) { if (s.repo) (repoStreams[s.repo] ??= []).push(s.id); }
     const sharedDepsLocked = unlockedSharedRepos(planDependencies, repoStreams).length === 0;
-    return { ...planStateToSignals(stageState), hasPlanGaps, featuresPhased: featuresAllPhased(planFeatures), deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
-  }, [stageState, hasPlanGaps, planFeatures, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
+    // The Structure/Plan gate (#1912): the feature DAG is defined (≥1 feature) and acyclic. This
+    // replaced the old `featuresPhased` (every feature assigned a roadmap phase) — sequencing is now
+    // expressed purely via feature `dependsOn`, with no milestone phases.
+    const featuresDefined = featureState.count > 0 && featureCycle.length === 0;
+    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
+  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
 
   // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
   // signals; the active phase auto-follows the frontier (the user-pick SELECTION stays in Planning).

@@ -6,7 +6,7 @@ const issue = (p: Partial<PlanIssue>): PlanIssue => ({
   ref: "F1", title: "Do the thing", acceptance: [], owns: [], dependsOn: [], labels: [], ...p,
 });
 
-/** Build the GitHub issue a publish would create from a PlanIssue (body + milestone + stream label). */
+/** Build the GitHub issue a publish would create from a PlanIssue (body + stream label). */
 const published = (iss: PlanIssue, number: number, state: "open" | "closed"): GitHubIssueLike => ({
   number,
   title: iss.title,
@@ -16,7 +16,6 @@ const published = (iss: PlanIssue, number: number, state: "open" | "closed"): Gi
     ...iss.labels.map((name) => ({ name })),
     ...(iss.stream ? [{ name: `stream:${iss.stream}` }] : []),
   ],
-  milestone: iss.phase !== undefined ? { title: String(iss.phase) } : null,
 });
 
 describe("recoverIssue (GitHub → plan.db)", () => {
@@ -24,7 +23,6 @@ describe("recoverIssue (GitHub → plan.db)", () => {
     const original = issue({
       ref: "auth-login",
       title: "Add POST /sessions",
-      phase: "Phase 2 — auth",
       acceptance: ["returns 200 on valid creds", "sets the session cookie"],
       owns: ["src/auth/", "src/api/sessions.ts"],
       dependsOn: ["schema", "auth-config"],
@@ -36,7 +34,6 @@ describe("recoverIssue (GitHub → plan.db)", () => {
 
     expect(recovered.ref).toBe("auth-login");                 // from the hidden marker, not #42
     expect(recovered.title).toBe("Add POST /sessions");
-    expect(recovered.phase).toBe("Phase 2 — auth");           // from the milestone
     expect(recovered.acceptance).toEqual(original.acceptance);
     expect(recovered.owns).toEqual(original.owns);            // backticks stripped
     expect(recovered.dependsOn).toEqual(original.dependsOn);  // the refs survive — the whole point
@@ -61,12 +58,11 @@ describe("recoverIssue (GitHub → plan.db)", () => {
     expect(r.acceptance).toEqual([]);
   });
 
-  it("recovers a bare-string label shape and an absent milestone", () => {
-    const gh: GitHubIssueLike = { number: 3, title: "t", state: "open", labels: ["scope:core", "stream:ui"], milestone: null };
+  it("recovers a bare-string label shape", () => {
+    const gh: GitHubIssueLike = { number: 3, title: "t", state: "open", labels: ["scope:core", "stream:ui"] };
     const r = recoverIssue(gh, "a/b");
     expect(r.stream).toBe("ui");
     expect(r.labels).toEqual(["scope:core"]);
-    expect(r.phase).toBeUndefined();
   });
 });
 

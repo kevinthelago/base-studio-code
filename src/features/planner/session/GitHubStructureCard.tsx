@@ -129,8 +129,6 @@ export function GitHubStructureCard({ structure, status }: { structure: GhStruct
         github structure
       </div>
       <GhGroup title="Project board" nodes={[structure.project]} status={status} />
-      <GhGroup title="Milestones" count={structure.milestones.length} nodes={structure.milestones} status={status}
-        empty="defined by the Phases section" />
       <GhReposGroup repos={structure.repos} status={status} />
       {structure.streams.length > 0 && (
         <GhGroup
