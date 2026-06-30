@@ -504,9 +504,101 @@ pub(crate) fn remove_sandbox() -> Result<u64, String> {
     Ok(freed)
 }
 
+// --- Host ↔ distro file I/O (#1988, the relocation bridge) -----------------------------------------
+// The `\\wsl$` 9P share is unavailable on some Windows installs ("network name cannot be found"), so
+// host↔distro file ops go through `wsl` exec with the path EMBEDDED (shell-escaped) in the script —
+// the mechanism verified to work. This is the foundation for relocating the planner/triage hub onto
+// the distro's ext4: a session sees `/home/agent/...`; the host writes/reads it via these helpers.
+
+/// The project hub's distro-native path for `key` (the in-distro analogue of `project_dir`).
+fn sandbox_project_path(key: &str) -> String {
+    format!(
+        "/home/agent/.base-studio-code/projects/{}",
+        crate::platform::fsx::sanitize_project_key(key)
+    )
+}
+
+/// Single-quote a string as one safe POSIX-shell token.
+fn sh_squote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Write `content` to `linux_path` inside the sandbox distro, creating parent dirs — via `wsl` exec
+/// (content on stdin; the path is embedded + escaped in the script, since `\\wsl$` is unreliable).
+fn sandbox_write(linux_path: &str, content: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let dir = linux_path.rsplit_once('/').map(|(d, _)| d).unwrap_or(".");
+    let script = format!("mkdir -p {} && cat > {}", sh_squote(dir), sh_squote(linux_path));
+    let mut child = std::process::Command::new("wsl.exe")
+        .args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("wsl spawn failed: {e}"))?;
+    {
+        let mut si = child.stdin.take().ok_or("no stdin handle")?;
+        si.write_all(content.as_bytes()).map_err(|e| format!("write stdin: {e}"))?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(decode_wsl(&out.stderr).trim().to_string())
+    }
+}
+
+/// Read a file from inside the sandbox distro via `wsl` exec.
+fn sandbox_read(linux_path: &str) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "cat", linux_path]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(decode_wsl(&out.stdout))
+    } else {
+        Err(decode_wsl(&out.stderr).trim().to_string())
+    }
+}
+
+/// Create a project hub INSIDE the sandbox distro (#1988) and seed its `CLAUDE.md`, returning the
+/// hub's distro-native path — the cwd a sandboxed planner/triage session launches at (`pty_create`'s
+/// `wsl_distro`). The relocation kernel; the launch + plan-file wiring builds on it.
+#[tauri::command]
+pub(crate) fn setup_sandbox_hub(key: String, claude_md: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let hub = sandbox_project_path(&key);
+    sandbox_write(&format!("{hub}/CLAUDE.md"), &claude_md)?;
+    Ok(hub)
+}
+
+/// Read a file from the sandbox distro (#1988) — e.g. a relocated hub's plan section, for the UI.
+#[tauri::command]
+pub(crate) fn sandbox_read_file(path: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    sandbox_read(&path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_project_path_is_distro_native_and_sanitized() {
+        assert_eq!(sandbox_project_path("my-proj"), "/home/agent/.base-studio-code/projects/my-proj");
+        // The key is sanitized the same way as the host hub (no path traversal into the distro).
+        assert!(!sandbox_project_path("../etc").contains(".."));
+    }
+
+    #[test]
+    fn sh_squote_wraps_and_escapes() {
+        assert_eq!(sh_squote("/home/agent/x"), "'/home/agent/x'");
+        assert_eq!(sh_squote("a'b"), "'a'\\''b'");
+    }
 
     #[test]
     fn linux_install_command_per_pm_adds_both_deps() {
