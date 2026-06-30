@@ -8,6 +8,7 @@ import {
 } from "@/app/console/lib/sessionRecovery";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // App banners — the full-width status strips pinned at the top of the app shell. Each is a small
@@ -218,54 +219,50 @@ function QuarantineBanner() {
   );
 }
 
-/** The OS-sandbox fields this nudge reads (mirror of the Rust `SandboxReadiness`, #1982). */
-type SandboxReadiness = { ready: boolean; detail: string };
-
 /**
  * First-run sandbox-setup nudge (#1916). Under the deny-list posture (auto-run), the OS sandbox is the
  * layer that actually confines Bash — but on a fresh machine it isn't installed yet. When the posture
  * is on and the probe (#1982) says the sandbox isn't ready, surface a one-time, dismissible nudge that
- * sends the user to Settings → Security, where the one-click installer (with live progress) lives.
- * Dismiss is persisted (`sandboxNudgeDismissed`) so it's first-run, not every launch; it auto-hides
- * once the sandbox is ready or the user switches to the allow-list posture.
+ * does the install **right here**: the step's action button (Install bubblewrap on Linux / Install
+ * sandbox on Windows) runs `provision_sandbox` with a live progress bar, via the shared
+ * `useSandboxReadiness` hook (same engine as the Settings posture card). Dismiss is persisted
+ * (`sandboxNudgeDismissed`) so it's first-run, not every launch; it auto-hides once the sandbox is
+ * ready or the user switches to the allow-list posture. A step the app can't auto-install (e.g. WSL
+ * not present) shows the manual next step from the probe's `detail` instead of a dead button.
  */
 export function SandboxSetupBanner() {
   const bypassPermissions = useAppStore((s) => s.bypassPermissions);
   const dismissed = useAppStore((s) => s.sandboxNudgeDismissed);
   const dismiss = useAppStore((s) => s.dismissSandboxNudge);
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
-  const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
-
-  useEffect(() => {
-    if (dismissed || !bypassPermissions) return;
-    let alive = true;
-    void safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null).then((r) => {
-      if (alive) setSandbox(r);
-    });
-    return () => { alive = false; };
-  }, [dismissed, bypassPermissions]);
+  const { sandbox, installing, installMsg, install } = useSandboxReadiness();
 
   if (dismissed || !bypassPermissions || !sandbox || sandbox.ready) return null;
 
-  const goSetUp = () => {
-    setSettingsSection("security"); // land on the posture card (the one-click installer + progress)
-    setWorkspace("settings");
-    dismiss();
-  };
-
+  const label = sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap";
   return (
     <Banner
       variant="bar"
       tone="warn"
       lead={<ShieldAlert size={14} style={{ color: "var(--warn)", flexShrink: 0 }} />}
-      right={<button className="btn primary" onClick={goSetUp}>Set up</button>}
+      right={
+        sandbox.autoInstallable ? (
+          <button className="btn primary" onClick={install} disabled={installing}>
+            {installing ? "Installing…" : label}
+          </button>
+        ) : undefined
+      }
       onDismiss={dismiss}
     >
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <b>Agent sandbox not set up</b> — sessions auto-run but aren't fully isolated yet. Set it up so a
-        misbehaving or hijacked agent can't reach outside its workspace.
-      </span>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+        <span>
+          <b>Agent sandbox not set up</b> — {installing ? "installing…" : (installMsg ?? sandbox.detail)}
+        </span>
+        {installing && (
+          <div aria-hidden style={{ height: 3, borderRadius: 2, background: "color-mix(in oklch, var(--warn), transparent 75%)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
+          </div>
+        )}
+      </div>
     </Banner>
   );
 }

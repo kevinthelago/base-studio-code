@@ -1,66 +1,16 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-
-/** Mirror of the Rust `SandboxReadiness` (#1982) — the OS-sandbox probe result. */
-type SandboxReadiness = {
-  platform: string;
-  needsWsl: boolean;
-  wslInstalled: boolean;
-  sandboxDistro: string | null;
-  /** The app can install the missing piece itself (Linux package manager / WSL rootfs import). */
-  autoInstallable: boolean;
-  ready: boolean;
-  detail: string;
-};
+import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
 /** Agent permission posture (#1916): the deny-list (bypass — auto-run, hooks gate) vs the allow-list
  *  (require approval). The toggle threads through `buildSessionSettings` → `write_session_settings`,
  *  which emits (or omits) `permissions.defaultMode = "bypassPermissions"`. Takes effect next launch.
  *  Under bypass, the OS sandbox (#1980) is the layer that confines Bash — its readiness is probed
- *  (#1982; on Windows it needs WSL2) and surfaced inline so the gap is visible before a session needs it. */
+ *  (#1982) and surfaced inline, with a one-click installer (live progress) when the app can fix it. */
 export function PermissionPostureCard() {
   const { bypassPermissions, setBypassPermissions } = useAppStore();
-  const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [installMsg, setInstallMsg] = useState<string | null>(null);
-  const [installLog, setInstallLog] = useState<string[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    void safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null).then((r) => {
-      if (alive) setSandbox(r);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // One-click install of the missing OS-sandbox prerequisites — Windows imports the sealed rootfs
-  // (#1988); Linux installs bubblewrap + socat via the host package manager (pkexec). The backend
-  // streams `sandbox-install` events so the user watches it happen live; we re-probe after so the
-  // dot reflects the result. Raw `invoke` (not safeInvoke) so the final Ok/Err text surfaces.
-  const onInstall = async () => {
-    setInstalling(true);
-    setInstallMsg(null);
-    setInstallLog([]);
-    const unlisten = await listen<{ phase: string; line?: string }>("sandbox-install", (e) => {
-      const { phase, line } = e.payload;
-      if ((phase === "start" || phase === "log") && line) setInstallLog((prev) => [...prev, line]);
-    });
-    try {
-      setInstallMsg(await invoke<string>("provision_sandbox"));
-    } catch (e) {
-      setInstallMsg(String(e));
-    }
-    unlisten();
-    setSandbox(await safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null));
-    setInstalling(false);
-  };
+  const { sandbox, installing, installLog, installMsg, install } = useSandboxReadiness();
 
   return (
     <Card title="Agent permissions">
@@ -123,7 +73,7 @@ export function PermissionPostureCard() {
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <button
-                    onClick={onInstall}
+                    onClick={install}
                     disabled={installing}
                     style={{
                       background: "var(--accent)", border: "none", color: "var(--accent-text, #1a120a)",

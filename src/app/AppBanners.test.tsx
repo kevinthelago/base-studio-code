@@ -67,7 +67,9 @@ describe("SandboxSetupBanner (#1916)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (cmd: string) =>
-      cmd === "wsl_sandbox_status" ? { ready: false, detail: "bubblewrap not installed" } : undefined,
+      cmd === "wsl_sandbox_status"
+        ? { ready: false, detail: "bubblewrap not installed", autoInstallable: true, needsWsl: false }
+        : undefined,
     );
     useAppStore.setState({ bypassPermissions: true, sandboxNudgeDismissed: false });
   });
@@ -77,14 +79,18 @@ describe("SandboxSetupBanner (#1916)", () => {
     await waitFor(() => expect(screen.getByText(/Agent sandbox not set up/)).toBeTruthy());
   });
 
-  it("'Set up' deep-links to Settings → Security and dismisses", async () => {
+  it("installs the sandbox directly from the banner", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "wsl_sandbox_status") {
+        return { ready: false, detail: "bubblewrap not installed", autoInstallable: true, needsWsl: false };
+      }
+      if (cmd === "provision_sandbox") return "Installed bubblewrap + socat.";
+      return undefined;
+    });
     render(<SandboxSetupBanner />);
-    await waitFor(() => expect(screen.getByText("Set up")).toBeTruthy());
-    fireEvent.click(screen.getByText("Set up"));
-    const s = useAppStore.getState();
-    expect(s.activeWorkspace).toBe("settings");
-    expect(s.settingsSection).toBe("security");
-    expect(s.sandboxNudgeDismissed).toBe(true);
+    const btn = await screen.findByRole("button", { name: /Install bubblewrap/ });
+    fireEvent.click(btn);
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith("provision_sandbox"));
   });
 
   it("stays hidden once dismissed", async () => {
