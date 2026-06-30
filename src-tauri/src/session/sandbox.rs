@@ -457,6 +457,53 @@ pub(crate) fn sandbox_run(cwd: String, command: String) -> Result<String, String
     }
 }
 
+/// The disk footprint of the WSL2 agent sandbox (#1988) — invisible to the worktree-only Storage scan,
+/// so Storage surfaces it separately.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SandboxDisk {
+    /// Whether the distro's on-disk image exists.
+    pub installed: bool,
+    /// The imported distro's ext4 image (`~/.base-studio-code/wsl/<distro>/`); grows as it's used.
+    pub distro_bytes: u64,
+    /// The staged rootfs tarball — a cache, only needed to (re)import; reclaimable on its own.
+    pub tarball_bytes: u64,
+}
+
+/// Report the WSL2 agent sandbox's disk usage (the distro image + the cached rootfs tarball under
+/// `~/.base-studio-code/wsl/`), so Settings → General → Storage can surface + reclaim it (#1988).
+#[tauri::command]
+pub(crate) fn sandbox_disk_usage() -> SandboxDisk {
+    let install_dir = sandbox_install_dir();
+    SandboxDisk {
+        installed: install_dir.exists(),
+        distro_bytes: crate::fleet::teardown::dir_size(&install_dir),
+        tarball_bytes: std::fs::metadata(sandbox_rootfs_tarball()).map(|m| m.len()).unwrap_or(0),
+    }
+}
+
+/// Remove the WSL2 agent sandbox entirely — unregister the distro and delete its on-disk image + the
+/// cached tarball — returning the bytes freed (#1988). Re-provisionable afterward via Settings →
+/// Security. The wsl.exe calls are best-effort (a no-op if the distro isn't registered).
+#[tauri::command]
+pub(crate) fn remove_sandbox() -> Result<u64, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let install_dir = sandbox_install_dir();
+    let tarball = sandbox_rootfs_tarball();
+    let freed = crate::fleet::teardown::dir_size(&install_dir)
+        + std::fs::metadata(&tarball).map(|m| m.len()).unwrap_or(0);
+    for args in [["--terminate", AGENT_SANDBOX_DISTRO], ["--unregister", AGENT_SANDBOX_DISTRO]] {
+        let mut cmd = std::process::Command::new("wsl.exe");
+        cmd.args(args);
+        let _ = crate::platform::process::run_output(&mut cmd);
+    }
+    let _ = std::fs::remove_dir_all(&install_dir);
+    let _ = std::fs::remove_file(&tarball);
+    Ok(freed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
