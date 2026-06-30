@@ -269,6 +269,11 @@ export function PublishedProjects({
     const allRepos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     const repo     = allRepos[0] ?? "";
     setActiveProjectMeta(p.id, p.title, repo, p.number, allRepos);
+    // Reflect the opened project's title in the planning session so the fleet/triage tab is named after
+    // THIS project — not a stale draft title left in `planningTitle` from a prior session. The tab name
+    // resolves via `deriveProjectTitle` as `planningTitle || activeProjectName`, so a leftover draft
+    // title ("ok") would otherwise win and mislabel a published project's triage/fleet tab (#1988).
+    setPlanningTitle(p.title);
     setPlanningContext(p.shortDescription ?? p.title, repo);
     // Resolve the session key through the node-id alias set at publish (#1741): a project
     // created with a stable id lives under that id on disk, so reopening it from the board must
