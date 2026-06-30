@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { useAppStore } from "@/store";
 import {
-  statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis, tabOfPane,
+  statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis,
 } from "@/shared/lib/fleet/fleetLive";
 import { emptyCoordState, type CoordState } from "@/shared/lib/fleet/coordination";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
@@ -16,11 +16,6 @@ function coord(p: Partial<CoordState> = {}): CoordState {
 }
 
 describe("fleetLive mappers", () => {
-  it("tabOfPane parses the tab index", () => {
-    expect(tabOfPane("t2p0")).toBe(2);
-    expect(tabOfPane("nope")).toBe(-1);
-  });
-
   it("statusForPane: coordination wins over raw run/idle", () => {
     const ps = { t0p0: "run" as const };
     expect(statusForPane("t0p0", coord(), ps)).toBe("running");
@@ -34,21 +29,24 @@ describe("fleetLive mappers", () => {
     expect(statusForPane("t0p0", maint, ps)).toBe("running");
   });
 
-  it("buildLiveWorkers: roster from launched fleet, drops closed/disabled panes", () => {
+  it("buildLiveWorkers: roster from launched fleet, drops closed/disabled panes (#1176 identity ids)", () => {
+    // Fleet/triage panes key off IDENTITY ids (`<key>:<stream>`), recorded on the tab's `paneIds` —
+    // NOT the legacy positional `t<idx>p<idx>`. The roster must resolve these (the empty-fleet bug
+    // was the positional `tabOfPane` parse dropping every identity-keyed worker).
     const workers = buildLiveWorkers({
       fleetPaneStreams: {
-        t0p0: stream({ name: "api", profile: "pf_build", issues: ["#1", "#2", "#3"] }),
-        t0p1: stream({ name: "docs", profile: "pf_docs" }),
-        t9p0: stream({ name: "ghost" }),       // tab 9 doesn't exist → dropped
-        t0p2: stream({ name: "off" }),          // disabled → dropped
+        "proj:api": stream({ name: "api", profile: "pf_build", issues: ["#1", "#2", "#3"] }),
+        "proj:docs": stream({ name: "docs", profile: "pf_docs" }),
+        "ghost:x": stream({ name: "ghost" }),   // not on any open tab's paneIds → dropped
+        "proj:off": stream({ name: "off" }),     // disabled → dropped
       },
-      paneStatus: { t0p0: "run", t0p1: "idle" },
-      coord: coord({ waiting: [{ session: "t0p1", reason: "awaiting review", at: 0 }] }),
-      tabCount: 1,
-      disabledPanes: { t0p2: true },
+      paneStatus: { "proj:api": "run", "proj:docs": "idle" },
+      coord: coord({ waiting: [{ session: "proj:docs", reason: "awaiting review", at: 0 }] }),
+      tabs: [{ paneIds: ["proj:api", "proj:docs", "proj:off"] }], // the live fleet tab
+      disabledPanes: { "proj:off": true },
       profiles: [{ id: "pf_build", name: "Build & test" }, { id: "pf_docs", name: "Docs" }],
     });
-    expect(workers.map(w => w.name)).toEqual(["api", "docs"]); // sorted by pane id, ghosts dropped
+    expect(workers.map(w => w.name)).toEqual(["api", "docs"]); // sorted by pane id, ghost + disabled dropped
     const api = workers.find(w => w.name === "api")!;
     expect(api.status).toBe("running");
     expect(api.profileLabel).toBe("Build & test");
@@ -61,10 +59,10 @@ describe("fleetLive mappers", () => {
 
   it("statusCounts + deriveFleetKpis tally by status", () => {
     const workers = buildLiveWorkers({
-      fleetPaneStreams: { t0p0: stream({ name: "a" }), t0p1: stream({ name: "b" }), t0p2: stream({ name: "c" }) },
-      paneStatus: { t0p0: "run", t0p1: "run", t0p2: "idle" },
-      coord: coord({ waiters: [{ session: "t0p2", deps: [{ kind: "issue", number: 1 }], registeredAt: 0 }] }),
-      tabCount: 1, disabledPanes: {}, profiles: [],
+      fleetPaneStreams: { "proj:a": stream({ name: "a" }), "proj:b": stream({ name: "b" }), "proj:c": stream({ name: "c" }) },
+      paneStatus: { "proj:a": "run", "proj:b": "run", "proj:c": "idle" },
+      coord: coord({ waiters: [{ session: "proj:c", deps: [{ kind: "issue", number: 1 }], registeredAt: 0 }] }),
+      tabs: [{ paneIds: ["proj:a", "proj:b", "proj:c"] }], disabledPanes: {}, profiles: [],
     });
     expect(statusCounts(workers)).toEqual({ running: 2, blocked: 1 });
     expect(deriveFleetKpis(workers)).toEqual({ total: 3, active: 2, needAttention: 1, idle: 0 });
