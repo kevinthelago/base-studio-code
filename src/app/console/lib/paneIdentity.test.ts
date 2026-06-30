@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   paneIdFor, manualPaneId, fleetPaneId, directorPaneId, triagePaneId, isManualPaneId, positionalPaneId,
-  parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab,
+  parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab, paneCwdRecovery,
 } from "./paneIdentity";
 
 describe("paneIdentity (#1176)", () => {
@@ -126,6 +126,22 @@ describe("paneIdentity (#1176)", () => {
       expect(parsePaneIdentity("garbage")).toBeNull();   // no colon, not positional/manual
       expect(parsePaneIdentity("key:")).toBeNull();      // empty stream id
       expect(parsePaneIdentity(":director")).toBeNull(); // empty project key
+    });
+  });
+
+  describe("paneCwdRecovery (#1819 empty-cwd recovery)", () => {
+    it("resolves a triage pane to repo_dir_path", () => {
+      expect(paneCwdRecovery("STEM:owner/STEM:triage")).toEqual({
+        cmd: "repo_dir_path", args: { projectKey: "STEM", repo: "owner/STEM" },
+      });
+    });
+    it("resolves a director pane to project_dir_path", () => {
+      expect(paneCwdRecovery("STEM:director")).toEqual({ cmd: "project_dir_path", args: { projectKey: "STEM" } });
+    });
+    it("returns null where the dir isn't derivable from the id alone", () => {
+      expect(paneCwdRecovery("STEM:backend")).toBeNull();  // worker — its worktree needs the agent id
+      expect(paneCwdRecovery("man:tab-1:p0")).toBeNull();   // manual console
+      expect(paneCwdRecovery("t0p1")).toBeNull();           // legacy positional
     });
   });
 });

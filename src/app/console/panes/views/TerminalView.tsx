@@ -11,6 +11,7 @@ import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib/terminal";
 import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
+import { paneCwdRecovery } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
@@ -445,13 +446,26 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // LLM provider/model/key, role-derived perms, and resolved MCP servers (BSC_AGENT_* env, #1078
       // P3b). Composed in sessionLaunch.buildAgentEnv from the current store snapshot.
       const agentEnv = buildAgentEnv(useAppStore.getState(), paneId, providerId, ghToken);
-      if (launchesClaude && (initialCwd ?? "") !== "") {
+      // #1819 hardening — never launch claude permission-less. If the pane's configured cwd came back
+      // empty (the async bscBaseDir mirror wasn't loaded when its cwd was set), recover an authoritative
+      // dir from Rust by the pane's identity (triage → repo dir, director → hub) so the role gate +
+      // shell allow-list are always written where claude actually launches.
+      let launchCwd = initialCwd ?? "";
+      if (launchesClaude && !launchCwd) {
+        const recovery = paneCwdRecovery(paneId);
+        if (recovery) {
+          launchCwd = await safeInvoke<string>(recovery.cmd, recovery.args, "");
+          if (destroyed) return;
+          if (launchCwd) log.warn(`console[${paneId}] recovered an empty launch cwd from Rust (#1819): ${launchCwd}`);
+        }
+      }
+      if (launchesClaude && launchCwd !== "") {
         // Compose the role gate (#219) + profile (#255) + flow (#297/#304) + MCP/hooks + skills (#636)
         // + audit/confine/scope/taint/defer/skill/activity hooks into the permission payload. Pure
         // composition lives in sessionLaunch.buildSessionSettings; read from the current snapshot.
         const settings = buildSessionSettings(useAppStore.getState(), paneId);
         await safeInvoke("ensure_session_settings", {
-          cwd: initialCwd,
+          cwd: launchCwd,
           ...settings,
           // Replace (not merge) the permission block so a relaunch reflects the CURRENT
           // role+profile exactly — incl. permissions the user removed from the profile (#799).
@@ -465,7 +479,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Runs AFTER agentEnv is resolved so gh-auth uses the real token.
         try {
           const prereqs = await invoke<PrereqStatus[]>("preflight", {
-            cwd: initialCwd, env: agentEnv ?? null,
+            cwd: launchCwd, env: agentEnv ?? null,
           });
           if (!destroyed) setReadinessVerdict(sessionVerdictFromReport(interpretDiagnostics(prereqs)));
         } catch (e) {
@@ -493,7 +507,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         paneId,
         cols: term.cols,
         rows: term.rows,
-        cwd:     initialCwd ?? "",
+        cwd:     launchCwd,
         initCmd: effectiveInitCmd,
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
