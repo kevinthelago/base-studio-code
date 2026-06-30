@@ -2,7 +2,7 @@
 import type { PaneAutomation } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
 
-export function FocusedAutomationsBody({ automations }: { automations?: PaneAutomation[] }) {
+export function AutomationsBody({ automations }: { automations?: PaneAutomation[] }) {
   const list = automations ?? [];
   if (list.length === 0) {
     return (

@@ -7,7 +7,7 @@ const ph = (key: string, name: string, status: Stage["status"], index: number, t
   ({ key, name, glyph: "•", blurb: `${name} blurb`, gate: "gate", index, total, status, fraction: 0 });
 
 const baseFocus = (over: Partial<Parameters<typeof ProjectPane>[0]["focus"] & object> = {}) => ({
-  stages: [ph("discovery", "Discovery", "active", 0, 3), ph("structure", "Structure", "upcoming", 1, 3), ph("permissions", "Permissions", "locked", 2, 3)],
+  stages: [ph("discovery", "Discovery", "active", 0, 3), ph("deployment", "Deployment", "upcoming", 1, 3), ph("streams", "Streams", "locked", 2, 3)],
   selectedIdx: 0,
   activeIdx: 0,
   onSelect: vi.fn(),
@@ -98,7 +98,7 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
-  const reposPhase = { stages: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+  const reposPhase = { stages: [ph("deployment", "Deployment", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
   it("lists the linked repositories with tiles, metadata, and stateful branch chips (#811)", () => {
     const data = { agents: [], repos: [
@@ -143,19 +143,20 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
   });
 
-  it("shows empty states (no mock structure/agents) for a fresh Plan + permissions stage", () => {
+  it("shows empty states (no mock plan/agents) for a fresh Streams stage (#1914)", () => {
     const { rerender } = render(<ProjectPane focus={baseFocus({
-      stages: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("streams", "Streams", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No plan yet/)).toBeInTheDocument();
+    // With the fleet half folded in (stage.fleet), the embedded permissions body shows its empty state.
     rerender(<ProjectPane focus={baseFocus({
-      stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [{ ...ph("streams", "Streams", "active", 0, 1), fleet: true }], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No fleet yet/)).toBeInTheDocument();
   });
 
-  it("renders the Permissions fleet as agent rows (#817)", () => {
-    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+  it("renders the Streams fleet as agent rows (#817/#1914)", () => {
+    const permsPhase = { stages: [{ ...ph("streams", "Streams", "active", 0, 1), fleet: true }], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Autonomous (trusted)",
@@ -167,9 +168,9 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(screen.getByText("@auth")).toBeInTheDocument();
   });
 
-  it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {
+  it("Streams: picks a per-agent model and clears it back to the global default (#…/#1914)", () => {
     const onModel = vi.fn();
-    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const permsPhase = { stages: [{ ...ph("streams", "Streams", "active", 0, 1), fleet: true }], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
@@ -192,7 +193,7 @@ describe("ProjectPane focused mode (#652)", () => {
       seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus({
-      stages: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("streams", "Streams", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.queryByText(/Approve milestones/)).not.toBeInTheDocument();
   });

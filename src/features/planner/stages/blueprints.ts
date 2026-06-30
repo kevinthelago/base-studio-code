@@ -285,60 +285,57 @@ export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string
 
 export const DEFAULT_BLUEPRINT_ID = "default";
 
-/** Fold an adjacent SectionDef INTO `base` as a second substep — one merged stage gated on BOTH
- *  halves, with the folded def's prompt as the second substep. The folded SectionDef stays the
- *  single source (gate + prompt); a blueprint that doesn't opt in is untouched. Shared by the
- *  Deploy→Repos ("ship", #1383) and Permissions→Structure ("fleet", #1383-streams) merges. */
-function foldInto(
-  base: BlueprintStage, def: SectionDef, folded: SectionDef | undefined,
-  name: string, subs: [string, string][],
-): BlueprintStage {
-  if (!folded) return base;
-  // Preserve the base section's OWN substeps (e.g. Structure's "sequence"); a base with none gets a
-  // synthesized first substep from its prompt. Then append the folded section as the marker substep
-  // (its key — "ship"/"fleet" — is what the focused-pane detects to render the merged body).
-  const baseSubs = base.substeps ?? [{ key: subs[0][0], label: subs[0][1], prompt: def.prompt }];
-  return {
-    ...base,
-    name,
-    gate: `${def.gate} · ${folded.gate}`,
-    gateRule: { require: [...(def.gateRule?.require ?? []), ...(folded.gateRule?.require ?? [])] },
-    output: folded.output ?? base.output,
-    substeps: [...baseSubs, { key: subs[1][0], label: subs[1][1], prompt: folded.prompt }],
-  };
+// ── Stage-key grandfathering (#1914) ─────────────────────────────────────────
+// The unified stage vocabulary (#1914) collapsed the old base-key/fold split into single canonical
+// stage keys — the merged repos+deploy stage is `deployment`, the merged structure+permissions stage
+// is `streams`, and `mcp` was renamed `mcps` — each now ONE def in `data/stages/`. A blueprint
+// (or per-project stage config) authored under the OLD vocabulary still carries the legacy keys, so
+// map them through this alias on every blueprint-load / persisted-state read path: an in-flight
+// project keeps resolving to the real, collapsed stage defs (and its confirmations/config survive).
+export const STAGE_KEY_ALIAS: Record<string, string> = {
+  repos: "deployment",
+  structure: "streams",
+  permissions: "streams",
+  mcp: "mcps",
+};
+
+/** Canonicalize a (possibly legacy) stage key to its current vocabulary token (#1914). An
+ *  already-canonical or unknown key passes through unchanged. */
+export function canonicalStageKey(key: string): string {
+  return STAGE_KEY_ALIAS[key] ?? key;
 }
 
-/** Build a section instance from a def key + per-blueprint overrides. */
+/** Canonicalize a persisted blueprint's section keys to the current vocabulary AND dedup (#1914):
+ *  a forked/imported blueprint authored under the old split may carry BOTH a legacy key and its
+ *  canonical twin (e.g. `repos` + `deployment`, or `structure` + `permissions`) — collapse to the
+ *  first occurrence so the focused pane / gates resolve a single, real stage. Only the key is
+ *  remapped (the frozen section snapshot's display fields are left as-is). */
+export function canonicalizeSections(sections: BlueprintStage[]): BlueprintStage[] {
+  const seen = new Set<string>();
+  const out: BlueprintStage[] = [];
+  for (const s of sections) {
+    const key = canonicalStageKey(s.key);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key === s.key ? s : { ...s, key });
+  }
+  return out;
+}
+
+/** Build a section instance from a def key + per-blueprint overrides. The key is canonicalized
+ *  (#1914) so a legacy `repos`/`structure`/`permissions`/`mcp` ref resolves to its collapsed def. */
 export function mkStage(
   key: string,
-  { enabled = true, expanded = false, optional, ship, fleet }:
-    { enabled?: boolean; expanded?: boolean; optional?: boolean; ship?: boolean; fleet?: boolean } = {},
+  { enabled = true, expanded = false, optional }:
+    { enabled?: boolean; expanded?: boolean; optional?: boolean } = {},
 ): BlueprintStage {
-  const def = STAGE_DEFS[key];
-  const base: BlueprintStage = {
-    uid: uid("sec"), key, ...def, enabled, expanded,
+  const ckey = canonicalStageKey(key);
+  const def = STAGE_DEFS[ckey];
+  return {
+    uid: uid("sec"), key: ckey, ...def, enabled, expanded,
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
   };
-  // A blueprint can fold an adjacent stage INTO this one as a substep — one merged stage gated on
-  // BOTH halves, only where the blueprint opts in. The folded SectionDef stays the single source, so
-  // blueprints that don't opt in are untouched (no behavior change).
-  // #1383: Deploy → Repos ("ship"). #1383-streams: Permissions → Structure ("fleet" → "Streams").
-  if (ship) return foldInto(base, def, STAGE_DEFS.deployment, "Deployment", [["link", "Link repositories"], ["ship", "Define deployment"]]);
-  if (fleet) return foldInto(base, def, STAGE_DEFS.permissions, "Streams", [["plan", "Plan the roadmap"], ["fleet", "Plan the fleet"]]);
-  return base;
-}
-
-/** The planner-overview directive id for a (possibly merged) section (#1383/#1392). A merged stage
- *  reads as ONE directive in the planner's "Active planning stages" scope: a `repos` section with a
- *  `ship` substep → `deployment` ("Deployment"), a `structure` section with a `fleet` substep →
- *  `streams` ("Streams"). Plain (unmerged) sections map to their own key. Pure so the planner-scope
- *  build is testable; `stageIdsFor` (Planning.tsx) passes the result to `setup_workspaces`. */
-export function stageDirectiveId(section: { key: string; substeps?: SubStep[] }): string {
-  const subs = (section.substeps ?? []).map((s) => s.key);
-  if (section.key === "repos" && subs.includes("ship")) return "deployment";
-  if (section.key === "structure" && subs.includes("fleet")) return "streams";
-  return section.key;
 }
 
 /** Seed blueprints — the starter library, depicting every section/pipeline state. */
@@ -356,7 +353,10 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
   // id, and leave user-created / forked / imported blueprints untouched (#923 cleanup).
   const merged = persisted
     .filter((b) => b.origin !== "built-in" || byId.has(b.id))
-    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : b));
+    // Built-ins are replaced by their fresh (canonical) code def; everything else is a persisted
+    // user/forked/imported blueprint — canonicalize its section keys + dedup so a blueprint authored
+    // under the OLD stage vocabulary keeps resolving to the collapsed defs (#1914).
+    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : { ...b, sections: canonicalizeSections(b.sections) }));
   for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
   return merged;
 }
@@ -367,10 +367,10 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
 export interface BlueprintDef extends Omit<Blueprint, "sections"> {
   /** Display order within the built-in library. */
   order?: number;
-  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag, plus
-   *  `ship` (#1383, on the `repos` ref → folds Deploy in) and `fleet` (on the `structure` ref →
-   *  folds Permissions in, making the "Streams" stage). */
-  sections: { key: string; optional?: boolean; ship?: boolean; fleet?: boolean }[];
+  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag. The
+   *  key is canonicalized at load (#1914), so a legacy `repos`/`structure`/`permissions`/`mcp` ref
+   *  resolves to its collapsed def. */
+  sections: { key: string; optional?: boolean }[];
 }
 
 // The built-in blueprints live as one JSON file per blueprint under ./blueprints/ — each is just
@@ -385,7 +385,8 @@ export function makeBlueprints(): Blueprint[] {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,
-      sections: sections.map((s) => mkStage(s.key, { optional: s.optional, ship: s.ship, fleet: s.fleet })),
+      // mkStage canonicalizes each key (#1914); dedup collapses any legacy+canonical twin pair.
+      sections: canonicalizeSections(sections.map((s) => mkStage(s.key, { optional: s.optional }))),
     }));
 }
 

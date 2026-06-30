@@ -49,20 +49,20 @@ not their output documents.
 - Order the `stages` array the way they should run; use `deps` (earlier stage keys) for ordering
   constraints and `optional: true` for stages the user may skip.
 - `output` is a disposition key: `plan-file | issues | milestones | skill-index | knowledge | scratch`.
-- A stage's `key` can be any of the known stage kinds (context, repos, users, ui, stack,
-  architecture, schema, api, structure, permissions, automations, skills, testing, security,
+- A stage's `key` can be any of the known stage kinds (discovery, deployment, users, ui, stack,
+  architecture, schema, api, streams, mcps, automations, skills, testing, security,
   observability, infra, cicd, docs) or your own; pick the closest kind so it gets a sensible icon.
 
-> **If the blueprint LAUNCHES A FLEET, it MUST include a `repos` stage AND a `permissions` stage.**
+> **If the blueprint LAUNCHES A FLEET, it MUST include a `deployment` stage AND a `streams` stage.**
 > Any execution blueprint — one whose projects build/work code with the agent fleet (most
 > `greenfield`, `transform`, `harden`, and `maintain` blueprints) — launches a fleet, and the
-> launcher needs three things the stages produce: linked repositories (the **`repos`** stage), a
-> structure to work (the **`structure`** stage → issues/milestones), and the **fleet plan + each
-> agent's least-privilege profile (the `permissions` stage)**. A blueprint with no `permissions`
-> stage produces **no fleet**, so its projects can never launch — the launch button stays locked and
-> publishing has nothing to ship. So: whenever you design a build/execution flow, **always include
-> `repos` and `permissions`** (with `structure` between them). Only blueprints that genuinely DON'T
-> launch a fleet — pure planning/`data` acquisition, or an authoring flow — may omit them.
+> launcher needs two things the stages produce: linked repositories + how each ships (the
+> **`deployment`** stage) and the feature roadmap + the **fleet plan + each agent's least-privilege
+> profile (the `streams` stage)**. A blueprint with no `streams` stage produces **no fleet**, so its
+> projects can never launch — the launch button stays locked and publishing has nothing to ship. So:
+> whenever you design a build/execution flow, **always include `deployment` and `streams`**. Only
+> blueprints that genuinely DON'T launch a fleet — pure planning/`data` acquisition, or an authoring
+> flow — may omit them.
 
 ## The four authoring stages (the app advances you one at a time)
 

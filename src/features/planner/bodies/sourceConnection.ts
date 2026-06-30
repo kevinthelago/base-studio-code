@@ -1,10 +1,10 @@
-// sourceConnection — the per-source connection state machine for FocusedSourceBody (#1637).
+// sourceConnection — the per-source connection state machine for SourceBody (#1637).
 //
-// Split out of FocusedSourceBody.tsx: the `useSourceConnection` hook owns the per-source lifecycle
+// Split out of SourceBody.tsx: the `useSourceConnection` hook owns the per-source lifecycle
 // (declared → connecting → scanning → scanned / error), the OAuth browser-flow launch + completion
 // listen, the live read-only scan (with sample-shape fallback), and the secret-masking local state.
 // It is the ONLY home for the invoke/listen calls that drive a source forward; the presentational
-// card lives in connectorForm.tsx and the container in FocusedSourceBody.tsx.
+// card lives in connectorForm.tsx and the container in SourceBody.tsx.
 //
 // SECURITY BOUNDARY: a secret's value lives ONLY in `secrets` (local React state) and is saved to
 // the OS keychain on connect — it is NEVER written into the persisted SourceConfig and never shared

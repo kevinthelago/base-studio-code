@@ -12,7 +12,7 @@ describe("blueprintCatalog (#609)", () => {
     expect((STAGE_KINDS as Record<string, unknown>).ux).toBeUndefined();
   });
   it("default dispositions map sensibly and exist", () => {
-    expect(defaultDisposition("structure")).toBe("issues");
+    expect(defaultDisposition("streams")).toBe("issues");
     expect(defaultDisposition("skills")).toBe("skill-index");
     expect(defaultDisposition("discovery")).toBe("knowledge");
     expect(defaultDisposition("stack")).toBe("plan-file");
@@ -22,9 +22,9 @@ describe("blueprintCatalog (#609)", () => {
 
 describe("blueprintEdit — mkStageSection (#609)", () => {
   it("known kind keeps its runtime gate (from STAGE_DEFS) + gets a default output", () => {
-    const s = mkStageSection("structure");
-    expect(s.key).toBe("structure");
-    expect(s.gateRule).toEqual(STAGE_DEFS.structure.gateRule); // runtime preserved
+    const s = mkStageSection("streams");
+    expect(s.key).toBe("streams");
+    expect(s.gateRule).toEqual(STAGE_DEFS.streams.gateRule); // runtime preserved
     expect(s.output).toBe("issues");
   });
   it("unknown kind is synthesized as an informational stage", () => {
@@ -37,16 +37,16 @@ describe("blueprintEdit — mkStageSection (#609)", () => {
 });
 
 describe("blueprintEdit — stage ops (#609)", () => {
-  const base = () => [mkStageSection("discovery"), mkStageSection("ui"), mkStageSection("structure")];
+  const base = () => [mkStageSection("discovery"), mkStageSection("ui"), mkStageSection("streams")];
 
   it("reorderStages moves by index; out-of-range is a no-op", () => {
     const a = base();
-    expect(reorderStages(a, 0, 2).map((s) => s.key)).toEqual(["ui", "structure", "discovery"]);
+    expect(reorderStages(a, 0, 2).map((s) => s.key)).toEqual(["ui", "streams", "discovery"]);
     expect(reorderStages(a, 0, 9)).toBe(a);
   });
 
   it("addStage appends a fresh stage", () => {
-    expect(addStage(base(), "permissions").map((s) => s.key)).toEqual(["discovery", "ui", "structure", "permissions"]);
+    expect(addStage(base(), "skills").map((s) => s.key)).toEqual(["discovery", "ui", "streams", "skills"]);
   });
 
   it("deleteStage removes it and scrubs deps by key when no twin remains", () => {

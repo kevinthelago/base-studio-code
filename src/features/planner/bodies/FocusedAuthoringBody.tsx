@@ -7,7 +7,7 @@ import type { AuthoringWiring } from "./focusedHandlers";
 
 /** The authoring stages' body (#923): the four interactive editor views over the in-progress
  *  blueprint, ported from the design. Holds the selected-stage cursor for the Stages editor. */
-export function FocusedAuthoringBody({ bp, stageKey, wiring }: {
+export function AuthoringBody({ bp, stageKey, wiring }: {
   bp?: ProjectPaneData["authoredBlueprint"]; stageKey: string; wiring?: AuthoringWiring;
 }) {
   const [selStage, setSelStage] = useState<string | null>(null);

@@ -1,6 +1,6 @@
-// connectorForm — the spec-driven connector form + per-source card for FocusedSourceBody (#1637).
+// connectorForm — the spec-driven connector form + per-source card for SourceBody (#1637).
 //
-// Split out of FocusedSourceBody.tsx: every PURE presentational piece that renders a declared
+// Split out of SourceBody.tsx: every PURE presentational piece that renders a declared
 // source from its ConnectionSpec lives here — the field/secret inputs, the status badges, the scan
 // bar/result, and the collapsible SourceCard that drives the spec → connect form. These take props
 // only (no store, no invoke/listen) — the connection lifecycle lives in sourceConnection.ts.

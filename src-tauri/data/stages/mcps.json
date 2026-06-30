@@ -1,9 +1,9 @@
 {
-  "name": "MCP Servers",
+  "name": "MCPs",
   "glyph": "⊕",
   "gate": "tools connected",
   "deps": [
-    "structure"
+    "streams"
   ],
   "optional": true,
   "blurb": "External tools + data the fleet's agents can call.",

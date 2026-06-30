@@ -2,7 +2,7 @@
 import type { PaneSkill } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
 
-export function FocusedSkillsBody({ skills }: { skills?: PaneSkill[] }) {
+export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
   const list = skills ?? [];
   if (list.length === 0) {
     return (

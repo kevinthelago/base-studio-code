@@ -47,8 +47,8 @@ export function stageKind(key: string): StageKindMeta {
  *  seeded by their category's built-in, and the blueprint-authoring meta-stages), so an imported
  *  blueprint resolves a real icon for every stage without those flooding the palette. */
 export const STAGE_KIND_KEYS = [
-  "discovery", "repos", "users", "ui", "stack", "architecture", "schema", "api",
-  "structure", "permissions", "automations", "skills", "testing", "security",
+  "discovery", "deployment", "users", "ui", "stack", "architecture", "schema", "api",
+  "streams", "automations", "skills", "testing", "security",
   "observability", "infra", "cicd", "docs", "cleanup",
 ];
 
@@ -67,9 +67,9 @@ export const DISPOSITION_KEYS = Object.keys(DISPOSITIONS);
 
 /** Default disposition for a stage kind. */
 export function defaultDisposition(key: string): string {
-  if (key === "structure") return "issues";
+  if (key === "streams") return "issues";
   if (key === "skills") return "skill-index";
-  if (key === "permissions" || key === "discovery") return "knowledge";
+  if (key === "discovery") return "knowledge";
   return "plan-file";
 }
 

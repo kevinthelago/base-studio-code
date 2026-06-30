@@ -2,7 +2,8 @@ use crate::prelude::*;
 
 // Base-level allowed commands are defined ONCE in the backend-owned `data/permissions/base.json`
 // (#1880), embedded here at compile time — the SINGLE SOURCE OF TRUTH. The planner prompts
-// (`data/planner/process.md`, `data/stages/permissions.json`) re-state the same baseline so the
+// (`data/planner/process.md`, `data/stages/streams.json` — the collapsed structure+permissions stage,
+// #1914) re-state the same baseline so the
 // planner authors only stack-specific extras on top, and the `baseline_drift_guard` tests below parse
 // those data files and assert they match `base.json` (a CI-caught invariant, #1866 — the ALLOW-baseline
 // sibling of #1844's deny-floor guard). Change `base.json` → the planner prose must follow or the build
@@ -249,16 +250,17 @@ mod baseline_drift_guard {
     //! Drift guard (#1866 / #1880) for the three baseline ALLOW tiers.
     //!
     //! `data/permissions/base.json` is the SINGLE canonical source (embedded + parsed by the
-    //! accessors above). The planner data (`data/planner/process.md`, `data/stages/permissions.json`)
-    //! re-states the same baseline so the planner authors only stack-specific extras on top — a manual
-    //! "keep in sync (#1817)" that these tests turn into a CI-caught invariant (the ALLOW-baseline
-    //! sibling of #1844's deny-floor guard). The data files are embedded at compile time, so this is a
-    //! pure offline parse — no fixtures, no runtime. The session render path is untouched; these tests
-    //! only pin that the planner-facing copies can't silently drift from `base.json`.
+    //! accessors above). The planner data (`data/planner/process.md`, `data/stages/streams.json` — the
+    //! collapsed structure+permissions stage, #1914) re-states the same baseline so the planner authors
+    //! only stack-specific extras on top — a manual "keep in sync (#1817)" that these tests turn into a
+    //! CI-caught invariant (the ALLOW-baseline sibling of #1844's deny-floor guard). The data files are
+    //! embedded at compile time, so this is a pure offline parse — no fixtures, no runtime. The session
+    //! render path is untouched; these tests only pin that the planner-facing copies can't silently
+    //! drift from `base.json`.
     use super::{baseline_build, baseline_readonly, mandatory_bash};
 
     const PROCESS_MD: &str = include_str!("../../data/planner/process.md");
-    const PERMISSIONS_JSON: &str = include_str!("../../data/stages/permissions.json");
+    const PERMISSIONS_JSON: &str = include_str!("../../data/stages/streams.json");
 
     /// The backtick-quoted tokens in `s`, in order: "`ls`, `cat`" → ["ls", "cat"].
     fn backtick_tokens(s: &str) -> Vec<String> {

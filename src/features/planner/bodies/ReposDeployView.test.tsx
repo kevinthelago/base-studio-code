@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { FocusedReposDeployBody } from "./ReposDeployView";
+import { DeploymentBody } from "./ReposDeployView";
 import { defaultDeployConfig, type DeployConfig } from "../lib/deployConfig";
 import type { Repo } from "../pane/projectPane.types";
 
@@ -13,13 +13,13 @@ const repo = (id: string, over: Partial<Repo> = {}): Repo => ({
 function Harness({ repos, initial }: { repos?: Repo[]; initial?: DeployConfig }) {
   const [cfg, setCfg] = useState(initial ?? defaultDeployConfig((repos ?? []).map((r) => r.id)));
   return (
-    <FocusedReposDeployBody
+    <DeploymentBody
       repos={repos} deploy={cfg} onDeployChange={setCfg} onLinkRepo={() => {}}
     />
   );
 }
 
-describe("FocusedReposDeployBody — no in-body header (#1430)", () => {
+describe("DeploymentBody — no in-body header (#1430)", () => {
   it("renders no in-body header — the focused pane's phase header titles the stage", () => {
     render(<Harness repos={[repo("acme/web"), repo("acme/api")]} />);
     expect(screen.queryByText("Repositories & Deployment")).not.toBeInTheDocument(); // duplicate header removed
@@ -37,7 +37,7 @@ describe("FocusedReposDeployBody — no in-body header (#1430)", () => {
   });
 });
 
-describe("FocusedReposDeployBody — per-repo cards (#1421)", () => {
+describe("DeploymentBody — per-repo cards (#1421)", () => {
   it("renders one per-repo card (with git identity) + the project-wide dependency tail, no global visibility toggle", () => {
     render(<Harness repos={[repo("acme/web", { primary: true, lang: "TypeScript" })]} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();

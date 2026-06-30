@@ -10,11 +10,11 @@ import {
   type Topology, type RelFocus,
 } from "@/features/planner/relationship/relationshipGraph";
 
-export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
+export function PlanBody({ data, focus: focusProp, onFocus }: {
   data?: ProjectPaneData;
   /** Controlled graph focus (#1392 streams-link): in the merged "Streams" stage the parent lifts
    *  focus so the permissions roster expands whichever stream the graph spotlights (and vice-versa).
-   *  Omitted ⇒ FocusedPlanBody owns its own focus (the standalone Plan stage). */
+   *  Omitted ⇒ PlanBody owns its own focus (the standalone Plan stage). */
   focus?: RelFocus;
   onFocus?: (f: RelFocus) => void;
 }) {

@@ -2,7 +2,7 @@
 // reusable, cross-body components (Card, Readiness, ModeChip, EntityChip, SourceHead, Kv). Used by
 // the data-collection panes (Targets, Source legitimacy, Mapping, …) and renamed from
 // DataCollectionPrimitives.tsx in #1635 to reflect that it is the shared body-primitives module.
-// Token-styled inline to match the other focused bodies (FocusedSourceBody etc.); transcribed from
+// Token-styled inline to match the other focused bodies (SourceBody etc.); transcribed from
 // collection/panes.jsx.
 
 import type { ReactNode } from "react";
