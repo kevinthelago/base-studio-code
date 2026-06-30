@@ -367,6 +367,26 @@ pub(crate) fn to_native_path(p: &str) -> String {
     p.to_string()
 }
 
+/// Build the `wsl.exe` invocation that runs `command` inside a WSL2 distro at a distro-native `cwd`
+/// (#1988 — the spawn recipe for the sealed agent sandbox). Returns `(program, args)` for a
+/// `Command`/`CommandBuilder`. An empty `cwd` runs at the distro's default (the user's `~`); the
+/// command is run under a login `bash -lc` so `/etc/profile` + PATH are set. Paths here are
+/// **distro-native** (e.g. `/home/agent/...`), never translated `/mnt/c` — the sealed distro has no
+/// Windows mount. (When the host is git-bash, callers must spawn this directly, not via MSYS, or the
+/// leading-`/` args get path-mangled.)
+pub(crate) fn wsl_invocation(distro: &str, cwd: &str, command: &str) -> (String, Vec<String>) {
+    let mut args = vec!["-d".to_string(), distro.to_string()];
+    if !cwd.is_empty() {
+        args.push("--cd".to_string());
+        args.push(cwd.to_string());
+    }
+    args.push("--".to_string());
+    args.push("bash".to_string());
+    args.push("-lc".to_string());
+    args.push(command.to_string());
+    ("wsl.exe".to_string(), args)
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -392,6 +412,20 @@ pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn wsl_invocation_builds_distro_exec_recipe() {
+        use super::wsl_invocation;
+        let (p, a) = wsl_invocation("bsc-agent-sandbox", "/home/agent", "bsc --help");
+        assert_eq!(p, "wsl.exe");
+        assert_eq!(
+            a,
+            vec!["-d", "bsc-agent-sandbox", "--cd", "/home/agent", "--", "bash", "-lc", "bsc --help"],
+        );
+        // Empty cwd ⇒ no --cd (runs at the distro default ~).
+        let (_, a2) = wsl_invocation("d", "", "pwd");
+        assert_eq!(a2, vec!["-d", "d", "--", "bash", "-lc", "pwd"]);
+    }
 
     #[cfg(windows)]
     #[test]
