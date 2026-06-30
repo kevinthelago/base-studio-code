@@ -1,7 +1,8 @@
 // Smoke tests for the Deploy stage section modules extracted in #1636 — ServiceTargetEditor
 // (deployTargetSection) and ServiceDeploySections (deployShipSections). These render the split
-// modules in isolation so a regression in either is caught even though FocusedDeployBody composes
-// them (covered in DeployView.test.tsx). Behavior is unchanged from the pre-split single file.
+// modules in isolation so a regression in either is caught even though the merged Repositories &
+// Deployment pane composes them (covered in ReposDeployView.test.tsx). Behavior unchanged from the
+// pre-split single file.
 
 import { describe, it, expect } from "vitest";
 import { useState } from "react";

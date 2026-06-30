@@ -31,12 +31,10 @@ pub(crate) fn planner_stage_directive(id: String) -> String {
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 pub(crate) fn stage_directive(id: &str) -> String {
-    // `testing-informational` shares the `testing` stage's directive (alias; it has no own JSON).
-    // Every stage directive — including the composed/lifecycle ids (`repos_deploy`, `streams`,
-    // `refactor`, `transform`) — now resolves from its `data/stages/<id>.json` `directive` field;
-    // an unknown id gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
-    let key = if id == "testing-informational" { "testing" } else { id };
-    embedded_directive(key)
+    // Every stage directive — including the composed/lifecycle ids (`deployment`, `streams`) —
+    // resolves from its `data/stages/<id>.json` `directive` field; an unknown id (incl. an archived
+    // stage) gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
+    embedded_directive(id)
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| format!("**{id}** — configured stage."))
 }
@@ -102,9 +100,9 @@ mod tests {
     #[test]
     fn merged_stage_directives_name_the_stage_and_cover_both_halves() {
         // #1383/#1392: the planner overview gets ONE directive for a merged stage, covering both
-        // halves' CLIs. `repos_deploy` = "Deployment" (link repos + deploy); `streams` = both the
+        // halves' CLIs. `deployment` = "Deployment" (link repos + deploy); `streams` = both the
         // roadmap (phases) AND the fleet.
-        let dep = stage_directive("repos_deploy");
+        let dep = stage_directive("deployment");
         assert!(dep.contains("Deployment"), "merged stage names itself Deployment: {dep}");
         assert!(dep.contains("repo_link") && dep.contains("bsc plan deploy set"),
             "Deployment covers link + deploy: {dep}");
@@ -115,7 +113,7 @@ mod tests {
             "Streams covers the roadmap, the fleet, AND shared deps: {streams}");
 
         // The merged stages render in the active-stages overview with their merged names.
-        let md = build_active_stages_md(&["repos_deploy".into(), "streams".into()]);
+        let md = build_active_stages_md(&["deployment".into(), "streams".into()]);
         assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists merged names: {md}");
     }
 
@@ -125,10 +123,11 @@ mod tests {
     /// data/transform/harden stages; this is the kept set that carries a `directive`.)
     #[test]
     fn migrated_stage_directives_resolve_from_embedded_json() {
-        let migrated = ["discovery","repos","deploy","ui","features","structure","permissions",
+        let migrated = ["discovery","repos","deployment","ui","features","structure","permissions",
             "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
-            // #1610: the formerly-inline composed/lifecycle directives now resolve from JSON too.
-            "repos_deploy","streams"];
+            // #1610: the composed/lifecycle directives resolve from JSON too — `deployment` is the
+            // merged repos+deploy stage (v1.0.5), `streams` the merged structure+permissions stage.
+            "streams"];
         for id in migrated {
             let d = stage_directive(id);
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
@@ -142,8 +141,8 @@ mod tests {
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
     /// EXACTLY the expected set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
     /// the SAME `data/stages/` dir, so a directive can't drift between them; this pins the set.
-    /// #1610: the composed/lifecycle ids (`repos_deploy`/`streams`/`refactor`/`transform`) are now
-    /// plain stage JSONs too — no Rust-side prose, no special carve-out.
+    /// #1610: the composed/lifecycle ids (`deployment`/`streams`) are plain stage JSONs too — no
+    /// Rust-side prose, no special carve-out.
     #[test]
     fn embedded_directive_key_set_matches_the_migrated_set() {
         use std::collections::BTreeSet;
@@ -155,9 +154,9 @@ mod tests {
                 Some(f.path().file_stem()?.to_string_lossy().into_owned())
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","repos","deploy","ui","features","structure",
+        let expected: BTreeSet<String> = ["discovery","repos","deployment","ui","features","structure",
             "permissions","automations","skills","purpose","bp_stages","bp_capabilities",
-            "bp_review","repos_deploy","streams"].iter().map(|s| s.to_string()).collect();
+            "bp_review","streams"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }

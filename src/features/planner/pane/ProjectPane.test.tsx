@@ -138,60 +138,6 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
   });
 
-  it("repos stage: GitHub visibility defaults to private and toggles to public (#…)", () => {
-    const onSetReposPublic = vi.fn();
-    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={onSetReposPublic} reposPublic={false} />);
-    const priv = screen.getByText("🔒 Private");
-    const pub = screen.getByText("🌐 Public");
-    expect(priv).toHaveAttribute("aria-pressed", "true");   // private is the default
-    expect(pub).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(pub);
-    expect(onSetReposPublic).toHaveBeenCalledWith(true);
-    // clicking the already-active option is a no-op (no redundant flip)
-    fireEvent.click(priv);
-    expect(onSetReposPublic).toHaveBeenCalledTimes(1);
-  });
-
-  it("repos stage: reflects the public selection when the project default is set", () => {
-    render(<ProjectPane focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic />);
-    expect(screen.getByText("🌐 Public")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/default for new repos/)).toBeInTheDocument();
-  });
-
-  it("repos stage: hides the visibility control when no setter is wired", () => {
-    render(<ProjectPane focus={baseFocus(reposPhase)} />);
-    expect(screen.queryByText("🔒 Private")).not.toBeInTheDocument();
-  });
-
-  // #1227 — per-repo visibility overrides.
-  const twoRepos = { agents: [], repos: [
-    { id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
-    { id: "acme/api", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
-  ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-
-  it("repos stage: each card has its own toggle; setting one doesn't touch the others (#1227)", () => {
-    const onSetRepoPublic = vi.fn();
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={onSetRepoPublic} repoOverrides={{}} />);
-    // No override ⇒ each card resolves to the project default (private).
-    expect(screen.getByLabelText("Make acme/web private")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");
-    // Flip ONLY web public.
-    fireEvent.click(screen.getByLabelText("Make acme/web public"));
-    expect(onSetRepoPublic).toHaveBeenCalledWith("acme/web", true);
-    expect(onSetRepoPublic).toHaveBeenCalledTimes(1); // api untouched
-  });
-
-  it("repos stage: a per-repo override wins over the project default (#1227)", () => {
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={vi.fn()} repoOverrides={{ "acme/web": true }} />);
-    expect(screen.getByLabelText("Make acme/web public")).toHaveAttribute("aria-pressed", "true");   // overridden public
-    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");  // inherits private default
-  });
-
-  it("repos stage: the per-repo toggle is hidden when no per-repo setter is wired (#1227)", () => {
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposPhase)} onSetReposPublic={vi.fn()} reposPublic={false} />);
-    expect(screen.queryByLabelText("Make acme/web public")).not.toBeInTheDocument();
-  });
-
   it("shows an empty context state (no mock files) on a fresh plan", () => {
     render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
