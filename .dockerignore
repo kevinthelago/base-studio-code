@@ -1,0 +1,12 @@
+# Keep the build context lean (and force a fresh Linux compile — don't ship the Windows target/).
+target
+**/target
+node_modules
+**/node_modules
+.git
+.claude
+dist
+release
+*.tar
+*.exe
+*.msi
