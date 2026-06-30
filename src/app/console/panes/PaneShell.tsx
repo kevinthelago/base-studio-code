@@ -235,11 +235,13 @@ export function PaneShell({
         ) : (
           <span
             onDoubleClick={() => { setDraftName(agent); setEditingName(true); }}
-            title="Double-click to rename"
+            title={`${agent} · double-click to rename`}
             className="mono"
             style={{
               fontSize: 12.5, fontWeight: 600, color: "var(--fg)",
-              whiteSpace: "nowrap", flex: "0 0 auto",
+              // Shrink + ellipsis (like the repo) so a long name truncates instead of pushing the
+              // role badge off the right edge — the worker/director tag stays visible (#header-overflow).
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto", minWidth: 0,
             }}
           >{agent}</span>
         )}

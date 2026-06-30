@@ -156,7 +156,7 @@ describe("PaneShell", () => {
         <div>content</div>
       </PaneShell>
     );
-    fireEvent.doubleClick(screen.getByTitle("Double-click to rename"));
+    fireEvent.doubleClick(screen.getByTitle(/double-click to rename/));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
