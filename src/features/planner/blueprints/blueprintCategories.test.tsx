@@ -50,8 +50,9 @@ describe("blueprint categories (#645)", () => {
     const out = refreshBuiltIns([stale, mine]);
     // the built-in is refreshed from code → UI optional again
     expect(out.find((b) => b.id === "default")!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
-    // the user blueprint is untouched
-    expect(out.find((b) => b.id === "mine")).toBe(mine);
+    // the user blueprint's content is preserved (refreshBuiltIns now canonicalizes section keys, #1914,
+    // so it's a content-equal copy rather than the same reference)
+    expect(out.find((b) => b.id === "mine")).toStrictEqual(mine);
     // new built-ins (not in the stale set) are added
     expect(out.some((b) => b.id === "complete")).toBe(true);
   });
@@ -62,7 +63,7 @@ describe("blueprint categories (#645)", () => {
     const mine: Blueprint = { id: "mine", name: "Mine", desc: "", origin: "local", sections: [] };
     const out = refreshBuiltIns([removed, mine]);
     expect(out.some((b) => b.id === "fullstack")).toBe(false); // pruned
-    expect(out.find((b) => b.id === "mine")).toBe(mine);        // user blueprint untouched
+    expect(out.find((b) => b.id === "mine")).toStrictEqual(mine); // user blueprint content preserved (#1914)
   });
 
   it("tags every built-in blueprint origin=built-in (#658)", () => {

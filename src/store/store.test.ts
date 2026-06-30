@@ -1841,7 +1841,8 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
+    // default + complete + blueprint-author after the data/transform blueprints were archived (5def26b7).
+    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(3);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 

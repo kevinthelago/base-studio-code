@@ -17,8 +17,10 @@ describe("SegmentedControl", () => {
     expect(screen.getByText("scope")).toBeInTheDocument();
     const global = screen.getByText("global");
     const project = screen.getByText("project");
-    expect(global.className).toContain("on");
-    expect(project.className).not.toContain("on");
+    // Check the `on` class as a token — a substring match would falsely hit the "on" inside
+    // the default "tone-accent" class (#1874 control-vocab migration).
+    expect(global.classList.contains("on")).toBe(true);
+    expect(project.classList.contains("on")).toBe(false);
     fireEvent.click(project);
     expect(pick).toHaveBeenCalledWith("project");
   });
