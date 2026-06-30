@@ -133,6 +133,15 @@ pub(crate) fn write_session_settings(
             baseline.extend(baseline_build().iter().cloned());
         }
     }
+    // The app's own bsc-* coordination/checkpoint helpers (bsc-fleet, bsc-checkpoint, bsc-note,
+    // bsc-wait, bsc-ask/answer, bsc-issue/assign, bsc-landed/merged/closed/failed, bsc-learned, …) are
+    // shell FUNCTIONS installed in every session (bsc-env.sh) — NOT the `bsc` binary, so the mandatory
+    // `Bash(bsc *)` rule never matches them (`bsc-fleet` has no space after `bsc`). Auto-approve the
+    // whole family in EVERY posture: they're app-provided + safe (the dangerous floor + the bsc-deny
+    // hook still gate the args), and they're how a session checkpoints + coordinates — the director runs
+    // `bsc-fleet` (BARE) to see every worker's stream/repo/branch/role + STATE. A no-space glob so it
+    // covers the bare form (`bsc-fleet`) AND arg forms (`bsc-checkpoint "…"`).
+    allow_rules.push("Bash(bsc-*)".to_string());
     for c in baseline.into_iter()
         .chain(mandatory_bash().iter().cloned())
         .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
