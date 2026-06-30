@@ -51,16 +51,22 @@ export function planWarden(sessions: WardenSession[], alreadyQuarantined: Readon
 }
 
 /** Extract the shell commands a pane attempted from `bsc-audit` lines (`ts \t pane \t tool \t
- *  target`). Only Bash-tool rows are commands; their `target` is the command string. Pure. */
-export function parseAuditCommands(lines: string[], paneId: string): string[] {
+ *  target`). Only Bash-tool rows are commands; their `target` is the command string. `since` (epoch
+ *  ms, 0 = no floor) drops rows logged BEFORE it, so a denied command from a PRIOR run can't
+ *  re-quarantine a worker that triage just relaunched — `ts` is ISO-8601 (`bsc-audit` writes
+ *  `date -u +%Y-%m-%dT%H:%M:%SZ`), so `Date.parse` compares cleanly; an unparseable ts is kept. Pure. */
+export function parseAuditCommands(lines: string[], paneId: string, since = 0): string[] {
   const cmds: string[] = [];
   for (const line of lines) {
     const f = line.split("\t");
     if (f.length < 4) continue;
-    const [, pane, tool, target] = f;
-    if (pane === paneId && tool.trim().toLowerCase() === "bash" && target.trim()) {
-      cmds.push(target.trim());
+    const [ts, pane, tool, target] = f;
+    if (pane !== paneId || tool.trim().toLowerCase() !== "bash" || !target.trim()) continue;
+    if (since > 0) {
+      const at = Date.parse(ts);
+      if (Number.isFinite(at) && at < since) continue;
     }
+    cmds.push(target.trim());
   }
   return cmds;
 }
