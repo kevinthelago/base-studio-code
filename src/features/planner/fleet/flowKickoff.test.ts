@@ -13,6 +13,10 @@ describe("flowKickoffText", () => {
     expect(k.autonomy).toMatch(/do not end your turn while any remain unintegrated/);
     expect(k.push).toMatch(/push it, and open a PR to develop/);
     expect(k.push).toContain("auth-ui");
+    // The director owns the PR lifecycle: the worker opens it, then never merges/closes it (#1948).
+    expect(k.push).toMatch(/Do not poll CI, close, merge, reopen, or duplicate the PR/);
+    expect(k.push).toMatch(/the director reviews, merges, and closes your PR/);
+    expect(k.push).toMatch(/Never run gh pr merge or gh pr close/);
   });
 
   it("hard push-confirm tells the agent to STOP and wait for approval", () => {
