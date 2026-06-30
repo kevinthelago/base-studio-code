@@ -97,6 +97,7 @@ export const useAppStore = create<AppStore>()(
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         injectionHardGate:    s.injectionHardGate,
+        bypassPermissions:    s.bypassPermissions,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
         allowGateOverride:    s.allowGateOverride,

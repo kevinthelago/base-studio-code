@@ -214,6 +214,9 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     askToolRules,
     skills,
     bashPosture,
+    // Permission posture (#1916): bypass=true ⇒ deny-list (auto-run; the PreToolUse hooks gate); false ⇒
+    // allow-list (Claude's `default` mode — require approval). User-toggled in Settings; default true.
+    bypass: s.bypassPermissions,
   };
 }
 
