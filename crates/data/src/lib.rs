@@ -21,15 +21,7 @@ pub mod connector;
 pub mod reconcile;
 pub mod error;
 pub mod behavior;
-pub mod salesforce;
-pub mod monday;
-pub mod quickbooks;
-pub mod quickbase;
-pub mod hubspot;
-pub mod odata;
-pub mod fhir;
 pub mod rest;
-pub mod presets;
 pub mod runtime;
 pub mod source_meta;
 pub mod descriptor;
@@ -52,15 +44,7 @@ pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reco
 pub use behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
-pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
-pub use monday::MondayConnector;
-pub use quickbooks::QuickBooksConnector;
-pub use quickbase::QuickbaseConnector;
-pub use hubspot::HubSpotConnector;
-pub use odata::ODataConnector;
-pub use fhir::{FhirConnector, FHIR_RESOURCE_TYPES};
 pub use rest::{RestConnector, RestResource};
-pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
 pub use runtime::{
     find_runtime_preset, load_runtime_presets, remove_runtime_preset, runtime_store_path,
     save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
