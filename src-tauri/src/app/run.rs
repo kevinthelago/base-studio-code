@@ -185,6 +185,7 @@ pub fn run() {
             session::settings::ensure_session_settings,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
+            session::sandbox::sandbox_run,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
