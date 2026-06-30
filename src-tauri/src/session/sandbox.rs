@@ -9,6 +9,7 @@
 //! `wsl.exe` spawn rewiring (running the planner/triage sessions INSIDE the distro) is the rest of #1982.
 
 use serde::Serialize;
+use tauri::Emitter;
 
 /// The sealed agent sandbox distro we import + run sessions inside (#1988). Built from
 /// `tooling/wsl-sandbox/` (Debian-slim + the slim Linux `bsc` sidecars + a locked-down `wsl.conf`,
@@ -322,16 +323,56 @@ fn import_args(distro: &str, install_dir: &str, tarball: &str) -> Vec<String> {
     ]
 }
 
-/// Install the OS-sandbox prerequisites for this host, one-click. On **Windows**, import the sealed
+/// Emit one `sandbox-install` progress event to the frontend (phases: `start` · `log` · `done`), so
+/// the install surface shows exactly what's happening live.
+fn emit_install(app: &tauri::AppHandle, phase: &str, line: &str) {
+    let _ = app.emit("sandbox-install", serde_json::json!({ "phase": phase, "line": line }));
+}
+
+/// Spawn `cmd` and stream each output line to the frontend as a `sandbox-install` log event (stderr is
+/// merged by the caller via `2>&1`), so the user watches the install happen. Returns exit success.
+fn stream_lines(app: &tauri::AppHandle, cmd: &mut std::process::Command) -> Result<bool, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("failed to start: {e}"))?;
+    if let Some(out) = child.stdout.take() {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+            emit_install(app, "log", &line);
+        }
+    }
+    let status = child.wait().map_err(|e| format!("process error: {e}"))?;
+    Ok(status.success())
+}
+
+/// Install the OS-sandbox prerequisites for this host, one-click, emitting `sandbox-install` progress
+/// events throughout so the UI shows exactly what's being installed. On **Windows**, import the sealed
 /// `bsc-agent-sandbox` rootfs as a WSL2 distro (#1988; no-op success if already installed — the rootfs
 /// tarball must be staged first by `tooling/wsl-sandbox/build-rootfs.sh`). On **Linux**, install
 /// bubblewrap + socat via the detected package manager, elevated through `pkexec`. On **macOS** there
 /// is nothing to install (Seatbelt is built in).
 #[tauri::command]
-pub(crate) fn provision_sandbox() -> Result<String, String> {
-    if !cfg!(windows) {
-        return provision_native_deps();
-    }
+pub(crate) fn provision_sandbox(app: tauri::AppHandle) -> Result<String, String> {
+    emit_install(&app, "start", "Setting up the agent sandbox…");
+    let result = if !cfg!(windows) {
+        provision_native_deps(&app)
+    } else {
+        provision_windows_rootfs(&app)
+    };
+    let (ok, line) = match &result {
+        Ok(m) => (true, m.clone()),
+        Err(m) => (false, m.clone()),
+    };
+    let _ = app.emit(
+        "sandbox-install",
+        serde_json::json!({ "phase": "done", "ok": ok, "line": line }),
+    );
+    result
+}
+
+/// Windows: import the sealed `bsc-agent-sandbox` WSL2 rootfs (#1988). The import is quick and quiet,
+/// so we emit a status line + the result rather than streaming (its output is also UTF-16-prone).
+fn provision_windows_rootfs(app: &tauri::AppHandle) -> Result<String, String> {
     if let Some(out) = run_wsl(&["-l", "-v"]) {
         if parse_wsl_distros(&out).iter().any(|d| d.name == AGENT_SANDBOX_DISTRO) {
             return Ok(format!("{AGENT_SANDBOX_DISTRO} is already installed."));
@@ -347,6 +388,7 @@ pub(crate) fn provision_sandbox() -> Result<String, String> {
     let install_dir = sandbox_install_dir();
     std::fs::create_dir_all(&install_dir)
         .map_err(|e| format!("Could not create {}: {e}", install_dir.display()))?;
+    emit_install(app, "log", &format!("Importing the sealed {AGENT_SANDBOX_DISTRO} distro…"));
     let args = import_args(
         AGENT_SANDBOX_DISTRO,
         &install_dir.to_string_lossy(),
@@ -357,9 +399,12 @@ pub(crate) fn provision_sandbox() -> Result<String, String> {
     let out = crate::platform::process::run_output(&mut cmd)
         .map_err(|e| format!("wsl --import failed to start: {e}"))?;
     if out.status.success() {
-        Ok(format!("Imported {AGENT_SANDBOX_DISTRO}."))
+        Ok(format!("Imported {AGENT_SANDBOX_DISTRO} — the sandbox is ready."))
     } else {
-        Err(decode_wsl(&out.stderr))
+        let err = decode_wsl(&out.stderr);
+        let err = err.trim();
+        emit_install(app, "log", err);
+        Err(if err.is_empty() { "wsl --import failed.".into() } else { err.to_string() })
     }
 }
 
@@ -367,7 +412,7 @@ pub(crate) fn provision_sandbox() -> Result<String, String> {
 /// elevated through `pkexec` (graphical sudo). macOS needs nothing — Seatbelt is built in. Returns a
 /// copy-pasteable manual command when no package manager or no `pkexec` is found, rather than failing
 /// opaquely.
-fn provision_native_deps() -> Result<String, String> {
+fn provision_native_deps(app: &tauri::AppHandle) -> Result<String, String> {
     if cfg!(target_os = "macos") {
         return Ok("macOS uses the built-in Seatbelt sandbox — nothing to install.".into());
     }
@@ -378,20 +423,14 @@ fn provision_native_deps() -> Result<String, String> {
     if !host_has("pkexec") {
         return Err(format!("`pkexec` (graphical sudo) not found — run `sudo {install}` in a terminal."));
     }
+    emit_install(app, "log", "Requesting administrator access (you may be prompted for your password)…");
+    // Merge stderr into stdout so the streamed log carries the package manager's progress + warnings.
     let mut cmd = std::process::Command::new("pkexec");
-    cmd.args(["sh", "-c", install]);
-    let out = crate::platform::process::run_output(&mut cmd)
-        .map_err(|e| format!("pkexec failed to start: {e}"))?;
-    if out.status.success() {
+    cmd.args(["sh", "-c", &format!("{install} 2>&1")]);
+    if stream_lines(app, &mut cmd)? {
         Ok("Installed bubblewrap + socat — the native sandbox is ready.".into())
     } else {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let err = err.trim();
-        Err(if err.is_empty() {
-            format!("Install failed — try `sudo {install}` manually.")
-        } else {
-            format!("Install failed: {err}")
-        })
+        Err(format!("Install failed — try `sudo {install}` manually."))
     }
 }
 
