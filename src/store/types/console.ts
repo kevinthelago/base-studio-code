@@ -125,6 +125,14 @@ export interface ConsoleState {
   quarantinedPanes: Record<string, QuarantineInfo>;
   markQuarantine: (paneId: string, info: QuarantineInfo) => void;
   clearQuarantine: (paneId: string) => void;
+  /** Per-pane warden "since" floor (epoch ms): the warden ignores `bsc-audit` commands logged BEFORE
+   *  this, so a denied command from a PRIOR run can't re-quarantine a relaunched worker. Triage stamps
+   *  it; persisted alongside quarantinedPanes. */
+  wardenSince: Record<string, number>;
+  /** Pressing triage: clear EVERY quarantine under a project's `<projectKey>:` pane-id prefix and
+   *  stamp `since` as the warden floor for each relaunching pane — so the relaunch starts clean and a
+   *  stale denied command (still in the persisted bsc-audit log) can't immediately re-pause the worker. */
+  clearProjectQuarantine: (projectKey: string, panes: string[], since: number) => void;
   // ── Auto-end finished workers (#920) ──
   /** Fleet workers auto-ended after their PTY exited, classified from plan.db owned-issue
    *  status. PERSISTED + recovery-gated so a restart never re-opens a finished worker; the view

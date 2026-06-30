@@ -40,6 +40,11 @@ describe("parseAuditCommands", () => {
     expect(parseAuditCommands(lines, "t0p1")).toEqual(["git status", "gh repo delete acme"]);
     expect(parseAuditCommands(lines, "t0p2")).toEqual(["gh pr merge 3"]);
   });
+  it("drops commands logged before the `since` floor (triage relaunch ignores stale denials)", () => {
+    const since = Date.parse("2026-06-22T10:00:02Z"); // floor between the two t0p1 rows
+    expect(parseAuditCommands(lines, "t0p1", since)).toEqual(["gh repo delete acme"]);
+    expect(parseAuditCommands(lines, "t0p1", 0)).toEqual(["git status", "gh repo delete acme"]); // 0 = no floor
+  });
 });
 
 describe("planWarden", () => {

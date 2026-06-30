@@ -1545,6 +1545,31 @@ describe("pane status — store single source of truth (#435)", () => {
     expect(st.paneCwds[w1]).toBeUndefined();
     expect(st.quarantinedPanes[w1]).toBeUndefined();
   });
+
+  it("clearProjectQuarantine clears a project's quarantines + stamps a warden floor, leaving other projects", () => {
+    // Triage relaunch must not be re-paused by a prior run's quarantine. Clears every pane under the
+    // `<projectKey>:` prefix and floors the warden for each relaunching pane (incl. not-yet-flagged ones).
+    const w1 = "STEM:data";     // STEM worker, currently quarantined
+    const w2 = "STEM:backend";  // STEM worker, relaunching but not flagged
+    const other = "MARS:ui";    // a different project — must be untouched
+    useAppStore.setState((s) => ({
+      quarantinedPanes: {
+        ...s.quarantinedPanes,
+        [w1]: { streamId: "data", summary: "ran denied `gh pr close 8`", at: 1 },
+        [other]: { streamId: "ui", summary: "drift", at: 1 },
+      },
+      wardenSince: {},
+    }));
+
+    useAppStore.getState().clearProjectQuarantine("STEM", [w1, w2], 5000);
+
+    const st = useAppStore.getState();
+    expect(st.quarantinedPanes[w1]).toBeUndefined();   // STEM quarantine cleared
+    expect(st.quarantinedPanes[other]).toBeDefined();  // other project untouched
+    expect(st.wardenSince[w1]).toBe(5000);             // floor stamped for the flagged pane
+    expect(st.wardenSince[w2]).toBe(5000);             // and the not-yet-flagged relaunching pane
+    expect(st.wardenSince[other]).toBeUndefined();     // other project not floored
+  });
 });
 
 describe("mcp servers store", () => {

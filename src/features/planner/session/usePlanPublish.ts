@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
+import { useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import type { Section } from "../github/ghStructure";
 import { type GhStatusMap } from "./GitHubStructureCard";
 import { deriveProjectTitle } from "./projectTitle";
@@ -75,6 +76,10 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
   // Live status of each GitHub object, keyed by the ids in buildGhStructure.
   const [ghStatus, setGhStatus] = useState<GhStatusMap>({});
+  // Confirm + clear stale warden quarantines before a triage relaunch (a denied command from a prior
+  // run otherwise persists and immediately re-pauses the relaunched worker). `quarantineDialog` is the
+  // self-rendering modal node the JSX mounts.
+  const { confirm, dialog: quarantineDialog } = useConfirmDialog();
 
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
@@ -88,6 +93,29 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       busy: triaging,
       planReady,
     })) return;
+    // A stale warden quarantine from a PRIOR run persists (in quarantinedPanes + the bsc-audit log)
+    // and would immediately re-pause the relaunched worker. On triage: show the user WHY each worker
+    // was quarantined, then clear those flags and stamp a warden "since" floor so the relaunch is clean.
+    const projQuarantines = Object.entries(useAppStore.getState().quarantinedPanes)
+      .filter(([p]) => p.startsWith(`${effectiveProjectId}:`));
+    if (projQuarantines.length > 0) {
+      const reasons = projQuarantines.map(([, info]) => `${info.streamId} (${info.summary})`).join("; ");
+      const ok = await confirm({
+        title: projQuarantines.length === 1 ? "Clear worker quarantine?" : `Clear ${projQuarantines.length} worker quarantines?`,
+        message: `${projQuarantines.length === 1 ? "A worker was" : `${projQuarantines.length} workers were`} `
+          + `quarantined and paused — ${reasons}. Relaunching clears `
+          + `${projQuarantines.length === 1 ? "it and resumes the worker" : "them and resumes the workers"}.`,
+        confirmLabel: "Clear & relaunch",
+        cancelLabel: "Cancel",
+      });
+      if (!ok) return;
+    }
+    // Always stamp the warden floor for the project's panes on relaunch (even with nothing currently
+    // flagged) so a stale denied command that hasn't tripped the warden yet also can't re-pause.
+    {
+      const relaunchPanes = (fleet?.streams ?? []).map((st) => `${effectiveProjectId}:${st.id}`);
+      useAppStore.getState().clearProjectQuarantine(effectiveProjectId, relaunchPanes, Date.now());
+    }
     setTriageError(null);
     setTriageNote(null);
     setTriaging(true);
@@ -346,5 +374,5 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, githubToken, publishRepos.join(","), effectiveProjectId]);
 
-  return { handlePublish, launchTriage, handleRecover, triaging, triageError, triageNote, recoverable, recovering, publishPhase, setPublishPhase, ghStatus };
+  return { handlePublish, launchTriage, handleRecover, triaging, triageError, triageNote, recoverable, recovering, publishPhase, setPublishPhase, ghStatus, quarantineDialog };
 }
