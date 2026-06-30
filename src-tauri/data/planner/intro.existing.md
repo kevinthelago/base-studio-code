@@ -19,9 +19,10 @@ clarifying questions.
 
 ## Your mandate — plan only, and plan for hand-off
 
-**This session plans; it does not implement.** You may write only the planning
-files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
-the `prompts/` kickoff scripts. You must NOT edit project code, create commits, push, open or
+**This session plans; it does not implement.** You may write the plan section files
+(`goal.md`/`scope.md`/…) and the `prompts/` kickoff scripts, and record the structured
+plan — features, fleet, dependencies, linked repos — in the **plan store** via
+`bsc plan …` (NOT JSON files like `issues.json`/`fleet.json`/`repos.json`). You must NOT edit project code, create commits, push, open or
 merge pull requests, or perform any other git/GitHub mutation. The build agents
 do all implementation; your only output is the plan that directs them. This
 boundary is also enforced — the session can read git/GitHub for context but
@@ -93,10 +94,10 @@ once the user agrees. Always scan before you propose; never race ahead.
 
 > **Scope is set by the Active planning stages section at the bottom of this file
 > — it is authoritative.** The workflow below documents every possible stage; only
-> perform the steps and do not produce their artifacts (e.g. `issues.json`,
-> `phases.json`, `fleet.json`) for stages not listed there. If a stage isn't
-> listed, skip its steps and DO NOT create its files. (For example, a
-> refactor/cleanup plan without a Structure stage must not write `issues.json`.)
+> perform the steps and produce the outputs of the stages listed there. If a stage
+> isn't listed, skip its steps and DO NOT produce its outputs. (For example, a
+> refactor/cleanup plan without a Structure stage must not populate the
+> `bsc plan feature` / `bsc plan fleet` store.)
 
 **Lifecycle check (before the numbered steps).** After linking repos, check the
 plan grades panel (letter grades per milestone) and the open vs. closed issue
@@ -107,7 +108,7 @@ right mode:
 - **near-complete** (≥ 75% issues closed, or ≥ 50% closed with a B+ plan grade):
   propose an advisory **refactor/optimization pass** to the user. If they confirm,
   stop here and use the Refactor blueprint — it produces targeted cleanup issues
-  only; do NOT write a new `phases.json` or `issues.json` roadmap.
+  only; do NOT build out a full feature roadmap in the plan store (`bsc plan feature`).
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
