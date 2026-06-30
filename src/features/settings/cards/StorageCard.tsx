@@ -38,7 +38,7 @@ function saveStorageCache(c: StorageCache): void {
 }
 
 export function StorageCard() {
-  const initialCache = useMemo(loadStorageCache, []);
+  const initialCache = useMemo(() => loadStorageCache(), []);
   const [rows, setRows] = useState<WorktreeUsage[]>(initialCache?.rows ?? []);
   const [sandbox, setSandbox] = useState<SandboxDisk | null>(initialCache?.sandbox ?? null);
   const [takenAt, setTakenAt] = useState<number | null>(initialCache?.takenAt ?? null);
