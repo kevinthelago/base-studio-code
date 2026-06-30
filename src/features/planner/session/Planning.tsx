@@ -818,6 +818,7 @@ export function Planning({ visible }: { visible: boolean }) {
               onBuildMcp={onBuildMcp}
               onAddMcp={onAddMcp}
               onRemoveMcp={onRemoveMcp}
+              onInject={sendPrompt}
               focus={{
                 stages,
                 selectedIdx: focusSelectedIdx,

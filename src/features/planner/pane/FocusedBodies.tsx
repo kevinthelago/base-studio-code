@@ -34,12 +34,14 @@ export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../
    FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
   stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
   /** Required-context topics for the Context body's written/missing checklist (#1061). */
   requiredContext?: string[];
+  /** Inject a prompt into the live planner terminal (#1986) — the Source body's declare affordance. */
+  onInject?: (text: string) => void;
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: import("../bodies/focusedHandlers").AuthoringWiring;
   onLinkRepo?: (r: string) => void;
@@ -61,7 +63,7 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
   switch (stage.key) {
     case "source":
-      return <SourceBody projectId={projectId} />;
+      return <SourceBody projectId={projectId} onInject={onInject} />;
     case "deployment":
       // The unified `deployment` stage (#1914 — the collapsed repos+deploy def) renders as one
       // cohesive Repositories & Deployment pane: each repo's git identity merged with its deploy
