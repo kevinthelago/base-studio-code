@@ -481,6 +481,9 @@ pub(crate) fn pty_create(
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
     // identify which CLI is running. The frontend has already baked init_cmd from it.
     provider_id: Option<String>,
+    // #1988: when set, run this session INSIDE the named sealed WSL2 distro (the model-agnostic
+    // sandbox). None ⇒ the normal host shell — every existing caller, unchanged.
+    wsl_distro: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -500,7 +503,20 @@ pub(crate) fn pty_create(
     // keeps the full bsc-* helper experience, PowerShell/cmd run degraded.
     let resolved_shell = crate::platform::shell::resolve_interactive_shell();
     let shell = resolved_shell.program.clone();
-    let mut cmd = CommandBuilder::new(&shell);
+    // #1988: target the sealed WSL2 distro when one is named (empty → None). When set, spawn the
+    // distro's OWN interactive bash via wsl.exe — the seal (/etc/wsl.conf) confines it regardless of
+    // which LLM drives the session. Everything distro-specific below is guarded on this, so a None
+    // session (every current caller) takes the exact original path.
+    let into_sandbox = wsl_distro.as_deref().filter(|d| !d.is_empty()).map(str::to_string);
+    let mut cmd = if let Some(distro) = into_sandbox.as_deref() {
+        let mut c = CommandBuilder::new("wsl.exe");
+        for a in ["-d", distro, "--", "bash", "-i"] {
+            c.arg(a);
+        }
+        c
+    } else {
+        CommandBuilder::new(&shell)
+    };
 
     // The session-harness adapter (#1078 P0/P3) — owns the launch + pre-launch host setup. Selected
     // from the console provider id: "bsc-agent" runs the model-agnostic runtime, everything else
@@ -527,8 +543,10 @@ pub(crate) fn pty_create(
     // app persists) back to native (`C:/Users/...`) so `is_dir` / `Command::cwd` resolve it on
     // Windows — otherwise an EXISTING worktree/dir reads as "missing" on restore (#979). No-op off
     // Windows and for already-native paths.
-    let cwd = to_native_path(&cwd);
-    let cwd_missing = !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
+    // #1988: a distro session's cwd is a distro-native path (`/home/agent/...`) — don't normalize it as
+    // a Windows path or test it with the host's `is_dir` (it isn't a host path). The init line cd's it.
+    let cwd = if into_sandbox.is_some() { cwd } else { to_native_path(&cwd) };
+    let cwd_missing = into_sandbox.is_none() && !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
     if cwd_missing {
         log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
     }
@@ -540,7 +558,9 @@ pub(crate) fn pty_create(
         log::warn!("pty[{pane_id}] launched with an EMPTY cwd — no per-session settings.json was written; the shell inherits the app's working directory (#1819)");
     }
     let effective_cwd: String = if cwd_missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
-    if !effective_cwd.is_empty() {
+    // #1988: skip for a distro session — `effective_cwd` is a distro path (not a valid wsl.exe spawn
+    // cwd), and folder-trust is a Claude-on-host concern. The distro init line cd's into it instead.
+    if into_sandbox.is_none() && !effective_cwd.is_empty() {
         cmd.cwd(&effective_cwd);
         // Pre-accept Claude Code's folder-trust prompt for this directory so the
         // auto-launched `claude` starts already trusted instead of blocking on
@@ -557,7 +577,13 @@ pub(crate) fn pty_create(
     // BASH_ENV rc, the analytics logs, the plan/skill/data stores + their CLIs, the planner skill
     // group, and the bsc-agent sidecar/session). Returns the bash-style rc path so the interactive
     // shell below can source the same helpers.
-    let rc_bash = wire_bsc_env(&mut cmd, &pane_id, &cwd, checkpoint_doc.as_deref(), provider_id.as_deref());
+    // #1988: the host bsc-env rc + Windows-path BSC_* vars don't cross the wsl boundary — a distro
+    // session bakes its (distro-native) env into the init line below instead (rc_bash unused there).
+    let rc_bash = if into_sandbox.is_some() {
+        String::new()
+    } else {
+        wire_bsc_env(&mut cmd, &pane_id, &cwd, checkpoint_doc.as_deref(), provider_id.as_deref())
+    };
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
@@ -639,7 +665,10 @@ pub(crate) fn pty_create(
     // types pick it up. Skip the injection when the call already carries `--model`
     // (whole-word match, so prompt text containing the string can't trip it).
     let claude_fn = harness.shell_fn(model_alias.as_deref());
-    let init_line = match resolved_shell.kind {
+    // #1988: a distro session always runs the distro's bash — bake its env + cd into the init line.
+    let init_line = if into_sandbox.is_some() {
+        crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref())
+    } else { match resolved_shell.kind {
         crate::platform::shell::ShellKind::Bash => {
             let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
             // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
@@ -675,7 +704,7 @@ pub(crate) fn pty_create(
         crate::platform::shell::ShellKind::PowerShell | crate::platform::shell::ShellKind::Cmd => {
             crate::platform::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
         }
-    };
+    } };
     writer.write_all(init_line.as_bytes()).ok();
 
     // Stream PTY output to the frontend, COALESCED to ~one event per frame.
