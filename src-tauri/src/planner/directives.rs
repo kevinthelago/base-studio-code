@@ -105,6 +105,21 @@ mod tests {
         assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists collapsed names: {md}");
     }
 
+    /// The conductor injects a stage's top-level `prompt` FIRST as orientation (plannerConductor.ts).
+    /// The Deployment `prompt` used to end at "Gate: at least one repository is linked" — which made
+    /// the planner treat linking as the whole stage and never define the deploy config, leaving the
+    /// `deploymentDefined` gate stuck. The orientation `prompt` must state the FULL gate: both linking
+    /// AND every service's deploy config (target, environments, pipeline, secrets, release).
+    #[test]
+    fn deployment_stage_prompt_states_the_full_deploy_gate_not_just_linking() {
+        let file = STAGES_DIR.get_file("deployment.json").expect("deployment.json embedded");
+        let v: serde_json::Value = serde_json::from_slice(file.contents()).expect("valid JSON");
+        let prompt = v.get("prompt").and_then(|p| p.as_str()).unwrap_or_default().to_lowercase();
+        for term in ["repo", "bsc plan deploy", "target", "environment", "pipeline", "secret", "release"] {
+            assert!(prompt.contains(term), "Deployment `prompt` must cover the full gate — missing '{term}': {prompt}");
+        }
+    }
+
     /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
     /// read via `include_dir!`. Every migrated id must resolve to its real directive — NOT the
     /// generic fallback — and come from the embedded JSON. (The v1.0.5 consolidation archived the
