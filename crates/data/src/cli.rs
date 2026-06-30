@@ -93,13 +93,26 @@ The per-row and per-field lineage counts recorded for an entity.",
     },
     CmdDoc {
         name: "connector",
-        summary: "runtime REST connector presets (no --db needed)",
+        summary: "runtime REST connector presets + dev-loop (no --db needed)",
         usage: "\
 USAGE:
   bsc data connector list            # list the runtime connectors
   bsc data connector get <id>        # print one connector (RuntimePreset JSON)
   bsc data connector add             # upsert a RuntimePreset JSON on stdin (validated, secret-free)
   bsc data connector remove <id>     # delete a runtime connector
+
+DEV-LOOP (author + test a REST connector on the fly, secret-free; read-only — `try` persists NOTHING):
+  bsc data connector validate        # validate a RuntimePreset JSON on stdin → `ok` or the error
+  bsc data connector probe --base-url <url> [--openapi <url>] [--path <p>] [--project <k> --source <u>]
+                                     # GET a live endpoint (authed if a handle is given) and emit a
+                                     #   draft RuntimePreset + shape report; --openapi walks an
+                                     #   OpenAPI/Swagger doc's paths instead
+  bsc data connector try --project <k> --source <u> [--base-url <url>]
+                                     # sample-read dry run: validate a RuntimePreset on stdin, resolve
+                                     #   the secret from the keychain, read ≤12 objects ×≤20 rows, emit
+                                     #   { live, resources:[{name,count,fields}] } — persists nothing
+  bsc data connector map             # read a `try` result (or manifest) JSON on stdin → a starter
+                                     #   canonical DataModel JSON (one entity per resource)
 
 Runtime REST connector presets live in ~/.base-studio-code/connectors.json ($BSC_CONNECTORS
 overrides) — the app-wide store, NOT the per-project DuckDB, so `connector` needs no --db.",
@@ -116,6 +129,16 @@ struct Args {
     pretty: bool,
     /// Row cap for `rows` (default [`DEFAULT_ROW_LIMIT`]).
     limit: Option<usize>,
+    /// `connector probe/try`: the instance base URL (overrides a preset's `base_url`).
+    base_url: Option<String>,
+    /// `connector probe`: an OpenAPI/Swagger doc URL to infer a draft manifest from.
+    openapi: Option<String>,
+    /// `connector probe`: the request path to sample under `--base-url`.
+    path: Option<String>,
+    /// `connector probe/try`: the project key half of the keychain handle (authed read).
+    project: Option<String>,
+    /// `connector probe/try`: the source uid half of the keychain handle (authed read).
+    source: Option<String>,
     positional: Vec<String>,
 }
 
@@ -123,7 +146,19 @@ struct Args {
 const DEFAULT_ROW_LIMIT: usize = 20;
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, refined: false, json: false, pretty: false, limit: None, positional: Vec::new() };
+    let mut a = Args {
+        db: None,
+        refined: false,
+        json: false,
+        pretty: false,
+        limit: None,
+        base_url: None,
+        openapi: None,
+        path: None,
+        project: None,
+        source: None,
+        positional: Vec::new(),
+    };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -134,6 +169,11 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                 a.json = true;
                 a.pretty = true;
             }
+            "--base-url" => a.base_url = Some(it.next().ok_or("--base-url needs a url")?),
+            "--openapi" => a.openapi = Some(it.next().ok_or("--openapi needs a url")?),
+            "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
+            "--project" => a.project = Some(it.next().ok_or("--project needs a value")?),
+            "--source" => a.source = Some(it.next().ok_or("--source needs a value")?),
             "--limit" => {
                 a.limit = Some(
                     it.next()
@@ -404,11 +444,112 @@ fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
             }
             Ok(())
         }
+        // ── dev-loop (#1963): author + test a REST connector on the fly, secret-free ──
+        "validate" => cmd_connector_validate(),
+        "probe" => cmd_connector_probe(args),
+        "try" => cmd_connector_try(args),
+        "map" => cmd_connector_map(args),
         other => Err(format!(
             "unknown connector command '{other}'\n\n{}",
             bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "connector")
         )),
     }
+}
+
+/// Print a JSON value to stdout, indented under `--pretty` (else compact). The dev-loop verbs always
+/// emit JSON (there is no lean form), so they don't route through [`emit`].
+fn print_json(pretty: bool, value: &serde_json::Value) {
+    if pretty {
+        println!("{}", serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into()));
+    } else {
+        println!("{}", serde_json::to_string(value).unwrap_or_else(|_| "null".into()));
+    }
+}
+
+/// `connector validate` — read a [`RuntimePreset`] JSON on stdin, run its structural + secret-free
+/// validation, and print `ok`; a malformed/invalid preset is the command's error (#1963).
+fn cmd_connector_validate() -> Result<(), String> {
+    let preset: crate::RuntimePreset =
+        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+    preset.validate()?;
+    println!("ok");
+    Ok(())
+}
+
+/// `connector probe` — GET a live endpoint (or an OpenAPI doc) read-only and emit a draft
+/// [`RuntimePreset`] (#1963). With `--openapi`, walk the doc's `paths` for array-returning GETs;
+/// else sample `--base-url[/--path]` and report its JSON shape. A `--project`/`--source` handle adds
+/// a bearer token from the keychain for an authed probe. Persists nothing.
+fn cmd_connector_probe(args: &Args) -> Result<(), String> {
+    let base = args.base_url.clone().ok_or(
+        "usage: bsc data connector probe --base-url <url> [--openapi <url>] [--path <p>] [--project <k> --source <u>]",
+    )?;
+    // An optional handle resolves a bearer token for the authed probe (the auth kind is unknown
+    // here, so default to the `token` keychain field + a bearer header).
+    let secret = match (&args.project, &args.source) {
+        (Some(p), Some(s)) => crate::transport::resolve_source_secret(p, s, "token"),
+        _ => None,
+    };
+    let value = match &args.openapi {
+        Some(openapi_url) => {
+            // The OpenAPI URL is absolute; base is empty so it passes through join_url unchanged.
+            let fetch = crate::transport::build_fetch("", "token", secret);
+            let spec = (fetch)(openapi_url).map_err(|e| format!("fetching OpenAPI doc: {e}"))?;
+            serde_json::to_value(crate::transport::draft_from_openapi(&spec, &base))
+                .map_err(|e| e.to_string())?
+        }
+        None => {
+            let fetch = crate::transport::build_fetch(&base, "token", secret);
+            let path = args.path.clone().unwrap_or_default();
+            let body = (fetch)(&path).map_err(|e| format!("fetching {base}: {e}"))?;
+            crate::transport::report_sample_shape(&body, &base, &path)
+        }
+    };
+    print_json(args.pretty, &value);
+    Ok(())
+}
+
+/// `connector try` — a sample-reads-only dry run (#1963). Validate the [`RuntimePreset`] on stdin,
+/// resolve its secret from the keychain via the `--project`/`--source` handle, build the audited
+/// generic REST connector, and read a bounded sample (≤12 objects × ≤20 rows). Emits
+/// `{ live, resources:[{name,count,fields}], error? }`. **Persists NOTHING** — no store, no DuckDB,
+/// no connectors.json write.
+fn cmd_connector_try(args: &Args) -> Result<(), String> {
+    use crate::descriptor::RestPreset;
+    let project = args.project.as_deref().ok_or(
+        "usage: bsc data connector try --project <k> --source <u> [--base-url <url>]  (RuntimePreset on stdin)",
+    )?;
+    let source = args.source.as_deref().ok_or(
+        "usage: bsc data connector try --project <k> --source <u> [--base-url <url>]  (RuntimePreset on stdin)",
+    )?;
+    let preset: crate::RuntimePreset =
+        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+    preset.validate()?;
+    let base = args
+        .base_url
+        .clone()
+        .or_else(|| preset.base_url.clone())
+        .filter(|s| !s.is_empty())
+        .ok_or("missing base URL — pass --base-url or set the preset's base_url")?;
+    let field = crate::transport::runtime_secret_field(&preset.auth);
+    let secret = crate::transport::resolve_source_secret(project, source, field);
+    let fetch = crate::transport::build_fetch(&base, &preset.auth, secret);
+    let conn = preset.connector(preset.id.clone(), fetch);
+    let result = crate::transport::run_try(&conn, 12, 20);
+    print_json(args.pretty, &result);
+    Ok(())
+}
+
+/// `connector map` — read a `try`-result (or manifest) JSON on stdin and emit a starter canonical
+/// [`DataModel`] JSON: one entity per resource, fields by name with a best-effort type (#1963). A
+/// seed for the agent to refine (identities/refs left empty).
+fn cmd_connector_map(args: &Args) -> Result<(), String> {
+    let input: serde_json::Value =
+        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing input JSON: {e}"))?;
+    let model = crate::transport::map_to_model(&input);
+    let value = serde_json::to_value(&model).map_err(|e| e.to_string())?;
+    print_json(args.pretty, &value);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -426,8 +567,44 @@ mod tests {
         assert!(c.contains("bsc data connector"));
         assert!(c.contains("remove <id>"));
         assert!(!c.contains("sample rows"));
+        // The dev-loop verbs (#1963) are documented in the connector help block.
+        for v in ["validate", "probe", "try", "map"] {
+            assert!(c.contains(v), "connector help documents `{v}`");
+        }
         // An unknown command falls back to the overview.
         assert!(bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+    }
+
+    #[test]
+    fn parses_dev_loop_flags() {
+        let a = parse_args(vec![
+            "connector".into(), "probe".into(),
+            "--base-url".into(), "https://acme.example.com/api".into(),
+            "--openapi".into(), "https://acme.example.com/openapi.json".into(),
+            "--path".into(), "contacts".into(),
+            "--project".into(), "p1".into(),
+            "--source".into(), "s1".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.base_url.as_deref(), Some("https://acme.example.com/api"));
+        assert_eq!(a.openapi.as_deref(), Some("https://acme.example.com/openapi.json"));
+        assert_eq!(a.path.as_deref(), Some("contacts"));
+        assert_eq!(a.project.as_deref(), Some("p1"));
+        assert_eq!(a.source.as_deref(), Some("s1"));
+        assert_eq!(a.positional, vec!["connector", "probe"]);
+        // Each value flag errors without its argument.
+        assert!(parse_args(vec!["connector".into(), "probe".into(), "--base-url".into()]).is_err());
+    }
+
+    #[test]
+    fn map_verb_emits_a_starter_model_from_a_try_result() {
+        // `connector map` is pure over stdin → DataModel; exercise the mapping the verb calls.
+        let try_result = serde_json::json!({ "resources": [
+            { "name": "account", "count": 1, "fields": [ { "name": "id", "type": "number" } ] },
+        ] });
+        let model = crate::transport::map_to_model(&try_result);
+        assert_eq!(model.entities.len(), 1);
+        assert_eq!(model.entities[0].key, "account");
     }
 
     #[test]
@@ -485,6 +662,11 @@ mod tests {
             json: false,
             pretty: false,
             limit: None,
+            base_url: None,
+            openapi: None,
+            path: None,
+            project: None,
+            source: None,
             positional: positional.iter().map(|s| s.to_string()).collect(),
         };
 

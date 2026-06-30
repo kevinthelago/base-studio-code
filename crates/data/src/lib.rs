@@ -33,6 +33,10 @@ pub mod presets;
 pub mod runtime;
 pub mod source_meta;
 pub mod descriptor;
+// Connector dev-loop transport (#1963): authed HTTP + OS-keychain + sample inference for the
+// `bsc data connector probe/try/map` verbs. Pure inference is unit-tested; the network stays behind
+// `build_fetch`. Compiled unconditionally (the verbs that drive it live in the gated `cli`).
+pub mod transport;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
@@ -63,6 +67,7 @@ pub use runtime::{
     RUNTIME_AUTH_KINDS,
 };
 pub use source_meta::{LiveSupport, SourceAuth};
+pub use transport::{build_fetch, resolve_source_secret};
 pub use descriptor::{
     find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, RestPreset, BUILTINS,
 };
