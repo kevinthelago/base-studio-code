@@ -157,8 +157,31 @@ fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
 /// (which Claude Code spawns directly, no shell-rc) via the `pub(crate)` wrapper below.
 fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
-    let p = std::env::current_exe().ok()?.with_file_name(exe);
-    p.exists().then_some(p)
+    let cur = std::env::current_exe().ok()?;
+    sidecar_candidates(&cur, &exe).into_iter().find(|p| p.exists())
+}
+
+/// The ordered candidate paths for a sidecar named `exe_name`, given the running app exe `cur_exe`.
+/// The bundled sidecar sits BESIDE the app exe (a release bundle stages it there; in dev that dir is
+/// `target/<profile>/`). But the sidecars are built by a SEPARATE step (`npm run build:plan`) from the
+/// app, so any build path that skips it — or running the app exe from elsewhere — would leave the
+/// beside-the-exe copy missing and silently unset `$BSC_BIN`, the gap that left sessions unable to find
+/// `bsc`. So we ALSO probe both workspace profile dirs (`target/debug`, `target/release`) relative to
+/// the exe, so a sidecar built at all is found regardless of which profile built it (#1988 resilience).
+/// Pure (no fs/env) so the ordering is unit-testable; `sidecar_bin_path` applies `.exists()`.
+fn sidecar_candidates(cur_exe: &std::path::Path, exe_name: &str) -> Vec<std::path::PathBuf> {
+    let mut v = Vec::new();
+    let Some(exe_dir) = cur_exe.parent() else { return v };
+    v.push(exe_dir.join(exe_name)); // beside the app exe — release bundle + dev target/<profile>
+    if let Some(target_dir) = exe_dir.parent() {
+        for profile in ["debug", "release"] {
+            let cand = target_dir.join(profile).join(exe_name);
+            if !v.contains(&cand) {
+                v.push(cand);
+            }
+        }
+    }
+    v
 }
 
 /// The absolute path of the bundled unified `bsc` binary (#1877), or None if absent. Used by
@@ -167,6 +190,16 @@ fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
 /// Thin wrapper over [`sidecar_bin_path`].
 pub(crate) fn bsc_bin_path() -> Option<std::path::PathBuf> {
     sidecar_bin_path("bsc")
+}
+
+/// Startup self-check (#1988): each bundled sidecar and where it resolved (`None` ⇒ missing). Logged
+/// loudly at boot (`app::run`) so a missing `bsc`/`bsc-agent` surfaces immediately, instead of only
+/// when a live session silently can't find `bsc` because `$BSC_BIN` was never set.
+pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2] {
+    [
+        ("bsc", sidecar_bin_path("bsc")),
+        ("bsc-agent", sidecar_bin_path("bsc-agent")),
+    ]
 }
 
 /// Build the environment for a session shell.
@@ -884,8 +917,28 @@ mod tests {
     use super::session_env;
     use super::plan_db_for_cwd;
     use super::{plan_launch, LaunchPlan};
+    use super::sidecar_candidates;
 
     const INIT: &str = "claude --continue 2>/dev/null || claude";
+
+    #[test]
+    fn sidecar_candidates_probe_beside_exe_then_both_profile_dirs() {
+        use std::path::PathBuf;
+        // A dev exe in target/debug: look beside it (target/debug) first, then the OTHER profile
+        // (target/release). The beside-the-exe dir IS target/debug, so it's not duplicated.
+        let dev = PathBuf::from("/repo/target/debug/base-studio-code.exe");
+        assert_eq!(
+            sidecar_candidates(&dev, "bsc.exe"),
+            vec![
+                PathBuf::from("/repo/target/debug/bsc.exe"),
+                PathBuf::from("/repo/target/release/bsc.exe"),
+            ],
+            "a built sidecar is found whichever profile produced it — not only beside THIS exe"
+        );
+        // An installed/bundled app: the staged sidecar beside the exe is the first candidate.
+        let installed = PathBuf::from("/opt/app/base-studio-code");
+        assert_eq!(sidecar_candidates(&installed, "bsc")[0], PathBuf::from("/opt/app/bsc"));
+    }
 
     #[test]
     fn project_session_ids_matches_only_the_project_panes() {

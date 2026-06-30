@@ -98,6 +98,20 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
+            // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
+            // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
+            // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
+            // agent shell loses the `bsc` CLI mid-task. Surface it LOUDLY at boot (with the fix) instead.
+            for (name, path) in crate::console::pty::sidecar_status() {
+                match path {
+                    Some(p) => log::info!("[startup] sidecar `{name}` → {}", p.display()),
+                    None => log::error!(
+                        "[startup] sidecar `{name}` NOT FOUND beside the app exe or in target/{{debug,release}} \
+                         — agent sessions will lack `{name}`. Build it: `npm run build:plan` (dev) or \
+                         `npm run stage:sidecar` (release)."
+                    ),
+                }
+            }
             // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
             // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
             // housekeeping, not first-paint work; doing it inline blocked every startup. Defer
