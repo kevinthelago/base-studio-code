@@ -12,7 +12,7 @@ import { aggregateTabState, clearTabStatuses as clearTabStatusesPure } from "@/a
 import { isManualPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { moveInArray, tabIndexMap, rekeyByTab, rekeyByPaneId, remapFocusQueue } from "@/app/console/lib/tabReorder";
 import { newTabId } from "../helpers";
-import { setMapEntry, deleteMapEntry, updateArrayItem } from "../updateHelpers";
+import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "../updateHelpers";
 
 type ConsoleSlice = Pick<AppStore,
   "activeWorkspace" | "setWorkspace" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
@@ -333,11 +333,25 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           // Drop the closed tab's pane statuses so its sessions' "run"/"on" can't
           // linger as a stale activity dot (#435) — like the focusQueue reset.
           const paneStatus = closing ? clearTabStatusesPure(s.paneStatus, closing, idx) : s.paneStatus;
-          if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [], paneStatus };
+          // Release the closed tab's worker pane state (#1951). The always-on warden (#1102) watches
+          // every pane in `fleetPaneStreams`; leaving the closed tab's now-dead (PTY-killed) workers
+          // there means it keeps re-evaluating them, sees the worktree still off-plan, and
+          // re-quarantines them every tick — so the "Worker quarantined" banner reappears despite the
+          // tab AND the banner being closed. The tab's minted identity ids (`paneIds`) are exactly the
+          // keys `fleetStartProject` set in these maps, so drop them here (mirrors that teardown).
+          const ids = closing?.paneIds ?? [];
+          const released = ids.length
+            ? {
+                fleetPaneStreams: deleteMapEntries(s.fleetPaneStreams, ids),
+                paneCwds: deleteMapEntries(s.paneCwds, ids),
+                quarantinedPanes: deleteMapEntries(s.quarantinedPanes, ids),
+              }
+            : {};
+          if (tabs.length === 0) return { tabs, activeTabIdx: 0, focusQueue: [], paneStatus, ...released };
           let activeTabIdx = s.activeTabIdx;
           if (idx < s.activeTabIdx) activeTabIdx -= 1;
           else if (idx === s.activeTabIdx) activeTabIdx = Math.min(activeTabIdx, tabs.length - 1);
-          return { tabs, activeTabIdx, focusQueue: [], paneStatus };
+          return { tabs, activeTabIdx, focusQueue: [], paneStatus, ...released };
         }),
       moveTab: (from, to) =>
         set((s) => {
