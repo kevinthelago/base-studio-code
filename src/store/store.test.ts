@@ -1580,6 +1580,23 @@ describe("pane status — store single source of truth (#435)", () => {
     expect(st.wardenSince[w2]).toBe(5000);             // and the not-yet-flagged relaunching pane
     expect(st.wardenSince[other]).toBeUndefined();     // other project not floored
   });
+
+  it("clearQuarantine removes the pane AND stamps a warden floor (so the banner doesn't reappear)", () => {
+    // Dismissing the quarantine banner must floor the warden — otherwise the next tick re-reads the
+    // same (still-logged) denied command from the audit log and re-quarantines the pane.
+    const p = "STEM:data";
+    useAppStore.setState((s) => ({
+      quarantinedPanes: { ...s.quarantinedPanes, [p]: { streamId: "data", summary: "ran denied cmd", at: 1 } },
+      wardenSince: {},
+    }));
+
+    const before = Date.now();
+    useAppStore.getState().clearQuarantine(p);
+    const st = useAppStore.getState();
+
+    expect(st.quarantinedPanes[p]).toBeUndefined();           // cleared
+    expect(st.wardenSince[p]).toBeGreaterThanOrEqual(before); // and the warden is floored to ~now
+  });
 });
 
 describe("mcp servers store", () => {
