@@ -503,15 +503,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // is a no-op (Claude Code's own default). Only meaningful when this pane
       // launches claude.
       const paneModel = st.paneModels[paneId] ?? st.defaultModel;
+      // #1988: opt-in — run this console INSIDE the sealed WSL2 sandbox distro. A clean bash at the
+      // distro home (no agent launch / startup prompt / Windows cwd — repos aren't mounted in the cage).
+      const sandboxed = st.sandboxConsoles === true;
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
         rows: term.rows,
-        cwd:     launchCwd,
-        initCmd: effectiveInitCmd,
+        cwd:     sandboxed ? "/home/agent" : launchCwd,
+        initCmd: sandboxed ? undefined : effectiveInitCmd,
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
-        startupPrompt: bakesPrompt ? startupPrompt : undefined,
+        startupPrompt: sandboxed ? undefined : (bakesPrompt ? startupPrompt : undefined),
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
@@ -519,6 +522,8 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         checkpointDoc,
         env: agentEnv,
         providerId,
+        // The sealed distro to spawn into (#1988), or undefined for the normal host shell.
+        wslDistro: sandboxed ? "bsc-agent-sandbox" : undefined,
       }, true, (e) => log.error(`console[${paneId}] pty_create failed: ${e}`));
 
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100

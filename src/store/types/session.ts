@@ -37,6 +37,11 @@ export interface SessionState {
    *  (require approval). Default true. Threaded to `write_session_settings` via `buildSessionSettings`. */
   bypassPermissions: boolean;
   setBypassPermissions: (v: boolean) => void;
+  /** #1988: launch console panes INSIDE the sealed WSL2 sandbox distro (`bsc-agent-sandbox`) — a clean
+   *  bash at the distro home. Opt-in; off by default. Your Windows repos aren't mounted in (the seal),
+   *  so it's a scratch/verification shell until project files are relocated into the distro. */
+  sandboxConsoles: boolean;
+  setSandboxConsoles: (v: boolean) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
