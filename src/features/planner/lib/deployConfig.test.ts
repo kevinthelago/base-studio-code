@@ -316,12 +316,13 @@ describe("local vs cloud deploy modes (#1192)", () => {
   });
 });
 
-describe("Deploy stage placement (#919, merged into Repos #1383)", () => {
-  it("the Default blueprint folds Deploy into the `repos` stage as a ship substep (no separate `deploy` section)", () => {
+describe("Deploy stage placement (#919, collapsed into `deployment` #1914)", () => {
+  it("the Default blueprint's `deployment` stage carries link+ship substeps (no separate `deploy`/`repos` section)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
     const keys = def.sections.map((s) => s.key);
-    expect(keys).not.toContain("deploy"); // merged into repos
-    const repos = def.sections.find((s) => s.key === "repos")!;
-    expect(repos.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
+    expect(keys).not.toContain("deploy"); // collapsed into deployment
+    expect(keys).not.toContain("repos");  // collapsed into deployment
+    const deployment = def.sections.find((s) => s.key === "deployment")!;
+    expect(deployment.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
   });
 });

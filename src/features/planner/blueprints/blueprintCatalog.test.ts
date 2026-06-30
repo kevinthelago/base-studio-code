@@ -68,8 +68,8 @@ describe("STAGE_KINDS derived from the stage JSON data layer (#1603)", () => {
 
   it("reconciles the palette title to the stage's JSON name (option A)", () => {
     // Formerly the palette title diverged from the stage bar; now it's single-sourced to `name`.
-    expect(stageKind("structure").title).toBe("Plan");
-    expect(stageKind("repos").title).toBe("Repos");
-    expect(stageKind("structure").title).toBe(STAGE_DEFS.structure.name);
+    expect(stageKind("streams").title).toBe("Streams");
+    expect(stageKind("deployment").title).toBe("Deployment");
+    expect(stageKind("streams").title).toBe(STAGE_DEFS.streams.name);
   });
 });

@@ -4,7 +4,7 @@
   "gate": "every declared source connected",
   "deps": [
     "discovery",
-    "repos"
+    "deployment"
   ],
   "optional": true,
   "blurb": "Migration source — declare the legacy systems you're migrating from and connect each read-only so it can be scanned.",

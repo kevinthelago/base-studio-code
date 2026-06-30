@@ -19,12 +19,11 @@
  *  but exists in the union so other stages and signal consumers can reference it by name. */
 export type StageId =
   | "discovery"
-  | "repos"
+  | "deployment"
   | "source"
   | "features"
   | "ui"
-  | "structure"
-  | "permissions"
+  | "streams"
   | "automations"
   | "skills"
   | "load";
@@ -116,11 +115,13 @@ export const PLAN_STAGES: Stage[] = [
     defaultEnabled: true,
   },
   {
-    id: "repos",
-    label: "Repos",
-    description: "Link repositories — the app clones each into the project hub",
+    // deployment: link repositories + define how each service ships (the collapsed repos+deploy
+    // stage, #1914 — was two folded keys, now one canonical `deployment`).
+    id: "deployment",
+    label: "Deployment",
+    description: "Link repositories + define how each service ships",
     optional: true,
-    hasOutputFile: true,  // repos.json
+    hasOutputFile: true,
     dependsOn: [],
     defaultEnabled: true,
   },
@@ -132,7 +133,7 @@ export const PLAN_STAGES: Stage[] = [
     description: "Migration source — inventory it, infer the data model, confirm the schema",
     optional: true,
     hasOutputFile: false,  // the Data Model lives in the project's DuckDB store now (#1446), not a file
-    dependsOn: ["discovery", "repos"],
+    dependsOn: ["discovery", "deployment"],
     defaultEnabled: true,
   },
   {
@@ -156,23 +157,16 @@ export const PLAN_STAGES: Stage[] = [
     defaultEnabled: true,
   },
   {
-    id: "structure",
-    label: "Plan",
-    description: "Autonomous: contracts/ + phases.json + the agent-ready sub-issue tree",
+    // streams: review the feature DAG/roadmap + plan the agent fleet (the collapsed
+    // structure+permissions stage, #1914 — was two folded keys, now one canonical `streams`).
+    id: "streams",
+    label: "Streams",
+    description: "Review the feature dependency graph + plan the agent fleet + least-privilege profiles",
     // optional: true so refactor/cleanup blueprints can legitimately omit the
     // plan synthesis (they produce targeted issues only, not a roadmap) (#666).
     optional: true,
-    hasOutputFile: true,  // phases.json + issues.json
-    dependsOn: ["discovery", "repos", "features"],
-    defaultEnabled: true,
-  },
-  {
-    id: "permissions",
-    label: "Permissions",
-    description: "Agent fleet plan (fleet.json): non-overlapping streams + least-privilege profiles",
-    optional: true,
-    hasOutputFile: true,  // fleet.json
-    dependsOn: ["structure"],
+    hasOutputFile: true,
+    dependsOn: ["discovery", "deployment", "features"],
     defaultEnabled: true,
   },
   {
@@ -181,7 +175,7 @@ export const PLAN_STAGES: Stage[] = [
     description: "Cron and on-demand automations (emit <automation_assign> tags)",
     optional: true,
     hasOutputFile: false,
-    dependsOn: ["structure"],
+    dependsOn: ["streams"],
     defaultEnabled: true,
   },
   {

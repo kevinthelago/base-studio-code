@@ -12,8 +12,7 @@
       "key": "discovery"
     },
     {
-      "key": "repos",
-      "ship": true
+      "key": "deployment"
     },
     {
       "key": "features"
@@ -23,8 +22,7 @@
       "optional": true
     },
     {
-      "key": "structure",
-      "fleet": true
+      "key": "streams"
     }
   ]
 }

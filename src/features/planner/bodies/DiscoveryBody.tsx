@@ -48,7 +48,7 @@ function RequiredCtxRow({ topic, written }: { topic: string; written: boolean })
   );
 }
 
-export function FocusedContextBody({ context, onView, requiredContext }: {
+export function DiscoveryBody({ context, onView, requiredContext }: {
   context?: ContextFile[]; onView?: (f: ContextFile) => void; requiredContext?: string[];
 }) {
   const files = context ?? [];

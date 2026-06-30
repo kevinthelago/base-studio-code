@@ -9,20 +9,20 @@ import type { Stage } from "../stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { Topology } from "../relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
-// The merged Repositories & Deployment pane + source body (pre-existing files). The data-pipeline
-// bodies, the standalone Deploy pane, the plain (non-ship) Repos pane, and the standalone Permissions
-// pane were removed with the data/transform blueprints (v1.0.5 cleanup): `repos` always renders the
-// merged pane, `permissions` always folds into Streams, and `source` stays (it's in `complete`).
+// The merged Repositories & Deployment pane + source body (pre-existing files). #1914 collapsed the
+// stage vocabulary: the `deployment` stage (repos+deploy) renders the merged Repositories & Deployment
+// pane, the `streams` stage (structure+permissions) renders the plan graph + the folded-in fleet
+// permissions, and `source` stays (it's in `complete`).
 import { FileIntakePane } from "../bodies/FileIntakePane";
-import { FocusedReposDeployBody } from "../bodies/ReposDeployView";
-import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
+import { DeploymentBody } from "../bodies/ReposDeployView";
+import { SourceBody } from "../bodies/FocusedSourceBody";
 // Core planning-stage bodies (#1757 split out of this file).
-import { FocusedContextBody } from "../bodies/FocusedContextBody";
-import { FocusedAutomationsBody } from "../bodies/FocusedAutomationsBody";
-import { FocusedSkillsBody } from "../bodies/FocusedSkillsBody";
-import { FocusedMcpBody } from "../bodies/FocusedMcpBody";
-import { FocusedFeaturesBody } from "../bodies/FocusedFeaturesBody";
-import { FocusedAuthoringBody } from "../bodies/FocusedAuthoringBody";
+import { DiscoveryBody } from "../bodies/DiscoveryBody";
+import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
+import { SkillsBody } from "../bodies/FocusedSkillsBody";
+import { McpsBody } from "../bodies/McpsBody";
+import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
+import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 
@@ -61,45 +61,44 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
   switch (stage.key) {
     case "source":
-      return <FocusedSourceBody projectId={projectId} />;
-    case "repos":
-      // The kept blueprints all fold deploy into repos (stage.ship), so `repos` renders as one
-      // cohesive Repositories & Deployment pane — each repo's git identity merged with its deploy
-      // target (click a repo to expand its target editor inline). The plain repo linker + the
-      // standalone Deploy pane were removed with the link-only/data blueprints (v1.0.5 cleanup).
+      return <SourceBody projectId={projectId} />;
+    case "deployment":
+      // The unified `deployment` stage (#1914 — the collapsed repos+deploy def) renders as one
+      // cohesive Repositories & Deployment pane: each repo's git identity merged with its deploy
+      // target (click a repo to expand its target editor inline).
       return (
-        <FocusedReposDeployBody
+        <DeploymentBody
           repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
           onLinkRepo={onLinkRepo}
         />
       );
     case "discovery":
-      return <FocusedContextBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
+      return <DiscoveryBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
     case "ui":
       // The UI stage's drop-in-files surface (#604/#829): stage design assets into the
       // project's `design/` dir for the planner to route. The pipeline-screen registry that
       // hosted this was orphaned by the focused-pane refactor — render it directly here.
       return <FileIntakePane projectKey={projectId ?? ""} />;
     case "features":
-      return <FocusedFeaturesBody features={data?.features} />;
-    case "structure":
-      // #1383-streams: one "Streams" stage. The plan + relationship graph always shows; the fleet
-      // (coordination + per-stream permissions, via the embedded FocusedPermissionsBody) folds in
-      // below when the blueprint opted into fleet (stage.fleet). Every kept blueprint fleets, so the
-      // standalone Permissions stage/pane was removed (v1.0.5 cleanup).
+      return <FeaturesBody features={data?.features} />;
+    case "streams":
+      // The unified `streams` stage (#1914 — the collapsed structure+permissions def). The plan +
+      // relationship graph always shows; the fleet (coordination + per-stream permissions, via the
+      // embedded PermissionsBody) folds in below when the def carries the `fleet` substep — which the
+      // kept blueprints always do.
       return <StreamsBody data={data} fleet={stage.fleet} {...fleetHandlers} />;
-    case "mcp":
-      return <FocusedMcpBody servers={data?.mcpServers} {...mcpHandlers} />;
+    case "mcps":
+      return <McpsBody servers={data?.mcpServers} {...mcpHandlers} />;
     case "automations":
-      return <FocusedAutomationsBody automations={data?.automations} />;
+      return <AutomationsBody automations={data?.automations} />;
     case "skills":
-      return <FocusedSkillsBody skills={data?.skills} />;
+      return <SkillsBody skills={data?.skills} />;
     // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
     case "purpose":
     case "bp_stages":
     case "bp_capabilities":
     case "bp_review":
-      return <FocusedAuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
+      return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
       return (
         <div className="empty-state">

@@ -32,7 +32,7 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
   );
 }
 
-export function FocusedReposDeployBody({
+export function DeploymentBody({
   repos, deploy, onDeployChange, onLinkRepo,
 }: {
   repos?: Repo[];

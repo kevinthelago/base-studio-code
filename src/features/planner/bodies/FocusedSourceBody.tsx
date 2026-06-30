@@ -1,4 +1,4 @@
-// FocusedSourceBody — right-pane body for the "source" planning stage (#source-pane).
+// SourceBody — right-pane body for the "source" planning stage (#source-pane).
 // Hi-fi implementation of design/Source connection pane kickoff (Direction B — the catalog
 // collapses to a status chip-bar once you declare). The migration Source stage: name the legacy
 // systems you're migrating FROM and connect each READ-ONLY so the planner can scan it into the
@@ -34,7 +34,7 @@ import { useSourceConnection } from "./sourceConnection";
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function FocusedSourceBody({ projectId }: { projectId?: string }) {
+export function SourceBody({ projectId }: { projectId?: string }) {
   const pid = projectId ?? "";
   const stored = useAppStore((s) => s.planSourceConfig[pid]);
   const setPlanSourceConfig = useAppStore((s) => s.setPlanSourceConfig);

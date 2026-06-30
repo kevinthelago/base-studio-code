@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { defaultSourceConfig } from "../lib/sourceConfig";
-import { FocusedSourceBody } from "./FocusedSourceBody";
+import { SourceBody } from "./FocusedSourceBody";
 
 // The body is store-backed (planSourceConfig keyed by projectId). Reset that slice between tests so
 // each starts from an empty config.
@@ -11,16 +11,16 @@ beforeEach(() => {
   useAppStore.setState({ planSourceConfig: {}, planningPitch: "" });
 });
 
-describe("FocusedSourceBody — catalog → declare", () => {
+describe("SourceBody — catalog → declare", () => {
   it("shows the connector catalog and read-only reassurance when nothing is declared", () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     expect(screen.getByTestId("connector-catalog")).toBeTruthy();
     expect(screen.getByTestId("connector-tile-quickbase")).toBeTruthy();
     expect(screen.getByText(/credentials never leave this device/i)).toBeTruthy();
   });
 
   it("declaring a connector adds its card and collapses the catalog into a chip-bar", () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
     // A card appears…
     expect(screen.getByTestId(/^source-card-/)).toBeTruthy();
@@ -32,16 +32,16 @@ describe("FocusedSourceBody — catalog → declare", () => {
   });
 
   it("search filters the catalog", () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     fireEvent.change(screen.getByPlaceholderText("Search connectors…"), { target: { value: "salesforce" } });
     expect(screen.getByTestId("connector-tile-salesforce")).toBeTruthy();
     expect(screen.queryByTestId("connector-tile-quickbase")).toBeNull();
   });
 });
 
-describe("FocusedSourceBody — spec-driven connect (token)", () => {
+describe("SourceBody — spec-driven connect (token)", () => {
   it("requires the realm + secret, then connects → scans → shows discovered objects", async () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
 
     const connectBtn = screen.getByRole("button", { name: /save & connect/i }) as HTMLButtonElement;
@@ -64,7 +64,7 @@ describe("FocusedSourceBody — spec-driven connect (token)", () => {
   });
 
   it("reveal toggles the secret field between password and text", () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
     const secret = screen.getByLabelText("User Token") as HTMLInputElement;
     expect(secret.type).toBe("password");
@@ -73,10 +73,10 @@ describe("FocusedSourceBody — spec-driven connect (token)", () => {
   });
 });
 
-describe("FocusedSourceBody — planner-proposed", () => {
+describe("SourceBody — planner-proposed", () => {
   it("confirming the proposed banner declares those sources", () => {
     useAppStore.getState().setPlanSourceConfig("p2", { ...defaultSourceConfig(), dataModelName: "Acme Core", proposed: ["quickbooks", "quickbase"] });
-    render(<FocusedSourceBody projectId="p2" />);
+    render(<SourceBody projectId="p2" />);
     fireEvent.click(screen.getByTestId("proposed-confirm"));
     const cfg = useAppStore.getState().planSourceConfig.p2;
     expect(cfg.sources.map((s) => s.connectorId).sort()).toEqual(["quickbase", "quickbooks"]);
@@ -86,7 +86,7 @@ describe("FocusedSourceBody — planner-proposed", () => {
   it("seeds the Confirm-N-sources banner from the planner pitch on first open (#1349)", async () => {
     // A fresh project (no stored source config) with a pitch that names two legacy systems.
     useAppStore.setState({ planningPitch: "Migrate off QuickBooks and Salesforce into one app." });
-    render(<FocusedSourceBody projectId="pitch1" />);
+    render(<SourceBody projectId="pitch1" />);
     // The proposed-from-pitch ids land in the config → the banner surfaces with the right count …
     await waitFor(() => expect(screen.getByTestId("proposed-confirm").textContent).toMatch(/Confirm 2 sources/));
     expect(useAppStore.getState().planSourceConfig.pitch1.proposed.sort()).toEqual(["quickbooks", "salesforce"]);
@@ -97,16 +97,16 @@ describe("FocusedSourceBody — planner-proposed", () => {
 
   it("does not seed when the pitch names no known system", async () => {
     useAppStore.setState({ planningPitch: "A brand-new greenfield app with no legacy systems." });
-    render(<FocusedSourceBody projectId="pitch2" />);
+    render(<SourceBody projectId="pitch2" />);
     // Nothing proposed → no banner, the catalog shows instead.
     await waitFor(() => expect(screen.getByTestId("connector-catalog")).toBeTruthy());
     expect(screen.queryByTestId("proposed-confirm")).toBeNull();
   });
 });
 
-describe("FocusedSourceBody — readiness", () => {
+describe("SourceBody — readiness", () => {
   it("readiness reaches all-connected once an OAuth source scans", async () => {
-    render(<FocusedSourceBody projectId="p3" />);
+    render(<SourceBody projectId="p3" />);
     fireEvent.click(screen.getByTestId("connector-tile-salesforce"));
     // OAuth connectors connect with one click (no secret form).
     fireEvent.click(screen.getByRole("button", { name: /connect to salesforce/i }));
@@ -116,9 +116,9 @@ describe("FocusedSourceBody — readiness", () => {
   });
 });
 
-describe("FocusedSourceBody — closes the data-dictates-structure loop (#1205)", () => {
+describe("SourceBody — closes the data-dictates-structure loop (#1205)", () => {
   it("once every source is scanned, persists the derived model + shows the downstream-impact recap", async () => {
-    render(<FocusedSourceBody projectId="p1" />);
+    render(<SourceBody projectId="p1" />);
     fireEvent.click(screen.getByTestId("connector-tile-quickbase"));
     fireEvent.change(screen.getByPlaceholderText("acme.quickbase.com"), { target: { value: "acme.quickbase.com" } });
     fireEvent.change(screen.getByLabelText("User Token"), { target: { value: "tok" } });

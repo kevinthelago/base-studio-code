@@ -46,9 +46,10 @@ describe("nextInjection — stage + static substeps", () => {
   });
 
   it("a substep-less stage injects only its stage prompt, once", () => {
-    const permissions = mkStage("permissions");
-    expect(nextInjection(permissions, new Set(), emptyState())?.id).toBe("permissions:_stage");
-    expect(nextInjection(permissions, new Set(["permissions:_stage"]), emptyState())).toBeNull();
+    // #1914: `mcps` is the substep-less stage now (permissions collapsed into `streams`, which has substeps).
+    const mcps = mkStage("mcps");
+    expect(nextInjection(mcps, new Set(), emptyState())?.id).toBe("mcps:_stage");
+    expect(nextInjection(mcps, new Set(["mcps:_stage"]), emptyState())).toBeNull();
   });
 });
 

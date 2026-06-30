@@ -29,9 +29,9 @@ describe("bsc-reskin gist blueprint (#1212)", () => {
     // Every stage resolved with a key, name, and a working prompt.
     expect(bp.blueprint.sections.length).toBeGreaterThanOrEqual(9);
     expect(bp.blueprint.sections.every((s) => s.key && s.name && s.prompt)).toBe(true);
-    // The theme-token + repo stages are present, and the reskin skill is attached.
+    // The theme-token + deployment stages are present, and the reskin skill is attached.
     const keys = bp.blueprint.sections.map((s) => s.key);
-    expect(keys).toContain("repos");
+    expect(keys).toContain("deployment");
     expect(keys).toContain("theme-tokens");
     expect(bp.blueprint.skills).toContain("reskin-bsc");
   });

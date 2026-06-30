@@ -168,14 +168,14 @@ describe("sectionForStage (#815)", () => {
     // `c` is dropped from the visible stages (appliesWhen showC=false), so the stage at index 1
     // is `b` — but in the RAW section list index 1 is also `b` here; the real skew shows once a
     // section BEFORE the target is dropped. Build that case explicitly:
-    const sections = [sec("ui", { appliesWhen: { signal: "showUi", target: true } }), sec("features"), sec("structure")];
+    const sections = [sec("ui", { appliesWhen: { signal: "showUi", target: true } }), sec("features"), sec("streams")];
     // showUi=false ⇒ stages = [features, structure]; stage index 0 is `features`.
     const stages = stagesFrom(sections, {});
-    expect(stages.map((p) => p.key)).toEqual(["features", "structure"]);
+    expect(stages.map((p) => p.key)).toEqual(["features", "streams"]);
     // Indexing the RAW sections with the stage index 0 would wrongly pick `ui`; by-key picks `features`.
     expect(sections[0].key).toBe("ui");
     expect(sectionForStage(sections, stages[0])?.key).toBe("features");
-    expect(sectionForStage(sections, stages[1])?.key).toBe("structure");
+    expect(sectionForStage(sections, stages[1])?.key).toBe("streams");
   });
 
   it("returns undefined for a missing/absent stage", () => {
@@ -191,9 +191,9 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
   const IMPORTED: BlueprintStage[] = [
     sec("discovery"),
     sec("architecture", { deps: ["discovery"] }),
-    sec("structure", { deps: ["architecture"] }),
-    sec("testing", { deps: ["structure"] }),
-    sec("docs", { deps: ["structure"], optional: true }),
+    sec("streams", { deps: ["architecture"] }),
+    sec("testing", { deps: ["streams"] }),
+    sec("docs", { deps: ["streams"], optional: true }),
   ];
   const active = (s: PlanSignals): string | undefined => {
     const ps = stagesFrom(IMPORTED, s);
@@ -210,8 +210,8 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
     sig[confirmedSignal("discovery")] = true;
     expect(active(sig)).toBe("architecture");           // ← was stuck on context before #954
     sig[confirmedSignal("architecture")] = true;
-    expect(active(sig)).toBe("structure");
-    sig[confirmedSignal("structure")] = true;
+    expect(active(sig)).toBe("streams");
+    sig[confirmedSignal("streams")] = true;
     expect(active(sig)).toBe("testing");
     sig[confirmedSignal("testing")] = true;
     expect(active(sig)).toBe("docs");                    // optional — flow stops here until done/skipped (#921)

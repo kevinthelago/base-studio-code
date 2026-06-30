@@ -24,10 +24,10 @@ describe("blueprint categories (#645)", () => {
     expect(CATEGORY_META.transform.label).toBe("Transform");
   });
 
-  it("the default blueprint's repos stage is enabled so it shows in the plan (#672)", () => {
+  it("the default blueprint's deployment stage is enabled so it shows in the plan (#672/#1914)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
-    const repos = def.sections.find((s) => s.key === "repos")!;
-    expect(repos.enabled).toBe(true);
+    const deployment = def.sections.find((s) => s.key === "deployment")!;
+    expect(deployment.enabled).toBe(true);
   });
 
   it("the default blueprint's UI stage is optional; automations/skills moved to Complete (#676/#698/#700/#1003)", () => {

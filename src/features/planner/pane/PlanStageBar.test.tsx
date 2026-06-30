@@ -44,18 +44,18 @@ describe("PlanStageBar", () => {
   });
 
   it("marks a satisfied section complete in its tooltip", () => {
-    const sections = setEnabled(defaultSections(), "repos", true);
-    // The Default blueprint's repos stage folds Deploy in (#1383), so its merged gate needs repos
-    // linked AND the deploy signals; satisfy all and expect the combined stage name.
+    const sections = setEnabled(defaultSections(), "deployment", true);
+    // The Default blueprint's `deployment` stage is the collapsed repos+deploy def (#1914), so its
+    // gate needs a repo linked AND the deploy signals; satisfy all and expect the stage name.
     const signals = { ...signalsFrom({ repoCount: 2 }), deploymentDefined: true, dependenciesDefined: 1 };
     const { container } = render(<PlanStageBar sections={sections} signals={signals} />);
     expect(titlesIn(container).some((t) => t === "Deployment — complete")).toBe(true);
   });
 
   it("flags a gate-blocked section in its tooltip (#532)", () => {
-    const sections = setEnabled(defaultSections(), "repos", true);
+    const sections = setEnabled(defaultSections(), "deployment", true);
     const { container } = render(
-      <PlanStageBar sections={sections} signals={signalsFrom({ repoCount: 2 })} blocked={new Set(["repos"])} />,
+      <PlanStageBar sections={sections} signals={signalsFrom({ repoCount: 2 })} blocked={new Set(["deployment"])} />,
     );
     expect(titlesIn(container).some((t) => t.includes("gate blocked"))).toBe(true);
   });

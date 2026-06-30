@@ -4,7 +4,8 @@ import {
   stageStatus, incompleteStages, planStagesComplete, currentStage, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, stageDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
-  stageDirectiveId, STAGE_DEFS, type BlueprintStage, type Blueprint,
+  canonicalStageKey, STAGE_KEY_ALIAS, canonicalizeSections,
+  STAGE_DEFS, type BlueprintStage, type Blueprint,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
@@ -42,32 +43,31 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.ui.deps).toContain("features");
   });
 
-  it("adds an optional MCP Servers stage after Permissions in the Complete blueprint (#878/#1003)", () => {
-    expect(STAGE_DEFS.mcp).toBeTruthy();
-    expect(STAGE_DEFS.mcp.optional).toBe(true);
+  it("adds an optional MCPs stage after Streams in the Complete blueprint (#878/#1003/#1914)", () => {
+    expect(STAGE_DEFS.mcps).toBeTruthy();
+    expect(STAGE_DEFS.mcps.optional).toBe(true);
     // #1003: the advanced stages moved off Default onto the Complete greenfield blueprint.
     for (const id of ["complete"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
-      expect(keys, `${id} has an mcp stage`).toContain("mcp");
-      // Permissions is folded into the `structure` (Streams) stage (#1383-streams); mcp comes after it.
-      expect(keys.indexOf("mcp"), `${id}: mcp after structure`).toBeGreaterThan(keys.indexOf("structure"));
+      expect(keys, `${id} has an mcps stage`).toContain("mcps");
+      // #1914: structure+permissions collapsed into the `streams` stage; mcps comes after it.
+      expect(keys.indexOf("mcps"), `${id}: mcps after streams`).toBeGreaterThan(keys.indexOf("streams"));
     }
   });
 
-  it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003)", () => {
+  it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003/#1914)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
-    // Default is the simplest greenfield path — no source/mcp/automations/skills. Deploy folds into
-    // `repos` (#1383) and Permissions folds into `structure` (the "Streams" stage, #1383-streams), so
-    // neither is a separate section key.
-    expect(keysOf("default")).toEqual(["discovery", "repos", "features", "ui", "structure"]);
-    for (const k of ["source", "mcp", "automations", "skills", "deploy", "permissions"]) {
+    // Default is the simplest greenfield path — no source/mcps/automations/skills. The unified
+    // vocabulary (#1914) collapsed repos+deploy → `deployment` and structure+permissions → `streams`.
+    expect(keysOf("default")).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    for (const k of ["source", "mcps", "automations", "skills", "repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["discovery", "repos", "source", "features", "ui", "structure", "mcp", "automations", "skills"],
+      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
@@ -136,26 +136,26 @@ describe("blueprints — seed library", () => {
 
 describe("blueprints — computeStatus (dependency locks)", () => {
   it("locks a section whose enabled dependency is disabled", () => {
-    // structure depends on discovery, repos, features; disable repos -> structure locked.
-    const secs = [mkStage("discovery"), mkStage("repos", { enabled: false }), mkStage("features"), mkStage("structure")];
+    // streams depends on discovery, deployment, features; disable deployment -> streams locked (#1914).
+    const secs = [mkStage("discovery"), mkStage("deployment", { enabled: false }), mkStage("features"), mkStage("streams")];
     const st = computeStatus(secs);
-    expect(st.structure.locked).toBe(true);
-    expect(st.structure.unmet).toContain("repos");
+    expect(st.streams.locked).toBe(true);
+    expect(st.streams.unmet).toContain("deployment");
   });
 
   it("a dependency omitted from the blueprint is treated as met", () => {
-    // structure present but ui omitted entirely -> ui not counted as unmet.
-    const secs = [mkStage("discovery"), mkStage("repos"), mkStage("structure")];
+    // streams present but ui omitted entirely -> ui not counted as unmet.
+    const secs = [mkStage("discovery"), mkStage("deployment"), mkStage("streams")];
     const st = computeStatus(secs);
-    expect(st.structure.unmet).not.toContain("ui");
-    expect(st.structure.locked).toBe(false);
+    expect(st.streams.unmet).not.toContain("ui");
+    expect(st.streams.locked).toBe(false);
   });
 
   it("all deps enabled -> not locked, satisfied", () => {
-    const secs = [mkStage("discovery"), mkStage("repos"), mkStage("ui"), mkStage("structure")];
+    const secs = [mkStage("discovery"), mkStage("deployment"), mkStage("features"), mkStage("streams")];
     const st = computeStatus(secs);
-    expect(st.structure.locked).toBe(false);
-    expect(st.structure.satisfied).toBe(true);
+    expect(st.streams.locked).toBe(false);
+    expect(st.streams.satisfied).toBe(true);
   });
 });
 
@@ -192,18 +192,19 @@ describe("blueprints — helpers", () => {
 });
 
 describe("blueprints — section status (declarative, blueprint-driven gates)", () => {
-  // structure depends on context+repos+ui; build a set where those are satisfiable.
+  // #1914: streams depends on discovery+deployment+features; build a set where those are satisfiable.
   const baseSecs = () => [
-    mkStage("discovery"), mkStage("repos"), mkStage("ui"), mkStage("structure"),
-    mkStage("permissions"), mkStage("skills"),
+    mkStage("discovery"), mkStage("deployment"), mkStage("ui"), mkStage("streams"),
+    mkStage("skills"),
   ];
   const doneCtx = { discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 1, requiresUi: false };
 
   it("evaluates a section's own declarative gate (not a hardcoded enum)", () => {
     const secs = baseSecs();
-    const repos = secs.find((s) => s.key === "repos")!;
-    expect(stageStatus(repos, secs, sig({ repoCount: 0 })).status).toBe("in-progress");
-    expect(stageStatus(repos, secs, sig({ repoCount: 2 })).status).toBe("complete");
+    const deployment = secs.find((s) => s.key === "deployment")!;
+    // deployment gates on BOTH a linked repo AND shipping defined (#1914).
+    expect(stageStatus(deployment, secs, sig({ repoCount: 0 })).status).toBe("in-progress");
+    expect(stageStatus(deployment, secs, { ...sig({ repoCount: 2 }), deploymentDefined: true }).status).toBe("complete");
   });
 
   it("UI section is N/A when the project needs no UI (appliesWhen)", () => {
@@ -214,31 +215,31 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("locks a section whose enabled dependency is incomplete", () => {
     const secs = baseSecs();
-    const structure = secs.find((s) => s.key === "structure")!;
-    // context not confirmed → structure locked
-    expect(stageStatus(structure, secs, sig({ requiresUi: false })).status).toBe("locked");
+    const streams = secs.find((s) => s.key === "streams")!;
+    // discovery not ready → streams locked (it depends on discovery + deployment).
+    expect(stageStatus(streams, secs, sig({ requiresUi: false })).status).toBe("locked");
   });
 
   it("a gateless (informational) section completes only when confirmed, not vacuously (#664)", () => {
-    // mcp is gateless (no gateRule); forced non-optional it plays the required-informational role the
+    // mcps is gateless (no gateRule); forced non-optional it plays the required-informational role the
     // archived `testing` stage used to (completes only on confirm, never vacuously).
-    const secs = [mkStage("discovery"), mkStage("mcp", { optional: false })];
-    const info = secs.find((s) => s.key === "mcp")!;
+    const secs = [mkStage("discovery"), mkStage("mcps", { optional: false })];
+    const info = secs.find((s) => s.key === "mcps")!;
     // not vacuously complete on a fresh/cleared plan
     expect(stageStatus(info, secs, sig()).status).toBe("in-progress");
     // complete once the section is confirmed
-    expect(stageStatus(info, secs, { ...sig(), [confirmedSignal("mcp")]: true }).status).toBe("complete");
+    expect(stageStatus(info, secs, { ...sig(), [confirmedSignal("mcps")]: true }).status).toBe("complete");
   });
 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
-    const secs = [mkStage("discovery"), mkStage("ui", { optional: true }), mkStage("structure")];
+    const secs = [mkStage("discovery"), mkStage("ui", { optional: true }), mkStage("streams")];
     const signals = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, requiresUi: true,
       issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
     expect(stageStatus(ui, secs, signals).status).not.toBe("na");
-    // structure depends on ui, but an optional dep never locks the dependent (#676)
-    expect(stageStatus(secs.find((s) => s.key === "structure")!, secs, signals).status).not.toBe("locked");
+    // an optional dep never locks the dependent (#676)
+    expect(stageStatus(secs.find((s) => s.key === "streams")!, secs, signals).status).not.toBe("locked");
     // #921: the flow now STOPS on the optional stage — once context is done it IS the current stage,
     // so the user decides whether to do or skip it (was: optional excluded from the frontier).
     expect(currentStage(secs, signals)?.key).toBe("ui");
@@ -264,42 +265,42 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("planStagesComplete is true only when every enabled, applicable section is done", () => {
     const secs = setEnabled(baseSecs(), "ui", false); // drop ui to simplify
-    expect(planStagesComplete(secs, sig(doneCtx))).toBe(false); // structure/permissions/skills unmet
+    expect(planStagesComplete(secs, sig(doneCtx))).toBe(false); // deployment/streams/skills unmet
     const allDone = {
       ...doneCtx,
-      features: { count: 1, allConfirmed: true }, // structure gates on featuresDefined (#1912)
+      features: { count: 1, allConfirmed: true }, // streams gates on featuresDefined (#1912)
       fleet: { streams: 2, profilesComplete: true }, skillsAck: true,
     };
-    // sharedDepsLocked is an extra signal (added in Planning.tsx alongside hasPlanGaps), not part of
-    // planStateToSignals — supply it the same way the app does. With no multi-stream repos
-    // sharedDepsLocked is true (#1429).
-    expect(planStagesComplete(secs, { ...sig(allDone), sharedDepsLocked: true })).toBe(true);
+    // deploymentDefined + sharedDepsLocked are extra signals (added in Planning.tsx alongside
+    // hasPlanGaps), not part of planStateToSignals — supply them the same way the app does. With no
+    // multi-stream repos sharedDepsLocked is true (#1429).
+    expect(planStagesComplete(secs, { ...sig(allDone), sharedDepsLocked: true, deploymentDefined: true })).toBe(true);
   });
 
   it("currentStage is the first in-progress section, skipping N/A", () => {
     const secs = baseSecs();
-    // context complete, repos incomplete, ui N/A → repos is the frontier
+    // context complete, deployment incomplete, ui N/A → deployment is the frontier
     const s = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 0, requiresUi: false });
-    expect(currentStage(secs, s)?.key).toBe("repos");
+    expect(currentStage(secs, s)?.key).toBe("deployment");
   });
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {
     const known = new Set(PLAN_STAGES.map((s) => s.id));
-    // a blueprint including "mcp" (a non-registry stage) — dropped from the stage config order.
-    const bp = { id: "t", name: "T", desc: "", sections: [mkStage("discovery"), mkStage("repos"), mkStage("structure"), mkStage("mcp")] } as Blueprint;
+    // a blueprint including "mcps" (a non-registry stage) — dropped from the stage config order.
+    const bp = { id: "t", name: "T", desc: "", sections: [mkStage("discovery"), mkStage("deployment"), mkStage("streams"), mkStage("mcps")] } as Blueprint;
     const cfg = blueprintToStageConfig(bp);
     // order only contains registry stage ids, in blueprint order
     expect(cfg.order.every((id) => known.has(id))).toBe(true);
-    expect(cfg.order).not.toContain("mcp" as never);
+    expect(cfg.order).not.toContain("mcps" as never);
     // a section's enabled flag carries through
-    const repos = bp.sections.find((s) => s.key === "repos")!;
-    expect(cfg.enabled.repos).toBe(repos.enabled);
+    const deployment = bp.sections.find((s) => s.key === "deployment")!;
+    expect(cfg.enabled.deployment).toBe(deployment.enabled);
   });
 });
 
 describe("lint-as-gate (#897 Phase 4b)", () => {
-  it("wires a hasPlanGaps requirement into the context + structure gates", () => {
-    for (const key of ["discovery", "structure"] as const) {
+  it("wires a hasPlanGaps requirement into the discovery + streams gates", () => {
+    for (const key of ["discovery", "streams"] as const) {
       const reqs = STAGE_DEFS[key].gateRule?.require ?? [];
       const r = reqs.find((x) => x.signal === "hasPlanGaps");
       expect(r, `${key} has a hasPlanGaps requirement`).toBeTruthy();
@@ -332,82 +333,99 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
     expect(evalGate(gate, { deploymentDefined: true }).done).toBe(true);
   });
 
-  it("the Streams (permissions) gate requires shared deps locked (#1429)", () => {
-    const gate = STAGE_DEFS.permissions.gateRule!;
+  it("the Streams gate requires shared deps locked (#1429/#1914)", () => {
+    const gate = STAGE_DEFS.streams.gateRule!;
     expect(gate.require.map((r) => r.signal)).toContain("sharedDepsLocked");
-    expect(evalGate(gate, { fleetStreams: 1, profilesComplete: true, sharedDepsLocked: false }).done).toBe(false);
-    expect(evalGate(gate, { fleetStreams: 1, profilesComplete: true, sharedDepsLocked: true }).done).toBe(true);
+    expect(evalGate(gate, { featuresDefined: true, fleetStreams: 1, profilesComplete: true, sharedDepsLocked: false }).done).toBe(false);
+    expect(evalGate(gate, { featuresDefined: true, fleetStreams: 1, profilesComplete: true, sharedDepsLocked: true }).done).toBe(true);
   });
 
-  it("folds Deploy into the Repos stage as a ship substep when a blueprint opts in (#1383)", () => {
-    // ship:true → one "Deployment" stage with link+ship substeps; the gate is the UNION (repos linked
-    // AND shipping). Deps are NOT here anymore (#1429). Non-ship → plain Repos, repos-only gate.
-    const merged = mkStage("repos", { ship: true });
-    expect(merged.name).toBe("Deployment");
-    expect(merged.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
-    const sig = merged.gateRule!.require.map((r) => r.signal);
+  it("the collapsed `deployment` def carries link+ship substeps + the union gate (#1914)", () => {
+    // #1914: repos+deploy collapsed into ONE `deployment` def — link+ship substeps; the gate is the
+    // UNION (a repo linked AND shipping). Deps live in the Streams stage now (#1429).
+    const dep = mkStage("deployment");
+    expect(dep.name).toBe("Deployment");
+    expect(dep.substeps?.map((s) => s.key)).toEqual(["link", "ship"]);
+    const sig = dep.gateRule!.require.map((r) => r.signal);
     expect(sig).toEqual(expect.arrayContaining(["repoCount", "deploymentDefined"]));
     expect(sig).not.toContain("dependenciesDefined");
-    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: false }).done).toBe(false);
-    expect(evalGate(merged.gateRule!, { repoCount: 1, deploymentDefined: true }).done).toBe(true);
-
-    const plain = mkStage("repos");
-    expect(plain.name).toBe("Repos");
-    expect(plain.substeps).toBeUndefined();
-    expect(plain.gateRule!.require.map((r) => r.signal)).toEqual(["repoCount"]); // repos-only, unchanged
+    expect(evalGate(dep.gateRule!, { repoCount: 1, deploymentDefined: false }).done).toBe(false);
+    expect(evalGate(dep.gateRule!, { repoCount: 1, deploymentDefined: true }).done).toBe(true);
+    // a legacy `repos` ref canonicalizes to the same collapsed `deployment` def.
+    expect(mkStage("repos").key).toBe("deployment");
+    expect(mkStage("repos").name).toBe("Deployment");
   });
 
-  it("the greenfield blueprints opt repos into ship; data-integration keeps Deploy standalone (#1383)", () => {
-    const reposRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "repos");
-    // default + complete: repos carries the ship substep, no separate deploy section.
+  it("the greenfield blueprints carry the collapsed `deployment` stage (#1914)", () => {
+    const depRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "deployment");
     for (const id of ["default", "complete"]) {
-      expect(reposRef(id)?.substeps?.some((s) => s.key === "ship"), `${id} ships via repos`).toBe(true);
-      expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("deploy");
+      expect(depRef(id)?.substeps?.some((s) => s.key === "ship"), `${id} ships via deployment`).toBe(true);
+      const keys = makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key);
+      expect(keys).not.toContain("repos");
+      expect(keys).not.toContain("deploy");
     }
   });
 
-  it("folds Permissions into the Structure stage as a fleet substep — the 'Streams' stage (#1383-streams)", () => {
-    // fleet:true → one "Streams" stage with plan+fleet substeps; the gate is the UNION (every feature
-    // phased AND the fleet streams scoped + profiled). Non-fleet structure is plain, unchanged.
-    const merged = mkStage("structure", { fleet: true });
-    expect(merged.name).toBe("Streams");
-    // Structure's own substep(s) are preserved; the "fleet" marker substep is appended last.
-    expect(merged.substeps?.some((s) => s.key === "sequence")).toBe(true);
-    const subKeys = merged.substeps?.map((s) => s.key) ?? [];
-    expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fold marker is appended last
-    const sig = merged.gateRule!.require.map((r) => r.signal);
-    expect(sig).toEqual(expect.arrayContaining(["featuresDefined", "fleetStreams", "profilesComplete"]));
-
-    const plain = mkStage("structure");
-    expect(plain.name).toBe("Plan");
-    // Plain Structure keeps its own substep(s) but gains NO fleet marker, and its gate is plan-only.
-    expect(plain.substeps?.some((s) => s.key === "fleet")).toBeFalsy();
-    expect(plain.gateRule!.require.map((r) => r.signal)).not.toContain("fleetStreams"); // plan-only, unchanged
+  it("the collapsed `streams` def carries plan+fleet substeps + the union gate (#1914)", () => {
+    // #1914: structure+permissions collapsed into ONE `streams` def — plan+fleet substeps; the gate
+    // is the UNION (features defined AND the fleet streams scoped + profiled + shared deps locked).
+    const streams = mkStage("streams");
+    expect(streams.name).toBe("Streams");
+    expect(streams.substeps?.map((s) => s.key)).toEqual(["plan", "fleet"]);
+    const subKeys = streams.substeps?.map((s) => s.key) ?? [];
+    expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fleet marker is the focused-pane signal
+    const sig = streams.gateRule!.require.map((r) => r.signal);
+    expect(sig).toEqual(expect.arrayContaining(["featuresDefined", "fleetStreams", "profilesComplete", "sharedDepsLocked"]));
+    // a legacy `structure`/`permissions` ref canonicalizes to the same collapsed `streams` def.
+    expect(mkStage("structure").key).toBe("streams");
+    expect(mkStage("permissions").key).toBe("streams");
   });
 
-  it("greenfield/transform blueprints opt structure into fleet; refactor keeps Permissions standalone (#1383-streams)", () => {
-    const structRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "structure");
+  it("greenfield blueprints carry the collapsed `streams` stage (#1914)", () => {
+    const streamsRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "streams");
     for (const id of ["default", "complete"]) {
-      expect(structRef(id)?.substeps?.some((s) => s.key === "fleet"), `${id} fleets via structure`).toBe(true);
-      expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("permissions");
+      expect(streamsRef(id)?.substeps?.some((s) => s.key === "fleet"), `${id} fleets via streams`).toBe(true);
+      const keys = makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key);
+      expect(keys).not.toContain("structure");
+      expect(keys).not.toContain("permissions");
     }
   });
 });
 
-describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#1392)", () => {
-  it("maps a merged stage to its combined directive id, leaving plain stages alone", () => {
-    expect(stageDirectiveId(mkStage("repos", { ship: true }))).toBe("deployment");
-    expect(stageDirectiveId(mkStage("repos"))).toBe("repos");          // transform: link-only, no deploy
-    expect(stageDirectiveId(mkStage("structure", { fleet: true }))).toBe("streams");
-    expect(stageDirectiveId(mkStage("structure"))).toBe("structure");  // plan-only
-    expect(stageDirectiveId(mkStage("discovery"))).toBe("discovery");
+describe("stage-key grandfathering — canonicalStageKey / STAGE_KEY_ALIAS / canonicalizeSections (#1914)", () => {
+  it("maps every legacy key to its collapsed canonical token, passing canonical/unknown through", () => {
+    expect(canonicalStageKey("repos")).toBe("deployment");
+    expect(canonicalStageKey("structure")).toBe("streams");
+    expect(canonicalStageKey("permissions")).toBe("streams");
+    expect(canonicalStageKey("mcp")).toBe("mcps");
+    // already-canonical + unknown keys are untouched
+    expect(canonicalStageKey("deployment")).toBe("deployment");
+    expect(canonicalStageKey("discovery")).toBe("discovery");
+    expect(canonicalStageKey("goal")).toBe("goal");
+    // the alias table IS the full legacy set
+    expect(STAGE_KEY_ALIAS).toEqual({ repos: "deployment", structure: "streams", permissions: "streams", mcp: "mcps" });
   });
 
-  it("the complete blueprint's planner-overview stages read as the merged structure", () => {
+  it("mkStage resolves a legacy key to the collapsed def and stores the canonical key", () => {
+    expect(mkStage("mcp").key).toBe("mcps");
+    expect(mkStage("mcp").name).toBe("MCPs");
+  });
+
+  it("canonicalizeSections remaps a forked blueprint's old keys and DEDUPS a legacy+canonical twin", () => {
+    // A forked blueprint authored under the old split carries BOTH `structure` and `permissions`
+    // (and `repos`) — they collapse to a single `streams` (and `deployment`), first-occurrence wins.
+    const forked = [mkStage("discovery"), mkStage("repos"), mkStage("structure"), mkStage("permissions")];
+    // mkStage already canonicalizes, so simulate a raw persisted snapshot with legacy keys:
+    const raw = forked.map((s, i) => ({ ...s, key: ["discovery", "repos", "structure", "permissions"][i] }));
+    const out = canonicalizeSections(raw);
+    expect(out.map((s) => s.key)).toEqual(["discovery", "deployment", "streams"]);
+  });
+
+  it("a built-in blueprint's planner-overview stage keys ARE the canonical directive ids", () => {
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
-    const overview = complete.sections.filter((s) => s.enabled).map(stageDirectiveId);
+    const overview = complete.sections.filter((s) => s.enabled).map((s) => canonicalStageKey(s.key));
     expect(overview).toEqual(
-      ["discovery", "deployment", "source", "features", "ui", "streams", "mcp", "automations", "skills"],
+      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
   });
 

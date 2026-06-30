@@ -13,14 +13,14 @@ mod tests {
         // Empty → omitted (all-stages default, no behavior change).
         assert_eq!(build_active_stages_md(&[]), "");
 
-        let md = build_active_stages_md(&["discovery".into(), "structure".into()]);
+        let md = build_active_stages_md(&["discovery".into(), "streams".into()]);
         assert!(md.contains("Active planning stages"));
         assert!(md.contains("OUT OF SCOPE"), "must declare unlisted stages out of scope");
-        assert!(md.contains("**Discovery**") && md.contains("**Structure**"));
+        assert!(md.contains("**Discovery**") && md.contains("**Streams**"));
         // a stage not in the enabled list is absent
         assert!(!md.contains("**UI**"), "disabled stage must not be instructed");
         // ordered + numbered
-        assert!(md.find("**Discovery**").unwrap() < md.find("**Structure**").unwrap());
+        assert!(md.find("**Discovery**").unwrap() < md.find("**Streams**").unwrap());
 
         // unknown id → generic line, never panics
         assert!(build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
@@ -98,15 +98,16 @@ mod tests {
         assert!(d.contains("Web SEO"), "context directive must point at the Web SEO skill");
     }
 
-    /// Structure directive must mention both workshop modes (#355).
+    /// The Streams directive sequences the feature DAG + plans the fleet (#1914 — the collapsed
+    /// structure+permissions stage). It must never author phases/issues (publish-time artifacts).
     #[test]
-    fn stage_directive_structure_sequences_features_without_authoring_issues() {
-        let d = stage_directive("structure");
-        assert!(d.to_lowercase().contains("do not write phases.json"), "phases live in plan.db — must NOT write phases.json (#plan-db)");
-        assert!(d.to_lowercase().contains("plan.db") || d.to_lowercase().contains("plan db"), "phases live in the plan DB");
-        assert!(d.to_lowercase().contains("generated from the features"), "issues are a publish-time artifact, not authored here (#plan-db)");
-        assert!(d.contains("bsc plan feature add"), "missing the per-feature phase assignment");
-        assert!(d.contains("inventory"), "missing existing-project handling");
+    fn stage_directive_streams_sequences_features_and_plans_fleet() {
+        let d = stage_directive("streams");
+        assert!(d.contains("dependency DAG") || d.contains("dependsOn"), "streams reviews the feature dependency graph: {d}");
+        assert!(d.contains("bsc plan feature list"), "streams reviews the DAG via the plan DB: {d}");
+        assert!(d.to_lowercase().contains("no milestone phases"), "sequencing is dependsOn-only, no milestone phases: {d}");
+        assert!(d.contains("bsc plan fleet set"), "streams plans the fleet: {d}");
+        assert!(d.contains("bsc plan deps set") && d.contains("sharedDepsLocked"), "streams locks shared deps (#1429): {d}");
     }
 
     /// PLANNING_PROCESS_MD Coverage section must carry the gate-item and Context gate text (#672).
@@ -145,14 +146,15 @@ mod tests {
     }
 
     #[test]
-    fn blueprint_author_intro_requires_repos_and_permissions_for_fleet() {
-        // A fleet-launching blueprint that omits a `permissions` stage produces no fleet, so its
-        // projects can never launch (the bug that motivated this guard). The author session must be
-        // told to always include `repos` + `permissions` for build/execution blueprints (#969).
+    fn blueprint_author_intro_requires_deployment_and_streams_for_fleet() {
+        // A fleet-launching blueprint that omits a `streams` stage produces no fleet, so its projects
+        // can never launch (the bug that motivated this guard). #1914: the unified vocabulary means the
+        // author session must require a `deployment` stage (linked repos + shipping) + a `streams`
+        // stage (roadmap + fleet plan + per-agent permissions) for build/execution blueprints (#969).
         let intro = PLANNING_BLUEPRINT_INTRO;
         assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
-        assert!(intro.contains("`permissions` stage"), "author intro must require a permissions stage for fleets");
-        assert!(intro.contains("`repos` stage"), "author intro must require a repos stage for fleets");
+        assert!(intro.contains("`streams` stage"), "author intro must require a streams stage for fleets");
+        assert!(intro.contains("`deployment` stage"), "author intro must require a deployment stage for fleets");
     }
 
     #[test]
@@ -223,13 +225,13 @@ mod tests {
 
     #[test]
     fn custom_stage_directives_and_scope_guard() {
-        // The active-stages section for a stage set WITHOUT `structure` doesn't list Structure —
-        // so its issues.json step is out of scope.
+        // The active-stages section for a stage set WITHOUT `streams` doesn't list Streams —
+        // so its issue-generation step is out of scope (#1914).
         let md = build_active_stages_md(&[
-            "discovery".to_string(), "repos".to_string(), "permissions".to_string(),
+            "discovery".to_string(), "deployment".to_string(),
         ]);
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
-        assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
+        assert!(!md.contains("Streams"), "no Streams stage → no issue-generation step");
         assert!(PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
         // The context directive names the baseline required topics + the `bsc plan context` channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).

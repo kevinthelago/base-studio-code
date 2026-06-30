@@ -5,7 +5,7 @@ import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Tile } from "@/features/planner/pane/focusedPrimitives";
 import { featureDefined, type PlanFeature } from "@/features/planner/issues/featureList";
 
-export function FocusedFeaturesBody({ features }: { features?: PlanFeature[] }) {
+export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
   // Auto-expand the first not-yet-defined feature — the one the workshop is actively driving down.
   const firstDrafting = list.find((f) => !featureDefined(f))?.slug;
