@@ -12,11 +12,15 @@ const USAGE = [
   { projectKey: "proj-b", name: "app--ui", path: "/wt/proj-b/app--ui", sizeBytes: 2_000_000, targetBytes: 1_500_000 },
 ];
 
+const SANDBOX = { installed: true, distroBytes: 300_000_000, tarballBytes: 205_000_000 };
+
 beforeEach(() => {
   mockInvoke.mockReset();
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === "worktrees_disk_usage") return Promise.resolve(USAGE);
     if (cmd === "reclaim_worktrees") return Promise.resolve(2);
+    if (cmd === "sandbox_disk_usage") return Promise.resolve(SANDBOX);
+    if (cmd === "remove_sandbox") return Promise.resolve(505_000_000);
     return Promise.resolve(undefined);
   });
 });
@@ -57,5 +61,26 @@ describe("StorageCard", () => {
     );
     render(<StorageCard />);
     await waitFor(() => expect(screen.getByText(/No fleet worktrees on disk/)).toBeInTheDocument());
+  });
+
+  it("surfaces the WSL2 agent sandbox footprint and removes it on confirm (#1988)", async () => {
+    render(<StorageCard />);
+    await waitFor(() => expect(screen.getByText("Agent sandbox (WSL2)")).toBeInTheDocument());
+    expect(screen.getByText(/distro image/)).toBeInTheDocument();
+    expect(screen.getByText(/cached image/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Remove")); // arm
+    fireEvent.click(screen.getByText("Confirm")); // confirm
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("remove_sandbox"));
+  });
+
+  it("hides the sandbox section when no sandbox is installed", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "worktrees_disk_usage") return Promise.resolve([]);
+      if (cmd === "sandbox_disk_usage") return Promise.resolve({ installed: false, distroBytes: 0, tarballBytes: 0 });
+      return Promise.resolve(undefined);
+    });
+    render(<StorageCard />);
+    await waitFor(() => expect(screen.getByText(/No fleet worktrees on disk/)).toBeInTheDocument());
+    expect(screen.queryByText("Agent sandbox (WSL2)")).not.toBeInTheDocument();
   });
 });

@@ -16,8 +16,16 @@ interface WorktreeUsage {
   targetBytes: number;
 }
 
+// The WSL2 agent sandbox's disk footprint (mirrors Rust `SandboxDisk`, #1988) — separate from worktrees.
+interface SandboxDisk {
+  installed: boolean;
+  distroBytes: number;
+  tarballBytes: number;
+}
+
 export function StorageCard() {
   const [rows, setRows] = useState<WorktreeUsage[]>([]);
+  const [sandbox, setSandbox] = useState<SandboxDisk | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -26,6 +34,9 @@ export function StorageCard() {
   const refresh = useCallback(async () => {
     try { setRows(await invoke<WorktreeUsage[]>("worktrees_disk_usage")); }
     catch { setRows([]); }
+    // The WSL2 agent sandbox lives outside the worktrees tree, so it needs its own scan (#1988).
+    try { setSandbox(await invoke<SandboxDisk>("sandbox_disk_usage")); }
+    catch { setSandbox(null); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -35,6 +46,17 @@ export function StorageCard() {
     try {
       const n = await invoke<number>("reclaim_worktrees", { projectKey });
       flash(`Reclaimed ${n} worktree${n === 1 ? "" : "s"}.`);
+      await refresh();
+    } catch (e) { flash(String(e)); }
+    setBusy(false);
+  }, [refresh]);
+
+  // Remove the WSL2 agent sandbox: unregister the distro + delete its image and cached tarball (#1988).
+  const removeSandbox = useCallback(async () => {
+    setBusy(true);
+    try {
+      const freed = await invoke<number>("remove_sandbox");
+      flash(`Removed the agent sandbox — freed ${fmtBytes(freed)}.`);
       await refresh();
     } catch (e) { flash(String(e)); }
     setBusy(false);
@@ -107,12 +129,26 @@ export function StorageCard() {
         ))
       )}
 
+      {sandbox && (sandbox.installed || sandbox.tarballBytes > 0) && (
+        <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>Agent sandbox (WSL2)</div>
+              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+                {fmtBytes(sandbox.distroBytes)} distro image{sandbox.tarballBytes > 0 ? ` · ${fmtBytes(sandbox.tarballBytes)} cached image` : ""} · the sealed WSL2 isolation cage
+              </div>
+            </div>
+            <ConfirmButton size="sm" label="Remove" armedLabel="Confirm" disabled={busy} onConfirm={removeSandbox} />
+          </div>
+        </div>
+      )}
+
       {notice && (
         <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, wordBreak: "break-all" }}>{notice}</div>
       )}
 
       <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-dim)", marginTop: 12 }}>
-        Worktrees live under <code className="mono">~/.base-studio-code/worktrees/</code>.
+        Worktrees live under <code className="mono">~/.base-studio-code/worktrees/</code>; the agent sandbox under <code className="mono">~/.base-studio-code/wsl/</code>. Removing the sandbox is reversible — reinstall it from <strong>Settings → Security</strong>.
       </div>
     </div>
   );
