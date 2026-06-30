@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { LlmProviderCard } from "../cards/LlmProviderCard";
 import { PlanningAutomationCard } from "../cards/PlanningAutomationCard";
-import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { ShellSelectorCard } from "../cards/ShellSelectorCard";
 import { TunnelSettings } from "@/features/tunnel";
 import { MetricsCollectionCard } from "../cards/MetricsCollectionCard";
@@ -39,8 +38,7 @@ export function PlannerPage() {
       <LlmProviderCard />
       <PlanningAutomationCard />
 
-      {/* Environment Diagnostics & Shell */}
-      <DiagnosticsCard />
+      {/* Shell (host-tool diagnostics moved to Settings → Dependencies) */}
       <ShellSelectorCard />
 
       {/* Mobile tunnel */}

@@ -6,13 +6,15 @@ import { PlannerPage } from "./pages/PlannerPage";
 import { SkillsPage as SkillsSettingsPage } from "./pages/SkillsPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { McpPage } from "./pages/McpPage";
+import { DependenciesPage } from "./pages/DependenciesPage";
 
 // The settings sections — the SINGLE source for the nav, the known-section guard, and the rendered
 // Page, so the three can't drift. Grouped by app area (mirrors the rail). Each section's body is a
 // Page (the L3 content the Settings Workspace shows one at a time; see docs/frontend-structure.md).
 const SECTIONS = [
-  { k: "general",     label: "General",     Page: GeneralPage },
-  { k: "planner",     label: "Planner",     Page: PlannerPage },
+  { k: "general",      label: "General",      Page: GeneralPage },
+  { k: "dependencies", label: "Dependencies", Page: DependenciesPage },
+  { k: "planner",      label: "Planner",      Page: PlannerPage },
   { k: "skills",      label: "Skills",      Page: SkillsSettingsPage },
   { k: "automations", label: "Automations", Page: AutomationsPage },
   { k: "mcp",         label: "MCP",         Page: McpPage },
