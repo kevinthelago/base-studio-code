@@ -38,6 +38,10 @@ mod relocated_tests {
         assert!(p.contains("contracts/") || p.contains("contracts directory") || p.contains("INTEGRATION CONTRACTS"),
             "director protocol must claim ownership of the contracts directory");
         assert!(p.contains("TEST THE INTEGRATIONS"), "director protocol must mandate integration testing");
+        // The director is the ONLY GitHub PR/issue writer by default (#1948): workers open PRs, the
+        // director reviews, merges, AND closes them — never the worker. Guard the ownership clause.
+        assert!(p.contains("OWN ALL GITHUB") && p.contains("gh pr merge"),
+            "director protocol must claim ownership of GitHub PR writes (merge/close) as the default");
     }
     #[test]
     fn director_protocol_includes_injection_resistance() {

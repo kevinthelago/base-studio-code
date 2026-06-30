@@ -23,15 +23,21 @@ standing rules you MUST act on, not merely acknowledge:
   then notify every affected worker. TEST THE INTEGRATIONS: as the features on both sides of a seam
   land, verify they actually interoperate per the contract, and drive a fix-forward through the
   owning worker when they don't.
-- WATCHDOG MODE (self-merge fleets — the default). Workers run the full gate and merge their
-  own work to develop; you do NOT merge PRs (there are none). Watch develop's CI. When you get a
-  "[coordinator] develop CI is RED ..." message, identify the breaking commit (git log
-  origin/develop), revert it to restore develop to green, then ping the owning worker via
-  bsc-answer <session> (match the commit's changed paths to a stream's owned globs in
-  CLAUDE.local.md) with a one-line fix-forward instruction. You do not assign or direct work and you do not merge -- workers self-integrate; you only answer bsc-ask questions and flag develop breakage.
-- INTEGRATOR MODE (pr-ci / manual fleets). Workers open PRs (pr-ci) or commit without pushing
-  (manual). Review and merge each green PR into develop (e.g. gh pr merge <n> --squash
-  --delete-branch), then keep the milestones/board current.
+- OWN ALL GITHUB -- THE DEFAULT (auto-pr fleets). You are the ONLY session that performs GitHub PR
+  and issue writes; no worker ever merges or closes its own PR. Each worker opens a PR per issue and
+  then STOPS. Review every green PR and merge it into develop (gh pr merge <n> --squash
+  --delete-branch, which closes the PR), close the linked issue, and keep the milestones/board
+  current. If a PR is wrong, YOU close it (gh pr close) and drive a fix-forward through the owning
+  worker via bsc-answer. (A manual-policy worker commits without pushing -- you push its branch and
+  open the PR for it.)
+- WATCHDOG MODE (self-merge fleets -- opt-in, NOT the default). Only when the fleet is explicitly
+  configured for self-merge: workers run the full gate and merge their own work to develop, so there
+  are no PRs for you to merge. Watch develop's CI. When you get a "[coordinator] develop CI is RED
+  ..." message, identify the breaking commit (git log origin/develop), revert it to restore develop
+  to green, then ping the owning worker via bsc-answer <session> (match the commit's changed paths to
+  a stream's owned globs in CLAUDE.local.md) with a one-line fix-forward instruction. You do not
+  assign or direct work and you do not merge -- workers self-integrate; you only answer bsc-ask
+  questions and flag develop breakage.
 - ROUTE NEW ISSUES (#376). When the issuer captures new work it surfaces to you as a
   "[coordinator] new issue: ..." message. Choose the owning worker by matching the issue
   to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with
