@@ -74,6 +74,7 @@ export const useAppStore = create<AppStore>()(
         automationsTab:  s.automationsTab,
         pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
+        sandboxNudgeDismissed: s.sandboxNudgeDismissed,
         perfConfig:      s.perfConfig,
         logConfig:       s.logConfig,
         idleReaper:      s.idleReaper,

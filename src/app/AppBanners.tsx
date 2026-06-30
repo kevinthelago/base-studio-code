@@ -218,6 +218,58 @@ function QuarantineBanner() {
   );
 }
 
+/** The OS-sandbox fields this nudge reads (mirror of the Rust `SandboxReadiness`, #1982). */
+type SandboxReadiness = { ready: boolean; detail: string };
+
+/**
+ * First-run sandbox-setup nudge (#1916). Under the deny-list posture (auto-run), the OS sandbox is the
+ * layer that actually confines Bash — but on a fresh machine it isn't installed yet. When the posture
+ * is on and the probe (#1982) says the sandbox isn't ready, surface a one-time, dismissible nudge that
+ * sends the user to Settings → Security, where the one-click installer (with live progress) lives.
+ * Dismiss is persisted (`sandboxNudgeDismissed`) so it's first-run, not every launch; it auto-hides
+ * once the sandbox is ready or the user switches to the allow-list posture.
+ */
+export function SandboxSetupBanner() {
+  const bypassPermissions = useAppStore((s) => s.bypassPermissions);
+  const dismissed = useAppStore((s) => s.sandboxNudgeDismissed);
+  const dismiss = useAppStore((s) => s.dismissSandboxNudge);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
+  const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
+
+  useEffect(() => {
+    if (dismissed || !bypassPermissions) return;
+    let alive = true;
+    void safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null).then((r) => {
+      if (alive) setSandbox(r);
+    });
+    return () => { alive = false; };
+  }, [dismissed, bypassPermissions]);
+
+  if (dismissed || !bypassPermissions || !sandbox || sandbox.ready) return null;
+
+  const goSetUp = () => {
+    setSettingsSection("security"); // land on the posture card (the one-click installer + progress)
+    setWorkspace("settings");
+    dismiss();
+  };
+
+  return (
+    <Banner
+      variant="bar"
+      tone="warn"
+      lead={<ShieldAlert size={14} style={{ color: "var(--warn)", flexShrink: 0 }} />}
+      right={<button className="btn primary" onClick={goSetUp}>Set up</button>}
+      onDismiss={dismiss}
+    >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <b>Agent sandbox not set up</b> — sessions auto-run but aren't fully isolated yet. Set it up so a
+        misbehaving or hijacked agent can't reach outside its workspace.
+      </span>
+    </Banner>
+  );
+}
+
 /** The set of full-width banners pinned at the top of the app shell, mounted once by App. */
 export function AppBanners() {
   return (
@@ -225,6 +277,7 @@ export function AppBanners() {
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
+      <SandboxSetupBanner />
     </>
   );
 }
