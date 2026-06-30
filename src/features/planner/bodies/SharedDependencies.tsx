@@ -78,7 +78,7 @@ export function SharedDependenciesSection({ agents, dependencies = [], registrie
 
   if (views.length === 0) {
     return (
-      <div style={{ padding: "14px 16px 20px", borderTop: "1px solid var(--border-soft)" }}>
+      <div style={{ padding: "14px 0 20px", borderTop: "1px solid var(--border-soft)" }}>
         {label}
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7 }}>
           <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11 }}>◴</span>
@@ -89,7 +89,7 @@ export function SharedDependenciesSection({ agents, dependencies = [], registrie
   }
 
   return (
-    <div style={{ padding: "14px 16px 20px", borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ padding: "14px 0 20px", borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 12 }}>
       {label}
 
       {views.map((v) => {
