@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
@@ -27,6 +28,7 @@ export function PermissionPostureCard() {
   const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
   const [installing, setInstalling] = useState(false);
   const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const [installLog, setInstallLog] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -39,16 +41,23 @@ export function PermissionPostureCard() {
   }, []);
 
   // One-click install of the missing OS-sandbox prerequisites — Windows imports the sealed rootfs
-  // (#1988); Linux installs bubblewrap + socat via the host package manager (pkexec). Re-probe after,
-  // so the status dot reflects the result. Raw `invoke` (not safeInvoke) so the Ok/Err text surfaces.
+  // (#1988); Linux installs bubblewrap + socat via the host package manager (pkexec). The backend
+  // streams `sandbox-install` events so the user watches it happen live; we re-probe after so the
+  // dot reflects the result. Raw `invoke` (not safeInvoke) so the final Ok/Err text surfaces.
   const onInstall = async () => {
     setInstalling(true);
     setInstallMsg(null);
+    setInstallLog([]);
+    const unlisten = await listen<{ phase: string; line?: string }>("sandbox-install", (e) => {
+      const { phase, line } = e.payload;
+      if ((phase === "start" || phase === "log") && line) setInstallLog((prev) => [...prev, line]);
+    });
     try {
       setInstallMsg(await invoke<string>("provision_sandbox"));
     } catch (e) {
       setInstallMsg(String(e));
     }
+    unlisten();
     setSandbox(await safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null));
     setInstalling(false);
   };
@@ -111,19 +120,40 @@ export function PermissionPostureCard() {
               </>
             )}
             {!sandbox.ready && sandbox.autoInstallable && (
-              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  onClick={onInstall}
-                  disabled={installing}
-                  style={{
-                    background: "var(--accent)", border: "none", color: "var(--accent-text, #1a120a)",
-                    cursor: installing ? "default" : "pointer", fontSize: 11, fontWeight: 600,
-                    padding: "3px 10px", borderRadius: 4, opacity: installing ? 0.6 : 1,
-                  }}
-                >
-                  {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
-                </button>
-                {installMsg && <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>}
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    onClick={onInstall}
+                    disabled={installing}
+                    style={{
+                      background: "var(--accent)", border: "none", color: "var(--accent-text, #1a120a)",
+                      cursor: installing ? "default" : "pointer", fontSize: 11, fontWeight: 600,
+                      padding: "3px 10px", borderRadius: 4, opacity: installing ? 0.6 : 1,
+                    }}
+                  >
+                    {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
+                  </button>
+                  {installMsg && !installing && (
+                    <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>
+                  )}
+                </div>
+                {installing && (
+                  <div aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
+                  </div>
+                )}
+                {installLog.length > 0 && (
+                  <pre
+                    className="mono"
+                    style={{
+                      margin: 0, maxHeight: 120, overflow: "auto", padding: "6px 8px", borderRadius: 4,
+                      background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+                      fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {installLog.join("\n")}
+                  </pre>
+                )}
               </div>
             )}
           </div>
