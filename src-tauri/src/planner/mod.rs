@@ -231,7 +231,10 @@ mod tests {
             "discovery".to_string(), "deployment".to_string(),
         ]);
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
-        assert!(!md.contains("Streams"), "no Streams stage → no issue-generation step");
+        // The deployment directive references the Streams stage in prose ("dependencies are locked in
+        // the Streams stage"), so check the full Streams DIRECTIVE (its issue-generation step) is absent
+        // — not the bare word.
+        assert!(!md.contains(&stage_directive("streams")), "no Streams stage → its issue-generation directive is out of scope");
         assert!(PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
         // The context directive names the baseline required topics + the `bsc plan context` channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).

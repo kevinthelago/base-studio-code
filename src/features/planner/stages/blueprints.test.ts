@@ -21,7 +21,9 @@ describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
     expect(bps.find((b) => b.id === "default")).toBeTruthy();
-    expect(bps.length).toBeGreaterThanOrEqual(4);
+    // After the data-platform + transform blueprints were archived (v1.0.5 prep, 5def26b7) the
+    // built-in library is default + complete + blueprint-author.
+    expect(bps.length).toBeGreaterThanOrEqual(3);
   });
 
   it("each section carries a prompt module and a gate from its def", () => {
@@ -329,8 +331,10 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
     const signals = gate.require.map((r) => r.signal);
     expect(signals).toContain("deploymentDefined");
     expect(signals).not.toContain("dependenciesDefined"); // deps no longer gate Deploy
-    expect(evalGate(gate, { deploymentDefined: false }).done).toBe(false);
-    expect(evalGate(gate, { deploymentDefined: true }).done).toBe(true);
+    // #1914: deployment is a UNION gate (a repo linked AND shipping defined); supply repoCount so
+    // toggling deploymentDefined is what flips the gate.
+    expect(evalGate(gate, { repoCount: 1, deploymentDefined: false }).done).toBe(false);
+    expect(evalGate(gate, { repoCount: 1, deploymentDefined: true }).done).toBe(true);
   });
 
   it("the Streams gate requires shared deps locked (#1429/#1914)", () => {

@@ -23,7 +23,7 @@ describe("ProjectPane focused mode (#652)", () => {
     const onSelect = vi.fn();
     render(<ProjectPane focus={baseFocus({ onSelect })} />);
     expect(screen.getByRole("heading", { name: "Discovery" })).toBeInTheDocument();
-    fireEvent.click(screen.getByTitle("Permissions"));
+    fireEvent.click(screen.getByTitle("Streams")); // step 2 — structure+permissions folded into Streams (#1914)
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
@@ -100,7 +100,10 @@ describe("ProjectPane focused mode (#652)", () => {
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
   const reposPhase = { stages: [ph("deployment", "Deployment", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
-  it("lists the linked repositories with tiles, metadata, and stateful branch chips (#811)", () => {
+  it("lists each linked repository with its git identity in the merged Deployment pane (#811/#1914)", () => {
+    // #1914: repos+deploy collapsed into the `deployment` stage → the merged Repositories & Deployment
+    // pane (ReposDeployView). A linked repo with no deploy service yet shows its git identity (ahead/
+    // behind · language) and a "deploy seeds on save" hint.
     const data = { agents: [], repos: [
       { id: "acme/web", branch: "main", ahead: 2, behind: 1, agents: [], primary: true, cloned: true,
         lang: "TypeScript", desc: "Operator dashboard",
@@ -108,20 +111,15 @@ describe("ProjectPane focused mode (#652)", () => {
     ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus(reposPhase)} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();
-    expect(screen.getByText("primary")).toBeInTheDocument();
-    expect(screen.getByText("● cloned")).toBeInTheDocument();        // clone status
-    expect(screen.getByText("repositories")).toBeInTheDocument();     // tile
     expect(screen.getByText("TypeScript")).toBeInTheDocument();       // language chip (#811)
-    expect(screen.getByText("Operator dashboard")).toBeInTheDocument(); // description (#811)
     expect(screen.getByText("↑2")).toBeInTheDocument();              // ahead count (#811)
     expect(screen.getByText("↓1")).toBeInTheDocument();              // behind count (#811)
-    expect(screen.getByText(/stream-ui/)).toBeInTheDocument();        // planned branch chip
-    expect(screen.getByText(/#12/)).toBeInTheDocument();             // branch issue number (#811)
+    expect(screen.getByText("deploy seeds on save")).toBeInTheDocument(); // no deploy service yet (#1914)
   });
 
   it("shows an empty state (no mock repos) when none are linked", () => {
     render(<ProjectPane focus={baseFocus(reposPhase)} />);
-    expect(screen.getByText(/No repositories linked yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No repositories linked/)).toBeInTheDocument();
   });
 
   it("lets the user manually link a repository via the dropzone (#677 / #811)", () => {

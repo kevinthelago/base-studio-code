@@ -50,14 +50,21 @@ describe("authored substeps (built-in sections)", () => {
     expect(subs.map((s) => s.key)).toEqual(["propose", "features"]);
     expect(subs.find((s) => s.key === "features")?.loop).toBe("features");
   });
-  it("Structure (Plan) exposes a single sequence step (issues are generated at publish, #plan-db)", () => {
-    const subs = STAGE_DEFS.structure.substeps ?? [];
-    expect(subs.map((s) => s.key)).toEqual(["sequence"]);
+  it("Streams (Plan substep) sequences the DAG then plans the fleet — issues are generated at publish, #plan-db (#1914)", () => {
+    // #1914: structure+permissions collapsed into the `streams` stage — a plan substep (present the
+    // dependency graph) then a fleet substep. Issues are still generated at publish, not during planning.
+    const subs = STAGE_DEFS.streams.substeps ?? [];
+    expect(subs.map((s) => s.key)).toEqual(["plan", "fleet"]);
   });
-  it("no built-in substep prompt mentions publishing (user owns publish)", () => {
+  it("no built-in substep prompt INSTRUCTS the planner to publish the GitHub structure (user owns publish)", () => {
+    // The guard is against an IMPERATIVE to publish (create repos / the board / milestones / issues) —
+    // not benign descriptive mentions. #1914's deployment+streams prompts legitimately use "publish" for
+    // library package-publishing and say issues are generated "at GitHub-publish time, not during planning".
     for (const def of Object.values(STAGE_DEFS)) {
       for (const s of def.substeps ?? []) {
-        expect(s.prompt.toLowerCase()).not.toMatch(/\bpublish|gh repo create|gh issue create|milestone/);
+        expect(s.prompt.toLowerCase()).not.toMatch(
+          /gh repo create|gh issue create|\b(publish|create) (the )?(repos|repositories|project board|milestones)\b/,
+        );
       }
     }
   });

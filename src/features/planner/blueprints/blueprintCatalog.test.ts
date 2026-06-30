@@ -19,14 +19,12 @@ describe("STAGE_KINDS ↔ project-pane stage coverage", () => {
     expect(bad).toEqual([]);
   });
 
-  it("keeps the add-stage palette a curated subset (no data-platform / authoring internals)", () => {
-    // The palette must stay user-facing — internal pipeline + meta-authoring stages have icons in
-    // the map but must not be hand-addable.
-    expect(STAGE_KIND_KEYS).not.toContain("dataModel");
+  it("keeps the add-stage palette a curated subset (no authoring internals)", () => {
+    // The palette must stay user-facing — the blueprint-authoring meta-stages have icons in the map
+    // but must not be hand-addable. (The data-platform stages were archived in 5def26b7.)
     expect(STAGE_KIND_KEYS).not.toContain("bp_stages");
     expect(STAGE_KIND_KEYS).not.toContain("purpose");
     // …yet they still resolve a real (non-fallback) icon.
-    expect(stageKind("dataModel").glyph).toBe("database");
     expect(stageKind("bp_stages").glyph in ICONS).toBe(true);
   });
 
