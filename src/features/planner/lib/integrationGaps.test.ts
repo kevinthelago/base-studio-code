@@ -22,13 +22,9 @@ describe("integrationGaps — detect", () => {
     expect(byRef.Stripe.status).toBe("available"); // billing → Stripe
   });
 
-  it("infers a source connector from an enterprise-system keyword (available until declared)", () => {
+  it("no longer implies a built-in source connector from a keyword (#1976 — connectors are agent-authored)", () => {
     const g = integrationGaps({ ...base, text: "Pull customers from Salesforce and invoices from QuickBooks." });
-    const byRef = Object.fromEntries(g.items.map((i) => [i.ref, i]));
-    expect(byRef.salesforce.kind).toBe("connector");
-    expect(byRef.salesforce.status).toBe("available");
-    expect(byRef.salesforce.action).toBe("declare");
-    expect(byRef.quickbooks.status).toBe("available");
+    expect(g.items.some((i) => i.kind === "connector")).toBe(false);
   });
 
   it("picks up an explicit <mcp_assign>, and an unknown server name is missing (no template)", () => {
@@ -51,11 +47,6 @@ describe("integrationGaps — classify", () => {
     const g = integrationGaps({ ...base, text: "Notion docs.", mcpServers: [mcp("Notion", { projects: [] })] });
     expect(g.items.find((i) => i.ref === "Notion")!.status).toBe("assigned");
   });
-
-  it("a connector already declared as a source is assigned", () => {
-    const g = integrationGaps({ ...base, text: "Read from HubSpot.", sources: [src("hubspot")] });
-    expect(g.items.find((i) => i.ref === "hubspot")!.status).toBe("assigned");
-  });
 });
 
 describe("integrationGaps — credentials", () => {
@@ -77,12 +68,13 @@ describe("integrationGaps — summary", () => {
   it("counts + ready reflect the mix, and items dedupe by key", () => {
     const g = integrationGaps({
       text: "Postgres database. Salesforce CRM. Stripe billing. Postgres again.", // Postgres mentioned twice
-      sources: [src("salesforce", { status: "scanned", secretSaved: true })], // salesforce now assigned
+      // The salesforce source is scanned (no credential gap); connectors no longer imply a gap (#1976).
+      sources: [src("salesforce", { status: "scanned", secretSaved: true })],
       mcpServers: [mcp("Stripe", { projects: ["p1"] })], // Stripe assigned
       projectId: "p1",
     });
     expect(g.items.filter((i) => i.ref === "Postgres")).toHaveLength(1); // deduped
-    expect(g.assigned).toBe(2); // salesforce + Stripe
+    expect(g.assigned).toBe(1); // Stripe
     expect(g.available).toBe(1); // Postgres
     expect(g.ready).toBe(false);
     expect(g.total).toBe(g.assigned + g.available + g.missing);

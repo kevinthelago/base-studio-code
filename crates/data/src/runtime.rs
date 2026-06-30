@@ -1,10 +1,10 @@
 //! Runtime (planner-authored) REST connector presets (#1235).
 //!
-//! A built-in [`VendorPreset`](crate::presets::VendorPreset) is compiled in; a **runtime** preset
-//! is the same shape authored at runtime — by the planner via `bsc-data connector add` — and
-//! loaded from the connectors store (`~/.base-studio-code/connectors.json`). It lets a source with
-//! no packaged connector become a **native** integration: the scan builds the audited generic
-//! [`RestConnector`] from it, identical to a built-in.
+//! A **runtime** preset is a REST connector manifest authored at runtime — by the planner via
+//! `bsc data connector` — and loaded from the connectors store
+//! (`~/.base-studio-code/connectors.json`). Since the native pre-built connectors were removed
+//! (#1976) it is the **sole** connector path: the scan builds the audited generic
+//! [`RestConnector`] from it.
 //!
 //! Read-only (#782); the spec carries **no credentials** (#1194) — only the public shape of the
 //! API (base URL, auth *method*, the resources to read). The secret still lives in the OS keychain
@@ -83,7 +83,7 @@ impl RuntimePreset {
         if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return Err(format!("id '{id}' must be [A-Za-z0-9_-]"));
         }
-        if crate::presets::find(id).is_some() || crate::descriptor::find(id).is_some() {
+        if crate::descriptor::find(id).is_some() {
             return Err(format!("id '{id}' collides with a built-in connector"));
         }
         if self.label.trim().is_empty() {
@@ -268,13 +268,6 @@ mod tests {
         p = preset("acme");
         p.resources.clear();
         assert!(p.validate().unwrap_err().contains("resource"));
-    }
-
-    #[test]
-    fn validate_rejects_builtin_id_collision() {
-        // `salesforce` is a built-in connector; `softexpert` is a built-in preset.
-        assert!(preset("salesforce").validate().unwrap_err().contains("built-in"));
-        assert!(preset("softexpert").validate().unwrap_err().contains("built-in"));
     }
 
     #[test]

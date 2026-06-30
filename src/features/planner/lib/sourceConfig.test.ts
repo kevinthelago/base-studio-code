@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  CONNECTORS, connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
+  connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
   deriveDataModel, migrationActive, datamodelSignals, downstreamImpact, proposeFromPitch,
-  presetToConnector, registerPresetConnectors,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
 } from "./sourceConfig";
@@ -12,22 +11,15 @@ import { checkDataModel } from "@/features/planner/data/dataModel";
 const src = (over: Partial<DeclaredSource>): DeclaredSource => ({ uid: "u", connectorId: "quickbase", status: "declared", fields: {}, ...over });
 
 describe("sourceConfig — catalog", () => {
-  it("has the expected first-party connectors with specs", () => {
-    const ids = CONNECTORS.map((c) => c.id);
-    expect(ids).toContain("quickbooks");
-    expect(ids).toContain("quickbase");
-    expect(ids).toContain("salesforce");
-    // QuickBooks is OAuth (no fields); Quickbase is a token form with a secret field.
-    expect(connector("quickbooks").spec.auth).toBe("oauth");
-    const qb = connector("quickbase").spec;
-    expect(qb.auth).toBe("token");
-    expect(qb.fields.some((f) => f.secret)).toBe(true);
-  });
-
-  it("connector() falls back safely for an unknown id", () => {
+  // The native pre-built connector catalog was removed (#1976): `connector(id)` resolves ANY id to a
+  // generic one-click token connector (no per-vendor spec). Connectors are agent-authored at runtime.
+  it("connector() resolves any id to a generic token connector", () => {
     const c = connector("nope");
     expect(c.id).toBe("nope");
+    expect(c.spec.auth).toBe("token");
     expect(c.spec.fields).toEqual([]);
+    // Formerly-dedicated ids are no longer special — they get the same generic shape.
+    expect(connector("salesforce").spec.fields).toEqual([]);
   });
 });
 
@@ -71,21 +63,23 @@ describe("sourceConfig — scan samples + handle", () => {
 
   it("redactedHandle is instance + env, never a credential", () => {
     expect(redactedHandle(src({ connectorId: "quickbase", instance: "acme realm", env: "production" }))).toBe("acme realm · production · held by app");
-    expect(redactedHandle(src({ connectorId: "quickbooks" }))).toBe("QuickBooks · held by app");
+    // With no static catalog (#1976), an undeclared instance falls back to the connector id itself.
+    expect(redactedHandle(src({ connectorId: "quickbooks" }))).toBe("quickbooks · held by app");
   });
 });
 
 describe("sourceConfig — coercion (planner channel)", () => {
-  it("keeps non-secret field hints but DROPS any secret, and resets status to declared", () => {
+  it("keeps non-secret field hints but DROPS any secret-looking key, and resets status to declared", () => {
     const cfg = coerceSourceConfig({
       dataModelName: "Acme Core",
-      proposed: ["quickbooks", "not-a-connector"],
+      proposed: ["quickbooks", "acme-authored"],
       sources: [{ connectorId: "quickbase", status: "scanned", fields: { realm: "acme.quickbase.com", userToken: "SECRET-LEAK" } }],
     });
     expect(cfg.dataModelName).toBe("Acme Core");
-    expect(cfg.proposed).toEqual(["quickbooks"]); // unknown connector filtered out
+    // Every non-empty id is a valid agent-authored connector now (#1976) — none are filtered.
+    expect(cfg.proposed).toEqual(["quickbooks", "acme-authored"]);
     expect(cfg.sources[0].fields.realm).toBe("acme.quickbase.com");
-    expect(cfg.sources[0].fields.userToken).toBeUndefined(); // secret never carried over the channel
+    expect(cfg.sources[0].fields.userToken).toBeUndefined(); // secret-looking key never carried over the channel
     expect(cfg.sources[0].status).toBe("declared"); // never trusted as pre-connected
   });
 
@@ -257,28 +251,6 @@ describe("sourceConfig — scan visualizations view-model (#1209)", () => {
     // the resolved lookup becomes a graph edge
     const edges = scanEdges(scanEntities(cfg));
     expect(edges).toContainEqual({ from: "account", to: "user", label: "ownerid → User" });
-  });
-});
-
-describe("packaged vendor presets (#1288)", () => {
-  it("presetToConnector builds a generic-REST connector (base URL + token)", () => {
-    const c = presetToConnector({ id: "shopify", name: "Shopify", category: "ecommerce", contributes: "products · orders" });
-    expect(c).toMatchObject({ id: "shopify", name: "Shopify", category: "ecommerce", preset: true, authLabel: "token" });
-    expect(c.spec.auth).toBe("token");
-    expect(c.spec.fields.map((f) => f.key)).toEqual(["baseUrl", "token"]);
-    expect(c.spec.fields.find((f) => f.key === "token")?.secret).toBe(true);
-    expect(c.spec.contributes).toContain("products");
-  });
-
-  it("registerPresetConnectors lets connector(id) resolve a declared preset's spec", () => {
-    // Unknown id → bare fallback (no fields) before registration.
-    expect(connector("acme-preset").spec.fields).toEqual([]);
-    registerPresetConnectors([presetToConnector({ id: "acme-preset", name: "Acme", category: "crm", contributes: "deals" })]);
-    const resolved = connector("acme-preset");
-    expect(resolved.name).toBe("Acme");
-    expect(resolved.spec.fields.map((f) => f.key)).toEqual(["baseUrl", "token"]);
-    // A dedicated connector still wins over any same-id preset.
-    expect(connector("salesforce").name).toBe("Salesforce");
   });
 });
 
