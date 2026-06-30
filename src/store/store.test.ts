@@ -1514,6 +1514,37 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().closeTab(idx);
     expect(useAppStore.getState().paneStatus[key]).toBeUndefined();
   });
+
+  it("closeTab releases the closed fleet tab's worker state so the warden stops watching them (#1951)", () => {
+    // Regression: the always-on warden (#1102) watches every pane in fleetPaneStreams. If closeTab
+    // left a closed tab's now-dead workers there, it kept re-quarantining them and the "Worker
+    // quarantined" banner reappeared despite the tab + banner being closed.
+    const w1 = "proj:auth-ui";
+    const w2 = "proj:api";
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "fleet", layout: "1×2" });
+    const idx = before;
+    // Make it a fleet tab carrying the minted worker identity ids, and seed the warden-watched state.
+    useAppStore.setState((s) => ({
+      tabs: s.tabs.map((t, i) => (i === idx ? { ...t, kind: "build", paneIds: [w1, w2] } : t)),
+      fleetPaneStreams: {
+        ...s.fleetPaneStreams,
+        [w1]: { id: "auth-ui", owns: ["src/auth/**"] } as never,
+        [w2]: { id: "api", owns: [] } as never,
+      },
+      paneCwds: { ...s.paneCwds, [w1]: "/wt/auth", [w2]: "/wt/api" },
+      quarantinedPanes: { ...s.quarantinedPanes, [w1]: { streamId: "auth-ui", summary: "drift", at: 1 } },
+    }));
+    expect(useAppStore.getState().fleetPaneStreams[w1]).toBeDefined();
+
+    useAppStore.getState().closeTab(idx);
+
+    const st = useAppStore.getState();
+    expect(st.fleetPaneStreams[w1]).toBeUndefined();
+    expect(st.fleetPaneStreams[w2]).toBeUndefined();
+    expect(st.paneCwds[w1]).toBeUndefined();
+    expect(st.quarantinedPanes[w1]).toBeUndefined();
+  });
 });
 
 describe("mcp servers store", () => {
