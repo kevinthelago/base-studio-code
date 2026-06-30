@@ -13,8 +13,9 @@ export function doneIssueRefs(issues: PlanIssue[]): Set<string> {
 }
 
 /**
- * A stream is complete when it owns at least one issue and EVERY one is done — so a relaunch must skip
- * its worker (it already finished). A stream that owns no issues is never "complete" (there's no
+ * A stream is complete when it owns at least one issue and EVERY one is done — so a relaunch puts its
+ * worker into maintenance, not back to building (it already finished). A stream that owns no issues is
+ * never "complete" (there's no
  * evidence of finished work; let it launch — e.g. a standing / open-ended worker).
  */
 export function streamComplete(stream: AgentStream, done: Set<string>): boolean {
@@ -23,14 +24,16 @@ export function streamComplete(stream: AgentStream, done: Set<string>): boolean 
 
 /**
  * Partition a fleet's streams for a progress-gated relaunch: `active` still have outstanding work and
- * should (re)launch; `skipped` are already complete and must not restart. Order is preserved.
+ * (re)launch to keep building; `maintenance` already finished every owned issue and relaunch INTO the
+ * maintenance posture (#1957) — they stay alive + ready for the director to dispatch new lane work,
+ * rather than being skipped/ended. Order is preserved.
  */
 export function pruneCompletedStreams(
   streams: AgentStream[],
   done: Set<string>,
-): { active: AgentStream[]; skipped: AgentStream[] } {
+): { active: AgentStream[]; maintenance: AgentStream[] } {
   const active: AgentStream[] = [];
-  const skipped: AgentStream[] = [];
-  for (const st of streams) (streamComplete(st, done) ? skipped : active).push(st);
-  return { active, skipped };
+  const maintenance: AgentStream[] = [];
+  for (const st of streams) (streamComplete(st, done) ? maintenance : active).push(st);
+  return { active, maintenance };
 }
