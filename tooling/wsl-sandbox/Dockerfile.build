@@ -1,0 +1,31 @@
+# Self-contained build of the sealed agent rootfs (#1988): compiles the slim Linux bsc/bsc-agent
+# sidecars in a builder stage, then assembles the sealed distro. No pre-staged binaries needed —
+# this is what `build-rootfs.sh` can't do alone (it expects ./bin already populated).
+#
+# Build from the REPO ROOT:
+#   docker build -f tooling/wsl-sandbox/Dockerfile.build -t bsc-agent-sandbox .
+#   cid=$(docker create bsc-agent-sandbox); docker export "$cid" -o agent-sandbox.tar; docker rm "$cid"
+#   wsl --import bsc-agent-sandbox "$HOME/.base-studio-code/wsl/bsc-agent-sandbox" agent-sandbox.tar --version 2
+FROM rust:bookworm AS build
+WORKDIR /src
+COPY . .
+# Slim bsc: --no-default-features drops the `data`/DuckDB feature, keeping the SQLite + fs subcommands
+# (rusqlite is `bundled`, so it compiles SQLite from C — gcc is already in the rust image).
+RUN cargo build --release -p bsc --no-default-features \
+ && cargo build --release -p bsc-agent \
+ && mkdir -p /out \
+ && cp target/release/bsc /out/bsc \
+ && cp target/release/bsc-agent /out/bsc-agent
+
+FROM debian:stable-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git openssh-client procps \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/bsc /usr/local/bin/bsc
+COPY --from=build /out/bsc-agent /usr/local/bin/bsc-agent
+RUN chmod +x /usr/local/bin/bsc /usr/local/bin/bsc-agent \
+ && useradd --create-home --shell /bin/bash agent
+# The seal (#1988): no /mnt/c, no interop, non-root default — baked in.
+COPY tooling/wsl-sandbox/wsl.conf /etc/wsl.conf
+USER agent
+WORKDIR /home/agent
