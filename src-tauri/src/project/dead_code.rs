@@ -43,3 +43,32 @@ pub(crate) fn scan_dead_code(repo_path: String, tool: String) -> ScanResult {
         Err(e) => err(format!("couldn't run {prog}: {e}")),
     }
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn dead_code_cmd_allowlists_known_scanners_only() {
+        assert!(dead_code_cmd("depcheck").is_some());
+        assert!(dead_code_cmd("ts-prune").is_some());
+        assert!(dead_code_cmd("cargo-machete").is_some());
+        // arbitrary commands are never runnable
+        assert!(dead_code_cmd("rm").is_none());
+        assert!(dead_code_cmd("cargo machete; rm -rf /").is_none());
+        assert!(dead_code_cmd("").is_none());
+    }
+    #[test]
+    fn scan_dead_code_handles_bad_dir_and_unknown_tool() {
+        let bad = scan_dead_code("/no/such/dir/xyzzy".to_string(), "depcheck".to_string());
+        assert!(!bad.ran && bad.error.is_some());
+        let unknown = scan_dead_code(".".to_string(), "totally-unknown".to_string());
+        assert!(!unknown.ran && unknown.error.as_deref().unwrap_or("").contains("unknown scanner"));
+    }
+}

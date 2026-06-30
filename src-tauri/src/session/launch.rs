@@ -75,3 +75,95 @@ pub(crate) fn has_bsc_agent_history(cwd: &str) -> bool {
         .map(|m| m.len() > 0)
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn claude_launch_bakes_prompt_fresh() {
+        assert_eq!(claude_launch("triage the issues", false), "claude $'triage the issues'");
+    }
+    #[test]
+    fn claude_launch_adds_continue_flag() {
+        // Triage resumes the repo's prior conversation instead of starting fresh.
+        assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    }
+    #[test]
+    fn claude_project_dir_name_replaces_non_alnum_with_dash() {
+        // Matches the dir Claude Code creates under ~/.claude/projects.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\Projects\rust\base-studio-code"),
+            "C--Users-Kevin-Projects-rust-base-studio-code"
+        );
+        // Consecutive specials (\ then .) each map to their own dash.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\.base-studio-code\documents"),
+            "C--Users-Kevin--base-studio-code-documents"
+        );
+    }
+    #[test]
+    fn has_claude_history_detects_jsonl_in_project_dir() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let home = temp_home("history");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let proj = home.join(".claude").join("projects").join(claude_project_dir_name(cwd));
+
+        // No project dir yet → fresh launch.
+        assert!(!has_claude_history(cwd));
+
+        // Dir exists but holds no conversation → still fresh.
+        std::fs::create_dir_all(&proj).unwrap();
+        write_file(&proj.join("config.json"), "{}");
+        assert!(!has_claude_history(cwd));
+
+        // A conversation transcript is present → resume is safe.
+        write_file(&proj.join("abc-123.jsonl"), "{}\n");
+        assert!(has_claude_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!has_claude_history(""));
+    }
+    #[test]
+    fn bsc_agent_session_path_keys_off_cwd() {
+        // Deterministic per-cwd path under agent-sessions/, slugged like Claude's projects dir.
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-path");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let p = bsc_agent_session_path(cwd).unwrap();
+        assert!(p.ends_with("conversation.json"));
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(s.contains("/agent-sessions/"));
+        assert!(s.contains(&claude_project_dir_name(cwd)));
+        // Empty cwd ⇒ no path (no persistence).
+        assert!(bsc_agent_session_path("").is_none());
+    }
+    #[test]
+    fn has_bsc_agent_history_requires_nonempty_session_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _home = temp_home("agentsess-hist");
+        let cwd = r"C:\Users\Kevin\Projects\demo";
+        let path = bsc_agent_session_path(cwd).unwrap();
+
+        // No file yet → fresh.
+        assert!(!has_bsc_agent_history(cwd));
+
+        // Empty file → still fresh (an aborted/empty run shouldn't trigger resume).
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_file(&path, "");
+        assert!(!has_bsc_agent_history(cwd));
+
+        // Non-empty conversation → resume is safe.
+        write_file(&path, "[{\"User\":\"hi\"}]");
+        assert!(has_bsc_agent_history(cwd));
+
+        // Empty cwd is never resumable.
+        assert!(!has_bsc_agent_history(""));
+    }
+}
