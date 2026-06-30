@@ -35,6 +35,7 @@ export function ProjectPane({
   onAddMcp,
   onRemoveMcp,
   onDeployChange,
+  onInject,
 }: {
   data?: ProjectPaneData;
   projectId?: string;
@@ -82,6 +83,10 @@ export function ProjectPane({
   onRemoveMcp?: (id: string) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
+  /** Inject a prompt into the live planner terminal (#1986) — threaded to the Source body so the
+   *  "+ Add a source" affordance nudges the planner to author the connector. Same seam as the
+   *  per-stage "?" prompt helper (`sendPrompt` in Planning.tsx). */
+  onInject?: (text: string) => void;
 }) {
   // Context file viewer modal
   const [viewing, setViewing] = useState<ContextFile | null>(null);
@@ -132,7 +137,7 @@ export function ProjectPane({
         <div className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
-            onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
+            onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} onInject={onInject} />
         </div>
         <FocusedStageFooter stage={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
