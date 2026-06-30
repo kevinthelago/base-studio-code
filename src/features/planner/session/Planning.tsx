@@ -377,7 +377,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // ── Blueprint-driven plan model (#652) — restored (#776) ────────────────────
   // The authoritative plan sections come from the active BLUEPRINT; each carries its own
   // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
-  // progress rail, current-phase, and advance/publish footer all read these. #668 deleted
+  // progress rail, current-stage, and advance/publish footer all read these. #668 deleted
   // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
   const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
   const requiresUi = stageConfig.enabled.ui;
@@ -415,9 +415,9 @@ export function Planning({ visible }: { visible: boolean }) {
   });
   // Gate/`signals` derivation (#1474, usePlanGates) — the live stageState snapshot, the lint/injection
   // gates, the skip/confirm signal bags, the flat `signals` bag, and the auto-derived focused-pane
-  // phases. `planSecs` + the focused-pane SELECTION (`focusSel` below) stay in this component.
+  // stages. `planSecs` + the focused-pane SELECTION (`focusSel` below) stay in this component.
   const {
-    injectionGateState, phases, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady,
+    injectionGateState, stages, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady,
   } = usePlanGates({
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
@@ -441,14 +441,14 @@ export function Planning({ visible }: { visible: boolean }) {
   // Stage gate-confirm/skip logic (#1775, usePlanConfirmations): the active stage's pending sections,
   // the confirm-stage primitive (#1068), the auto-advance effect (#1068), and the optional skip (#921).
   const { pendingConfirm, confirmStageKeys, onSkipStage } = usePlanConfirmations({
-    phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
+    stages, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
     effectiveProjectId, paneId, confirmPlanSection, skipPlanSection,
     autoCompleteGates, autoPlanActive: autoPlanWithClaude && llmHasKey,
   });
   // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
   // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
   const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
-    phases, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
+    stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
     allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId,
   });
 
@@ -486,10 +486,10 @@ export function Planning({ visible }: { visible: boolean }) {
   // review (never auto-publishes). Progress + frontier read the SAME dynamic blueprint gate the
   // focused pane renders (#1061 retired the legacy PLAN_STAGES gate), so they can't disagree.
   const autopilotProgressPct = useMemo(() => {
-    const required = phases.filter(p => !p.optional);
+    const required = stages.filter(p => !p.optional);
     const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
     return required.length ? Math.round((done / required.length) * 100) : 0;
-  }, [phases]);
+  }, [stages]);
   // `planReady` (from usePlanGates) is `planComplete`: the plan is "ready" — gating the Triage launch
   // (#444/#551/#823) — on the SAME blueprint-driven completion the focused footer publishes on.
   // The blueprint's enabled stage ids — passed to setup_workspaces so the planner's CLAUDE.md
@@ -536,9 +536,9 @@ export function Planning({ visible }: { visible: boolean }) {
       const grew = len > apLastSnapLen.current;
       apLastSnapLen.current = len;
       const plannerAwaiting = !grew && len > apLastAnswered.current;
-      // The dynamic blueprint gate (#1061): non-optional phases done = gate met; the frontier is
-      // the active phase, and its drafted-but-unconfirmed sections are what the autopilot confirms.
-      const required = phases.filter(p => !p.optional);
+      // The dynamic blueprint gate (#1061): non-optional stages done = gate met; the frontier is
+      // the active stage, and its drafted-but-unconfirmed sections are what the autopilot confirms.
+      const required = stages.filter(p => !p.optional);
       const done = required.filter(p => p.status === "complete" || p.status === "ahead").length;
       return {
         planReady: planComplete,
@@ -806,7 +806,7 @@ export function Planning({ visible }: { visible: boolean }) {
               onAddMcp={onAddMcp}
               onRemoveMcp={onRemoveMcp}
               focus={{
-                phases,
+                stages,
                 selectedIdx: focusSelectedIdx,
                 activeIdx: focusActiveIdx,
                 onSelect: (i) => setFocusSel(i),
@@ -824,9 +824,9 @@ export function Planning({ visible }: { visible: boolean }) {
                 // An authoring project publishes a gist, not a GitHub board (#923).
                 publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
                 // The user deliberately skips the active optional stage (#921); the gate resolves
-                // and the selection re-follows to the next live phase.
+                // and the selection re-follows to the next live stage.
                 onSkip: () => { onSkipStage(); setFocusSel(null); },
-                onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, phases.length)),
+                onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, stages.length)),
                 onPrimary: () => {
                   if (focusFooter.kind === "publish") { void handlePublish(); return; }
                   if (focusFooter.kind === "approve-continue") {
@@ -835,10 +835,10 @@ export function Planning({ visible }: { visible: boolean }) {
                     if (focusFooter.override) { onSkipStage(); setFocusSel(null); return; }
                     // One-click stage approval: confirm every drafted section the active stage needs,
                     // then tell the planner in a single message. The gate re-evaluates and the
-                    // selection re-follows to the next live phase (#807-followup).
+                    // selection re-follows to the next live stage (#807-followup).
                     if (pendingConfirm.length > 0) confirmStageKeys(pendingConfirm);
                   }
-                  setFocusSel(null); // re-follow the live phase
+                  setFocusSel(null); // re-follow the live stage
                 },
                 // Blueprint-authoring wiring (#923): the interactive editor views write edits back to
                 // the stored blueprint (kept in sync with the planner's <blueprint> tag) + publish.

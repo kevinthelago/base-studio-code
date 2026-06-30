@@ -1,11 +1,11 @@
-// FocusedBodies — the planner ProjectPane phase-body dispatcher (#1332; bodies split into
-// ../bodies/Focused*Body per #1757). Each per-phase body now lives in its own file under
-// `../bodies/`; this module is the `FocusedPhaseBody` switch that maps a Phase to its body and
+// FocusedBodies — the planner ProjectPane stage-body dispatcher (#1332; bodies split into
+// ../bodies/Focused*Body per #1757). Each per-stage body now lives in its own file under
+// `../bodies/`; this module is the `FocusedStageBody` switch that maps a Stage to its body and
 // assembles the shared handler sets once. ProjectPane.tsx is the thin shell that renders it.
 import "./projectPane.css";
 import type { Flow, ContextFile, McpServer, ProjectPaneData } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
-import type { Phase } from "../stages/focusedPlan";
+import type { Stage } from "../stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { Topology } from "../relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
@@ -33,11 +33,11 @@ import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../bodies/focusedHandlers";
 
 /* =================================================================
-   FocusedPhaseBody — maps a Phase to its body (#652 / #674)
+   FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
-  phase: Phase;
+export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+  stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
   /** Required-context topics for the Context body's written/missing checklist (#1061). */
@@ -67,16 +67,16 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
   const fleetHandlers: FleetHandlers = { onFlow, onModel, onTopology, onDirectorDrive };
   const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
-  switch (phase.key) {
+  switch (stage.key) {
     case "source":
       return <FocusedSourceBody projectId={projectId} />;
     case "repos":
-      // #1383/#1399: when the blueprint folds deploy in (phase.ship), the merged "Deployment" stage
+      // #1383/#1399: when the blueprint folds deploy in (stage.ship), the merged "Deployment" stage
       // renders as one cohesive Repositories & Deployment pane — each repo's git identity merged with
       // its deploy target (click a repo to expand its target editor inline). A non-ship blueprint
       // (transform: harden/migrate) keeps the plain repo linker; a blueprint that still lists Deploy
       // as its own stage uses `case "deploy"` below (unchanged).
-      return phase.ship ? (
+      return stage.ship ? (
         <FocusedReposDeployBody
           repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
           onLinkRepo={onLinkRepo}
@@ -98,9 +98,9 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "structure":
       // #1383-streams: one "Streams" stage. The plan + relationship graph always shows; the fleet
       // (coordination + per-stream permissions) folds in below it when the blueprint opted into fleet
-      // (phase.fleet). A blueprint that still lists Permissions as its own stage uses `case
+      // (stage.fleet). A blueprint that still lists Permissions as its own stage uses `case
       // "permissions"` below (refactor — permissions without a structure stage to fold into).
-      return <StreamsBody data={data} fleet={phase.fleet} {...fleetHandlers} />;
+      return <StreamsBody data={data} fleet={stage.fleet} {...fleetHandlers} />;
     case "permissions":
       return <FocusedPermissionsBody data={data} {...fleetHandlers} />;
     case "mcp":
@@ -114,7 +114,7 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
     case "bp_stages":
     case "bp_capabilities":
     case "bp_review":
-      return <FocusedAuthoringBody bp={data?.authoredBlueprint} phaseKey={phase.key} wiring={authoring} />;
+      return <FocusedAuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
       return (
         <div className="empty-state">

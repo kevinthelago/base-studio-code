@@ -1,6 +1,6 @@
-// Focused planner pane (#652) — the pure model behind the one-phase-at-a-time right
+// Focused planner pane (#652) — the pure model behind the one-stage-at-a-time right
 // pane. It wraps the EXISTING blueprint/signal/gate logic (stageStatus / currentStage
-// / evalGate) into a navigable "phase" view: which phases are visible, each one's status
+// / evalGate) into a navigable "stage" view: which stages are visible, each one's status
 // (complete / active / locked / upcoming), the gate pill, and the advance-bar action.
 // Pure + serializable so it's fully unit-testable; no React/Tauri.
 
@@ -16,9 +16,9 @@ import { evalGate, gateReasons, type PlanSignals } from "./stageGate";
 // past one without completing it is a user skip). The rail renders each distinctly so a future
 // stage finishing early / a deliberately skipped stage don't read as in-order progress or as a
 // not-yet-reached stage (#668).
-export type PhaseStatus = "complete" | "ahead" | "active" | "skipped" | "locked" | "upcoming";
+export type StageStatus = "complete" | "ahead" | "active" | "skipped" | "locked" | "upcoming";
 
-export interface Phase {
+export interface Stage {
   key: string;
   name: string;
   glyph: string;
@@ -27,7 +27,7 @@ export interface Phase {
   gate: string;
   index: number;
   total: number;
-  status: PhaseStatus;
+  status: StageStatus;
   /** Gate fill 0..1 for the in-progress fraction. */
   fraction: number;
   /** An optional stage — shown but never required (#676). */
@@ -43,19 +43,19 @@ export interface Phase {
 }
 
 /**
- * The visible phase list: enabled, non-N/A sections in declared order, each tagged with
- * its status — complete (gate passed), active (the current reached phase), locked (a
+ * The visible stage list: enabled, non-N/A sections in declared order, each tagged with
+ * its status — complete (gate passed), active (the current reached stage), locked (a
  * dependency is unmet), or upcoming (reachable but not yet current).
  */
-export function phasesFrom(sections: BlueprintStage[], signals: PlanSignals): Phase[] {
+export function stagesFrom(sections: BlueprintStage[], signals: PlanSignals): Stage[] {
   const current = currentStage(sections, signals);
   const visible = enabledStages(sections)
     .map((s) => ({ s, st: stageStatus(s, sections, signals) }))
     .filter(({ st }) => st.status !== "na");
-  // The current position among visible phases; everything complete PAST it is "ahead".
+  // The current position among visible stages; everything complete PAST it is "ahead".
   const activeIdx = current ? visible.findIndex(({ s }) => s.key === current.key) : visible.length;
   return visible.map(({ s, st }, i) => {
-    let status: PhaseStatus;
+    let status: StageStatus;
     // A deliberately user-skipped optional stage reads as "skipped", not "complete" — even though
     // it counts as resolved for the frontier/gate (`stageDone`). Check this first (#921).
     if (stageSkipped(s, signals)) status = "skipped";
@@ -77,41 +77,41 @@ export function phasesFrom(sections: BlueprintStage[], signals: PlanSignals): Ph
 }
 
 /**
- * The blueprint section for a phase, resolved BY KEY (#815). `phases` is a FILTERED subset of the
- * raw section list (disabled / not-applicable sections like `ui` are dropped by {@link phasesFrom}),
- * so indexing the raw sections with a phase index lands on the wrong section once any earlier one is
- * dropped. The conductor uses this to inject the *active phase's* prompt, not a neighbor's.
+ * The blueprint section for a stage, resolved BY KEY (#815). `stages` is a FILTERED subset of the
+ * raw section list (disabled / not-applicable sections like `ui` are dropped by {@link stagesFrom}),
+ * so indexing the raw sections with a stage index lands on the wrong section once any earlier one is
+ * dropped. The conductor uses this to inject the *active stage's* prompt, not a neighbor's.
  */
-export function sectionForPhase<T extends { key: string }>(
-  sections: T[], phase: { key: string } | undefined,
+export function sectionForStage<T extends { key: string }>(
+  sections: T[], stage: { key: string } | undefined,
 ): T | undefined {
-  return phase ? sections.find((s) => s.key === phase.key) : undefined;
+  return stage ? sections.find((s) => s.key === stage.key) : undefined;
 }
 
 export type ConnectorKind = "solid" | "partial" | "dashed" | "dim";
 
 /** The rail connector AFTER node `i` (#668): solid traces the walked in-sequence path,
  *  partial leaves the current node, dashed reaches a banked-ahead node, dim otherwise. */
-export function connectorKind(phases: Phase[], i: number): ConnectorKind {
-  const role = phases[i]?.status;
-  const next = phases[i + 1]?.status;
+export function connectorKind(stages: Stage[], i: number): ConnectorKind {
+  const role = stages[i]?.status;
+  const next = stages[i + 1]?.status;
   // A banked-ahead node (done out of sequence) is reached by a dashed connector.
   if (role === "ahead" || next === "ahead") return "dashed";
   // The walked path is green UP TO the current node: every connector positioned BEFORE the
   // active node is solid — including the one leaving a skipped/optional section — so the
   // green leads INTO the current node, never out of it. Beyond the current node: dim (#668).
-  const activeIdx = phases.findIndex((p) => p.status === "active");
-  const frontier = activeIdx >= 0 ? activeIdx : phases.length;
+  const activeIdx = stages.findIndex((p) => p.status === "active");
+  const frontier = activeIdx >= 0 ? activeIdx : stages.length;
   return i < frontier ? "solid" : "dim";
 }
 
-/** Index of the active phase (else the last) — what the selection auto-follows. */
-export function activeIndex(phases: Phase[]): number {
-  const a = phases.findIndex((p) => p.status === "active");
-  return a >= 0 ? a : Math.max(0, phases.length - 1);
+/** Index of the active stage (else the last) — what the selection auto-follows. */
+export function activeIndex(stages: Stage[]): number {
+  const a = stages.findIndex((p) => p.status === "active");
+  return a >= 0 ? a : Math.max(0, stages.length - 1);
 }
 
-/** Clamp an index into [0, count-1] (0 when empty) — guards against a shrunk phase list
+/** Clamp an index into [0, count-1] (0 when empty) — guards against a shrunk stage list
  *  after a blueprint switch / clear. */
 export function clampIndex(i: number, count: number): number {
   if (count <= 0) return 0;
@@ -120,10 +120,10 @@ export function clampIndex(i: number, count: number): number {
 
 export type GatePill = "pass" | "wait";
 
-/** Gate pill for a phase, from the declarative gate (#897 Phase 4c removed the legacy
- *  pipeline gate): "pass" once the phase's gateRule is satisfied, else "wait". */
-export function gatePill(phase: Phase): GatePill {
-  return phase.status === "complete" || phase.status === "ahead" ? "pass" : "wait";
+/** Gate pill for a stage, from the declarative gate (#897 Phase 4c removed the legacy
+ *  pipeline gate): "pass" once the stage's gateRule is satisfied, else "wait". */
+export function gatePill(stage: Stage): GatePill {
+  return stage.status === "complete" || stage.status === "ahead" ? "pass" : "wait";
 }
 
 export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "publish";
@@ -131,7 +131,7 @@ export type FooterKind = "back-to-current" | "jump-to-current" | "approve-contin
 export interface FooterAction {
   kind: FooterKind;
   enabled: boolean;
-  /** The active phase is an OPTIONAL stage the user can deliberately skip past — the advance bar
+  /** The active stage is an OPTIONAL one the user can deliberately skip past — the advance bar
    *  shows a secondary "Skip stage" control alongside the primary action (#921). */
   canSkip?: boolean;
   /** The primary action is a user GATE OVERRIDE (#1285): the active stage's gate is NOT satisfied,
@@ -141,11 +141,11 @@ export interface FooterAction {
 
 /**
  * The advance-bar's primary action, by where the selection sits relative to the active
- * phase. Browsing a future (locked) phase → back to current; a past phase → jump to
- * current; on the active phase → approve & continue (enabled when its gate is ready), or
+ * stage. Browsing a future (locked) stage → back to current; a past stage → jump to
+ * current; on the active stage → approve & continue (enabled when its gate is ready), or
  * publish when the whole plan is complete.
  *
- * `activeSkippable` (#921): the active phase is an enabled OPTIONAL stage that hasn't been decided
+ * `activeSkippable` (#921): the active stage is an enabled OPTIONAL stage that hasn't been decided
  * yet — so the user can either complete it (approve & continue) OR skip it. The flow stops on every
  * optional stage; skipping is how the USER, not the app, decides to move past one.
  */
@@ -175,7 +175,7 @@ export function resolveFooter(raw: FooterAction, pendingCount: number, allowOver
   return raw;
 }
 
-/** Whether the active phase's gate is satisfied — enables "approve & continue". */
+/** Whether the active stage's gate is satisfied — enables "approve & continue". */
 export function currentGateReady(sections: BlueprintStage[], signals: PlanSignals): boolean {
   const cur = currentStage(sections, signals);
   return !!cur && evalGate(cur.gateRule, signals).done;

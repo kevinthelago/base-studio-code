@@ -7,8 +7,8 @@ import type { AuthoringWiring } from "./focusedHandlers";
 
 /** The authoring stages' body (#923): the four interactive editor views over the in-progress
  *  blueprint, ported from the design. Holds the selected-stage cursor for the Stages editor. */
-export function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
-  bp?: ProjectPaneData["authoredBlueprint"]; phaseKey: string; wiring?: AuthoringWiring;
+export function FocusedAuthoringBody({ bp, stageKey, wiring }: {
+  bp?: ProjectPaneData["authoredBlueprint"]; stageKey: string; wiring?: AuthoringWiring;
 }) {
   const [selStage, setSelStage] = useState<string | null>(null);
   if (!bp || !wiring) {
@@ -22,7 +22,7 @@ export function FocusedAuthoringBody({ bp, phaseKey, wiring }: {
   const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
   const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };
   const view = (() => {
-    switch (phaseKey) {
+    switch (stageKey) {
       case "purpose":         return <PurposeView {...common} />;
       case "bp_stages":       return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
       case "bp_capabilities": return <CapabilitiesView {...common} />;

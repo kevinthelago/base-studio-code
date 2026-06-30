@@ -6,7 +6,7 @@
 // rounded-SQUARE node showing the stage's icon (✓ once done), status-colored — complete = filled
 // success, ahead = success-ringed (banked out of sequence), active = accent-ringed (pulses only in
 // the interactive stepper), skipped = info-tinted, locked/upcoming = dim. Pure presentational:
-// callers map their own model (blueprint sections via `stageStatus`, or focused-plan `Phase`s) into
+// callers map their own model (blueprint sections via `stageStatus`, or focused-plan `Stage`s) into
 // `RailNode[]` and pass it in. CSS in progressionRail.css (imported here so every consumer gets it).
 
 import { Fragment, type ReactNode } from "react";
@@ -14,7 +14,7 @@ import { Ic } from "../blueprints/blueprintIcons";
 import type { ConnectorKind } from "../stages/focusedPlan";
 import "./progressionRail.css";
 
-/** The unified node state. The focused-pane `PhaseStatus` IS this set; the blueprint card maps its
+/** The unified node state. The focused-pane `StageStatus` IS this set; the blueprint card maps its
  *  narrower `stageStatus` ("in-progress" → "active") into it. */
 export type RailStatus = "complete" | "ahead" | "active" | "skipped" | "locked" | "upcoming";
 
