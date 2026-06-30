@@ -89,13 +89,6 @@ export const INTAKE_MANIFEST = "design/intake.json";
 /** The built-in pipeline id (matches its PIPELINE_LIB entry + screen registration). */
 export const FILE_INTAKE_ID = "file-intake";
 
-/** The self-contained instruction the "Route" action sends to the planner session.
- *  It tells the planner to read the staged files and route each to the right repo —
- *  the planner does the intelligent routing; the pipeline only stages + asks. (#604) */
-export const ROUTE_PROMPT =
-  "The user just added files under design/ — see design/intake.json for the manifest. " +
-  "For each staged file: examine it, classify it, and route it to the right place in this " +
-  "project. Use repos.json to pick the relevant repo (e.g. copy design assets into the repo " +
-  "that owns the UI), copy the file into that repo's directory, and reference it in the " +
-  "appropriate section file. In a multi-repo project, only attach UI assets to the UI-bearing " +
-  "repo. If a file's destination is ambiguous, ask me before placing it.";
+// The file-intake "Route" instruction now lives in the UI stage's DATA
+// (`src-tauri/data/stages/ui.json` → `routePrompt`), read via `STAGE_DEFS.ui.routePrompt` — not
+// hardcoded here, so the prompt is editable alongside the rest of the stage (#604).

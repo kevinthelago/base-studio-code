@@ -72,6 +72,10 @@ export interface SectionDef {
   deps: string[];
   blurb: string;
   prompt: string;
+  /** UI stage only (#604): the self-contained instruction the file-intake "Route" action injects
+   *  into the planner to read the staged design files and route each to the right repo. Carried as
+   *  stage DATA (like `prompt`) so it isn't hardcoded in the frontend. Absent ⇒ no route prompt. */
+  routePrompt?: string;
   /** Declarative completion gate (#…) — the DATA that decides this section's
    *  done-ness. Carried on every section instance so a section is fully serializable
    *  and distributable; the app evaluates it via {@link evalGate}. Absent ⇒ the

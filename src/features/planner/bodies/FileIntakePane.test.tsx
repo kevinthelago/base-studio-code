@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileIntakePane } from "./FileIntakePane";
-import { ROUTE_PROMPT } from "../lib/fileIntake";
+import { STAGE_DEFS } from "../stages/blueprints";
 import { useAppStore } from "@/store";
 
 describe("FileIntakePane (#604)", () => {
@@ -34,7 +34,7 @@ describe("FileIntakePane (#604)", () => {
     ]);
     render(<FileIntakePane projectKey="proj-x" />);
     fireEvent.click(await screen.findByRole("button", { name: /Route to project/i }));
-    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(ROUTE_PROMPT);
+    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(STAGE_DEFS.ui.routePrompt);
     // routing also completes the UI stage by confirming the `ui` section (#837)
     expect(useAppStore.getState().planConfirmedSections["proj-x"]).toContain("ui");
     // …and promotes the dropped design into .ui-skeleton/ so the preview shows it (#1373)

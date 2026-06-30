@@ -1,16 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
-  INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT,
+  INTAKE_DIR, INTAKE_MANIFEST,
 } from "./fileIntake";
+import { STAGE_DEFS } from "../stages/blueprints";
 
 describe("fileIntake — staging directory (#829)", () => {
   it("stages dropped files into a visible project-folder design/ directory", () => {
     expect(INTAKE_DIR).toBe("design");
     expect(INTAKE_MANIFEST).toBe("design/intake.json");
-    // the route prompt points the planner at the same visible directory
-    expect(ROUTE_PROMPT).toContain("design/");
-    expect(ROUTE_PROMPT).not.toContain(".intake");
+    // the UI stage's route prompt (now data — ui.json → routePrompt) points the planner at the same dir
+    expect(STAGE_DEFS.ui.routePrompt).toContain("design/");
+    expect(STAGE_DEFS.ui.routePrompt).not.toContain(".intake");
   });
 });
 
