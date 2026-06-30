@@ -12,14 +12,14 @@ import { buildSectionConfirmMessage, buildSectionSkipMessage } from "./planningS
 import { stageConfirmKeys } from "../stages/planStageDerive";
 import { featuresAwaitingConfirm } from "../issues/featureList";
 import { shouldAutoCompleteGate } from "../stages/focusedPlan";
-import type { phasesFrom } from "../stages/focusedPlan";
+import type { stagesFrom } from "../stages/focusedPlan";
 import type { Section } from "../github/ghStructure";
 import type { BlueprintStage } from "../stages/blueprints";
 
-type Phases = ReturnType<typeof phasesFrom>;
+type Stages = ReturnType<typeof stagesFrom>;
 
 export function usePlanConfirmations(opts: {
-  phases: Phases;
+  stages: Stages;
   focusActiveIdx: number;
   sections: Section[];
   planSecs: BlueprintStage[];
@@ -35,14 +35,14 @@ export function usePlanConfirmations(opts: {
   autoPlanActive: boolean;
 }) {
   const {
-    phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
+    stages, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
     effectiveProjectId, paneId, confirmPlanSection, skipPlanSection, autoCompleteGates, autoPlanActive,
   } = opts;
 
   // The active stage's drafted sections "approve & continue" confirms in one click (#807-followup)
   // — so the user approves a whole stage at once. Empty ⇒ nothing pending (the gate drives the button).
   const pendingConfirm = useMemo(() => {
-    const activeKey = phases[focusActiveIdx]?.key;
+    const activeKey = stages[focusActiveIdx]?.key;
     const activeSec = activeKey ? planSecs.find((s) => s.key === activeKey) : undefined;
     const base = stageConfirmKeys(activeKey, sections, !!activeSec?.gateRule, !!activeKey && confirmedSet.has(activeKey));
     // Features (#plan-db): once every feature in the roster is populated, offer the one-click confirm
@@ -51,7 +51,7 @@ export function usePlanConfirmations(opts: {
       return base.includes(FEATURES_KEY) ? base : [...base, FEATURES_KEY];
     }
     return base;
-  }, [phases, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
+  }, [stages, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle]);
 
   // The single stage-completion primitive (#1068): confirm each pending section + tell the planner to
   // continue. One path every gate advances through, so behaviour stays identical whether the user
@@ -81,11 +81,11 @@ export function usePlanConfirmations(opts: {
 
   // The user deliberately skips the active optional stage (#921): resolve its gate + tell the planner.
   const onSkipStage = useCallback(() => {
-    const phase = phases[focusActiveIdx];
-    if (!phase) return;
-    skipPlanSection(effectiveProjectId, phase.key);
-    fireInvoke("pty_write", { paneId, data: buildSectionSkipMessage(phase.name) + "\r" }, console.error);
-  }, [phases, focusActiveIdx, skipPlanSection, effectiveProjectId, paneId]);
+    const stage = stages[focusActiveIdx];
+    if (!stage) return;
+    skipPlanSection(effectiveProjectId, stage.key);
+    fireInvoke("pty_write", { paneId, data: buildSectionSkipMessage(stage.name) + "\r" }, console.error);
+  }, [stages, focusActiveIdx, skipPlanSection, effectiveProjectId, paneId]);
 
   return { pendingConfirm, confirmStageKeys, onSkipStage };
 }

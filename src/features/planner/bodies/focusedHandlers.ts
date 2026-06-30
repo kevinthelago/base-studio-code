@@ -1,5 +1,5 @@
 // Shared handler/types for the focused phase bodies (#1757, split from FocusedBodies.tsx).
-// These are imported by BOTH the per-body components AND the FocusedPhaseBody dispatcher, so they
+// These are imported by BOTH the per-body components AND the FocusedStageBody dispatcher, so they
 // live in their own React-free module to avoid a dispatcher↔body import cycle. FocusedBodies.tsx
 // re-exports them for back-compat (ProjectPane imports `AuthoringWiring` from there).
 import type { Flow, McpServer, ProjectPaneData } from "@/features/planner/pane/projectPaneData";

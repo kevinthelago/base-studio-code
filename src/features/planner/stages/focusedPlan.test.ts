@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  phasesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
-  sectionForPhase, shouldAutoCompleteGate, type Phase, type PhaseStatus,
+  stagesFrom, activeIndex, clampIndex, gatePill, footerAction, resolveFooter, currentGateReady, connectorKind,
+  sectionForStage, shouldAutoCompleteGate, type Stage, type StageStatus,
 } from "./focusedPlan";
 import { confirmedSignal, skippedSignal, type BlueprintStage } from "./blueprints";
 import type { PlanSignals } from "./stageGate";
@@ -19,9 +19,9 @@ const SECTIONS: BlueprintStage[] = [
   sec("c", { appliesWhen: { signal: "showC", target: true } }),
 ];
 
-describe("phasesFrom (#652)", () => {
+describe("stagesFrom (#652)", () => {
   it("marks the first reachable section active and unmet-dep sections locked; hides N/A", () => {
-    const p = phasesFrom(SECTIONS, {} as PlanSignals);
+    const p = stagesFrom(SECTIONS, {} as PlanSignals);
     expect(p.map((x) => x.key)).toEqual(["a", "b"]); // c is N/A (showC unset)
     expect(p.find((x) => x.key === "a")!.status).toBe("active");
     expect(p.find((x) => x.key === "b")!.status).toBe("locked");
@@ -29,18 +29,18 @@ describe("phasesFrom (#652)", () => {
   });
 
   it("advances active as gates pass", () => {
-    const p = phasesFrom(SECTIONS, { a: true });
+    const p = stagesFrom(SECTIONS, { a: true });
     expect(p.find((x) => x.key === "a")!.status).toBe("complete");
     expect(p.find((x) => x.key === "b")!.status).toBe("active");
   });
 
   it("shows an N/A section once its applicability turns on; a gateless section needs confirmation", () => {
-    const p = phasesFrom(SECTIONS, { a: true, b: true, showC: true });
+    const p = stagesFrom(SECTIONS, { a: true, b: true, showC: true });
     expect(p.map((x) => x.key)).toEqual(["a", "b", "c"]);
-    // c is gateless → NOT vacuously complete (#664); it's the active phase until confirmed.
+    // c is gateless → NOT vacuously complete (#664); it's the active stage until confirmed.
     expect(p.find((x) => x.key === "c")!.status).toBe("active");
     // confirm c → complete.
-    const p2 = phasesFrom(SECTIONS, { a: true, b: true, showC: true, [confirmedSignal("c")]: true });
+    const p2 = stagesFrom(SECTIONS, { a: true, b: true, showC: true, [confirmedSignal("c")]: true });
     expect(p2.find((x) => x.key === "c")!.status).toBe("complete");
   });
 });
@@ -48,7 +48,7 @@ describe("phasesFrom (#652)", () => {
 describe("ahead (banked) + connectorKind (#668)", () => {
   // a (done) → b (deps a, NOT done) → c (gateless, confirmed = done out of sequence)
   it("marks a complete section past the current one as 'ahead'", () => {
-    const p = phasesFrom(SECTIONS, { a: true, showC: true, [confirmedSignal("c")]: true });
+    const p = stagesFrom(SECTIONS, { a: true, showC: true, [confirmedSignal("c")]: true });
     // a complete (behind), b active (current), c complete-but-past-current → ahead
     expect(p.find((x) => x.key === "a")!.status).toBe("complete");
     expect(p.find((x) => x.key === "b")!.status).toBe("active");
@@ -56,7 +56,7 @@ describe("ahead (banked) + connectorKind (#668)", () => {
   });
 
   it("connectorKind: green up to + INTO the current node, not out of it (#668)", () => {
-    const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
+    const ph = (status: StageStatus) => ({ status } as unknown as Stage);
     // complete · complete · active · upcoming · ahead
     const list = [ph("complete"), ph("complete"), ph("active"), ph("upcoming"), ph("ahead")];
     expect(connectorKind(list, 0)).toBe("solid"); // complete → complete
@@ -73,21 +73,21 @@ describe("ahead (banked) + connectorKind (#668)", () => {
     ];
     // The flow now STOPS on the reached optional stage — it's "active", not auto-skipped (#921),
     // so the planner addresses it and the user decides. `b` isn't reached until `opt` is decided.
-    const p = phasesFrom(secs, { a: true } as unknown as PlanSignals);
+    const p = stagesFrom(secs, { a: true } as unknown as PlanSignals);
     expect(p.find((x) => x.key === "a")!.status).toBe("complete");
     expect(p.find((x) => x.key === "opt")!.status).toBe("active");
     expect(p.find((x) => x.key === "b")!.status).toBe("upcoming");
     // A deliberately user-skipped optional stage renders 'skipped' and the frontier advances past it.
-    const p2 = phasesFrom(secs, { a: true, [skippedSignal("opt")]: true } as unknown as PlanSignals);
+    const p2 = stagesFrom(secs, { a: true, [skippedSignal("opt")]: true } as unknown as PlanSignals);
     expect(p2.find((x) => x.key === "opt")!.status).toBe("skipped");
     expect(p2.find((x) => x.key === "b")!.status).toBe("active");
     // An optional stage the cursor hasn't reached isn't 'skipped' — only a deliberate skip is.
-    const p3 = phasesFrom([sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }), sec("opt", { optional: true })], {} as PlanSignals);
+    const p3 = stagesFrom([sec("a", { gateRule: { require: [{ signal: "a", target: true }] } }), sec("opt", { optional: true })], {} as PlanSignals);
     expect(p3.find((x) => x.key === "opt")!.status).not.toBe("skipped");
   });
 
   it("the connector leaving a SKIPPED section before the active stays green (#668)", () => {
-    const ph = (status: PhaseStatus) => ({ status } as unknown as Phase);
+    const ph = (status: StageStatus) => ({ status } as unknown as Stage);
     // context done · UI skipped/optional (upcoming) · structure active
     const list = [ph("complete"), ph("upcoming"), ph("active")];
     expect(connectorKind(list, 0)).toBe("solid"); // context → skipped UI
@@ -96,10 +96,10 @@ describe("ahead (banked) + connectorKind (#668)", () => {
 });
 
 describe("activeIndex / clampIndex (#652)", () => {
-  it("returns the active phase index, else the last", () => {
-    expect(activeIndex(phasesFrom(SECTIONS, {}))).toBe(0);
-    expect(activeIndex(phasesFrom(SECTIONS, { a: true }))).toBe(1);
-    expect(activeIndex(phasesFrom(SECTIONS, { a: true, b: true, showC: true }))).toBe(2); // none active → last
+  it("returns the active stage index, else the last", () => {
+    expect(activeIndex(stagesFrom(SECTIONS, {}))).toBe(0);
+    expect(activeIndex(stagesFrom(SECTIONS, { a: true }))).toBe(1);
+    expect(activeIndex(stagesFrom(SECTIONS, { a: true, b: true, showC: true }))).toBe(2); // none active → last
   });
   it("clamps into range", () => {
     expect(clampIndex(5, 3)).toBe(2);
@@ -109,7 +109,7 @@ describe("activeIndex / clampIndex (#652)", () => {
 });
 
 describe("gatePill (#652)", () => {
-  const p = phasesFrom(SECTIONS, { a: true }); // a complete, b active
+  const p = stagesFrom(SECTIONS, { a: true }); // a complete, b active
   it("pass when the gate is satisfied (complete), else wait", () => {
     expect(gatePill(p.find((x) => x.key === "a")!)).toBe("pass");
     expect(gatePill(p.find((x) => x.key === "b")!)).toBe("wait");
@@ -126,11 +126,11 @@ describe("footerAction (#652)", () => {
   });
 
   it("offers a skip control on the active OPTIONAL stage (#921)", () => {
-    // The active phase is an enabled optional stage the user hasn't decided — `canSkip` lights up
+    // The active stage is an enabled optional stage the user hasn't decided — `canSkip` lights up
     // alongside "approve & continue" so the USER, not the app, decides whether to skip it.
     expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
     expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
-    // Browsing away from the active phase never offers skip.
+    // Browsing away from the active stage never offers skip.
     expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
   });
 });
@@ -163,24 +163,24 @@ describe("currentGateReady (#652)", () => {
   });
 });
 
-describe("sectionForPhase (#815)", () => {
-  it("resolves the section by key, surviving the phases/sections index skew", () => {
-    // `c` is dropped from the visible phases (appliesWhen showC=false), so the phase at index 1
+describe("sectionForStage (#815)", () => {
+  it("resolves the section by key, surviving the stages/sections index skew", () => {
+    // `c` is dropped from the visible stages (appliesWhen showC=false), so the stage at index 1
     // is `b` — but in the RAW section list index 1 is also `b` here; the real skew shows once a
     // section BEFORE the target is dropped. Build that case explicitly:
     const sections = [sec("ui", { appliesWhen: { signal: "showUi", target: true } }), sec("features"), sec("structure")];
-    // showUi=false ⇒ phases = [features, structure]; phase index 0 is `features`.
-    const phases = phasesFrom(sections, {});
-    expect(phases.map((p) => p.key)).toEqual(["features", "structure"]);
-    // Indexing the RAW sections with the phase index 0 would wrongly pick `ui`; by-key picks `features`.
+    // showUi=false ⇒ stages = [features, structure]; stage index 0 is `features`.
+    const stages = stagesFrom(sections, {});
+    expect(stages.map((p) => p.key)).toEqual(["features", "structure"]);
+    // Indexing the RAW sections with the stage index 0 would wrongly pick `ui`; by-key picks `features`.
     expect(sections[0].key).toBe("ui");
-    expect(sectionForPhase(sections, phases[0])?.key).toBe("features");
-    expect(sectionForPhase(sections, phases[1])?.key).toBe("structure");
+    expect(sectionForStage(sections, stages[0])?.key).toBe("features");
+    expect(sectionForStage(sections, stages[1])?.key).toBe("structure");
   });
 
-  it("returns undefined for a missing/absent phase", () => {
-    expect(sectionForPhase(SECTIONS, undefined)).toBeUndefined();
-    expect(sectionForPhase(SECTIONS, { key: "nope" } as Phase)).toBeUndefined();
+  it("returns undefined for a missing/absent stage", () => {
+    expect(sectionForStage(SECTIONS, undefined)).toBeUndefined();
+    expect(sectionForStage(SECTIONS, { key: "nope" } as Stage)).toBeUndefined();
   });
 });
 
@@ -196,7 +196,7 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
     sec("docs", { deps: ["structure"], optional: true }),
   ];
   const active = (s: PlanSignals): string | undefined => {
-    const ps = phasesFrom(IMPORTED, s);
+    const ps = stagesFrom(IMPORTED, s);
     return ps[activeIndex(ps)]?.key;
   };
 
@@ -216,7 +216,7 @@ describe("imported blueprint — every stage gateless (#954, the 'Feature Add' r
     sig[confirmedSignal("testing")] = true;
     expect(active(sig)).toBe("docs");                    // optional — flow stops here until done/skipped (#921)
     sig[confirmedSignal("docs")] = true;
-    expect(phasesFrom(IMPORTED, sig).every((p) => p.status === "complete")).toBe(true);
+    expect(stagesFrom(IMPORTED, sig).every((p) => p.status === "complete")).toBe(true);
   });
 });
 

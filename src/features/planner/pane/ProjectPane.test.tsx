@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectPane } from "./ProjectPane";
-import type { Phase } from "../stages/focusedPlan";
+import type { Stage } from "../stages/focusedPlan";
 
-const ph = (key: string, name: string, status: Phase["status"], index: number, total: number): Phase =>
+const ph = (key: string, name: string, status: Stage["status"], index: number, total: number): Stage =>
   ({ key, name, glyph: "•", blurb: `${name} blurb`, gate: "gate", index, total, status, fraction: 0 });
 
 const baseFocus = (over: Partial<Parameters<typeof ProjectPane>[0]["focus"] & object> = {}) => ({
-  phases: [ph("discovery", "Discovery", "active", 0, 3), ph("structure", "Structure", "upcoming", 1, 3), ph("permissions", "Permissions", "locked", 2, 3)],
+  stages: [ph("discovery", "Discovery", "active", 0, 3), ph("structure", "Structure", "upcoming", 1, 3), ph("permissions", "Permissions", "locked", 2, 3)],
   selectedIdx: 0,
   activeIdx: 0,
   onSelect: vi.fn(),
@@ -19,7 +19,7 @@ const baseFocus = (over: Partial<Parameters<typeof ProjectPane>[0]["focus"] & ob
 });
 
 describe("ProjectPane focused mode (#652)", () => {
-  it("renders the stepper + the selected phase, and selects on step click", () => {
+  it("renders the stepper + the selected stage, and selects on step click", () => {
     const onSelect = vi.fn();
     render(<ProjectPane focus={baseFocus({ onSelect })} />);
     expect(screen.getByRole("heading", { name: "Discovery" })).toBeInTheDocument();
@@ -36,7 +36,7 @@ describe("ProjectPane focused mode (#652)", () => {
       ],
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus({
-      phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     // The authored skill carries a NEW badge…
     expect(screen.getByText("NEW")).toBeInTheDocument();
@@ -46,14 +46,14 @@ describe("ProjectPane focused mode (#652)", () => {
     expect(fresh.compareDocumentPosition(existing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("shows a lock banner when browsing a future phase", () => {
+  it("shows a lock banner when browsing a future stage", () => {
     render(<ProjectPane focus={baseFocus({ selectedIdx: 2, activeIdx: 0 })} />);
     expect(screen.getByText(/Locked\./)).toBeInTheDocument();
   });
 
   it("renders the file-drop intake surface for the UI stage (#829)", () => {
     render(<ProjectPane projectId="proj-x" focus={baseFocus({
-      phases: [ph("ui", "UI", "active", 0, 1)],
+      stages: [ph("ui", "UI", "active", 0, 1)],
       selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/Drop design files or a folder/i)).toBeInTheDocument();
@@ -61,7 +61,7 @@ describe("ProjectPane focused mode (#652)", () => {
 
   it("renders a generic body for a section without a dedicated panel", () => {
     render(<ProjectPane focus={baseFocus({
-      phases: [ph("testing", "Testing", "active", 0, 1)],
+      stages: [ph("testing", "Testing", "active", 0, 1)],
       selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/planner documents this stage/)).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe("ProjectPane focused mode (#652)", () => {
       agents: [], repos: [], structure: [], phaseStructure: [], issues: [],
       context: [{ name: "goal.md", kind: "doc", tok: "1.2k", pinned: false, scope: "project", content: "# Goal\n\nThe one outcome." }],
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus()} />); // context phase active
+    render(<ProjectPane data={data} focus={baseFocus()} />); // context stage active
     // the file is listed, but its content isn't shown until opened
     expect(screen.getByText("goal.md")).toBeInTheDocument();
     expect(screen.queryByText(/The one outcome\./)).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
-  const reposPhase = { phases: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+  const reposPhase = { stages: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
   it("lists the linked repositories with tiles, metadata, and stateful branch chips (#811)", () => {
     const data = { agents: [], repos: [
@@ -139,23 +139,23 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("shows an empty context state (no mock files) on a fresh plan", () => {
-    render(<ProjectPane focus={baseFocus()} />); // context phase active, no data
+    render(<ProjectPane focus={baseFocus()} />); // context stage active, no data
     expect(screen.getByText(/No context files yet/)).toBeInTheDocument();
   });
 
   it("shows empty states (no mock structure/agents) for a fresh Plan + permissions stage", () => {
     const { rerender } = render(<ProjectPane focus={baseFocus({
-      phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No plan yet/)).toBeInTheDocument();
     rerender(<ProjectPane focus={baseFocus({
-      phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.getByText(/No fleet yet/)).toBeInTheDocument();
   });
 
   it("renders the Permissions fleet as agent rows (#817)", () => {
-    const permsPhase = { phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Autonomous (trusted)",
@@ -169,7 +169,7 @@ describe("ProjectPane focused mode (#652)", () => {
 
   it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {
     const onModel = vi.fn();
-    const permsPhase = { phases: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
@@ -186,35 +186,35 @@ describe("ProjectPane focused mode (#652)", () => {
 
   it("renders the Plan review (seam graph) with no in-body approve button (#949)", () => {
     // The Structure stage's only approve control is the footer's "approve & continue" — the
-    // duplicate in-body "Approve milestones & seams" button was removed (#949). Milestone phases
-    // were removed (#1912), so the Plan body no longer renders a phase roadmap.
+    // duplicate in-body "Approve milestones & seams" button was removed (#949). Milestone stages
+    // were removed (#1912), so the Plan body no longer renders a stage roadmap.
     const data = { agents: [], repos: [], structure: [], context: [], issues: [],
       seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus({
-      phases: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
+      stages: [ph("structure", "Plan", "active", 0, 1)], selectedIdx: 0, activeIdx: 0,
     })} />);
     expect(screen.queryByText(/Approve milestones/)).not.toBeInTheDocument();
   });
 
   it("renders the automations + skills bodies from real data, with empty states", () => {
     // empty → empty states
-    const { rerender } = render(<ProjectPane focus={baseFocus({ phases: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    const { rerender } = render(<ProjectPane focus={baseFocus({ stages: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
     expect(screen.getByText(/No automations yet/)).toBeInTheDocument();
-    rerender(<ProjectPane focus={baseFocus({ phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    rerender(<ProjectPane focus={baseFocus({ stages: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
     expect(screen.getByText(/No skills attached/)).toBeInTheDocument();
     // populated
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
       automations: [{ name: "nightly-deps", command: "npm audit", schedule: "0 2 * * *" }],
       skills: [{ name: "Rust review", kind: "skill", desc: "review checklist" }] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    rerender(<ProjectPane data={data} focus={baseFocus({ phases: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    rerender(<ProjectPane data={data} focus={baseFocus({ stages: [ph("automations", "Automations", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
     expect(screen.getByText("nightly-deps")).toBeInTheDocument();
-    rerender(<ProjectPane data={data} focus={baseFocus({ phases: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
+    rerender(<ProjectPane data={data} focus={baseFocus({ stages: [ph("skills", "Skills", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 })} />);
     expect(screen.getByText("Rust review")).toBeInTheDocument();
   });
 
   it("renders the Features board — empty state, then cards with defined/drafting badges (#…)", () => {
-    const featuresPhase = { phases: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const featuresPhase = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const { rerender } = render(<ProjectPane focus={baseFocus(featuresPhase)} />);
     expect(screen.getByText(/Claude proposes a starter set/)).toBeInTheDocument();
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
@@ -231,7 +231,7 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("expands a feature card to show the full workshop spec (#811-followup)", () => {
-    const featuresPhase = { phases: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const featuresPhase = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
       features: [
         { slug: "invite", name: "Invite teammates", behavior: "send an invite",
@@ -258,7 +258,7 @@ describe("ProjectPane focused mode (#652)", () => {
       { name: "goal.md", kind: "doc", tok: "2.0k", pinned: true, scope: "project", content: "x" },
       { name: "scope.md", kind: "doc", tok: "1.5k", pinned: true, scope: "project", content: "y" },
     ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus()} />); // context phase active
+    render(<ProjectPane data={data} focus={baseFocus()} />); // context stage active
     expect(screen.getByText("3.5k / 200k tok")).toBeInTheDocument();
     expect(screen.queryByText(/6\.7k/)).toBeNull(); // old hardcoded value gone
   });

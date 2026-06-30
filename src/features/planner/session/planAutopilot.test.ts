@@ -3,14 +3,14 @@ import {
   decideAutopilotAction, buildUserSimPrompt, staticReply, autopilotProgress,
   type AutopilotContext,
 } from "./planAutopilot";
-import type { Phase } from "../stages/focusedPlan";
+import type { Stage } from "../stages/focusedPlan";
 
 const ctx = (over: Partial<AutopilotContext> = {}): AutopilotContext => ({
   planReady: false, published: false, confirmKeys: [], plannerAwaiting: false,
   iteration: 0, maxIterations: 100, idleStreak: 0, maxIdle: 5, autoPublish: true, ...over,
 });
 
-const phase = (status: Phase["status"]): Phase =>
+const stage = (status: Stage["status"]): Stage =>
   ({ key: "k", name: "K", glyph: "•", blurb: "", gate: "", index: 0, total: 1, status, fraction: 0 });
 
 describe("decideAutopilotAction (#682)", () => {
@@ -69,8 +69,8 @@ describe("staticReply (#682 strategies)", () => {
 });
 
 describe("autopilotProgress (#682)", () => {
-  it("counts complete + banked-ahead phases as done", () => {
-    const p = [phase("complete"), phase("ahead"), phase("active"), phase("upcoming")];
+  it("counts complete + banked-ahead stages as done", () => {
+    const p = [stage("complete"), stage("ahead"), stage("active"), stage("upcoming")];
     expect(autopilotProgress(p)).toEqual({ done: 2, total: 4, fraction: 0.5 });
     expect(autopilotProgress([])).toEqual({ done: 0, total: 0, fraction: 0 });
   });

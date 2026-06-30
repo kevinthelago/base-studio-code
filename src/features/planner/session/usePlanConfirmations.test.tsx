@@ -5,14 +5,14 @@ import { usePlanConfirmations } from "./usePlanConfirmations";
 import { FEATURES_KEY } from "../stages/planTopics";
 
 type Props = Parameters<typeof usePlanConfirmations>[0];
-type Phases = Props["phases"];
+type Stages = Props["stages"];
 
-const phases = (over: Record<string, unknown> = {}): Phases =>
-  ([{ key: "goal", name: "Goal", index: 0, optional: false, status: "active", ...over }] as unknown as Phases);
+const stages = (over: Record<string, unknown> = {}): Stages =>
+  ([{ key: "goal", name: "Goal", index: 0, optional: false, status: "active", ...over }] as unknown as Stages);
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    phases: phases(),
+    stages: stages(),
     focusActiveIdx: 0,
     sections: [],
     planSecs: [],
@@ -48,8 +48,8 @@ describe("usePlanConfirmations", () => {
     expect(props.confirmPlanSection).not.toHaveBeenCalled();
   });
 
-  it("onSkipStage skips the active phase and tells the planner", () => {
-    const props = baseProps({ phases: phases({ key: "ui", name: "UI", optional: true }) });
+  it("onSkipStage skips the active stage and tells the planner", () => {
+    const props = baseProps({ stages: stages({ key: "ui", name: "UI", optional: true }) });
     const { result } = renderHook(() => usePlanConfirmations(props));
     act(() => { result.current.onSkipStage(); });
     expect(props.skipPlanSection).toHaveBeenCalledWith("proj", "ui");
@@ -58,7 +58,7 @@ describe("usePlanConfirmations", () => {
 
   it("pendingConfirm offers the one-click FEATURES confirm once every feature is populated", () => {
     const props = baseProps({
-      phases: phases({ key: FEATURES_KEY, name: "Features" }),
+      stages: stages({ key: FEATURES_KEY, name: "Features" }),
       featureState: { count: 2, allConfirmed: true } as Props["featureState"],
     });
     const { result } = renderHook(() => usePlanConfirmations(props));
@@ -75,7 +75,7 @@ describe("usePlanConfirmations", () => {
     vi.useFakeTimers();
     try {
       const props = baseProps({
-        phases: phases({ key: FEATURES_KEY, name: "Features" }),
+        stages: stages({ key: FEATURES_KEY, name: "Features" }),
         featureState: { count: 1, allConfirmed: true } as Props["featureState"],
         autoCompleteGates: true,
         autoPlanActive: false,

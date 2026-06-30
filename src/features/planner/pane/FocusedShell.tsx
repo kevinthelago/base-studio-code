@@ -1,10 +1,10 @@
-// Focused planner pane (#652) — the presentational shell around a single phase: the
-// navigable stepper, the phase header with gate pill, lock/done banners, and the footer
-// advance bar. Pure presentational (props in, callbacks out); the phase model + footer
+// Focused planner pane (#652) — the presentational shell around a single stage: the
+// navigable stepper, the stage header with gate pill, lock/done banners, and the footer
+// advance bar. Pure presentational (props in, callbacks out); the stage model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { useState } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
-import { connectorKind, type Phase, type GatePill, type FooterKind } from "../stages/focusedPlan";
+import { connectorKind, type Stage, type GatePill, type FooterKind } from "../stages/focusedPlan";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
 import type { StagePrompt } from "../session/plannerConductor";
@@ -78,20 +78,20 @@ function reasonText(u: { label: string; detail?: string }): string {
 }
 
 /**
- * The sequenced rail (#668): one node per phase joined by connectors. Solid connectors trace the
+ * The sequenced rail (#668): one node per stage joined by connectors. Solid connectors trace the
  * in-sequence path walked so far; the current node pulses (accent ring); a banked-ahead node (gate
- * met out of sequence) is green-ringed, reached by a dashed connector. `highlight` pulses phases the
+ * met out of sequence) is green-ringed, reached by a dashed connector. `highlight` pulses stages the
  * user still has to finish.
  *
- * A thin adapter over the shared {@link ProgressionRail} (#1869): it maps each {@link Phase} to a
- * rail node (the phase's status IS the rail status), labels it with the phase name, shows the stage
+ * A thin adapter over the shared {@link ProgressionRail} (#1869): it maps each {@link Stage} to a
+ * rail node (the stage's status IS the rail status), labels it with the stage name, shows the stage
  * icon (✓ once done — the card look we standardized on), and hands the rail the focused-plan
  * {@link connectorKind} so the dashed banked / solid walked / dim upcoming connectors are preserved.
  */
-export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
-  phases: Phase[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
+export function Stepper({ stages, selectedIdx, onSelect, highlight }: {
+  stages: Stage[]; selectedIdx: number; onSelect: (i: number) => void; highlight?: Set<string>;
 }) {
-  const nodes: RailNode[] = phases.map((p) => ({
+  const nodes: RailNode[] = stages.map((p) => ({
     key: p.key,
     status: p.status,
     icon: stageKind(p.key).glyph,
@@ -105,21 +105,21 @@ export function Stepper({ phases, selectedIdx, onSelect, highlight }: {
       selectedIdx={selectedIdx}
       onSelect={onSelect}
       highlight={highlight}
-      connectorKind={(_, i) => connectorKind(phases, i)}
+      connectorKind={(_, i) => connectorKind(stages, i)}
     />
   );
 }
 
-/** Eyebrow + title + blurb + gate pill for the focused phase. The pill surfaces WHY the
+/** Eyebrow + title + blurb + gate pill for the focused stage. The pill surfaces WHY the
  *  gate isn't met (#805): a hover tooltip + a click-to-toggle popover of what's still needed. */
-export function PhaseHeader({ phase, pill, promptHelp }: {
-  phase: Phase;
+export function StageHeader({ stage, pill, promptHelp }: {
+  stage: Stage;
   pill: GatePill;
   /** Injectable prompts for this stage + the inject handler — drives the "?" helper (#…). */
   promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
 }) {
   const [showReasons, setShowReasons] = useState(false);
-  const unmet = phase.unmet ?? [];
+  const unmet = stage.unmet ?? [];
   // Only offer reasons while the gate isn't passing and there's something to explain.
   const hasReasons = pill !== "pass" && unmet.length > 0;
   const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
@@ -127,7 +127,7 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
     <div className="ph-head" style={{ position: "relative" }}>
       {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
       <div className="ph-title">
-        <h2>{phase.name}</h2>
+        <h2>{stage.name}</h2>
         <span
           className={"ph-gate " + pill}
           title={tip}
@@ -139,7 +139,7 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
           {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
         </span>
       </div>
-      <p className="ph-blurb">{phase.blurb}</p>
+      <p className="ph-blurb">{stage.blurb}</p>
       {hasReasons && showReasons && (
         <div role="status" className="mono" style={{
           marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
@@ -160,20 +160,20 @@ export function PhaseHeader({ phase, pill, promptHelp }: {
   );
 }
 
-/** Shown when browsing a not-yet-reachable phase. */
+/** Shown when browsing a not-yet-reachable stage. */
 export function LockBanner({ activeName }: { activeName: string }) {
   return (
     <div className="lock-banner">
-      🔒 <span><b>Locked.</b> Complete <b>{activeName}</b> to unlock this phase. Previewing only.</span>
+      🔒 <span><b>Locked.</b> Complete <b>{activeName}</b> to unlock this stage. Previewing only.</span>
     </div>
   );
 }
 
-/** Shown when reviewing a completed phase. */
+/** Shown when reviewing a completed stage. */
 export function DoneBanner() {
   return (
     <div className="lock-banner" style={{ background: "color-mix(in oklch,var(--success),transparent 91%)", borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
-      ✓ <span style={{ color: "var(--fg-muted)" }}><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the phase for review.</span>
+      ✓ <span style={{ color: "var(--fg-muted)" }}><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the stage for review.</span>
     </div>
   );
 }
@@ -186,8 +186,8 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 };
 
 /** The advance bar: back · progress · the context-sensitive primary action. */
-export function PhaseFooter({ phase, action, published, publishLabel, onBack, onPrimary, onSkip }: {
-  phase: Phase;
+export function StageFooter({ stage, action, published, publishLabel, onBack, onPrimary, onSkip }: {
+  stage: Stage;
   action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; override?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
@@ -208,7 +208,7 @@ export function PhaseFooter({ phase, action, published, publishLabel, onBack, on
   const primary = action.kind === "approve-continue" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
   // In override mode (#1285) the button IS enabled, but the tooltip warns it bypasses the gate.
-  const unmet = phase.unmet ?? [];
+  const unmet = stage.unmet ?? [];
   const stillNeeded = unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : "";
   const blockedTip = action.override
     ? ("Override: advance past this stage's gate without meeting it." + (stillNeeded ? " " + stillNeeded : ""))
@@ -216,8 +216,8 @@ export function PhaseFooter({ phase, action, published, publishLabel, onBack, on
     : undefined;
   return (
     <div className="ph-foot">
-      <BackButton variant="text" label="back" className="nav-btn" disabled={phase.index === 0} onClick={onBack} aria-label="Back" />
-      <span className="prog">phase {phase.index + 1} of {phase.total}</span>
+      <BackButton variant="text" label="back" className="nav-btn" disabled={stage.index === 0} onClick={onBack} aria-label="Back" />
+      <span className="prog">stage {stage.index + 1} of {stage.total}</span>
       <span style={{ flex: 1 }} />
       {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
       {action.canSkip && onSkip && (

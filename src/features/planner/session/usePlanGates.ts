@@ -1,11 +1,11 @@
 // usePlanGates (#1474) — the planner's gate/`signals` derivation, extracted verbatim from
 // Planning.tsx. Owns the live `stageState` snapshot, the lint/injection gates, the skip/confirm
 // signal bags, the flat `signals` bag the declarative section gates read, and the focused-pane
-// derivations (`phases`, active index, current-gate-ready, plan-complete, status label).
+// derivations (`stages`, active index, current-gate-ready, plan-complete, status label).
 //
 // Pure derivation, no side effects. `planSecs` (the blueprint sections) and the focused-pane
-// SELECTION state (`focusSel`/`focusSelectedIdx`/`focusSelPhase`) STAY in Planning and are passed
-// in / read off this hook's outputs — only the auto-derived `phases`/`focusActiveIdx` move here.
+// SELECTION state (`focusSel`/`focusSelectedIdx`/`focusSelStage`) STAY in Planning and are passed
+// in / read off this hook's outputs — only the auto-derived `stages`/`focusActiveIdx` move here.
 // `isAuthoring`/`authoringSig` come from usePlannerBlueprint, so call this immediately after it.
 
 import { useMemo } from "react";
@@ -22,7 +22,7 @@ import { deploymentDefined } from "../lib/deployConfig";
 import { allSourcesConnected, migrationActive, datamodelSignals } from "../lib/sourceConfig";
 import { destinationDefined, syncDefined } from "../lib/integrationConfig";
 import { unlockedSharedRepos } from "../issues/dependencies";
-import { phasesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
+import { stagesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
 
 interface PlanGatesDeps {
   sections: Section[];
@@ -142,17 +142,17 @@ export function usePlanGates(deps: PlanGatesDeps) {
     return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
   }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
 
-  // Focused pane (#652): one phase at a time. `phases` derive from the blueprint sections +
-  // signals; the active phase auto-follows the frontier (the user-pick SELECTION stays in Planning).
-  const phases = useMemo(() => phasesFrom(planSecs, signals), [planSecs, signals]);
-  const focusActiveIdx = useMemo(() => activeIndex(phases), [phases]);
+  // Focused pane (#652): one stage at a time. `stages` derive from the blueprint sections +
+  // signals; the active stage auto-follows the frontier (the user-pick SELECTION stays in Planning).
+  const stages = useMemo(() => stagesFrom(planSecs, signals), [planSecs, signals]);
+  const focusActiveIdx = useMemo(() => activeIndex(stages), [stages]);
   const focusGateReady = useMemo(() => currentGateReady(planSecs, signals), [planSecs, signals]);
   const planComplete = useMemo(() => planStagesComplete(planSecs, signals), [planSecs, signals]);
-  const currentStage = phases[focusActiveIdx]?.key ?? "";
+  const currentStage = stages[focusActiveIdx]?.key ?? "";
   const planStatusLabel = planComplete ? "complete" : currentStage ? "in_progress" : "starting";
   // Legacy alias kept for the publish/recovery readers (#854): the dynamic blueprint gate IS the
   // completion gate.
   const planReady = planComplete;
 
-  return { injectionGateState, phases, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady };
+  return { injectionGateState, stages, focusActiveIdx, focusGateReady, planComplete, currentStage, planStatusLabel, planReady };
 }
