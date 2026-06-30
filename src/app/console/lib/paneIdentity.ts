@@ -176,3 +176,28 @@ export function parsePaneIdentity(id: string): ParsedPaneIdentity | null {
   }
   return null;
 }
+
+/**
+ * The Rust command + args that resolve a pane's on-disk dir from its identity (#1819 hardening) — for
+ * a claude pane whose configured cwd came back EMPTY (the async `bscBaseDir` mirror wasn't loaded when
+ * the pane's cwd was set, so `projectRepoCwd`/`projectHubCwd` returned ""). The launch can then recover
+ * an authoritative absolute path from the backend instead of running permission-less.
+ *
+ * `triage` → its repo clone dir (`repo_dir_path`); `director` → the project hub (`project_dir_path`).
+ * Returns `null` for an id whose dir can't be derived from the id alone — manual/positional panes, or a
+ * `worker` (its cwd is a worktree keyed by the agent id, which `ensure_worktree` already supplies). Pure
+ * (no invoke) so it's unit-testable; the caller runs the returned command.
+ */
+export function paneCwdRecovery(
+  paneId: string,
+): { cmd: "repo_dir_path" | "project_dir_path"; args: Record<string, string> } | null {
+  const id = parsePaneIdentity(paneId);
+  if (!id?.projectKey) return null;
+  if (id.kind === "triage" && id.repo) {
+    return { cmd: "repo_dir_path", args: { projectKey: id.projectKey, repo: id.repo } };
+  }
+  if (id.kind === "director") {
+    return { cmd: "project_dir_path", args: { projectKey: id.projectKey } };
+  }
+  return null;
+}
