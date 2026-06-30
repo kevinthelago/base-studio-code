@@ -9,21 +9,13 @@ import type { Phase } from "../stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { Topology } from "../relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
-// Migration / data-pipeline + deploy bodies (pre-existing files).
+// Deploy + source bodies (pre-existing files). The data-pipeline bodies (targets / legitimacy /
+// acquire / extract / model / mapping / cleaning / load / destination / sync / integrations) were
+// removed with the v1.0.4 data-platform stages (v1.0.5 cleanup); `source` stays (it's in `complete`).
 import { FileIntakePane } from "../bodies/FileIntakePane";
 import { FocusedDeployBody } from "../bodies/DeployView";
 import { FocusedReposDeployBody } from "../bodies/ReposDeployView";
 import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
-import { FocusedTargetsBody } from "../bodies/FocusedTargetsBody";
-import { FocusedLegitimacyBody } from "../bodies/FocusedLegitimacyBody";
-import { FocusedAcquireBody } from "../bodies/FocusedAcquireBody";
-import { FocusedExtractBody } from "../bodies/FocusedExtractBody";
-import { FocusedModelBody } from "../bodies/FocusedModelBody";
-import { FocusedDestinationBody, FocusedSyncBody } from "../bodies/IntegrationBodies";
-import { FocusedIntegrationsBody } from "../bodies/FocusedIntegrationsBody";
-import { FocusedMappingBody } from "../bodies/FocusedMappingBody";
-import { FocusedCleaningBody } from "../bodies/FocusedCleaningBody";
-import { FocusedLoadBody } from "../bodies/FocusedLoadBody";
 // Core planning-stage bodies (#1757 split out of this file).
 import { FocusedReposBody } from "../bodies/FocusedReposBody";
 import { FocusedContextBody } from "../bodies/FocusedContextBody";
@@ -78,28 +70,6 @@ export function FocusedPhaseBody({ phase, data, projectId, authoring, onLinkRepo
   switch (phase.key) {
     case "source":
       return <FocusedSourceBody projectId={projectId} />;
-    case "collectTargets":
-      return <FocusedTargetsBody projectId={projectId} />;
-    case "sourceLicensing":
-      return <FocusedLegitimacyBody projectId={projectId} />;
-    case "dataAcquire":
-      return <FocusedAcquireBody projectId={projectId} />;
-    case "dataExtract":
-      return <FocusedExtractBody projectId={projectId} />;
-    case "dataModel":
-      return <FocusedModelBody projectId={projectId} />;
-    case "dataMap":
-      return <FocusedMappingBody projectId={projectId} />;
-    case "dataClean":
-      return <FocusedCleaningBody projectId={projectId} />;
-    case "dataLoad":
-      return <FocusedLoadBody projectId={projectId} />;
-    case "destination":
-      return <FocusedDestinationBody projectId={projectId} />;
-    case "sync":
-      return <FocusedSyncBody projectId={projectId} />;
-    case "integrations":
-      return <FocusedIntegrationsBody projectId={projectId} />;
     case "repos":
       // #1383/#1399: when the blueprint folds deploy in (phase.ship), the merged "Deployment" stage
       // renders as one cohesive Repositories & Deployment pane — each repo's git identity merged with

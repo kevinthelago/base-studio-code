@@ -17,9 +17,6 @@ describe("blueprint categories (#645)", () => {
     const all = makeBlueprints();
     expect(all.find((b) => b.id === "default")!.category).toBe("greenfield");
     expect(all.find((b) => b.id === "default")!.mode).toBe("create");
-    const refactor = all.find((b) => b.id === "refactor")!;
-    expect(refactor.category).toBe("transform");
-    expect(refactor.mode).toBe("operate");
   });
 
   it("every category has display metadata", () => {
@@ -71,103 +68,23 @@ describe("blueprint categories (#645)", () => {
   it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    for (const id of ["default", "complete", "refactor"]) {
+    // The packaged set after the v1.0.5 consolidation: greenfield Default + Complete, plus the
+    // blueprint-authoring meta-blueprint. (The transform/harden/data blueprints were archived.)
+    for (const id of ["default", "complete", "blueprint-author"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });
 });
 
-describe("transform blueprints (#645 slice 2)", () => {
-  const all = makeBlueprints();
-  const byId = (id: string) => all.find((b) => b.id === id)!;
-
-  it("packages the lifecycle transforms with the right category/mode", () => {
-    for (const id of ["split-services", "combine-services", "migrate"]) {
-      expect(byId(id), id).toBeTruthy();
-      expect(byId(id).category).toBe("transform");
-      expect(byId(id).mode).toBe("operate");
-    }
-    expect(byId("harden").category).toBe("harden");
-    expect(byId("harden").mode).toBe("operate");
-  });
-
-  it("builds their stages from real transform section defs (not the synth fallback)", () => {
-    const split = byId("split-services");
-    const keys = split.sections.map((s) => s.key);
-    expect(keys).toEqual(expect.arrayContaining(["boundaries", "extraction"]));
-    const extraction = split.sections.find((s) => s.key === "extraction")!;
-    expect(extraction.deps).toContain("boundaries");
-    // a real SECTION_DEF carries its own glyph; the synth fallback would be "✚".
-    expect(split.sections.find((s) => s.key === "boundaries")!.glyph).not.toBe("✚");
-  });
-
-  it("the refactor blueprint has no structure stage (no issues.json) but keeps cleanup + testing (#666)", () => {
-    const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
-    const keys = refactor.sections.map((s) => s.key);
-    expect(keys).not.toContain("structure");
-    expect(keys).toEqual(expect.arrayContaining(["cleanup", "testing"]));
-  });
-
-  it("are surfaced by the category filter", () => {
-    const transforms = filterBlueprints(all, { category: "transform" }).map((b) => b.id);
-    expect(transforms).toEqual(expect.arrayContaining(["refactor", "split-services", "combine-services", "migrate"]));
-    expect(filterBlueprints(all, { category: "harden" }).map((b) => b.id)).toContain("harden");
-  });
-});
-
-describe("data blueprints (#779/#782/#783)", () => {
-  const all = makeBlueprints();
-  const byId = (id: string) => all.find((b) => b.id === id)!;
-
-  it("the data category has display metadata and a chip", () => {
-    expect(CATEGORY_META.data.label).toBe("Data");
-    expect(filterBlueprints(all, { category: "data" }).map((b) => b.id))
-      .toEqual(expect.arrayContaining(["data-migration", "data-collection"]));
-  });
-
-  it("packages the two data blueprints with the right category/mode", () => {
-    expect(byId("data-migration").category).toBe("data");
-    expect(byId("data-migration").mode).toBe("operate"); // against an existing system
-    expect(byId("data-collection").category).toBe("data");
-    expect(byId("data-collection").mode).toBe("create"); // net-new acquisition
-  });
-
-  it("both pipelines converge on the shared Data Model + clean + load stages", () => {
-    for (const id of ["data-migration", "data-collection"]) {
-      const keys = byId(id).sections.map((s) => s.key);
-      expect(keys, id).toEqual(expect.arrayContaining(["dataModel", "dataClean", "dataLoad"]));
-    }
-  });
-
-  it("migration maps a source; collection acquires net-new under a licensing gate", () => {
-    const mig = byId("data-migration").sections.map((s) => s.key);
-    expect(mig).toEqual(expect.arrayContaining(["dataSource", "dataMap"]));
-    const col = byId("data-collection").sections.map((s) => s.key);
-    expect(col).toEqual(expect.arrayContaining(["collectTargets", "sourceLicensing", "dataAcquire", "dataExtract"]));
-  });
-
-  it("migration is strictly read-only — no write-back stage (#782)", () => {
-    const keys = byId("data-migration").sections.map((s) => s.key);
-    expect(keys).not.toContain("dataWriteback");
-  });
-
-  it("the shared cleaning stage gates on whichever front half a blueprint includes (omitted dep treated as met)", () => {
-    // dataClean's def depends on BOTH dataMap (migration) and dataExtract (collection);
-    // each blueprint omits the other, which the lock resolver treats as met.
-    const clean = byId("data-migration").sections.find((s) => s.key === "dataClean")!;
-    expect(clean.deps).toEqual(expect.arrayContaining(["dataMap", "dataExtract"]));
-  });
-});
-
 describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 fix)", () => {
   it("a brand-new project (no config) seeds + records the active blueprint", () => {
-    expect(resolveProjectSeed(false, undefined, "fullstack")).toEqual({ seedConfig: true, setBlueprintId: "fullstack" });
+    expect(resolveProjectSeed(false, undefined, "complete")).toEqual({ seedConfig: true, setBlueprintId: "complete" });
   });
   it("an existing project with NO recorded blueprint backfills to default (so a switch prompts)", () => {
-    expect(resolveProjectSeed(true, undefined, "fullstack")).toEqual({ seedConfig: false, setBlueprintId: "default" });
+    expect(resolveProjectSeed(true, undefined, "complete")).toEqual({ seedConfig: false, setBlueprintId: "default" });
   });
   it("an existing project that already knows its blueprint changes nothing", () => {
-    expect(resolveProjectSeed(true, "refactor", "fullstack")).toEqual({ seedConfig: false });
+    expect(resolveProjectSeed(true, "complete", "default")).toEqual({ seedConfig: false });
   });
 });
 
