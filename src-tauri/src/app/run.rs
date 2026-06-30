@@ -182,6 +182,7 @@ pub fn run() {
             session::claude_config::read_claude_config,
             session::claude_config::write_claude_config,
             session::settings::ensure_session_settings,
+            session::sandbox::wsl_sandbox_status,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
