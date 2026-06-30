@@ -102,8 +102,9 @@ pub(crate) struct LocalProject {
 /// unpublished local work, not just GitHub boards + the store's draft map (#…). The on-disk hub is
 /// the durable source of truth; the store had drifted out of sync, hiding real projects. `title`
 /// is the first non-empty line of `goal.md` (heading markers stripped, first sentence, capped),
-/// else the humanized key. `has_plan` marks a real project (any of goal/scope/CLAUDE.md present)
-/// vs. a bare scaffold. `updated_at` is the dir mtime in ms since the epoch (for recency sorting).
+/// else the humanized key. `has_plan` marks a real project (a plan SECTION — goal/scope — present),
+/// NOT `CLAUDE.md` (which EVERY hub gets at setup, so it can't tell a bare scaffold apart).
+/// `updated_at` is the dir mtime in ms since the epoch (for recency sorting).
 #[tauri::command]
 pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
     // Single root since #922: every hub lives under projects/<key>; `published` is the in-place
@@ -119,13 +120,20 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
             _ => continue,
         };
         let goal = dir.join("goal.md");
-        let has_plan = goal.exists() || dir.join("scope.md").exists() || dir.join("CLAUDE.md").exists();
+        // Real project vs bare scaffold: a plan SECTION (goal/scope) is present. CLAUDE.md is
+        // EXCLUDED — it's written into EVERY hub at setup, so counting it made `has_plan` always true,
+        // surfacing a freshly-created/empty hub (just CLAUDE.md + an empty plan.db) as a draft named by
+        // its raw `p-…` key (the title falls back to the humanized key when goal.md is absent).
+        let has_plan = goal.exists() || dir.join("scope.md").exists();
         let title = std::fs::read_to_string(&goal)
             .ok()
             .and_then(|c| {
+                // First real (non-empty, non-heading) line → its first sentence. SKIP heading lines
+                // (`# Goal`) rather than just stripping the `#` — otherwise every hub whose goal.md
+                // opens with `# Goal` would be titled "Goal" (matches the frontend deriveProjectTitle).
                 c.lines()
-                    .map(|l| l.trim_start_matches('#').trim())
-                    .find(|l| !l.is_empty())
+                    .map(|l| l.trim())
+                    .find(|l| !l.is_empty() && !l.starts_with('#'))
                     .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
             })
             .filter(|t| !t.is_empty())
@@ -244,6 +252,30 @@ mod relocated_tests {
         assert!(is_published(key));
         std::fs::remove_dir_all(&home).ok();
     }
+
+    #[test]
+    fn has_plan_ignores_the_always_present_claude_md_scaffold() {
+        // The bug: every hub gets a CLAUDE.md at setup, so counting it in `has_plan` made a freshly
+        // created / empty hub (just CLAUDE.md + an empty plan.db, no plan section) surface as a draft
+        // named by its raw `p-…` key. A real project has a plan SECTION (goal/scope); a bare scaffold
+        // does not. (A real in-progress draft the user created is still shown from the store's draft
+        // map regardless — this only governs ORPHAN on-disk hubs with no store entry.)
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("hasplan");
+        // A bare scaffold — only the setup-written CLAUDE.md.
+        write_file(&project_dir("p-empty").join("CLAUDE.md"), "planner spec");
+        // A real project — a goal section was written.
+        write_file(&project_dir("real-proj").join("CLAUDE.md"), "planner spec");
+        write_file(&project_dir("real-proj").join("goal.md"), "# Goal\n\nBuild a thing.");
+
+        let list = list_local_projects().unwrap();
+        let get = |k: &str| list.iter().find(|p| p.key == k).expect("project listed");
+        assert!(!get("p-empty").has_plan, "a CLAUDE.md-only scaffold is NOT a real project (no random-named draft)");
+        assert!(get("real-proj").has_plan, "a hub with a plan section IS a real project");
+        assert_eq!(get("real-proj").title, "Build a thing", "title comes from goal.md, not the key");
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn migration_consolidates_draft_hubs_and_clears_empty_published_shells() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
