@@ -1,6 +1,6 @@
 // usePlanSectionPoll (#1474) — the planner's 2-second plan.db + section-file poll, extracted
 // verbatim from Planning.tsx. While the planning page is visible it reflects every DB-owned
-// artifact (issues / features / repos / phases / fleet / deploy / deps / mcp / blueprint) plus the
+// artifact (issues / features / repos / fleet / deploy / deps / mcp / blueprint) plus the
 // `read_plan_sections` file poll into the store, with per-artifact change-guards so an unchanged
 // blob never churns state. Side-effect only — owns its guard refs internally and returns nothing.
 
@@ -76,15 +76,6 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           const dbRepos = await invoke<string[]>("plan_list_repos", { projectKey: effectiveProjectId });
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
-
-        // Phases are DB-owned too (#1017) — reflect the roadmap (name + description, in order) from
-        // plan.db into the "phases" section so the structure card + publish (parsePhases) read it
-        // unchanged. Only override on a non-empty DB so the migration doesn't wipe a legacy phases.json.
-        try {
-          const dbPhases = await invoke<{ name: string; description: string }[]>("plan_list_phases", { projectKey: effectiveProjectId });
-          const json = JSON.stringify(dbPhases ?? []);
-          if ((dbPhases?.length ?? 0) > 0 && json !== (saved["phases"] ?? "")) store.setPlanSection(effectiveProjectId, "phases", json);
-        } catch { /* plan.db not created until the planner adds a phase — ignore */ }
 
         // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
         // plan.db is the SOLE fleet source (#1805): there is no fleet.json reader anymore. Reflect the
@@ -189,7 +180,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           // Canonicalize the file stem (e.g. "Tech stack" → "stack") so a title-named file
           // still satisfies the gate (#…).
           const key = canonicalTopicKey(rawKey);
-          if (key === "issues" || key === FEATURES_KEY || key === "phases" || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1017/#1018/#1022) — sourced from plan.db above, not a file
+          if (key === "issues" || key === FEATURES_KEY || key === FLEET_KEY || key === "blueprint") continue; // DB-owned (#plan-db/#1018/#1022) — sourced from plan.db above, not a file
           // Dependencies are DB-owned (#1191): once plan.db has supplied the manifest, the DB blob wins
           // over any lingering legacy `dependencies.json`. Until then, let the file through so the
           // one-time legacy import (above) can read it.

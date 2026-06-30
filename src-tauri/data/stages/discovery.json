@@ -31,7 +31,6 @@
     { "key": "accessibility", "title": "Accessibility & i18n" },
     { "key": "cost", "title": "Cost & resourcing" },
     { "key": "release", "title": "Versioning & release schedule" },
-    { "key": "phases", "title": "Roadmap" },
     { "key": "risks", "title": "Risks" },
     { "key": "seo", "title": "SEO" },
     { "key": "compliance", "title": "Compliance" },

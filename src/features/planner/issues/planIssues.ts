@@ -24,9 +24,6 @@ export interface PlanIssue {
   ref: string;
   /** Concrete, imperative title (e.g. "Add POST /sessions endpoint"). */
   title: string;
-  /** Phase this issue belongs to — the 1-based phase number or its name. Resolved
-   *  to a milestone at publish; undefined ⇒ unmilestoned (backlog). */
-  phase?: number | string;
   /** Acceptance criteria — the done-when checklist an agent verifies against. */
   acceptance: string[];
   /** Files/dirs this issue owns, so the agent knows exactly where to work. */
@@ -57,8 +54,8 @@ const toStrArray = (v: unknown): string[] =>
 /**
  * Parse the planner's `issues.json` (a JSON array of issue objects) into a clean
  * {@link PlanIssue}[]. Tolerant: bad JSON ⇒ `[]`; entries missing `ref` or `title`
- * are dropped (the minimum an issue needs to be addressable). `phase` accepts a
- * number or a name string. Mirrors {@link parseFleetFile}'s defensiveness.
+ * are dropped (the minimum an issue needs to be addressable). Mirrors
+ * {@link parseFleetFile}'s defensiveness.
  */
 export function parseIssuesFile(raw: string): PlanIssue[] {
   if (!raw || !raw.trim()) return [];
@@ -72,14 +69,9 @@ export function parseIssuesFile(raw: string): PlanIssue[] {
     const ref = toStr(o.ref) || toStr(o.id);
     const title = toStr(o.title);
     if (!ref || !title) continue;
-    const phaseRaw = o.phase;
-    const phase = typeof phaseRaw === "number" && Number.isFinite(phaseRaw)
-      ? phaseRaw
-      : (toStr(phaseRaw) || undefined);
     out.push({
       ref,
       title,
-      phase,
       acceptance: toStrArray(o.acceptance),
       owns:       toStrArray(o.owns),
       dependsOn:  toStrArray(o.dependsOn ?? o.depends_on),
@@ -145,20 +137,16 @@ export interface IssueValidation {
   duplicateRefs: string[];
   /** `{ ref, dependsOn }` where the dependency ref doesn't exist. */
   danglingDependencies: { ref: string; dependsOn: string }[];
-  /** Refs whose `phase` names/numbers no phase (when phaseNames is provided). */
-  unknownPhases: { ref: string; phase: string | number }[];
   /** Issues with no acceptance criteria — not agent-ready (a warning, not fatal). */
   missingAcceptance: string[];
 }
 
 /**
- * Validate a decomposed issue set. `phaseNames` (in order) lets a `phase` reference
- * be checked: a number is 1-based into that list, a string must match a name. With
- * no `phaseNames`, phase checks are skipped. `ok` is true when there are no
- * duplicate refs, no dangling dependencies, and no unknown phases — the agent-ready
- * gate (missing acceptance is surfaced but doesn't fail validation).
+ * Validate a decomposed issue set. `ok` is true when there are no duplicate refs and
+ * no dangling dependencies — the agent-ready gate (missing acceptance is surfaced but
+ * doesn't fail validation).
  */
-export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): IssueValidation {
+export function validateIssues(issues: PlanIssue[]): IssueValidation {
   const seen = new Map<string, number>();
   for (const i of issues) seen.set(i.ref, (seen.get(i.ref) ?? 0) + 1);
   const duplicateRefs = [...seen.entries()].filter(([, n]) => n > 1).map(([r]) => r);
@@ -171,62 +159,14 @@ export function validateIssues(issues: PlanIssue[], phaseNames: string[] = []): 
     }
   }
 
-  const unknownPhases: { ref: string; phase: string | number }[] = [];
-  if (phaseNames.length > 0) {
-    for (const i of issues) {
-      if (i.phase === undefined) continue;
-      const known = typeof i.phase === "number"
-        ? i.phase >= 1 && i.phase <= phaseNames.length
-        : phaseNames.filter((n) => phaseTagMatches(n, String(i.phase))).length === 1;
-      if (!known) unknownPhases.push({ ref: i.ref, phase: i.phase });
-    }
-  }
-
   const missingAcceptance = issues.filter((i) => i.acceptance.length === 0).map((i) => i.ref);
 
   return {
-    ok: duplicateRefs.length === 0 && danglingDependencies.length === 0 && unknownPhases.length === 0,
+    ok: duplicateRefs.length === 0 && danglingDependencies.length === 0,
     duplicateRefs,
     danglingDependencies,
-    unknownPhases,
     missingAcceptance,
   };
-}
-
-/**
- * Resolve a {@link PlanIssue.phase} (1-based number or a phase name) to a 0-based
- * index into `phaseNames` — the milestone the issue pins to at publish. Returns
- * undefined for an absent or unmatched phase (the issue lands unmilestoned). Name
- * matching is case-insensitive, mirroring {@link validateIssues}.
- */
-/**
- * True when a phase  from  matches a planner-supplied . Accepts:
- * - exact or case-insensitive full-name match
- * - boundary-anchored version-prefix: name starts with tag + " " (e.g. "0.9.7" matches
- *   "0.9.7 - Finish line: …" without matching "0.9.71 - …").
- * The same predicate is used by both {@link resolvePhaseIndex} and {@link validateIssues}
- * so the gate and resolver never disagree (#550).
- */
-export function phaseTagMatches(name: string, tag: string): boolean {
-  const lo = name.toLowerCase();
-  const t = tag.toLowerCase();
-  return name === tag || lo === t || lo.startsWith(t + " ");
-}
-
-export function resolvePhaseIndex(phase: number | string | undefined, phaseNames: string[]): number | undefined {
-  if (phase === undefined) return undefined;
-  if (typeof phase === "number") return phase >= 1 && phase <= phaseNames.length ? phase - 1 : undefined;
-  const tag = String(phase);
-  const spaceMatches = phaseNames.reduce<number[]>((acc, n, i) => phaseTagMatches(n, tag) ? [...acc, i] : acc, []);
-  if (spaceMatches.length === 1) return spaceMatches[0];
-  if (spaceMatches.length > 1) return undefined;
-  // Dot-delimited fallback: "1.0" matches "1.0.0 - GA" when no space-prefix match exists
-  const t = tag.toLowerCase();
-  const dotMatches = phaseNames.reduce<number[]>(
-    (acc, n, i) => n.toLowerCase().startsWith(t + ".") ? [...acc, i] : acc, []
-  );
-  if (dotMatches.length === 1) return dotMatches[0];
-  return undefined;
 }
 
 /**

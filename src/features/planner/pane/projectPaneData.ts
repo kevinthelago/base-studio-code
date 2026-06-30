@@ -1,5 +1,5 @@
 // projectPaneData -- maps the real plan store (fleet streams, agent profiles,
-// decomposed issues, phases, sections, linked repos) into the shapes the
+// decomposed issues, sections, linked repos) into the shapes the
 // ProjectPane (v2) renders. Pure (no React / Tauri) so the mapping is unit-testable,
 // keeping the pane a dumb view. ProjectPane re-imports these interfaces, so this
 // module is the single source of truth for the pane data contract; the pane
@@ -11,7 +11,6 @@ import type { AgentRelationship } from "../relationship/relationshipGraph";
 import type { PlanIssue } from "../issues/planIssues";
 import type { Section } from "../github/ghStructure";
 import type { NodeProgress } from "../github/ghProgress";
-import { resolvePhaseIndex } from "../issues/planIssues";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveDirectorDrive } from "../fleet/directorDrive";
 
@@ -19,7 +18,7 @@ import { resolveDirectorDrive } from "../fleet/directorDrive";
 // types). This adapter imports those shapes and re-exports them so existing
 // import sites that reach for them via "./projectPaneData" keep working.
 import type {
-  Posture, Perm, Agent, Repo, Issue, Milestone, PhaseGroup, ContextFile, ProjectPaneData,
+  Posture, Perm, Agent, Repo, Issue, Milestone, ContextFile, ProjectPaneData,
   PaneAutomation, PaneSkill,
 } from "./projectPane.types";
 import type { PlanFeature } from "../issues/featureList";
@@ -30,7 +29,7 @@ import { buildMcpServers, type McpInstallState } from "../lib/mcpPaneData";
 import type { McpServer as McpServerDef } from "@/features/mcp/lib/mcpServers";
 
 export type {
-  Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone, PhaseGroup,
+  Posture, Perm, Flow, Agent, RepoBranch, Repo, SubItem, Issue, Epic, Milestone,
   ContextFile, ProjectPaneData, PaneAutomation, PaneSkill, McpServer,
 } from "./projectPane.types";
 
@@ -38,7 +37,6 @@ export interface BuildProjectPaneInput {
   fleet?: FleetPlan;
   profiles: AgentProfile[];
   issues: PlanIssue[];
-  phases: { name: string; description?: string }[];
   repos: string[];
   /** Full_names cloned into the project hub (clone state) — drives each repo's `cloned`. */
   clonedNames?: string[];
@@ -174,12 +172,11 @@ function buildRepos(input: BuildProjectPaneInput): Repo[] {
   }));
 }
 
-/** Shared issue derivation used by both the repo-first and phase-first builders:
- *  how an issue attributes to a repo, whether it's closed (live overlay → static
- *  label fallback), the render shape, and a closed-fraction helper. */
+/** Shared issue derivation for the repo-first structure builder: how an issue
+ *  attributes to a repo, whether it's closed (live overlay → static label
+ *  fallback), the render shape, and a closed-fraction helper. */
 function issueHelpers(input: BuildProjectPaneInput) {
-  const { phases, repos, progress } = input;
-  const phaseNames = phases.map(p => p.name);
+  const { repos, progress } = input;
   const firstAgent = input.fleet?.streams[0]?.id ?? "";
   // Attribute each issue to a repo: its explicit `repo`, else the first publish repo.
   const fallbackRepo = repos[0] ?? "";
@@ -209,58 +206,20 @@ function issueHelpers(input: BuildProjectPaneInput) {
   });
   const pct = (group: PlanIssue[]): number =>
     group.length ? group.filter(issueClosed).length / group.length : 0;
-  return { phaseNames, repoOf, issueClosed, toIssue, pct };
-}
-
-/** A stable-ish phase id from its name (the persisted stable id lands in slice 2). */
-function phaseSlug(name: string, i: number): string {
-  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return s ? `phase-${s}` : `phase-${i}`;
+  return { repoOf, issueClosed, toIssue, pct };
 }
 
 /**
- * Phase-first, PROJECT-SCOPED structure (#497): one {@link PhaseGroup} per phase
- * spanning every repo, with its issues (each carrying `repo`) and a single
- * closed/total/pct rollup. Every phase is shown (the roadmap), even with no issues
- * yet; issues whose phase doesn't resolve fall to a trailing "Unscheduled" group.
+ * Repo-first structure (#497, #1912): one milestone per repo carrying every issue
+ * that attributes to it (its `repo`, or the default repo when unset), with a single
+ * closed/total/pct rollup. Milestone phases were removed (#1912), so issues are no
+ * longer grouped by roadmap phase — just by repo.
  */
-function buildPhaseStructure(input: BuildProjectPaneInput): PhaseGroup[] {
-  const { phases, issues } = input;
-  if (phases.length === 0 && issues.length === 0) return [];
-  const { phaseNames, issueClosed, toIssue } = issueHelpers(input);
-
-  const byPhase = new Map<number, PlanIssue[]>();
-  const unscheduled: PlanIssue[] = [];
-  for (const p of issues) {
-    const idx = resolvePhaseIndex(p.phase, phaseNames);
-    if (idx === undefined) { unscheduled.push(p); continue; }
-    const list = byPhase.get(idx) ?? [];
-    list.push(p);
-    byPhase.set(idx, list);
-  }
-
-  const group = (list: PlanIssue[], id: string, name: string, order: number, doneWhen?: string): PhaseGroup => {
-    const total = list.length;
-    const closed = list.filter(issueClosed).length;
-    return { id, name, doneWhen, order, issues: list.map(toIssue), closed, total, pct: total ? closed / total : 0 };
-  };
-
-  const out: PhaseGroup[] = phases.map((ph, i) =>
-    group(byPhase.get(i) ?? [], phaseSlug(ph.name, i), ph.name, i, ph.description));
-  if (unscheduled.length > 0) {
-    out.push(group(unscheduled, "unscheduled", "Unscheduled", phases.length));
-  }
-  return out;
-}
-
 function buildStructure(input: BuildProjectPaneInput): Milestone[] {
-  const { phases, issues, repos } = input;
-  if (phases.length === 0 && issues.length === 0) return [];
-  const { phaseNames, repoOf, toIssue, pct } = issueHelpers(input);
+  const { issues, repos } = input;
+  if (issues.length === 0) return [];
+  const { repoOf, toIssue, pct } = issueHelpers(input);
 
-  // Render milestones PER repo: a milestone is a (repo, phase) pair that actually
-  // has issues, so the repo-first view shows each repo's own work tree and empty
-  // (repo, phase) pairs don't appear.
   const repoOrder: string[] = [...repos];
   for (const p of issues) {
     const r = repoOf(p);
@@ -271,39 +230,15 @@ function buildStructure(input: BuildProjectPaneInput): Milestone[] {
   for (const repo of repoOrder) {
     const repoIssues = issues.filter(p => repoOf(p) === repo);
     if (repoIssues.length === 0) continue;
-    const byPhase = new Map<number, PlanIssue[]>();
-    const unscheduled: PlanIssue[] = [];
-    for (const p of repoIssues) {
-      const idx = resolvePhaseIndex(p.phase, phaseNames);
-      if (idx === undefined) { unscheduled.push(p); continue; }
-      const list = byPhase.get(idx) ?? [];
-      list.push(p);
-      byPhase.set(idx, list);
-    }
-    phases.forEach((phase, i) => {
-      const group = byPhase.get(i) ?? [];
-      if (group.length === 0) return;
-      const fraction = pct(group);
-      out.push({
-        id: `${repo}#M${i + 1}`,
-        title: phase.name,
-        repo,
-        pct: fraction,
-        state: "doing",
-        epics: [{ id: `${repo}#E${i + 1}`, title: "Issues", pct: fraction, issues: group.map(toIssue) }],
-      });
+    const fraction = pct(repoIssues);
+    out.push({
+      id: `${repo}#M1`,
+      title: "Issues",
+      repo,
+      pct: fraction,
+      state: "doing",
+      epics: [{ id: `${repo}#E1`, title: "Issues", pct: fraction, issues: repoIssues.map(toIssue) }],
     });
-    if (unscheduled.length > 0) {
-      const fraction = pct(unscheduled);
-      out.push({
-        id: `${repo}#M0`,
-        title: "Unscheduled",
-        repo,
-        pct: fraction,
-        state: "doing",
-        epics: [{ id: `${repo}#E0`, title: "Issues", pct: fraction, issues: unscheduled.map(toIssue) }],
-      });
-    }
   }
   return out;
 }
@@ -342,16 +277,15 @@ function buildContext(input: BuildProjectPaneInput): ContextFile[] {
 
 /**
  * Build the ProjectPane render data from the real plan store. Robust to missing
- * pieces: no fleet -> no agents and no repo->agent links; no phases or issues ->
- * empty structure; no sections -> empty context. The pane treats an all-empty
- * result as a signal to fall back to its illustrative sample data.
+ * pieces: no fleet -> no agents and no repo->agent links; no issues -> empty
+ * structure; no sections -> empty context. The pane treats an all-empty result as
+ * a signal to fall back to its illustrative sample data.
  */
 export function buildProjectPaneData(input: BuildProjectPaneInput): ProjectPaneData {
   return {
     agents: buildAgents(input),
     repos: buildRepos(input),
     structure: buildStructure(input),
-    phaseStructure: buildPhaseStructure(input),
     context: buildContext(input),
     director: {
       enabled: input.fleet?.director.enabled ?? false,

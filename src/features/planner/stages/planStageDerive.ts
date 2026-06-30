@@ -78,16 +78,14 @@ export interface DerivePlanStageInput {
  *
  * - **context** → nothing. Context files gate on GENERATION (#1028), not confirmation — they're
  *   done once written, so there's no per-file confirm step.
- * - **structure** → the `phases` roadmap anchor when it's drafted.
- * - other stages gate on counts (issues, fleet, …), not section confirmation ⇒ nothing to confirm.
+ * - other stages gate on counts (features, issues, fleet, …) or auto-derived signals, not section
+ *   confirmation ⇒ nothing to confirm. (Milestone phases were removed in #1912, so the Structure
+ *   stage no longer confirms a `phases` roadmap anchor — it gates on `featuresDefined`.)
  */
 export function pendingStageConfirms(
-  activeStageKey: string | undefined,
-  sections: { k: string; state: SectionState }[],
+  _activeStageKey: string | undefined,
+  _sections: { k: string; state: SectionState }[],
 ): string[] {
-  if (activeStageKey === "structure") {
-    return sections.some((s) => s.k === "phases" && s.state === "drafted") ? ["phases"] : [];
-  }
   return [];
 }
 
@@ -128,8 +126,6 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
   const resolved = input.discoveryRequired.filter(present).length;
   const requiredDiscoveryReady = total > 0 && resolved >= total;
 
-  const phasesConfirmed = byKey.get("phases") === "confirmed";
-
   const art = input.datamodelArtifact ?? {};
   return buildPlanStageState({
     discovery: { resolved, total, requiredDiscoveryReady },
@@ -138,7 +134,6 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     ui: { ...input.ui, routed: input.uiRouted ?? false },
     features: input.features,
     dependencies: { count: input.dependencies?.count ?? 0 },
-    phasesConfirmed,
     issueCount: input.issueCount,
     fleet: { streams: input.fleetStreams, profilesComplete: input.fleetProfilesComplete },
     automationsAck: input.automationsAck,
@@ -176,7 +171,6 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     featuresConfirmed: s.features.allConfirmed,
     // Dependencies (#1111): the manifest gate passes once the planner has locked ≥1 library.
     dependenciesDefined: s.dependencies.count,
-    phasesConfirmed: s.phasesConfirmed,
     issueCount: s.issueCount,
     fleetStreams: s.fleet.streams,
     profilesComplete: s.fleet.profilesComplete,
