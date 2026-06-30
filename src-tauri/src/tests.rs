@@ -315,6 +315,9 @@ use crate::session::settings::*;
             assert_eq!(allow.contains(&"Bash".to_string()), want_bare, "{posture}: bare Bash");
             assert!(allow.contains(&"Bash(terraform *)".to_string()), "{posture}: granted command always present");
             assert!(allow.contains(&"Bash(git *)".to_string()), "{posture}: mandatory git always present");
+            // The bsc-* coordination helpers (bsc-fleet/checkpoint/note/…) are auto-approved in EVERY
+            // posture — they're shell functions the `Bash(bsc *)` mandatory rule can't match.
+            assert!(allow.contains(&"Bash(bsc-*)".to_string()), "{posture}: bsc-* helpers always present");
         }
         let _ = std::fs::remove_dir_all(&base);
     }
