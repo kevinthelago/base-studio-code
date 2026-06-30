@@ -63,7 +63,7 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
       push = "This is a read-only role: do not commit, push, or open PRs. Report what you find by piping notes into bsc-note on stdin.";
       break;
     default: // auto-pr
-      push = `When your work is ready and the checks pass (${when}), commit to your branch ${branch}, push it, and open a PR to develop. After opening the PR, STOP -- CI runs automatically and is watched for you: when it finishes you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, reopen, or duplicate the PR; the director reviews and merges it once it is green.`;
+      push = `When your work is ready and the checks pass (${when}), commit to your branch ${branch}, push it, and open a PR to develop. After opening the PR, STOP -- CI runs automatically and is watched for you: when it finishes you will be told to continue (if it passed) or to fix the build and push (if it failed). Do not poll CI, close, merge, reopen, or duplicate the PR -- GitHub is the DIRECTOR's job: the director reviews, merges, and closes your PR once it is green. Never run gh pr merge or gh pr close on your own PR.`;
   }
 
   // Issue lifecycle is the director's job (#906): a worker signals completion (above) but
