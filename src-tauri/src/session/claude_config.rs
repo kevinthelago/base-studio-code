@@ -111,12 +111,43 @@ pub(crate) fn trust_claude_dir(cwd: &str) {
         },
         Err(_) => serde_json::json!({}), // missing file → start fresh
     };
-    let key = claude_project_key(cwd);
-    if !mark_dir_trusted(&mut config, &key) { return; }
+    // Claude Code keys folder-trust on the MAIN repo root: for a linked git WORKTREE it resolves to the
+    // git common dir's working tree, NOT the worktree path — so a worker launched in a worktree is only
+    // "trusted" if its MAIN repo is trusted, and trusting just the worktree dir is ignored (Claude reads
+    // the workspace as untrusted → drops EVERY `permissions.allow` entry → the agent prompts for
+    // everything). Trust BOTH the cwd and that main-worktree root so trust applies whichever Claude
+    // resolves to (#worktree-trust).
+    let keys = trust_keys(cwd, git_main_worktree(cwd).as_deref());
+    let mut changed = false;
+    for k in &keys {
+        if mark_dir_trusted(&mut config, k) { changed = true; }
+    }
+    if !changed { return; }
     match crate::platform::fsx::atomic_write_json(&path, &config) {
-        Ok(())  => log::info!("trust_claude_dir: pre-trusted {key}"),
+        Ok(())  => log::info!("trust_claude_dir: pre-trusted {}", keys.join(", ")),
         Err(e)  => log::warn!("trust_claude_dir: write {} failed: {e}", path.display()),
     }
+}
+
+/// The `~/.claude.json` project keys to pre-trust for a session at `cwd`: the cwd itself, plus the
+/// `main_worktree` root when it differs (a linked git worktree's MAIN repo — the dir Claude Code
+/// actually keys folder-trust on). Deduped, cwd first. Pure (the git lookup is the caller's job).
+fn trust_keys(cwd: &str, main_worktree: Option<&str>) -> Vec<String> {
+    let mut keys = vec![claude_project_key(cwd)];
+    if let Some(m) = main_worktree.filter(|m| !m.is_empty()) {
+        let mk = claude_project_key(m);
+        if !keys.contains(&mk) { keys.push(mk); }
+    }
+    keys
+}
+
+/// The MAIN worktree root of the git repo containing `cwd` — the first `worktree <path>` line of
+/// `git worktree list --porcelain` (which lists the main worktree first), or `None` when `cwd` isn't
+/// a git repo. For a linked worktree this is the MAIN repo — what Claude Code keys folder-trust on.
+fn git_main_worktree(cwd: &str) -> Option<String> {
+    crate::platform::git::git_lines(cwd, &["worktree", "list", "--porcelain"])
+        .into_iter()
+        .find_map(|l| l.strip_prefix("worktree ").map(|s| s.trim().to_string()))
 }
 
 // Reads and writes CLAUDE.md + .claude/settings.json for two target types:
@@ -191,7 +222,7 @@ pub(crate) fn write_claude_config(
 #[cfg(test)]
 mod tests {
 
-    use super::{claude_project_key, mark_dir_trusted};
+    use super::{claude_project_key, mark_dir_trusted, trust_keys};
 
     #[test]
     fn claude_project_key_uses_forward_slashes_and_upper_drive() {
@@ -204,6 +235,27 @@ mod tests {
             claude_project_key("C:/Users/Kevin/.base-studio-code/repos/x"),
             "C:/Users/Kevin/.base-studio-code/repos/x"
         );
+    }
+
+    #[test]
+    fn trust_keys_adds_the_main_worktree_root_for_a_linked_worktree() {
+        // A worker in a linked worktree: trust BOTH the worktree dir AND the main repo — Claude Code
+        // keys folder-trust on the main repo (the git common dir's working tree), not the worktree.
+        let keys = trust_keys(
+            "C:/Users/k/.base-studio-code/worktrees/STEM/STEM--backend",
+            Some("C:/Users/k/.base-studio-code/projects/STEM/STEM"),
+        );
+        assert_eq!(keys, vec![
+            "C:/Users/k/.base-studio-code/worktrees/STEM/STEM--backend".to_string(),
+            "C:/Users/k/.base-studio-code/projects/STEM/STEM".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn trust_keys_is_a_single_key_when_not_a_linked_worktree() {
+        let cwd = "C:/Users/k/.base-studio-code/projects/STEM/STEM";
+        assert_eq!(trust_keys(cwd, Some(cwd)), vec![cwd.to_string()]); // main == cwd (normal clone)
+        assert_eq!(trust_keys(cwd, None), vec![cwd.to_string()]);       // not a git repo
     }
 
     #[test]
