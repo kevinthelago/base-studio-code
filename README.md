@@ -57,7 +57,7 @@ Eight surfaces, reached from the left rail:
 - **Automations** — cron-scheduled commands dispatched into console panes, with armed status and run history
 - **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
 - **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
-- **Security** — the least-privilege control room: a role and profile per session (write-path scope, network, command policy) enforced at launch — moving to a **deny-list model with per-session worktree filesystem isolation** (the allow-list stays available as an opt-in posture) — with a live audit feed of every tool attempt
+- **Security** — the least-privilege control room: a role and profile per session (write-path scope, network, command policy), enforced at launch via a **deny-list model** (sessions auto-run, gated by always-on hooks; the allow-list stays as an opt-in posture toggle), with an opt-in **model-agnostic OS sandbox** that runs sessions inside a **sealed WSL2 distro** (no Windows-drive mount, no interop — the cage is the *environment*, so any LLM is confined), plus a live audit feed of every tool attempt
 - **Settings** — providers/keys, mobile-tunnel pairing, appearance, diagnostics, performance, logs, and storage
 
 ## Tech Stack
@@ -175,6 +175,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 - **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
 - **Research** — a **built-in** literature MCP server (arXiv · Semantic Scholar · PubMed/PMC · Crossref, native PDF extraction, citation-grounded search), so the planner can ground plans and skills in the latest real sources with no download, build, or Docker
 - **Console polish** — native copy/paste (hotkeys scoped to the Console page) and Claude's own TUI input restored, with auto-redraw nudges for the CLI's jumbled-text bug
+- **Hardened agent isolation** *(security track, #1916/#1988)* — the least-privilege model moved to a **deny-list** (sessions auto-run, gated by always-on PreToolUse hooks; the allow-list is an opt-in posture toggle), plus an opt-in **model-agnostic OS sandbox**: sessions run inside a **sealed WSL2 distro** (no `/mnt/c`, no Windows interop), so the *environment* is the cage and any LLM is confined — built and installed from **Settings → Security**. Per-agent isolation (a Linux user per worker/director) is queued for `1.0.5` (#1994)
 
 **🔧 In progress — codebase refactor & consolidation** *(on the `1.0.4` line, before `1.0.5`)*
 
