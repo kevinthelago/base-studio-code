@@ -1,31 +1,31 @@
 // ProjectPane — planning-page right visualizer pane.
 // v5: stage-focused one-at-a-time view (#652) with real data (#674).
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
-// so the planning workflow is one focused phase at a time.
+// so the planning workflow is one focused stage at a time.
 import { useState, useEffect } from "react";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
-import type { Phase, GatePill, FooterKind } from "../stages/focusedPlan";
+import type { Stage, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
   Stepper as FocusedStepper,
-  PhaseHeader as FocusedPhaseHeader,
+  StageHeader as FocusedStageHeader,
   LockBanner as FocusedLockBanner,
-  PhaseFooter as FocusedPhaseFooter,
+  StageFooter as FocusedStageFooter,
 } from "./FocusedShell";
 import type { StagePrompt } from "../session/plannerConductor";
 import type { DeployConfig } from "../lib/deployConfig";
 import { type Topology } from "../relationship/relationshipGraph";
 import { type DirectorDrive } from "../fleet/directorDrive";
-import { FocusedPhaseBody, type AuthoringWiring } from "./FocusedBodies";
+import { FocusedStageBody, type AuthoringWiring } from "./FocusedBodies";
 import { KindDot } from "./focusedPrimitives";
 export function ProjectPane({
   data,
   projectId,
   onFlow,
   onModel,
-  // focused mode: one-phase sequenced rail (#652) — the only render mode (#1061)
+  // focused mode: one-stage sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
   onTopology,
@@ -44,7 +44,7 @@ export function ProjectPane({
   /** The sequenced-rail focused mode (#652) — the sole render path (#1061 removed the legacy
    *  staged/flat view + its hardcoded PLAN_STAGES gate). */
   focus?: {
-    phases: Phase[];
+    stages: Stage[];
     selectedIdx: number;
     activeIdx: number;
     onSelect: (i: number) => void;
@@ -119,22 +119,22 @@ export function ProjectPane({
     </div>
   );
 
-  // Focused mode: sequenced-rail one-phase view (#652)
+  // Focused mode: sequenced-rail one-stage view (#652)
   if (focus) {
-    const selected = focus.phases[focus.selectedIdx];
-    const active   = focus.phases[focus.activeIdx];
+    const selected = focus.stages[focus.selectedIdx];
+    const active   = focus.stages[focus.activeIdx];
     const isLocked = focus.selectedIdx > focus.activeIdx;
     return (
       <Pane mode="inline" bare className="pp fp">
-        <FocusedStepper phases={focus.phases} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
-        <FocusedPhaseHeader phase={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
+        <FocusedStepper stages={focus.stages} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
+        <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedPhaseBody phase={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
+          <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>
-        <FocusedPhaseFooter phase={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
+        <FocusedStageFooter stage={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
       </Pane>
     );

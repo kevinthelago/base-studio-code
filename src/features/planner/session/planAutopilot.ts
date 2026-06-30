@@ -7,7 +7,7 @@
 // here), and the app (confirms sections, advances, publishes). The driver decides, each
 // tick, what the user/app should do next given the planning state.
 
-import type { Phase } from "../stages/focusedPlan";
+import type { Stage } from "../stages/focusedPlan";
 
 /** How the simulated user answers the planner. Phase 1 wires `llm`; the rest are Phase 2. */
 export type AutopilotStrategy = "llm" | "scripted" | "random" | "none";
@@ -108,10 +108,10 @@ export function staticReply(strategy: AutopilotStrategy, seed: number): string |
   }
 }
 
-/** Progress fraction (0..1) over the visible phases — how far the plan got. */
-export function autopilotProgress(phases: Phase[]): { done: number; total: number; fraction: number } {
-  const total = phases.length;
-  const done = phases.filter((p) => p.status === "complete" || p.status === "ahead").length;
+/** Progress fraction (0..1) over the visible stages — how far the plan got. */
+export function autopilotProgress(stages: Stage[]): { done: number; total: number; fraction: number } {
+  const total = stages.length;
+  const done = stages.filter((p) => p.status === "complete" || p.status === "ahead").length;
   return { done, total, fraction: total ? done / total : 0 };
 }
 
