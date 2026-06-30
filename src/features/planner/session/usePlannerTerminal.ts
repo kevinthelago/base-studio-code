@@ -21,6 +21,7 @@ import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
 import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
+import { resolvePlannerSandbox } from "./plannerSandbox";
 import { TERM_THEME } from "./planningTerminal";
 import type { Command, Schedule } from "@/shared/data/mock";
 
@@ -208,29 +209,22 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         }
       }
       const startupPrompt = composePlannerIntro(introText, introMode, pitchSnap ?? "", firstStageDirective) || undefined;
-      // #1988: opt-in (off by default) — when the planner runs on bsc-agent (the runtime baked into the
-      // sealed WSL2 distro) AND the sandbox toggle is on, relocate the hub into the distro and launch the
-      // planner INSIDE it. Falls back to the host hub if the sandbox isn't ready / the relocation fails.
-      const sandboxHub =
-        useAppStore.getState().sandboxConsoles && launch.providerId === "bsc-agent" && paths
-          ? await safeInvoke<string | null>(
-              "setup_sandbox_hub", { key: projIdSnap }, null,
-              (e: unknown) => console.error("sandbox hub setup failed (falling back to host):", e),
-            )
-          : null;
+      // #1988: opt-in (off by default) — relocate the hub into the sealed WSL2 distro + spawn INSIDE
+      // it when the sandbox toggle is on AND the planner runs on bsc-agent (shared with the restart
+      // path so they can't drift; host fallback on failure). Toggling restarts the planner to convert.
+      const sandbox = await resolvePlannerSandbox(launch.providerId, paths?.planning_dir ?? "", projIdSnap);
       await safeInvoke("pty_create", {
         paneId:  paneId,
         cols:    term.cols,
         rows:    term.rows,
-        cwd:     sandboxHub ?? (paths?.planning_dir ?? ""),
+        cwd:     sandbox.cwd,
         initCmd: launch.initCmd,
         startupPrompt,
         startupPromptFreshOnly: launch.startupPromptFreshOnly,
         continueSession: launch.continueSession,
         env:     launch.env,
         providerId: launch.providerId,
-        // The sealed distro to spawn into (#1988), or undefined for the normal host launch.
-        wslDistro: sandboxHub ? "bsc-agent-sandbox" : undefined,
+        wslDistro: sandbox.wslDistro,
       }, undefined, console.error);
     });
 
