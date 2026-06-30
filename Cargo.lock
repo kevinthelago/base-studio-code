@@ -801,6 +801,8 @@ dependencies = [
  "bsc-cli-util",
  "csv",
  "duckdb",
+ "keyring",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
 ]
