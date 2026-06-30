@@ -12,7 +12,7 @@
 
 import {
   connector, isConnected,
-  type DeclaredSource, type SpecField, type SourceStatus,
+  type DeclaredSource, type SpecField, type SourceStatus, type RuntimeConnectorView,
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -142,10 +142,12 @@ function ScanResult({ src, dataModelName }: { src: DeclaredSource; dataModelName
 
 /** One declared source's collapsible card — header + a spec/state-driven body. */
 export function SourceCard({
-  src, dataModelName, expanded, revealed, secrets,
+  src, runtime, dataModelName, expanded, revealed, secrets,
   onToggle, onField, onSecret, onReveal, onEnv, onConnect, onRetry, onRemove,
 }: {
   src: DeclaredSource;
+  /** Agent-authored runtime connector list (#1980) — resolves the source's real connector identity. */
+  runtime?: readonly RuntimeConnectorView[];
   dataModelName: string;
   expanded: boolean;
   revealed: boolean;
@@ -159,7 +161,7 @@ export function SourceCard({
   onRetry: () => void;
   onRemove: () => void;
 }) {
-  const c = connector(src.connectorId);
+  const c = connector(src.connectorId, runtime);
   const spec = c.spec;
   const connected = isConnected(src);
   const borderColor = src.status === "error" ? "color-mix(in oklch, var(--danger), transparent 62%)"

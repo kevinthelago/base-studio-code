@@ -33,6 +33,7 @@ export { defaultSourceConfig, newDeclaredSource } from "./sourceSpecs";
 export {
   connector, connectorColor, sampleScan, proposeFromPitch, redactedHandle,
 } from "./sourceCatalog";
+export type { RuntimeConnectorView } from "./sourceCatalog";
 
 export {
   isConnected, connectedCount, allSourcesConnected, sourceChecks,

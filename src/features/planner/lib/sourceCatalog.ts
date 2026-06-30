@@ -10,10 +10,37 @@
 
 import type { Connector, DeclaredSource, DiscoveredObject, SourceBehavior } from "./sourceSpecs";
 
-/** Resolve a connector by id to a generic fallback shape so any declared source still renders. With
- *  the native catalog gone (#1976), every connector is agent-authored, so there is no rich per-id
- *  spec here — the pane renders a simple token form (no fields ⇒ a one-click connect + sample scan). */
-export function connector(id: string): Connector {
+/** One agent-authored runtime connector as the backend surfaces it (#1980) — the live, app-wide
+ *  list the Source pane polls (`data_runtime_connectors`). Mirrors the Rust `RuntimeConnectorView`
+ *  (serde camelCase). Metadata only; the secret + resources stay backend-side. */
+export interface RuntimeConnectorView {
+  id: string;
+  label: string;
+  category: string;
+  /** Declared auth method — one of `oauth` / `token` / `apikey` / `basic` (`RUNTIME_AUTH_KINDS`). */
+  auth: string;
+}
+
+/** Human auth blurb for a runtime connector's declared auth method (the {@link Connector.authLabel}). */
+const RUNTIME_AUTH_LABEL: Record<string, string> = {
+  oauth: "OAuth", token: "token", apikey: "API key", basic: "Basic auth",
+};
+
+/** Resolve a connector by id (#1980). When `runtime` carries an agent-authored connector with that
+ *  id, its real `label` / `auth` / `category` are used; otherwise — and for an unknown id — a generic
+ *  fallback shape so any declared source still renders. Both keep the simple token form (no fields ⇒
+ *  a one-click connect + sample scan); the full per-auth connect form is Phase 5b. */
+export function connector(id: string, runtime?: readonly RuntimeConnectorView[]): Connector {
+  const rt = runtime?.find((r) => r.id === id);
+  if (rt) {
+    const name = rt.label || id;
+    return {
+      id, name, badge: name.slice(0, 2).toUpperCase(),
+      authLabel: RUNTIME_AUTH_LABEL[rt.auth] ?? rt.auth ?? "custom",
+      category: rt.category || undefined,
+      spec: { auth: "token", fields: [], contributes: "—" },
+    };
+  }
   return {
     id, name: id, badge: id.slice(0, 2).toUpperCase(), authLabel: "custom",
     spec: { auth: "token", fields: [], contributes: "—" },
