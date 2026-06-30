@@ -387,6 +387,27 @@ pub(crate) fn wsl_invocation(distro: &str, cwd: &str, command: &str) -> (String,
     ("wsl.exe".to_string(), args)
 }
 
+/// The interactive-shell init line for a session running INSIDE the sealed WSL2 distro (#1988).
+/// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch) but bakes the
+/// distro's own `bsc`/`bsc-agent` paths into the env — the host env does not cross the wsl boundary —
+/// and sources no host rc. `cwd` is a distro-native path (`/home/agent/...`); `launch` (e.g. a
+/// `bsc-agent …` command) is appended to start the agent. (In-distro bsc-* helper rc is a follow-up.)
+pub(crate) fn sandbox_init_line(cwd: &str, launch: Option<&str>) -> String {
+    let cd = if cwd.is_empty() {
+        String::new()
+    } else {
+        format!("cd \"{cwd}\" 2>/dev/null; ")
+    };
+    let launch_suffix = launch.map(|s| format!("; {s}")).unwrap_or_default();
+    format!(
+        "export BSC_BIN=/usr/local/bin/bsc BSC_AGENT_BIN=/usr/local/bin/bsc-agent; \
+         {cd}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+         __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
+         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
+         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{launch_suffix}\n"
+    )
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -425,6 +446,20 @@ mod tests {
         // Empty cwd ⇒ no --cd (runs at the distro default ~).
         let (_, a2) = wsl_invocation("d", "", "pwd");
         assert_eq!(a2, vec!["-d", "d", "--", "bash", "-lc", "pwd"]);
+    }
+
+    #[test]
+    fn sandbox_init_line_bakes_distro_env_cwd_and_launch() {
+        use super::sandbox_init_line;
+        let l = sandbox_init_line("/home/agent/projects/p", Some("bsc-agent"));
+        assert!(l.contains("export BSC_BIN=/usr/local/bin/bsc"));
+        assert!(l.contains("BSC_AGENT_BIN=/usr/local/bin/bsc-agent"));
+        assert!(l.contains("cd \"/home/agent/projects/p\""));
+        assert!(l.trim_end().ends_with("; bsc-agent"));
+        // Empty cwd ⇒ no cd; no launch ⇒ no trailing command.
+        let bare = sandbox_init_line("", None);
+        assert!(!bare.contains("cd \""));
+        assert!(bare.trim_end().ends_with("\\033[H"));
     }
 
     #[cfg(windows)]
