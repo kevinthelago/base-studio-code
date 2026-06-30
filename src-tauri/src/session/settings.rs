@@ -207,16 +207,43 @@ pub(crate) fn write_session_settings(
     // (push-confirm) still prompts natively. The allow-list machinery (base.json tiers, posture scaling)
     // STAYS: it's the engine for allow-list mode. Applies to EVERY pane (workers, director, triage, manual).
     if bypass {
-        let obj = config.as_object_mut().unwrap();
-        let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
-        crate::platform::fsx::ensure_object(permissions);
-        permissions.as_object_mut().unwrap().insert(
-            "defaultMode".into(),
-            serde_json::Value::String("bypassPermissions".into()),
+        {
+            let obj = config.as_object_mut().unwrap();
+            let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
+            crate::platform::fsx::ensure_object(permissions);
+            permissions.as_object_mut().unwrap().insert(
+                "defaultMode".into(),
+                serde_json::Value::String("bypassPermissions".into()),
+            );
+        }
+        // Layer 4 — the OS sandbox (#1916): under bypass, OS-confine the Bash subprocess tree, the one
+        // tool a PreToolUse hook can't fully contain (macOS Seatbelt / Linux + WSL2 bubblewrap). On NATIVE
+        // Windows it warns + falls back to unsandboxed (`failIfUnavailable: false`) — a safe no-op until a
+        // session runs in WSL2. The sandbox's default write boundary is cwd + $TMPDIR; WIDEN it or it
+        // breaks real work: the bsc state dir (`~/.base-studio-code` — coord/audit logs, plan.db) and the
+        // cwd's MAIN git repo (a linked worktree's git data lives in `<main>/.git/worktrees/<id>`, outside
+        // the cwd). Reads stay open (builds need system libs); credential + read confinement is a follow-on.
+        let mut allow_write = vec![serde_json::Value::String(
+            crate::platform::paths::bsc_base_dir().to_string_lossy().into_owned(),
+        )];
+        if let Some(main) = crate::session::claude_config::git_main_worktree(cwd) {
+            allow_write.push(serde_json::Value::String(main));
+        }
+        config.as_object_mut().unwrap().insert(
+            "sandbox".into(),
+            serde_json::json!({
+                "enabled": true,
+                "failIfUnavailable": false,
+                "filesystem": { "allowWrite": allow_write },
+            }),
         );
-    } else if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
-        // Allow-list posture: drop any stale bypass left by a prior bypass launch so the toggle takes.
-        perms.remove("defaultMode");
+    } else {
+        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
+            // Allow-list posture: drop any stale bypass left by a prior bypass launch so the toggle takes.
+            perms.remove("defaultMode");
+        }
+        // Allow-list posture: prompts are the gate, so the OS sandbox isn't required — drop a stale block.
+        config.as_object_mut().unwrap().remove("sandbox");
     }
 
     // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
@@ -437,12 +464,20 @@ mod tests {
         // THE FLIP (#1916 Step 4): every session is emitted in bypassPermissions — the PreToolUse
         // hooks (not the allow/deny lists) do the gating.
         assert_eq!(v["permissions"]["defaultMode"], "bypassPermissions");
+        // Layer 4 OS sandbox (#1916): bypass also emits a sandbox block (enabled, fail-open) whose
+        // write boundary is widened to the bsc state dir so coordination/plan.db writes aren't blocked.
+        assert_eq!(v["sandbox"]["enabled"], true);
+        assert_eq!(v["sandbox"]["failIfUnavailable"], false);
+        let writes: Vec<String> = v["sandbox"]["filesystem"]["allowWrite"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(writes.iter().any(|w| w.contains(".base-studio-code")), "sandbox must allowWrite the bsc state dir, got {writes:?}");
         // Allow-list posture (#1916): bypass=false omits defaultMode (and clears a stale one), so Claude's
         // `default` mode enforces the enumerated allow/deny lists — the require-approval option we keep.
         write_session_settings(&dir.to_string_lossy(), &[], &[], &[], &[], &[], &[], &[], &[], false, "allow", false).unwrap();
         let v2: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert!(v2["permissions"]["defaultMode"].is_null(), "allow-list posture must omit defaultMode");
+        assert!(v2["sandbox"].is_null(), "allow-list posture must omit the OS sandbox");
         let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
         let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
