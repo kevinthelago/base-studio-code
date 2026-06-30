@@ -154,6 +154,7 @@ pub fn run() {
             data::data_get_model,
             data::data_load_reconciled,
             data::data_platform_scan,
+            data::data_runtime_connectors,
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,

@@ -17,13 +17,14 @@
 // discovered object inventory.
 
 import { useEffect, useRef, useState } from "react";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import {
   connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
   deriveDataModel, proposeFromPitch,
-  type SourceConfig,
+  type SourceConfig, type RuntimeConnectorView,
 } from "../lib/sourceConfig";
 import { ScanViews } from "./ScanViews";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
@@ -59,6 +60,16 @@ export function SourceBody({ projectId }: { projectId?: string }) {
   }, [pid, planningPitch, stored, setPlanSourceConfig]);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Poll the app-wide agent-authored connector list (#1980) so a declared source resolves its REAL
+  // connector name/auth/category instead of the generic fallback. Light read every ~2.5s (matching
+  // the planner skill poll); an absent store ⇒ []. The full declare/build-status picker is Phase 5b.
+  const [runtime, setRuntime] = useState<RuntimeConnectorView[]>([]);
+  usePoll(async (isCancelled) => {
+    const list = await safeInvoke<RuntimeConnectorView[] | null>("data_runtime_connectors", undefined, []);
+    if (isCancelled()) return;
+    setRuntime(list ?? []);
+  }, 2500, []);
 
   const seq = useRef(0);
   const persist = (next: SourceConfig) => setPlanSourceConfig(pid, next);
@@ -118,7 +129,7 @@ export function SourceBody({ projectId }: { projectId?: string }) {
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <span style={{ color: "var(--accent)", fontSize: 13 }}>★</span>
             <div style={{ fontSize: 12.5, color: "var(--fg)", lineHeight: 1.5 }}>
-              Detected from your pitch — migrating from {proposedPending.map((id) => connector(id).name).join(" + ")}. Connect them?
+              Detected from your pitch — migrating from {proposedPending.map((id) => connector(id, runtime).name).join(" + ")}. Connect them?
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -134,7 +145,7 @@ export function SourceBody({ projectId }: { projectId?: string }) {
         <div data-testid="source-chips" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={grpLabel}>sources</span>
           {cfg.sources.map((s) => {
-            const c = connector(s.connectorId);
+            const c = connector(s.connectorId, runtime);
             const done = s.status === "scanned";
             return (
               <span key={s.uid} onClick={() => { setExpanded((p) => new Set(p).add(s.uid)); }} title={c.name} style={{
@@ -166,6 +177,7 @@ export function SourceBody({ projectId }: { projectId?: string }) {
         <SourceCard
           key={src.uid}
           src={src}
+          runtime={runtime}
           dataModelName={dataModelName}
           expanded={expanded.has(src.uid)}
           revealed={revealed.has(src.uid)}

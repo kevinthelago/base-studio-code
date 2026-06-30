@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
@@ -75,6 +75,33 @@ describe("SourceBody — connect & scan", () => {
     fireEvent.click(screen.getByTestId("proposed-confirm"));
     fireEvent.click(screen.getByTestId("connect-src-salesforce-1"));
     await waitFor(() => expect(screen.getByText(/sources connected/i)).toBeTruthy());
+  });
+});
+
+describe("SourceBody — agent-authored runtime connectors (#1980)", () => {
+  // Restore the default invoke mock (setup.ts resolves null) after each runtime-list test so the
+  // overridden implementation doesn't leak into other suites.
+  afterEach(() => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(null);
+  });
+
+  it("resolves a declared source to its polled agent-authored connector label", async () => {
+    // The pane polls `data_runtime_connectors`; feed it one agent-authored connector.
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "data_runtime_connectors") {
+        return [{ id: "acme-crm", label: "Acme CRM", category: "crm", auth: "token" }];
+      }
+      return null;
+    });
+    useAppStore.getState().setPlanSourceConfig("p-rt", {
+      ...defaultSourceConfig(),
+      sources: [{ uid: "u1", connectorId: "acme-crm", status: "declared", fields: {} }],
+    });
+    render(<SourceBody projectId="p-rt" />);
+    // Before the poll resolves the source would render its raw id ("acme-crm"); once the list feeds
+    // in, the chip + card header resolve to the real label.
+    await waitFor(() => expect(screen.getAllByText(/Acme CRM/).length).toBeGreaterThan(0));
   });
 });
 
