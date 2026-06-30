@@ -40,17 +40,17 @@ describe("pruneCompletedStreams (#1004)", () => {
       stream("fresh", ["X"]),
       stream("standing", []),
     ];
-    const { active, skipped } = pruneCompletedStreams(streams, done);
+    const { active, maintenance } = pruneCompletedStreams(streams, done);
     expect(active.map((s) => s.id)).toEqual(["partial", "fresh", "standing"]);
-    expect(skipped.map((s) => s.id)).toEqual(["done"]);
+    expect(maintenance.map((s) => s.id)).toEqual(["done"]); // completed → relaunch into maintenance (#1957)
   });
 
   it("first launch (nothing done) → every stream is active", () => {
-    const { active, skipped } = pruneCompletedStreams(
+    const { active, maintenance } = pruneCompletedStreams(
       [stream("a", ["A"]), stream("b", ["B"])],
       new Set(),
     );
     expect(active).toHaveLength(2);
-    expect(skipped).toHaveLength(0);
+    expect(maintenance).toHaveLength(0);
   });
 });
