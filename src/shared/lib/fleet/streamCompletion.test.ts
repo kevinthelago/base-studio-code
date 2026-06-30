@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { doneIssueRefs, streamComplete, pruneCompletedStreams } from "./streamCompletion";
-import type { AgentStream } from "./planFleet";
-import type { PlanIssue } from "../issues/planIssues";
+import { doneIssueRefs, streamComplete, pruneCompletedStreams, completedWorkerPanes } from "./streamCompletion";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 
 const issue = (ref: string, status?: PlanIssue["status"]): PlanIssue => ({
   ref, title: ref, acceptance: [], owns: [], dependsOn: [], labels: [], status,
@@ -52,5 +52,24 @@ describe("pruneCompletedStreams (#1004)", () => {
     );
     expect(active).toHaveLength(2);
     expect(maintenance).toHaveLength(0);
+  });
+});
+
+describe("completedWorkerPanes (warden un-quarantine of finished workers)", () => {
+  const fleetPaneStreams = {
+    "proj:auth": stream("auth", ["A", "B"]), // every issue done → completed
+    "proj:api":  stream("api", ["A", "C"]),  // C outstanding → still building
+    "proj:ui":   stream("ui", []),           // owns nothing → never "completed"
+  };
+  // The pane id is `<projectKey>:<streamId>`, so the project key selects the per-project done set.
+  const doneFor = (paneId: string) =>
+    new Map([["proj", new Set(["A", "B"])]]).get(paneId.split(":")[0]);
+
+  it("marks only panes whose stream finished every owned issue", () => {
+    expect([...completedWorkerPanes(fleetPaneStreams, doneFor)]).toEqual(["proj:auth"]);
+  });
+
+  it("marks nothing when the project's done set is unknown (no plan.db read yet)", () => {
+    expect(completedWorkerPanes(fleetPaneStreams, () => undefined).size).toBe(0);
   });
 });
