@@ -11,7 +11,7 @@ import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib/terminal";
 import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
-import { paneCwdRecovery } from "@/app/console/lib/paneIdentity";
+import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
@@ -503,9 +503,12 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // is a no-op (Claude Code's own default). Only meaningful when this pane
       // launches claude.
       const paneModel = st.paneModels[paneId] ?? st.defaultModel;
-      // #1988: opt-in — run this console INSIDE the sealed WSL2 sandbox distro. A clean bash at the
+      // #1988: opt-in — run a MANUAL console INSIDE the sealed WSL2 sandbox distro: a clean bash at the
       // distro home (no agent launch / startup prompt / Windows cwd — repos aren't mounted in the cage).
-      const sandboxed = st.sandboxConsoles === true;
+      // Gated to manual (`man:`) panes ONLY — an identity pane (triage/fleet) carries a real kickoff +
+      // repo cwd that this scratch-shell behavior would wrongly blank (the bug where sandboxed triage
+      // agents got no start command). The planner's own sandbox path lives in usePlannerTerminal (#1999).
+      const sandboxed = st.sandboxConsoles === true && isManualPaneId(paneId);
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
