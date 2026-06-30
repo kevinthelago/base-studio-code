@@ -109,3 +109,48 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn project_dir_places_the_sanitized_key_directly_under_projects() {
+        // Every hub lives at projects/<key> for life (#922) — no draft/ root, no documents/ prefix.
+        let p = project_dir("studio-code").to_string_lossy().replace('\\', "/");
+        assert!(p.ends_with("/projects/studio-code"), "got {p}");
+        assert!(!p.contains("/documents/"), "got {p}");
+        let s = project_dir("acme/api project").to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/projects/acme_api_project"), "got {s}");
+    }
+    #[test]
+    fn repo_dir_places_the_repo_short_name_under_the_project_hub() {
+        // Backs the `repo_dir_path` command (#1819): triage resolves each repo's absolute clone
+        // dir from Rust so a launch never depends on the async `bscBaseDir` mirror. The path is
+        // projects/<sanitized-key>/<short-repo-name> and mirrors the frontend `projectRepoCwd`.
+        let p = repo_dir("studio-code", "acme/wotos-ui").to_string_lossy().replace('\\', "/");
+        assert!(p.ends_with("/projects/studio-code/wotos-ui"), "got {p}");
+        // The key is sanitized; the repo collapses to its segment after the last '/'.
+        let s = repo_dir("acme/api project", "owner/api").to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/projects/acme_api_project/api"), "got {s}");
+    }
+    #[test]
+    fn worktrees_dir_is_outside_the_project_hub() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("wtdir");
+        let key = "my-proj";
+        let wts = worktrees_dir(key);
+        let hub = project_dir(key);
+        // The whole point of #844: a worker's worktree is NOT under the hub, so the hub's
+        // planner CLAUDE.md is not an ancestor of the worker's cwd.
+        assert!(wts.starts_with(bsc_base_dir().join("worktrees")), "got {wts:?}");
+        assert!(!wts.starts_with(&hub), "worktrees must not be under the hub: {wts:?} ⊄ {hub:?}");
+        std::fs::remove_dir_all(&home).ok();
+    }
+}

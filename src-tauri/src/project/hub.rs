@@ -214,3 +214,128 @@ pub(crate) fn project_dir_path(project_key: String) -> String {
 pub(crate) fn repo_dir_path(project_key: String, repo: String) -> String {
     repo_dir(&project_key, &repo).to_string_lossy().to_string()
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn mark_published_writes_an_in_place_marker_read_by_is_published() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("marker");
+        let key = "publish-me";
+        // A live hub with a plan file (simulating the planner's cwd) — never moved.
+        write_file(&project_dir(key).join("goal.md"), "# goal");
+        assert!(!is_published(key), "a fresh hub is a draft");
+
+        mark_published(key.to_string()).unwrap();
+        assert!(is_published(key), "marker present after mark_published");
+        assert!(project_dir(key).join(".published").is_file());
+        // The hub did not move: its files stay put (so the planner's cwd + Claude history survive).
+        assert!(project_dir(key).join("goal.md").exists(), "files stay in place");
+        // Idempotent.
+        mark_published(key.to_string()).unwrap();
+        assert!(is_published(key));
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn migration_consolidates_draft_hubs_and_clears_empty_published_shells() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("migrate");
+        let draft_root = bsc_base_dir().join("draft");
+
+        // (1) A plain draft → moved into projects/.
+        write_file(&draft_root.join("plain").join("goal.md"), "# plain goal");
+        // (2) The overdrive case: real hub in draft/, empty shell in projects/ → shell cleared, hub wins.
+        write_file(&draft_root.join("overdrive").join("CLAUDE.md"), "spec");
+        std::fs::create_dir_all(project_dir("overdrive").join("prompts")).unwrap();
+        // (3) A real published hub colliding with a stale same-key draft → published kept, draft dropped.
+        write_file(&project_dir("shipped").join("CLAUDE.md"), "published spec");
+        write_file(&draft_root.join("shipped").join("goal.md"), "stale draft");
+
+        migrate_draft_hubs_into_projects();
+
+        // (1) consolidated.
+        assert!(project_dir("plain").join("goal.md").exists(), "plain draft moved into projects/");
+        // (2) the real overdrive hub replaced the empty shell.
+        assert!(project_dir("overdrive").join("CLAUDE.md").exists(), "real overdrive hub moved in");
+        assert!(!project_dir("overdrive").join("prompts").exists(), "empty shell cleared");
+        // (3) published kept, stale draft content not clobbered in.
+        assert_eq!(std::fs::read_to_string(project_dir("shipped").join("CLAUDE.md")).unwrap(), "published spec");
+        // draft/ root retired.
+        assert!(!draft_root.exists(), "draft/ root removed after migration");
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn list_local_projects_surfaces_on_disk_unpublished_projects() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("llp");
+        let root = bsc_base_dir().join("projects");
+        // A real project: goal.md drives the title (first sentence, heading stripped).
+        write_file(&root.join("monkeys-paw").join("goal.md"), "# A wish-granting app.\n\nmore");
+        // A project with only CLAUDE.md still counts as has_plan, title falls back to humanized key.
+        write_file(&root.join("artist_portfolio").join("CLAUDE.md"), "spec");
+        // A bare scaffold dir (no plan artifacts) is listed but flagged has_plan=false.
+        std::fs::create_dir_all(root.join("empty-scaffold").join("prompts")).unwrap();
+
+        let found = list_local_projects().unwrap();
+        let by = |k: &str| found.iter().find(|p| p.key == k);
+        assert_eq!(by("monkeys-paw").unwrap().title, "A wish-granting app");
+        assert!(by("monkeys-paw").unwrap().has_plan);
+        assert_eq!(by("artist_portfolio").unwrap().title, "artist portfolio");
+        assert!(by("artist_portfolio").unwrap().has_plan);
+        assert!(!by("empty-scaffold").unwrap().has_plan, "bare scaffold flagged has_plan=false");
+
+        // The wire format MUST be camelCase — Tauri doesn't rename return fields, and the
+        // frontend reads `hasPlan`/`updatedAt`. snake_case here silently hides every project (#789).
+        let json = serde_json::to_string(by("monkeys-paw").unwrap()).unwrap();
+        assert!(json.contains("\"hasPlan\""), "expected camelCase hasPlan in {json}");
+        assert!(json.contains("\"updatedAt\""), "expected camelCase updatedAt in {json}");
+        assert!(!json.contains("has_plan") && !json.contains("updated_at"), "must not emit snake_case: {json}");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn delete_project_dir_removes_a_dir_with_a_read_only_file() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dpd");
+        let key = "doomed-proj".to_string();
+        let proj = bsc_base_dir().join("projects").join(&key);
+        // Simulate a cloned repo's read-only git pack file — the Windows delete failure mode.
+        let f = proj.join("repo").join("objects").join("pack.idx");
+        write_file(&f, "packdata");
+        let mut perms = std::fs::metadata(&f).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&f, perms).unwrap();
+
+        crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
+        assert!(!proj.exists(), "project dir (incl. read-only files) should be deleted");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn delete_project_dir_removes_relocated_worktrees() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dpdwt");
+        let key = "doomed-with-wt".to_string();
+        // A hub file and a relocated worktree with a (Windows-hostile) read-only file.
+        write_file(&project_dir(&key).join("goal.md"), "# goal");
+        let wt_file = worktrees_dir(&key).join("web--auth").join("src").join("x.rs");
+        write_file(&wt_file, "fn main() {}");
+        let mut perms = std::fs::metadata(&wt_file).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&wt_file, perms).unwrap();
+
+        crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
+        assert!(!project_dir(&key).exists(), "hub should be deleted");
+        assert!(!worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+}

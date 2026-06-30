@@ -133,3 +133,42 @@ pub(crate) fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> 
     set.extend(b);
     set.into_iter().collect()
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn worktree_audit_commands_tolerate_empty_cwd() {
+        // The per-worker audit snapshot (#920) must never panic on a missing/blank cwd —
+        // it just yields nothing so the UI shows "no data" rather than crashing.
+        assert!(read_worktree_branch(String::new()).is_empty());
+        assert!(read_worktree_branch("   ".into()).is_empty());
+        assert!(read_worktree_commits(String::new(), 10).is_empty());
+        assert!(read_worktree_commits("   ".into(), 10).is_empty());
+        assert!(claude_transcript_path(String::new()).is_none());
+        assert!(find_branch_pr(String::new(), "branch".into()).is_none());
+        assert!(find_branch_pr("owner/repo".into(), String::new()).is_none());
+    }
+    #[test]
+    fn merge_change_lists_dedupes_and_sorts() {
+        let merged = merge_change_lists(
+            vec!["src/b.ts".into(), "src/a.ts".into(), "src/b.ts".into()],
+            vec!["new.ts".into(), "src/a.ts".into()],
+        );
+        assert_eq!(merged, vec!["new.ts", "src/a.ts", "src/b.ts"]);
+        // Empty inputs yield an empty set.
+        assert!(merge_change_lists(vec![], vec![]).is_empty());
+    }
+    #[test]
+    fn read_worktree_changes_empty_cwd_is_empty() {
+        assert!(read_worktree_changes(String::new()).is_empty());
+        assert!(read_worktree_changes("   ".into()).is_empty());
+    }
+}

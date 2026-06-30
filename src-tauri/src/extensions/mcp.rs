@@ -226,3 +226,104 @@ pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
     if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
     serde_json::Value::Object(v)
 }
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn resolve_mcp_command_substitutes_research_marker(){
+        use std::path::PathBuf;
+        // A normal command is untouched.
+        assert_eq!(resolve_mcp_command("npx", None), "npx");
+        assert_eq!(
+            resolve_mcp_command("npx", Some(PathBuf::from("/x/bsc-research-mcp"))),
+            "npx",
+        );
+        // The Research marker resolves to the bundled binary's absolute path when present…
+        let bin = PathBuf::from("/opt/app/bsc-research-mcp");
+        assert_eq!(resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
+        // …and falls back to the bare marker when the bundled binary can't be located (dev build).
+        assert_eq!(resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
+        // The Compliance marker (#1005) resolves the same way through its own bundled path.
+        let comp = PathBuf::from("/opt/app/bsc-compliance-mcp");
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", Some(comp.clone())), comp.to_string_lossy());
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", None), "bsc-compliance-mcp");
+    }
+    #[test]
+    fn mcp_install_dir_slugifies_and_stays_under_mcp_root() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("mcpdir");
+        let root = bsc_base_dir().join("mcp");
+        // A normal repo name lands directly under mcp/.
+        assert_eq!(mcp_install_dir("compliance-mcp-server").unwrap(), root.join("compliance-mcp-server"));
+        // Path separators are slugified to `_`, so a traversal attempt collapses to a single
+        // literal dir name DIRECTLY under mcp/ — it can't escape (the `..` substring that
+        // survives is just part of a leaf filename, not a real parent ref).
+        let evil = mcp_install_dir("../../etc/passwd").unwrap();
+        assert_eq!(evil.parent(), Some(root.as_path()), "must be a direct child of mcp/: {evil:?}");
+        let leaf = evil.file_name().unwrap().to_string_lossy();
+        assert!(!leaf.contains('/') && !leaf.contains('\\'), "no separators survive the slug: {leaf}");
+        // Empty / dot names are rejected.
+        assert!(mcp_install_dir("").is_err());
+        assert!(mcp_install_dir(".").is_err());
+        assert!(mcp_install_dir("..").is_err());
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn mcp_build_command_detects_the_toolchain() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpbuild-{}", std::process::id()));
+        let uv = base.join("uv");
+        let pnpm = base.join("pnpm");
+        let npm = base.join("npm");
+        let none = base.join("none");
+        for d in [&uv, &pnpm, &npm, &none] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        // Python/uv project → `python -m uv sync` (module form — no PATH dependency, #887).
+        std::fs::write(uv.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+        assert_eq!(mcp_build_command(&uv).as_deref(), Some("python -m uv sync"));
+        // pnpm project → pnpm install && build (a package.json is also present, but the
+        // pnpm lockfile wins over the npm fallback).
+        std::fs::write(pnpm.join("package.json"), "{}").unwrap();
+        std::fs::write(pnpm.join("pnpm-lock.yaml"), "lockfileVersion: 9\n").unwrap();
+        assert_eq!(mcp_build_command(&pnpm).as_deref(), Some("pnpm install && pnpm build"));
+        // Plain Node project → npm fallback.
+        std::fs::write(npm.join("package.json"), "{}").unwrap();
+        assert_eq!(mcp_build_command(&npm).as_deref(), Some("npm install && npm run build"));
+        // Unknown toolchain → None.
+        assert_eq!(mcp_build_command(&none), None);
+        std::fs::remove_dir_all(&base).ok();
+    }
+    #[test]
+    fn mcp_status_of_reports_downloaded_and_built() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpstatus-{}", std::process::id()));
+        let dir = base.join("srv");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing yet → neither downloaded nor built.
+        assert_eq!(mcp_status_of(&dir), (false, false));
+        // A clone (.git) → downloaded, not built.
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        assert_eq!(mcp_status_of(&dir), (true, false));
+        // A build artifact (node_modules) → built. (dist / .venv count too.)
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        assert_eq!(mcp_status_of(&dir), (true, true));
+        std::fs::remove_dir_all(&base).ok();
+    }
+    #[test]
+    fn mcp_update_available_compares_heads() {
+        // Differing non-empty shas → update available; equal → none; empty (unknown) → none.
+        assert!(mcp_update_available("aaaa", "bbbb"));
+        assert!(!mcp_update_available("aaaa", "aaaa"));
+        assert!(!mcp_update_available("aaaa", ""));
+        assert!(!mcp_update_available("", "bbbb"));
+        // Trims surrounding whitespace before comparing.
+        assert!(!mcp_update_available(" aaaa\n", "aaaa"));
+    }
+}
