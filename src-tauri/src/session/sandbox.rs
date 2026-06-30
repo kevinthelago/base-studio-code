@@ -189,8 +189,18 @@ fn detect_linux_pm() -> Option<LinuxPm> {
 
 /// Probe whether the OS sandbox can engage. On Windows this queries WSL2; elsewhere the OS confines
 /// natively (macOS Seatbelt / Linux bubblewrap). Read-only — no provisioning.
+///
+/// Async + `spawn_blocking` so the (blocking) `wsl.exe` / host probe runs OFF the main thread: as a
+/// synchronous command it ran on the UI thread and froze the window for the seconds a cold `wsl.exe`
+/// takes to spin up — felt as a slow Settings page (#1916 perf).
 #[tauri::command]
-pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
+pub(crate) async fn wsl_sandbox_status() -> SandboxReadiness {
+    tauri::async_runtime::spawn_blocking(wsl_sandbox_status_inner)
+        .await
+        .unwrap_or_else(|_| wsl_sandbox_status_inner())
+}
+
+fn wsl_sandbox_status_inner() -> SandboxReadiness {
     let platform = if cfg!(windows) {
         "windows"
     } else if cfg!(target_os = "macos") {

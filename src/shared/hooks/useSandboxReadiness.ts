@@ -29,7 +29,12 @@ export interface UseSandboxReadiness {
   install: () => Promise<void>;
 }
 
-export function useSandboxReadiness(): UseSandboxReadiness {
+/**
+ * @param enabled — when `false`, skip the readiness probe entirely (the caller won't render the
+ *   sandbox UI). Lets a posture-gated card avoid the `wsl_sandbox_status` probe in the allow-list
+ *   posture, so it isn't paid on every mount of a page that hosts the card.
+ */
+export function useSandboxReadiness(enabled = true): UseSandboxReadiness {
   const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
   const [installing, setInstalling] = useState(false);
   const [installLog, setInstallLog] = useState<string[]>([]);
@@ -40,6 +45,7 @@ export function useSandboxReadiness(): UseSandboxReadiness {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     void safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null).then((r) => {
       if (alive) setSandbox(r);
@@ -47,7 +53,7 @@ export function useSandboxReadiness(): UseSandboxReadiness {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [enabled]);
 
   // Raw `invoke` (not safeInvoke) so the final Ok/Err text surfaces; `sandbox-install` events stream the
   // package manager / rootfs-import output live into `installLog`.

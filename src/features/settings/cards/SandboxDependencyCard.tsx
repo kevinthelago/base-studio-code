@@ -10,7 +10,9 @@ import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
  */
 export function SandboxDependencyCard() {
   const bypassPermissions = useAppStore((s) => s.bypassPermissions);
-  const { sandbox, installing, installLog, installMsg, install } = useSandboxReadiness();
+  // Only probe when the card will actually render (deny-list posture) — skips the wsl.exe probe on
+  // General-page mount for allow-list users.
+  const { sandbox, installing, installLog, installMsg, install } = useSandboxReadiness(bypassPermissions);
 
   if (!bypassPermissions || !sandbox) return null;
 
