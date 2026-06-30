@@ -33,6 +33,11 @@ import type { AppStore } from "@/store/types";
  * @param providerId  the resolved provider id (default "claude")
  * @param ghToken  the repo-scoped or global GitHub token already resolved for this pane
  */
+/** Sentinel `BSC_SCOPE_GLOBS` value meaning "deny ALL file writes" — set for a `code:none` role with
+ *  no write globs so the `bsc-scope` PreToolUse hook hard-blocks every Edit/Write (a write-block that
+ *  survives `bypassPermissions`, #1916 Step 3.5). MUST match the literal in `bsc-scope` (shell_rc.rs). */
+export const SCOPE_DENY_ALL = "__bsc_deny_all__";
+
 export function buildAgentEnv(
   s: AppStore,
   paneId: string,
@@ -46,8 +51,17 @@ export function buildAgentEnv(
   // allow-only rules lack. Applies to every gated pane.
   const scopeRole = s.paneRoles[paneId];
   if (scopeRole) {
-    const sg = scopeWriteGlobs(scopeRole, s.paneRoleGlobs[paneId] ?? []);
-    if (sg.length > 0) e.BSC_SCOPE_GLOBS = sg.join(" ");
+    const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
+    const sg = scopeWriteGlobs(scopeRole, roleGlobs);
+    if (sg.length > 0) {
+      e.BSC_SCOPE_GLOBS = sg.join(" ");
+    } else if (roleCapability(scopeRole, { writeGlobs: roleGlobs }).code === "none") {
+      // code:none with no write globs ⇒ DENY ALL writes (#1916 Step 3.5). The sentinel makes bsc-scope
+      // hard-block every Edit/Write — surviving bypassPermissions, where the role's permissions.deny
+      // write rule is ignored. (A code:none role WITH globs — e.g. a director's commons — is scoped
+      // above; an ungated pane has no scopeRole, so it stays allow-all.)
+      e.BSC_SCOPE_GLOBS = SCOPE_DENY_ALL;
+    }
   }
   // Deny-list (#1916): the session's role/user/profile deny patterns for the `bsc-deny` PreToolUse
   // hook (newline-separated; the dangerous floor itself is compiled into `bsc hook bash-deny`). This
