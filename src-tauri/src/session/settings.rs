@@ -196,6 +196,21 @@ pub(crate) fn write_session_settings(
     merge_permission_list(&mut config, "allow", &allow_rules);
     merge_permission_list(&mut config, "deny", &deny_rules);
     merge_permission_list(&mut config, "ask", &ask_rules);
+    // THE FLIP (#1916 Step 4): every session runs in bypassPermissions — auto-run without prompts,
+    // gated by the PreToolUse HOOKS that fire AND block even under bypass (the dangerous floor + role/
+    // user denies via bsc-deny, FS confinement + .claude protection via bsc-confine, code:none/write-
+    // scope via bsc-scope). `ask` rules (the push-confirm hard gate) still prompt natively. The allow/
+    // deny lists above are now belt-and-suspenders — ignored under bypass; Step 5 stops emitting them.
+    // Applies to EVERY pane: fleet workers, the director, triage, AND manual consoles.
+    {
+        let obj = config.as_object_mut().unwrap();
+        let permissions = obj.entry("permissions").or_insert_with(|| serde_json::json!({}));
+        crate::platform::fsx::ensure_object(permissions);
+        permissions.as_object_mut().unwrap().insert(
+            "defaultMode".into(),
+            serde_json::Value::String("bypassPermissions".into()),
+        );
+    }
 
     // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
     // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
@@ -411,6 +426,9 @@ mod tests {
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        // THE FLIP (#1916 Step 4): every session is emitted in bypassPermissions — the PreToolUse
+        // hooks (not the allow/deny lists) do the gating.
+        assert_eq!(v["permissions"]["defaultMode"], "bypassPermissions");
         let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
         let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
