@@ -6,9 +6,19 @@ import { TunnelSettings } from "@/features/tunnel";
 import { MetricsCollectionCard } from "../cards/MetricsCollectionCard";
 import { IdleReaperCard } from "../cards/IdleReaperCard";
 import { PerfRetentionCard } from "../cards/PerfRetentionCard";
+import { StorageCard } from "../cards/StorageCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
+
+/** A settings page sub-section header — the group label within a page (scaled-down page h2). */
+function Sub({ children }: { children: string }) {
+  return (
+    <h3 className="mono" style={{ fontSize: 12.5, margin: "10px 0 -6px", fontWeight: 600, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>
+      {children}
+    </h3>
+  );
+}
 
 export function PlannerPage() {
   const [selectedStream, setSelectedStream] = useState<string | null>(null);
@@ -28,28 +38,28 @@ export function PlannerPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
-      {/* Planner Header */}
       <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Planner</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
-        Manage LLM planning providers, autopilot options, telemetry, performance, and background logs.
+        LLM planning providers, autopilot, the session shell, mobile tunnel, performance, and storage.
       </p>
 
-      {/* Provider & Planning Automation */}
+      <Sub>Providers &amp; automation</Sub>
       <LlmProviderCard />
       <PlanningAutomationCard />
 
-      {/* Shell (host-tool diagnostics moved to Settings → Dependencies) */}
+      <Sub>Shell</Sub>
       <ShellSelectorCard />
 
-      {/* Mobile tunnel */}
+      <Sub>Mobile tunnel</Sub>
       <TunnelSettings />
 
-      {/* Metrics collection & reaping background idle memory */}
+      <Sub>Performance &amp; memory</Sub>
       <MetricsCollectionCard />
       <IdleReaperCard />
       <PerfRetentionCard />
 
-      {/* Database & PTY stream logs */}
+      <Sub>Storage &amp; logs</Sub>
+      <StorageCard />
       <LogsInventoryCard
         selectedStream={selectedStream}
         onViewStream={setSelectedStream}
