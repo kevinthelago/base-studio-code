@@ -105,8 +105,8 @@ describe("SourceBody — agent-authored runtime connectors (#1980)", () => {
   });
 });
 
-describe("SourceBody — closes the data-dictates-structure loop (#1205)", () => {
-  it("once every source is scanned, persists the derived model + shows the downstream-impact recap", async () => {
+describe("SourceBody — closes the data-dictates-structure loop (#1205) via the mapping gate (#1986)", () => {
+  it("shows the scan-views + mapping list once scanned, but only persists AFTER the user confirms the mapping", async () => {
     useAppStore.getState().setPlanSourceConfig("p1", { ...defaultSourceConfig(), proposed: ["quickbase"] });
     render(<SourceBody projectId="p1" />);
     fireEvent.click(screen.getByTestId("proposed-confirm"));
@@ -116,10 +116,75 @@ describe("SourceBody — closes the data-dictates-structure loop (#1205)", () =>
     // carries the downstream-impact recap …
     await waitFor(() => expect(screen.getByTestId("scan-views")).toBeTruthy());
     expect(screen.getByTestId("scan-views").textContent).toMatch(/seeds .* into features/i);
-    // … and the derived model is persisted as the canonical artifact (refined, the user confirmed it).
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+    // … and the inferred source→canonical mapping list renders for confirmation.
+    expect(screen.getByTestId("mapping-confirm")).toBeTruthy();
+    // The model is NOT persisted yet — the human mapping gate (#1986) replaced the old auto-persist.
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("data_persist_model", expect.anything());
+
+    // Confirming the mapping persists the derived model as the canonical artifact (refined).
+    fireEvent.click(screen.getByTestId("confirm-mapping"));
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith(
       "data_persist_model",
       expect.objectContaining({ projectKey: "p1", refined: true }),
-    );
+    ));
+    expect(screen.getByTestId("mapping-confirmed")).toBeTruthy();
+  });
+});
+
+describe("SourceBody — ① declare a source (#1986)", () => {
+  it("submitting the add-source input stages a source + injects the build-integration nudge", () => {
+    const onInject = vi.fn();
+    render(<SourceBody projectId="decl" onInject={onInject} />);
+    fireEvent.change(screen.getByTestId("add-source-name"), { target: { value: "Stripe" } });
+    fireEvent.change(screen.getByTestId("add-source-url"), { target: { value: "https://api.stripe.com" } });
+    fireEvent.submit(screen.getByTestId("add-source"));
+
+    // A declared source is staged under a slug id derived from the name.
+    const cfg = useAppStore.getState().planSourceConfig.decl;
+    expect(cfg.sources.map((s) => s.connectorId)).toEqual(["stripe"]);
+    expect(cfg.sources[0].status).toBe("declared");
+    // The planner is nudged to author the connector via the dev-loop, carrying the system name + url.
+    expect(onInject).toHaveBeenCalledTimes(1);
+    expect(onInject.mock.calls[0][0]).toContain("Stripe");
+    expect(onInject.mock.calls[0][0]).toMatch(/build-integration|bsc data connector/);
+  });
+
+  it("does not stage anything for a blank name", () => {
+    const onInject = vi.fn();
+    render(<SourceBody projectId="decl2" onInject={onInject} />);
+    fireEvent.submit(screen.getByTestId("add-source"));
+    expect(useAppStore.getState().planSourceConfig.decl2?.sources ?? []).toHaveLength(0);
+    expect(onInject).not.toHaveBeenCalled();
+  });
+});
+
+describe("SourceBody — ② build status (#1986)", () => {
+  afterEach(() => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(null);
+  });
+
+  it("a declared source whose connector is not yet in the runtime list shows 'building…'", () => {
+    useAppStore.getState().setPlanSourceConfig("p-b", {
+      ...defaultSourceConfig(),
+      sources: [{ uid: "u1", connectorId: "acme-crm", status: "declared", fields: {} }],
+    });
+    render(<SourceBody projectId="p-b" />);
+    expect(screen.getByTestId("build-status-u1").textContent).toMatch(/building/i);
+  });
+
+  it("once the connector appears in the runtime list the source reads 'ready to connect'", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "data_runtime_connectors") {
+        return [{ id: "acme-crm", label: "Acme CRM", category: "crm", auth: "token" }];
+      }
+      return null;
+    });
+    useAppStore.getState().setPlanSourceConfig("p-r", {
+      ...defaultSourceConfig(),
+      sources: [{ uid: "u1", connectorId: "acme-crm", status: "declared", fields: {} }],
+    });
+    render(<SourceBody projectId="p-r" />);
+    await waitFor(() => expect(screen.getByTestId("build-status-u1").textContent).toMatch(/ready to connect/i));
   });
 });
