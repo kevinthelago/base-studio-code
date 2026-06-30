@@ -7,6 +7,7 @@
     "deployment"
   ],
   "optional": true,
+  "skills": ["build-integration"],
   "blurb": "Migration source — declare the legacy systems you're migrating from and connect each read-only so it can be scanned.",
   "gateRule": {
     "require": [
