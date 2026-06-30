@@ -143,8 +143,9 @@ fn trust_keys(cwd: &str, main_worktree: Option<&str>) -> Vec<String> {
 
 /// The MAIN worktree root of the git repo containing `cwd` — the first `worktree <path>` line of
 /// `git worktree list --porcelain` (which lists the main worktree first), or `None` when `cwd` isn't
-/// a git repo. For a linked worktree this is the MAIN repo — what Claude Code keys folder-trust on.
-fn git_main_worktree(cwd: &str) -> Option<String> {
+/// a git repo. For a linked worktree this is the MAIN repo — what Claude Code keys folder-trust on
+/// (and what the OS sandbox must allow writes to, since a worktree's git data lives there, #1916).
+pub(crate) fn git_main_worktree(cwd: &str) -> Option<String> {
     crate::platform::git::git_lines(cwd, &["worktree", "list", "--porcelain"])
         .into_iter()
         .find_map(|l| l.strip_prefix("worktree ").map(|s| s.trim().to_string()))
