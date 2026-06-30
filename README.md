@@ -22,7 +22,7 @@ The platform isn't locked to one vendor. Alongside Claude Code, it ships **`bsc-
 
 ## Project Blueprints
 
-*A core feature of the platform.* A **Blueprint** is a reusable planning template — an ordered list of planning **stages** (context, repos, UI design, structure, permissions, …), each with its own prompt module, a declarative completion **gate**, and optional attached **skills / knowledge**. Pick one — built-ins span the project lifecycle: **greenfield** (Default, Complete), **transform** (Refactor & Cleanup, Split / Combine microservices, Migrate stack), **harden** (Harden security), and **data** (Data migration, Data collection) — searchable and filterable by category. It seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. You can also **author your own blueprint** in the planner and publish it to a gist to share. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
+*A core feature of the platform.* A **Blueprint** is a reusable planning template — an ordered list of planning **stages** (context, deployment, features, UI design, structure, integrations, …), each with its own prompt module, a declarative completion **gate**, and optional attached **skills**. The packaged greenfield built-ins are **Default** (a trimmed, foolproof path) and **Complete** (every advanced stage — MCP servers, automations, skills); you can also **author your own blueprint** in the planner and publish it to a gist to share. It seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
 A standout capability is the **live UI preview**: the UI stage's generated screen skeletons are bundled with `esbuild-wasm` and rendered as an interactive **2D/3D walkthrough** in a sandboxed iframe, right inside the planning page — no preview server, no leaving the app. Approve screens one at a time to advance the stage.
 
@@ -44,7 +44,7 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 - **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
 - **Automations** — cron-scheduled commands dispatched across panes
 - **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
-- **Data models** *(landing — `1.0.4`)* — a canonical schema layer the data blueprints (migration, scraping) map into, for migrating off enterprise systems
+- **Canonical data model** — a DuckDB-backed schema layer (`crates/data`, `bsc data`) a migration source maps into; **connectors are authored by the planner agent** as validated manifests (probe → validate → try) and captured as reusable skills — no native per-vendor code
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
 ### The app, screen by screen
@@ -52,12 +52,12 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 Eight surfaces, reached from the left rail:
 
 - **Console** — the execution surface where planned work runs. Tabbed workspaces, each a configurable grid of terminal panes; every pane is a real PTY running an agent, with swappable views for the terminal, files, branches, diffs, the session log, and live tokens/cost
-- **Projects** — the flagship planner: pitch → staged plan → live UI preview → publish to GitHub → launch the fleet, alongside a live **Fleet** board (one worker per stream, coordinated by a director) and the canonical **Data Models** editor
+- **Projects** — the flagship planner: pitch → staged plan → live UI preview → publish to GitHub → launch the fleet, alongside a live **Fleet** board (one worker per stream, coordinated by a director)
 - **Skills** — the injectable-context library: searchable skills and task groups, attachable per session, with invocation telemetry and per-project lessons
 - **Automations** — cron-scheduled commands dispatched into console panes, with armed status and run history
 - **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
 - **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
-- **Security** — the least-privilege control room: a role and profile per session (tool allowlists, write-path scope, network), enforced at launch, with a live audit feed of every tool attempt
+- **Security** — the least-privilege control room: a role and profile per session (write-path scope, network, command policy) enforced at launch — moving to a **deny-list model with per-session worktree filesystem isolation** (the allow-list stays available as an opt-in posture) — with a live audit feed of every tool attempt
 - **Settings** — providers/keys, mobile-tunnel pairing, appearance, diagnostics, performance, logs, and storage
 
 ## Tech Stack
@@ -170,7 +170,7 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 
 > Released and in active development — we ship builds early and keep working `1.0.4` until its theme is complete.
 
-- **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via native + MCP connectors (Salesforce, monday.com, QuickBooks, Quickbase, HubSpot, Airtable), capturing **data, configurations, and behaviors** (automations, business processes), not just rows
+- **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via **agent-authored connector manifests** (the planner probes the source and authors the connector — no native per-vendor code) + MCP connectors (Salesforce, monday.com, QuickBooks, Quickbase, HubSpot, Airtable), capturing **data, configurations, and behaviors** (automations, business processes), not just rows
 - **Migrate off an existing solution to bespoke generated software** — the source scan dictates the app's schema + logic; map it into your own custom app, generated and run by the fleet
 - **Compliance** — a user-updatable Compliance MCP server (regulations, accessibility, user-protection) integrated into the planner, so generated software is compliant by default
 - **Research** — a **built-in** literature MCP server (arXiv · Semantic Scholar · PubMed/PMC · Crossref, native PDF extraction, citation-grounded search), so the planner can ground plans and skills in the latest real sources with no download, build, or Docker
@@ -189,6 +189,12 @@ A snapshot of where the platform is and where it's headed. (Dates aren't promise
 **🔜 Next — `1.0.5` · the UI release**
 - An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview
 - **UI loops** — iterative design loops that **generate → live-preview → refine** a UI in-app until it's right, the same tight loop the agent fleet runs for code
+
+> Foundation work for the `1.0.5` line, landing ahead of the UI editor:
+
+- **Integrations platform** — one global connection registry reused across every project, projected four ways (migration **data source** · **incident/CVE** stream · **MCP server** · **app seed**); connectors are **authored by the planner agent** as validated manifests (probe → validate → try, captured as skills), replacing the native per-vendor connectors
+- **Deny-list security** — sessions move from an enumerated allow-list to a **deny-list + per-session worktree filesystem isolation** (the allow-list stays an opt-in posture)
+- **Maintenance mode** — a worker that finishes its issues stays alive in a ready posture for the director to dispatch new or regressed lane work to, instead of ending
 
 **Later**
 - The execution-side **conductor** (staged build → test → review → integrate)
