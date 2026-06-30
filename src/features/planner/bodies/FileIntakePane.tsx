@@ -11,8 +11,9 @@ import { useAppStore } from "@/store";
 import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
-  INTAKE_DIR, INTAKE_MANIFEST, ROUTE_PROMPT, type IntakeEntry, type IntakeKind,
+  INTAKE_DIR, INTAKE_MANIFEST, type IntakeEntry, type IntakeKind,
 } from "../lib/fileIntake";
+import { STAGE_DEFS } from "../stages/blueprints";
 import type { StageScreenProps } from "../preview/stageScreens";
 import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../lib/dropFiles";
 
@@ -160,7 +161,9 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
               style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
               disabled={busy}
               onClick={() => {
-                requestPlannerPrompt(projectKey, ROUTE_PROMPT);
+                // The route instruction is the UI stage's data (ui.json → routePrompt), not hardcoded.
+                const routePrompt = STAGE_DEFS.ui.routePrompt ?? "";
+                if (routePrompt) requestPlannerPrompt(projectKey, routePrompt);
                 // Promote the dropped components into .ui-skeleton/ so the preview shows the REAL
                 // design, not the demo (#1373) — deterministic, alongside the planner's routing.
                 fireInvoke("sync_design_to_skeleton", { projectKey });
