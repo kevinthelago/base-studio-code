@@ -230,3 +230,95 @@ pub(crate) fn set_preferred_shell(kind: String) -> Result<(), String> {
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     std::fs::write(crate::platform::shell::shell_pref_path(), pref.as_str()).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_github_probe_detects_each_marker_independently() {
+        use {GH_AUTH_MARK, GH_PATH_MARK, GIT_PATH_MARK};
+        // All three markers present -> (gh, git, auth) all true.
+        let all = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+{GH_AUTH_MARK}
+");
+        assert_eq!(parse_github_probe(&all), (true, true, true));
+        // Empty output (probe found nothing) -> all false.
+        assert_eq!(parse_github_probe(""), (false, false, false));
+        // git on PATH but gh missing -> gh false, git true, auth false.
+        let git_only = format!("{GIT_PATH_MARK}
+");
+        assert_eq!(parse_github_probe(&git_only), (false, true, false));
+        // gh present but unauthenticated -> gh true, git true, auth false.
+        let no_auth = format!("{GIT_PATH_MARK}
+{GH_PATH_MARK}
+");
+        assert_eq!(parse_github_probe(&no_auth), (true, true, false));
+    }
+
+    #[test]
+    fn interpret_preflight_reports_each_prerequisite() {
+        use {interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        // Everything present + authed, on Windows with Git Bash found.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t/usr/bin/gh\tgh version 2.40.0\n\
+             {GH_AUTH_MARK}\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Found("C:\\Git\\bin\\bash.exe".into()));
+        // Git Bash first (the console shell), then claude, git, gh, gh auth.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Git Bash", "claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| p.found), "all prerequisites should be found");
+        assert!(r.iter().all(|p| p.hint.is_empty()), "found tools carry no hint");
+        let git = r.iter().find(|p| p.name == "git").unwrap();
+        assert_eq!(git.version.as_deref(), Some("git version 2.43.0"));
+        assert_eq!(git.path.as_deref(), Some("/usr/bin/git"));
+    }
+
+    #[test]
+    fn interpret_preflight_flags_missing_tools_with_hints() {
+        use {interpret_preflight, GitBashProbe, PREFLIGHT_MARK};
+        // claude + git present; gh missing (empty path), unauthenticated; Git Bash missing.
+        let stdout = format!(
+            "{PREFLIGHT_MARK}\tclaude\t/usr/bin/claude\tclaude 1.2.3\n\
+             {PREFLIGHT_MARK}\tgit\t/usr/bin/git\tgit version 2.43.0\n\
+             {PREFLIGHT_MARK}\tgh\t\t\n"
+        );
+        let r = interpret_preflight(&stdout, GitBashProbe::Missing);
+        let gh = r.iter().find(|p| p.name == "gh").unwrap();
+        assert!(!gh.found);
+        assert!(gh.hint.contains("cli.github.com"));
+        let gh_auth = r.iter().find(|p| p.name == "gh auth").unwrap();
+        assert!(!gh_auth.found, "gh missing -> auth cannot be reported found");
+        assert!(!gh_auth.hint.is_empty());
+        let gitbash = r.iter().find(|p| p.name == "Git Bash").unwrap();
+        assert!(!gitbash.found);
+        assert!(gitbash.hint.contains("git-scm.com"));
+        // Present tools still carry their version/path even when others are missing.
+        assert!(r.iter().find(|p| p.name == "claude").unwrap().found);
+    }
+
+    #[test]
+    fn interpret_preflight_omits_git_bash_off_windows() {
+        use {interpret_preflight, GitBashProbe};
+        let r = interpret_preflight("", GitBashProbe::NotApplicable);
+        assert!(!r.iter().any(|p| p.name == "Git Bash"));
+        // Empty probe -> every CLI tool reported missing with a hint.
+        let names: Vec<&str> = r.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["claude", "git", "gh", "gh auth"]);
+        assert!(r.iter().all(|p| !p.found));
+        assert!(r.iter().all(|p| !p.hint.is_empty()));
+    }
+
+    #[test]
+    fn interpret_preflight_gh_auth_requires_gh_present() {
+        // A stale GH_AUTH_OK marker must NOT report auth when gh itself is absent.
+        use {interpret_preflight, GitBashProbe, GH_AUTH_MARK, PREFLIGHT_MARK};
+        let stdout = format!("{PREFLIGHT_MARK}\tgh\t\t\n{GH_AUTH_MARK}\n");
+        let r = interpret_preflight(&stdout, GitBashProbe::NotApplicable);
+        assert!(!r.iter().find(|p| p.name == "gh auth").unwrap().found);
+    }
+}
