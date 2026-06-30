@@ -6,7 +6,6 @@ import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { Fleet } from "./fleet/Fleet";
-import { DataModelsPage } from "./data/DataModelsPage";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -72,13 +71,6 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {mode === "fleet" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           <Fleet />
-        </div>
-      )}
-
-      {/* Data Models — canonical schemas the data blueprints map into (#780). Mounts on demand. */}
-      {mode === "dataModels" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <DataModelsPage />
         </div>
       )}
 

@@ -92,29 +92,22 @@ describe("blueprints — seed library", () => {
   it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
-    expect(canChangeBlueprint(by("refactor"))).toBe(true);          // transform → switchable (was locked)
-    expect(canChangeBlueprint(by("harden"))).toBe(true);            // harden → switchable (was locked)
+    expect(canChangeBlueprint(by("complete"))).toBe(true);          // greenfield → switchable
     expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
   });
 
   it("canSwitchBlueprint: any project blueprint → any OTHER, except authoring + self (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    // greenfield → transform / harden — still allowed
-    expect(canSwitchBlueprint(by("default"), by("refactor"))).toBe(true);        // → transform
-    expect(canSwitchBlueprint(by("default"), by("harden"))).toBe(true);          // → harden
-    // previously-refused targets are now allowed (the over-restriction is gone)
+    // any project blueprint → another is allowed
     expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(true);        // → another greenfield
-    expect(canSwitchBlueprint(by("default"), by("data-migration"))).toBe(true);  // → data
-    // a non-greenfield origin can switch now — no more soft-lock (the #1281 bug)
-    expect(canSwitchBlueprint(by("refactor"), by("harden"))).toBe(true);
-    expect(canSwitchBlueprint(by("refactor"), by("default"))).toBe(true);        // transform → back to greenfield
+    expect(canSwitchBlueprint(by("complete"), by("default"))).toBe(true);        // → back
     // refused: switching to the SAME blueprint (a no-op)
     expect(canSwitchBlueprint(by("default"), by("default"))).toBe(false);
     // refused: anything touching the authoring lifecycle
-    expect(canSwitchBlueprint(by("blueprint-author"), by("refactor"))).toBe(false);
+    expect(canSwitchBlueprint(by("blueprint-author"), by("default"))).toBe(false);
     expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
     // refused: unbound (no current) can't "switch"
-    expect(canSwitchBlueprint(undefined, by("refactor"))).toBe(false);
+    expect(canSwitchBlueprint(undefined, by("default"))).toBe(false);
   });
 
   it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
@@ -227,12 +220,14 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   });
 
   it("a gateless (informational) section completes only when confirmed, not vacuously (#664)", () => {
-    const secs = [mkStage("discovery"), mkStage("testing")];
-    const testing = secs.find((s) => s.key === "testing")!;
+    // mcp is gateless (no gateRule); forced non-optional it plays the required-informational role the
+    // archived `testing` stage used to (completes only on confirm, never vacuously).
+    const secs = [mkStage("discovery"), mkStage("mcp", { optional: false })];
+    const info = secs.find((s) => s.key === "mcp")!;
     // not vacuously complete on a fresh/cleared plan
-    expect(stageStatus(testing, secs, sig()).status).toBe("in-progress");
+    expect(stageStatus(info, secs, sig()).status).toBe("in-progress");
     // complete once the section is confirmed
-    expect(stageStatus(testing, secs, { ...sig(), [confirmedSignal("testing")]: true }).status).toBe("complete");
+    expect(stageStatus(info, secs, { ...sig(), [confirmedSignal("mcp")]: true }).status).toBe("complete");
   });
 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
@@ -289,12 +284,12 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
 
   it("blueprintToStageConfig maps enabled+order over known stages, dropping non-registry sections", () => {
     const known = new Set(PLAN_STAGES.map((s) => s.id));
-    // a blueprint including "testing" (a non-registry stage) — dropped from the stage config order.
-    const bp = { id: "t", name: "T", desc: "", sections: [mkStage("discovery"), mkStage("repos"), mkStage("structure"), mkStage("testing")] } as Blueprint;
+    // a blueprint including "mcp" (a non-registry stage) — dropped from the stage config order.
+    const bp = { id: "t", name: "T", desc: "", sections: [mkStage("discovery"), mkStage("repos"), mkStage("structure"), mkStage("mcp")] } as Blueprint;
     const cfg = blueprintToStageConfig(bp);
     // order only contains registry stage ids, in blueprint order
     expect(cfg.order.every((id) => known.has(id))).toBe(true);
-    expect(cfg.order).not.toContain("testing" as never);
+    expect(cfg.order).not.toContain("mcp" as never);
     // a section's enabled flag carries through
     const repos = bp.sections.find((s) => s.key === "repos")!;
     expect(cfg.enabled.repos).toBe(repos.enabled);
@@ -368,10 +363,6 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
       expect(reposRef(id)?.substeps?.some((s) => s.key === "ship"), `${id} ships via repos`).toBe(true);
       expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("deploy");
     }
-    // data-integration deploys without a repos stage → keeps Deploy as its own section (unchanged).
-    const di = makeBlueprints().find((b) => b.id === "data-integration")!;
-    expect(di.sections.map((s) => s.key)).toContain("deploy");
-    expect(di.sections.find((s) => s.key === "repos")).toBeUndefined();
   });
 
   it("folds Permissions into the Structure stage as a fleet substep — the 'Streams' stage (#1383-streams)", () => {
@@ -395,14 +386,10 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
 
   it("greenfield/transform blueprints opt structure into fleet; refactor keeps Permissions standalone (#1383-streams)", () => {
     const structRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "structure");
-    for (const id of ["default", "complete", "migrate", "harden"]) {
+    for (const id of ["default", "complete"]) {
       expect(structRef(id)?.substeps?.some((s) => s.key === "fleet"), `${id} fleets via structure`).toBe(true);
       expect(makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key)).not.toContain("permissions");
     }
-    // refactor has Permissions but no Structure stage → keeps Permissions standalone (unchanged).
-    const refactor = makeBlueprints().find((b) => b.id === "refactor")!;
-    expect(refactor.sections.map((s) => s.key)).toContain("permissions");
-    expect(refactor.sections.find((s) => s.key === "structure")).toBeUndefined();
   });
 });
 
@@ -423,61 +410,6 @@ describe("stageDirectiveId — planner-overview ids for merged stages (#1383/#13
     );
   });
 
-  it("a transform blueprint keeps repos link-only but still merges structure→streams (#1383/#1392)", () => {
-    // harden has repos WITHOUT deploy, structure WITH fleet → repos stays `repos`, structure → streams.
-    const harden = makeBlueprints().find((b) => b.id === "harden")!;
-    const ids = harden.sections.filter((s) => s.enabled).map(stageDirectiveId);
-    expect(ids).toContain("repos");        // not repos_deploy
-    expect(ids).not.toContain("repos_deploy");
-    expect(ids).toContain("streams");
-  });
-});
-
-describe("data-integration blueprint (#1207)", () => {
-  const bp = () => makeBlueprints().find((b) => b.id === "data-integration")!;
-
-  it("loads, categorized data / create, with the full extractor section order + Compliance MCP", () => {
-    const b = bp();
-    expect(b).toBeTruthy();
-    expect(b.category).toBe("data");
-    expect(b.mode).toBe("create");
-    // Permissions folds into `structure` (the Streams stage, #1383-streams) — no separate key.
-    expect(b.sections.map((s) => s.key)).toEqual(
-      ["discovery", "dataSource", "dataModel", "dataMap", "destination", "sync", "dataClean", "integrations", "structure", "deploy"],
-    );
-    expect(b.mcp).toContain("Compliance"); // #1005 Compliance MCP attached
-  });
-
-  it("surfaces an optional, non-blocking Integrations stage (#1200)", () => {
-    const intg = bp().sections.find((s) => s.key === "integrations")!;
-    expect(intg).toBeTruthy();
-    expect(intg.optional).toBe(true); // inherited from the section def — shown, never blocks
-    expect(intg.gateRule).toBeUndefined(); // soft/informational, no gate signal
-  });
-
-  it("destination + sync sections gate on their own signals (#1207)", () => {
-    const dest = STAGE_DEFS.destination.gateRule!;
-    expect(dest.require.map((r) => r.signal)).toContain("destinationDefined");
-    expect(evalGate(dest, { destinationDefined: false }).done).toBe(false);
-    expect(evalGate(dest, { destinationDefined: true }).done).toBe(true);
-
-    const sync = STAGE_DEFS.sync.gateRule!;
-    expect(sync.require.map((r) => r.signal)).toContain("syncDefined");
-    expect(evalGate(sync, { syncDefined: false }).done).toBe(false);
-    expect(evalGate(sync, { syncDefined: true }).done).toBe(true);
-  });
-
-  it("sync depends on destination — locks until the destination is defined", () => {
-    const secs = [mkStage("discovery"), mkStage("destination"), mkStage("sync")];
-    const sync = secs.find((s) => s.key === "sync")!;
-    const ctxDone = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, repoCount: 1, requiresUi: false });
-    // dep (destination) unmet + own gate unmet ⇒ locked
-    expect(stageStatus(sync, secs, { ...ctxDone, destinationDefined: false, syncDefined: false }).status).toBe("locked");
-    // dep met, own gate still unmet ⇒ in-progress (unlocked)
-    expect(stageStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: false }).status).toBe("in-progress");
-    // own gate met ⇒ complete
-    expect(stageStatus(sync, secs, { ...ctxDone, destinationDefined: true, syncDefined: true }).status).toBe("complete");
-  });
 });
 
 describe("Web SEO capability (#1293)", () => {
@@ -490,13 +422,10 @@ describe("Web SEO capability (#1293)", () => {
     expect(seo!.body ?? "").toMatch(/sitemap|robots|Open Graph|JSON-LD/i);
   });
 
-  it("attaches web-seo to the greenfield web blueprints, not transform/data ones", () => {
+  it("attaches web-seo to the greenfield web blueprints", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     expect(by("default").skills).toContain("web-seo");
     expect(by("complete").skills).toContain("web-seo");
-    // Not on a transform/data blueprint.
-    expect(by("refactor").skills ?? []).not.toContain("web-seo");
-    expect(by("data-migration").skills ?? []).not.toContain("web-seo");
   });
 
   it("every blueprint skill id resolves to a real library skill", () => {

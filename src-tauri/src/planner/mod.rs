@@ -109,20 +109,6 @@ mod tests {
         assert!(d.contains("inventory"), "missing existing-project handling");
     }
 
-    /// Custom/refactor-blueprint stages get real directives, not the generic fallback (#666).
-    #[test]
-    fn stage_directive_custom_stages_have_real_directives() {
-        for id in &["refactor", "cleanup", "testing", "testing-informational", "transform"] {
-            let d = stage_directive(id);
-            assert!(
-                !d.ends_with("configured stage."),
-                "stage '{id}' fell back to generic — needs a real directive"
-            );
-        }
-        // Refactor explicitly says NOT to produce phases.json/issues.json (#666).
-        assert!(stage_directive("refactor").contains("NOT"), "refactor must exclude phases/issues");
-    }
-
     /// PLANNING_PROCESS_MD Coverage section must carry the gate-item and Context gate text (#672).
     #[test]
     fn planning_process_md_coverage_names_context_gate_requirements() {
@@ -237,16 +223,10 @@ mod tests {
 
     #[test]
     fn custom_stage_directives_and_scope_guard() {
-        // Custom transform/operate stages get real directives, not the generic fallback.
-        let cleanup = stage_directive("cleanup");
-        assert!(cleanup.contains("refactor units"), "cleanup has a real directive");
-        assert!(cleanup.to_lowercase().contains("do not write"), "cleanup forbids issues.json");
-        assert!(stage_directive("boundaries").contains("bounded contexts"));
-        // The active-stages section for a refactor-like set (no `structure`) doesn't list
-        // Structure — so its issues.json step is out of scope.
+        // The active-stages section for a stage set WITHOUT `structure` doesn't list Structure —
+        // so its issues.json step is out of scope.
         let md = build_active_stages_md(&[
-            "discovery".to_string(), "repos".to_string(), "cleanup".to_string(),
-            "testing".to_string(), "permissions".to_string(),
+            "discovery".to_string(), "repos".to_string(), "permissions".to_string(),
         ]);
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
         assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");

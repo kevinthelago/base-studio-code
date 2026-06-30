@@ -120,24 +120,21 @@ mod tests {
     }
 
     /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
-    /// read via `include_dir!`. Every migrated id (incl. the `testing-informational` alias) must
-    /// resolve to its real directive — NOT the generic fallback — and come from the embedded JSON.
-    /// This, with the substring tests above, proves the prose survived the move byte-for-byte.
+    /// read via `include_dir!`. Every migrated id must resolve to its real directive — NOT the
+    /// generic fallback — and come from the embedded JSON. (The v1.0.5 consolidation archived the
+    /// data/transform/harden stages; this is the kept set that carries a `directive`.)
     #[test]
     fn migrated_stage_directives_resolve_from_embedded_json() {
         let migrated = ["discovery","repos","deploy","ui","features","structure","permissions",
-            "automations","skills","cleanup","testing","testing-informational",
-            "boundaries","extraction","consolidation","migration","hardening","purpose","bp_stages",
-            "bp_capabilities","bp_review",
+            "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
             // #1610: the formerly-inline composed/lifecycle directives now resolve from JSON too.
-            "repos_deploy","streams","refactor","transform"];
+            "repos_deploy","streams"];
         for id in migrated {
             let d = stage_directive(id);
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
             assert!(!d.ends_with("configured stage."),
                 "stage '{id}' fell back to the generic line — its JSON `directive` is missing");
-            let key = if id == "testing-informational" { "testing" } else { id };
-            assert_eq!(d, embedded_directive(key).unwrap_or_default(),
+            assert_eq!(d, embedded_directive(id).unwrap_or_default(),
                 "stage '{id}' must resolve from its embedded JSON `directive`");
         }
     }
@@ -159,9 +156,8 @@ mod tests {
             })
             .collect();
         let expected: BTreeSet<String> = ["discovery","repos","deploy","ui","features","structure",
-            "permissions","automations","skills","cleanup","testing","boundaries",
-            "extraction","consolidation","migration","hardening","purpose","bp_stages","bp_capabilities",
-            "bp_review","repos_deploy","streams","refactor","transform"].iter().map(|s| s.to_string()).collect();
+            "permissions","automations","skills","purpose","bp_stages","bp_capabilities",
+            "bp_review","repos_deploy","streams"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }

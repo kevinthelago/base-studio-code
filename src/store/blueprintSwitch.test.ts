@@ -23,11 +23,11 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(useAppStore.getState().projectBlueprintId["p"]).toBe("api");
   });
 
-  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (greenfield → transform)", () => {
+  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (switch)", () => {
     useAppStore.getState().setProjectBlueprintId("p", "default"); // greenfield origin
-    useAppStore.getState().applyBlueprintToProject("p", "refactor"); // → transform (allowed)
+    useAppStore.getState().applyBlueprintToProject("p", "complete"); // → another blueprint (allowed)
     const s = useAppStore.getState();
-    expect(s.projectBlueprintId["p"]).toBe("refactor");
+    expect(s.projectBlueprintId["p"]).toBe("complete");
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
@@ -70,15 +70,15 @@ describe("blueprint-per-project + reset (#647)", () => {
   });
 
   it("now allows any project blueprint → any other, re-seeding on switch (#1281)", () => {
-    // greenfield → data is allowed now (was refused under the #923 one-way rule)
+    // any → any is allowed now (was refused under the #923 one-way rule)
     useAppStore.getState().setProjectBlueprintId("p", "default");
-    useAppStore.getState().applyBlueprintToProject("p", "data-migration");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("data-migration"); // switched
-    expect(useAppStore.getState().uiScreens["p"]).toBeUndefined();                 // progress wiped on switch
-    // a transform-origin project can switch too — the soft-lock is gone (#1281)
-    useAppStore.getState().setProjectBlueprintId("p", "refactor");
-    useAppStore.getState().applyBlueprintToProject("p", "harden");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("harden");         // switched
+    useAppStore.getState().applyBlueprintToProject("p", "complete");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("complete"); // switched
+    expect(useAppStore.getState().uiScreens["p"]).toBeUndefined();           // progress wiped on switch
+    // and back again — the soft-lock is gone (#1281)
+    useAppStore.getState().setProjectBlueprintId("p", "complete");
+    useAppStore.getState().applyBlueprintToProject("p", "default");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("default");  // switched
   });
 
   it("is a no-op when switching to the SAME blueprint (#1281)", () => {
