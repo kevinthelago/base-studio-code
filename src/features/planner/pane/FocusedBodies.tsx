@@ -9,22 +9,20 @@ import type { Stage } from "../stages/focusedPlan";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { Topology } from "../relationship/relationshipGraph";
 import type { DirectorDrive } from "../fleet/directorDrive";
-// Deploy + source bodies (pre-existing files). The data-pipeline bodies (targets / legitimacy /
-// acquire / extract / model / mapping / cleaning / load / destination / sync / integrations) were
-// removed with the v1.0.4 data-platform stages (v1.0.5 cleanup); `source` stays (it's in `complete`).
+// The merged Repositories & Deployment pane + source body (pre-existing files). The data-pipeline
+// bodies, the standalone Deploy pane, the plain (non-ship) Repos pane, and the standalone Permissions
+// pane were removed with the data/transform blueprints (v1.0.5 cleanup): `repos` always renders the
+// merged pane, `permissions` always folds into Streams, and `source` stays (it's in `complete`).
 import { FileIntakePane } from "../bodies/FileIntakePane";
-import { FocusedDeployBody } from "../bodies/DeployView";
 import { FocusedReposDeployBody } from "../bodies/ReposDeployView";
 import { FocusedSourceBody } from "../bodies/FocusedSourceBody";
 // Core planning-stage bodies (#1757 split out of this file).
-import { FocusedReposBody } from "../bodies/FocusedReposBody";
 import { FocusedContextBody } from "../bodies/FocusedContextBody";
 import { FocusedAutomationsBody } from "../bodies/FocusedAutomationsBody";
 import { FocusedSkillsBody } from "../bodies/FocusedSkillsBody";
 import { FocusedMcpBody } from "../bodies/FocusedMcpBody";
 import { FocusedFeaturesBody } from "../bodies/FocusedFeaturesBody";
 import { FocusedAuthoringBody } from "../bodies/FocusedAuthoringBody";
-import { FocusedPermissionsBody } from "../bodies/FocusedPermissionsBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 
@@ -36,7 +34,7 @@ export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../
    FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, reposPublic, onSetReposPublic, repoOverrides, onSetRepoPublic, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
+export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext }: {
   stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
@@ -45,12 +43,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
   authoring?: import("../bodies/focusedHandlers").AuthoringWiring;
   onLinkRepo?: (r: string) => void;
-  /** Repos stage: project-level DEFAULT visibility (default private) + its setter (#…). */
-  reposPublic?: boolean;
-  onSetReposPublic?: (isPublic: boolean) => void;
-  /** Repos stage: per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
-  repoOverrides?: Record<string, boolean>;
-  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
   onView?: (f: ContextFile) => void;
@@ -71,21 +63,16 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
     case "source":
       return <FocusedSourceBody projectId={projectId} />;
     case "repos":
-      // #1383/#1399: when the blueprint folds deploy in (stage.ship), the merged "Deployment" stage
-      // renders as one cohesive Repositories & Deployment pane — each repo's git identity merged with
-      // its deploy target (click a repo to expand its target editor inline). A non-ship blueprint
-      // (transform: harden/migrate) keeps the plain repo linker; a blueprint that still lists Deploy
-      // as its own stage uses `case "deploy"` below (unchanged).
-      return stage.ship ? (
+      // The kept blueprints all fold deploy into repos (stage.ship), so `repos` renders as one
+      // cohesive Repositories & Deployment pane — each repo's git identity merged with its deploy
+      // target (click a repo to expand its target editor inline). The plain repo linker + the
+      // standalone Deploy pane were removed with the link-only/data blueprints (v1.0.5 cleanup).
+      return (
         <FocusedReposDeployBody
           repos={data?.repos} deploy={data?.deploy} onDeployChange={onDeployChange}
           onLinkRepo={onLinkRepo}
         />
-      ) : (
-        <FocusedReposBody repos={data?.repos} onLinkRepo={onLinkRepo} isPublic={reposPublic} onSetPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} />
       );
-    case "deploy":
-      return <FocusedDeployBody deploy={data?.deploy} onChange={onDeployChange} />;
     case "discovery":
       return <FocusedContextBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
     case "ui":
@@ -97,12 +84,10 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       return <FocusedFeaturesBody features={data?.features} />;
     case "structure":
       // #1383-streams: one "Streams" stage. The plan + relationship graph always shows; the fleet
-      // (coordination + per-stream permissions) folds in below it when the blueprint opted into fleet
-      // (stage.fleet). A blueprint that still lists Permissions as its own stage uses `case
-      // "permissions"` below (refactor — permissions without a structure stage to fold into).
+      // (coordination + per-stream permissions, via the embedded FocusedPermissionsBody) folds in
+      // below when the blueprint opted into fleet (stage.fleet). Every kept blueprint fleets, so the
+      // standalone Permissions stage/pane was removed (v1.0.5 cleanup).
       return <StreamsBody data={data} fleet={stage.fleet} {...fleetHandlers} />;
-    case "permissions":
-      return <FocusedPermissionsBody data={data} {...fleetHandlers} />;
     case "mcp":
       return <FocusedMcpBody servers={data?.mcpServers} {...mcpHandlers} />;
     case "automations":

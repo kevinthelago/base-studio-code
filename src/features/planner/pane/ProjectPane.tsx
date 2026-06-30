@@ -28,10 +28,6 @@ export function ProjectPane({
   // focused mode: one-stage sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
-  reposPublic,
-  onSetReposPublic,
-  repoOverrides,
-  onSetRepoPublic,
   onTopology,
   onDirectorDrive,
   onToggleMcp,
@@ -74,12 +70,6 @@ export function ProjectPane({
   };
   /** Callback to link a repository from the focused repos body (#677). */
   onLinkRepo?: (repo: string) => void;
-  /** Repos stage: project-level GitHub visibility (default private) + its setter (#…). */
-  reposPublic?: boolean;
-  onSetReposPublic?: (isPublic: boolean) => void;
-  /** Per-repo visibility overrides (keyed by repo full-name) + setter (#1227). */
-  repoOverrides?: Record<string, boolean>;
-  onSetRepoPublic?: (repoId: string, isPublic: boolean) => void;
   /** Set the project's coordination topology (#…) — director / peer / hybrid. */
   onTopology?: (t: Topology) => void;
   /** Set the director's drive mode (#…) — event / heartbeat / manual / off. */
@@ -140,7 +130,7 @@ export function ProjectPane({
         <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <div className="pp-scroll">
-          <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} reposPublic={reposPublic} onSetReposPublic={onSetReposPublic} repoOverrides={repoOverrides} onSetRepoPublic={onSetRepoPublic} onView={setViewing}
+          <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} />
         </div>

@@ -98,7 +98,7 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   // #674 — the focused planner shows REAL data (empty states), never the sample mocks.
-  const reposStage = { stages: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+  const reposPhase = { stages: [ph("repos", "Repos", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
 
   it("lists the linked repositories with tiles, metadata, and stateful branch chips (#811)", () => {
     const data = { agents: [], repos: [
@@ -106,7 +106,7 @@ describe("ProjectPane focused mode (#652)", () => {
         lang: "TypeScript", desc: "Operator dashboard",
         branches: [{ n: "stream-ui", issue: 12, state: "draft", ahead: 0, behind: 0 }] },
     ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus(reposStage)} />);
+    render(<ProjectPane data={data} focus={baseFocus(reposPhase)} />);
     expect(screen.getByText("acme/web")).toBeInTheDocument();
     expect(screen.getByText("primary")).toBeInTheDocument();
     expect(screen.getByText("● cloned")).toBeInTheDocument();        // clone status
@@ -120,13 +120,13 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("shows an empty state (no mock repos) when none are linked", () => {
-    render(<ProjectPane focus={baseFocus(reposStage)} />);
+    render(<ProjectPane focus={baseFocus(reposPhase)} />);
     expect(screen.getByText(/No repositories linked yet/)).toBeInTheDocument();
   });
 
   it("lets the user manually link a repository via the dropzone (#677 / #811)", () => {
     const onLinkRepo = vi.fn();
-    render(<ProjectPane focus={baseFocus(reposStage)} onLinkRepo={onLinkRepo} />);
+    render(<ProjectPane focus={baseFocus(reposPhase)} onLinkRepo={onLinkRepo} />);
     // The input is behind a dashed dropzone now — click to reveal it.
     fireEvent.click(screen.getByText(/link another repository/));
     const input = screen.getByLabelText("Link a repository");
@@ -136,60 +136,6 @@ describe("ProjectPane focused mode (#652)", () => {
     fireEvent.change(input, { target: { value: "acme/web" } });
     fireEvent.click(screen.getByText("link"));
     expect(onLinkRepo).toHaveBeenCalledWith("acme/web");
-  });
-
-  it("repos stage: GitHub visibility defaults to private and toggles to public (#…)", () => {
-    const onSetReposPublic = vi.fn();
-    render(<ProjectPane focus={baseFocus(reposStage)} onSetReposPublic={onSetReposPublic} reposPublic={false} />);
-    const priv = screen.getByText("🔒 Private");
-    const pub = screen.getByText("🌐 Public");
-    expect(priv).toHaveAttribute("aria-pressed", "true");   // private is the default
-    expect(pub).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(pub);
-    expect(onSetReposPublic).toHaveBeenCalledWith(true);
-    // clicking the already-active option is a no-op (no redundant flip)
-    fireEvent.click(priv);
-    expect(onSetReposPublic).toHaveBeenCalledTimes(1);
-  });
-
-  it("repos stage: reflects the public selection when the project default is set", () => {
-    render(<ProjectPane focus={baseFocus(reposStage)} onSetReposPublic={vi.fn()} reposPublic />);
-    expect(screen.getByText("🌐 Public")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/default for new repos/)).toBeInTheDocument();
-  });
-
-  it("repos stage: hides the visibility control when no setter is wired", () => {
-    render(<ProjectPane focus={baseFocus(reposStage)} />);
-    expect(screen.queryByText("🔒 Private")).not.toBeInTheDocument();
-  });
-
-  // #1227 — per-repo visibility overrides.
-  const twoRepos = { agents: [], repos: [
-    { id: "acme/web", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
-    { id: "acme/api", branch: "main", ahead: 0, behind: 0, agents: [], primary: false, cloned: false, branches: [] },
-  ], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-
-  it("repos stage: each card has its own toggle; setting one doesn't touch the others (#1227)", () => {
-    const onSetRepoPublic = vi.fn();
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposStage)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={onSetRepoPublic} repoOverrides={{}} />);
-    // No override ⇒ each card resolves to the project default (private).
-    expect(screen.getByLabelText("Make acme/web private")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");
-    // Flip ONLY web public.
-    fireEvent.click(screen.getByLabelText("Make acme/web public"));
-    expect(onSetRepoPublic).toHaveBeenCalledWith("acme/web", true);
-    expect(onSetRepoPublic).toHaveBeenCalledTimes(1); // api untouched
-  });
-
-  it("repos stage: a per-repo override wins over the project default (#1227)", () => {
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposStage)} onSetReposPublic={vi.fn()} reposPublic={false} onSetRepoPublic={vi.fn()} repoOverrides={{ "acme/web": true }} />);
-    expect(screen.getByLabelText("Make acme/web public")).toHaveAttribute("aria-pressed", "true");   // overridden public
-    expect(screen.getByLabelText("Make acme/api private")).toHaveAttribute("aria-pressed", "true");  // inherits private default
-  });
-
-  it("repos stage: the per-repo toggle is hidden when no per-repo setter is wired (#1227)", () => {
-    render(<ProjectPane data={twoRepos} focus={baseFocus(reposStage)} onSetReposPublic={vi.fn()} reposPublic={false} />);
-    expect(screen.queryByLabelText("Make acme/web public")).not.toBeInTheDocument();
   });
 
   it("shows an empty context state (no mock files) on a fresh plan", () => {
@@ -209,28 +155,28 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("renders the Permissions fleet as agent rows (#817)", () => {
-    const permsStage = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Autonomous (trusted)",
         perm: { read: "allow", edit: "allow", create: "allow", run: "ask", net: "deny", push: "ask", pkg: "deny" },
         flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
     ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus(permsStage)} />);
+    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} />);
     // the stream renders as an agent row (no more "No agents yet" stub)
     expect(screen.getByText("@auth")).toBeInTheDocument();
   });
 
   it("Permissions: picks a per-agent model and clears it back to the global default (#…)", () => {
     const onModel = vi.fn();
-    const permsStage = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const permsPhase = { stages: [ph("permissions", "Permissions", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [
       { id: "auth", name: "@auth", role: "worker", status: "idle", repo: "acme/api", color: "#888",
         initial: "A", owns: ["src/auth/**"], issues: [], preset: "Build",
         perm: { read: "allow", edit: "allow", create: "allow", run: "ask", net: "deny", push: "ask", pkg: "deny" },
         flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
     ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus(permsStage)} onModel={onModel} />);
+    render(<ProjectPane data={data} focus={baseFocus(permsPhase)} onModel={onModel} />);
     // The first agent's editor is open by default → its model segmented control is visible.
     fireEvent.click(screen.getByText("opus"));
     expect(onModel).toHaveBeenCalledWith("auth", "opus-4.5"); // tier → ModelId
@@ -240,8 +186,8 @@ describe("ProjectPane focused mode (#652)", () => {
 
   it("renders the Plan review (seam graph) with no in-body approve button (#949)", () => {
     // The Structure stage's only approve control is the footer's "approve & continue" — the
-    // duplicate in-body "Approve milestones & seams" button was removed (#949). Milestone phases
-    // were removed (#1912), so the Plan body no longer renders a phase roadmap.
+    // duplicate in-body "Approve milestones & seams" button was removed (#949). Milestone stages
+    // were removed (#1912), so the Plan body no longer renders a stage roadmap.
     const data = { agents: [], repos: [], structure: [], context: [], issues: [],
       seamGraph: { nodes: [], edges: [], layerCount: 0, danglingCount: 0 },
     } as unknown as Parameters<typeof ProjectPane>[0]["data"];
@@ -268,15 +214,15 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("renders the Features board — empty state, then cards with defined/drafting badges (#…)", () => {
-    const featuresStage = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
-    const { rerender } = render(<ProjectPane focus={baseFocus(featuresStage)} />);
+    const featuresPhase = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const { rerender } = render(<ProjectPane focus={baseFocus(featuresPhase)} />);
     expect(screen.getByText(/Claude proposes a starter set/)).toBeInTheDocument();
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
       features: [
         { slug: "invite", name: "Invite teammates", behavior: "send an invite", acceptance: ["email sent"], stream: "invite" },
         { slug: "export", name: "Export to CSV", stream: "export" }, // not fully defined
       ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    rerender(<ProjectPane data={data} focus={baseFocus(featuresStage)} />);
+    rerender(<ProjectPane data={data} focus={baseFocus(featuresPhase)} />);
     expect(screen.getByText("Invite teammates")).toBeInTheDocument();
     expect(screen.getByText("✓ defined")).toBeInTheDocument();    // fully specified
     expect(screen.getByText("○ drafting")).toBeInTheDocument();    // missing behavior/acceptance
@@ -285,14 +231,14 @@ describe("ProjectPane focused mode (#652)", () => {
   });
 
   it("expands a feature card to show the full workshop spec (#811-followup)", () => {
-    const featuresStage = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
+    const featuresPhase = { stages: [ph("features", "Features", "active", 0, 1)], selectedIdx: 0, activeIdx: 0 };
     const data = { agents: [], repos: [], structure: [], phaseStructure: [], context: [], issues: [],
       features: [
         { slug: "invite", name: "Invite teammates", behavior: "send an invite",
           approach: "POST /invites then email", tools: ["resend", "zod"], data: "writes invites table",
           acceptance: ["email is sent", "invite expires in 7d"], stream: "invite" },
       ] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
-    render(<ProjectPane data={data} focus={baseFocus(featuresStage)} />);
+    render(<ProjectPane data={data} focus={baseFocus(featuresPhase)} />);
     // The single fully-defined feature is collapsed by default — only its summary shows.
     expect(screen.getByText("send an invite")).toBeInTheDocument();
     expect(screen.getByText(/2 acceptance criteria/)).toBeInTheDocument();
