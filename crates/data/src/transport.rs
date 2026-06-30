@@ -284,6 +284,7 @@ pub fn draft_from_openapi(spec: &Value, base_url: &str) -> RuntimePreset {
         category: String::new(),
         base_url: base,
         auth: openapi_guess_auth(spec),
+        oauth: None,
         resources,
     }
 }
@@ -325,6 +326,7 @@ pub fn report_sample_shape(body: &Value, base_url: &str, path: &str) -> Value {
             Some(base_url.trim_end_matches('/').to_string())
         },
         auth: "token".into(),
+        oauth: None,
         resources: vec![RuntimeResource {
             name: resource_name_from_path(path),
             path: path.trim_start_matches('/').to_string(),

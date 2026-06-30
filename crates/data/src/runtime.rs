@@ -30,6 +30,20 @@ pub struct RuntimeResource {
     pub array_key: Option<String>,
 }
 
+/// Self-describing OAuth endpoints for an `auth: "oauth"` runtime preset (#1972). Lets an
+/// agent-authored connector carry its own authorize/token URLs so `source_oauth_begin` can resolve
+/// them without a packaged provider descriptor. PKCE **public** client: the `client_id` is a
+/// semi-public OAuth app id (not a secret) and there is **no** `client_secret` in the manifest — if
+/// the provider requires one it stays in the OS keychain, never in the spec (#1194).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RuntimeOAuth {
+    pub authorize_url: String,
+    pub token_url: String,
+    #[serde(default)]
+    pub scopes: String,
+    pub client_id: String,
+}
+
 /// A planner/user-authored REST connector preset, loaded at runtime from the connectors store.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RuntimePreset {
@@ -43,6 +57,9 @@ pub struct RuntimePreset {
     /// Sanctioned auth method: one of [`RUNTIME_AUTH_KINDS`]. Drives which keychain secret the scan
     /// resolves and how the request is authenticated.
     pub auth: String,
+    /// Self-describing OAuth endpoints (required when `auth == "oauth"`; ignored otherwise).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<RuntimeOAuth>,
     pub resources: Vec<RuntimeResource>,
 }
 
@@ -74,6 +91,24 @@ impl RuntimePreset {
         }
         if !RUNTIME_AUTH_KINDS.contains(&self.auth.as_str()) {
             return Err(format!("auth '{}' must be one of {RUNTIME_AUTH_KINDS:?}", self.auth));
+        }
+        if self.auth == "oauth" {
+            let o = self
+                .oauth
+                .as_ref()
+                .ok_or("auth 'oauth' requires an 'oauth' block (authorize_url, token_url, client_id)")?;
+            if o.authorize_url.trim().is_empty() {
+                return Err("oauth.authorize_url is required".into());
+            }
+            if o.token_url.trim().is_empty() {
+                return Err("oauth.token_url is required".into());
+            }
+            if o.client_id.trim().is_empty() {
+                return Err("oauth.client_id is required".into());
+            }
+            // The client_id is a semi-public OAuth app id (not secretish); only the URLs are checked.
+            reject_secretish("oauth.authorize_url", &o.authorize_url)?;
+            reject_secretish("oauth.token_url", &o.token_url)?;
         }
         if self.resources.is_empty() {
             return Err("at least one resource is required".into());
@@ -190,12 +225,26 @@ mod tests {
             category: "crm".to_string(),
             base_url: Some("https://acme.example.com/api".to_string()),
             auth: "token".to_string(),
+            oauth: None,
             resources: vec![RuntimeResource {
                 name: "contacts".to_string(),
                 path: "contacts".to_string(),
                 array_key: Some("data".to_string()),
             }],
         }
+    }
+
+    /// A well-formed `auth: "oauth"` preset carrying its own (PKCE-public) OAuth endpoints.
+    fn oauth_preset(id: &str) -> RuntimePreset {
+        let mut p = preset(id);
+        p.auth = "oauth".to_string();
+        p.oauth = Some(RuntimeOAuth {
+            authorize_url: "https://acme.example.com/oauth/authorize".to_string(),
+            token_url: "https://acme.example.com/oauth/token".to_string(),
+            scopes: "read".to_string(),
+            client_id: "acme-public-client-id".to_string(),
+        });
+        p
     }
 
     fn tmp(name: &str) -> PathBuf {
@@ -236,6 +285,53 @@ mod tests {
         p = preset("acme");
         p.resources[0].path = "contacts?access_token=abc123".to_string();
         assert!(p.validate().unwrap_err().contains("credential"));
+    }
+
+    #[test]
+    fn validate_accepts_a_full_oauth_preset() {
+        assert!(oauth_preset("acme-oauth").validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_oauth_without_a_block_or_with_empty_endpoints() {
+        // auth=oauth but no oauth block at all.
+        let mut p = oauth_preset("acme-oauth");
+        p.oauth = None;
+        assert!(p.validate().unwrap_err().contains("oauth"));
+
+        // Each required endpoint empty in turn.
+        let mut p = oauth_preset("acme-oauth");
+        p.oauth.as_mut().unwrap().authorize_url = String::new();
+        assert!(p.validate().unwrap_err().contains("authorize_url"));
+
+        let mut p = oauth_preset("acme-oauth");
+        p.oauth.as_mut().unwrap().token_url = "   ".to_string();
+        assert!(p.validate().unwrap_err().contains("token_url"));
+
+        let mut p = oauth_preset("acme-oauth");
+        p.oauth.as_mut().unwrap().client_id = String::new();
+        assert!(p.validate().unwrap_err().contains("client_id"));
+    }
+
+    #[test]
+    fn validate_rejects_a_secretish_oauth_url() {
+        let mut p = oauth_preset("acme-oauth");
+        p.oauth.as_mut().unwrap().authorize_url =
+            "https://acme.example.com/oauth/authorize?client_secret=SEKRET".to_string();
+        assert!(p.validate().unwrap_err().contains("credential"));
+    }
+
+    #[test]
+    fn validate_ignores_an_oauth_block_on_a_non_oauth_preset() {
+        // An oauth block on a token connector is allowed-but-ignored (no error).
+        let mut p = preset("acme-token");
+        p.oauth = Some(RuntimeOAuth {
+            authorize_url: String::new(),
+            token_url: String::new(),
+            scopes: String::new(),
+            client_id: String::new(),
+        });
+        assert!(p.validate().is_ok());
     }
 
     #[test]
