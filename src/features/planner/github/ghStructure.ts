@@ -8,8 +8,8 @@ import type { FleetPlan } from "../fleet/planFleet";
 
 // The planner is dynamic: Claude documents whatever topics a project warrants,
 // so a section key is any file stem (`goal`, `security`, `data_lifecycle`, or a
-// per-repo `repo__web__api`). `goal` and `phases` remain semantically special —
-// the publish flow keys the project title and milestones off them.
+// per-repo `repo__web__api`). `goal` remains semantically special — the publish
+// flow keys the project title off it.
 export type SectionKey = string;
 export type SectionState = "pending" | "drafted" | "confirmed";
 
@@ -20,24 +20,9 @@ export interface Section {
   content: string;
 }
 
-export interface PhaseItem {
-  name: string;
-  description: string;
-}
-
-/** Parse the `phases` section content (a JSON array). Returns [] on any error. */
-export function parsePhases(content: string): PhaseItem[] {
-  try {
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 export interface GhNode { id: string; label: string; }
 
-/** A repository plus the tracking issues that belong to it (one per phase). */
+/** A repository plus the issues that belong to it (one per feature). */
 export interface GhRepoNode {
   node: GhNode;
   issues: GhNode[];
@@ -55,7 +40,6 @@ export interface GhStreamNode {
 
 export interface GhStructure {
   project: GhNode;
-  milestones: GhNode[];
   repos: GhRepoNode[];
   streams: GhStreamNode[];
 }
@@ -66,11 +50,9 @@ export interface GhStructure {
  * structure card one-to-one.
  *
  * - one project board node
- * - one milestone node per phase
- * - one repo node per linked repository, each owning one tracking issue per phase
+ * - one repo node per linked repository, each owning one issue per feature
  *
- * Issue ids are namespaced by repo (`issue:{fullName}:{phaseIndex}`) so the same
- * phase produces a distinct, independently-tracked issue in every repo.
+ * Issue ids are namespaced by repo (`issue:{fullName}:{ref}`).
  */
 export function buildGhStructure(
   sections: Section[],
@@ -78,26 +60,18 @@ export function buildGhStructure(
   projectTitle: string,
   fleet?: FleetPlan,
 ): GhStructure {
-  const phases = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
   // Issues are generated from the features (one per feature) — issues aren't authored during
   // planning (#plan-db). The card shows the same nodes publish will create.
   const planIssues = featuresToPlanIssues(parseFeaturesFile(sections.find(s => s.k === "features")?.content ?? ""));
   return {
     project:    { id: "project", label: projectTitle },
-    milestones: phases.map((ph, i) => ({ id: `ms:${i}`, label: ph.name })),
     repos: repos.map((fullName, repoIdx) => ({
       node:   { id: `repo:${fullName}`, label: fullName },
-      // Granular issues (#311) when the planner defined them: one node per
-      // PlanIssue belonging to this repo (its `repo`, or the default repo when
-      // unset). Otherwise fall back to the legacy one-tracker-per-phase nodes.
-      issues: planIssues.length
-        ? planIssues
-            .filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0)
-            .map((iss, idx) => ({ id: `issue:${fullName}:${iss.ref ?? idx}`, label: iss.title }))
-        : phases.map((ph, i) => ({
-            id:    `issue:${fullName}:${i}`,
-            label: `[${ph.name}] ${projectTitle}`,
-          })),
+      // Granular issues (#311): one node per PlanIssue belonging to this repo (its
+      // `repo`, or the default repo when unset).
+      issues: planIssues
+        .filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0)
+        .map((iss, idx) => ({ id: `issue:${fullName}:${iss.ref ?? idx}`, label: iss.title })),
     })),
     streams: (fleet?.streams ?? []).map(st => ({
       id:     `stream:${st.id}`,

@@ -5,7 +5,7 @@ import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Chip } from "@/shared/ui/data/Chip";
 import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
-import { buildGhStructure, parsePhases } from "../github/ghStructure";
+import { buildGhStructure } from "../github/ghStructure";
 import type { Section, SectionState } from "../github/ghStructure";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForTopic, groupTopics,
@@ -322,7 +322,6 @@ export function Planning({ visible }: { visible: boolean }) {
       fleet:    planFleet[effectiveProjectId],
       profiles: agentProfiles,
       issues:   parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""),
-      phases:   parsePhases(sections.find(sec => sec.k === "phases")?.content ?? ""),
       repos:    publishRepos,
       sections,
       features: planFeatures,
@@ -423,7 +422,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    planFeatures, deployCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, intgCfg, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called

@@ -1,7 +1,7 @@
 
 > **Scope is set by the Active planning stages section at the bottom of this file — it is
 > authoritative.** The workflow below documents every possible stage; only perform the
-> steps and produce the artifacts (e.g. the features, phases, and fleet in the plan store
+> steps and produce the artifacts (e.g. the features and fleet in the plan store
 > via `bsc plan`) for stages listed there. If a stage isn't listed, skip its steps and DO
 > NOT create its artifacts. (Issues are never authored during planning — they are generated
 > from the features at GitHub publish.)
@@ -35,12 +35,12 @@ right panel. Overwrite to refine — each write replaces the previous version.
   topics are REQUIRED with `bsc plan discovery require <topic>` / `bsc plan discovery
   unrequire <topic>` (`bsc plan discovery list` shows the manifest).
 - Other project-tier files (repo-tier sections) stay at the hub root: `repo__web__api.md`, etc.
-- Structured plan state is the plan DB, not files — repos (`bsc plan repo`), the roadmap
-  (`bsc plan phase`), features (`bsc plan feature`), the fleet (`bsc plan fleet`), deploy
-  (`bsc plan deploy`). See "App integration tags".
+- Structured plan state is the plan DB, not files — repos (`bsc plan repo`), features
+  (`bsc plan feature`), the fleet (`bsc plan fleet`), deploy (`bsc plan deploy`). See
+  "App integration tags".
 - **Reads are lean by default** — `bsc plan list`/`mine`/`feature list` print a compact table
   (counts, no bodies) and `bsc plan summary` gives the one-line plan overview (totals · per-status ·
-  per-stream · per-phase). That's enough to orient and decide. Pull the full record ONLY when you
+  per-stream). That's enough to orient and decide. Pull the full record ONLY when you
   need it: `bsc plan get <ref>` (one issue, full) or `bsc plan feature get <slug>`; escalate a list
   with `--full` / `--fields a,b` / `--limit N` / `--since <epoch>`. Don't dump full lists to skim —
   it wastes the context budget; read lean, then drill in.
@@ -103,18 +103,15 @@ For each repo `{short}`:
 
 1. **Walk the repo-relevant dimensions** as repo-tier sections — at least its
    role in the system, stack, the slice of the architecture/API/schema it owns,
-   its testing approach, and the current phase's in-scope work for *this* repo.
+   its testing approach, and the in-scope work for *this* repo.
    Write them as `repo__{short}__{topic}.md` (e.g. `repo__web__api.md`); they
    appear under that repo's group in the panel.
 2. **Break this repo into FEATURES — one section per feature (#177).** After the
-   dimensions, decompose this repo's in-scope phase work into named features and
+   dimensions, decompose this repo's in-scope work into named features and
    write ONE plan section per feature, keyed `repo__{short}__feat__{slug}.md`
    (e.g. `repo__web__feat__login-form.md`). Each feature section is granular and
-   self-contained — it captures exactly **one unit of work** under its phase.
+   self-contained — it captures exactly **one unit of work**.
    Write each as:
-   - **First line — a phase marker**: `phase: <N or phase name>` (e.g.
-     `phase: 2` or `phase: Phase 1 — MVP`). This assigns the feature to that
-     phase. Omit only for backlog/unscheduled features.
    - **A `# Title` heading** — the feature's name (falls back to the humanized
      slug if omitted).
    - **The approach** (the body) — how it's built: the behavior, the sequence of
@@ -137,7 +134,7 @@ For each repo `{short}`:
    future Claude sessions in that repo receive, so write them as direct
    instructions addressed to that session (not notes about it):
    - `prompts/{short}-kickoff.md` — the **dev** kickoff: this repo's role, its
-     stack, the current phase's in-scope work here, the first concrete steps, and
+     stack, the in-scope work here, the first concrete steps, and
      a reminder to read `CLAUDE.local.md` / the plan and stay aligned with it.
    - `prompts/{short}-triage.md` — the **triage** script: how to triage *this*
      repo's open issues (priority labels P0–P3, this repo's label/area
@@ -214,7 +211,7 @@ in parallel — the **fleet**. The goal is maximum parallelism with minimum conf
 several sessions working at once, each in its own lane, so they rarely touch the same
 files and rarely need a human.
 
-1. **Partition the current phase's in-scope work into streams.** A *stream* is one
+1. **Partition the in-scope work into streams.** A *stream* is one
    session with a focused role ("Auth UI", "API endpoints", "DB schema"). Split by
    concern so that two streams never write the same files.
 2. **Give each stream a non-overlapping ownership boundary** — the dirs/globs it
@@ -236,7 +233,7 @@ files and rarely need a human.
      set from the stack and enforces the exclusion, but keep your `owns` globs
      feature-directory-shaped (`src/auth/**`, not a bare root file) so the boundaries
      stay clean.
-3. **Assign each stream the issues it owns** — the deliverables from `phases`/scope
+3. **Assign each stream the issues it owns** — the deliverables from `features`/scope
    for its area.
 4. **Decide the optimal concurrent session count.** There is **no hard limit** on how
    many sessions can run at once: the app shows each session as a pane, a single tab
@@ -258,7 +255,7 @@ files and rarely need a human.
    ```
    {
      "recommended": 4,
-     "reasoning": "Phase 1 splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
+     "reasoning": "The work splits into four non-overlapping areas; the api-client lands the contract first, the rest are independent.",
      "director": { "enabled": true, "role": "async integrator: review/merge PRs, resolve logged decisions, keep milestones current" },
      "streams": [
        {"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"commands":["npm","vite"],"prompt":"prompts/auth-ui-kickoff.md","flow":{"autonomy":"continuous","push":"auto-pr","trigger":"per-issue","gate":"hard"}},
@@ -330,7 +327,7 @@ session run with as little human input as possible. Every worker kickoff must:
 - State that it runs in its **own git worktree on a branch named after the stream**:
   commit there and integrate per the fleet strategy — self-merge (default): rebase onto develop and push develop yourself, do NOT open a PR; pr-ci: open a PR for the director to merge — never switch branches or edit
   another agent's worktree. (The app creates the worktree + branch at launch.)
-- List the issues the stream owns and this phase's in-scope work for it.
+- List the issues the stream owns and its in-scope work.
 - Carry the **autonomy rule**: *Do not stop to ask. When something is underspecified,
   make the choice that best serves the planned solution and is consistent with the plan's
   goal and architecture — prefer a reversible option only when you are genuinely uncertain
@@ -351,13 +348,13 @@ milestones/the board current — never writing feature code itself.
 
 ## Aim for the most complete, production-grade solution
 
-Plan the **best, most complete solution** to the goal — not an interim, MVP, or phase-1-only
+Plan the **best, most complete solution** to the goal — not an interim, MVP, or first-pass
 cut, and never defer quality. Unless the user explicitly asks for a minimal/ship-fast version,
 design the full target: the complete feature set (above), the architecture that properly supports
 it, and the quality bars that make it production-grade — **tests, error handling, observability,
 and docs are part of "done," not extras**. Don't propose a stopgap and call the real thing a
-follow-up; propose the real thing. (Phasing is fine and expected — sequencing the complete plan
-into milestones is different from scoping the solution down.)
+follow-up; propose the real thing. (Sequencing is fine and expected — ordering the complete plan
+by dependency is different from scoping the solution down.)
 
 **Enterprise / production-readiness bars — part of "done," folded into the build.** For a
 production or enterprise target, **weigh each of these and APPLY the ones that matter** — as the
@@ -401,7 +398,7 @@ robustly meets the goal; raise the quality/completeness bar, not the surface are
 Establishing context here is a SHORT grounding pass. Its only job is to give the feature
 workshop (the real work — see "Develop the GitHub structure") enough shared
 context to stand on. Document the core dimensions briefly and move on fast; do
-NOT turn this into a dozen set-piece conversations. `goal`, `phases`, `issues`,
+NOT turn this into a dozen set-piece conversations. `goal`, `issues`,
 and `risks` apply to almost every project.
 
 **Core orientation — document these, briefly (each line is the template).**
@@ -464,11 +461,9 @@ it:** `ux`, `infra`, `analytics`. Document one only when it is a first-class con
 for a design tool).
 
 **Planning — the real output (see "Special sections" + the feature workshop):**
-- `phases` — the roadmap as a JSON array; each phase a crisp "done when", no time
-  estimates.
 - `issues` — every feature decomposed into granular, self-contained GitHub issues,
   each carrying a concrete title, **acceptance criteria**, the **files/dirs it
-  owns**, its **dependencies**, **labels**, its **phase** (→ milestone), and — for
+  owns**, its **dependencies**, **labels**, and — for
   a multi-repo project — its **`repo`** and **`stream`**. **This is the most
   important output for execution.** A building agent picks up ONE issue and must
   finish it WITHOUT asking. Don't stop at an overview — the plan isn't done until
@@ -502,15 +497,12 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
   plan store is the durable artifact. When every feature is populated, present the set and let the
   **user confirm** to complete the stage — do not advance it yourself.
-- **`phases`** — add each phase to the plan store with
-  `echo '{"name":"…","description":"…"}' | bsc plan phase add` (read back with
-  `bsc plan phase list`); there is no `phases.json`. Each phase needs a "done when"
-  definition; never include time estimates or week numbers.
 - **issues** — you do NOT author issues during planning. Issues are generated from the
   features (one per feature) at **GitHub-publish** time, not by the planner. Do not write
-  issue files or run `bsc plan add`. Your Plan-stage job is to **sequence** the features
-  into phases (`bsc plan phase add`) and give EVERY feature a phase via
-  `echo '{"slug":"…","phase":<n or name>}' | bsc plan feature add`. A feature's `acceptance`
+  issue files or run `bsc plan add`. Your Plan-stage job is to **present** the feature
+  dependency DAG (`bsc plan feature list`) — the build order implied PURELY by each
+  feature's `dependsOn`, foundations first — and get the user's approval; there are no
+  milestone phases and no per-feature phase numbering. A feature's `acceptance`
   / `owns` / `dependsOn` (captured in the Features stage) are what publish turns into the
   issue — so make the FEATURE complete, not a separate issue.
 - **`_skipped`** — the coverage record described under "Coverage" above.
@@ -519,9 +511,9 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
 
 This is the heart of planning and where the MAJORITY of the session goes. After
 the short orientation, you turn the project into its real structure — the
-features (each a stream), how they depend on each other, and the phased path to
-build them. The output is the **features** (defined in the Features stage) + their
-dependency DAG + the phases (`bsc plan phase add`); the GitHub issues are generated from the features at
+features (each a stream), how they depend on each other, and the build path their
+dependencies imply. The output is the **features** (defined in the Features stage) + their
+dependency DAG; the GitHub issues are generated from the features at
 publish, not here. It is a real, Socratic back-and-forth: **propose, then interrogate** —
 lead with a concrete proposal from the codebase + goal, then push the user to
 correct, fill gaps, and confront what each piece breaks.
@@ -642,28 +634,28 @@ NOT author issues. Then, and only then, move to the next unit.
 ### Sequence the path (how we get there)
 Once every unit (every feature, or every inventoried section) is decomposed, agree
 the ORDER with the user: the first shippable slice, what builds on what, the path
-from nothing to the finished product. Group the ordered work into phases
-(`bsc plan phase add`) — each a dependency-respecting slice with a crisp "done when,"
-not an arbitrary bucket. Phases span repos; each issue's `phase` names the phase
-it belongs to and its `repo` places it under that repo in the structure.
+from nothing to the finished product. This ordering is expressed PURELY via each
+feature's `dependsOn` (the dependency DAG) — foundations first, a feature after the
+features it builds on — not milestone phases. Present the dependency graph for the
+user's approval; each feature's `repo` places it under that repo in the structure.
 
 **Completeness gate.** The plan is done only when EVERY unit is decomposed — for a
 new project, every feature on the list; for an existing project, every section in
 the inventory, with the inventory itself confirmed complete. The repo-first
-structure panel is your scorecard: an empty repo, or a phase with no issues, is
+structure panel is your scorecard: an empty repo, or a feature left undecomposed, is
 unfinished work. For an existing app, a screen or module that exists in the code but
 has no issues means you missed it — go back and migrate it.
 
-When the units are done, the user sees the assembled structure (repos → phases →
-issues → dependencies) in the panel — every issue the product of this conversation,
+When the units are done, the user sees the assembled structure (repos → features →
+dependencies) in the panel — every feature the product of this conversation,
 carrying everything an agent needs to pick it up and finish without asking.
 
 ## Your outputs are the plan — nothing else
 
 You are plan-only. Your entire job is to produce the plan artifacts: the section
-files, the plan store (the features via `bsc plan feature`, the phases via
-`bsc plan phase add`, the fleet via `bsc plan fleet set`, the linked repos via
-`bsc plan repo add`), the `prompts/` kickoff scripts, and the app-integration tags.
+files, the plan store (the features via `bsc plan feature`, the fleet via
+`bsc plan fleet set`, the linked repos via `bsc plan repo add`), the `prompts/`
+kickoff scripts, and the app-integration tags.
 Issues are generated from the features at GitHub publish — never authored here. Get
 those right and stop there.
 

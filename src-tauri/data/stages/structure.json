@@ -1,8 +1,8 @@
 {
-  "directive": "**Structure** — the features are a dependency DAG (`bsc plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc plan add`). Two writes: (1) define the ordered phases — `bsc plan phase add \"<name>\" \"<done-when>\"`, foundations first (`bsc plan phase list` numbers them); (2) assign EVERY feature its phase NUMBER via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc plan feature add` (merges in place). When every feature is phased, present the roadmap + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
+  "directive": "**Structure** — the features are a dependency DAG (`bsc plan feature list` shows each feature + its `dependsOn`). PRESENT the dependency graph + roadmap and get the user's APPROVAL — there are no milestone phases and no phase numbering; sequencing is implied PURELY by each feature's `dependsOn`. Do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc plan add`). Run `bsc plan feature list` to review the DAG, walk the user through the implied build order (foundations first — a feature builds after its `dependsOn` features), and resolve any cycle so the graph is acyclic. Leave no TODO/TBD/FIXME/XXX markers — the gate blocks on them. Where a real cross-feature contract exists (a shared schema/types/API), write it as a doc under `contracts/<name>.md` — the director owns those and workers read them as the source of truth. (Existing repos: inventory every screen/module first so none is missed.)",
   "name": "Plan",
   "glyph": "⊞",
-  "gate": "every feature sequenced into a phase",
+  "gate": "features defined; dependency graph approved",
   "deps": [
     "discovery",
     "repos",
@@ -11,9 +11,9 @@
   "gateRule": {
     "require": [
       {
-        "signal": "featuresPhased",
+        "signal": "featuresDefined",
         "target": true,
-        "label": "sequence every feature into a phase"
+        "label": "features defined (no dependency cycles)"
       },
       {
         "signal": "hasPlanGaps",
@@ -23,14 +23,14 @@
       }
     ]
   },
-  "blurb": "Sequence the feature DAG into phases — in the plan DB; issues are generated at publish, not here.",
-  "prompt": "The features are a dependency DAG — run `bsc plan feature list` to see every feature and its\n`dependsOn`. SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue\nfiles. Issues are generated from the features at GitHub-publish time, not during planning (no\n`bsc plan add`). Two writes:\n1. Define the ordered **phases** — `bsc plan phase add \"<name>\" \"<done-when description>\"`, foundations\n   first (a feature's `dependsOn` features in the same or an earlier phase). `bsc plan phase list` shows\n   them numbered.\n2. Assign EVERY feature its phase NUMBER (1-based, matching the phase order):\n   `echo '{\"slug\":\"sketcher\",\"phase\":2}' | bsc plan feature add`  (merges in place — slug + phase only).\nWhen every feature is phased, present the roadmap + the dependency graph and get the user's APPROVAL.\nLeave no TODO / TBD / FIXME / XXX markers — the gate blocks on them.\n\nWhere a real cross-feature contract exists (a shared schema/types/API), write it as a doc under\n`contracts/<name>.md` — the director owns those and workers read them as the source of truth.",
+  "blurb": "Present the feature dependency graph + roadmap and get the user's approval — sequencing is implied by each feature's dependsOn.",
+  "prompt": "The features are a dependency DAG — run `bsc plan feature list` to see every feature and its\n`dependsOn`. PRESENT the dependency graph + roadmap and get the user's APPROVAL. There are no\nmilestone phases and no phase numbering: the build order is implied PURELY by each feature's\n`dependsOn` (foundations first — a feature builds after the features it depends on). Do NOT write\nphases.json or any issue files. Issues are generated from the features at GitHub-publish time, not\nduring planning (no `bsc plan add`).\n\nWalk the user through the dependency graph:\n1. Review the DAG with `bsc plan feature list` — confirm each feature's `dependsOn` is right and the\n   graph is acyclic (a cycle holds the gate).\n2. Present the implied roadmap — the build order the `dependsOn` edges describe (which features land\n   first, what builds on what) — and get the user's APPROVAL.\nLeave no TODO / TBD / FIXME / XXX markers — the gate blocks on them.\n\nWhere a real cross-feature contract exists (a shared schema/types/API), write it as a doc under\n`contracts/<name>.md` — the director owns those and workers read them as the source of truth.",
   "substeps": [
     {
-      "key": "sequence",
-      "label": "Sequence features into phases",
-      "gate": "every feature is phased in the DB",
-      "prompt": "Using the feature DAG (`bsc plan feature list`), sequence the features into ordered phases\n— foundations first, a feature's `dependsOn` features in the same or an earlier phase. Two DB writes:\n(1) define the phases via `bsc plan phase add \"<name>\" \"<done-when>\"` (in order); (2) assign EVERY\nfeature its phase number via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc plan feature add` (merges in place).\nDo NOT write phases.json or any issues — phases live in the DB, and issues are generated from the\nfeatures afterward, not in this stage. Present the roadmap + the dependency graph and get the user's APPROVAL."
+      "key": "approve",
+      "label": "Present the dependency graph",
+      "gate": "the dependency graph is approved",
+      "prompt": "Using the feature DAG (`bsc plan feature list`), present the dependency graph + the implied\nroadmap to the user — the build order each feature's `dependsOn` describes (foundations first; a\nfeature builds after the features it depends on). Confirm every `dependsOn` is right and the graph is\nacyclic (a cycle holds the gate), then get the user's APPROVAL. Do NOT write phases.json or any\nissues — there are no milestone phases, and issues are generated from the features afterward, not in\nthis stage."
     }
   ],
   "icon": "checklist",

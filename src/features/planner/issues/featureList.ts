@@ -14,9 +14,6 @@ export interface PlanFeature {
   name: string;
   /** What it does + when, in the user's terms. */
   behavior?: string;
-  /** Roadmap phase (1-based number or its name) this feature is sequenced into — assigned in the
-   *  Plan stage; becomes the GitHub milestone at publish (#plan-db). */
-  phase?: number | string;
   /** Done-when checklist a building agent verifies against. */
   acceptance?: string[];
   /** The build approach — the shape of the solution. */
@@ -60,12 +57,9 @@ export function parseFeaturesFile(raw: string): PlanFeature[] {
     const slug = str(o.slug) ?? slugify(name);
     if (!slug || !name || seen.has(slug)) continue;
     seen.add(slug);
-    const phaseRaw = o.phase;
-    const phase = typeof phaseRaw === "number" && Number.isFinite(phaseRaw) ? phaseRaw : (str(phaseRaw) || undefined);
     out.push({
       slug, name,
       behavior: str(o.behavior),
-      phase,
       acceptance: strArray(o.acceptance),
       approach: str(o.approach),
       tools: strArray(o.tools),
@@ -103,12 +97,6 @@ export function featuresAwaitingConfirm(summary: { allConfirmed: boolean }, user
   return summary.allConfirmed && !userConfirmed;
 }
 
-/** Whether every feature has been sequenced into a phase (#plan-db) — the Plan stage's completion
- *  signal now that issues are a publish-time artifact (it replaces the old "≥1 issue authored"). */
-export function featuresAllPhased(features: PlanFeature[]): boolean {
-  return features.length > 0 && features.every((f) => f.phase !== undefined && f.phase !== "");
-}
-
 /** The extra prose (beyond acceptance/owns/dependsOn, which `renderIssueBody` adds) for a feature's
  *  published issue: its behavior + approach + data + tools. */
 function featureBody(f: PlanFeature): string | undefined {
@@ -124,14 +112,13 @@ function featureBody(f: PlanFeature): string | undefined {
  * Project features into the issues published from them (#plan-db) — ONE issue per feature. Issues
  * aren't authored during planning; this is what publish (and the structure card) generate from the
  * DB features. The feature's slug becomes the issue `ref`, so a `dependsOn` between features is a
- * `dependsOn` between issues; phase/acceptance carry over; behavior/approach/data/tools become the
+ * `dependsOn` between issues; acceptance carries over; behavior/approach/data/tools become the
  * body. `owns`/`labels` are left to the fleet (assigned to the stream in the Permissions stage).
  */
 export function featuresToPlanIssues(features: PlanFeature[]): PlanIssue[] {
   return features.map((f) => ({
     ref: f.slug,
     title: f.name || f.slug,
-    phase: f.phase,
     acceptance: f.acceptance ?? [],
     owns: [],
     dependsOn: f.dependsOn ?? [],

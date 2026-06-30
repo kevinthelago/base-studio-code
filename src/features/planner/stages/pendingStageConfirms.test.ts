@@ -17,9 +17,9 @@ describe("pendingStageConfirms — one-click stage approval (#807-followup)", ()
     expect(pendingStageConfirms("discovery", sections)).toEqual([]);
   });
 
-  it("structure: confirms the phases roadmap anchor when it's drafted", () => {
-    expect(pendingStageConfirms("structure", [sec("phases", "drafted")])).toEqual(["phases"]);
-    expect(pendingStageConfirms("structure", [sec("phases", "confirmed")])).toEqual([]);
+  it("structure: nothing to confirm — milestone phases were removed (#1912)", () => {
+    // The Structure stage no longer confirms a `phases` roadmap anchor; it gates on featuresDefined.
+    expect(pendingStageConfirms("structure", [sec("phases", "drafted")])).toEqual([]);
     expect(pendingStageConfirms("structure", [])).toEqual([]);
   });
 
@@ -44,9 +44,9 @@ describe("stageConfirmKeys — gateless active-stage approval (#954)", () => {
     expect(stageConfirmKeys("repos", [], /*activeHasGate*/ true, false)).toEqual([]);
   });
 
-  it("a GATED structure confirms its phases anchor; context gates on generation, so nothing", () => {
-    // structure (gated) → the phases anchor
-    expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual(["phases"]);
+  it("a GATED structure/context confirms nothing extra by key — they complete via their gate (#1912)", () => {
+    // structure (gated) gates on featuresDefined now — no phases anchor to confirm
+    expect(stageConfirmKeys("structure", [sec("phases", "drafted")], /*activeHasGate*/ true, false)).toEqual([]);
     // context (gated) → no confirm step; the files are done once written (#1028)
     expect(stageConfirmKeys("discovery", coreDrafted, /*activeHasGate*/ true, false)).toEqual([]);
   });

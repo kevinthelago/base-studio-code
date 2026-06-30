@@ -25,9 +25,8 @@ export const FEATURES_KEY = "features";
  * Anchor sections that are always present in the UI even before Claude drafts
  * them, because the GitHub publish flow is keyed off them:
  *   - `goal`   → project board title + description
- *   - `phases` → milestones and per-repo tracking issues
  */
-export const ANCHOR_KEYS = ["goal", "phases"] as const;
+export const ANCHOR_KEYS = ["goal"] as const;
 
 /** Section keys for the per-repo tier are namespaced `repo__{short}__{topic}`. */
 const REPO_PREFIX = "repo__";

@@ -2,10 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import {
   type GhApi, type Upd,
   publishRepositories, scaffoldRepositories, ensureProjectBoard,
-  createMilestones, createIssues, applyStreamLabels, seedPublishStatus,
+  createIssues, applyStreamLabels, seedPublishStatus,
 } from "./publishSteps";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
-import type { PhaseItem } from "../github/ghStructure";
 import type { AgentStream } from "../fleet/planFleet";
 
 // ── test doubles ──────────────────────────────────────────────────────────────
@@ -36,7 +35,6 @@ function makeUpd() {
   return { status, upd };
 }
 
-const phase = (name: string, description = ""): PhaseItem => ({ name, description } as unknown as PhaseItem);
 const stream = (id: string, repo: string, issues: string[]): AgentStream => ({ id, repo, issues } as unknown as AgentStream);
 
 // ── publishRepositories ─────────────────────────────────────────────────────────
@@ -158,48 +156,14 @@ describe("ensureProjectBoard", () => {
   });
 });
 
-// ── createMilestones ─────────────────────────────────────────────────────────────
-describe("createMilestones", () => {
-  it("skips milestones when there is no repo", async () => {
-    const { api, calls } = makeApi({});
-    const { upd, status } = makeUpd();
-    const out = await createMilestones(api, upd, { repos: [], phases: [phase("P1")], noRepo: true });
-    expect(status["ms:0"].status).toBe("skipped");
-    expect(out.msNumbers).toEqual({});
-    expect(calls.some(c => c.method === "post")).toBe(false);
-  });
-
-  it("reuses an existing milestone by name (no create)", async () => {
-    const { api, calls } = makeApi({ rest: () => [{ title: "P1", number: 5 }] });
-    const { upd, status } = makeUpd();
-    const out = await createMilestones(api, upd, { repos: ["o/app"], phases: [phase("P1")], noRepo: false });
-    expect(out.msNumbers["o/app"][0]).toBe(5);
-    expect(status["ms:0"].status).toBe("exists");
-    expect(calls.some(c => c.method === "post")).toBe(false);
-  });
-
-  it("creates a missing milestone and records its number", async () => {
-    const { api } = makeApi({ rest: () => [], post: () => ({ number: 9 }) });
-    const { upd, status } = makeUpd();
-    const out = await createMilestones(api, upd, { repos: ["o/app"], phases: [phase("P1")], noRepo: false });
-    expect(out.msNumbers["o/app"][0]).toBe(9);
-    expect(status["ms:0"].status).toBe("created");
-  });
-
-  it("fails CLOSED when the existing-milestone fetch fails (no create, error status)", async () => {
-    const { api, calls } = makeApi({ rest: () => { throw new Error("500"); } });
-    const { upd, status } = makeUpd();
-    await createMilestones(api, upd, { repos: ["o/app"], phases: [phase("P1")], noRepo: false });
-    expect(status["ms:0"].status).toBe("error");
-    expect(calls.some(c => c.method === "post")).toBe(false); // never risk a duplicate
-  });
-});
-
 // ── createIssues ─────────────────────────────────────────────────────────────────
-describe("createIssues (legacy phase fallback — no features)", () => {
+// Issues are generated from the FEATURES (one per feature, #plan-db) — no milestones (#1912).
+describe("createIssues (generated from features)", () => {
   const noop = { upsertIssue: vi.fn(async () => {}) };
+  const features = JSON.stringify([{ slug: "login", name: "Add login", acceptance: ["works"] }]);
 
-  it("creates one tracking issue per phase, pinned to its milestone and added to the board", async () => {
+  it("creates one issue per feature, added to the board, with NO milestone pinning", async () => {
+    const upsertIssue = vi.fn(async () => {});
     const { api, calls } = makeApi({
       rest: () => [], // no existing issues
       post: () => ({ number: 1, node_id: "N1", html_url: "iurl" }),
@@ -207,33 +171,32 @@ describe("createIssues (legacy phase fallback — no features)", () => {
     });
     const { upd, status } = makeUpd();
     await createIssues(api, upd, {
-      repos: ["o/app"], featuresContent: "", phases: [phase("P1")], phaseNames: ["P1"],
-      msNumbers: { "o/app": { 0: 5 } }, projectId: "P", streams: [], viewerLogin: "me", projectTitle: "App",
-    }, noop);
+      repos: ["o/app"], featuresContent: features, projectId: "P", streams: [], viewerLogin: "me",
+    }, { upsertIssue });
+    expect(upsertIssue).toHaveBeenCalledTimes(1); // materialized into plan.db
     const issuePost = calls.find(c => c.method === "post" && c.path === "repos/o/app/issues");
-    expect((issuePost?.body as { milestone?: number }).milestone).toBe(5);
+    expect(issuePost).toBeTruthy();
+    expect((issuePost?.body as { milestone?: number }).milestone).toBeUndefined(); // no milestone pinning (#1912)
     expect(calls.some(c => c.method === "gql" && /addProjectV2ItemById/.test(c.query ?? ""))).toBe(true);
-    expect(status["issue:o/app:0"].status).toBe("created");
+    expect(status["issue:o/app:login"].status).toBe("created");
   });
 
-  it("marks an already-existing phase issue as 'exists'", async () => {
-    const { api } = makeApi({ rest: () => [{ title: "[P1] App" }] });
+  it("marks an already-existing feature issue as 'exists'", async () => {
+    const { api } = makeApi({ rest: () => [{ title: "Add login" }] });
     const { upd, status } = makeUpd();
     await createIssues(api, upd, {
-      repos: ["o/app"], featuresContent: "", phases: [phase("P1")], phaseNames: ["P1"],
-      msNumbers: {}, projectId: undefined, streams: [], viewerLogin: "", projectTitle: "App",
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
     }, noop);
-    expect(status["issue:o/app:0"].status).toBe("exists");
+    expect(status["issue:o/app:login"].status).toBe("exists");
   });
 
   it("fails CLOSED when the repo's existing-issue fetch fails", async () => {
     const { api, calls } = makeApi({ rest: () => { throw new Error("500"); } });
     const { upd, status } = makeUpd();
     await createIssues(api, upd, {
-      repos: ["o/app"], featuresContent: "", phases: [phase("P1")], phaseNames: ["P1"],
-      msNumbers: {}, projectId: undefined, streams: [], viewerLogin: "", projectTitle: "App",
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
     }, noop);
-    expect(status["issue:o/app:0"].status).toBe("error");
+    expect(status["issue:o/app:login"].status).toBe("error");
     expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/issues")).toBe(false);
   });
 });
@@ -259,13 +222,11 @@ describe("applyStreamLabels", () => {
 
 // ── seedPublishStatus ──────────────────────────────────────────────────────────
 describe("seedPublishStatus", () => {
-  it("seeds project, milestones, repos, per-repo issues and streams as planned", () => {
-    const status = seedPublishStatus({
-      repos: ["o/app"], phases: [phase("P1"), phase("P2")], streams: [stream("s1", "o/app", [])],
-    });
+  it("seeds project, repos and streams as planned (no milestones, #1912)", () => {
+    const status = seedPublishStatus({ repos: ["o/app"], streams: [stream("s1", "o/app", [])] });
     expect(status.project.status).toBe("planned");
     expect(Object.keys(status)).toEqual(expect.arrayContaining([
-      "project", "ms:0", "ms:1", "repo:o/app", "issue:o/app:0", "issue:o/app:1", "stream:s1",
+      "project", "repo:o/app", "stream:s1",
     ]));
   });
 });

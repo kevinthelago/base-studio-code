@@ -3,10 +3,10 @@
 // *progress*: for an already-published project it maps each structure node id to
 // a NodeProgress reflecting what's actually CLOSED/done on GitHub.
 //
-// Pure - no React / Tauri / network. The caller fetches per-repo issue + milestone
-// state and hands it here; this builds a deterministic id -> NodeProgress overlay
-// the structure card renders (done checkmarks, per-milestone progress bars, an
-// overall rollup). Kept I/O-free so it can be unit tested in isolation.
+// Pure - no React / Tauri / network. The caller fetches per-repo issue state and
+// hands it here; this builds a deterministic id -> NodeProgress overlay the
+// structure card renders (done checkmarks, per-repo rollups, an overall rollup).
+// Kept I/O-free so it can be unit tested in isolation.
 
 import type { GhStructure } from "./ghStructure";
 
@@ -18,13 +18,6 @@ export interface IssueState {
   url: string;
   /** Milestone title the issue is pinned to, or null when unmilestoned. */
   milestone: string | null;
-}
-
-/** One GitHub milestone's open/closed issue counts, from the REST `milestones` payload. */
-export interface MilestoneState {
-  title: string;
-  open: number;
-  closed: number;
 }
 
 /**
@@ -51,12 +44,7 @@ const norm = (s: string): string => s.trim().toLowerCase();
  * - **Issue nodes** (`issue:{repo}:{ref}`): matched to a GitHub issue by its
  *   persisted link (#393 Layer 1) — node id -> exact issue NUMBER — falling back
  *   to case-insensitive/trimmed title equality within the same repo. A match
- *   yields `{ done: state==="closed", url, number }`. Legacy phase-tracker nodes
- *   (label `[phase] title`) won't equal a real issue title and are simply left
- *   with no progress - that's acceptable.
- * - **Milestone nodes** (`ms:{i}`): open/closed summed across ALL repos for the
- *   milestone whose title equals `structure.milestones[i].label`. Yields
- *   `{ closed, total, done: total>0 && open===0 }`.
+ *   yields `{ done: state==="closed", url, number }`.
  * - **Repo nodes** (`repo:{fullName}`): rolled up from that repo's matched issue
  *   nodes -> `{ closed, total }` (total = matched issue nodes only).
  * - **Project node** (`project`): rolled up across all matched issues.
@@ -64,7 +52,6 @@ const norm = (s: string): string => s.trim().toLowerCase();
  *
  * @param structure        the derived GitHub object graph (node ids + labels)
  * @param issuesByRepo     full_name -> its GitHub issues (PRs already filtered out)
- * @param milestonesByRepo full_name -> its GitHub milestones with open/closed counts
  * @param links            optional node id -> linked GitHub issue ({number,url}); when
  *                         present, an issue node is matched to that exact issue number
  *                         (robust to title drift) before falling back to title match.
@@ -73,7 +60,6 @@ const norm = (s: string): string => s.trim().toLowerCase();
 export function buildProgressOverlay(
   structure: GhStructure,
   issuesByRepo: Record<string, IssueState[]>,
-  milestonesByRepo: Record<string, MilestoneState[]>,
   links?: Record<string, { number: number; url: string }>,   // nodeId -> linked GitHub issue
 ): Record<string, NodeProgress> {
   const overlay: Record<string, NodeProgress> = {};
@@ -118,25 +104,6 @@ export function buildProgressOverlay(
       overlay[repo.node.id] = { closed: repoClosed, total: repoTotal };
     }
   }
-
-  // -- Milestone nodes ---------------------------------------------------------
-  structure.milestones.forEach((ms, i) => {
-    let open = 0;
-    let closed = 0;
-    let seen = false;
-    for (const list of Object.values(milestonesByRepo)) {
-      for (const m of list) {
-        if (norm(m.title) === norm(ms.label)) {
-          open += m.open;
-          closed += m.closed;
-          seen = true;
-        }
-      }
-    }
-    if (!seen) return; // milestone not present on any repo yet -> no progress
-    const total = open + closed;
-    overlay[`ms:${i}`] = { closed, total, done: total > 0 && open === 0 };
-  });
 
   // -- Project node ------------------------------------------------------------
   if (projTotal > 0) {

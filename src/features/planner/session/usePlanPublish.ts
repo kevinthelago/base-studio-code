@@ -7,7 +7,6 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { parsePhases } from "../github/ghStructure";
 import type { Section } from "../github/ghStructure";
 import { type GhStatusMap } from "./GitHubStructureCard";
 import { deriveProjectTitle } from "./projectTitle";
@@ -24,7 +23,7 @@ import { resolveBlueprintSkillPayloads } from "../blueprints/blueprintSkills";
 import { publishGist } from "@/features/planner/lib/gist/gist";
 import {
   type GhApi, type Upd, seedPublishStatus,
-  publishRepositories, scaffoldRepositories, ensureProjectBoard, createMilestones, createIssues, applyStreamLabels,
+  publishRepositories, scaffoldRepositories, ensureProjectBoard, createIssues, applyStreamLabels,
 } from "./publishSteps";
 
 export type PublishPhase = "idle" | "running" | "done" | "error";
@@ -209,8 +208,6 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     const token = githubToken;
 
     const repos        = publishRepos;
-    const noRepo       = repos.length === 0;
-    const phases       = parsePhases(sections.find(s => s.k === "phases")?.content ?? "");
     const goalContent  = sections.find(s => s.k === "goal")?.content ?? "";
     const projectTitle = deriveProjectTitle(planningTitle, goalContent, activeProjectName);
     const projectDesc  = goalContent.split(/\n/)[0].slice(0, 350);
@@ -218,7 +215,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     const streams      = fleet?.streams ?? [];
 
     // Seed every node as "planned" so the card shows the full structure upfront.
-    const status = seedPublishStatus({ repos, phases, streams });
+    const status = seedPublishStatus({ repos, streams });
     setGhStatus({ ...status });
     setPublishPhase("running");
 
@@ -273,19 +270,16 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         store.removeDraftProject(effectiveProjectId);
       }
 
-      // 3. Milestones — one per phase per repo (idempotent, fail-closed).
-      const { msNumbers } = await createMilestones(api, upd, { repos, phases, noRepo });
-
-      // 4. Issues — features → issues, pinned to milestones, on the board, assigned, sub-issues nested.
+      // 3. Issues — features → issues, on the board, assigned, sub-issues nested (no milestones, #1912).
       await createIssues(api, upd, {
         repos, featuresContent: sections.find(s => s.k === "features")?.content ?? "",
-        phases, phaseNames: phases.map(p => p.name), msNumbers, projectId, streams, viewerLogin, projectTitle,
+        projectId, streams, viewerLogin,
       }, {
         upsertIssue: (iss) => invoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss })
           .then(() => {}).catch((e) => { console.warn(`plan_upsert_issue ${iss.ref}: ${e}`); }),
       });
 
-      // 5. Stream labels.
+      // 4. Stream labels.
       await applyStreamLabels(api, upd, { streams });
 
       setPublishPhase(anyError ? "error" : "done");
@@ -298,8 +292,8 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   // GitHub → plan.db recovery (#plan-db). The mirror of handlePublish: pull each repo's
   // planner-published issues back into the plan store so a lost or machine-switched plan.db
   // rehydrates from the durable GitHub copy. Paginates issues (state=all), drops PRs, and upserts
-  // each reconstructed PlanIssue (ref/dependsOn from the hidden marker, phase from the milestone,
-  // stream from the label, status from open/closed). The 2s section poll reflects the DB afterward.
+  // each reconstructed PlanIssue (ref/dependsOn from the hidden marker, stream from the label,
+  // status from open/closed). The 2s section poll reflects the DB afterward.
   async function handleRecover() {
     if (!githubToken || publishRepos.length === 0 || recovering) return;
     setRecovering(true);

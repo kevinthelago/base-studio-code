@@ -127,9 +127,9 @@ describe("parseSkipped", () => {
 });
 
 describe("KNOWN_DIMENSIONS", () => {
-  it("leads with goal and includes the publish-critical phases dimension", () => {
+  it("leads with goal and no longer carries a milestone-phases dimension (#1912)", () => {
     expect(KNOWN_DIMENSIONS[0].key).toBe("goal");
-    expect(KNOWN_DIMENSIONS.some(d => d.key === "phases")).toBe(true);
+    expect(KNOWN_DIMENSIONS.some(d => d.key === "phases")).toBe(false);
   });
 
   it("has unique keys", () => {

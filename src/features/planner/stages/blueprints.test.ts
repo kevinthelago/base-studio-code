@@ -233,7 +233,7 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
   it("an optional stage is shown + never locks dependents, but IS a deliberate stop the user must decide (#676/#921)", () => {
     const secs = [mkStage("discovery"), mkStage("ui", { optional: true }), mkStage("structure")];
     const signals = sig({ discovery: { resolved: 1, total: 1, requiredDiscoveryReady: true }, requiresUi: true,
-      phasesConfirmed: true, issueCount: 1 });
+      issueCount: 1 });
     const ui = secs.find((s) => s.key === "ui")!;
     // shown (not N/A) even though its screens gate is unmet
     expect(stageStatus(ui, secs, signals).status).not.toBe("na");
@@ -266,13 +266,14 @@ describe("blueprints — section status (declarative, blueprint-driven gates)", 
     const secs = setEnabled(baseSecs(), "ui", false); // drop ui to simplify
     expect(planStagesComplete(secs, sig(doneCtx))).toBe(false); // structure/permissions/skills unmet
     const allDone = {
-      ...doneCtx, phasesConfirmed: true,
+      ...doneCtx,
+      features: { count: 1, allConfirmed: true }, // structure gates on featuresDefined (#1912)
       fleet: { streams: 2, profilesComplete: true }, skillsAck: true,
     };
-    // featuresPhased + sharedDepsLocked are extra signals (added in Planning.tsx alongside
-    // hasPlanGaps), not part of planStateToSignals — supply them the same way the app does. With no
-    // multi-stream repos sharedDepsLocked is true (#1429).
-    expect(planStagesComplete(secs, { ...sig(allDone), featuresPhased: true, sharedDepsLocked: true })).toBe(true);
+    // sharedDepsLocked is an extra signal (added in Planning.tsx alongside hasPlanGaps), not part of
+    // planStateToSignals — supply it the same way the app does. With no multi-stream repos
+    // sharedDepsLocked is true (#1429).
+    expect(planStagesComplete(secs, { ...sig(allDone), sharedDepsLocked: true })).toBe(true);
   });
 
   it("currentStage is the first in-progress section, skipping N/A", () => {
@@ -375,7 +376,7 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
     const subKeys = merged.substeps?.map((s) => s.key) ?? [];
     expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fold marker is appended last
     const sig = merged.gateRule!.require.map((r) => r.signal);
-    expect(sig).toEqual(expect.arrayContaining(["featuresPhased", "fleetStreams", "profilesComplete"]));
+    expect(sig).toEqual(expect.arrayContaining(["featuresDefined", "fleetStreams", "profilesComplete"]));
 
     const plain = mkStage("structure");
     expect(plain.name).toBe("Plan");

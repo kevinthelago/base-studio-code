@@ -1,6 +1,6 @@
 // The Plan review (split from FocusedBodies.tsx #1757): the Plan stage's autonomous output — the
-// feature seam/dependency graph and the phases — shown for the user to APPROVE (the catch-point for
-// a wrong inferred seam).
+// feature seam/dependency graph — shown for the user to APPROVE (the catch-point for a wrong
+// inferred seam).
 import { useState, useMemo } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { RelationshipGraphView } from "@/features/planner/relationship/RelationshipGraphView";
@@ -25,7 +25,6 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
     if (onFocus) onFocus(next); else setFocusState(next);
   };
   const [hover, setHover] = useState<string | null>(null);
-  const phases = data?.phaseStructure ?? [];
 
   // Agent-relationship graph (#…): the typed coordination graph over the fleet streams.
   const artifacts = data?.relationshipArtifacts ?? [];
@@ -42,11 +41,11 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
   }, [data?.agents, data?.features, artifacts, edges, topology]);
   const hasRel = !!relGraph;
 
-  if (phases.length === 0 && !hasRel) {
+  if (!hasRel) {
     return (
       <div className="empty-state">
         <span className="empty-icon">◫</span>
-        <span>No plan yet — define the features, then Claude drafts the phases + seams</span>
+        <span>No plan yet — define the features, then Claude drafts the dependency seams</span>
       </div>
     );
   }
@@ -110,38 +109,6 @@ export function FocusedPlanBody({ data, focus: focusProp, onFocus }: {
               onInspectArtifact={(id) => setFocus({ type: "art", id })}
               onInspectEdge={(id) => setFocus({ type: "edge", id })}
             />
-          </div>
-        </div>
-      )}
-      {phases.length > 0 && (
-        <div>
-          <div className="ulabel" style={{ paddingBottom: 6 }}>phases</div>
-          {/* Numbered roadmap (#1429 reskin): a circle per phase + its done-when, foundations first. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {phases.map((p, i) => {
-              const first = i === 0;
-              return (
-                <div key={p.id}>
-                  <div style={{ display: "flex", gap: 11, padding: "8px 4px" }}>
-                    <span style={{
-                      flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 10, fontWeight: 600,
-                      color: first ? "var(--accent)" : "var(--fg-muted)",
-                      background: first ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev2)",
-                      border: "1px solid " + (first ? "color-mix(in oklch, var(--accent), transparent 65%)" : "var(--border)"),
-                    }}>{i + 1}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="mono" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{p.name}</div>
-                      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
-                        {p.doneWhen ? `done when · ${p.doneWhen}` : `${p.total} issue${p.total === 1 ? "" : "s"}`}
-                      </div>
-                    </div>
-                  </div>
-                  {i < phases.length - 1 && <div style={{ height: 1, background: "var(--border-soft)", marginLeft: 31 }} />}
-                </div>
-              );
-            })}
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 // GitHub → plan.db recovery (#plan-db). The mirror of the publish flow: where publish maps each
-// PlanIssue to a GitHub issue (body = acceptance/owns/dependsOn, milestone = phase, `stream:<id>`
-// label, hidden ref marker), recovery inverts it — reconstructing PlanIssue[] from a repo's issues
-// so a lost or machine-switched plan.db can be rehydrated from the durable GitHub store.
+// PlanIssue to a GitHub issue (body = acceptance/owns/dependsOn, `stream:<id>` label, hidden ref
+// marker), recovery inverts it — reconstructing PlanIssue[] from a repo's issues so a lost or
+// machine-switched plan.db can be rehydrated from the durable GitHub store.
 //
 // Pure (no React/Tauri) so the reverse-parse is unit-testable and round-trips against
 // renderIssueBody. The orchestration (gh fetch + plan_upsert_issue) lives in Planning.tsx.
@@ -16,7 +16,6 @@ export interface GitHubIssueLike {
   /** "open" | "closed". */
   state?: string;
   labels?: Array<{ name?: string } | string>;
-  milestone?: { title?: string } | null;
   /** Present ⇒ this row is a pull request, not an issue (the /issues endpoint returns both). */
   pull_request?: unknown;
 }
@@ -71,8 +70,8 @@ function parseIssueBody(raw: string): Pick<PlanIssue, "body" | "acceptance" | "o
 
 /**
  * Reconstruct one {@link PlanIssue} from a GitHub issue. Ref comes from the hidden marker (falling
- * back to `#<number>` so it stays addressable); phase from the milestone title; stream from the
- * `stream:<id>` label; acceptance/owns/dependsOn from the body. GitHub is only open/closed, so a
+ * back to `#<number>` so it stays addressable); stream from the `stream:<id>` label;
+ * acceptance/owns/dependsOn from the body. GitHub is only open/closed, so a
  * closed issue maps to `verified` (merged + CI green at close) and an open one to `open` — the
  * director can refine an open issue via its linked PR + CI later (the same live-verify signal).
  */
@@ -91,7 +90,6 @@ export function recoverIssue(gh: GitHubIssueLike, repoFullName: string): PlanIss
   return {
     ref,
     title: (gh.title ?? "").trim(),
-    phase: gh.milestone?.title?.trim() || undefined,
     stream,
     labels,
     repo: repoFullName,

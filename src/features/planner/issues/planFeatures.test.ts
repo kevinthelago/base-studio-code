@@ -25,9 +25,8 @@ describe("isFeatureKey / featureSlug", () => {
 });
 
 describe("parseFeatureSection", () => {
-  it("pulls the phase marker, the leading heading title, and acceptance checkboxes out of the body", () => {
+  it("pulls the leading heading title and acceptance checkboxes out of the body", () => {
     const content = [
-      "phase: 2",
       "# Login form",
       "",
       "Build the email/password form against POST /sessions.",
@@ -36,18 +35,18 @@ describe("parseFeatureSection", () => {
       "- [x] shows an inline error on 401",
     ].join("\n");
     const f = parseFeatureSection(content, "login-form");
-    expect(f.phase).toBe(2);
     expect(f.title).toBe("Login form");
     expect(f.acceptance).toEqual(["validates email format", "shows an inline error on 401"]);
     expect(f.body).toBe("Build the email/password form against POST /sessions.");
   });
 
-  it("accepts a phase NAME and an HTML-comment marker, and falls back to the humanized slug", () => {
-    expect(parseFeatureSection("<!-- phase: Phase 1 — MVP -->\njust prose", "x").phase).toBe("Phase 1 — MVP");
+  it("falls back to the humanized slug, and keeps a former phase: marker as plain body content (#1912)", () => {
     const f = parseFeatureSection("just an approach, no heading", "password-reset");
     expect(f.title).toBe("Password reset");
-    expect(f.phase).toBeUndefined();
     expect(f.body).toBe("just an approach, no heading");
+    // Milestone phases were removed (#1912): a `phase:` line is no longer parsed — it's body content.
+    const g = parseFeatureSection("phase: 2\njust prose", "x");
+    expect(g.body).toBe("phase: 2\njust prose");
   });
 
   it("keeps a non-leading heading in the body and only consumes the FIRST heading as title", () => {
@@ -78,7 +77,7 @@ describe("featureDiscoveryComplete (#490 rubric)", () => {
   });
 
   it("incomplete (hard gate) when behavior body is empty", () => {
-    const r = featureDiscoveryComplete({ body: "", acceptance: ["returns 200"], title: "T", phase: undefined });
+    const r = featureDiscoveryComplete({ body: "", acceptance: ["returns 200"], title: "T" });
     expect(r.complete).toBe(false);
     expect(r.missingBehavior).toBe(true);
   });
@@ -100,7 +99,7 @@ describe("featureSectionsToIssues (#490 hard gate)", () => {
 
   it("converts feature sections to synthetic PlanIssues, resolving the repo short name", () => {
     const sections = [
-      { k: "repo__web__feat__login", content: "phase: 1\n# Login\napproach here\n- [ ] works" },
+      { k: "repo__web__feat__login", content: "# Login\napproach here\n- [ ] works" },
       // Sessions endpoint now has acceptance so it passes the gate
       { k: "repo__api__feat__sessions-endpoint", content: "# Sessions endpoint\nadd POST /sessions\n- [ ] returns 201" },
       { k: "repo__web__api", content: "not a feature" },  // ignored
@@ -111,7 +110,6 @@ describe("featureSectionsToIssues (#490 hard gate)", () => {
     expect(issues[0]).toMatchObject({
       ref: "feat:web:login",
       title: "Login",
-      phase: 1,
       repo: "acme/web",
       labels: [FEATURE_LABEL],
       acceptance: ["works"],

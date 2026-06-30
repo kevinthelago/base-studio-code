@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use plandb::{Lesson, PlanFeature, PlanIssue, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -105,23 +105,6 @@ pub(crate) fn plan_list_repos(project_key: String) -> Result<Vec<String>, String
 #[tauri::command]
 pub(crate) fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
     open(&project_key)?.repo_remove(&full_name).map_err(|e| e.to_string())
-}
-
-// ── roadmap phases (#1017) — names/descriptions; the structure card + publish read them from here. ──
-
-#[tauri::command]
-pub(crate) fn plan_upsert_phase(project_key: String, phase: PlanPhase) -> Result<(), String> {
-    open(&project_key)?.phase_upsert(&phase).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub(crate) fn plan_list_phases(project_key: String) -> Result<Vec<PlanPhase>, String> {
-    open(&project_key)?.phase_list().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub(crate) fn plan_remove_phase(project_key: String, name: String) -> Result<(), String> {
-    open(&project_key)?.phase_remove(&name).map_err(|e| e.to_string())
 }
 
 // ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────

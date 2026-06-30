@@ -134,7 +134,7 @@ right mode:
    **migrate the app section by section** — inventory every screen/module first,
    then walk it so nothing is missed. Fully drive each unit down to the issues it
    brings (error/empty states, edge cases, migrations, cross-repo contracts) and
-   write it before moving on, then sequence into phases. The longest, most
+   write it before moving on, then sequence by dependency. The longest, most
    interactive part: be Socratic, propose then interrogate, and don't shortcut it.
 5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
    and set the optimal session count (see "Plan the agent fleet").

@@ -9,14 +9,13 @@
 // are preserved exactly so a transient read failure never risks duplicate creation.
 
 import { resolveRepoPublic } from "@/store/slices/plan";
-import type { PhaseItem } from "../github/ghStructure";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
 import { parseFeaturesFile, featuresToPlanIssues } from "../issues/featureList";
 import { depsForRepo, mergeIntoPackageJson, mergeIntoCargoToml, buildNpmrc, buildCargoConfig, type parseDependencyManifest } from "../issues/dependencies";
 import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import type { AgentStream } from "../fleet/planFleet";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../lib/repoScaffold";
-import { renderIssueBody, resolvePhaseIndex, subIssueLinks, type PlanIssue } from "../issues/planIssues";
+import { renderIssueBody, subIssueLinks, type PlanIssue } from "../issues/planIssues";
 import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/features/github/lib/issueProvenance";
 
 /** The injected GitHub transport — the same closures handlePublish built over `invoke`. */
@@ -233,93 +232,22 @@ export async function ensureProjectBoard(
   return { projectId, created };
 }
 
-// ── 3. Milestones — one per phase in every repo (idempotent, fail-CLOSED on a repo whose
-//      existing-milestone fetch fails). Returns repo → phase index → milestone number. ──
-export async function createMilestones(
-  api: GhApi,
-  upd: Upd,
-  opts: { repos: string[]; phases: PhaseItem[]; noRepo: boolean },
-): Promise<{ msNumbers: Record<string, Record<number, number>> }> {
-  const { repos, phases, noRepo } = opts;
-  const existingMs: Record<string, Map<string, number>> = {};
-  const msFetchFailed = new Set<string>();
-  if (!noRepo) {
-    await Promise.all(repos.map(async r => {
-      try {
-        const list = await api.rest<{ title: string; number: number }[]>(
-          `repos/${r}/milestones?state=all&per_page=100`,
-        );
-        existingMs[r] = new Map(list.map(m => [m.title, m.number]));
-      } catch {
-        msFetchFailed.add(r);
-        existingMs[r] = new Map();
-      }
-    }));
-  }
-  // repo full_name → phase index → milestone number
-  const msNumbers: Record<string, Record<number, number>> = {};
-  for (let pi = 0; pi < phases.length; pi++) {
-    const ph = phases[pi];
-    const id = `ms:${pi}`;
-    if (noRepo) { upd(id, { status: "skipped", detail: "no repo linked" }); continue; }
-    upd(id, { status: "running" });
-    try {
-      let created = 0, existed = 0, unverified = 0;
-      for (const r of repos) {
-        if (!msNumbers[r]) msNumbers[r] = {};
-        if (msFetchFailed.has(r)) { unverified++; continue; } // couldn't verify — skip
-        const existingNum = existingMs[r]?.get(ph.name);
-        if (existingNum !== undefined) {
-          msNumbers[r][pi] = existingNum;
-          existed++;
-          continue;
-        }
-        const ms = await api.post<{ number: number }>(`repos/${r}/milestones`, {
-          title: ph.name, description: ph.description ?? "",
-        });
-        msNumbers[r][pi] = ms.number;
-        created++;
-      }
-      const suffix = repos.length > 1 ? ` · ${repos.length} repos` : "";
-      if (created === 0 && existed === 0 && unverified > 0) {
-        upd(id, { status: "error", detail: `couldn't verify existing milestones — skipped${suffix}` });
-      } else {
-        const parts: string[] = [];
-        if (created)    parts.push(`${created} created`);
-        if (existed)    parts.push(`${existed} existed`);
-        if (unverified) parts.push(`${unverified} unverified`);
-        upd(id, {
-          status: created === 0 ? "exists" : "created",
-          detail: (parts.length ? parts.join(", ") : "already exists") + suffix,
-        });
-      }
-    } catch (e) {
-      upd(id, { status: "error", detail: String(e) });
-    }
-  }
-  return { msNumbers };
-}
-
-// ── 4. Issues — generated from the FEATURES (one issue per feature, #plan-db): pinned to its
-//      milestone + added to the board, assigned to its stream's login, with feature sub-issues nested.
-//      Falls back to one tracking issue per phase when there are no features. Idempotent, fail-CLOSED. ──
+// ── 3. Issues — generated from the FEATURES (one issue per feature, #plan-db): added to the board,
+//      assigned to its stream's login, with feature sub-issues nested. No milestones (#1912).
+//      Idempotent, fail-CLOSED on a repo whose existing-issue fetch fails. ──
 export async function createIssues(
   api: GhApi,
   upd: Upd,
   opts: {
     repos: string[];
     featuresContent: string;
-    phases: PhaseItem[];
-    phaseNames: string[];
-    msNumbers: Record<string, Record<number, number>>;
     projectId: string | undefined;
     streams: AgentStream[];
     viewerLogin: string;
-    projectTitle: string;
   },
   hooks: { upsertIssue: (iss: PlanIssue) => Promise<void> },
 ): Promise<void> {
-  const { repos, featuresContent, phases, phaseNames, msNumbers, projectId, streams, viewerLogin, projectTitle } = opts;
+  const { repos, featuresContent, projectId, streams, viewerLogin } = opts;
   const planIssues = featuresToPlanIssues(parseFeaturesFile(featuresContent));
   // Materialize them into the plan store too, so the fleet/director have issues to coordinate on.
   for (const iss of planIssues) {
@@ -333,102 +261,57 @@ export async function createIssues(
       const existing = await api.rest<{ title: string }[]>(`repos/${fullName}/issues?state=all&per_page=100`);
       existingTitles = existing.map(i => i.title);
     } catch {
-      if (planIssues.length) {
-        for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
-      } else {
-        for (let pi = 0; pi < phases.length; pi++) upd(`issue:${fullName}:${pi}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
-      }
+      for (const iss of planIssues) upd(`issue:${fullName}:${iss.ref}`, { status: "error", detail: "couldn't verify existing issues — skipped" });
       continue;
     }
 
-    if (planIssues.length) {
-      // Issues for THIS repo: its declared `repo`, or the default (first) repo.
-      const mine = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
-      // Ensure every label this repo uses exists (422 if present — harmless).
-      // Provenance label first (#738) — every app-created issue carries it.
-      await api.post(`repos/${fullName}/labels`, { name: BSC_ISSUE_LABEL, color: BSC_ISSUE_LABEL_COLOR }).catch(() => {});
-      for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
-        await api.post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
-      }
-      // ref → created GitHub node id, so feature parents + their sub-issues can be linked.
-      const nodeByRef: Record<string, string> = {};
-      for (const iss of mine) {
-        const id = `issue:${fullName}:${iss.ref}`;
-        if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
-        upd(id, { status: "running" });
-        try {
-          const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
-          const phIdx = resolvePhaseIndex(iss.phase, phaseNames);
-          const msNum = phIdx !== undefined ? msNumbers[fullName]?.[phIdx] : undefined;
-          if (msNum !== undefined) body.milestone = msNum;
-          body.labels = withProvenanceLabel(iss.labels); // provenance stamp (#738)
-          const issue = await api.post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
-          if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
-          if (projectId && issue.node_id) {
-            await api.gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
-          }
-          // Assign the issue to its owning stream's GitHub login (#847), defaulting to the publishing
-          // account. Done AFTER the issue exists, so an invalid / no-access login (a 422) is skipped
-          // gracefully and never loses the issue.
-          const assignee = resolveIssueAssignee(iss.stream, streams, viewerLogin);
-          if (assignee) {
-            await api.post(`repos/${fullName}/issues/${issue.number}/assignees`, { assignees: [assignee] }).catch(() => {});
-          }
-          upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
-        } catch (e) {
-          upd(id, { status: "error", detail: String(e) });
-        }
-      }
-      // Nest each feature's sub-issues under their parent (#…) via GraphQL addSubIssue. Best-effort +
-      // idempotent: only links pairs created in THIS run; an already-linked pair (or an API that
-      // doesn't support sub-issues) errors harmlessly.
-      for (const { parent, child } of subIssueLinks(mine, nodeByRef)) {
-        await api.gql(
-          `mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p,subIssueId:$c}){ issue { id } } }`,
-          { p: parent, c: child },
-        ).catch(() => {});
-      }
-      continue;
+    // Issues for THIS repo: its declared `repo`, or the default (first) repo.
+    const mine = planIssues.filter(iss => iss.repo ? iss.repo === fullName : repoIdx === 0);
+    // Ensure every label this repo uses exists (422 if present — harmless).
+    // Provenance label first (#738) — every app-created issue carries it.
+    await api.post(`repos/${fullName}/labels`, { name: BSC_ISSUE_LABEL, color: BSC_ISSUE_LABEL_COLOR }).catch(() => {});
+    for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
+      await api.post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
     }
-
-    // Legacy fallback: one tracking issue per phase.
-    await api.post(`repos/${fullName}/labels`, { name: BSC_ISSUE_LABEL, color: BSC_ISSUE_LABEL_COLOR }).catch(() => {}); // #738
-    for (let pi = 0; pi < phases.length; pi++) {
-      const ph    = phases[pi];
-      const id    = `issue:${fullName}:${pi}`;
-      const title = `[${ph.name}] ${projectTitle}`;
-      const marker = `[${ph.name}]`;
-      if (existingTitles.some(t => t.startsWith(marker))) {
-        upd(id, { status: "exists", detail: "already exists" });
-        continue;
-      }
+    // ref → created GitHub node id, so feature parents + their sub-issues can be linked.
+    const nodeByRef: Record<string, string> = {};
+    for (const iss of mine) {
+      const id = `issue:${fullName}:${iss.ref}`;
+      if (existingTitles.includes(iss.title)) { upd(id, { status: "exists", detail: "already exists" }); continue; }
       upd(id, { status: "running" });
       try {
-        const body: Record<string, unknown> = {
-          title,
-          body: `## ${ph.name}
-
-${ph.description ?? ""}
-
----
-_Auto-generated by base-studio-code planner._`,
-          labels: [BSC_ISSUE_LABEL], // provenance stamp (#738)
-        };
-        const msNum = msNumbers[fullName]?.[pi];
-        if (msNum !== undefined) body.milestone = msNum;
+        const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
+        body.labels = withProvenanceLabel(iss.labels); // provenance stamp (#738)
         const issue = await api.post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
+        if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
         if (projectId && issue.node_id) {
           await api.gql(`mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item { id } } }`, { p: projectId, c: issue.node_id }).catch(() => {});
+        }
+        // Assign the issue to its owning stream's GitHub login (#847), defaulting to the publishing
+        // account. Done AFTER the issue exists, so an invalid / no-access login (a 422) is skipped
+        // gracefully and never loses the issue.
+        const assignee = resolveIssueAssignee(iss.stream, streams, viewerLogin);
+        if (assignee) {
+          await api.post(`repos/${fullName}/issues/${issue.number}/assignees`, { assignees: [assignee] }).catch(() => {});
         }
         upd(id, { status: "created", detail: `#${issue.number}`, url: issue.html_url });
       } catch (e) {
         upd(id, { status: "error", detail: String(e) });
       }
     }
+    // Nest each feature's sub-issues under their parent (#…) via GraphQL addSubIssue. Best-effort +
+    // idempotent: only links pairs created in THIS run; an already-linked pair (or an API that
+    // doesn't support sub-issues) errors harmlessly.
+    for (const { parent, child } of subIssueLinks(mine, nodeByRef)) {
+      await api.gql(
+        `mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p,subIssueId:$c}){ issue { id } } }`,
+        { p: parent, c: child },
+      ).catch(() => {});
+    }
   }
 }
 
-// ── 5. Stream labels — tag each fleet stream's owned issues with `stream:<id>` so ownership is
+// ── 4. Stream labels — tag each fleet stream's owned issues with `stream:<id>` so ownership is
 //      visible on GitHub and the board. Ensure the label, then apply it to each owned issue
 //      resolvable by number. Idempotent. ──
 export async function applyStreamLabels(
@@ -461,15 +344,11 @@ export async function applyStreamLabels(
 }
 
 /** Seed every GitHub-structure node as "planned" so the card shows the full structure upfront. */
-export function seedPublishStatus(opts: { repos: string[]; phases: PhaseItem[]; streams: AgentStream[] }): GhStatusMap {
-  const { repos, phases, streams } = opts;
+export function seedPublishStatus(opts: { repos: string[]; streams: AgentStream[] }): GhStatusMap {
+  const { repos, streams } = opts;
   const status: GhStatusMap = {};
   status["project"] = { status: "planned" };
-  phases.forEach((_, i) => { status[`ms:${i}`] = { status: "planned" }; });
-  repos.forEach(r => {
-    status[`repo:${r}`] = { status: "planned" };
-    phases.forEach((_, i) => { status[`issue:${r}:${i}`] = { status: "planned" }; });
-  });
+  repos.forEach(r => { status[`repo:${r}`] = { status: "planned" }; });
   streams.forEach(st => { status[`stream:${st.id}`] = { status: "planned" }; });
   return status;
 }

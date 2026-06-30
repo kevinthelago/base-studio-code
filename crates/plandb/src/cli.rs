@@ -20,7 +20,7 @@
 //!   bsc plan fleet help      # detailed help for ONE command
 //!   bsc plan <cmd> help      # same, after any command
 
-use crate::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, PlanPhase, Store, STATUSES};
+use crate::{is_valid_status, IssueSummary, Lesson, PlanFeature, PlanIssue, Store, STATUSES};
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 use serde::Serialize;
@@ -53,12 +53,12 @@ One issue's full spec — the detail the lean `list` omits. --json is compact; -
     },
     CmdDoc {
         name: "summary",
-        summary: "plan overview: totals + per-status/stream/phase counts",
+        summary: "plan overview: totals + per-status/stream counts",
         usage: "\
 USAGE:
   bsc plan summary [--json] [--pretty]
 
-The cheapest \"where does the plan stand\" read: totals plus per-status, per-stream, per-phase counts.",
+The cheapest \"where does the plan stand\" read: totals plus per-status, per-stream counts.",
     },
     CmdDoc {
         name: "list",
@@ -130,15 +130,6 @@ USAGE:
   bsc plan repo add <owner/repo>...   # link repo(s) to the project
   bsc plan repo list                  # list the linked repos
   bsc plan repo remove <owner/repo>   # unlink a repo",
-    },
-    CmdDoc {
-        name: "phase",
-        summary: "the roadmap phases (referenced by 1-based order)",
-        usage: "\
-USAGE:
-  bsc plan phase add <name> [description...]   # add/merge a roadmap phase (in order)
-  bsc plan phase list                          # list phases in order
-  bsc plan phase remove <name>                 # delete a phase",
     },
     CmdDoc {
         name: "fleet",
@@ -355,7 +346,6 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "render" => cmd_render(&args),
         "feature" => cmd_feature(&args),
         "repo" => cmd_repo(&args),
-        "phase" => cmd_phase(&args),
         "fleet" => cmd_fleet(&args),
         "deploy" => cmd_deploy(&args),
         "deps" => cmd_deps(&args),
@@ -476,12 +466,11 @@ fn cmd_get(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// `summary` — the cheapest "where does the plan stand" read: totals + per-status/stream/phase counts.
+/// `summary` — the cheapest "where does the plan stand" read: totals + per-status/stream counts.
 fn cmd_summary(args: &Args) -> Result<(), String> {
     let s = open_store(&args.db)?;
     let rows = s.list_summary(None, None, None, None).map_err(|e| e.to_string())?;
-    let phases = s.phase_list().map_err(|e| e.to_string())?;
-    let o = compute_overview(&rows, &phases);
+    let o = compute_overview(&rows);
     if args.json {
         print_json(&overview_json(&o), args.pretty);
     } else {
@@ -639,41 +628,6 @@ fn cmd_repo(args: &Args) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!("unknown repo command '{other}'\n\n{}", cmd_help(&args.prog, "repo"))),
-    }
-}
-
-/// `phase` — the roadmap (features reference a phase by its 1-based order).
-fn cmd_phase(args: &Args) -> Result<(), String> {
-    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
-    let s = open_store(&args.db)?;
-    match sub {
-        // `phase add <name> [description...]` — name first, the rest joined as the description.
-        "add" => {
-            let name = args.positional.get(2).ok_or("usage: bsc plan phase add <name> [description]")?;
-            let desc = args.positional.iter().skip(3).cloned().collect::<Vec<_>>().join(" ");
-            s.phase_upsert(&PlanPhase { name: name.clone(), description: desc }).map_err(|e| e.to_string())?;
-            if !args.json {
-                println!("phase: {name}");
-            }
-            Ok(())
-        }
-        "list" => {
-            let phases = s.phase_list().map_err(|e| e.to_string())?;
-            emit_json_or_lines(args.json, &phases, "(no phases)", |i, p| {
-                let d = if p.description.is_empty() { String::new() } else { format!("  — {}", p.description) };
-                format!("{}. {}{}", i + 1, p.name, d)
-            });
-            Ok(())
-        }
-        "remove" => {
-            let name = args.positional.get(2).ok_or("usage: bsc plan phase remove <name>")?;
-            s.phase_remove(name).map_err(|e| e.to_string())?;
-            if !args.json {
-                println!("removed {name}");
-            }
-            Ok(())
-        }
-        other => Err(format!("unknown phase command '{other}'\n\n{}", cmd_help(&args.prog, "phase"))),
     }
 }
 
@@ -1206,13 +1160,10 @@ struct PlanOverview {
     status: Vec<(String, usize)>,
     /// Per-stream counts, first-seen order.
     streams: Vec<(String, usize)>,
-    /// Per-phase counts: (1-based number, resolved name, count), phase order.
-    phases: Vec<(usize, String, usize)>,
 }
 
-/// Tally a lean issue set into a {@link PlanOverview}. Phase values that are names resolve to their
-/// 1-based roster position so a name-tagged and a number-tagged issue land in the same bucket.
-fn compute_overview(rows: &[IssueSummary], phases: &[PlanPhase]) -> PlanOverview {
+/// Tally a lean issue set into a {@link PlanOverview}.
+fn compute_overview(rows: &[IssueSummary]) -> PlanOverview {
     let status: Vec<(String, usize)> = STATUSES
         .iter()
         .filter_map(|st| {
@@ -1236,32 +1187,10 @@ fn compute_overview(rows: &[IssueSummary], phases: &[PlanPhase]) -> PlanOverview
         (s, n)
     }).collect();
 
-    // Resolve a phase value to its 1-based number (a name → its roster index + 1).
-    let phase_num = |p: &Option<serde_json::Value>| -> Option<usize> {
-        match p {
-            Some(serde_json::Value::Number(n)) => n.as_u64().map(|v| v as usize),
-            Some(serde_json::Value::String(s)) => phases.iter().position(|ph| ph.name == *s).map(|i| i + 1),
-            _ => None,
-        }
-    };
-    let mut phase_count: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
-    for r in rows {
-        if let Some(n) = phase_num(&r.phase) {
-            *phase_count.entry(n).or_default() += 1;
-        }
-    }
-    let phases: Vec<(usize, String, usize)> = phase_count
-        .into_iter()
-        .map(|(n, c)| {
-            let name = phases.get(n - 1).map(|p| p.name.clone()).unwrap_or_default();
-            (n, name, c)
-        })
-        .collect();
-
-    PlanOverview { total: rows.len(), status, streams, phases }
+    PlanOverview { total: rows.len(), status, streams }
 }
 
-/// Render the overview as three compact lines (totals · streams · phases).
+/// Render the overview as compact lines (totals · streams).
 fn render_overview_text(o: &PlanOverview) -> String {
     let mut out = format!("{} issue{}", o.total, if o.total == 1 { "" } else { "s" });
     for (st, n) in &o.status {
@@ -1272,14 +1201,6 @@ fn render_overview_text(o: &PlanOverview) -> String {
         let parts: Vec<String> = o.streams.iter().map(|(s, n)| format!("{s} {n}")).collect();
         out.push_str(&format!("stream: {}\n", parts.join(" · ")));
     }
-    if !o.phases.is_empty() {
-        let parts: Vec<String> = o
-            .phases
-            .iter()
-            .map(|(n, name, c)| if name.is_empty() { format!("{n} {c}") } else { format!("{n} {name} {c}") })
-            .collect();
-        out.push_str(&format!("phase:  {}\n", parts.join(" · ")));
-    }
     out
 }
 
@@ -1289,12 +1210,7 @@ fn overview_json(o: &PlanOverview) -> serde_json::Value {
         o.status.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();
     let streams: serde_json::Map<String, serde_json::Value> =
         o.streams.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();
-    let phases: Vec<serde_json::Value> = o
-        .phases
-        .iter()
-        .map(|(n, name, c)| serde_json::json!({ "phase": n, "name": name, "count": c }))
-        .collect();
-    serde_json::json!({ "total": o.total, "status": status, "streams": streams, "phases": phases })
+    serde_json::json!({ "total": o.total, "status": status, "streams": streams })
 }
 
 /// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
@@ -1410,7 +1326,7 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "phase", "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
+            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
             "lesson", "section", "automations", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
@@ -1496,33 +1412,25 @@ mod tests {
     }
 
     #[test]
-    fn overview_counts_by_status_stream_and_phase() {
+    fn overview_counts_by_status_and_stream() {
         let rows = vec![
             summary("F1", Some("auth"), Some(serde_json::json!(1)), 0),
             summary("F2", Some("auth"), Some(serde_json::json!(2)), 0),
             summary("F3", Some("ui"), Some(serde_json::json!("Core")), 0),
         ];
-        let phases = vec![
-            PlanPhase { name: "Foundations".into(), description: String::new() },
-            PlanPhase { name: "Core".into(), description: String::new() },
-        ];
-        let o = compute_overview(&rows, &phases);
+        let o = compute_overview(&rows);
         assert_eq!(o.total, 3);
         assert_eq!(o.status, vec![("open".to_string(), 3)]);
         assert_eq!(o.streams, vec![("auth".to_string(), 2), ("ui".to_string(), 1)]);
-        // phase 2 has F2 (number) + F3 (name "Core" resolves to roster position 2)
-        assert_eq!(o.phases, vec![(1, "Foundations".to_string(), 1), (2, "Core".to_string(), 2)]);
 
         let text = render_overview_text(&o);
         assert!(text.starts_with("3 issues · open 3"));
         assert!(text.contains("stream: auth 2 · ui 1"));
-        assert!(text.contains("phase:  1 Foundations 1 · 2 Core 2"));
 
         let json = overview_json(&o);
         assert_eq!(json["total"], serde_json::json!(3));
         assert_eq!(json["status"]["open"], serde_json::json!(3));
         assert_eq!(json["streams"]["auth"], serde_json::json!(2));
-        assert_eq!(json["phases"][1], serde_json::json!({ "phase": 2, "name": "Core", "count": 2 }));
     }
 
     #[test]
