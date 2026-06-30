@@ -179,7 +179,7 @@ pub(crate) const BSC_CONFINE_RC: &str = concat!(
 /// patterns against the cwd; `return 2` (not `exit`) so it never kills a shell that sources it.
 /// Covers the AI's WRITE tools only (Read is unrestricted — the planner must read for context).
 pub(crate) const BSC_SCOPE_RC: &str = concat!(
-    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
+    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ "$globs" = "__bsc_deny_all__" ] && { echo "blocked: this session is code:none (no write scope) -- file writes are denied (#1916)" >&2; return 2; }; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
     "\n",
 );
 
