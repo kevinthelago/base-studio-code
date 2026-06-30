@@ -56,7 +56,10 @@ export function statusForPane(
   if (coord.asking.some(a => a.session === paneId)) return "asking";
   if (coord.waiting.some(w => w.session === paneId)) return "waiting";
   if (coord.waiters.some(w => w.session === paneId)) return "blocked";
-  return paneStatus[paneId] === "run" ? "running" : "idle";
+  if (paneStatus[paneId] === "run") return "running"; // active work wins (a dispatched maintenance worker)
+  // Otherwise, a finished worker parked in maintenance (#1957) shows as `maintenance`, not plain idle.
+  if (coord.maintaining.some(m => m.session === paneId)) return "maintenance";
+  return "idle";
 }
 
 /** The parked-state note for a pane (question / wait reason / block deps), or "". */
@@ -70,6 +73,8 @@ function noteForPane(paneId: string, coord: CoordState): string {
     const deps = blocked.deps.map(d => (d.kind === "issue" ? `#${d.number}` : d.kind === "contract" ? `contract:${d.name}` : d.kind)).join(", ");
     return deps ? `blocked on ${deps}` : "blocked";
   }
+  const maint = coord.maintaining.find(m => m.session === paneId);
+  if (maint) return maint.note || "owned issues complete — standing by";
   return "";
 }
 

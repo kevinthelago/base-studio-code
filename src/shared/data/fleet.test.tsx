@@ -28,6 +28,10 @@ describe("fleetLive mappers", () => {
     expect(statusForPane("t0p0", coord({ asking: [{ session: "t0p0", question: "q?", at: 0 }] }), ps)).toBe("asking");
     expect(statusForPane("t0p0", coord({ waiting: [{ session: "t0p0", reason: "r", at: 0 }] }), ps)).toBe("waiting");
     expect(statusForPane("t0p0", coord({ waiters: [{ session: "t0p0", deps: [{ kind: "issue", number: 9 }], registeredAt: 0 }] }), ps)).toBe("blocked");
+    // Maintenance (#1957): idle + maintaining → maintenance; but active work (run) still wins.
+    const maint = coord({ maintaining: [{ session: "t0p0", note: "standing by", at: 0 }] });
+    expect(statusForPane("t0p0", maint, {})).toBe("maintenance");
+    expect(statusForPane("t0p0", maint, ps)).toBe("running");
   });
 
   it("buildLiveWorkers: roster from launched fleet, drops closed/disabled panes", () => {

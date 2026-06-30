@@ -3,14 +3,15 @@
 // log — via lib/fleetLive; these are the status/profile display maps the board
 // renders. (The original sample dataset was removed once the page went live.)
 
-export type WorkerStatus = "running" | "asking" | "blocked" | "waiting" | "idle" | "done";
+export type WorkerStatus = "running" | "asking" | "blocked" | "waiting" | "idle" | "done" | "maintenance";
 export type FleetProfile = "build" | "review" | "docs" | "auto" | "sandbox";
 
 export interface ProfileMeta { label: string; color: string }
 export interface StatusMeta { label: string; color: string }
 
 const ACCENT = "var(--accent)", INFO = "var(--info)", OK = "var(--success)",
-  DANGER = "var(--danger)", VIOLET = "oklch(0.7 0.12 290)", DIM = "var(--fg-dim)";
+  DANGER = "var(--danger)", VIOLET = "oklch(0.7 0.12 290)", DIM = "var(--fg-dim)",
+  TEAL = "oklch(0.75 0.10 195)";
 
 /** Profile palette (mirrors agentProfiles colors). */
 export const PROFILE: Record<FleetProfile, ProfileMeta> = {
@@ -28,5 +29,6 @@ export const STATUS: Record<WorkerStatus, StatusMeta> = {
   blocked: { label: "blocked", color: DANGER },
   waiting: { label: "waiting", color: INFO },
   idle:    { label: "idle",    color: DIM },
+  maintenance: { label: "maintenance", color: TEAL },
   done:    { label: "landed",  color: OK },
 };
