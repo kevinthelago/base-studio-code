@@ -7,6 +7,7 @@ import { MetricsCollectionCard } from "../cards/MetricsCollectionCard";
 import { IdleReaperCard } from "../cards/IdleReaperCard";
 import { PerfRetentionCard } from "../cards/PerfRetentionCard";
 import { StorageCard } from "../cards/StorageCard";
+import { SandboxedConsolesCard } from "../cards/SandboxedConsolesCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
@@ -59,6 +60,7 @@ export function PlannerPage() {
       <PerfRetentionCard />
 
       <Sub>Storage &amp; logs</Sub>
+      <SandboxedConsolesCard />
       <StorageCard />
       <LogsInventoryCard
         selectedStream={selectedStream}
