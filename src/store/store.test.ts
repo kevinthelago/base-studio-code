@@ -94,6 +94,16 @@ describe("autoPlanWithClaude setting (#682)", () => {
   });
 });
 
+describe("sandboxConsoles setting (#1988)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().sandboxConsoles).toBe(false);
+    useAppStore.getState().setSandboxConsoles(true);
+    expect(useAppStore.getState().sandboxConsoles).toBe(true);
+    useAppStore.getState().setSandboxConsoles(false);
+    expect(useAppStore.getState().sandboxConsoles).toBe(false);
+  });
+});
+
 describe("autoCompleteGates setting (#1068)", () => {
   it("is off by default and toggles via the setter", () => {
     expect(useAppStore.getState().autoCompleteGates).toBe(false);
