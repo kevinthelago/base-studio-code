@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
@@ -10,6 +11,8 @@ type SandboxReadiness = {
   needsWsl: boolean;
   wslInstalled: boolean;
   sandboxDistro: string | null;
+  /** The app can install the missing piece itself (Linux package manager / WSL rootfs import). */
+  autoInstallable: boolean;
   ready: boolean;
   detail: string;
 };
@@ -22,6 +25,8 @@ type SandboxReadiness = {
 export function PermissionPostureCard() {
   const { bypassPermissions, setBypassPermissions } = useAppStore();
   const [sandbox, setSandbox] = useState<SandboxReadiness | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -32,6 +37,21 @@ export function PermissionPostureCard() {
       alive = false;
     };
   }, []);
+
+  // One-click install of the missing OS-sandbox prerequisites — Windows imports the sealed rootfs
+  // (#1988); Linux installs bubblewrap + socat via the host package manager (pkexec). Re-probe after,
+  // so the status dot reflects the result. Raw `invoke` (not safeInvoke) so the Ok/Err text surfaces.
+  const onInstall = async () => {
+    setInstalling(true);
+    setInstallMsg(null);
+    try {
+      setInstallMsg(await invoke<string>("provision_sandbox"));
+    } catch (e) {
+      setInstallMsg(String(e));
+    }
+    setSandbox(await safeInvoke<SandboxReadiness | null>("wsl_sandbox_status", undefined, null));
+    setInstalling(false);
+  };
 
   return (
     <Card title="Agent permissions">
@@ -89,6 +109,22 @@ export function PermissionPostureCard() {
                 </a>
                 . Until then the deny-list hooks still gate; only raw Bash is unconfined.
               </>
+            )}
+            {!sandbox.ready && sandbox.autoInstallable && (
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={onInstall}
+                  disabled={installing}
+                  style={{
+                    background: "var(--accent)", border: "none", color: "var(--accent-text, #1a120a)",
+                    cursor: installing ? "default" : "pointer", fontSize: 11, fontWeight: 600,
+                    padding: "3px 10px", borderRadius: 4, opacity: installing ? 0.6 : 1,
+                  }}
+                >
+                  {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
+                </button>
+                {installMsg && <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>}
+              </div>
             )}
           </div>
         </div>

@@ -38,6 +38,9 @@ pub(crate) struct SandboxReadiness {
     pub socat: bool,
     /// Whether our sealed `bsc-agent-sandbox` distro (#1988) is already imported.
     pub agent_sandbox_installed: bool,
+    /// Whether the app can install the missing piece itself — Linux: a detected package manager for
+    /// bubblewrap/socat; Windows: importing the sealed rootfs. Drives the one-click "Install" button.
+    pub auto_installable: bool,
     /// Can the OS sandbox actually engage for a bypass session right now?
     pub ready: bool,
     /// One-line human explanation (+ the next action when not ready).
@@ -116,8 +119,75 @@ pub(crate) fn evaluate(
     }
 }
 
+/// A Linux host package manager the app can drive non-interactively (via `pkexec`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum LinuxPm {
+    Apt,
+    Dnf,
+    Pacman,
+    Zypper,
+}
+
+/// The non-interactive install command (sans elevation) that adds bubblewrap + socat for a PM. Pure.
+pub(crate) fn linux_install_command(pm: LinuxPm) -> &'static str {
+    match pm {
+        LinuxPm::Apt => "apt-get install -y bubblewrap socat",
+        LinuxPm::Dnf => "dnf install -y bubblewrap socat",
+        LinuxPm::Pacman => "pacman -S --needed --noconfirm bubblewrap socat",
+        LinuxPm::Zypper => "zypper install -y bubblewrap socat",
+    }
+}
+
+/// Map a package-manager binary name to its [`LinuxPm`] (the pure half of `detect_linux_pm`).
+pub(crate) fn pm_for_bin(bin: &str) -> Option<LinuxPm> {
+    match bin {
+        "apt-get" => Some(LinuxPm::Apt),
+        "dnf" => Some(LinuxPm::Dnf),
+        "pacman" => Some(LinuxPm::Pacman),
+        "zypper" => Some(LinuxPm::Zypper),
+        _ => None,
+    }
+}
+
+/// The readiness verdict + detail line for a Linux host, given bubblewrap/socat presence + a detected
+/// package manager. Pure — the I/O probe (`host_has`) feeds it. Mirrors `evaluate` for the WSL path.
+pub(crate) fn evaluate_linux(bubblewrap: bool, socat: bool, pm: Option<LinuxPm>) -> (bool, String) {
+    if bubblewrap && socat {
+        return (true, "Ready — the native bubblewrap sandbox can confine Bash.".into());
+    }
+    let missing = match (bubblewrap, socat) {
+        (false, false) => "bubblewrap + socat are",
+        (false, true) => "bubblewrap is",
+        (true, false) => "socat (needed for network isolation) is",
+        (true, true) => unreachable!("ready case handled above"),
+    };
+    let fix = match pm {
+        Some(pm) => format!("install with `sudo {}`, or click Install.", linux_install_command(pm)),
+        None => "install bubblewrap + socat with your distro's package manager.".into(),
+    };
+    (false, format!("{missing} not installed — {fix} Sessions run unsandboxed until then."))
+}
+
+/// Whether a command resolves on the host `PATH` (`command -v`). Best-effort — false on any error or
+/// (on Windows) where the POSIX shell is absent; only ever called on the macOS/Linux branches.
+fn host_has(cmd: &str) -> bool {
+    std::process::Command::new("sh")
+        .args(["-c", &format!("command -v {cmd} >/dev/null 2>&1")])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Detect the host's package manager by probing for its binary, in preference order.
+fn detect_linux_pm() -> Option<LinuxPm> {
+    ["apt-get", "dnf", "pacman", "zypper"]
+        .into_iter()
+        .find(|b| host_has(b))
+        .and_then(pm_for_bin)
+}
+
 /// Probe whether the OS sandbox can engage. On Windows this queries WSL2; elsewhere the OS confines
-/// natively. Read-only — no provisioning.
+/// natively (macOS Seatbelt / Linux bubblewrap). Read-only — no provisioning.
 #[tauri::command]
 pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
     let platform = if cfg!(windows) {
@@ -127,8 +197,9 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
     } else {
         "linux"
     };
-    if !cfg!(windows) {
-        // macOS Seatbelt / Linux bubblewrap engage the #1980 sandbox config directly — no WSL.
+    if cfg!(target_os = "macos") {
+        // Seatbelt (`sandbox-exec`) is built into macOS — confirm it's actually present.
+        let ready = host_has("sandbox-exec");
         return SandboxReadiness {
             platform: platform.into(),
             needs_wsl: false,
@@ -138,8 +209,35 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
             bubblewrap: false,
             socat: false,
             agent_sandbox_installed: false,
-            ready: true,
-            detail: "Native OS sandbox (macOS Seatbelt / Linux bubblewrap) — no WSL2 needed.".into(),
+            auto_installable: false,
+            ready,
+            detail: if ready {
+                "Native macOS sandbox (Seatbelt) — no setup needed.".into()
+            } else {
+                "`sandbox-exec` not found — macOS sandboxing is unavailable on this system.".into()
+            },
+        };
+    }
+    if !cfg!(windows) {
+        // Linux: the native bubblewrap sandbox confines Bash, but `bwrap` + `socat` must be installed
+        // on the host. (This branch used to report `ready: true` unconditionally — a false positive
+        // that told un-provisioned Linux users they were sandboxed when they weren't.)
+        let bubblewrap = host_has("bwrap");
+        let socat = host_has("socat");
+        let pm = detect_linux_pm();
+        let (ready, detail) = evaluate_linux(bubblewrap, socat, pm);
+        return SandboxReadiness {
+            platform: platform.into(),
+            needs_wsl: false,
+            wsl_installed: false,
+            distros: vec![],
+            sandbox_distro: None,
+            bubblewrap,
+            socat,
+            agent_sandbox_installed: false,
+            auto_installable: !ready && pm.is_some(),
+            ready,
+            detail,
         };
     }
     let list = run_wsl(&["-l", "-v"]);
@@ -161,6 +259,8 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
         bubblewrap,
         socat,
         agent_sandbox_installed,
+        // WSL is present but the sandbox isn't ready → the app can import the sealed rootfs (#1988).
+        auto_installable: wsl_installed && !ready,
         ready,
         detail,
     }
@@ -222,13 +322,15 @@ fn import_args(distro: &str, install_dir: &str, tarball: &str) -> Vec<String> {
     ]
 }
 
-/// Import the sealed `bsc-agent-sandbox` rootfs as a WSL2 distro (#1988). A no-op success if it is
-/// already installed. The rootfs tarball must be staged first (built by
-/// `tooling/wsl-sandbox/build-rootfs.sh`); returns a clear error if it is missing.
+/// Install the OS-sandbox prerequisites for this host, one-click. On **Windows**, import the sealed
+/// `bsc-agent-sandbox` rootfs as a WSL2 distro (#1988; no-op success if already installed — the rootfs
+/// tarball must be staged first by `tooling/wsl-sandbox/build-rootfs.sh`). On **Linux**, install
+/// bubblewrap + socat via the detected package manager, elevated through `pkexec`. On **macOS** there
+/// is nothing to install (Seatbelt is built in).
 #[tauri::command]
 pub(crate) fn provision_sandbox() -> Result<String, String> {
     if !cfg!(windows) {
-        return Err("The WSL2 agent sandbox is a Windows-only feature.".into());
+        return provision_native_deps();
     }
     if let Some(out) = run_wsl(&["-l", "-v"]) {
         if parse_wsl_distros(&out).iter().any(|d| d.name == AGENT_SANDBOX_DISTRO) {
@@ -261,9 +363,70 @@ pub(crate) fn provision_sandbox() -> Result<String, String> {
     }
 }
 
+/// Install the native Linux sandbox deps (bubblewrap + socat) via the detected package manager,
+/// elevated through `pkexec` (graphical sudo). macOS needs nothing — Seatbelt is built in. Returns a
+/// copy-pasteable manual command when no package manager or no `pkexec` is found, rather than failing
+/// opaquely.
+fn provision_native_deps() -> Result<String, String> {
+    if cfg!(target_os = "macos") {
+        return Ok("macOS uses the built-in Seatbelt sandbox — nothing to install.".into());
+    }
+    let Some(pm) = detect_linux_pm() else {
+        return Err("No supported package manager found (apt/dnf/pacman/zypper) — install `bubblewrap` and `socat` manually.".into());
+    };
+    let install = linux_install_command(pm);
+    if !host_has("pkexec") {
+        return Err(format!("`pkexec` (graphical sudo) not found — run `sudo {install}` in a terminal."));
+    }
+    let mut cmd = std::process::Command::new("pkexec");
+    cmd.args(["sh", "-c", install]);
+    let out = crate::platform::process::run_output(&mut cmd)
+        .map_err(|e| format!("pkexec failed to start: {e}"))?;
+    if out.status.success() {
+        Ok("Installed bubblewrap + socat — the native sandbox is ready.".into())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let err = err.trim();
+        Err(if err.is_empty() {
+            format!("Install failed — try `sudo {install}` manually.")
+        } else {
+            format!("Install failed: {err}")
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_install_command_per_pm_adds_both_deps() {
+        for pm in [LinuxPm::Apt, LinuxPm::Dnf, LinuxPm::Pacman, LinuxPm::Zypper] {
+            let c = linux_install_command(pm);
+            assert!(c.contains("bubblewrap") && c.contains("socat"), "{c}");
+        }
+        assert!(linux_install_command(LinuxPm::Apt).starts_with("apt-get install"));
+        assert!(linux_install_command(LinuxPm::Pacman).starts_with("pacman -S"));
+    }
+
+    #[test]
+    fn pm_for_bin_maps_known_managers_only() {
+        assert_eq!(pm_for_bin("apt-get"), Some(LinuxPm::Apt));
+        assert_eq!(pm_for_bin("dnf"), Some(LinuxPm::Dnf));
+        assert_eq!(pm_for_bin("zypper"), Some(LinuxPm::Zypper));
+        assert_eq!(pm_for_bin("brew"), None);
+    }
+
+    #[test]
+    fn evaluate_linux_flags_each_gap_and_points_at_the_pm() {
+        assert!(evaluate_linux(true, true, None).0); // both present → ready
+        assert!(!evaluate_linux(false, false, Some(LinuxPm::Apt)).0); // both missing
+        assert!(!evaluate_linux(true, false, Some(LinuxPm::Apt)).0); // socat missing
+        // a detected PM surfaces its concrete install command
+        assert!(evaluate_linux(false, true, Some(LinuxPm::Apt)).1.contains("apt-get install"));
+        // no PM → generic guidance, no command
+        assert!(evaluate_linux(false, false, None).1.contains("package manager"));
+    }
 
     #[test]
     fn import_args_builds_wsl_import_invocation() {
