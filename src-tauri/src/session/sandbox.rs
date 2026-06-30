@@ -4,10 +4,16 @@
 //! tree, but on Windows it engages ONLY inside WSL2 — native Windows is unsupported, so it silently
 //! no-ops. This module probes, from the Windows host, whether the sandbox can actually run: is WSL2
 //! installed, is there a version-2 distro, and does that distro have the bubblewrap + socat deps the
-//! sandbox needs. It is strictly READ-ONLY — it runs `wsl.exe` queries and never provisions anything
-//! (provisioning + the `wsl.exe` spawn rewiring are the rest of #1982).
+//! sandbox needs. The detection (`wsl_sandbox_status`) is read-only; `provision_sandbox` (#1988) is the
+//! one mutating command here — it imports the sealed `bsc-agent-sandbox` rootfs as a WSL2 distro. The
+//! `wsl.exe` spawn rewiring (running the planner/triage sessions INSIDE the distro) is the rest of #1982.
 
 use serde::Serialize;
+
+/// The sealed agent sandbox distro we import + run sessions inside (#1988). Built from
+/// `tooling/wsl-sandbox/` (Debian-slim + the slim Linux `bsc` sidecars + a locked-down `wsl.conf`,
+/// so the distro is the cage regardless of which LLM drives the session inside it).
+pub(crate) const AGENT_SANDBOX_DISTRO: &str = "bsc-agent-sandbox";
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +36,8 @@ pub(crate) struct SandboxReadiness {
     pub sandbox_distro: Option<String>,
     pub bubblewrap: bool,
     pub socat: bool,
+    /// Whether our sealed `bsc-agent-sandbox` distro (#1988) is already imported.
+    pub agent_sandbox_installed: bool,
     /// Can the OS sandbox actually engage for a bypass session right now?
     pub ready: bool,
     /// One-line human explanation (+ the next action when not ready).
@@ -129,6 +137,7 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
             sandbox_distro: None,
             bubblewrap: false,
             socat: false,
+            agent_sandbox_installed: false,
             ready: true,
             detail: "Native OS sandbox (macOS Seatbelt / Linux bubblewrap) — no WSL2 needed.".into(),
         };
@@ -141,6 +150,7 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
         Some(d) => probe_deps(d),
         None => (false, false),
     };
+    let agent_sandbox_installed = distros.iter().any(|d| d.name == AGENT_SANDBOX_DISTRO);
     let (ready, detail) = evaluate(wsl_installed, &distros, &sandbox_distro, bubblewrap, socat);
     SandboxReadiness {
         platform: platform.into(),
@@ -150,6 +160,7 @@ pub(crate) fn wsl_sandbox_status() -> SandboxReadiness {
         sandbox_distro,
         bubblewrap,
         socat,
+        agent_sandbox_installed,
         ready,
         detail,
     }
@@ -187,9 +198,81 @@ fn probe_deps(distro: &str) -> (bool, bool) {
     }
 }
 
+/// Where the sealed agent distro is imported on the Windows host (its ext4 vhdx lives here).
+fn sandbox_install_dir() -> std::path::PathBuf {
+    crate::platform::paths::bsc_base_dir().join("wsl").join(AGENT_SANDBOX_DISTRO)
+}
+
+/// The bundled rootfs tarball the app imports. Built by `tooling/wsl-sandbox/build-rootfs.sh` and
+/// staged here (installer bundling is a packaging follow-up).
+fn sandbox_rootfs_tarball() -> std::path::PathBuf {
+    crate::platform::paths::bsc_base_dir().join("wsl").join("bsc-agent-sandbox.tar")
+}
+
+/// The `wsl --import <distro> <dir> <tarball> --version 2` argument vector. Pure, so it can be
+/// unit-tested without WSL present.
+fn import_args(distro: &str, install_dir: &str, tarball: &str) -> Vec<String> {
+    vec![
+        "--import".into(),
+        distro.into(),
+        install_dir.into(),
+        tarball.into(),
+        "--version".into(),
+        "2".into(),
+    ]
+}
+
+/// Import the sealed `bsc-agent-sandbox` rootfs as a WSL2 distro (#1988). A no-op success if it is
+/// already installed. The rootfs tarball must be staged first (built by
+/// `tooling/wsl-sandbox/build-rootfs.sh`); returns a clear error if it is missing.
+#[tauri::command]
+pub(crate) fn provision_sandbox() -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is a Windows-only feature.".into());
+    }
+    if let Some(out) = run_wsl(&["-l", "-v"]) {
+        if parse_wsl_distros(&out).iter().any(|d| d.name == AGENT_SANDBOX_DISTRO) {
+            return Ok(format!("{AGENT_SANDBOX_DISTRO} is already installed."));
+        }
+    }
+    let tarball = sandbox_rootfs_tarball();
+    if !tarball.exists() {
+        return Err(format!(
+            "Sandbox rootfs not found at {}. Build it with tooling/wsl-sandbox/build-rootfs.sh and stage it there.",
+            tarball.display()
+        ));
+    }
+    let install_dir = sandbox_install_dir();
+    std::fs::create_dir_all(&install_dir)
+        .map_err(|e| format!("Could not create {}: {e}", install_dir.display()))?;
+    let args = import_args(
+        AGENT_SANDBOX_DISTRO,
+        &install_dir.to_string_lossy(),
+        &tarball.to_string_lossy(),
+    );
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(&args).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd)
+        .map_err(|e| format!("wsl --import failed to start: {e}"))?;
+    if out.status.success() {
+        Ok(format!("Imported {AGENT_SANDBOX_DISTRO}."))
+    } else {
+        Err(decode_wsl(&out.stderr))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn import_args_builds_wsl_import_invocation() {
+        let a = import_args("bsc-agent-sandbox", "C:/x/wsl/d", "C:/x/d.tar");
+        assert_eq!(
+            a,
+            vec!["--import", "bsc-agent-sandbox", "C:/x/wsl/d", "C:/x/d.tar", "--version", "2"],
+        );
+    }
 
     #[test]
     fn parses_wsl_l_v_output() {
