@@ -30,6 +30,26 @@ So the distro *is* the boundary, from first boot.
 
 ## Building it
 
+### Self-contained (recommended) — no pre-staged binaries
+
+`Dockerfile.build` compiles the slim Linux sidecars itself, then assembles the sealed rootfs. Run it
+from the **repo root**:
+
+```bash
+docker build -f tooling/wsl-sandbox/Dockerfile.build -t bsc-agent-sandbox .
+cid=$(docker create bsc-agent-sandbox)
+docker export "$cid" -o "$HOME/.base-studio-code/wsl/bsc-agent-sandbox.tar"
+docker rm "$cid"
+wsl --import bsc-agent-sandbox "$HOME/.base-studio-code/wsl/bsc-agent-sandbox" \
+    "$HOME/.base-studio-code/wsl/bsc-agent-sandbox.tar" --version 2
+```
+
+> **Verified** on Windows + docker-desktop: ~205 MB tarball; after import, inside the distro `ls /mnt/c`
+> → *No such file or directory*, `powershell.exe` → *command not found*, and `bsc` / `bsc-agent` run as
+> the non-root `agent` user. The cage holds.
+
+### From pre-staged binaries (`build-rootfs.sh`)
+
 Requires Docker (docker-desktop is fine) and the slim Linux sidecars in `./bin/`.
 
 1. **Get the Linux sidecars.** The unified `bsc` is built **without** the `data` feature (DuckDB is
