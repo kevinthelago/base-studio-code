@@ -680,6 +680,7 @@ mod tests {
             category: "crm".into(),
             base_url: Some("https://acme.example.com/api".into()),
             auth: "token".into(),
+            oauth: None,
             resources: vec![crate::RuntimeResource {
                 name: "contacts".into(),
                 path: "contacts".into(),

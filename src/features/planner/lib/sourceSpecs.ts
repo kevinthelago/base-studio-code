@@ -56,16 +56,6 @@ export interface Connector {
   preset?: boolean;
 }
 
-/** A packaged vendor preset from the backend catalog (#1288 — the `data_connector_catalog` command
- *  over `crates/data` `presets::CATALOG`). The Source pane turns each into a generic-REST connector. */
-export interface ConnectorCatalogEntry {
-  id: string;
-  name: string;
-  category: string;
-  /** "will contribute →" blurb — the preset's resource object names. */
-  contributes: string;
-}
-
 /** A discovered field: name + an inferred type + (for enums) the observed values (#1219). */
 export interface DiscoveredField { name: string; type?: FieldType; enumValues?: string[]; ref?: string }
 /** An object/table the scan discovered in a connected source (a count, not extracted rows).

@@ -32,6 +32,11 @@ export interface SessionState {
    *  cannot publish until the marker is removed; OFF (default) ⇒ acknowledge-to-clear. */
   injectionHardGate: boolean;
   setInjectionHardGate: (v: boolean) => void;
+  /** Permission posture (#1916): true ⇒ agents (and manual consoles) auto-run and the PreToolUse hooks
+   *  do the gating (the deny-list); false ⇒ Claude's `default` mode enforces the enumerated allow-list
+   *  (require approval). Default true. Threaded to `write_session_settings` via `buildSessionSettings`. */
+  bypassPermissions: boolean;
+  setBypassPermissions: (v: boolean) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
