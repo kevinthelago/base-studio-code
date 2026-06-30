@@ -51,7 +51,8 @@ describe("blueprintShare (#598)", () => {
       stages: [{ key: "discovery", name: "Discovery" }, { key: "structure", name: "Structure" }],
     });
     expect(bp).not.toBeNull();
-    expect(bp!.sections.map((s) => s.key)).toEqual(["discovery", "structure"]);
+    // #1914: a legacy `structure` key canonicalizes to `streams` on import.
+    expect(bp!.sections.map((s) => s.key)).toEqual(["discovery", "streams"]);
     // `stages` wins when both are present (it's the canonical planner-facing field).
     const both = coerceBlueprint({
       id: "y", name: "Both",
@@ -101,8 +102,9 @@ describe("blueprintShare (#598)", () => {
     expect(bp!.mcp).toEqual(["Compliance"]);
     expect(bp!.category).toBe("transform");
     expect(bp!.mode).toBe("operate");
-    // Per-section capabilities + shape survive.
+    // Per-section capabilities + shape survive (the legacy `structure` key canonicalizes to `streams`, #1914).
     const s = bp!.sections[0];
+    expect(s.key).toBe("streams");
     expect(s.skills).toEqual(["sk-a", "sk-b"]);
     expect(s.mcp).toEqual(["Complexity Analyzer", "Dependency Graph"]);
     expect(s.optional).toBe(true);
@@ -125,7 +127,7 @@ describe("blueprintShare (#598)", () => {
     }];
     const bp = {
       id: "x", name: "BP", desc: "", skills: ["sk2"],
-      sections: [{ uid: "u", key: "structure", name: "Structure", glyph: "◆", icon: "checklist", hue: 70, gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
+      sections: [{ uid: "u", key: "streams", name: "Streams", glyph: "◆", icon: "checklist", hue: 70, gate: "", deps: [], blurb: "", prompt: "", enabled: true, expanded: false, skills: ["sk1"] }],
     } as unknown as Blueprint;
 
     const bundled = resolveBlueprintSkillPayloads(bp, skills);

@@ -21,7 +21,7 @@ const MCP_STATUS: Record<McpServer["status"], { c: string; dot: string; label: s
   error:       { c: "var(--danger)",  dot: "",     label: "build failed" },
 };
 
-export function FocusedMcpBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHandlers & {
+export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHandlers & {
   servers?: McpServer[];
 }) {
   const list = servers ?? [];

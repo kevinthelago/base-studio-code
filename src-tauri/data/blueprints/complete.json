@@ -12,8 +12,7 @@
       "key": "discovery"
     },
     {
-      "key": "repos",
-      "ship": true
+      "key": "deployment"
     },
     {
       "key": "source",
@@ -27,11 +26,10 @@
       "optional": true
     },
     {
-      "key": "structure",
-      "fleet": true
+      "key": "streams"
     },
     {
-      "key": "mcp",
+      "key": "mcps",
       "optional": true
     },
     {

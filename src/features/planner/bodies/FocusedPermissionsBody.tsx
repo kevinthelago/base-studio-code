@@ -23,7 +23,7 @@ const DRIVE_HINTS: Record<DirectorDrive, string> = {
   off:       "the director is never driven (a static session)",
 };
 
-export function FocusedPermissionsBody({ data, onFlow, onModel, onTopology, onDirectorDrive, focusedStream, onSelectStream }: FleetHandlers & {
+export function PermissionsBody({ data, onFlow, onModel, onTopology, onDirectorDrive, focusedStream, onSelectStream }: FleetHandlers & {
   data?: ProjectPaneData;
   /** #1392 streams-link: the graph-focused stream → expand its editor; report row open/close back. */
   focusedStream?: string;

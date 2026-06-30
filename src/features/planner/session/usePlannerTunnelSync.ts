@@ -55,6 +55,8 @@ export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
       if (k === "phases") phasesJson = v;
       else if (k === "issues") issuesJson = v;
       else if (k === FLEET_KEY) fleetJson = v;
+      // Legacy `repos` SECTION-CONTENT key (not the stage key, #1914) — the mobile canonical-sync
+      // contract still routes a `reposJson` relpath via hubToCanonical, so keep reading it if present.
       else if (k === "repos") reposJson = v;
       else if (k === SKIPPED_KEY) skippedContent = v;
       else if (k === FEATURES_KEY || k === DEPENDENCIES_KEY) continue;

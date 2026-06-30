@@ -27,9 +27,9 @@ describe("planStages — registry", () => {
     expect(enabledOrderedStages(c).map((s) => s.id)).toEqual(["discovery"]);
   });
 
-  it("default order puts ui before structure (#510)", () => {
+  it("default order puts ui before streams (#510/#1914)", () => {
     const order = defaultStageConfig().order;
-    expect(order.indexOf("ui")).toBeLessThan(order.indexOf("structure"));
+    expect(order.indexOf("ui")).toBeLessThan(order.indexOf("streams"));
   });
 
   it("only discovery is required; every other stage is optional", () => {
@@ -42,9 +42,9 @@ describe("planStages — registry", () => {
     expect(STAGE_BY_ID["load" as StageId]).toBeUndefined();
   });
 
-  it("source appears in PLAN_STAGES between repos and features", () => {
+  it("source appears in PLAN_STAGES between deployment and features (#1914)", () => {
     const ids = PLAN_STAGES.map((s) => s.id);
-    expect(ids.indexOf("source")).toBeGreaterThan(ids.indexOf("repos"));
+    expect(ids.indexOf("source")).toBeGreaterThan(ids.indexOf("deployment"));
     expect(ids.indexOf("source")).toBeLessThan(ids.indexOf("features"));
   });
 });
@@ -53,8 +53,8 @@ describe("planStages — enabledOrderedStages", () => {
   it("returns only enabled stages, in configured order", () => {
     const c = cfg({
       enabled: { ...defaultStageConfig().enabled, ui: false, skills: false },
-      order: ["repos", "discovery", "structure", "permissions", "automations", "ui", "skills"],
+      order: ["deployment", "discovery", "streams", "automations", "ui", "skills"],
     });
-    expect(enabledOrderedStages(c).map((s) => s.id)).toEqual(["repos", "discovery", "structure", "permissions", "automations"]);
+    expect(enabledOrderedStages(c).map((s) => s.id)).toEqual(["deployment", "discovery", "streams", "automations"]);
   });
 });

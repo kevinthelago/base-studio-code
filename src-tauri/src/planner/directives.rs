@@ -84,37 +84,25 @@ mod tests {
     }
 
     #[test]
-    fn deploy_directive_ships_only_deps_moved_to_streams() {
-        // #1429: dependencies moved Deploy → Streams. The Deploy directive records the deploy config
-        // and gates on shipping ALONE — it must NOT instruct `bsc plan deps set`; the `streams`
-        // directive owns dependency locking now.
-        let dep = stage_directive("deploy");
-        assert!(dep.contains("bsc plan deploy set"), "deploy directive records the deploy config: {dep}");
-        assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams — not the deploy directive: {dep}");
-        assert!(dep.contains("deploymentDefined"), "deploy gates on shipping: {dep}");
-        let streams = stage_directive("streams");
-        assert!(streams.contains("bsc plan deps set") && streams.contains("sharedDepsLocked"),
-            "the streams directive owns dependency locking: {streams}");
-    }
-
-    #[test]
-    fn merged_stage_directives_name_the_stage_and_cover_both_halves() {
-        // #1383/#1392: the planner overview gets ONE directive for a merged stage, covering both
-        // halves' CLIs. `deployment` = "Deployment" (link repos + deploy); `streams` = both the
-        // roadmap (phases) AND the fleet.
+    fn collapsed_stage_directives_name_the_stage_and_cover_both_halves() {
+        // #1914: the unified vocabulary collapsed the old fold split into single canonical defs.
+        // `deployment` = "Deployment" (link repos + deploy); `streams` = the feature roadmap, the
+        // fleet, AND shared deps. Each carries the WHOLE merged directive — and `deployment` must NOT
+        // instruct `bsc plan deps set` (deps live in the Streams stage now, #1429).
         let dep = stage_directive("deployment");
-        assert!(dep.contains("Deployment"), "merged stage names itself Deployment: {dep}");
+        assert!(dep.contains("Deployment"), "collapsed stage names itself Deployment: {dep}");
         assert!(dep.contains("repo_link") && dep.contains("bsc plan deploy set"),
             "Deployment covers link + deploy: {dep}");
         assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams (#1429): {dep}");
         let streams = stage_directive("streams");
-        assert!(streams.contains("Streams"), "merged stage names itself Streams: {streams}");
-        assert!(streams.contains("bsc plan phase add") && streams.contains("bsc plan fleet set") && streams.contains("bsc plan deps set"),
+        assert!(streams.contains("Streams"), "collapsed stage names itself Streams: {streams}");
+        assert!(streams.contains("bsc plan feature list") && streams.contains("bsc plan fleet set") && streams.contains("bsc plan deps set"),
             "Streams covers the roadmap, the fleet, AND shared deps: {streams}");
+        assert!(streams.contains("sharedDepsLocked"), "streams gates on shared deps locked: {streams}");
 
-        // The merged stages render in the active-stages overview with their merged names.
+        // The collapsed stages render in the active-stages overview with their names.
         let md = build_active_stages_md(&["deployment".into(), "streams".into()]);
-        assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists merged names: {md}");
+        assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists collapsed names: {md}");
     }
 
     /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
@@ -123,10 +111,10 @@ mod tests {
     /// data/transform/harden stages; this is the kept set that carries a `directive`.)
     #[test]
     fn migrated_stage_directives_resolve_from_embedded_json() {
-        let migrated = ["discovery","repos","deployment","ui","features","structure","permissions",
+        // #1914: the unified vocabulary collapsed repos+deploy → `deployment` and
+        // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
+        let migrated = ["discovery","deployment","ui","features",
             "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
-            // #1610: the composed/lifecycle directives resolve from JSON too — `deployment` is the
-            // merged repos+deploy stage (v1.0.5), `streams` the merged structure+permissions stage.
             "streams"];
         for id in migrated {
             let d = stage_directive(id);
@@ -141,8 +129,9 @@ mod tests {
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
     /// EXACTLY the expected set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
     /// the SAME `data/stages/` dir, so a directive can't drift between them; this pins the set.
-    /// #1610: the composed/lifecycle ids (`deployment`/`streams`) are plain stage JSONs too — no
-    /// Rust-side prose, no special carve-out.
+    /// #1914: after the collapse the composed/lifecycle ids (`deployment`/`streams`) are plain stage
+    /// JSONs too — no Rust-side prose, no special carve-out; the legacy `repos`/`structure`/`permissions`
+    /// defs are gone.
     #[test]
     fn embedded_directive_key_set_matches_the_migrated_set() {
         use std::collections::BTreeSet;
@@ -154,8 +143,8 @@ mod tests {
                 Some(f.path().file_stem()?.to_string_lossy().into_owned())
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","repos","deployment","ui","features","structure",
-            "permissions","automations","skills","purpose","bp_stages","bp_capabilities",
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+            "automations","skills","purpose","bp_stages","bp_capabilities",
             "bp_review","streams"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }

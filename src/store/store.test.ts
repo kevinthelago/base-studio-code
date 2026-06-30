@@ -1775,12 +1775,12 @@ describe("plan stage config (#512)", () => {
     expect(cfg.enabled.automations).toBe(false);
     // other stages keep their default-on value
     expect(cfg.enabled.discovery).toBe(true);
-    expect(cfg.enabled.structure).toBe(true);
+    expect(cfg.enabled.streams).toBe(true);
   });
 
   it("reorderStages stores the new order without touching enabled flags", () => {
     useAppStore.getState().setStageEnabled("proj", "ui", false);
-    const order = ["repos", "discovery", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["deployment", "discovery", "ui", "streams", "automations", "skills"] as const;
     useAppStore.getState().reorderStages("proj", [...order]);
     const cfg = useAppStore.getState().planStageConfig["proj"];
     expect(cfg.order).toEqual([...order]);
@@ -1795,9 +1795,9 @@ describe("plan stage config (#512)", () => {
 
   it("setProjectStageConfig wholesale-seeds a project's config", () => {
     const d = defaultStageConfig();
-    const order = ["repos", "discovery", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["deployment", "discovery", "ui", "streams", "automations", "skills"] as const;
     useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
-    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
+    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("deployment");
   });
 });
 

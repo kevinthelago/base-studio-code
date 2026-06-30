@@ -19,7 +19,7 @@ import { parseIssuesFile } from "../issues/planIssues";
 import { ProjectPane } from "../pane/ProjectPane";
 import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
-import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
+import { defaultStageConfig, enabledOrderedStages, type StageConfig, type StageId } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../lib/mcpPaneData";
@@ -29,7 +29,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkStage, blueprintCategory, stageDirectiveId, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
+import { mkStage, blueprintCategory, canonicalStageKey, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
@@ -61,6 +61,26 @@ import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
 import { TERM_THEME } from "./planningTerminal";
 import { GitHubStructureCard } from "./GitHubStructureCard";
+
+/** Canonicalize a persisted per-project stage config to the unified stage vocabulary (#1914): map
+ *  each legacy StageId (`repos`/`structure`/`permissions`) through the stage-key alias and dedup, so
+ *  a project saved under the OLD vocab keeps its enabled set + order. The active blueprint normally
+ *  supplies `planSecs`; this feeds the no-blueprint fallback path + `requiresUi`. */
+function canonicalStageConfig(cfg: StageConfig | undefined): StageConfig | undefined {
+  if (!cfg) return cfg;
+  const order: StageId[] = [];
+  const seen = new Set<string>();
+  for (const id of cfg.order) {
+    const c = canonicalStageKey(id) as StageId;
+    if (!seen.has(c)) { seen.add(c); order.push(c); }
+  }
+  const enabled = {} as Record<StageId, boolean>;
+  for (const [k, v] of Object.entries(cfg.enabled)) {
+    const c = canonicalStageKey(k) as StageId;
+    enabled[c] = (enabled[c] ?? false) || v;
+  }
+  return { enabled, order };
+}
 
 export function Planning({ visible }: { visible: boolean }) {
   const {
@@ -205,13 +225,16 @@ export function Planning({ visible }: { visible: boolean }) {
   // a fresh ref each time the project has no sections yet).
   const savedSections = useMemo(
     () => planSections[effectiveProjectId] ?? {}, [planSections, effectiveProjectId]);
+  // Alias legacy stage keys on read (#1914) so a project that confirmed/skipped a stage under the
+  // OLD vocabulary (`repos`/`structure`/`permissions`/`mcp`) keeps matching the collapsed stage's
+  // `confirmed:<key>`/`skipped:<key>` signal. Discovery-topic keys (goal/scope/…) pass through.
   const confirmedSet  = useMemo(
-    () => new Set(planConfirmedSections[effectiveProjectId] ?? []),
+    () => new Set((planConfirmedSections[effectiveProjectId] ?? []).map(canonicalStageKey)),
     [planConfirmedSections, effectiveProjectId]);
   // Optional stages the user deliberately skipped (#921) — they resolve the stage's gate (so the
   // flow advances) but render as "skipped", not "complete".
   const skippedSet = useMemo(
-    () => new Set(planSkippedSections[effectiveProjectId] ?? []),
+    () => new Set((planSkippedSections[effectiveProjectId] ?? []).map(canonicalStageKey)),
     [planSkippedSections, effectiveProjectId]);
 
   const sections = useMemo<Section[]>(() => {
@@ -370,7 +393,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
   // progress rail, current-stage, and advance/publish footer all read these. #668 deleted
   // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
-  const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
+  const stageConfig = canonicalStageConfig(planStageConfig[effectiveProjectId]) ?? defaultStageConfig();
   const requiresUi = stageConfig.enabled.ui;
   const uiCounts = useMemo(() => {
     if (!requiresUi) return { approved: 0, total: 0 };
@@ -493,8 +516,10 @@ export function Planning({ visible }: { visible: boolean }) {
     // stage set across version / active-blueprint changes instead of adopting the library selection.
     const bpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
     const bp = st.blueprints.find(b => b.id === bpId);
-    if (bp) return bp.sections.filter(s => s.enabled).map(stageDirectiveId);
-    return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
+    // Blueprint section keys ARE the canonical directive ids now (#1914) — pass them straight to
+    // setup_workspaces (canonicalized, so a legacy persisted blueprint still maps to the real ids).
+    if (bp) return bp.sections.filter(s => s.enabled).map(s => canonicalStageKey(s.key));
+    return enabledOrderedStages(canonicalStageConfig(st.planStageConfig[key]) ?? defaultStageConfig()).map(s => s.id);
   };
 
   // ── Context-updated badge (#175/#756, useSetupSignature #1775) ───────────────

@@ -6,8 +6,8 @@
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import type { RelFocus } from "@/features/planner/relationship/relationshipGraph";
-import { FocusedPlanBody } from "./FocusedPlanBody";
-import { FocusedPermissionsBody } from "./FocusedPermissionsBody";
+import { PlanBody } from "./FocusedPlanBody";
+import { PermissionsBody } from "./FocusedPermissionsBody";
 import { SharedDependenciesSection } from "./SharedDependencies";
 import type { FleetHandlers } from "./focusedHandlers";
 
@@ -19,10 +19,10 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
   const focusedStream = focus?.type === "agent" ? focus.id : undefined;
   return (
     <>
-      <FocusedPlanBody data={data} focus={focus} onFocus={setFocus} />
+      <PlanBody data={data} focus={focus} onFocus={setFocus} />
       {fleet && (
         <div style={{ marginTop: 18 }}>
-          <FocusedPermissionsBody
+          <PermissionsBody
             data={data} {...handlers}
             focusedStream={focusedStream}
             onSelectStream={(id) => setFocus(id ? { type: "agent", id } : null)}

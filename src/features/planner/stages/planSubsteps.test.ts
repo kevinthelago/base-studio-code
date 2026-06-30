@@ -73,10 +73,10 @@ describe("Features stage (Phase 1)", () => {
     expect(signals).toContain("featuresDefined");
   });
 
-  it("the default blueprint runs Features before the Plan (structure) stage", () => {
+  it("the default blueprint runs Features before the Streams stage (#1914)", () => {
     const keys = makeBlueprints().find((b) => b.id === "default")!.sections.map((s) => s.key);
     expect(keys.indexOf("features")).toBeGreaterThanOrEqual(0);
-    expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("structure"));
+    expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("streams"));
   });
 
   it("derive → signals surfaces the features count + confirmation", () => {
