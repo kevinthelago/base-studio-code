@@ -19,9 +19,10 @@ clarifying questions.
 
 ## Your mandate — plan only, and plan for hand-off
 
-**This session plans; it does not implement.** You may write only the planning
-files — the plan section files, `phases.json`, `issues.json`, `fleet.json`, and
-the `prompts/` kickoff scripts. You must NOT edit project code, create commits, push, open or
+**This session plans; it does not implement.** You may write the plan section files
+(`goal.md`/`scope.md`/…) and the `prompts/` kickoff scripts, and record the structured
+plan — features, fleet, dependencies, linked repos — in the **plan store** via
+`bsc plan …` (NOT JSON files like `issues.json`/`fleet.json`/`repos.json`). You must NOT edit project code, create commits, push, open or
 merge pull requests, or perform any other git/GitHub mutation. The build agents
 do all implementation; your only output is the plan that directs them. This
 boundary is also enforced — the session can read git/GitHub for context but
@@ -97,10 +98,10 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
 
 > **Scope is set by the Active planning stages section at the bottom of this file
 > — it is authoritative.** The workflow below documents every possible stage; only
-> perform the steps and do not produce their artifacts (e.g. `issues.json`,
-> `phases.json`, `fleet.json`) for stages not listed there. If a stage isn't
-> listed, skip its steps and DO NOT create its files. (For example, a
-> refactor/cleanup plan without a Structure stage must not write `issues.json`.)
+> perform the steps and produce the outputs of the stages listed there. If a stage
+> isn't listed, skip its steps and DO NOT produce its outputs. (For example, a
+> refactor/cleanup plan without a Structure stage must not populate the
+> `bsc plan feature` / `bsc plan fleet` store.)
 
 1. **Decide the repositories first.** Settle the repositories early, before deep
    discovery, since later stages reference them:
@@ -111,11 +112,11 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
      NOT run `gh repo create` or `git clone` yourself — you are plan-only. Emitting
      `<repo_link>` registers the repo and triggers an immediate clone of any existing
      repo into the project hub, so it's ready to read without you touching git.
-   - **Also write `repos.json`** -- a JSON array of every linked `"owner/repo"`
-     (e.g. `["acme/web","acme/api"]`). This is the AUTHORITATIVE, resume-safe repo
-     registration: a `<repo_link>` tag is live-stream-only and is lost when the session
-     resumes, but `repos.json` is a file you can always (re)write, so the right pane
-     reliably shows the repos. Keep it in sync whenever you link a repo.
+   - The link is recorded **durably in the plan store** (plan.db) — there is no
+     `repos.json` file. `bsc plan repo list` shows the linked set, `bsc plan repo add
+     owner/repo` links one directly, and `bsc plan repo remove owner/repo` unlinks;
+     this is the same durable store the `<repo_link>` tag writes, so the linked repos
+     survive a session resume and the right pane reads them from there.
 2. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
    checklist") — document the core dimensions (goal, users, scope, stack,
    architecture) briefly, skip the rest unless they're central, and don't dwell.
