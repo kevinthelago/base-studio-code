@@ -615,6 +615,18 @@ export function Planning({ visible }: { visible: boolean }) {
     setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
   });
 
+  // Convert an OPEN planner when the sandbox toggle flips (#1988): the launch reads `sandboxConsoles`
+  // only at spawn time, so an already-running planner must be RESTARTED to move into (or out of) the
+  // sealed distro. Restart on every change after the initial mount; each mounted Planning restarts its
+  // OWN pane, so flipping the toggle refreshes every open planner session.
+  const sandboxConsoles = useAppStore((s) => s.sandboxConsoles);
+  const sandboxInit = useRef(true);
+  useEffect(() => {
+    if (sandboxInit.current) { sandboxInit.current = false; return; }
+    void handleRestart();
+    // handleRestart is re-created each render; depend only on the toggle so we restart once per flip.
+  }, [sandboxConsoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Publish / triage / recovery (#1490) ─────────────────────────────────────
   const {
     handlePublish, launchTriage, handleRecover,

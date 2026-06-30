@@ -20,6 +20,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useAppStore } from "@/store";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
+import { resolvePlannerSandbox } from "./plannerSandbox";
 
 export interface PlanningSessionDeps {
   termRef: MutableRefObject<Terminal | null>;
@@ -129,15 +130,20 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
       }
     }
     const startupPrompt = composePlannerIntro(introText, introMode, planningPitch ?? "", firstStageDirective) || undefined;
+    // #1988: honor the sandbox toggle on a restart too — shared with the mount path (plannerSandbox).
+    // This is the path a sandbox-toggle flip relaunches through, so it MUST convert into/out of the cage
+    // (a restart used to always spawn on the host, silently dropping a planner out of the sandbox).
+    const sandbox = await resolvePlannerSandbox(launch.providerId, paths?.planning_dir ?? "", effectiveProjectId);
     await safeInvoke("pty_create", {
       paneId: paneId,
       cols: term.cols,
       rows: term.rows,
-      cwd: paths?.planning_dir ?? "",
+      cwd: sandbox.cwd,
       initCmd: launch.providerId === "bsc-agent" ? launch.initCmd : "claude",
       startupPrompt,
       env: launch.env,
       providerId: launch.providerId,
+      wslDistro: sandbox.wslDistro,
     }, undefined, console.error);
     setRestarting(false);
   }
