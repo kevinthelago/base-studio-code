@@ -26,8 +26,10 @@ const PUBLISHED = {
  *  whether the DELETE_MUTATION ran. */
 function routeInvoke() {
   const graphqlCalls: Array<{ query: string; variables: unknown }> = [];
+  const repoDeleteCalls: string[] = [];
   vi.mocked(invoke).mockImplementation(((cmd: string, args?: Record<string, unknown>) => {
     if (cmd === "list_local_projects") return Promise.resolve([]);
+    if (cmd === "github_delete") { repoDeleteCalls.push(String(args?.path ?? "")); return Promise.resolve(null); }
     if (cmd === "github_graphql") {
       const query = String(args?.query ?? "");
       // The initial PROJECTS_QUERY returns the published project; record + answer DELETE separately.
@@ -44,6 +46,7 @@ function routeInvoke() {
   return {
     deleteMutationRan: () => graphqlCalls.some(c => c.query.includes("deleteProjectV2")),
     deleteDirCalled: () => vi.mocked(invoke).mock.calls.some(c => c[0] === "delete_project_dir"),
+    repoDeletes: () => repoDeleteCalls,
   };
 }
 
@@ -77,6 +80,21 @@ describe("ProjectsList — published delete (Keep vs Delete, #1216)", () => {
     expect(screen.getByText(/board, milestones, issues, and repos stay intact/i)).toBeTruthy();
     expect(screen.getByText(/repos and their code are not deleted/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+  });
+
+  it("Delete everything + repositories deletes each repo, the board, and the local copy", async () => {
+    const r = routeInvoke();
+    render(<ProjectsList />);
+    await screen.findByText("Shipped App");
+    openDeleteModal();
+    // The 3rd, most-destructive option arms its own confirm…
+    fireEvent.click(screen.getByText(/permanently deletes the linked GitHub repositories/i));
+    // …then confirm.
+    fireEvent.click(screen.getByRole("button", { name: /delete everything \+ repos/i }));
+    // Each linked repo is DELETEd, then the board, then the local copy.
+    await waitFor(() => expect(r.repoDeletes()).toContain("repos/o/shipped"));
+    expect(r.deleteMutationRan()).toBe(true);
+    expect(r.deleteDirCalled()).toBe(true);
   });
 
   it("Keep does local cleanup and does NOT run the GitHub DELETE_MUTATION", async () => {

@@ -148,6 +148,7 @@ pub fn run() {
             github::github_post,
             github::github_put,
             github::github_patch,
+            github::github_delete,
             oauth::github_client_id,
             oauth::github_device_start,
             oauth::github_device_poll,

@@ -251,6 +251,8 @@ export function PublishedProjects({
   // safe) vs "delete everything"; choosing the destructive path arms a deliberate second confirm
   // before it runs the GitHub project DELETE_MUTATION.
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  // The third, most-destructive path: also permanently DELETE the GitHub repositories + their code.
+  const [confirmDeleteRepos, setConfirmDeleteRepos] = useState(false);
 
   // Dismiss the new-project form on an outside click (#…) — closes without clearing the title, so a
   // stray click keeps what was typed. The trigger button is excluded so it keeps toggling the form.
@@ -289,6 +291,7 @@ export function PublishedProjects({
     setDeleteTarget(null);
     setDeleteError(null);
     setConfirmDeleteAll(false);
+    setConfirmDeleteRepos(false);
   }
 
   // Remove ONLY the local footprint of a published project (#1216 "Keep the app"): the on-disk hub +
@@ -343,6 +346,49 @@ export function PublishedProjects({
     await removeLocalFootprint(deleteTarget);
     setDeleting(false);
     closeDeleteModal();
+  }
+
+  // "Delete everything + repositories" — the MOST destructive path: handleDeleteEverything PLUS a
+  // best-effort REST delete of every linked GitHub repository (needs the token's `delete_repo` scope).
+  // Repos go first; failures are collected and surfaced (the local copy + board still get removed).
+  async function handleDeleteWithRepos() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const repos = deleteTarget.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
+    const failed: string[] = [];
+    if (githubToken) {
+      for (const fullName of repos) {
+        try {
+          await invoke("github_delete", { token: githubToken, path: `repos/${fullName}` });
+        } catch (e) {
+          console.warn(`repo delete failed for ${fullName}: ${e}`);
+          failed.push(fullName);
+        }
+      }
+      // Then tear down the project board (best-effort, like handleDeleteEverything).
+      try {
+        await invoke("github_graphql", {
+          token: githubToken,
+          query: DELETE_MUTATION,
+          variables: { projectId: deleteTarget.id },
+        });
+      } catch (e) {
+        console.warn(`github project delete failed (removing locally anyway): ${e}`);
+      }
+    }
+    await removeLocalFootprint(deleteTarget);
+    setDeleting(false);
+    if (failed.length > 0) {
+      // Local copy + board are gone, but some repos couldn't be deleted — surface which (a missing
+      // `delete_repo` scope is the usual cause) and keep the modal open so the message is seen.
+      setDeleteError(
+        `Couldn't delete ${failed.length} repositor${failed.length === 1 ? "y" : "ies"}: ${failed.join(", ")}. ` +
+          "Your token may lack the `delete_repo` scope — delete them on GitHub. The local copy and project board were removed.",
+      );
+    } else {
+      closeDeleteModal();
+    }
   }
 
   const titleTrimmed = title.trim();
@@ -584,7 +630,49 @@ export function PublishedProjects({
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
           }}>
-            {!confirmDeleteAll ? (
+            {confirmDeleteRepos ? (
+              (() => {
+                const repoNames = deleteTarget.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
+                return (
+                  <>
+                    <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--danger)" }}>
+                      Delete everything + repositories?
+                    </h3>
+                    <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                      This <b style={{ color: "var(--fg)" }}>permanently deletes</b> the local copy, the GitHub project
+                      board, and{" "}
+                      <b style={{ color: "var(--fg)" }}>
+                        {repoNames.length > 0 ? `${repoNames.length} GitHub repositor${repoNames.length === 1 ? "y" : "ies"}` : "the linked repositories"} and all their code
+                      </b>{" "}
+                      for <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b>.{" "}
+                      <b style={{ color: "var(--danger)" }}>This cannot be undone.</b>
+                    </p>
+                    {repoNames.length > 0 && (
+                      <div className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", marginBottom: 16, lineHeight: 1.7 }}>
+                        {repoNames.map((r) => <div key={r}>· {r}</div>)}
+                      </div>
+                    )}
+                    {deleteError && (
+                      <div className="mono" style={{
+                        padding: "8px 12px", borderRadius: 4, marginBottom: 14,
+                        background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                        border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
+                        fontSize: 11, color: "var(--danger)",
+                      }}>
+                        {deleteError}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="btn ghost" onClick={() => { setConfirmDeleteRepos(false); setDeleteError(null); }} disabled={deleting}>back</button>
+                      <button className="btn danger" onClick={handleDeleteWithRepos} disabled={deleting} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Trash2 size={12} />
+                        {deleting ? "deleting…" : "delete everything + repos"}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()
+            ) : !confirmDeleteAll ? (
               <>
                 <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
                   Remove “{deleteTarget.title}”?
@@ -628,6 +716,20 @@ export function PublishedProjects({
                   </span>
                   <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy AND deletes the GitHub project board. (Your repos and their code are not deleted.)
+                  </span>
+                </button>
+                {/* Delete everything + repositories — the MOST destructive; arms its own confirm. */}
+                <button
+                  className="btn ghost"
+                  onClick={() => { setConfirmDeleteRepos(true); setDeleteError(null); }}
+                  disabled={deleting}
+                  style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                    <Trash2 size={12} /> Delete everything + repositories
+                  </span>
+                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                    Removes the local copy, the GitHub project board, AND permanently deletes the linked GitHub repositories and all their code. This cannot be undone.
                   </span>
                 </button>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

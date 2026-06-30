@@ -198,6 +198,36 @@ pub(crate) async fn github_patch(
     gh_request(reqwest::Method::PATCH, &path, &token, &body, &format!("github_patch {path}")).await
 }
 
+/// `DELETE https://api.github.com/{path}` — e.g. `repos/{owner}/{repo}` to permanently delete a
+/// repository (needs the token's `delete_repo` scope). Unlike the other verbs this does NOT reuse
+/// `gh_request`: repo-delete answers `204 No Content` with an EMPTY body, which `gh_request` would
+/// choke on trying to parse as JSON. Returns `Ok(())` on any 2xx, else a `GitHub API error (...)`.
+#[tauri::command]
+pub(crate) async fn github_delete(token: String, path: String) -> Result<(), String> {
+    let _perf = PerfSpan::new("github_delete");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{path}");
+    let response = gh_std_headers(client.request(reqwest::Method::DELETE, url), &token)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    // The error body may be empty or JSON — extract `message` when present.
+    let body = response.text().await.unwrap_or_default();
+    let msg = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|j| j.get("message").and_then(|m| m.as_str()).map(str::to_string))
+        .unwrap_or_else(|| if body.trim().is_empty() { "Unknown error".into() } else { body });
+    log::warn!("github_delete {path} HTTP {status}: {msg}");
+    Err(format!("GitHub API error ({status}): {msg}"))
+}
+
 // ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
 //
 // REST GETs are cached by endpoint path. On the next request we send the stored
