@@ -15,7 +15,7 @@ import { parseFeaturesFile } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { type PlanIssue } from "../issues/planIssues";
-import { pruneCompletedStreams, doneIssueRefs } from "../fleet/streamCompletion";
+import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import { canLaunchTriage, publishBlockReason } from "@/features/github/lib/projectSync";
