@@ -1,0 +1,4 @@
+# The Linux sidecars are build artifacts (CI / local cross-build), not checked in. See ../README.md.
+bsc
+bsc-agent
+*.exe
