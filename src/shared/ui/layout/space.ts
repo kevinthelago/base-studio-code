@@ -39,6 +39,16 @@ export function space(v: Space | undefined): number | undefined {
   return typeof v === "number" ? v : SCALE[v];
 }
 
+/** Resolve a friendly `Align` to its CSS box-alignment value. Shared by the flex + grid kit. */
+export function alignValue(a: Align): CSSProperties["alignItems"] {
+  return ALIGN[a];
+}
+
+/** Resolve a friendly `Justify` to its CSS distribution value. Shared by the flex + grid kit. */
+export function justifyValue(j: Justify): CSSProperties["justifyContent"] {
+  return JUSTIFY[j];
+}
+
 /** Resolve a padding shorthand: a single `Space` (all sides) or `[block, inline]`. */
 export function pad(v: Space | [Space, Space] | undefined): CSSProperties["padding"] {
   if (v == null) return undefined;
