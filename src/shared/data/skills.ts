@@ -14,6 +14,8 @@ export type SkillKind = "workflow" | "scaffold" | "codemod" | "review" | "docs";
 /** Where a skill came from — drives its source tag style. */
 export type SkillSource = "first-party" | "team" | "imported" | "community";
 
+import { overlayGlob } from "@/shared/lib/core/configOverrides";
+
 /** Permission profile a skill is allowed to run under (mirrors agentProfiles). */
 export type SkillProfile = "build" | "review" | "docs" | "auto" | "sandbox";
 
@@ -104,9 +106,9 @@ const skillModules = import.meta.glob<{ default: Skill }>("@data/skills/*.json",
 
 /** The packaged skill library, assembled from the per-skill JSON definitions (sorted by id for a
  *  stable order). */
-export const SKILLS: Skill[] = Object.entries(skillModules)
+export const SKILLS: Skill[] = overlayGlob("skills", skillModules)
   .sort(([a], [b]) => a.localeCompare(b))
-  .map(([, m]) => m.default);
+  .map(([, s]) => s);
 
 /** Compact number formatter (e.g. 1234 → "1.2k"). Single source: re-exports the chart `fmt`
  *  (#1528) so there's one impl. */
