@@ -199,18 +199,16 @@ export function Planning({ visible }: { visible: boolean }) {
     [projectLocalRepos, effectiveProjectId, activeProjectId, effectiveRepos],
   );
 
-  // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): owns the
-  // <repo_link>-surfaced repo set and clones each linked repo into the project dir as it appears.
-  const { repoLinkFullNames, setRepoLinkFullNames } = usePlannerRepoManagement(effectiveProjectId, effectiveRepos);
+  // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): clones each linked
+  // repo (DB-owned, surfaced via the plan.db poll into effectiveRepos) into the project dir.
+  usePlannerRepoManagement(effectiveProjectId, effectiveRepos);
 
   const isExisting = !!activeProjectId;
 
-  // Canonical set of repos for publish/sync — union of project-linked repos,
-  // Claude-surfaced repo_link tags, and the store's planningRepo fallback.
-  // Feeds both handlePublish and the GitHubStructureCard.
+  // Canonical set of repos for publish/sync — union of project-linked repos (DB-owned) and the
+  // store's planningRepo fallback. Feeds both handlePublish and the GitHubStructureCard.
   const publishRepos = [...new Set([
     ...effectiveRepos,
-    ...repoLinkFullNames,
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
 
@@ -487,7 +485,6 @@ export function Planning({ visible }: { visible: boolean }) {
   const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream({
     projectId: effectiveProjectId,
     setActiveSection,
-    setRepoLinkFullNames,
   });
   const apLastSnapLen  = useRef(0);
   const apLastAnswered = useRef(0);
@@ -611,7 +608,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint } = usePlanningSession({
     termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
-    stageIdsFor, refreshSetupSig, setRepoLinkFullNames,
+    stageIdsFor, refreshSetupSig,
     setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
   });
 

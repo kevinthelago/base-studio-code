@@ -112,14 +112,14 @@ right mode:
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
-   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />` (the app
-     clones it into the project hub for you), then read its `CLAUDE.md`, top-level
-     manifests, and recent `gh issue list` / `gh pr list` for orientation. You are
-     plan-only — don't clone or mutate git yourself.
+   - **If listed:** for each, run `bsc plan repo add owner/repo` (the app clones it
+     into the project hub for you), then read its `CLAUDE.md`, top-level manifests,
+     and recent `gh issue list` / `gh pr list` for orientation. You are plan-only —
+     don't clone or mutate git yourself.
    - **If none listed:** `gh api user --jq .login`, then
      `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
      present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
-     emit `<repo_link>` for each confirmed repo (the app clones them).
+     run `bsc plan repo add owner/repo` for each confirmed repo (the app clones them).
 2. **Set up automations & extensions.** Read `automations.md` and `extensions.md`,
    and run the **Automations & extensions** step (see that section) — assign the MCP
    servers + automations the project's agents need.

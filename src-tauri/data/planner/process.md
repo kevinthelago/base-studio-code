@@ -666,10 +666,11 @@ context; you never mutate it.
 
 ## App integration tags
 
-**Link a repository** (emit once per repo the moment it's confirmed — created,
-listed, or discovered; duplicates are harmless):
+**Link a repository** (run once per repo the moment it's confirmed — created,
+listed, or discovered; duplicates are harmless — it clones the repo into the hub
+and records the link durably in plan.db):
 ```
-<repo_link full_name="owner/repo" />
+bsc plan repo add owner/repo
 ```
 **Suggest an automation** (read `automations.md` first; omit `schedule` for
 on-demand commands — otherwise it's a cron expression):
