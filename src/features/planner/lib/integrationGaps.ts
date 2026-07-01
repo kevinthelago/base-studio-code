@@ -10,7 +10,6 @@
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import { resolveMcpServers, mcpFromCatalog } from "@/features/mcp/lib/mcpServers";
 import { connector, type DeclaredSource } from "./sourceConfig";
-import { parseMcpAssigns } from "./planExtensions";
 
 export type IntegrationKind = "mcp" | "connector" | "credential";
 export type IntegrationStatus = "assigned" | "available" | "missing";
@@ -95,15 +94,16 @@ export function integrationGaps(input: IntegrationGapInput): IntegrationGaps {
     }
   };
 
-  // 1. MCP servers — keyword matches in the plan text + any explicit <mcp_assign> the planner wrote.
+  // 1. MCP servers — keyword matches in the plan text + every server the plan actually ASSIGNED
+  // (recorded with `bsc plan mcp add`, resolved into the store by the plan.db poll — no longer a tag).
   const mcpNeeds = new Map<string, { label: string; reason: string }>();
   for (const r of MCP_RULES) {
     if (r.re.test(text)) mcpNeeds.set(r.ref, { label: r.label, reason: r.reason });
   }
-  for (const name of parseMcpAssigns(text)) {
-    if (!mcpNeeds.has(name)) mcpNeeds.set(name, { label: name, reason: "the plan assigns this server" });
-  }
   const scoped = resolveMcpServers(mcpServers, projectId);
+  for (const s of scoped) {
+    if (!mcpNeeds.has(s.name)) mcpNeeds.set(s.name, { label: s.name, reason: "the plan assigns this server" });
+  }
   for (const [name, { label, reason }] of mcpNeeds) {
     const isAssigned = scoped.some((s) => s.name.toLowerCase() === name.toLowerCase());
     const resolvable = mcpResolvable(name);
