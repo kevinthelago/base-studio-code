@@ -39,12 +39,22 @@ describe("ServiceTargetEditor (deployTargetSection, #1636)", () => {
 });
 
 describe("ServiceDeploySections (deployShipSections, #1636)", () => {
-  it("renders the pipeline / environments / config & secrets cards", () => {
+  it("renders the pipeline / environments / config & secrets / rollout cards, collapsed by default", () => {
     const s = svc0();
     render(<ServiceDeploySections svc={s} setSvc={() => {}} />);
+    // Card headers are always visible…
     expect(screen.getByText("CI / CD pipeline")).toBeInTheDocument();
     expect(screen.getByText("Environments")).toBeInTheDocument();
     expect(screen.getByText("Config & secrets")).toBeInTheDocument();
+    expect(screen.getByText("Rollout & health")).toBeInTheDocument();
+    // …but each card is collapsed, so its body (the rollout controls) is hidden until opened.
+    expect(screen.queryByText("auto-rollback")).not.toBeInTheDocument();
+  });
+
+  it("clicking a card header expands its body", () => {
+    const s = svc0();
+    render(<ServiceDeploySections svc={s} setSvc={() => {}} />);
+    fireEvent.click(screen.getByText("Rollout & health"));
     expect(screen.getByText("rollout")).toBeInTheDocument();
     expect(screen.getByText("auto-rollback")).toBeInTheDocument();
   });

@@ -8,12 +8,12 @@ import { useState } from "react";
 import {
   PLATFORMS, platform, WORKLOAD, ORCHESTRATORS, REPLICA_OPTIONS,
   PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
-  hostMeta, serviceMode,
+  hostMeta, serviceMode, serviceTargetDefined,
   type DeployService, type Workload,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForwardMethod,
 } from "../lib/deployConfig";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
-import { prop, chip, Seg, Field, Toggle, Select } from "./deployPrimitives";
+import { prop, chip, Card, Seg, Field, Toggle, Select } from "./deployPrimitives";
 
 /** Cloud body (#1192) — today's card: platform dropdown → workload → region/build/runtime →
  *  containerization & orchestration for container workloads. Unchanged from the original. */
@@ -219,10 +219,16 @@ export function ServiceTargetEditor({ svc, setSvc }: {
   svc: DeployService; setSvc: (patch: Partial<DeployService>) => void;
 }) {
   const mode: DeployMode = serviceMode(svc);
+  const targeted = serviceTargetDefined(svc);
+  // Collapsed-header summary of the chosen target (platform / local kind), or a prompt when unset.
+  const targetHint = targeted
+    ? (mode === "local" ? (svc.localKind ?? "local") : (platform(svc.platform).name || "target set"))
+    : "not set";
   return (
     <>
-      {/* selected service meta */}
-      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
+      {/* selected service meta — bare identity line (#1421 follow-up, 1a): what this repo IS, not a
+          config field, so it stays above the numbered cards rather than inside one. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         {(() => { const h = hostMeta(svc.host); return (
           <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
             <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
@@ -237,18 +243,22 @@ export function ServiceTargetEditor({ svc, setSvc }: {
         {svc.proposed && <span style={prop}>✦ proposed</span>}
       </div>
 
-      {/* Cloud · Local mode toggle (#1192) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-        <span style={grpLabel}>mode</span>
-        <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
-          onChange={(v) => setSvc({ mode: v, proposed: false })} />
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
-          {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
-        </span>
-      </div>
+      {/* 01 · Target & build — mode + platform/region/build (+ containerization for cloud). Starts
+          open only while no target is set, so an unconfigured repo surfaces the picker immediately. */}
+      <Card n="01" title="Target & build" hint={targetHint} done={targeted} defaultOpen={!targeted}>
+        {/* Cloud · Local mode toggle (#1192) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+          <span style={grpLabel}>mode</span>
+          <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
+            onChange={(v) => setSvc({ mode: v, proposed: false })} />
+          <span style={{ flex: 1 }} />
+          <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
+            {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
+          </span>
+        </div>
 
-      {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
+        {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
+      </Card>
     </>
   );
 }
