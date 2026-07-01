@@ -140,7 +140,7 @@ For each repo `{short}`:
      repo's open issues (priority labels P0–P3, this repo's label/area
      conventions, what "stale" means here), grounded in the plan's priorities.
 5. **Register both** so the app auto-assigns them as that repo's startup prompts
-   (see `<startup_script>` under "App integration tags"). Once registered,
+   (see `bsc plan startup add` under "App integration tags"). Once registered,
    opening this repo's console uses the kickoff and its triage pane uses the
    triage script — no manual assignment needed.
 
@@ -712,12 +712,12 @@ echo '{
   "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
 }' | bsc plan deploy set
 ```
-**Register a per-repo starting script** (emit once you've written the file to
-`prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
+**Register a per-repo starting script** (run once you've written the file to
+`prompts/`; `--mode` is `dev` or `triage`, `--path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
 ```
-<startup_script repo="owner/repo" mode="dev" path="prompts/web-kickoff.md" />
-<startup_script repo="owner/repo" mode="triage" path="prompts/web-triage.md" />
+bsc plan startup add owner/repo --mode dev --path prompts/web-kickoff.md
+bsc plan startup add owner/repo --mode triage --path prompts/web-triage.md
 ```
 
 **Grant each stream its shell commands** — YOU GENERATE this allowlist at plan time, as

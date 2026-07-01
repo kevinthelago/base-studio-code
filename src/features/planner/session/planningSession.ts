@@ -48,49 +48,9 @@ export function buildSectionSkipMessage(sectionTitle: string): string {
   return `[The user chose to SKIP the optional "${sectionTitle}" section in the planner UI — do not work on it; continue to the next section.]`;
 }
 
-export interface StartupScriptTag {
-  /** Repo full_name (owner/name) the script belongs to. */
-  repo: string;
-  /** Which session the script kicks off: a dev console or a triage pass. */
-  mode: "dev" | "triage";
-  /** Path the planner wrote, relative to its project dir (e.g. prompts/web-kickoff.md). */
-  path: string;
-}
-
-const STARTUP_SCRIPT_RE = () =>
-  new RegExp(
-    `<startup_script\\s+([^>]*?)\\/>`,
-    "g",
-  );
-
-/**
- * Parse every `<startup_script repo="owner/repo" mode="dev|triage" path="..." />`
- * tag the planner emits to register a per-repo starting script. Attributes may
- * use straight or curly quotes and appear in any order. Tags missing a repo or
- * path, or with an unrecognized mode, are skipped.
- */
-export function parseStartupScripts(text: string): StartupScriptTag[] {
-  const re = STARTUP_SCRIPT_RE();
-  const out: StartupScriptTag[] = [];
-  const attr = (attrs: string, k: string) =>
-    new RegExp(`\\b${k}=${Q}([^\\u0022\\u201c\\u201d]*)${Q}`).exec(attrs)?.[1];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const attrs = m[1];
-    const repo = attr(attrs, "repo")?.trim();
-    const path = attr(attrs, "path")?.trim();
-    const mode = (attr(attrs, "mode")?.trim() ?? "dev").toLowerCase();
-    if (repo && path && (mode === "dev" || mode === "triage")) {
-      out.push({ repo, mode, path });
-    }
-  }
-  return out;
-}
-
-/** Remove every `<startup_script>` tag so it never prints in the terminal. */
-export function stripStartupScripts(text: string): string {
-  return text.replace(STARTUP_SCRIPT_RE(), "");
-}
+// Startup scripts moved to plan.db (#2010) — the planner records per-repo kickoff/triage prompt
+// docs with `bsc plan startup add`; the section poll resolves each `path` via `scriptDocRelpath`
+// (below) and auto-assigns it. (The `<startup_script>` stream tag + its parser are gone.)
 
 /**
  * Build the unified-store relpath for a script the planner wrote to its project
