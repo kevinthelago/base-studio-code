@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, uid, canonicalStageKey, canonicalizeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, uid, dedupeSections } from "../stages/blueprints";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 
@@ -20,9 +20,7 @@ function coerceSection(v: unknown): BlueprintStage | null {
   const name = str(o.name);
   if (!key || !name) return null;
   return {
-    // Canonicalize a legacy stage key on import (#1914) — a shared/old-vocab blueprint that carries
-    // `repos`/`structure`/`permissions`/`mcp` resolves to the collapsed canonical stage.
-    uid: uid("sec"), key: canonicalStageKey(key), name,
+    uid: uid("sec"), key, name,
     glyph: str(o.glyph, "✚"),
     icon: str(o.icon, "category"),
     hue: typeof o.hue === "number" ? o.hue : 250,
@@ -62,9 +60,8 @@ export function coerceBlueprint(
   // STAGES, one per project pane. (NOT the per-stage context files, which a stage like Context
   // produces itself.) The internal model keeps the field name `sections`.
   const rawStages = Array.isArray(o.stages) ? o.stages : Array.isArray(o.sections) ? o.sections : [];
-  // Canonicalize + dedup the section keys (#1914): a forked/old-vocab blueprint carrying both a legacy
-  // key and its canonical twin (e.g. `structure` + `permissions` → `streams`) collapses to one.
-  const sections = canonicalizeSections(rawStages.map(coerceSection).filter(Boolean) as BlueprintStage[]);
+  // Dedup the section keys defensively — a hand-edited/imported blueprint could carry a duplicate.
+  const sections = dedupeSections(rawStages.map(coerceSection).filter(Boolean) as BlueprintStage[]);
   if (sections.length === 0 && !allowEmptySections) return null;
   const category = (BP_CATEGORIES as readonly string[]).includes(str(o.category))
     ? (str(o.category) as Blueprint["category"]) : undefined;

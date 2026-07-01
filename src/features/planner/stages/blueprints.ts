@@ -6,6 +6,7 @@
 //
 // Mirrors design/base-studio-code-projects/Blueprints.html.
 
+import blueprintMeta from "@data/planner/blueprint-meta.json";
 import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
 import { type ClassificationSignals } from "./classification";
 import {
@@ -144,22 +145,18 @@ export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
  *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
  *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
 export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
-export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = ["greenfield", "transform", "harden", "maintain", "data"];
+// The category list + display metadata + stage-key aliases load from @data/planner/blueprint-meta.json
+// (#2027 P1) — editable without a rebuild, part of the exportable config bundle.
+export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = blueprintMeta.categories as BlueprintCategory[];
 
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
  *  (operate) — selects the planner intro at launch. */
 export type BlueprintMode = "create" | "operate";
 
-/** Display metadata per category (label + accent hue for the badge/filter). */
-export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number }> = {
-  greenfield: { label: "Greenfield", h: 145 },
-  transform:  { label: "Transform",  h: 230 },
-  harden:     { label: "Harden",     h: 25 },
-  maintain:   { label: "Maintain",   h: 70 },
-  // Data-acquisition blueprints (#779) — distinct from the software-lifecycle
-  // categories above. They write into a canonical Data Model rather than code.
-  data:       { label: "Data",       h: 280 },
-};
+/** Display metadata per category (label + accent hue for the badge/filter). From blueprint-meta.json;
+ *  `data` (#779) is the data-acquisition category, distinct from the software-lifecycle ones. */
+export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number }> =
+  blueprintMeta.categoryMeta as Record<BlueprintCategory, { label: string; h: number }>;
 
 /** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
  *  populates this; the Library card reads it for the sync badge. Absent ⇒ local-only. */
@@ -285,54 +282,28 @@ export function filterBlueprints(blueprints: Blueprint[], opts: { query?: string
 
 export const DEFAULT_BLUEPRINT_ID = "default";
 
-// ── Stage-key grandfathering (#1914) ─────────────────────────────────────────
-// The unified stage vocabulary (#1914) collapsed the old base-key/fold split into single canonical
-// stage keys — the merged repos+deploy stage is `deployment`, the merged structure+permissions stage
-// is `streams`, and `mcp` was renamed `mcps` — each now ONE def in `data/stages/`. A blueprint
-// (or per-project stage config) authored under the OLD vocabulary still carries the legacy keys, so
-// map them through this alias on every blueprint-load / persisted-state read path: an in-flight
-// project keeps resolving to the real, collapsed stage defs (and its confirmations/config survive).
-export const STAGE_KEY_ALIAS: Record<string, string> = {
-  repos: "deployment",
-  structure: "streams",
-  permissions: "streams",
-  mcp: "mcps",
-};
-
-/** Canonicalize a (possibly legacy) stage key to its current vocabulary token (#1914). An
- *  already-canonical or unknown key passes through unchanged. */
-export function canonicalStageKey(key: string): string {
-  return STAGE_KEY_ALIAS[key] ?? key;
-}
-
-/** Canonicalize a persisted blueprint's section keys to the current vocabulary AND dedup (#1914):
- *  a forked/imported blueprint authored under the old split may carry BOTH a legacy key and its
- *  canonical twin (e.g. `repos` + `deployment`, or `structure` + `permissions`) — collapse to the
- *  first occurrence so the focused pane / gates resolve a single, real stage. Only the key is
- *  remapped (the frozen section snapshot's display fields are left as-is). */
-export function canonicalizeSections(sections: BlueprintStage[]): BlueprintStage[] {
+/** Dedup a blueprint's section list by stage key — a hand-edited or imported blueprint could carry
+ *  two sections with the same key; keep the first so the focused pane / gates resolve a single stage. */
+export function dedupeSections(sections: BlueprintStage[]): BlueprintStage[] {
   const seen = new Set<string>();
   const out: BlueprintStage[] = [];
   for (const s of sections) {
-    const key = canonicalStageKey(s.key);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(key === s.key ? s : { ...s, key });
+    if (seen.has(s.key)) continue;
+    seen.add(s.key);
+    out.push(s);
   }
   return out;
 }
 
-/** Build a section instance from a def key + per-blueprint overrides. The key is canonicalized
- *  (#1914) so a legacy `repos`/`structure`/`permissions`/`mcp` ref resolves to its collapsed def. */
+/** Build a section instance from a def key + per-blueprint overrides. */
 export function mkStage(
   key: string,
   { enabled = true, expanded = false, optional }:
     { enabled?: boolean; expanded?: boolean; optional?: boolean } = {},
 ): BlueprintStage {
-  const ckey = canonicalStageKey(key);
-  const def = STAGE_DEFS[ckey];
+  const def = STAGE_DEFS[key];
   return {
-    uid: uid("sec"), key: ckey, ...def, enabled, expanded,
+    uid: uid("sec"), key, ...def, enabled, expanded,
     // explicit `optional` overrides the def's; otherwise inherit it
     optional: optional ?? def.optional,
   };
@@ -353,10 +324,9 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
   // id, and leave user-created / forked / imported blueprints untouched (#923 cleanup).
   const merged = persisted
     .filter((b) => b.origin !== "built-in" || byId.has(b.id))
-    // Built-ins are replaced by their fresh (canonical) code def; everything else is a persisted
-    // user/forked/imported blueprint — canonicalize its section keys + dedup so a blueprint authored
-    // under the OLD stage vocabulary keeps resolving to the collapsed defs (#1914).
-    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : { ...b, sections: canonicalizeSections(b.sections) }));
+    // Built-ins are replaced by their fresh code def; everything else is a persisted
+    // user/forked/imported blueprint — dedup its section keys defensively.
+    .map((b) => (b.origin === "built-in" && byId.has(b.id) ? byId.get(b.id)! : { ...b, sections: dedupeSections(b.sections) }));
   for (const b of fresh) if (!merged.some((x) => x.id === b.id)) merged.push(b);
   return merged;
 }
@@ -367,9 +337,7 @@ export function refreshBuiltIns(persisted: Blueprint[]): Blueprint[] {
 export interface BlueprintDef extends Omit<Blueprint, "sections"> {
   /** Display order within the built-in library. */
   order?: number;
-  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag. The
-   *  key is canonicalized at load (#1914), so a legacy `repos`/`structure`/`permissions`/`mcp` ref
-   *  resolves to its collapsed def. */
+  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag. */
   sections: { key: string; optional?: boolean }[];
 }
 
@@ -385,8 +353,7 @@ export function makeBlueprints(): Blueprint[] {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,
-      // mkStage canonicalizes each key (#1914); dedup collapses any legacy+canonical twin pair.
-      sections: canonicalizeSections(sections.map((s) => mkStage(s.key, { optional: s.optional }))),
+      sections: dedupeSections(sections.map((s) => mkStage(s.key, { optional: s.optional }))),
     }));
 }
 

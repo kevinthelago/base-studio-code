@@ -4,7 +4,7 @@ import {
   stageStatus, incompleteStages, planStagesComplete, currentStage, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, stageDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
-  canonicalStageKey, STAGE_KEY_ALIAS, canonicalizeSections,
+  dedupeSections,
   STAGE_DEFS, type BlueprintStage, type Blueprint,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
@@ -355,9 +355,6 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
     expect(sig).not.toContain("dependenciesDefined");
     expect(evalGate(dep.gateRule!, { repoCount: 1, deploymentDefined: false }).done).toBe(false);
     expect(evalGate(dep.gateRule!, { repoCount: 1, deploymentDefined: true }).done).toBe(true);
-    // a legacy `repos` ref canonicalizes to the same collapsed `deployment` def.
-    expect(mkStage("repos").key).toBe("deployment");
-    expect(mkStage("repos").name).toBe("Deployment");
   });
 
   it("the greenfield blueprints carry the collapsed `deployment` stage (#1914)", () => {
@@ -380,9 +377,6 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
     expect(subKeys[subKeys.length - 1]).toBe("fleet"); // the fleet marker is the focused-pane signal
     const sig = streams.gateRule!.require.map((r) => r.signal);
     expect(sig).toEqual(expect.arrayContaining(["featuresDefined", "fleetStreams", "profilesComplete", "sharedDepsLocked"]));
-    // a legacy `structure`/`permissions` ref canonicalizes to the same collapsed `streams` def.
-    expect(mkStage("structure").key).toBe("streams");
-    expect(mkStage("permissions").key).toBe("streams");
   });
 
   it("greenfield blueprints carry the collapsed `streams` stage (#1914)", () => {
@@ -396,38 +390,16 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
   });
 });
 
-describe("stage-key grandfathering — canonicalStageKey / STAGE_KEY_ALIAS / canonicalizeSections (#1914)", () => {
-  it("maps every legacy key to its collapsed canonical token, passing canonical/unknown through", () => {
-    expect(canonicalStageKey("repos")).toBe("deployment");
-    expect(canonicalStageKey("structure")).toBe("streams");
-    expect(canonicalStageKey("permissions")).toBe("streams");
-    expect(canonicalStageKey("mcp")).toBe("mcps");
-    // already-canonical + unknown keys are untouched
-    expect(canonicalStageKey("deployment")).toBe("deployment");
-    expect(canonicalStageKey("discovery")).toBe("discovery");
-    expect(canonicalStageKey("goal")).toBe("goal");
-    // the alias table IS the full legacy set
-    expect(STAGE_KEY_ALIAS).toEqual({ repos: "deployment", structure: "streams", permissions: "streams", mcp: "mcps" });
-  });
-
-  it("mkStage resolves a legacy key to the collapsed def and stores the canonical key", () => {
-    expect(mkStage("mcp").key).toBe("mcps");
-    expect(mkStage("mcp").name).toBe("MCPs");
-  });
-
-  it("canonicalizeSections remaps a forked blueprint's old keys and DEDUPS a legacy+canonical twin", () => {
-    // A forked blueprint authored under the old split carries BOTH `structure` and `permissions`
-    // (and `repos`) — they collapse to a single `streams` (and `deployment`), first-occurrence wins.
-    const forked = [mkStage("discovery"), mkStage("repos"), mkStage("structure"), mkStage("permissions")];
-    // mkStage already canonicalizes, so simulate a raw persisted snapshot with legacy keys:
-    const raw = forked.map((s, i) => ({ ...s, key: ["discovery", "repos", "structure", "permissions"][i] }));
-    const out = canonicalizeSections(raw);
+describe("dedupeSections", () => {
+  it("keeps the first section per key and drops later duplicates", () => {
+    const raw = [mkStage("discovery"), mkStage("deployment"), mkStage("deployment"), mkStage("streams")];
+    const out = dedupeSections(raw);
     expect(out.map((s) => s.key)).toEqual(["discovery", "deployment", "streams"]);
   });
 
   it("a built-in blueprint's planner-overview stage keys ARE the canonical directive ids", () => {
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
-    const overview = complete.sections.filter((s) => s.enabled).map((s) => canonicalStageKey(s.key));
+    const overview = complete.sections.filter((s) => s.enabled).map((s) => s.key);
     expect(overview).toEqual(
       ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
