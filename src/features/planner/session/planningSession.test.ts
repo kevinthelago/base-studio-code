@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parsePlanFocus, stripPlanFocus, buildSectionConfirmMessage, buildSectionSkipMessage,
-  parseStartupScripts, stripStartupScripts, scriptDocRelpath,
+  scriptDocRelpath,
   parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
 
@@ -61,53 +61,6 @@ describe("buildSectionSkipMessage (#921)", () => {
 
   it("is a single line (no embedded newline that would submit early)", () => {
     expect(buildSectionSkipMessage("MCP Servers")).not.toContain("\n");
-  });
-});
-
-describe("parseStartupScripts", () => {
-  it("parses repo, mode, and path from a tag", () => {
-    expect(parseStartupScripts('<startup_script repo="acme/web" mode="dev" path="prompts/web-kickoff.md" />')).toEqual([
-      { repo: "acme/web", mode: "dev", path: "prompts/web-kickoff.md" },
-    ]);
-  });
-
-  it("parses several tags and both modes", () => {
-    const text =
-      '<startup_script repo="acme/web" mode="dev" path="prompts/web-kickoff.md" />\n' +
-      '<startup_script repo="acme/web" mode="triage" path="prompts/web-triage.md" />';
-    expect(parseStartupScripts(text)).toEqual([
-      { repo: "acme/web", mode: "dev", path: "prompts/web-kickoff.md" },
-      { repo: "acme/web", mode: "triage", path: "prompts/web-triage.md" },
-    ]);
-  });
-
-  it("defaults mode to dev when omitted", () => {
-    expect(parseStartupScripts('<startup_script repo="o/r" path="prompts/x.md" />')).toEqual([
-      { repo: "o/r", mode: "dev", path: "prompts/x.md" },
-    ]);
-  });
-
-  it("tolerates attribute order and curly quotes", () => {
-    expect(parseStartupScripts('<startup_script path=“prompts/x.md” mode=“triage” repo=“o/r” />')).toEqual([
-      { repo: "o/r", mode: "triage", path: "prompts/x.md" },
-    ]);
-  });
-
-  it("skips tags missing repo or path, or with an unknown mode", () => {
-    expect(parseStartupScripts('<startup_script mode="dev" path="prompts/x.md" />')).toEqual([]);
-    expect(parseStartupScripts('<startup_script repo="o/r" mode="dev" />')).toEqual([]);
-    expect(parseStartupScripts('<startup_script repo="o/r" mode="bogus" path="prompts/x.md" />')).toEqual([]);
-  });
-
-  it("returns [] when no tag is present", () => {
-    expect(parseStartupScripts("plain terminal output")).toEqual([]);
-  });
-});
-
-describe("stripStartupScripts", () => {
-  it("removes startup_script tags from the buffer", () => {
-    const text = 'a <startup_script repo="o/r" mode="dev" path="prompts/x.md" /> b';
-    expect(stripStartupScripts(text)).toBe("a  b");
   });
 });
 
