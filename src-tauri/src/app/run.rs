@@ -98,6 +98,13 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
+            // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
+            // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
+            // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure
+            // the embedded fallback stays in force, so a seed error is non-fatal.
+            if let Err(e) = crate::platform::config::ensure_seeded() {
+                log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
+            }
             // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
             // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
             // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
