@@ -677,6 +677,52 @@ pub(crate) fn read_sandbox_plan_sections(key: String) -> Result<std::collections
     Ok(parse_section_dump(&decode_wsl(&out.stdout)))
 }
 
+/// Read a file's raw bytes from the sandbox distro (#1988) — binary-safe, for the SQLite `plan.db`.
+/// The distro `base64`-encodes the file so the transfer over the `wsl` pipe is pure ASCII (raw binary
+/// stdout gets mangled by the Windows console layer — verified); we keep only the base64 alphabet
+/// (stripping any wrapping/CR wsl adds) and decode. Round-trip verified byte-exact against the distro.
+fn sandbox_read_bytes(linux_path: &str) -> Result<Vec<u8>, String> {
+    let script = format!("base64 -w0 {}", sh_squote(linux_path));
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(decode_wsl(&out.stderr).trim().to_string());
+    }
+    let b64: String = decode_wsl(&out.stdout)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='))
+        .collect();
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()).map_err(|e| format!("base64 decode: {e}"))
+}
+
+/// Mirror a sandboxed project's `plan.db` from the distro hub back to the HOST hub (#1988), so every
+/// host-side plan.db reader (`plan_list_issues`/`plan_get_fleet`/… the poll uses, plus publish + fleet
+/// launch) reflects what the in-cage planner wrote. Called each poll tick while a planner runs
+/// sandboxed. A no-op — `Ok(false)` — when there's no in-distro db yet or its bytes are unchanged
+/// (so an identical db never churns the file or its readers); `Ok(true)` when it copied.
+#[tauri::command]
+pub(crate) fn sync_sandbox_plan_db(key: String) -> Result<bool, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let distro_db = format!("{}/plan.db", sandbox_project_path(&key));
+    let bytes = match sandbox_read_bytes(&distro_db) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return Ok(false), // the sandboxed planner hasn't written a plan.db yet — nothing to sync
+    };
+    let host_db = crate::platform::paths::project_dir(&key).join("plan.db");
+    if std::fs::read(&host_db).map(|h| h == bytes).unwrap_or(false) {
+        return Ok(false); // unchanged
+    }
+    if let Some(parent) = host_db.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&host_db, &bytes).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

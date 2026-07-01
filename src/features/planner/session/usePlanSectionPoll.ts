@@ -65,6 +65,16 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         const saved = store.planSections[effectiveProjectId] ?? {};
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
 
+        // Sandbox (#1988): a planner launched INSIDE the WSL2 cage writes plan.db + section files into
+        // the distro hub. Mirror the in-distro plan.db back to the host FIRST, so the DB-owned reads
+        // below (issues/features/fleet/deploy/deps/mcp/automations/startup/blueprint) — and publish +
+        // fleet launch, which read the host plan.db — reflect the sandboxed planner's work. Sections
+        // (file-based) are read from the distro directly further down.
+        const sandboxed = wantsSandboxLaunch(store.sandboxConsoles, plannerLaunchConfig(store, {}).providerId, planningDir);
+        if (sandboxed) {
+          await invoke("sync_sandbox_plan_db", { key: effectiveProjectId }).catch(() => { /* no in-distro db yet — ignore */ });
+        }
+
         // Issues are owned by plan.db now (#plan-db) — the canonical store, not an issues.json
         // file. Read them straight from the DB and reflect into the "issues" section so every
         // downstream consumer (publish, structure card, grading, the mobile mirror) is unchanged.
@@ -217,10 +227,9 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
 
         // Section files: a planner launched INSIDE the WSL2 cage (#1988) writes them into the distro
-        // hub, so read from there (via `read_sandbox_plan_sections`) when this session is sandboxed —
-        // else the host hub. Fall back to the host read if the distro read is empty (e.g. the
-        // relocation fell back to host at launch), so sections never silently vanish from the pane.
-        const sandboxed = wantsSandboxLaunch(store.sandboxConsoles, plannerLaunchConfig(store, {}).providerId, planningDir);
+        // hub, so read from there (via `read_sandbox_plan_sections`) when this session is sandboxed
+        // (`sandboxed`, computed above) — else the host hub. Fall back to the host read if the distro
+        // read is empty (e.g. the relocation fell back to host at launch), so sections never vanish.
         let result: Record<string, string>;
         if (sandboxed) {
           result = await invoke<Record<string, string>>("read_sandbox_plan_sections", { key: effectiveProjectId })
