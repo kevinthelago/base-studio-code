@@ -31,5 +31,5 @@ pub(crate) use crate::extensions::hooks::write_session_hooks;
 pub(crate) use crate::extensions::skills::write_session_skills;
 pub(crate) use crate::extensions::cfg::{HookCfg, McpServerCfg, SkillCfg};
 pub(crate) use crate::fleet::protocols::{
-    FLEET_PROTOCOL_MD, INJECTION_RESISTANCE_MARKER, INJECTION_RESISTANCE_MD,
+    fleet_protocol_md, injection_resistance_md, INJECTION_RESISTANCE_MARKER,
 };

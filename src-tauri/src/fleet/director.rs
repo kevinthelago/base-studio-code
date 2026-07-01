@@ -3,8 +3,12 @@ use crate::fleet::protocols::append_section_once;
 
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
-/// (it runs at the hub, so it never gets the worker worktree protocol).
-pub(crate) const DIRECTOR_PROTOCOL_MD: &str = include_str!("../../data/fleet/director-protocol.md");
+/// (it runs at the hub, so it never gets the worker worktree protocol). Loaded at runtime via
+/// [`crate::platform::config::load_str`] (#2027 P2) — the user's `fleet/director-protocol.md` under
+/// the config dir if present, else the embedded seed.
+pub(crate) fn director_protocol_md() -> String {
+    crate::platform::config::load_str("fleet/director-protocol.md")
+}
 
 /// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
 #[tauri::command]
@@ -13,10 +17,10 @@ pub(crate) fn ensure_director_protocol(project_key: String) -> Result<(), String
     if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
     // Both sections are appended verbatim only when their marker is absent (idempotent), via the
     // shared helper — no scattered read-modify-write blocks. Errors propagate (this is a command).
-    append_section_once(&local, "## Director protocol", DIRECTOR_PROTOCOL_MD).map_err(|e| e.to_string())?;
+    append_section_once(&local, "## Director protocol", &director_protocol_md()).map_err(|e| e.to_string())?;
     // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
     // so it's a high-value injection target — give it the same untrusted-input rules as workers.
-    append_section_once(&local, INJECTION_RESISTANCE_MARKER, INJECTION_RESISTANCE_MD).map_err(|e| e.to_string())?;
+    append_section_once(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md()).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -34,7 +38,7 @@ mod relocated_tests {
     fn director_protocol_assigns_contract_ownership() {
         // The director owns the integration contracts, tests the seams, and is the worker's
         // help desk for them (#…). Guard that the standing protocol says so.
-        let p = DIRECTOR_PROTOCOL_MD;
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
         assert!(p.contains("contracts/") || p.contains("contracts directory") || p.contains("INTEGRATION CONTRACTS"),
             "director protocol must claim ownership of the contracts directory");
         assert!(p.contains("TEST THE INTEGRATIONS"), "director protocol must mandate integration testing");
