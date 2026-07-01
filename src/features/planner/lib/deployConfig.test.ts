@@ -93,6 +93,29 @@ describe("deployConfig (per-repo, #1421)", () => {
     expect(deploymentDefined(normalizeDeployConfig(cfg, []))).toBe(true);           // and survives normalize
   });
 
+  it("preserves a free-text (non-enum) release strategy so a release-artifact deploy clears the gate (#2021)", () => {
+    // A desktop app shipped via GitHub Releases (tauri-action): its release strategy is a legit
+    // free-text description, NOT one of the four cloud-rollout enum values. The old coerceRelease
+    // validated against the enum and dropped it to "", so the poll's config disagreed with
+    // normalizeDeployConfig and the deploy gate jammed even though the config was complete.
+    const strategy = "github-release (tag on main → tauri-action builds per-OS installers and attaches them to a GitHub Release)";
+    const blob = {
+      services: [{
+        id: "app", repo: "kevinthelago/STEM", platform: "ghpages",
+        environments: [{ name: "dev", branch: "feature/*", auto: true }, { name: "staging", branch: "develop", auto: true }, { name: "prod", branch: "main", auto: false }],
+        pipeline: { provider: "GitHub Actions", stages: [{ name: "build" }, { name: "test", gate: true }, { name: "package" }, { name: "release" }] },
+        release: { strategy, autoRollback: false, keep: 3, migrateWithDeploy: false },
+      }],
+    };
+    const cfg = coerceDeployConfig(blob, ["kevinthelago/STEM"]);
+    expect(cfg.services[0].release.strategy).toBe(strategy);                        // survives coercion (not blanked)
+    expect(serviceChecks(cfg.services[0]).find((c) => c.id === "release")!.ok).toBe(true);
+    expect(deploymentDefined(cfg)).toBe(true);                                      // the gate clears
+    // The poll path (parseDeployConfigTag) now agrees with normalizeDeployConfig — the exact bug.
+    expect(deploymentDefined(parseDeployConfigTag(JSON.stringify(blob), ["kevinthelago/STEM"])!)).toBe(true);
+    expect(deploymentDefined(normalizeDeployConfig(blob as unknown as DeployConfig, []))).toBe(true);
+  });
+
   it("blocks while a repo's prod secret is unwired", () => {
     const base = defaultDeployConfig(["acme/web"]);
     const d = {
@@ -141,9 +164,13 @@ describe("coerceDeployConfig — the planner deploy channel (per-repo, #1421)", 
     expect(deploymentDefined(d)).toBe(false);
   });
 
-  it("coerces an invalid release strategy to empty (blocks) and bad input to a safe default", () => {
-    const bad = coerceDeployConfig({ services: [{ id: "web", platform: "fly", release: { strategy: "yolo" } }] });
-    expect(bad.services[0].release.strategy).toBe("");
+  it("preserves any non-empty release strategy (#2021) but blanks a missing one, and survives garbage input", () => {
+    // A non-enum strategy is now KEPT, not dropped (#2021) — the planner's free-text strategy is
+    // trusted (release-artifact modes need it); only a genuinely-absent strategy stays "" (blocks).
+    const kept = coerceDeployConfig({ services: [{ id: "web", platform: "fly", release: { strategy: "yolo" } }] });
+    expect(kept.services[0].release.strategy).toBe("yolo");
+    const none = coerceDeployConfig({ services: [{ id: "web", platform: "fly", release: {} }] });
+    expect(none.services[0].release.strategy).toBe("");
     expect(coerceDeployConfig(null).services.length).toBeGreaterThan(0); // never throws on garbage
   });
 
