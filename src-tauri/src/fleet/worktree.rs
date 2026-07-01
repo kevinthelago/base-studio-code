@@ -189,11 +189,11 @@ pub(crate) fn write_worker_context(
     // is the file content), so the written file is byte-identical.
     // Coordination protocol (#369): the defer-to-director / never-ask-the-user rules.
     if !md.contains("## Fleet coordination protocol") {
-        md.push_str(FLEET_PROTOCOL_MD);
+        md.push_str(&fleet_protocol_md());
     }
     // Injection-resistance preamble (#1167): untrusted-input rules as authoritative worker context.
     if !md.contains(INJECTION_RESISTANCE_MARKER) {
-        md.push_str(INJECTION_RESISTANCE_MD);
+        md.push_str(&injection_resistance_md());
     }
     let wt_local = wt.join("CLAUDE.local.md");
     let _ = std::fs::write(&wt_local, &md);
