@@ -85,9 +85,9 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       return <FeaturesBody features={data?.features} />;
     case "streams":
       // The unified `streams` stage (#1914 — the collapsed structure+permissions def). The plan +
-      // relationship graph always shows; the fleet (coordination + per-stream permissions, via the
-      // embedded PermissionsBody) folds in below when the def carries the `fleet` substep — which the
-      // kept blueprints always do.
+      // relationship graph always shows; the fleet (coordination + the per-stream roster + shared
+      // deps, as collapsible cards) folds in below when the def carries the `fleet` substep — which
+      // the kept blueprints always do.
       return <StreamsBody data={data} fleet={stage.fleet} {...fleetHandlers} />;
     case "mcps":
       return <McpsBody servers={data?.mcpServers} {...mcpHandlers} />;
