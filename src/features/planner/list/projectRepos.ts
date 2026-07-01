@@ -4,9 +4,8 @@
 // - **Published** project (a GitHub board exists → `activeProjectId`): use the board's repos,
 //   falling back to the locally-linked set if the board hasn't loaded yet.
 // - **Unpublished** project (no board yet): use the linked+cloned repos persisted under the
-//   title-derived `effectiveProjectId`. Without this the links vanish on restart — the
-//   in-session list (`<repo_link>` tags) lives in component state that resets, while the
-//   persisted `projectLocalRepos` record was never read back for the no-board case.
+//   title-derived `effectiveProjectId`. The linked set is DB-owned (`bsc plan repo add` → plan.db,
+//   reflected into `projectLocalRepos` by the section poll), so it survives a restart.
 //
 // KEY MISMATCH (#881): linked repos are written under TWO keys — the title-derived
 // `effectiveProjectId` (the planning link + auto-clone path) and the GitHub node id
