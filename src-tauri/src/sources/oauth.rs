@@ -38,17 +38,16 @@ struct OAuthProvider {
     client_secret_env: String,
 }
 
-/// The packaged provider descriptors, embedded at compile time and parsed once on first lookup.
-const PROVIDERS_JSON: &str = include_str!("../../data/sources/oauth-providers.json");
-
 /// The parsed provider table (lazily initialized; `'static` for the program's lifetime so lookups
-/// can hand out `'static` references). Panics on first use if the packaged JSON is malformed — a
-/// build-data error, guarded by `providers_json_parses`.
+/// can hand out `'static` references). Loaded at runtime via [`crate::platform::config::load_str`]
+/// (#2027 P2) — the user's `sources/oauth-providers.json` under the config dir if present, else the
+/// embedded seed. Panics on first use if the JSON is malformed, guarded by `providers_json_parses`.
 fn providers() -> &'static [OAuthProvider] {
     static PROVIDERS: OnceLock<Vec<OAuthProvider>> = OnceLock::new();
     PROVIDERS
         .get_or_init(|| {
-            serde_json::from_str(PROVIDERS_JSON).expect("oauth-providers.json is valid JSON")
+            serde_json::from_str(&crate::platform::config::load_str("sources/oauth-providers.json"))
+                .expect("oauth-providers.json is valid JSON")
         })
         .as_slice()
 }

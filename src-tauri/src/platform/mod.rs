@@ -12,3 +12,4 @@ pub mod process;
 pub mod fsx;
 pub mod docstore;
 pub mod pkgcache;
+pub mod config;
