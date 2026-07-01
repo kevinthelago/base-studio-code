@@ -28,7 +28,6 @@ function makeDeps(over: Partial<PlanningSessionDeps> = {}): PlanningSessionDeps 
     effectiveProjectId: "proj",
     stageIdsFor: () => ["goal"],
     refreshSetupSig: vi.fn(),
-    setRepoLinkFullNames: vi.fn(),
     setShowBlueprintModal: vi.fn(),
     setShowClearConfirm: vi.fn(),
     setSwitchOpen: vi.fn(),
@@ -47,7 +46,7 @@ describe("usePlanningSession", () => {
     expect(result.current.restarting).toBe(false);
   });
 
-  it("doClearPlan deletes the on-disk plan files, closes the confirm modal, and unlinks repos", async () => {
+  it("doClearPlan deletes the on-disk plan files and closes the confirm modal", async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => usePlanningSession(deps));
 
@@ -55,7 +54,6 @@ describe("usePlanningSession", () => {
 
     expect(deps.setShowClearConfirm).toHaveBeenCalledWith(false);
     expect(invokeMock).toHaveBeenCalledWith("clear_project_plan_files", { projectKey: "proj" });
-    expect(deps.setRepoLinkFullNames).toHaveBeenCalledWith([]);
   });
 
   it("keepPlanFiles closes the blueprint modal and regenerates the workspace without wiping plan files", async () => {

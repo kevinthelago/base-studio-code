@@ -1,36 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseMcpAssigns,
-  stripMcpAssigns,
   mcpAssignToServer,
   applyMcpAssign,
   isDownloadableMcp,
   type McpStoreLike,
 } from "./planExtensions";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
-
-describe("parseMcpAssigns", () => {
-  it("extracts catalog names, deduped and order-preserving, across straight/curly quotes", () => {
-    const text = [
-      'intro <mcp_assign name="Postgres" /> mid',
-      "<mcp_assign name=“Sentry” />",
-      '<mcp_assign name="Postgres" />',  // dup — dropped
-      '<mcp_assign id="Linear" />',      // id alias
-    ].join("\n");
-    expect(parseMcpAssigns(text)).toEqual(["Postgres", "Sentry", "Linear"]);
-  });
-
-  it("skips a tag with no name and tolerates extra attributes", () => {
-    expect(parseMcpAssigns('<mcp_assign foo="bar" />')).toEqual([]);
-    expect(parseMcpAssigns('<mcp_assign name="Stripe" note="db" />')).toEqual(["Stripe"]);
-  });
-});
-
-describe("stripMcpAssigns", () => {
-  it("removes every assign tag and leaves surrounding text", () => {
-    expect(stripMcpAssigns('a <mcp_assign name="Postgres" /> b <mcp_assign id="X" /> c')).toBe("a  b  c");
-  });
-});
 
 describe("mcpAssignToServer", () => {
   it("derives an enabled, project-scoped catalog server with blank secret env", () => {

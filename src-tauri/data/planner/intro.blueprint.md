@@ -4,9 +4,8 @@ You are **NOT** planning a software project. You are **designing a reusable BLUE
 planning template that other projects get seeded from — and publishing it as a gist.
 
 There is **no code, no repositories, no agent fleet, no GitHub issues/milestones, and no
-triage**. Do not link repos, populate the plan store (`bsc plan feature`/`fleet`/`repo`), emit
-`<repo_link>` / `<fleet_plan>` / `<agent_assign>`, or publish a GitHub project board. Your
-single deliverable is the blueprint itself.
+triage**. Do not link repos, populate the plan store (`bsc plan feature`/`fleet`/`repo`), or
+publish a GitHub project board. Your single deliverable is the blueprint itself.
 
 ## How you deliver the blueprint
 
@@ -18,8 +17,8 @@ echo '{ …the whole blueprint… }' | bsc plan blueprint set   # bsc plan bluep
 ```
 
 The app polls the DB, validates the blueprint, renders it live in the focused pane, and the user
-publishes it from the Review stage — you never publish it yourself. Do NOT write a `blueprint.json`
-file or emit a `<blueprint>` tag; the plan DB is the single source of truth.
+publishes it from the Review stage — you never publish it yourself. Record it with `bsc plan blueprint set`
+(the plan DB is the single source of truth); do NOT write a `blueprint.json` file.
 
 ```
 {

@@ -1,55 +1,12 @@
-// MCP-server assignment from the planner (#174). The planner's "Automations & extensions"
-// step can assign an MCP server to a project with a `<mcp_assign name="Postgres" />` tag.
-// Rather than invent a parallel store, an assignment reuses the MCP-servers subsystem
-// (src/lib/mcpServers.ts): it adds (or enables) a catalog-derived {@link McpServer} scoped
-// to the project, so the SAME launch wiring that powers the MCP screen — `resolveMcpServers`
-// → `paneMcpServers` → `.mcp.json` at build/triage launch — loads it with no extra glue.
-//
-// Pure (no React/Tauri) so the tag parsing + catalog mapping are unit-testable and
-// shared between Planning.tsx and its tests.
+// MCP-server assignment from the planner (#174). The planner assigns an MCP server to a project via
+// `bsc plan mcp add <name>` (plan.db); the section poll resolves each assigned catalog name into the
+// MCP-servers subsystem (`applyMcpAssign` → `resolveMcpServers` → `paneMcpServers` → `.mcp.json` at
+// build/triage launch), so the SAME launch wiring that powers the MCP screen loads it with no extra
+// glue. Pure (no React/Tauri) so the catalog mapping is unit-testable and shared with its tests.
+// (The old `<mcp_assign>` stream tag + its parser were removed in the tag→bsc migration, #2012.)
 
 import { mcpFromCatalog, type McpServer } from "@/features/mcp/lib/mcpServers";
 import { resolveMcpInstallDir, catalogLink } from "@/features/mcp/lib/mcpInstall";
-
-// Quote-flexible: matches a straight double quote and both curly quotes, so an LLM's
-// smart-quote output doesn't silently break tag detection (mirrors Planning.tsx's Q).
-const Q = '["“”]';
-const MCP_ASSIGN_RE = new RegExp(`<mcp_assign\\b([^/]*?)\\/>`, "g");
-
-/** Read a `name=` (or its `id=` alias) attribute value from a tag's attribute blob. */
-function readName(attrs: string): string | null {
-  const m =
-    new RegExp(`\\bname=${Q}([^"“”]*)${Q}`).exec(attrs) ??
-    new RegExp(`\\bid=${Q}([^"“”]*)${Q}`).exec(attrs);
-  const v = m?.[1]?.trim();
-  return v ? v : null;
-}
-
-/**
- * Parse every `<mcp_assign name="..." />` (or `id="..."`) tag out of a text buffer
- * into a deduped, order-preserving list of catalog names. Tolerant of straight/curly
- * quotes and extra attributes; a tag missing a name is skipped.
- */
-export function parseMcpAssigns(text: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  MCP_ASSIGN_RE.lastIndex = 0;
-  while ((m = MCP_ASSIGN_RE.exec(text)) !== null) {
-    const name = readName(m[1]);
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(name);
-  }
-  return out;
-}
-
-/** Remove every `<mcp_assign … />` tag from a buffer once its assignments are applied. */
-export function stripMcpAssigns(text: string): string {
-  return text.replace(new RegExp(`<mcp_assign\\b[^/]*?\\/>`, "g"), "");
-}
 
 /**
  * The {@link McpServer} (minus id) a `<mcp_assign name>` resolves to: the catalog

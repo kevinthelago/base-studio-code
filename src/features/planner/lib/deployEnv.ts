@@ -1,7 +1,14 @@
 // Per-service deploy building blocks (#919; per-repo rework #1421; local mode #1192) — the
 // environment ladder, CI/CD pipeline, config/secrets block, release policy, and health policy that
-// each DeployService owns, plus the local-vs-cloud ship-mode option lists and the sensible default
-// builders a fresh service starts from. Pure data (no React/Tauri). Split out of deployConfig.ts (#1639).
+// each DeployService owns, plus the ship-mode option lists and the sensible default a fresh service
+// starts from.
+//
+// The DATA (option lists + defaults) is externalized to `@data/deploy/taxonomy.json` (#2027 P1) —
+// the single source, editable without touching code and part of the exportable app-config bundle.
+// This module keeps only the TYPES + the accessor/const names + the default BUILDERS (which return a
+// fresh deep copy of the JSON default each call, since callers mutate them). Pure (no React/Tauri).
+
+import taxonomy from "@data/deploy/taxonomy.json";
 
 /** How a service ships (#1192). `cloud` = a hosted platform; `local` = a published library or a
  *  build-and-run-here application (CLI / desktop / local server). A monorepo can mix the two. */
@@ -10,16 +17,16 @@ export type DeployMode = "cloud" | "local";
 export type LocalKind = "library" | "application";
 
 /** Package registries a local LIBRARY can publish to (#1192). */
-export const PUBLISH_REGISTRIES = ["npm", "crates.io", "PyPI", "internal"] as const;
-export type PublishRegistry = (typeof PUBLISH_REGISTRIES)[number];
+export type PublishRegistry = "npm" | "crates.io" | "PyPI" | "internal";
+export const PUBLISH_REGISTRIES = taxonomy.publishRegistries as readonly PublishRegistry[];
 /** When a library's publish workflow fires (#1192). */
-export const PUBLISH_TRIGGERS = ["on-tag", "manual"] as const;
-export type PublishTrigger = (typeof PUBLISH_TRIGGERS)[number];
+export type PublishTrigger = "on-tag" | "manual";
+export const PUBLISH_TRIGGERS = taxonomy.publishTriggers as readonly PublishTrigger[];
 
 /** How a locally-running deployment is exposed remotely (#1192). `cloudflared` is the default —
  *  we already run a Cloudflare relay for the mobile tunnel. */
-export const PORT_FORWARD_METHODS = ["cloudflared", "ngrok", "tailscale", "LAN"] as const;
-export type PortForwardMethod = (typeof PORT_FORWARD_METHODS)[number];
+export type PortForwardMethod = "cloudflared" | "ngrok" | "tailscale" | "LAN";
+export const PORT_FORWARD_METHODS = taxonomy.portForwardMethods as readonly PortForwardMethod[];
 
 /** Optional remote exposure for a local Application / server (#1192). */
 export interface PortForward {
@@ -40,7 +47,7 @@ export interface DeployEnvironment {
 }
 
 export type PipeTrigger = "push" | "tag" | "on-green" | "manual";
-export const PIPE_TRIGGERS: PipeTrigger[] = ["push", "tag", "on-green", "manual"];
+export const PIPE_TRIGGERS = taxonomy.pipeTriggers as PipeTrigger[];
 
 export interface PipelineStage {
   id: string;
@@ -65,14 +72,13 @@ export interface DeployConfigBlock {
 }
 
 export type ReleaseStrategy = "recreate" | "rolling" | "blue-green" | "canary";
-export const RELEASE_STRATEGIES: { id: ReleaseStrategy; label: string; desc: string }[] = [
-  { id: "recreate",   label: "recreate",   desc: "Stop old, start new — brief downtime." },
-  { id: "rolling",    label: "rolling",    desc: "Replace instances incrementally." },
-  { id: "blue-green", label: "blue-green", desc: "Stand up new, flip traffic, keep old warm." },
-  { id: "canary",     label: "canary",     desc: "Shift a % of traffic, watch, then ramp." },
-];
+export const RELEASE_STRATEGIES = taxonomy.releaseStrategies as { id: ReleaseStrategy; label: string; desc: string }[];
 export interface ReleasePolicy {
-  strategy: ReleaseStrategy | "";
+  /** The rollout/release strategy. {@link RELEASE_STRATEGIES} are the KNOWN cloud-rollout options the
+   *  picker offers, but the field accepts ANY non-empty string — a release-artifact deploy (GitHub
+   *  Pages/Releases, npm publish, packaging) legitimately carries a free-text strategy like
+   *  `github-release (tag on main → …)` that isn't one of the four. `""` = unset. */
+  strategy: string;
   autoRollback: boolean;
   keep: number;
   migrateWithDeploy: boolean;
@@ -84,28 +90,21 @@ export interface HealthPolicy {
   alerts: string; alertsOn: boolean;
 }
 
+// The sensible defaults a fresh service's deploy plan starts from (from `@data/deploy/taxonomy.json`).
+// Each builder returns a fresh DEEP COPY so callers can mutate their service's config independently.
+const clone = <T>(v: T): T => structuredClone(v);
+
 /** A sensible default environment ladder a repo's deploy plan starts from. */
 export function defaultEnvs(): DeployEnvironment[] {
-  return [
-    { id: "dev",     name: "dev",     branch: "feature/*", url: "", auto: true,  proposed: true },
-    { id: "staging", name: "staging", branch: "develop",   url: "", auto: true,  proposed: true },
-    { id: "prod",    name: "prod",    branch: "main",       url: "", auto: false, proposed: true },
-  ];
+  return clone(taxonomy.defaults.envs) as DeployEnvironment[];
 }
 /** A sensible default pipeline a repo's deploy plan starts from. */
 export function defaultPipeline(): Pipeline {
-  return {
-    provider: "GitHub Actions",
-    stages: [
-      { id: "build",  name: "build",  trigger: "push",     gate: false, cmd: "" },
-      { id: "test",   name: "test",   trigger: "on-green", gate: true,  cmd: "" },
-      { id: "deploy", name: "deploy", trigger: "on-green", gate: false, cmd: "" },
-    ],
-  };
+  return clone(taxonomy.defaults.pipeline) as Pipeline;
 }
 export function defaultRelease(): ReleasePolicy {
-  return { strategy: "", autoRollback: true, keep: 3, migrateWithDeploy: false };
+  return clone(taxonomy.defaults.release) as ReleasePolicy;
 }
 export function defaultHealth(): HealthPolicy {
-  return { probe: "/healthz", probeOn: false, slo: "", sloOn: false, alerts: "", alertsOn: false };
+  return clone(taxonomy.defaults.health) as HealthPolicy;
 }

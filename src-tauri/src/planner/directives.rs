@@ -51,9 +51,9 @@ pub(crate) fn build_active_stages_md(stages: &[String]) -> String {
     if stages.is_empty() {
         return String::new();
     }
-    let mut s = String::from(
-        "\n## Active planning stages\n\nThe app drives the plan **one stage at a time** — it sends you each stage's working instructions the moment you reach it. Treat this list as SCOPE: work the current stage, then wait for the app to advance you; don't run ahead or jump stages. **Stages not listed here are OUT OF SCOPE — do not produce their artifacts.**\n\n",
-    );
+    // The preamble prose lives in `@data/planner/active-stages-preamble.md` (#2027 P1); the surrounding
+    // newlines that frame it in the CLAUDE.md + the per-stage lines below stay here.
+    let mut s = format!("\n{}\n\n", PLANNING_ACTIVE_STAGES_PREAMBLE.trim_end());
     for (i, id) in stages.iter().enumerate() {
         s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
     }

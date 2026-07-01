@@ -122,15 +122,11 @@ pub(crate) fn setup_workspaces(
     std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
         .map_err(|e| e.to_string())?;
 
-    // Write automations catalogue so Claude can reference and assign them.
-    let mut auto_md = String::from(
-        "# Automations Catalogue\n\n\
-         Suggest assigning an automation to this project with a single-line tag:\n\
-         `<automation_assign name=\"...\" command=\"...\" schedule=\"0 9 * * 1-5\" description=\"...\" />`\n\n\
-         The `schedule` field is a cron expression (omit for one-shot commands).\n\n"
-    );
+    // Write automations catalogue so Claude can reference and assign them. The header prose lives in
+    // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
+    let mut auto_md = format!("{}\n\n", AUTOMATIONS_CATALOGUE_HEADER.trim_end());
     if automations.is_empty() {
-        auto_md.push_str("_No saved automations yet — suggest new ones using the tag above._\n");
+        auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
     } else {
         auto_md.push_str("## Saved automations\n\n");
         for a in &automations {

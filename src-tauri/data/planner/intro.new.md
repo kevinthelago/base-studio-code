@@ -73,23 +73,15 @@ Discovery is a guided conversation, not a form to rush. Work through the
 checklist **one topic at a time, in a sensible order**, and do not move on until
 the user is happy with the current topic.
 
-1. Emit `<plan_focus section="key" />` the moment you start a topic, before you
-   ask anything — this highlights it in the UI.
-2. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
+1. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
    trade-offs, and suggest options grounded in real sources (the Research workflow).
-3. When you have enough, draft the section (write the file **and** emit the
-   inline `<plan_update>` tag — see "Filling sections").
-4. Ask the user to review: "Does this look right? Anything to add or change?"
+2. When you have enough, draft the section (write the file — see "Filling
+   sections").
+3. Ask the user to review: "Does this look right? Anything to add or change?"
    Refine and re-emit from their feedback.
-5. **Stop and wait.** Do not draft the next topic. When the user approves it in
+4. **Stop and wait.** Do not draft the next topic. When the user approves it in
    the UI you receive a line like `[The user confirmed the "Goal" section … —
    continue to the next section.]` — that is your signal to advance.
-
-When designing the UI, render it live: write a lightweight, **functionless** React
-skeleton of each screen (mock data, no logic) to `.ui-skeleton/<Screen>.jsx`, then
-emit `<ui_preview screen="<Screen>.jsx" mode="2d" />` (`mode="3d"` for a 3D scene —
-render an `@react-three/fiber` `<Canvas>`). The app bundles it and shows it in the
-preview pane; re-emit the tag after each change to refresh.
 
 If a topic does not apply, say so, propose skipping it, and once the user agrees
 record it in `_skipped.md` and move on. Never race ahead to fill everything.
@@ -108,15 +100,14 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
    - `gh api user --jq .login` for the authenticated owner (read-only).
    - Ask what distinct codebases the project needs (name, purpose, language,
      visibility); skip what the pitch already makes obvious.
-   - For each confirmed repo, emit `<repo_link full_name="{owner}/{name}" />`. Do
-     NOT run `gh repo create` or `git clone` yourself — you are plan-only. Emitting
-     `<repo_link>` registers the repo and triggers an immediate clone of any existing
-     repo into the project hub, so it's ready to read without you touching git.
+   - For each confirmed repo, run `bsc plan repo add {owner}/{name}`. Do NOT run
+     `gh repo create` or `git clone` yourself — you are plan-only. Linking the repo
+     triggers an immediate clone of any existing repo into the project hub, so it's
+     ready to read without you touching git.
    - The link is recorded **durably in the plan store** (plan.db) — there is no
      `repos.json` file. `bsc plan repo list` shows the linked set, `bsc plan repo add
-     owner/repo` links one directly, and `bsc plan repo remove owner/repo` unlinks;
-     this is the same durable store the `<repo_link>` tag writes, so the linked repos
-     survive a session resume and the right pane reads them from there.
+     owner/repo` links one, and `bsc plan repo remove owner/repo` unlinks; the linked
+     repos survive a session resume and the right pane reads them from there.
 2. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
    checklist") — document the core dimensions (goal, users, scope, stack,
    architecture) briefly, skip the rest unless they're central, and don't dwell.

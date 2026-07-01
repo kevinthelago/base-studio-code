@@ -18,7 +18,6 @@
 //   - sourceGate.ts           — connection counts/readiness + the gate signals (#1712)
 //   - dataModelDerivation.ts  — the canonical Data Model derivation (#1712)
 //   - sourceScanViews.ts      — the Graph / List / Process scan view-models (#1712)
-//   - sourceCoerce.ts         — the lenient `<source_config>` planner-channel coercion (#1712)
 
 export type {
   AuthMethod, SpecField, ConnectionSpec, Connector,
@@ -42,4 +41,3 @@ export {
 export { deriveDataModel } from "./dataModelDerivation";
 export type { ScanViewField, ScanViewEntity } from "./sourceScanViews";
 export { scanEntities, scanEdges, aggregatePlatform, isMultiSource } from "./sourceScanViews";
-export { coerceSourceConfig, parseSourceConfigTag } from "./sourceCoerce";

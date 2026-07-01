@@ -19,7 +19,7 @@ import { parseIssuesFile } from "../issues/planIssues";
 import { ProjectPane } from "../pane/ProjectPane";
 import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
-import { defaultStageConfig, enabledOrderedStages, type StageConfig, type StageId } from "../stages/planStages";
+import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../lib/mcpPaneData";
@@ -29,7 +29,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkStage, blueprintCategory, canonicalStageKey, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
+import { mkStage, blueprintCategory, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
@@ -61,26 +61,6 @@ import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
 import { TERM_THEME } from "./planningTerminal";
 import { GitHubStructureCard } from "./GitHubStructureCard";
-
-/** Canonicalize a persisted per-project stage config to the unified stage vocabulary (#1914): map
- *  each legacy StageId (`repos`/`structure`/`permissions`) through the stage-key alias and dedup, so
- *  a project saved under the OLD vocab keeps its enabled set + order. The active blueprint normally
- *  supplies `planSecs`; this feeds the no-blueprint fallback path + `requiresUi`. */
-function canonicalStageConfig(cfg: StageConfig | undefined): StageConfig | undefined {
-  if (!cfg) return cfg;
-  const order: StageId[] = [];
-  const seen = new Set<string>();
-  for (const id of cfg.order) {
-    const c = canonicalStageKey(id) as StageId;
-    if (!seen.has(c)) { seen.add(c); order.push(c); }
-  }
-  const enabled = {} as Record<StageId, boolean>;
-  for (const [k, v] of Object.entries(cfg.enabled)) {
-    const c = canonicalStageKey(k) as StageId;
-    enabled[c] = (enabled[c] ?? false) || v;
-  }
-  return { enabled, order };
-}
 
 export function Planning({ visible }: { visible: boolean }) {
   const {
@@ -199,18 +179,16 @@ export function Planning({ visible }: { visible: boolean }) {
     [projectLocalRepos, effectiveProjectId, activeProjectId, effectiveRepos],
   );
 
-  // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): owns the
-  // <repo_link>-surfaced repo set and clones each linked repo into the project dir as it appears.
-  const { repoLinkFullNames, setRepoLinkFullNames } = usePlannerRepoManagement(effectiveProjectId, effectiveRepos);
+  // The planner's headless repo auto-clone (#1474, usePlannerRepoManagement): clones each linked
+  // repo (DB-owned, surfaced via the plan.db poll into effectiveRepos) into the project dir.
+  usePlannerRepoManagement(effectiveProjectId, effectiveRepos);
 
   const isExisting = !!activeProjectId;
 
-  // Canonical set of repos for publish/sync — union of project-linked repos,
-  // Claude-surfaced repo_link tags, and the store's planningRepo fallback.
-  // Feeds both handlePublish and the GitHubStructureCard.
+  // Canonical set of repos for publish/sync — union of project-linked repos (DB-owned) and the
+  // store's planningRepo fallback. Feeds both handlePublish and the GitHubStructureCard.
   const publishRepos = [...new Set([
     ...effectiveRepos,
-    ...repoLinkFullNames,
     ...(planningRepo ? [planningRepo] : []),
   ])].filter(Boolean);
 
@@ -225,16 +203,13 @@ export function Planning({ visible }: { visible: boolean }) {
   // a fresh ref each time the project has no sections yet).
   const savedSections = useMemo(
     () => planSections[effectiveProjectId] ?? {}, [planSections, effectiveProjectId]);
-  // Alias legacy stage keys on read (#1914) so a project that confirmed/skipped a stage under the
-  // OLD vocabulary (`repos`/`structure`/`permissions`/`mcp`) keeps matching the collapsed stage's
-  // `confirmed:<key>`/`skipped:<key>` signal. Discovery-topic keys (goal/scope/…) pass through.
   const confirmedSet  = useMemo(
-    () => new Set((planConfirmedSections[effectiveProjectId] ?? []).map(canonicalStageKey)),
+    () => new Set(planConfirmedSections[effectiveProjectId] ?? []),
     [planConfirmedSections, effectiveProjectId]);
   // Optional stages the user deliberately skipped (#921) — they resolve the stage's gate (so the
   // flow advances) but render as "skipped", not "complete".
   const skippedSet = useMemo(
-    () => new Set((planSkippedSections[effectiveProjectId] ?? []).map(canonicalStageKey)),
+    () => new Set(planSkippedSections[effectiveProjectId] ?? []),
     [planSkippedSections, effectiveProjectId]);
 
   const sections = useMemo<Section[]>(() => {
@@ -393,7 +368,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // declarative gate over a flat signal bag — NOT a hardcoded stage list. The focused
   // progress rail, current-stage, and advance/publish footer all read these. #668 deleted
   // this whole substrate; the store data (blueprints, ui, automations, pipelines) survived.
-  const stageConfig = canonicalStageConfig(planStageConfig[effectiveProjectId]) ?? defaultStageConfig();
+  const stageConfig = planStageConfig[effectiveProjectId] ?? defaultStageConfig();
   const requiresUi = stageConfig.enabled.ui;
   const uiCounts = useMemo(() => {
     if (!requiresUi) return { approved: 0, total: 0 };
@@ -473,22 +448,14 @@ export function Planning({ visible }: { visible: boolean }) {
   // Publish / triage / recovery state + callbacks live in usePlanPublish (#1490) — the hook is
   // called below, once all the plan data it reads is in scope.
 
-  // The section Claude is currently discussing, driven by <plan_focus> tags.
-  // Null until the first focus tag arrives. Highlights the matching card.
-  const [, setActiveSection] = useState<string | null>(null);
-
   // Drag-to-resize the plan-sections panel (#43; the terminal flexes to fill the rest).
   const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
   // The xterm terminal + PTY refs (containerRef, termRef) come from usePlannerTerminal, called below
   // once its inputs (processChunk, stageIdsFor, refreshSetupSig) are in scope.
-  // The planner's PTY tag-parse stream (#1474): owns bufRef + autopilotTxRef and a `processChunk`
-  // that parses + dispatches every structured <tag> the planner emits. bufRef is the tag-scan
-  // buffer (cleared on restart); autopilotTxRef is the un-consumed copy the autopilot reads.
-  const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream({
-    projectId: effectiveProjectId,
-    setActiveSection,
-    setRepoLinkFullNames,
-  });
+  // The planner's PTY output buffer (#1474): owns bufRef + autopilotTxRef and a `processChunk` that
+  // strips/accumulates/caps the output. bufRef is cleared on restart; autopilotTxRef is the
+  // un-consumed copy the autopilot reads. (No longer parses tags — all moved to plan.db, #2017.)
+  const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream();
   const apLastSnapLen  = useRef(0);
   const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
@@ -516,10 +483,9 @@ export function Planning({ visible }: { visible: boolean }) {
     // stage set across version / active-blueprint changes instead of adopting the library selection.
     const bpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
     const bp = st.blueprints.find(b => b.id === bpId);
-    // Blueprint section keys ARE the canonical directive ids now (#1914) — pass them straight to
-    // setup_workspaces (canonicalized, so a legacy persisted blueprint still maps to the real ids).
-    if (bp) return bp.sections.filter(s => s.enabled).map(s => canonicalStageKey(s.key));
-    return enabledOrderedStages(canonicalStageConfig(st.planStageConfig[key]) ?? defaultStageConfig()).map(s => s.id);
+    // Blueprint section keys ARE the canonical directive ids — pass them straight to setup_workspaces.
+    if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);
+    return enabledOrderedStages(st.planStageConfig[key] ?? defaultStageConfig()).map(s => s.id);
   };
 
   // ── Setup signatures (#175/#756, useSetupSignature #1775) ────────────────────
@@ -612,7 +578,7 @@ export function Planning({ visible }: { visible: boolean }) {
   const { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint } = usePlanningSession({
     termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
-    stageIdsFor, refreshSetupSig, setRepoLinkFullNames,
+    stageIdsFor, refreshSetupSig,
     setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
   });
 
