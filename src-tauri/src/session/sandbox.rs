@@ -723,6 +723,46 @@ pub(crate) fn sync_sandbox_plan_db(key: String) -> Result<bool, String> {
     Ok(true)
 }
 
+/// The https clone URL for a `owner/name` repo, with a GitHub PAT injected for private repos (empty
+/// token → a plain public URL). Pure — kept out of [`sandbox_clone_repo`] so it can be unit-tested
+/// without leaking the token into a test that shells out.
+fn clone_url(repo: &str, token: &str) -> String {
+    if token.is_empty() {
+        format!("https://github.com/{repo}.git")
+    } else {
+        format!("https://{token}@github.com/{repo}.git")
+    }
+}
+
+/// Clone a linked repo (`owner/name`) INTO the sandbox distro's project hub (#1988) — the foundation
+/// for running triage/fleet inside the cage: repos are git-CLONED in-distro (not file-copied over the
+/// wsl pipe, which `copy_dir_to_sandbox` skips). The sealed distro has git + network + ca-certs
+/// (verified — a plain https clone succeeds), so this just runs `git clone` there; `token` authorizes
+/// a private repo. Idempotent (a re-clone of an existing checkout is skipped). Returns the distro
+/// clone path. Any token echoed in git's error output is redacted.
+#[tauri::command]
+pub(crate) fn sandbox_clone_repo(key: String, repo: String, token: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let dest = format!("{}/{}", sandbox_project_path(&key), short);
+    let script = format!(
+        "test -d {dest}/.git && exit 0; rm -rf {dest}; git clone {url} {dest}",
+        dest = sh_squote(&dest), url = sh_squote(&clone_url(&repo, &token)),
+    );
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(dest)
+    } else {
+        let mut err = decode_wsl(&out.stderr).trim().to_string();
+        if !token.is_empty() { err = err.replace(&token, "***"); }
+        Err(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -752,6 +792,12 @@ mod tests {
         assert!(!s.contains_key("CLAUDE"), "control files excluded");
         assert!(!s.contains_key("empty"), "empty sections dropped");
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn clone_url_injects_token_for_private_repos_only() {
+        assert_eq!(clone_url("octocat/Hello-World", ""), "https://github.com/octocat/Hello-World.git");
+        assert_eq!(clone_url("acme/private", "ghp_secret"), "https://ghp_secret@github.com/acme/private.git");
     }
 
     #[test]
