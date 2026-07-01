@@ -731,11 +731,14 @@ stream's `commands`** (the app pre-approves them at launch from the backend-owne
 - **Navigation / inspection / text** (every agent): `ls`, `cat`, `head`, `tail`, `grep`,
   `rg`, `find`, `fd`, `pwd`, `cd`, `echo`, `wc`, `sort`, `uniq`, `diff`, `tree`, `which`,
   `env`, `date`, `file`, `stat`, `basename`, `dirname`, `cut`, `sleep`, `printf`, `test`,
-  `sed`, `awk`, `jq`, `tr`, `mkdir`, `touch`
+  `sed`, `awk`, `jq`, `tr`, `mkdir`, `touch`, `xargs`, `tee`, `realpath`, `readlink`, `du`,
+  `df`, `ps`, `id`, `whoami`, `hostname`, `uname`, `column`, `nl`, `seq`, `comm`
 - **Build / test toolchains** (doer/worker streams): `cargo`, `rustc`, `rustup`, `npm`,
   `pnpm`, `yarn`, `npx`, `node`, `deno`, `bun`, `python`, `python3`, `pip`, `pip3`,
   `pytest`, `make`, `go`, `tsc`, `vite`, `eslint`, `prettier`, `vitest`, `jest`, `docker`,
-  `mvn`, `gradle`, `dotnet`, `ollama`
+  `mvn`, `gradle`, `dotnet`, `ollama`, `ruby`, `bundle`, `rake`, `gem`, `rails`, `php`,
+  `composer`, `java`, `javac`, `gradlew`, `flutter`, `dart`, `swift`, `poetry`, `uv`, `ruff`,
+  `black`, `mypy`, `tsx`, `cmake`, `ninja`, `gofmt`
 - **Always** (every agent): `gh`, `git`, `bsc`
 
 So a stream's `commands` lists ONLY the tools its stack needs that are NOT in the baseline
