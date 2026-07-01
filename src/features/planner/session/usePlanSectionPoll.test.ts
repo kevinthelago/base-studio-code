@@ -13,7 +13,7 @@ const PID = "p-fleet-poll";
 
 const render = () =>
   renderHook(() =>
-    usePlanSectionPoll({ visible: true, projectId: PID, publishRepos: [], enqueueMcpDownloads: () => {} }),
+    usePlanSectionPoll({ visible: true, projectId: PID, publishRepos: [], enqueueMcpDownloads: () => {}, planningDir: "" }),
   );
 
 describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {

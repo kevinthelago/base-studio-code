@@ -19,6 +19,8 @@ import { catalogLink } from "@/features/mcp/lib/mcpInstall";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
 import { scriptDocRelpath } from "./planningSession";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { wantsSandboxLaunch } from "./plannerSandbox";
+import { plannerLaunchConfig } from "./plannerLaunch";
 
 /** A per-repo startup script row from plan.db (`bsc plan startup`, #2010). */
 interface StartupScriptRow { repo: string; mode: "dev" | "triage"; path: string }
@@ -30,9 +32,12 @@ interface SectionPollDeps {
   publishRepos: string[];
   /** Queue first-party MCP servers for the download-confirmation modal. */
   enqueueMcpDownloads: (names: string[]) => void;
+  /** The host hub dir — non-empty once `setup_workspaces` resolves. Drives the sandbox-read decision
+   *  (#1988): a planner launched into the WSL2 cage writes its sections into the distro hub. */
+  planningDir: string;
 }
 
-export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads }: SectionPollDeps): void {
+export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir }: SectionPollDeps): void {
   // Per-artifact change-guards: skip re-applying an unchanged DB blob each 2s tick. `depsImportedRef`
   // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve;
   // `lastBpJsonRef` the authored-blueprint coercion (reset on project switch).
@@ -59,6 +64,16 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         const store = useAppStore.getState();
         const saved = store.planSections[effectiveProjectId] ?? {};
         const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
+
+        // Sandbox (#1988): a planner launched INSIDE the WSL2 cage writes plan.db + section files into
+        // the distro hub. Mirror the in-distro plan.db back to the host FIRST, so the DB-owned reads
+        // below (issues/features/fleet/deploy/deps/mcp/automations/startup/blueprint) — and publish +
+        // fleet launch, which read the host plan.db — reflect the sandboxed planner's work. Sections
+        // (file-based) are read from the distro directly further down.
+        const sandboxed = wantsSandboxLaunch(store.sandboxConsoles, plannerLaunchConfig(store, {}).providerId, planningDir);
+        if (sandboxed) {
+          await invoke("sync_sandbox_plan_db", { key: effectiveProjectId }).catch(() => { /* no in-distro db yet — ignore */ });
+        }
 
         // Issues are owned by plan.db now (#plan-db) — the canonical store, not an issues.json
         // file. Read them straight from the DB and reflect into the "issues" section so every
@@ -211,7 +226,20 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           }
         } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
 
-        const result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+        // Section files: a planner launched INSIDE the WSL2 cage (#1988) writes them into the distro
+        // hub, so read from there (via `read_sandbox_plan_sections`) when this session is sandboxed
+        // (`sandboxed`, computed above) — else the host hub. Fall back to the host read if the distro
+        // read is empty (e.g. the relocation fell back to host at launch), so sections never vanish.
+        let result: Record<string, string>;
+        if (sandboxed) {
+          result = await invoke<Record<string, string>>("read_sandbox_plan_sections", { key: effectiveProjectId })
+            .catch(() => ({} as Record<string, string>));
+          if (Object.keys(result).length === 0) {
+            result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+          }
+        } else {
+          result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+        }
         const entries = Object.entries(result);
 
         for (const [rawKey, content] of entries) {
