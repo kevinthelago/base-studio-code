@@ -1,10 +1,4 @@
 use super::prompts::*;
-use include_dir::{include_dir, Dir};
-
-/// The migrated stage directives (#1462) live as the `directive` field in each
-/// `data/stages/<id>.json` — the single source of truth, shared with the frontend `SectionDef`.
-/// Embedded at compile time; `stage_directive` resolves them by id.
-static STAGES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data/stages");
 
 /// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
 /// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
@@ -33,14 +27,15 @@ pub(crate) fn stage_directive(id: &str) -> String {
     // Every stage directive — including the composed/lifecycle ids (`deployment`, `streams`) —
     // resolves from its `data/stages/<id>.json` `directive` field; an unknown id (incl. an archived
     // stage) gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
-    embedded_directive(id)
+    directive_of(id)
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| format!("**{id}** — configured stage."))
 }
-/// Read the `directive` field of the embedded `data/stages/<id>.json`, if present + a string.
-fn embedded_directive(id: &str) -> Option<String> {
-    let file = STAGES_DIR.get_file(format!("{id}.json"))?;
-    let v: serde_json::Value = serde_json::from_slice(file.contents()).ok()?;
+/// Read the `directive` field of `data/stages/<id>.json` — the user's copy under the config dir if
+/// present, else the embedded seed (#2027 P2). `None` if the stage file is absent or has no directive.
+fn directive_of(id: &str) -> Option<String> {
+    let raw = crate::platform::config::load_opt(&format!("stages/{id}.json"))?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
     v.get("directive")?.as_str().map(str::to_string)
 }
 /// Assemble the "Active planning stages" section from the project's ENABLED stages
@@ -111,8 +106,8 @@ mod tests {
     /// AND every service's deploy config (target, environments, pipeline, secrets, release).
     #[test]
     fn deployment_stage_prompt_states_the_full_deploy_gate_not_just_linking() {
-        let file = STAGES_DIR.get_file("deployment.json").expect("deployment.json embedded");
-        let v: serde_json::Value = serde_json::from_slice(file.contents()).expect("valid JSON");
+        let raw = crate::platform::config::embedded_str("stages/deployment.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
         let prompt = v.get("prompt").and_then(|p| p.as_str()).unwrap_or_default().to_lowercase();
         for term in ["repo", "bsc plan deploy", "target", "environment", "pipeline", "secret", "release"] {
             assert!(prompt.contains(term), "Deployment `prompt` must cover the full gate — missing '{term}': {prompt}");
@@ -120,9 +115,10 @@ mod tests {
     }
 
     /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
-    /// read via `include_dir!`. Every migrated id must resolve to its real directive — NOT the
-    /// generic fallback — and come from the embedded JSON. (The v1.0.5 consolidation archived the
-    /// data/transform/harden stages; this is the kept set that carries a `directive`.)
+    /// read via the runtime config loader (#2027 P2 — config-dir override → embedded seed). Every
+    /// migrated id must resolve to its real directive — NOT the generic fallback. (The v1.0.5
+    /// consolidation archived the data/transform/harden stages; this is the kept set that carries a
+    /// `directive`.)
     #[test]
     fn migrated_stage_directives_resolve_from_embedded_json() {
         // #1914: the unified vocabulary collapsed repos+deploy → `deployment` and
@@ -135,26 +131,31 @@ mod tests {
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
             assert!(!d.ends_with("configured stage."),
                 "stage '{id}' fell back to the generic line — its JSON `directive` is missing");
-            assert_eq!(d, embedded_directive(id).unwrap_or_default(),
-                "stage '{id}' must resolve from its embedded JSON `directive`");
+            // The SHIPPED stage JSON carries a non-empty `directive` (checked against the embedded
+            // seed, so it holds regardless of any local config override).
+            let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
+            let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
+            let shipped = v.get("directive").and_then(|x| x.as_str()).unwrap_or_default();
+            assert!(!shipped.trim().is_empty(), "stage '{id}' embedded JSON has a `directive`");
         }
     }
 
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
-    /// EXACTLY the expected set. Both Rust (`include_dir!`) and the frontend (`import.meta.glob`) read
-    /// the SAME `data/stages/` dir, so a directive can't drift between them; this pins the set.
+    /// EXACTLY the expected set. Both Rust (the config loader / embedded seed) and the frontend
+    /// (`import.meta.glob`) read the SAME `data/stages/` dir, so a directive can't drift between them;
+    /// this pins the set.
     /// #1914: after the collapse the composed/lifecycle ids (`deployment`/`streams`) are plain stage
     /// JSONs too — no Rust-side prose, no special carve-out; the legacy `repos`/`structure`/`permissions`
     /// defs are gone.
     #[test]
     fn embedded_directive_key_set_matches_the_migrated_set() {
         use std::collections::BTreeSet;
-        let with_directive: BTreeSet<String> = STAGES_DIR
-            .files()
-            .filter_map(|f| {
-                let v: serde_json::Value = serde_json::from_slice(f.contents()).ok()?;
+        let with_directive: BTreeSet<String> = crate::platform::config::embedded_dir_files("stages")
+            .into_iter()
+            .filter_map(|(stem, contents)| {
+                let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
                 v.get("directive").and_then(|d| d.as_str()).filter(|s| !s.is_empty())?;
-                Some(f.path().file_stem()?.to_string_lossy().into_owned())
+                Some(stem)
             })
             .collect();
         let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
