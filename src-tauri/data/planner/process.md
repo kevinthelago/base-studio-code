@@ -270,9 +270,8 @@ files and rarely need a human.
    `auto-pr`|`self-merge`|`push-confirm`|`commit-only`|`none`; `trigger` =
    `per-issue`|`per-stage`|`on-green`; `gate` = `soft`|`hard`. Omit `flow` (or any of its
    fields) to take the default (`continuous` + `auto-pr` + `per-issue` + `hard`). The
-   flat attribute form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top
-   level, as the `<agent_assign>` tag emits) is ALSO accepted on ingest for back-compat,
-   but emit the nested `"flow"` object here.
+   flat form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top level) is
+   ALSO accepted on ingest for back-compat, but emit the nested `"flow"` object here.
    **Generating each stream's permission set is a REQUIRED part of defining the stream —
    not a later step, not a manual button.** As you author each stream, DERIVE its
    least-privilege permissions from the project stack + the stream's `owns`/role and write
@@ -759,12 +758,11 @@ worker blocks on a permission prompt for that command.
 (The stream's `commands` array is the only channel — there is no `commands.json` file.)
 
 **Declare the agent fleet** (the parallel-execution plan). `bsc plan fleet set` (see
-"Plan the agent fleet") is the authoritative channel; these tags are the fast path that
-reveals the fleet live. Emit the header once, then one
-`agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
-comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
-attribute carries an AgentProfile id that scopes the stream's session (commands +
-tools + write-paths) — generate one per agent or reuse an existing profile.
+"Plan the agent fleet") is the channel — pipe the whole FleetPlan JSON to `bsc plan fleet set`:
+the header (`recommended` count + `reasoning` + `director` + `topology`), then one entry per
+`stream`. Each stream carries `owns` / `issues` / `dependsOn` (stream ids) and an optional
+`profile` (an AgentProfile id that scopes the stream's session — commands + tools + write-paths;
+generate one per agent or reuse an existing profile).
 
 Each stream also carries an optional **flow** (#297) — how it runs and pushes —
 via four attributes, all defaulting if omitted:
@@ -780,8 +778,7 @@ Default = `continuous` + `auto-pr` + `per-issue` + `hard`. Set a tighter flow fo
 agent whose work you want to review before it lands (e.g. `push=push-confirm gate=hard`),
 or `push=none` for a pure reviewer/explorer.
 ```
-<fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
-<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
+echo '{"recommended":4,"reasoning":"...","director":{"enabled":true,"drive":"async integrator: review/merge PRs, resolve logged decisions, keep milestones current"},"topology":"director","streams":[{"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"profile":"auth-ui-dev","flow":{"autonomy":"continuous","push":"auto-pr","trigger":"per-issue","gate":"hard"}}]}' | bsc plan fleet set
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Author each
