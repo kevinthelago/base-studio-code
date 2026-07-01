@@ -164,6 +164,37 @@ describe("coerceDeployConfig — the planner deploy channel (per-repo, #1421)", 
     expect(deploymentDefined(d)).toBe(false);
   });
 
+  it("mode-aware checks (#2023): a LOCAL build gates on target+envs+pipeline+secrets, NOT a cloud rollout", () => {
+    // GitHub is the baseline, so a local application (desktop installer via CI) still needs CI/CD +
+    // environments + config/secrets — but NOT a cloud rollout strategy (recreate/rolling/…).
+    const d = coerceDeployConfig({
+      services: [{
+        id: "app", repo: "o/desktop", mode: "local", localKind: "application",
+        buildTargets: "win-x64, mac-arm64, linux-x64", artifact: "installers/*",
+        environments: [{ name: "dev", branch: "feature/*" }, { name: "staging", branch: "develop" }, { name: "prod", branch: "main" }],
+        pipeline: { provider: "GitHub Actions", stages: [{ name: "build" }, { name: "test", gate: true }, { name: "package" }] },
+        secrets: [{ key: "SIGNING_KEY", envs: ["dev", "staging", "prod"] }],
+        // NOTE: no release.strategy — a local build has no rollout.
+      }],
+    });
+    const ids = serviceChecks(d.services[0]).map((c) => c.id);
+    expect(ids).toEqual(["target", "envs", "pipeline", "secrets"]);   // no "release" check for local
+    expect(serviceReady(d.services[0])).toBe(true);                    // ready WITHOUT a rollout strategy
+    expect(deploymentDefined(d)).toBe(true);
+
+    // A CLOUD service, identical but no strategy, still fails on the release check.
+    const cloud = coerceDeployConfig({
+      services: [{
+        id: "api", repo: "o/api", platform: "fly", workload: "container",
+        environments: [{ name: "dev", branch: "feature/*" }, { name: "prod", branch: "main" }],
+        pipeline: { provider: "GitHub Actions", stages: [{ name: "build" }, { name: "deploy" }] },
+      }],
+    });
+    expect(serviceChecks(cloud.services[0]).map((c) => c.id)).toContain("release");
+    expect(serviceChecks(cloud.services[0]).find((c) => c.id === "release")!.ok).toBe(false);
+    expect(deploymentDefined(cloud)).toBe(false);
+  });
+
   it("preserves any non-empty release strategy (#2021) but blanks a missing one, and survives garbage input", () => {
     // A non-enum strategy is now KEPT, not dropped (#2021) — the planner's free-text strategy is
     // trusted (release-artifact modes need it); only a genuinely-absent strategy stays "" (blocks).
