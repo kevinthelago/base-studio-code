@@ -19,13 +19,13 @@ export function PermissionPostureCard() {
         onToggle={() => setBypassPermissions(!bypassPermissions)}
         title="Autonomous agents (deny-list)"
       >
-        When on (default), sessions <b>auto-run without prompts</b> and a set of always-on guards do the
-        gating — the dangerous-command floor, each role's denied commands, filesystem confinement to the
-        worktree, and the write-scope rules (all enforced by PreToolUse hooks, which hold even in this
-        mode). The push-confirm gate still pauses for approval. Turn <b>off</b> to use the classic{" "}
-        <b>allow-list</b> instead: every command not on the enumerated allow-list prompts for approval —
-        more friction, tighter control. Applies to every session — fleet agents <i>and</i> your manual
-        consoles. Takes effect on the next session launch.
+        Off <b>(default)</b> uses the <b>allow-list</b>: the common dev toolchains (git/gh, the read-only
+        inspection set, and the mainstream build/test tools) <b>auto-run</b>, and any other command{" "}
+        <b>prompts for approval</b> — with the always-on guards underneath (dangerous-command floor, role
+        denies, filesystem confinement, write-scope, all PreToolUse hooks). Turn <b>on</b> for autonomous
+        agents that <b>auto-run everything</b> without prompts (the same guards still hold, and an
+        OS-level sandbox confines raw Bash). The push-confirm gate always pauses for approval either way. Applies
+        to every session — fleet agents <i>and</i> your manual consoles. Takes effect on the next launch.
       </ToggleRow>
 
       {bypassPermissions && sandbox && (
