@@ -569,7 +569,7 @@ export function Planning({ visible }: { visible: boolean }) {
 
 
   // Planner 2s plan.db + section-file poll (#1474, usePlanSectionPoll).
-  usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads });
+  usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir });
 
 
   // Session lifecycle (#1642, usePlanningSession): the `restarting` flag + the regenerate /
