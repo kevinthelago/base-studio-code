@@ -300,14 +300,46 @@ built on, even though a build may already be released under that number) rather 
 At any time exactly one version is **Current**. Earlier versions are **Complete**; later versions
 are **Planned**.
 
+### Versioning policy (pre-v2 is loose on purpose)
+
+The app is still coalescing — not every feature is well defined, work spans many files and overlaps
+with other work — so the version numbers are **deliberately loose** until it's unified. Three phases:
+
+1. **`1.0.4n` — fix & polish (CURRENT).** Bump the trailing digit for each release (`1.0.41`,
+   `1.0.42`, …). Development stays the firehose: the fleet pushes to `develop`, features overlap,
+   nothing is gated on a tidy theme. A release is just a snapshot of `develop`.
+2. **`1.0.5` — the UI release + finishing the maintenance bots.** The next themed step, cut once the
+   fix/polish pass feels done.
+3. **`2.0.0` — unification.** Once every feature the maintainer wants is added and the app is a
+   defined product, we cut `2.0.0` and switch to **rigorous semver** (major/minor/patch by their real
+   meaning), followed strictly from there. This is the hand-off point where release discipline tightens.
+
+The pre-v2 numbering is an intentional trade for velocity — **do not "fix" it or relitigate the
+scheme.** The phase boundaries are tracked as GitHub **milestones** (`1.0.5 …`, `2.0.0 …`).
+
+### Cutting a release — one command
+
+`npm run release` does the whole cut in one go: bump the version in **both** `package.json` and
+`src-tauri/tauri.conf.json`, stamp the `CHANGELOG.md` `[Unreleased]` section as the new version,
+commit, tag `vX.Y.Z`, and `git push --follow-tags` — which fires the tag-triggered `release.yml` to
+build the platform installers and cut the GitHub Release.
+
+- `npm run release` — patch bump (the `1.0.4n` cadence: `1.0.41 → 1.0.42`).
+- `npm run release -- 1.0.5` — an explicit version (a themed step, or `2.0.0`).
+- `npm run release -- minor` / `major` — a semver bump (used from v2 on).
+
+Run it from an up-to-date `develop` with a clean working tree. Only `package.json` +
+`tauri.conf.json` carry the app version; `src-tauri/Cargo.toml` stays at its crate version.
+
 ### Roadmap
 
 | Version | Status | Theme |
 |---|---|---|
 | v1.0.3 | Complete | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
 | **v1.0.4** | **Current** | **Enterprise integration & migration** — connect **read-only** to an existing system (CRM/ERP/BPM, Salesforce first) and **scan the whole platform**: data types *and* configurations *and* behaviors. The planner produces a **Platform Behavior Summary** — objects/fields, automations (validation rules, workflows, Flows/Process Builder), business processes (approval processes), and derived logic (formula fields, Apex) — so **automations, business processes, and data are all migratable**: reproduced as the generated app's schema and logic via canonical **data models** + **agent-authored connector manifests** (the planner probes the source and authors the connector; native per-vendor connectors were removed, #1976) + MCP connectors, with a compliance layer baked into the planner. The v1.0.5 line generalizes this into a global **Integrations Platform** (#1965). |
-| **v1.0.41** | Checkpoint (on the v1.0.4 line, before v1.0.5) | A consolidation **stop-gap** labelling the large volume of no-user-facing-feature refactor, integration-architecture, and hardening work cut before the UI release. **Codebase refactor & consolidation**: feature-first frontend vertical slices (#1309) — `app/` shell · `features/` (UI + pure `lib/` + slice + `index.ts` barrel) · `shared/` · `store/`, `@/…` alias; shared UI primitives (`Banner`/`Card`/`Button`/`StatTile`/`EmptyState`/`BackButton`/`IconButton`/`ModalScrim`/`Dialog`/…) + a consistency sweep; `Planning.tsx`+`FocusedBodies.tsx` decomposition, `handlePublish`→`publishSteps.ts`, reusable `usePoll`/`useGithubQuery`/`useCoordLog` + `safeInvoke`/`fireInvoke`; Rust consolidation (`bsc-cli-util`, Tauri-free `bsc-blueprint`/`bsc-project`/`bsc-tunnel`, `session/` domain, `src-tauri/prompts`→`data`, **plan.db as the sole fleet store**, `tests.rs` decomposed, reference-context removed). **Integrations as agent-authored connectors** (#1962): the planner probes a source and authors the connector manifest (probe→validate→try, captured as skills); native connectors/presets/catalog removed (#1976); dynamic Source pane + runtime OAuth. **Data-driven planner**: Rust-inline prose/stage-registry/role-capabilities/deploy-taxonomy extracted to `@data/*`; tag-parsing → `bsc`. **Planner/fleet hardening**: unified stage vocabulary (#1958) + milestone phases removed (#1942); Repos+Deploy→**Deployment** and Fleet+Streams→**Streams** (carded, collapsible); fleet-identity, warden re-quarantine, worker-trust/prompt, and triage-tab-naming fixes. |
-| v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code). |
+| **v1.0.4n** | **Current** · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …, per the Versioning policy above) — the large volume of no-user-facing-feature refactor, integration-architecture, and hardening work, plus ongoing polish. **Codebase refactor & consolidation**: feature-first frontend vertical slices (#1309) — `app/` shell · `features/` (UI + pure `lib/` + slice + `index.ts` barrel) · `shared/` · `store/`, `@/…` alias; shared UI primitives (`Banner`/`Card`/`Button`/`StatTile`/`EmptyState`/`BackButton`/`IconButton`/`ModalScrim`/`Dialog`/…) + a consistency sweep; `Planning.tsx`+`FocusedBodies.tsx` decomposition, `handlePublish`→`publishSteps.ts`, reusable `usePoll`/`useGithubQuery`/`useCoordLog` + `safeInvoke`/`fireInvoke`; Rust consolidation (`bsc-cli-util`, Tauri-free `bsc-blueprint`/`bsc-project`/`bsc-tunnel`, `session/` domain, `src-tauri/prompts`→`data`, **plan.db as the sole fleet store**, `tests.rs` decomposed, reference-context removed). **Integrations as agent-authored connectors** (#1962): the planner probes a source and authors the connector manifest (probe→validate→try, captured as skills); native connectors/presets/catalog removed (#1976); dynamic Source pane + runtime OAuth. **Data-driven planner**: Rust-inline prose/stage-registry/role-capabilities/deploy-taxonomy extracted to `@data/*`; tag-parsing → `bsc`. **Planner/fleet hardening**: unified stage vocabulary (#1958) + milestone phases removed (#1942); Repos+Deploy→**Deployment** and Fleet+Streams→**Streams** (carded, collapsible); fleet-identity, warden re-quarantine, worker-trust/prompt, and triage-tab-naming fixes. |
+| v1.0.5 | Planned | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code) — **and finishing the maintenance bots** (#1957). |
+| v2.0.0 | Planned | **Unification + rigorous semver.** Once every feature the maintainer wants is added and the app is a defined product, cut `2.0.0` and switch to **strict semver** (see the Versioning policy above) — the hand-off point where release discipline tightens. |
 
 The agent-shell track shipped alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
 ("Run on any model"). v1.0.3 is now **Complete** and **v1.0.4** is **Current**. When v1.0.4 is complete,

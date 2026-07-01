@@ -8,10 +8,14 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 |---|---|---|
 | `1.0.3` | ✅ Complete | User experience, resiliency, the core **Default** blueprint + triage — and the parallel **run-on-any-model** `bsc-agent` pillar |
 | `1.0.4` | 🚧 Current | **Enterprise integration & migration** — connect read-only to ERP/CRM/BPM, scan data + configs + behaviors into canonical data models, generate bespoke software with compliance baked in |
-| `1.0.41` | 📦 Checkpoint | A consolidation stop-gap on the `1.0.4` line, ahead of `1.0.5`: the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, and a wave of planner/fleet hardening |
-| `1.0.5` | 🔜 Next | **The UI release** — an in-app, Claude-Design-like way to define pages, components, and animations with iterative UI loops |
+| `1.0.4n` | 🚧 Current · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …): the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, a wave of planner/fleet hardening, and ongoing polish |
+| `1.0.5` | 🔜 Next | **The UI release** — in-app page/component/animation authoring with iterative generate→preview→refine loops — **and finishing the maintenance bots** (#1957) |
+| `2.0.0` | 🎯 Unification | Once every feature is added and the app is a defined product: cut `2.0.0` and switch to **rigorous semver**, followed strictly from there |
 
-> **On `1.0.41`:** it's an informal "revision" marker over the `1.0.4` line — a label for the large volume of consolidation, integration-architecture, and hardening work that landed before the `1.0.5` UI release. (Semver note: `1.0.41` sorts *after* `1.0.5`, so read it as "`1.0.4`, revision 1" rather than a number between `1.0.4` and `1.0.5`.)
+> **Versioning is loose until v2, on purpose.** The app is still coalescing, so numbering trades
+> tidiness for velocity: **`1.0.4n`** (bump the trailing digit for each fix/polish release) → **`1.0.5`**
+> (the UI release + maintenance bots) → **`2.0.0`** (unification, then rigorous semver from there). The
+> phase boundaries are tracked as GitHub milestones (`1.0.5`, `2.0.0`).
 
 ---
 
@@ -77,6 +81,6 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 
 base-studio-code is on the **`1.0.x`** series and under active development. **`1.0.0` was the first official release** — the first version considered stable and ready for general use. The `1.0.x` line is bumped conservatively: **patch** bumps for fixes and small improvements, **minor** bumps for feature releases (e.g. enterprise integration & migration lands as `1.0.4`).
 
-We work one version at a time, **release-and-continue**: a version ships builds early and stays **Current** — actively worked — until its theme is complete; only then does the next minor become the focus. A released build is a checkpoint, not the end of the version.
+We work one version at a time, **release-and-continue**: a version ships builds early and stays **Current** — actively worked — until its theme is complete; only then does the next version become the focus. A released build is a checkpoint, not the end of the version. Until `2.0.0` the numbering is loose (see the phase note above); from `2.0.0` on we follow rigorous semver.
 
-See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+**Cutting a release** is one command — `npm run release` bumps the version (both `package.json` and `tauri.conf.json`), stamps the CHANGELOG, commits, tags `vX.Y.Z`, and pushes, which triggers the build + GitHub Release. See [CHANGELOG.md](CHANGELOG.md) for the full release history.
