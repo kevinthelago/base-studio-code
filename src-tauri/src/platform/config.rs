@@ -4,12 +4,12 @@
 //! So editing a prompt/taxonomy under the config dir takes effect on the next launch with NO rebuild,
 //! and the whole tree is the basis for the export/import bundle (#2027 P3).
 //!
-//! Migration is incremental: each former `include_str!`/`include_dir!` site moves to [`load_str`] one
-//! slice at a time (this slice: `permissions/base.json` + `sources/oauth-providers.json`). Until every
-//! site has moved, the packaged bytes are embedded both here (the seed `Dir`) and at the not-yet-moved
-//! sites — a temporary, harmless duplication in the binary.
+//! Every Rust config surface (permissions, OAuth providers, planner prompts, fleet protocols, stage
+//! directives) now reads through [`load_str`]/[`load_opt`]; the packaged bytes are embedded once here
+//! (the seed `Dir`). This module also owns the export/import config bundle (#2027 P3).
 
 use include_dir::{include_dir, Dir};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The packaged config tree (`src-tauri/data/`), embedded at build time — the seed written on first
@@ -106,6 +106,89 @@ fn seed_dir(dir: &Dir, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+// ── Config bundle: export / import (#2027 P3) ────────────────────────────────
+
+/// Bump on an incompatible bundle-format change. Import accepts an equal-or-older version and rejects
+/// a NEWER one (a bundle written by a future app it can't safely read).
+pub(crate) const BUNDLE_VERSION: u32 = 1;
+
+/// The whole active configuration as one portable, versioned document — every file under the config
+/// root, keyed by its forward-slash relative path. Round-trips through export → import so a user or
+/// org can snapshot, share, and restore the entire configuration (the epic's headline deliverable).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct ConfigBundle {
+    /// Bundle-format version ([`BUNDLE_VERSION`]).
+    pub version: u32,
+    /// rel-path → UTF-8 contents, for every file under the config root.
+    pub files: BTreeMap<String, String>,
+}
+
+/// Serialize the config tree at `root` into a [`ConfigBundle`] (recursive; text files only).
+fn export_from(root: &Path) -> ConfigBundle {
+    let mut files = BTreeMap::new();
+    collect_files(root, root, &mut files);
+    ConfigBundle { version: BUNDLE_VERSION, files }
+}
+
+fn collect_files(base: &Path, dir: &Path, out: &mut BTreeMap<String, String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(base, &path, out);
+        } else if let (Ok(rel), Ok(contents)) =
+            (path.strip_prefix(base), std::fs::read_to_string(&path))
+        {
+            out.insert(rel.to_string_lossy().replace('\\', "/"), contents);
+        }
+    }
+}
+
+/// Write a bundle's files into `root`. `replace` clears the root FIRST (an exact restore — files not
+/// in the bundle are removed); otherwise merges (overwrites the listed files, leaves the rest). Errors
+/// on a bundle newer than [`BUNDLE_VERSION`]. Returns the number of files written.
+fn import_into(root: &Path, bundle: &ConfigBundle, replace: bool) -> std::io::Result<usize> {
+    if bundle.version > BUNDLE_VERSION {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("bundle version {} is newer than supported ({BUNDLE_VERSION}) — update the app", bundle.version),
+        ));
+    }
+    if replace && root.exists() {
+        std::fs::remove_dir_all(root)?;
+    }
+    for (rel, contents) in &bundle.files {
+        let target = root.join(rel);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&target, contents)?;
+    }
+    Ok(bundle.files.len())
+}
+
+/// Export the active configuration to `path` as a versioned JSON bundle (#2027 P3). Seeds the config
+/// dir first, so a never-edited install still exports the shipped defaults. Returns the file count.
+#[tauri::command]
+pub(crate) fn export_config_bundle(path: String) -> Result<usize, String> {
+    ensure_seeded().map_err(|e| e.to_string())?;
+    let bundle = export_from(&config_root());
+    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(bundle.files.len())
+}
+
+/// Import a config bundle from `path` into the config dir (#2027 P3). `replace` = exact restore (clear
+/// first); otherwise merge. Returns the number of files written. Changes take effect on the NEXT launch
+/// (the loaders read the config dir at startup).
+#[tauri::command]
+pub(crate) fn import_config_bundle(path: String, replace: bool) -> Result<usize, String> {
+    let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let bundle: ConfigBundle =
+        serde_json::from_str(&json).map_err(|e| format!("not a valid config bundle: {e}"))?;
+    import_into(&config_root(), &bundle, replace).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +246,44 @@ mod tests {
             "a re-seed must never overwrite a file the user has edited",
         );
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn export_import_round_trips_the_config_tree() {
+        let src = scratch_dir("bundle-src");
+        seed_dir(&EMBEDDED, &src).unwrap();
+        std::fs::write(src.join("permissions/base.json"), "EDITED").unwrap();
+        let bundle = export_from(&src);
+        assert_eq!(bundle.version, BUNDLE_VERSION);
+        assert_eq!(bundle.files.get("permissions/base.json").map(String::as_str), Some("EDITED"));
+        assert!(bundle.files.contains_key("planner/process.md"), "nested files are captured");
+
+        let dst = scratch_dir("bundle-dst");
+        let n = import_into(&dst, &bundle, false).unwrap();
+        assert_eq!(n, bundle.files.len());
+        assert_eq!(std::fs::read_to_string(dst.join("permissions/base.json")).unwrap(), "EDITED");
+        assert!(dst.join("planner/process.md").exists(), "a nested file round-trips");
+        std::fs::remove_dir_all(&src).ok();
+        std::fs::remove_dir_all(&dst).ok();
+    }
+
+    #[test]
+    fn import_rejects_a_bundle_newer_than_this_app() {
+        let dst = scratch_dir("bundle-ver");
+        let bundle = ConfigBundle { version: BUNDLE_VERSION + 1, files: BTreeMap::new() };
+        assert!(import_into(&dst, &bundle, false).is_err(), "a future-version bundle is rejected");
+    }
+
+    #[test]
+    fn replace_mode_clears_files_absent_from_the_bundle() {
+        let dst = scratch_dir("bundle-replace");
+        std::fs::create_dir_all(&dst).unwrap();
+        std::fs::write(dst.join("stale.txt"), "old").unwrap();
+        let mut files = BTreeMap::new();
+        files.insert("planner/x.md".to_string(), "new".to_string());
+        import_into(&dst, &ConfigBundle { version: BUNDLE_VERSION, files }, true).unwrap();
+        assert!(!dst.join("stale.txt").exists(), "replace removes files not in the bundle");
+        assert_eq!(std::fs::read_to_string(dst.join("planner/x.md")).unwrap(), "new");
+        std::fs::remove_dir_all(&dst).ok();
     }
 }
