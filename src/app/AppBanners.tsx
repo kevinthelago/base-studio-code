@@ -232,7 +232,7 @@ function QuarantineBanner() {
       {open && (
         <div className="banner-drawer">
           {entries.map(([paneId, info]) => (
-            <div key={paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start", padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), transparent 90%)" }}>
+            <div key={paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start", padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), var(--bg-panel) 90%)" }}>
               <span style={{ minWidth: 0, display: "grid", gap: 2 }}>
                 <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {info.streamId} · {paneId}
