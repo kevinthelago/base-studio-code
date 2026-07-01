@@ -4,7 +4,7 @@
 
 import {
   PIPE_TRIGGERS, RELEASE_STRATEGIES,
-  serviceChecks, finalStageName,
+  serviceChecks, finalStageName, serviceMode,
   type DeployService, type ReleaseStrategy,
 } from "../lib/deployConfig";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
@@ -100,28 +100,35 @@ export function ServiceDeploySections({ svc, setSvc }: {
         )}
       </Card>
 
-      {/* Rollout (release strategy + auto-rollback) + a compact health row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 12px", flexWrap: "wrap" }}>
-        <span style={{ ...grpLabel }}>rollout</span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {RELEASE_STRATEGIES.map((s) => {
-            const on = svc.release.strategy === s.id;
-            return (
-              <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
-                fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
-                background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
-                border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
-              }}>{s.label}</button>
-            );
-          })}
-        </div>
-        <span style={{ flex: 1 }} />
-        <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "2px 4px" }}>
-        <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
-        <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
-      </div>
+      {/* Rollout (release strategy + auto-rollback) + health — CLOUD ONLY (#2023): a rollout strategy
+          (recreate/rolling/blue-green/canary), health probe, and migrate-with-deploy are
+          running-cloud-service concerns. A local build (library publish / application package) ships
+          via its pipeline's publish/package stage, so these cards are hidden for local mode. */}
+      {serviceMode(svc) === "cloud" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 12px", flexWrap: "wrap" }}>
+            <span style={{ ...grpLabel }}>rollout</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {RELEASE_STRATEGIES.map((s) => {
+                const on = svc.release.strategy === s.id;
+                return (
+                  <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
+                    fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
+                    background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
+                    border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
+                  }}>{s.label}</button>
+                );
+              })}
+            </div>
+            <span style={{ flex: 1 }} />
+            <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "2px 4px" }}>
+            <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
+            <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
+          </div>
+        </>
+      )}
     </>
   );
 }
