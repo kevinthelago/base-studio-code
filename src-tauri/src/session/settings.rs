@@ -29,14 +29,16 @@ struct CommandTiers {
     readonly: Vec<String>,
     build: Vec<String>,
 }
-/// The parsed, embedded base profile (`data/permissions/base.json`) — the single definition of
-/// base-level allowed commands. Parsed once; an invalid/renamed file is a hard panic at first use
-/// (it's compiled in, so this can only fire on a developer-introduced mistake, never at a user site).
+/// The parsed base profile (`permissions/base.json`) — the single definition of base-level allowed
+/// commands. Loaded at runtime via [`crate::platform::config::load_str`] (#2027 P2): the user's copy
+/// under the config dir if present, else the embedded seed. Parsed once; an invalid/renamed file is a
+/// hard panic at first use (the seed is compiled in, so this can only fire on a developer-introduced
+/// mistake or a user hand-editing the config file into invalid JSON).
 fn base_profile() -> &'static BaseProfile {
     static BASE: std::sync::OnceLock<BaseProfile> = std::sync::OnceLock::new();
     BASE.get_or_init(|| {
-        serde_json::from_str(include_str!("../../data/permissions/base.json"))
-            .expect("data/permissions/base.json must be valid JSON matching BaseProfile")
+        serde_json::from_str(&crate::platform::config::load_str("permissions/base.json"))
+            .expect("permissions/base.json must be valid JSON matching BaseProfile")
     })
 }
 /// Commands guaranteed in every session regardless of posture (gh/git/bsc).
@@ -298,18 +300,30 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
 mod baseline_drift_guard {
     //! Drift guard (#1866 / #1880) for the three baseline ALLOW tiers.
     //!
-    //! `data/permissions/base.json` is the SINGLE canonical source (embedded + parsed by the
-    //! accessors above). The planner data (`data/planner/process.md`, `data/stages/streams.json` — the
-    //! collapsed structure+permissions stage, #1914) re-states the same baseline so the planner authors
-    //! only stack-specific extras on top — a manual "keep in sync (#1817)" that these tests turn into a
-    //! CI-caught invariant (the ALLOW-baseline sibling of #1844's deny-floor guard). The data files are
-    //! embedded at compile time, so this is a pure offline parse — no fixtures, no runtime. The session
-    //! render path is untouched; these tests only pin that the planner-facing copies can't silently
-    //! drift from `base.json`.
-    use super::{baseline_build, baseline_readonly, mandatory_bash};
+    //! `data/permissions/base.json` is the SINGLE canonical source. The planner data
+    //! (`data/planner/process.md`, `data/stages/streams.json` — the collapsed structure+permissions
+    //! stage, #1914) re-states the same baseline so the planner authors only stack-specific extras on
+    //! top — a manual "keep in sync (#1817)" that these tests turn into a CI-caught invariant (the
+    //! ALLOW-baseline sibling of #1844's deny-floor guard). All three data files are read EMBEDDED
+    //! (`include_str!`), so this is a pure offline parse — no fixtures, no runtime. NB: the guard parses
+    //! the embedded `base.json` DIRECTLY (not the runtime `base_profile()` accessor, which since #2027 P2
+    //! reads the user config dir), so it always validates the SHIPPED artifacts. The session render path
+    //! is untouched; these tests only pin that the planner-facing copies can't silently drift from
+    //! `base.json`.
+    use super::BaseProfile;
 
+    const BASE_JSON: &str = include_str!("../../data/permissions/base.json");
     const PROCESS_MD: &str = include_str!("../../data/planner/process.md");
     const PERMISSIONS_JSON: &str = include_str!("../../data/stages/streams.json");
+
+    /// Parse the EMBEDDED base.json (the shipped artifact), keeping the drift guard independent of any
+    /// runtime config override.
+    fn embedded_base() -> BaseProfile {
+        serde_json::from_str(BASE_JSON).expect("embedded base.json parses into BaseProfile")
+    }
+    fn mandatory_bash() -> Vec<String> { embedded_base().command_tiers.mandatory }
+    fn baseline_readonly() -> Vec<String> { embedded_base().command_tiers.readonly }
+    fn baseline_build() -> Vec<String> { embedded_base().command_tiers.build }
 
     /// The backtick-quoted tokens in `s`, in order: "`ls`, `cat`" → ["ls", "cat"].
     fn backtick_tokens(s: &str) -> Vec<String> {
