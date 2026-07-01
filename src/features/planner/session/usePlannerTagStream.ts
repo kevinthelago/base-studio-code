@@ -11,16 +11,10 @@
 // live deps through a ref, so the once-attached `pty_data` listener never captures a stale value.
 
 import { useCallback, useEffect, useRef } from "react";
-import { useAppStore } from "@/store";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { stripAnsi } from "./planningTerminal";
-import {
-  parsePlanFocus, stripPlanFocus,
-  parseStartupScripts, stripStartupScripts, scriptDocRelpath,
-} from "./planningSession";
+import { parsePlanFocus, stripPlanFocus } from "./planningSession";
 
 interface TagStreamDeps {
-  projectId: string;
   setActiveSection: (key: string) => void;
 }
 
@@ -47,7 +41,7 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
   useEffect(() => { depsRef.current = deps; });
 
   const processChunk = useCallback((payload: string) => {
-    const { projectId: projIdSnap, setActiveSection } = depsRef.current;
+    const { setActiveSection } = depsRef.current;
 
     // Parse structured tags out of the stripped output stream.
     bufRef.current += stripAnsi(payload);
@@ -75,23 +69,9 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     // Automations are DB-owned: the planner runs `bsc plan automations add`, and the section poll
     // reflects `plan_list_automations` into planAutomations. No stream tag is parsed here anymore.
 
-    // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
-    // Registers a per-repo starting script the planner wrote to prompts/.
-    // The path is relative to the project dir; resolve it to a unified-store
-    // relpath and auto-assign so opening that repo's console (dev) or triage
-    // pane uses it. projectId = the planning session key (matches what the
-    // board passes to quick start / triage for existing projects).
-    const scripts = parseStartupScripts(bufRef.current);
-    if (scripts.length > 0) {
-      const key = sanitizeProjectKey(projIdSnap);
-      const store = useAppStore.getState();
-      for (const sc of scripts) {
-        const relpath = scriptDocRelpath(key, sc.path);
-        if (sc.mode === "triage") store.setRepoTriagePromptDoc(projIdSnap, sc.repo, relpath);
-        else                      store.setRepoStartupPromptDoc(projIdSnap, sc.repo, relpath);
-      }
-      bufRef.current = stripStartupScripts(bufRef.current);
-    }
+    // Startup scripts moved to plan.db (#2010) — the planner records per-repo kickoff/triage prompt
+    // docs with `bsc plan startup add`, and the DB poll resolves + auto-assigns each. (Was a
+    // <startup_script> stream tag.)
 
     // <allow_command> retired (#1457): command auto-approval is a per-agent profile property
     // now, not a planner-declared project/repo allowlist.

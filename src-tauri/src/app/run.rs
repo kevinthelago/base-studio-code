@@ -300,6 +300,7 @@ pub fn run() {
             plan_db::plan_list_mcp,
             plan_db::plan_remove_mcp,
             plan_db::plan_list_automations,
+            plan_db::plan_list_startup,
             plan_db::plan_set_blueprint,
             plan_db::plan_get_blueprint,
             plan_db::plan_list_discovery,
