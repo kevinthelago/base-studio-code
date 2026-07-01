@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/store";
+import { useAppStore, type AutomationSuggestion } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY } from "../fleet/planFleet";
@@ -35,6 +35,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
+  const autoAppliedRef = useRef<Record<string, string>>({});
   const lastBpJsonRef = useRef<string>("");
 
   // Poll the section files Claude writes every 2 seconds while visible. Each
@@ -148,6 +149,19 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           }
           if (toDownload.length) void enqueueMcpDownloads(toDownload);
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
+
+        // Automations are DB-owned (#2009) — the planner assigns them with `bsc plan automations add`
+        // (replacing the <automation_assign> stream tag). Reflect the stored list into planAutomations
+        // (a full replace, which the `automations` gate reads). Guard on the serialized list so an
+        // unchanged set doesn't churn the store every tick.
+        try {
+          const dbAutos = await invoke<AutomationSuggestion[]>("plan_list_automations", { projectKey: effectiveProjectId });
+          const raw = JSON.stringify(dbAutos ?? []);
+          if (raw !== autoAppliedRef.current[effectiveProjectId]) {
+            autoAppliedRef.current[effectiveProjectId] = raw;
+            store.setPlanAutomations(effectiveProjectId, dbAutos ?? []);
+          }
+        } catch { /* plan.db not created until the planner assigns an automation — ignore */ }
 
         // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
         // blueprint set`; coerce the stored JSON into the in-progress blueprint (the same coerceBlueprint
