@@ -78,7 +78,7 @@ pub(crate) fn ensure_session_settings(
         &skills.unwrap_or_default(),
         replace_permissions.unwrap_or(false),
         bash_posture.as_deref().unwrap_or("allow"),
-        bypass.unwrap_or(true),
+        bypass.unwrap_or(false),
     )
 }
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
@@ -203,7 +203,8 @@ pub(crate) fn write_session_settings(
     merge_permission_list(&mut config, "ask", &ask_rules);
     // Permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions auto-run,
     // the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the enumerated
-    // allow/deny lists require approval). Default is bypass. Either way the hooks (dangerous floor +
+    // allow/deny lists require approval). Default is the ALLOW-LIST (#2050 — the broad base.json tiers
+    // keep it low-friction; bypass is the opt-in power posture in Settings → Security). Either way the hooks (dangerous floor +
     // role/user denies via bsc-deny, FS confinement + .claude via bsc-confine, code:none/write-scope via
     // bsc-scope) still fire+block — they survive bypass, where `permissions.deny` is ignored — and `ask`
     // (push-confirm) still prompts natively. The allow-list machinery (base.json tiers, posture scaling)
