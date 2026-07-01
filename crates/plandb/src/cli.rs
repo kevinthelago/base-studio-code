@@ -20,7 +20,7 @@
 //!   bsc plan fleet help      # detailed help for ONE command
 //!   bsc plan <cmd> help      # same, after any command
 
-use crate::{is_valid_status, Automation, IssueSummary, Lesson, PlanFeature, PlanIssue, Store, STATUSES};
+use crate::{is_valid_status, Automation, IssueSummary, Lesson, PlanFeature, PlanIssue, StartupScript, Store, STATUSES};
 use bsc_cli_util::CmdDoc;
 use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 use serde::Serialize;
@@ -236,6 +236,18 @@ USAGE:
   bsc plan automations set   # write automations.md from stdin",
     },
     CmdDoc {
+        name: "startup",
+        summary: "assign/list/remove per-repo startup (dev/triage) prompt scripts",
+        usage: "\
+USAGE:
+  bsc plan startup add <owner/repo> --mode <dev|triage> --path <relpath>
+                        # assign a repo's kickoff (dev) or triage script (upsert by repo+mode)
+                        # --path is relative to the project hub dir, e.g. prompts/web-kickoff.md
+  bsc plan startup list # list assigned startup scripts (--json for the full objects)
+  bsc plan startup remove <owner/repo> --mode <dev|triage>
+                        # unassign a repo's startup script",
+    },
+    CmdDoc {
         name: "github-context",
         summary: "read github_context.md (app-generated; read-only)",
         usage: "\
@@ -272,6 +284,9 @@ struct Args {
     command: Option<String>,
     schedule: Option<String>,
     description: Option<String>,
+    /// Startup-script fields (#2010) — `startup add <repo> --mode dev|triage --path <relpath>`.
+    mode: Option<String>,
+    path: Option<String>,
     /// Plural reads (`list`/`mine`) escalate from the lean default to every field (#1562).
     full: bool,
     /// Explicit column projection for `list`/`mine`, e.g. `--fields ref,title,status` → TSV.
@@ -288,6 +303,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, command: None, schedule: None, description: None,
+        mode: None, path: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false,
     };
@@ -302,6 +318,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
             "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
+            "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
+            "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
             "--schedule" => a.schedule = Some(it.next().ok_or("--schedule needs a value")?),
             "--description" => a.description = Some(it.next().ok_or("--description needs a value")?),
             "--full" => a.full = true,
@@ -369,6 +387,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "lesson" => cmd_lesson(&args),
         "section" => cmd_section(&args),
         "automations" => cmd_automations(&args),
+        "startup" => cmd_startup(&args),
         "github-context" => cmd_github_context(&args),
         other => Err(format!("unknown command '{other}'\n\n{}", menu(prog))),
     }
@@ -997,6 +1016,52 @@ fn cmd_automations(args: &Args) -> Result<(), String> {
     }
 }
 
+/// `startup` — per-repo kickoff/triage prompt docs the planner assigns (#2010). The section poll
+/// reflects these into the app so opening a repo's console (`dev`) / triage pass (`triage`) launches
+/// with the assigned script. Keyed by (repo, mode); replaces the `<startup_script>` stream tag.
+fn cmd_startup(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    match sub {
+        // `startup add <repo> --mode dev|triage --path <relpath>` — upsert by (repo, mode).
+        "add" => {
+            let repo = args
+                .positional
+                .get(2)
+                .ok_or("usage: bsc plan startup add <owner/repo> --mode <dev|triage> --path <relpath>")?;
+            let mode = args.mode.clone().ok_or("startup add: --mode <dev|triage> is required")?;
+            if mode != "dev" && mode != "triage" {
+                return Err(format!("startup add: --mode must be 'dev' or 'triage' (got '{mode}')"));
+            }
+            let path = args.path.clone().ok_or("startup add: --path <relpath> is required")?;
+            open_store(&args.db)?
+                .startup_add(&StartupScript { repo: repo.clone(), mode, path })
+                .map_err(|e| e.to_string())?;
+            emit_set_result(args.json, std::slice::from_ref(repo), "assigned startup script for");
+            Ok(())
+        }
+        "list" => {
+            let scripts = open_store(&args.db)?.startup_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &scripts, "(no startup scripts)", |_, s| {
+                format!("{}\t{}\t{}", s.repo, s.mode, s.path)
+            });
+            Ok(())
+        }
+        "remove" => {
+            let repo = args
+                .positional
+                .get(2)
+                .ok_or("usage: bsc plan startup remove <owner/repo> --mode <dev|triage>")?;
+            let mode = args.mode.clone().ok_or("startup remove: --mode <dev|triage> is required")?;
+            open_store(&args.db)?.startup_remove(repo, &mode).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("unassigned {mode} startup script for {repo}");
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown startup command '{other}'\n\n{}", cmd_help(&args.prog, "startup"))),
+    }
+}
+
 /// `github-context` — the named `github_context.md` hub doc (app-generated GitHub context). Read-only.
 fn cmd_github_context(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
@@ -1379,7 +1444,7 @@ mod tests {
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
             "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
-            "lesson", "section", "automations", "github-context",
+            "lesson", "section", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }

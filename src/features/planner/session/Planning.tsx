@@ -483,7 +483,6 @@ export function Planning({ visible }: { visible: boolean }) {
   // that parses + dispatches every structured <tag> the planner emits. bufRef is the tag-scan
   // buffer (cleared on restart); autopilotTxRef is the un-consumed copy the autopilot reads.
   const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream({
-    projectId: effectiveProjectId,
     setActiveSection,
   });
   const apLastSnapLen  = useRef(0);
