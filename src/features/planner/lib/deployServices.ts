@@ -140,16 +140,24 @@ export function finalStageName(s: DeployService | undefined): "deploy" | "publis
   return "deploy";
 }
 
-/** The readiness checks for ONE service (repo) — every one `ok` ⇒ this repo is deploy-ready. */
+/** The readiness checks for ONE service (repo) — every one `ok` ⇒ this repo is deploy-ready. Checks
+ *  are MODE-AWARE (#2023): GitHub (Actions/environments/secrets) is a mandatory baseline, so BOTH
+ *  modes gate on target + CI/CD pipeline + environments + config-secrets. Only the cloud
+ *  instance-replacement **release/rollout** strategy (recreate/rolling/blue-green/canary) is
+ *  cloud-only — a local build (library publish / application package) has no rollout, so that check
+ *  is omitted for local mode (its shipping is the pipeline's publish/package stage instead). */
 export function serviceChecks(s: DeployService): ReadinessCheck[] {
   const prodSecrets = s.config.secrets.length === 0 || s.config.secrets.every((row) => !!row.prod);
-  return [
+  const checks: ReadinessCheck[] = [
     { id: "target",   label: "Deploy target set",          ok: serviceTargetDefined(s),     detail: serviceMode(s) === "local" ? (s.localKind ?? "local") : (platform(s.platform).name || "—") },
     { id: "envs",     label: "Environment ladder defined", ok: s.envs.length >= 2,           detail: `${s.envs.length} environments` },
     { id: "pipeline", label: "CI/CD pipeline staged",      ok: s.pipeline.stages.length >= 2, detail: s.pipeline.provider },
     { id: "secrets",  label: "Secrets wired for every env", ok: prodSecrets,                 detail: prodSecrets ? "all set" : "missing prod" },
-    { id: "release",  label: "Release & rollback strategy", ok: !!s.release.strategy,        detail: s.release.strategy || "—" },
   ];
+  if (serviceMode(s) === "cloud") {
+    checks.push({ id: "release", label: "Release & rollback strategy", ok: !!s.release.strategy, detail: s.release.strategy || "—" });
+  }
+  return checks;
 }
 
 /** Whether a single repo's deploy plan is complete (all its checks pass). */
