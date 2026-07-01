@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { integrationGaps } from "./integrationGaps";
-import type { McpServer } from "@/features/mcp/lib/mcpServers";
+import { BUILTIN_MCP_SERVERS, type McpServer } from "@/features/mcp/lib/mcpServers";
 import type { DeclaredSource } from "./sourceConfig";
+
+// The always-on built-in MCP servers (Research + Compliance, #1196) are global + enabled by
+// construction, so `resolveMcpServers` returns them for every project and they always classify as
+// `assigned`. Any count assertion has to account for them.
+const BUILTINS = BUILTIN_MCP_SERVERS.length;
 
 const mcp = (name: string, over: Partial<McpServer> = {}): McpServer => ({
   id: name, name, enabled: true, projects: [], transport: "stdio", command: "x", args: "", ...over,
@@ -27,11 +32,14 @@ describe("integrationGaps — detect", () => {
     expect(g.items.some((i) => i.kind === "connector")).toBe(false);
   });
 
-  it("picks up an explicit <mcp_assign>, and an unknown server name is missing (no template)", () => {
-    const g = integrationGaps({ ...base, text: 'Tools: <mcp_assign name="Acme Private" />' });
+  it("classifies an explicitly-assigned server (via the mcpServers array) as assigned, even with an unknown, non-catalog name", () => {
+    // MCP assignment is no longer a `<mcp_assign>` text tag (#tag-parse-migration): the planner records
+    // it with `bsc plan mcp add`, which the plan.db poll resolves into the `mcpServers` array. A server
+    // scoped + enabled for the project is `assigned` regardless of whether it has a catalog template.
+    const g = integrationGaps({ ...base, text: "Tools needed.", mcpServers: [mcp("Acme Private", { projects: ["p1"] })] });
     const it0 = g.items.find((i) => i.ref === "Acme Private")!;
-    expect(it0.status).toBe("missing");
-    expect(it0.action).toBe("install");
+    expect(it0.status).toBe("assigned");
+    expect(it0.action).toBeUndefined();
   });
 });
 
@@ -74,15 +82,16 @@ describe("integrationGaps — summary", () => {
       projectId: "p1",
     });
     expect(g.items.filter((i) => i.ref === "Postgres")).toHaveLength(1); // deduped
-    expect(g.assigned).toBe(1); // Stripe
+    expect(g.assigned).toBe(1 + BUILTINS); // Stripe + the always-on built-ins
     expect(g.available).toBe(1); // Postgres
-    expect(g.ready).toBe(false);
+    expect(g.ready).toBe(false); // Postgres is available (unassigned)
     expect(g.total).toBe(g.assigned + g.available + g.missing);
   });
 
-  it("an empty plan implies nothing and is ready", () => {
+  it("an empty plan implies only the always-on built-ins and is ready", () => {
     const g = integrationGaps({ ...base, text: "" });
-    expect(g.total).toBe(0);
-    expect(g.ready).toBe(true);
+    expect(g.total).toBe(BUILTINS); // just Research + Compliance, both assigned
+    expect(g.assigned).toBe(BUILTINS);
+    expect(g.ready).toBe(true); // nothing available/missing
   });
 });

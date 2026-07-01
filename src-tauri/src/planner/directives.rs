@@ -85,7 +85,7 @@ mod tests {
         // instruct `bsc plan deps set` (deps live in the Streams stage now, #1429).
         let dep = stage_directive("deployment");
         assert!(dep.contains("Deployment"), "collapsed stage names itself Deployment: {dep}");
-        assert!(dep.contains("repo_link") && dep.contains("bsc plan deploy set"),
+        assert!(dep.contains("bsc plan repo add") && dep.contains("bsc plan deploy set"),
             "Deployment covers link + deploy: {dep}");
         assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams (#1429): {dep}");
         let streams = stage_directive("streams");
