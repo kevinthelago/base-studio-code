@@ -1,13 +1,15 @@
-//! Session discovery (#1266, Stage 2): reconstruct the session topology from durable,
+//! Session discovery (#1266, Stage 2): reconstruct the *live* session topology from durable,
 //! store-independent sources so a session can be recovered from its NAME alone — even when the
 //! persisted (Zustand) store has lost the entry.
 //!
-//! Two sources, with different lifetimes:
-//!   * the **pty ledger** (`pty_ledger`) — every *running* session's exact identity pane id + pid.
-//!     Cleared on a clean quit, so it reflects live/orphaned processes (the crash case).
-//!   * the **project hubs + worktrees** — each `projects/<key>/fleet.json` (the planned director +
-//!     workers) cross-referenced with `worktrees/<key>/<repo>--<slug>/` existence. Durable across
-//!     clean exits → *dormant* fleet sessions that aren't currently running.
+//! Recovery surfaces ONLY LIVE sessions — the **pty ledger** (`pty_ledger`) records every running
+//! session's identity pane id + pid; it's cleared on a clean quit, so it reflects exactly the
+//! live/orphaned processes a crash left behind (the recovery case, #1041). It is NOT reconstructed
+//! from on-disk project hubs: a never-launched plan or a launched-but-stopped fleet is not a
+//! recoverable session, and surfacing every saved project floods the banner (#1390).
+//!
+//! The **project hubs + plan.db fleets** are still read — but ONLY to enrich a live session with its
+//! `project_key` / `repo` / `cwd` (where to reopen it), never to create a recoverable entry.
 //!
 //! The result is read-only: the frontend reconciles it against the store and lets the user decide
 //! what to restore (#1266 Stages 3–4). Manual `man:…` panes surface (from the ledger) but are
@@ -16,6 +18,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
+use crate::worktree_slug;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +29,9 @@ pub struct DiscoveredSession {
     pub sources: Vec<String>,
     /// The live shell pid, when a running process currently owns this pane.
     pub live_pid: Option<u32>,
-    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in fleet.json, never launched).
+    /// "running" (a live pid) · "dormant" (on disk, not running) · "planned" (in the plan.db fleet,
+    /// never launched) · "orphaned" (a live pid whose project was deleted — no hub, no known
+    /// project; unrestorable, so recovery reaps it rather than opening a console for it, #1279).
     pub status: String,
     /// The owning project key, when derivable from a hub. (The frontend re-parses `pane_id` authoritatively.)
     pub project_key: Option<String>,
@@ -39,13 +44,22 @@ pub struct DiscoveredSession {
 const RUNNING: &str = "running";
 const DORMANT: &str = "dormant";
 const PLANNED: &str = "planned";
+const ORPHANED: &str = "orphaned";
 
-/// Mirror of the frontend `worktreeSlug` / Rust `worktree_slug`: keep only `[A-Za-z0-9._-]`.
-fn worktree_slug(agent_id: &str) -> String {
-    agent_id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
-        .collect()
+/// Whether a live ledger pane id is an **orphan of a deleted project** (#1279): a project-keyed
+/// session (`<key>:…`, not a manual/positional id) whose project no longer exists — its hub dir is
+/// gone **and** its key maps to no known plan.db fleet. Such a shell can't be restored (nothing to
+/// rehydrate) nor attributed (the key resolves to no project), so recovery must reap it.
+fn is_orphaned(
+    pane_id: &str,
+    base_dir: &Path,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
+) -> bool {
+    let Some(key) = crate::console::ledger::project_key_of(pane_id) else {
+        return false; // manual / positional panes are never project orphans
+    };
+    let hub_gone = !base_dir.join("projects").join(key).is_dir();
+    hub_gone && fleet_for(key).is_none()
 }
 
 fn push_source(sources: &mut Vec<String>, s: &str) {
@@ -62,6 +76,7 @@ pub fn discover_sessions_impl(
     base_dir: &Path,
     ledger: &[(String, u32)],
     alive: &dyn Fn(u32) -> bool,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
 ) -> Vec<DiscoveredSession> {
     let mut map: BTreeMap<String, DiscoveredSession> = BTreeMap::new();
 
@@ -74,20 +89,28 @@ pub fn discover_sessions_impl(
         let d = map.entry(pane_id.clone()).or_insert_with(|| blank(pane_id));
         push_source(&mut d.sources, "ledger");
         d.live_pid = Some(*pid);
-        d.status = RUNNING.into();
+        // A live shell whose project was deleted (no hub, no known fleet) is an orphan, not a
+        // restorable running session — recovery reaps it (#1279). Everything else is running.
+        d.status = if is_orphaned(pane_id, base_dir, fleet_for) { ORPHANED } else { RUNNING }.into();
     }
 
-    // 2) Hub pass — dormant/planned director + workers from each project's fleet.json + worktrees.
+    // 2) Hub pass — dormant/planned director + workers from each project's plan.db fleet + worktrees.
     if let Ok(rd) = std::fs::read_dir(base_dir.join("projects")) {
         for entry in rd.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let key = entry.file_name().to_string_lossy().to_string();
-                discover_hub(base_dir, &key, &mut map);
+                discover_hub(base_dir, &key, &mut map, fleet_for);
             }
         }
     }
 
-    map.into_values().collect()
+    // Recovery surfaces only LIVE sessions — `running`, or `orphaned` (a live shell whose project was
+    // deleted). The hub pass above runs purely to ENRICH those with their project_key/repo/cwd; a
+    // session that exists ONLY on disk (a never-launched `planned` fleet, or a launched-but-stopped
+    // `dormant` one) is NOT recoverable and must not surface — otherwise recovery floods with every
+    // saved project (#1390). A clean quit clears the ledger, so there is correctly nothing to recover
+    // then; recovery is the crash/orphan case (#1041).
+    map.into_values().filter(|d| d.live_pid.is_some()).collect()
 }
 
 fn blank(pane_id: &str) -> DiscoveredSession {
@@ -102,14 +125,15 @@ fn blank(pane_id: &str) -> DiscoveredSession {
     }
 }
 
-fn discover_hub(base_dir: &Path, key: &str, map: &mut BTreeMap<String, DiscoveredSession>) {
-    let raw = match std::fs::read_to_string(base_dir.join("projects").join(key).join("fleet.json")) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let v: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return,
+fn discover_hub(
+    base_dir: &Path,
+    key: &str,
+    map: &mut BTreeMap<String, DiscoveredSession>,
+    fleet_for: &dyn Fn(&str) -> Option<serde_json::Value>,
+) {
+    let v = match fleet_for(key) {
+        Some(v) => v,
+        None => return,
     };
     let hub = base_dir.join("projects").join(key);
     let wts = base_dir.join("worktrees").join(key);
@@ -137,7 +161,7 @@ fn discover_hub(base_dir: &Path, key: &str, map: &mut BTreeMap<String, Discovere
 }
 
 /// Merge a hub-discovered session into the map without clobbering a running (ledger) hit. Always
-/// records `fleet` as a source (it came from fleet.json); adds `worktree` when its checkout exists.
+/// records `fleet` as a source (it came from the plan.db fleet); adds `worktree` when its checkout exists.
 fn upsert(
     map: &mut BTreeMap<String, DiscoveredSession>,
     pane_id: &str,
@@ -171,11 +195,25 @@ fn upsert(
 /// frontend reconciles this against the open tabs and lets the user choose what to restore.
 #[tauri::command]
 pub fn discover_sessions() -> Vec<DiscoveredSession> {
-    let ledger: Vec<(String, u32)> = crate::pty_ledger::ledger_entries()
+    let ledger: Vec<(String, u32)> = crate::console::ledger::ledger_entries()
         .into_iter()
         .map(|e| (e.pane_id, e.pid))
         .collect();
-    discover_sessions_impl(&crate::bsc_base_dir(), &ledger, &|pid| crate::pty_ledger::is_pid_alive(pid))
+    discover_sessions_impl(
+        &crate::bsc_base_dir(),
+        &ledger,
+        &|pid| crate::console::ledger::is_pid_alive(pid),
+        &|key| crate::project::plan_db::fleet_for(key),
+    )
+}
+
+/// Discard ONE discovered session by its identity pane id (#1266 Stage 4): tree-kill its still-running
+/// shell (if any) and forget its ledger entry, so an orphaned/unwanted session is gone. Read-only as
+/// to the user's work on disk — it only reaps the live process + the ledger record, never the worktree
+/// or branch. Returns true if a live shell was killed. The reconcile is recomputed by the caller.
+#[tauri::command]
+pub fn reap_session(pane_id: String) -> bool {
+    crate::console::ledger::reap_session(&pane_id)
 }
 
 #[cfg(test)]
@@ -198,32 +236,38 @@ mod tests {
     }
 
     /// A hub with director + two workers; one worker launched (worktree exists), one only planned.
-    fn write_fixture(base: &Path) {
-        let hub = base.join("projects").join("proj");
-        fs::create_dir_all(&hub).unwrap();
-        fs::write(
-            hub.join("fleet.json"),
-            r#"{
-                "recommended": 2, "reasoning": "",
-                "director": { "enabled": true, "role": "integrator" },
-                "streams": [
-                    { "id": "auth-ui", "name": "Auth UI", "repo": "own/web", "owns": [], "issues": [], "dependsOn": [] },
-                    { "id": "api", "name": "API", "repo": "own/api", "owns": [], "issues": [], "dependsOn": [] }
-                ]
-            }"#,
-        )
-        .unwrap();
-        // auth-ui has a worktree (launched); api does not (planned).
+    /// The fleet itself is served via the `fleet_for` closure (plan.db), not a file on disk.
+    fn fleet_json() -> serde_json::Value {
+        serde_json::json!({
+            "recommended": 2, "reasoning": "",
+            "director": { "enabled": true, "role": "integrator" },
+            "streams": [
+                { "id": "auth-ui", "name": "Auth UI", "repo": "own/web", "owns": [], "issues": [], "dependsOn": [] },
+                { "id": "api", "name": "API", "repo": "own/api", "owns": [], "issues": [], "dependsOn": [] }
+            ]
+        })
+    }
+
+    /// The hub dir must exist so the hub-pass enumerates "proj"; auth-ui has a worktree (launched),
+    /// api does not (planned). No `fleet.json` — the fleet comes from the closure.
+    fn prepare_disk(base: &Path) {
+        fs::create_dir_all(base.join("projects").join("proj")).unwrap();
         fs::create_dir_all(base.join("worktrees").join("proj").join("web--auth-ui")).unwrap();
     }
 
     #[test]
-    fn discovers_running_dormant_and_planned_with_sources() {
+    fn surfaces_only_live_sessions_enriched_from_the_hub() {
+        // #1390: recovery returns ONLY live (running/orphaned) sessions. A dormant fleet (launched,
+        // worktree on disk, not running) and a planned one (in the fleet, never launched) must NOT
+        // surface — they only exist on disk. The hub pass still ENRICHES the live ones.
         let base = tmp_base();
-        write_fixture(&base);
+        prepare_disk(&base);
+        let mut fleets = std::collections::HashMap::new();
+        fleets.insert("proj".to_string(), fleet_json());
+        let fleet_for = |k: &str| fleets.get(k).cloned();
 
         // Ledger: the director is running (pid 100); a manual scratch is running (pid 200);
-        // a stale api entry (pid 999) is dead and must be skipped.
+        // a stale api entry (pid 999) is dead.
         let ledger = vec![
             ("proj:director".to_string(), 100u32),
             ("man:scratch:p0".to_string(), 200u32),
@@ -231,35 +275,61 @@ mod tests {
         ];
         let alive = |pid: u32| pid == 100 || pid == 200;
 
-        let out = discover_sessions_impl(&base, &ledger, &alive);
+        let out = discover_sessions_impl(&base, &ledger, &alive, &fleet_for);
 
-        // Director: running (ledger wins), enriched with the hub cwd + project key from fleet.json.
-        let dir = find(&out, "proj:director").expect("director discovered");
+        // Director: running (live), STILL enriched with the hub cwd + project key from the plan.db fleet.
+        let dir = find(&out, "proj:director").expect("running director surfaces");
         assert_eq!(dir.status, "running");
         assert_eq!(dir.live_pid, Some(100));
         assert_eq!(dir.project_key.as_deref(), Some("proj"));
         assert_eq!(dir.sources, vec!["fleet".to_string(), "ledger".to_string()]);
 
-        // auth-ui: dormant — its worktree exists but it isn't running.
-        let auth = find(&out, "proj:auth-ui").expect("auth-ui discovered");
-        assert_eq!(auth.status, "dormant");
-        assert_eq!(auth.live_pid, None);
-        assert_eq!(auth.repo.as_deref(), Some("own/web"));
-        assert_eq!(auth.sources, vec!["fleet".to_string(), "worktree".to_string()]);
-        assert!(auth.cwd.as_deref().unwrap().ends_with("web--auth-ui"));
-
-        // api: planned — in fleet.json, no worktree, dead ledger entry skipped.
-        let api = find(&out, "proj:api").expect("api discovered");
-        assert_eq!(api.status, "planned");
-        assert_eq!(api.sources, vec!["fleet".to_string()]);
-        assert_eq!(api.repo.as_deref(), Some("own/api"));
-
         // The manual scratch surfaces from the ledger (the frontend marks it reap-only).
-        let man = find(&out, "man:scratch:p0").expect("manual discovered");
+        let man = find(&out, "man:scratch:p0").expect("running manual surfaces");
         assert_eq!(man.status, "running");
         assert_eq!(man.live_pid, Some(200));
-        assert_eq!(man.project_key, None);
-        assert_eq!(man.sources, vec!["ledger".to_string()]);
+
+        // auth-ui (dormant: worktree on disk, no live pid) and api (planned: in the fleet, dead pid)
+        // are disk-only — NOT recoverable, so they DON'T surface anymore.
+        assert!(find(&out, "proj:auth-ui").is_none(), "a dormant fleet session must not surface");
+        assert!(find(&out, "proj:api").is_none(), "a planned fleet session must not surface");
+        assert_eq!(out.len(), 2, "only the two LIVE sessions surface");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// #1279: a live ledger entry whose project was deleted — no `projects/<key>/` hub AND the key
+    /// maps to no plan.db fleet — is classified `orphaned`, never `running`. Recovery reaps it
+    /// rather than trying (and failing) to restore an unrestorable session.
+    #[test]
+    fn forgotten_key_ledger_entry_is_orphaned_not_running() {
+        let base = tmp_base();
+        // Only one live hub ("proj"); the deleted project "gone" has NO hub dir and NO fleet.
+        fs::create_dir_all(base.join("projects").join("proj")).unwrap();
+        let mut fleets = std::collections::HashMap::new();
+        fleets.insert("proj".to_string(), fleet_json());
+        let fleet_for = |k: &str| fleets.get(k).cloned();
+
+        let ledger = vec![
+            ("proj:director".to_string(), 100u32), // live, hub present → running
+            ("gone:auth-ui".to_string(), 300u32),  // live, project deleted → orphaned
+            ("man:scratch:p0".to_string(), 200u32), // manual scratch → running (reap-only via frontend)
+        ];
+        let alive = |_: u32| true;
+
+        let out = discover_sessions_impl(&base, &ledger, &alive, &fleet_for);
+
+        let orphan = find(&out, "gone:auth-ui").expect("forgotten-key entry surfaces");
+        assert_eq!(orphan.status, "orphaned");
+        assert_eq!(orphan.live_pid, Some(300));
+        assert_eq!(orphan.sources, vec!["ledger".to_string()]);
+        // It is NOT enriched from any hub (there is none) — no project key/cwd to attribute it to.
+        assert_eq!(orphan.project_key, None);
+
+        // A live session with a real hub is still plain "running".
+        assert_eq!(find(&out, "proj:director").unwrap().status, "running");
+        // A manual scratch shell is never a project orphan.
+        assert_eq!(find(&out, "man:scratch:p0").unwrap().status, "running");
 
         let _ = fs::remove_dir_all(&base);
     }
@@ -268,7 +338,7 @@ mod tests {
     fn empty_when_nothing_on_disk_or_alive() {
         let base = tmp_base();
         fs::create_dir_all(base.join("projects")).unwrap();
-        let out = discover_sessions_impl(&base, &[("proj:director".into(), 1)], &|_| false);
+        let out = discover_sessions_impl(&base, &[("proj:director".into(), 1)], &|_| false, &|_| None);
         assert!(out.is_empty(), "no live ledger entries + no hubs ⇒ nothing discovered");
         let _ = fs::remove_dir_all(&base);
     }

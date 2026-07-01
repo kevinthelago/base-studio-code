@@ -1,0 +1,13 @@
+[package]
+name = "mcp-rpc"
+version = "0.1.0"
+edition = "2021"
+description = "Shared stdio JSON-RPC 2.0 core for base-studio-code's bundled native MCP servers (#1622) — the `initialize`/`tools/list`/`tools/call` handshake, the request/response builders, the dispatch, and the newline-delimited stdin→stdout run-loop, parameterized by each server's tool catalog + dispatcher (the `ToolServer` trait). Used by `bsc-research-mcp` and `bsc-compliance-mcp` so the JSON-RPC plumbing lives in one tested place while each crate keeps its own tools + arg parsers."
+
+# Pure lib (no Tauri, no async runtime, no I/O beyond the stdio run-loop) so it stays a lightweight
+# dependency of the bundled MCP server binaries and the dispatch logic is unit-testable in isolation.
+[lib]
+name = "mcp_rpc"
+
+[dependencies]
+serde_json = "1"

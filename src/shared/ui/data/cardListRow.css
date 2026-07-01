@@ -1,0 +1,41 @@
+/* CardListRow — the shared selectable card-list row (portable; not feature-scoped). The card-list
+   archetype of the row vocabulary (#1865; sibling: DataTableRow). Chrome was the ex-`.ext-workspace .row`
+   mcp.css rule; feature content (health dot, scope chips, toggle) keeps its own screen-scoped styling
+   inside the slots. */
+.card-list-row {
+  background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: var(--r-md);
+  padding: 10px 14px; display: grid; grid-template-columns: 18px 1fr auto;
+  align-items: center; gap: 14px; cursor: default; transition: border-color .1s, background .1s;
+}
+.card-list-row.clickable:hover { border-color: var(--border); }
+.card-list-row.selected { border-color: var(--accent-dim); background: var(--bg-elev); }
+.card-list-row.off { opacity: .55; }
+
+.clr-lead { display: flex; align-items: center; justify-content: center; }
+.clr-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.clr-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clr-name { font-family: var(--mono); font-size: 12.5px; font-weight: 500; color: var(--fg); }
+.card-list-row.off .clr-name { color: var(--fg-muted); }
+.clr-desc { font-family: var(--sans); font-size: 11.5px; color: var(--fg-muted); line-height: 1.5; }
+.clr-aside { display: flex; align-items: center; gap: 14px; }
+.clr-spacer { flex: 1; }
+.clr-body { margin-top: 6px; min-width: 0; }
+
+/* a body makes the row multi-line — top-align the lead + trailing columns with the header */
+.card-list-row.has-body { align-items: start; }
+
+/* grouped variant — rows grouped under a parent card (no border of their own, top-separated),
+   inheriting the card's background. Matches the ex-`.pane-row` look. */
+.card-list-row.grouped {
+  background: transparent; border: 0; border-top: 1px solid var(--border-soft); border-radius: 0;
+  padding: 11px 16px;
+}
+.card-list-row.grouped:first-of-type { border-top: 0; }
+.card-list-row.grouped.clickable:hover { background: var(--bg-elev); }
+.card-list-row.grouped.selected { border-top-color: var(--border-soft); }
+
+.card-list-row.clickable { cursor: pointer; }
+
+/* accent rail — a left bar in `accent` colour, shown when the row is selected (e.g. a profile colour) */
+.card-list-row.has-accent { border-left: 2px solid transparent; }
+.card-list-row.has-accent.selected { border-left-color: var(--clr-accent, var(--accent)); }

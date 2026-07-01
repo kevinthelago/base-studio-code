@@ -1,0 +1,11 @@
+{
+  "id": "hipaa-safeguards",
+  "name": "HIPAA safeguards review",
+  "kind": "review",
+  "source": "first-party",
+  "desc": "Reviews PHI handling against the HIPAA Security Rule — encryption, access controls, audit logging, and minimum-necessary — citing each gap.",
+  "body": "Read-only review of PHI handling against the HIPAA Security Rule technical safeguards. Report findings only.\n1. Access control (§164.312(a)): unique user identification, RBAC scoped to minimum-necessary, automatic logoff.\n2. Audit controls (§164.312(b)): tamper-evident logging of PHI access — who accessed which record, when.\n3. Integrity (§164.312(c)): protections against improper PHI alteration/destruction.\n4. Transmission security (§164.312(e)) + encryption at rest: TLS in transit, encrypted storage; flag any PHI in logs, URLs, or analytics.\n5. Confirm a path for Business Associate Agreements with any third party that touches PHI.\n6. Output a safeguards table (§ · control · status · evidence file:line · remediation).",
+  "tools": ["git_diff", "rank_files", "repo_map"],
+  "profiles": ["review"],
+  "pinned": false
+}

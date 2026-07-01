@@ -1,0 +1,29 @@
+{
+  "order": 4,
+  "id": "combine-services",
+  "name": "Combine microservices",
+  "desc": "Merge services back into fewer (or a monolith)",
+  "origin": "built-in",
+  "icon": "⧈",
+  "h": 260,
+  "category": "transform",
+  "mode": "operate",
+  "sections": [
+    {
+      "key": "discovery"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "consolidation"
+    },
+    {
+      "key": "testing"
+    },
+    {
+      "key": "structure",
+      "fleet": true
+    }
+  ]
+}

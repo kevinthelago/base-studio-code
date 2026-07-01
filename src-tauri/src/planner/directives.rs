@@ -1,4 +1,4 @@
-use super::templates::*;
+use super::prompts::*;
 
 /// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
 /// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
@@ -6,45 +6,37 @@ use super::templates::*;
 #[tauri::command]
 pub(crate) fn planner_intro_prompt(mode: String) -> String {
     match mode.as_str() {
-        "blueprint" => PLANNING_INTRO_BLUEPRINT,
-        "existing" => PLANNING_INTRO_EXISTING,
-        _ => PLANNING_INTRO_NEW,
+        "blueprint" => planning_greeting_blueprint(),
+        "existing" => planning_greeting_existing(),
+        _ => planning_greeting_new(),
     }
-    .to_string()
 }
+/// Return one planning stage's directive prose by id (the same text `build_active_stages_md`
+/// embeds) so the frontend can bake the FIRST active stage's directive into a bsc-agent planner's
+/// startup prompt (#qwen). Claude Code receives stage directives via runtime injection as it
+/// advances; the one-shot bsc-agent loop never gets stage 1's, so without this it greets the user
+/// and then waits for instructions the app never sends. Unknown ids fall back to the generic line.
+#[tauri::command]
+pub(crate) fn planner_stage_directive(id: String) -> String {
+    stage_directive(&id)
+}
+
 /// One-line directive per planning stage (#542/#666) for the assembled active-stages
 /// section. Unknown ids fall back to a generic line.
 pub(crate) fn stage_directive(id: &str) -> String {
-    let line = match id {
-        "context"     => "**Context** — establish the project's context one topic at a time, each a markdown file at `context/<topic>.md` (canonical key = the file stem). The REQUIRED set is DYNAMIC: the baseline `goal, scope, stack, architecture, users, release` is seeded for you — shape it for THIS project with `bsc-plan context require <topic>` / `bsc-plan context unrequire <topic>` as the picture clarifies (a CLI tool unrequires `users`/`ux`; a data platform requires `schema`; a realtime API requires `api`). `bsc-plan context list` shows the manifest. The `release` file proposes the versioning + release schedule: default to a COMPLETE initial prototype first, then FEATURE-BY-FEATURE releases (semver; release-and-continue). ALWAYS write the required files; cover other dimensions ONLY where they genuinely apply, using the canonical key as the file stem (`context/ux.md`, `context/schema.md`, `context/api.md`, `context/security.md`, `context/testing.md`, `context/observability.md`, `context/reliability.md`, `context/data_lifecycle.md`, …; the production-readiness bars in the planning guide are first-class dimensions here — apply where they matter, accessibility/compliance via the Compliance MCP, and **SEO for any public web-facing project** (`context/seo.md` — target audience/keywords + indexability; the **Web SEO** skill carries the how; skip it for CLI/desktop/library/internal/API-only)). When the project hinges on specialized or fast-moving techniques (graphics, algorithms, ML, cryptography, distributed systems, physics), ground the `stack`/`architecture` choices in the built-in **Research** MCP — start with `search` `sources:[\"wikipedia\"]` for the lay-of-the-land, then the scientific sources for depth, and cite what you adopt rather than guessing. Record every dimension you don't document in `context/_skipped.md`. The required files are done once WRITTEN — they're generated, not confirmed (the gate checks every required `context/<topic>.md` exists). Do NOT create files for tangential topics, or the gate can't complete.",
-        "repos"       => "**Repos** — decide and link the repositories: emit `<repo_link owner/repo>` for each (clones it into the hub + records the link in plan.db, durable). Do NOT write repos.json — links live in plan.db (`bsc-plan repo list` shows them; `bsc-plan repo add owner/repo` links one directly).",
-        "deploy"      => "**Deploy** (right after Repos) — define how each service SHIPS, then RECORD it in the plan DB by piping the config JSON to `bsc-plan deploy set`. **`bsc-plan deploy set` is what clears the gate and fills the Deploy pane — a prose `deploy.md` does NOT** (`bsc-plan deploy get` shows the stored config). JSON fields: `services` (array; each REQUIRES `platform` + `workload` = static|serverless|container|service, plus `id`, `repo`, `region`, `build`, `output`/`runtime`); `environments` (≥2; each `name`, `branch`, `url`, `auto`); `pipeline` (`provider` + `stages`: array of `{name, trigger: push|tag|on-green|manual, gate: bool, cmd}`, ≥2 stages); `secrets` (array of `{key, envs:[…]}` — list `prod` in `envs` for every prod-needed secret); `release` (`strategy` = recreate|rolling|blue-green|canary, `autoRollback`, `keep`, `migrateWithDeploy`); `health` (`probe`, `slo`, `alerts`). The gate (`deploymentDefined`) needs: a `platform` on EVERY service, ≥2 environments, ≥2 pipeline stages, every secret wired for `prod`, and a non-empty `release.strategy`. Propose defaults from the stack, confirm with the user, then pipe the whole config: `echo '{…}' | bsc-plan deploy set` (re-run with the full config as it firms up). A human-readable `deploy.md` is optional reference. Publishes as deployment issues owned by a `deploy` stream.",
-        "ui"          => "**UI** — runs AFTER Features: design the screens that deliver the defined capabilities. Write functionless React skeletons to `.ui-skeleton/<Screen>.jsx` and emit `<ui_preview screen=\"…\" mode=\"2d|3d\" />` to render them live. Then author a **Claude Design kickoff** at `prompts/ui-kickoff.md` — a self-contained brief (goal, feature→screen map, each screen's states/flows, design-system constraints) the user pastes into a Claude Design session.",
-        "features"    => "**Features** — work titles-first via the `bsc-plan feature` store (NOT a features.json file). STEP 1: register the COMPLETE title roster in one pass — `bsc-plan feature add \"Invite teammates\" \"Export to CSV\" ...` (names only; the board shows each as an undefined title). Agree the roster with the user before detailing. STEP 2: drive ONE feature at a time, filling its detail by slug — `echo '{\"slug\":\"invite-teammates\",\"behavior\":\"…\",\"acceptance\":[\"…\"],\"approach\":\"…\",\"tools\":[\"…\"],\"data\":\"…\",\"dependsOn\":[\"…\"],\"stream\":\"…\"}' | bsc-plan feature add` (merges in place — do NOT resend the name). `behavior` = what it does + when, in the user's terms; `acceptance` = a done-when checklist; `data` = what it stores/reads; `dependsOn` = slugs of OTHER features this one builds on (the roadmap DAG — keep it acyclic; a feature may be foundational, not just user-facing); `stream` defaults to the slug. A feature is defined once it has name + behavior + ≥1 acceptance (`bsc-plan feature list` shows ✓/·). Do NOT design the integration contracts here — that's the Plan/Structure stage. When EVERY feature is populated, present the set and let the USER confirm to complete the stage — never advance the stage yourself.",
-        "structure"   => "**Structure** — the features are a dependency DAG (`bsc-plan feature list` shows each feature + its `dependsOn`). SEQUENCE them into a roadmap, all IN THE PLAN DB — do NOT write phases.json or any issue files. Issues are generated from the features at GitHub-publish time, not during planning (no `bsc-plan add`). Two writes: (1) define the ordered phases — `bsc-plan phase add \"<name>\" \"<done-when>\"`, foundations first (`bsc-plan phase list` numbers them); (2) assign EVERY feature its phase NUMBER via `echo '{\"slug\":\"…\",\"phase\":<n>}' | bsc-plan feature add` (merges in place). When every feature is phased, present the roadmap + the dependency graph and get the user's approval. (Existing repos: inventory every screen/module first so none is missed.)",
-        "permissions" => "**Permissions** — plan the agent fleet IN THE PLAN DB: pipe a FleetPlan JSON (non-overlapping streams with least-privilege profiles + per-stream perms/flows, plus recommended/director/topology) to `bsc-plan fleet set`. Do NOT write fleet.json — `bsc-plan fleet get` shows the stored fleet.",
-        "automations" => "**Automations** — propose cron automations (emit `<automation_assign>`).",
-        "skills"      => "**Skills** — select reusable skills from the library AND author new ones GROUNDED IN REAL SOURCES (`skills.json`). The built-in **Research** MCP is always available (no setup). SEED each new skill from **Wikipedia** first — `search` with `sources:[\"wikipedia\"]`, then `get_fulltext` on the article to lay down the broad skeleton (definitions, sub-topics, key terms). Then REFINE it by looping the scientific sources (arXiv, Semantic Scholar, PubMed/PMC, Crossref): `search` those sub-topics and use `get_fulltext` / `semantic_search` to pull the exact passages, folding that cited, current depth back into the skill. Each pass adds detail + citations — so workers get evidence-based technique, not guesswork. This matters most for specialized, fast-moving areas (3D graphics, algorithms, ML, cryptography, distributed systems, physics). Prefer recent, well-cited work; never fabricate references.",
-        // transform / operate stages (#666) — these do NOT produce issues.json.
-        "refactor"     => "**Refactor** — identify improvement opportunities (dead code, simplification, performance); write one targeted cleanup issue per area. Do NOT produce `phases.json` or `issues.json`.",
-        "cleanup"      => "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
-        "testing" | "testing-informational" => "**Testing** — define the coverage strategy and the test safety net for the changes.",
-        "transform"    => "**Transform** — plan the migration to a new pattern, version, or framework; write migration issues in strict dependency order.",
-        "boundaries"   => "**Service boundaries** — map the bounded contexts and the seams to split the monolith along.",
-        "extraction"   => "**Extraction plan** — sequence the incremental, shippable steps to carve out each service.",
-        "consolidation" => "**Consolidation** — plan merging the services, unifying data stores and contracts.",
-        "migration"    => "**Migration plan** — the from→to mapping and an incremental, reversible cutover.",
-        "hardening"    => "**Security hardening** — threat-model, audit (authz / secrets / deps), and plan concrete fixes.",
-        // Blueprint-authoring lifecycle (#923) — the DELIVERABLE is a reusable blueprint published
-        // to a gist; there is NO code, no fleet, no triage. Build the blueprint with `bsc-plan
-        // blueprint set` and re-run it with the whole blueprint as it grows (#1022).
-        "purpose"         => "**Purpose** — you are designing a reusable BLUEPRINT (a planning template), not a software project. Establish its lifecycle category, the projects it seeds, and its name + description; record it with `bsc-plan blueprint set` (the blueprint JSON on stdin: id/name/desc/category/mode). Do NOT emit a `<blueprint>` tag — `bsc-plan blueprint get` shows the stored blueprint.",
-        "bp_stages"       => "**Stages** — design the blueprint's ordered stages, one at a time: each stage's key+name, intent, the discovery prompt it runs, its deps/order, and whether it's optional. Re-run `bsc-plan blueprint set` with the full blueprint JSON as the sections array grows.",
-        "bp_capabilities" => "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc-plan blueprint set`.",
-        "bp_review"       => "**Review & publish** — review the assembled blueprint with the user, record the FINAL blueprint with `bsc-plan blueprint set`, and let the user publish it to a gist from the footer. Do NOT publish it yourself.",
-        other         => return format!("**{other}** — configured stage."),
-    };
-    line.to_string()
+    // Every stage directive — including the composed/lifecycle ids (`deployment`, `streams`) —
+    // resolves from its `data/stages/<id>.json` `directive` field; an unknown id (incl. an archived
+    // stage) gets the generic fallback. ONE resolution path, no Rust-side prose (#1610).
+    directive_of(id)
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| format!("**{id}** — configured stage."))
+}
+/// Read the `directive` field of `data/stages/<id>.json` — the user's copy under the config dir if
+/// present, else the embedded seed (#2027 P2). `None` if the stage file is absent or has no directive.
+fn directive_of(id: &str) -> Option<String> {
+    let raw = crate::platform::config::load_opt(&format!("stages/{id}.json"))?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("directive")?.as_str().map(str::to_string)
 }
 /// Assemble the "Active planning stages" section from the project's ENABLED stages
 /// (in order). Stages not listed are declared out of scope, so a disabled stage is
@@ -53,11 +45,122 @@ pub(crate) fn build_active_stages_md(stages: &[String]) -> String {
     if stages.is_empty() {
         return String::new();
     }
-    let mut s = String::from(
-        "\n## Active planning stages\n\nThe app drives the plan **one stage at a time** — it sends you each stage's working instructions the moment you reach it. Treat this list as SCOPE: work the current stage, then wait for the app to advance you; don't run ahead or jump stages. **Stages not listed here are OUT OF SCOPE — do not produce their artifacts.**\n\n",
-    );
+    // The preamble prose lives in `@data/planner/active-stages-preamble.md` (#2027 P1); the surrounding
+    // newlines that frame it in the CLAUDE.md + the per-stage lines below stay here.
+    let mut s = format!("\n{}\n\n", planning_active_stages_preamble().trim_end());
     for (i, id) in stages.iter().enumerate() {
         s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_directive_routes_design_without_generating_it() {
+        // #1371: the UI stage must route dropped design files into the repo and author the kickoff.
+        // #1404: but it must NOT instruct the planner to GENERATE the UI — no skeleton code, no live
+        // preview; the visual design comes from the user via Claude Design (matches sections/ui.json).
+        let ui = stage_directive("ui");
+        assert!(ui.contains("design/intake.json"), "ui directive must reference the intake manifest: {ui}");
+        assert!(ui.contains("ui-kickoff.md"), "ui directive must still author the kickoff: {ui}");
+        assert!(!ui.contains(".ui-skeleton/"), "ui directive must NOT tell the planner to write UI skeletons: {ui}");
+        assert!(!ui.contains("ui_preview"), "ui directive must NOT tell the planner to render a live preview: {ui}");
+        assert!(ui.contains("Do NOT design"), "ui directive must tell the planner not to design the screens: {ui}");
+        // #786: when a Data Model exists, the kickoff is authored FROM it (entities→screens) + the
+        // behavior summary — the generation stays the existing Claude Design loop, no new engine.
+        // #1446: the Data Model + behaviors now live in DuckDB, read via `bsc data` (not a file).
+        assert!(ui.contains("bsc data model get"), "ui directive must read the Data Model via `bsc data`: {ui}");
+        assert!(!ui.contains("datamodel.json"), "the Data Model is in DuckDB now, not a datamodel.json file (#1446): {ui}");
+        assert!(ui.contains("Platform Behavior Summary"), "ui directive must fold the captured behaviors into the kickoff: {ui}");
+    }
+
+    #[test]
+    fn collapsed_stage_directives_name_the_stage_and_cover_both_halves() {
+        // #1914: the unified vocabulary collapsed the old fold split into single canonical defs.
+        // `deployment` = "Deployment" (link repos + deploy); `streams` = the feature roadmap, the
+        // fleet, AND shared deps. Each carries the WHOLE merged directive — and `deployment` must NOT
+        // instruct `bsc plan deps set` (deps live in the Streams stage now, #1429).
+        let dep = stage_directive("deployment");
+        assert!(dep.contains("Deployment"), "collapsed stage names itself Deployment: {dep}");
+        assert!(dep.contains("bsc plan repo add") && dep.contains("bsc plan deploy set"),
+            "Deployment covers link + deploy: {dep}");
+        assert!(!dep.contains("bsc plan deps set"), "deps moved to Streams (#1429): {dep}");
+        let streams = stage_directive("streams");
+        assert!(streams.contains("Streams"), "collapsed stage names itself Streams: {streams}");
+        assert!(streams.contains("bsc plan feature list") && streams.contains("bsc plan fleet set") && streams.contains("bsc plan deps set"),
+            "Streams covers the roadmap, the fleet, AND shared deps: {streams}");
+        assert!(streams.contains("sharedDepsLocked"), "streams gates on shared deps locked: {streams}");
+
+        // The collapsed stages render in the active-stages overview with their names.
+        let md = build_active_stages_md(&["deployment".into(), "streams".into()]);
+        assert!(md.contains("**Deployment**") && md.contains("**Streams**"), "overview lists collapsed names: {md}");
+    }
+
+    /// The conductor injects a stage's top-level `prompt` FIRST as orientation (plannerConductor.ts).
+    /// The Deployment `prompt` used to end at "Gate: at least one repository is linked" — which made
+    /// the planner treat linking as the whole stage and never define the deploy config, leaving the
+    /// `deploymentDefined` gate stuck. The orientation `prompt` must state the FULL gate: both linking
+    /// AND every service's deploy config (target, environments, pipeline, secrets, release).
+    #[test]
+    fn deployment_stage_prompt_states_the_full_deploy_gate_not_just_linking() {
+        let raw = crate::platform::config::embedded_str("stages/deployment.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+        let prompt = v.get("prompt").and_then(|p| p.as_str()).unwrap_or_default().to_lowercase();
+        for term in ["repo", "bsc plan deploy", "target", "environment", "pipeline", "secret", "release"] {
+            assert!(prompt.contains(term), "Deployment `prompt` must cover the full gate — missing '{term}': {prompt}");
+        }
+    }
+
+    /// #1462: the migrated stage directives now live in `data/stages/<id>.json` (`directive` field),
+    /// read via the runtime config loader (#2027 P2 — config-dir override → embedded seed). Every
+    /// migrated id must resolve to its real directive — NOT the generic fallback. (The v1.0.5
+    /// consolidation archived the data/transform/harden stages; this is the kept set that carries a
+    /// `directive`.)
+    #[test]
+    fn migrated_stage_directives_resolve_from_embedded_json() {
+        // #1914: the unified vocabulary collapsed repos+deploy → `deployment` and
+        // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
+        let migrated = ["discovery","deployment","ui","features",
+            "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
+            "streams","source"];
+        for id in migrated {
+            let d = stage_directive(id);
+            assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
+            assert!(!d.ends_with("configured stage."),
+                "stage '{id}' fell back to the generic line — its JSON `directive` is missing");
+            // The SHIPPED stage JSON carries a non-empty `directive` (checked against the embedded
+            // seed, so it holds regardless of any local config override).
+            let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
+            let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
+            let shipped = v.get("directive").and_then(|x| x.as_str()).unwrap_or_default();
+            assert!(!shipped.trim().is_empty(), "stage '{id}' embedded JSON has a `directive`");
+        }
+    }
+
+    /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
+    /// EXACTLY the expected set. Both Rust (the config loader / embedded seed) and the frontend
+    /// (`import.meta.glob`) read the SAME `data/stages/` dir, so a directive can't drift between them;
+    /// this pins the set.
+    /// #1914: after the collapse the composed/lifecycle ids (`deployment`/`streams`) are plain stage
+    /// JSONs too — no Rust-side prose, no special carve-out; the legacy `repos`/`structure`/`permissions`
+    /// defs are gone.
+    #[test]
+    fn embedded_directive_key_set_matches_the_migrated_set() {
+        use std::collections::BTreeSet;
+        let with_directive: BTreeSet<String> = crate::platform::config::embedded_dir_files("stages")
+            .into_iter()
+            .filter_map(|(stem, contents)| {
+                let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
+                v.get("directive").and_then(|d| d.as_str()).filter(|s| !s.is_empty())?;
+                Some(stem)
+            })
+            .collect();
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+            "automations","skills","purpose","bp_stages","bp_capabilities",
+            "bp_review","streams","source"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
+    }
 }

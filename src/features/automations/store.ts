@@ -1,10 +1,10 @@
 // Automations feature store slice (#1309) — schedules, commands, and cron automations. Extracted
-// from the former grab-bag `automations` slice (which kept kbBlocks / LLM config / active-project
-// state, now in store/slices/core.ts). Composed into the app store by store/index.ts.
+// from the former grab-bag `automations` slice (which kept LLM config / active-project state, now
+// in store/slices/core.ts). Composed into the app store by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import { type Automation, type AutomationRun, appendRun, computeNextRun } from "./lib/scheduler";
-import type { Schedule, Command } from "@/data/mock";
+import type { Schedule, Command } from "@/shared/data/mock";
 
 export interface AutomationsSlice {
   schedules: Schedule[];
@@ -16,7 +16,7 @@ export interface AutomationsSlice {
   updateCommand: (id: string, patch: Partial<Command>) => void;
   removeCommand: (id: string) => void;
   automations: Automation[];
-  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => void;
+  addAutomation: (input: Omit<Automation, "id" | "lastRunAt" | "nextRunAt" | "runs">) => string;
   updateAutomation: (id: string, patch: Partial<Automation>) => void;
   removeAutomation: (id: string) => void;
   setAutomationArmed: (id: string, armed: boolean) => void;
@@ -54,13 +54,17 @@ export const createAutomationsSlice: StateCreator<AppStore, [], [], AutomationsS
     set((s) => ({ commands: s.commands.filter((c) => c.id !== id) })),
 
   automations: [],
-  addAutomation: (input) =>
+  addAutomation: (input) => {
+    // Mint the id outside `set` so the action can return it — callers select the new row via useDraft
+    // instead of the fragile "find the last item" lookup the screens used to do.
+    const id = `auto_${Math.random().toString(36).slice(2, 8)}`;
     set((s) => {
-      const id = `auto_${Math.random().toString(36).slice(2, 8)}`;
       const nextRunAt = input.armed ? computeNextRun(input.when, Date.now()) : null;
       const a: Automation = { ...input, id, lastRunAt: null, nextRunAt, runs: [] };
       return { automations: [...s.automations, a] };
-    }),
+    });
+    return id;
+  },
   updateAutomation: (id, patch) =>
     set((s) => ({
       automations: s.automations.map((a) => {

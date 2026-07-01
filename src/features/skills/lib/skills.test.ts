@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  seedSkills, resolveSkills, toSkillCfgs, skillSlug, defFromCatalog, blankSkill,
+  seedSkills, resolveSkills, toSkillCfgs, skillSlug, blankSkill,
   parseSkillsFile, deriveSkillKpis, refreshPackagedSkills,
   sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
   expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillDef, type SkillGroup,
@@ -172,23 +172,11 @@ describe("task groups (#skills-groups)", () => {
 describe("toSkillCfgs", () => {
   it("maps to the backend payload and skips name-less skills", () => {
     const cfgs = toSkillCfgs([def({ name: "Open a clean PR" }), def({ id: "x", name: "***" })]);
-    expect(cfgs).toEqual([{ name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
+    expect(cfgs).toEqual([{ id: "s1", name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
   });
 });
 
-describe("defFromCatalog / blankSkill", () => {
-  it("catalog entry comes disabled + global with the catalog description", () => {
-    const d = defFromCatalog("ISO 27001 control mapping");
-    expect(d.name).toBe("ISO 27001 control mapping");
-    expect(d.enabled).toBe(false);
-    expect(d.projects).toEqual([]);
-    expect(d.desc.length).toBeGreaterThan(0);
-  });
-  it("unknown catalog name still yields a usable workflow def", () => {
-    const d = defFromCatalog("Totally unknown");
-    expect(d.kind).toBe("workflow");
-    expect(d.enabled).toBe(false);
-  });
+describe("blankSkill", () => {
   it("blankSkill is an empty, disabled workflow", () => {
     const b = blankSkill();
     expect(b.name).toBe("");

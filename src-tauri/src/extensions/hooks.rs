@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// Overwrite `config.hooks` with the resolved hooks, grouped by event:
 /// `{event: [{matcher?, hooks: [{type:"command", command}]}]}`. Empty → key removed.

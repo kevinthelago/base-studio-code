@@ -1,9 +1,9 @@
 //! OpenAI Chat Completions provider (api.openai.com). Maps OpenAI's request/response
 //! onto the normalized shape: the system prompt is folded in as a leading
 //! `{role:"system"}` message, and `choices[0].message.content` becomes a single
-//! `{type:"text", text}` block so kb_chat's consumers read it unchanged.
+//! `{type:"text", text}` block so llm_complete's consumers read it unchanged.
 
-use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{post_json, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 
 pub struct OpenAiProvider;
 
@@ -69,10 +69,9 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
 /// 4-key shape `tokens.rs` parses; OpenAI has no prompt-cache split, so cache_* = 0.
 /// Shared by the `local` provider (OpenAI-compatible). Pure.
 pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
-    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
     serde_json::json!({
-        "input_tokens": g("prompt_tokens"),
-        "output_tokens": g("completion_tokens"),
+        "input_tokens": usage_u64(u, "prompt_tokens"),
+        "output_tokens": usage_u64(u, "completion_tokens"),
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
     })
@@ -149,52 +148,54 @@ pub(crate) fn normalize_response(raw: &serde_json::Value) -> serde_json::Value {
     })
 }
 
-impl LlmProvider for OpenAiProvider {
-    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
-        let client = reqwest::Client::new();
-        let response = client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("authorization", format!("Bearer {}", api_key))
-            .header("content-type", "application/json")
-            .json(&build_request_body(req))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown error")
-                .to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
+/// Base URL for the OpenAI Chat Completions API. Production passes this; tests point
+/// the `*_at` helpers at a localhost mock so the real send path is exercised offline.
+pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
+
+impl OpenAiProvider {
+    /// `complete` against an arbitrary base URL (production passes [`OPENAI_BASE_URL`];
+    /// tests point it at a localhost mock). Threading the base-url here lets the real
+    /// send path (`post_json` + status/error handling) be exercised end-to-end without
+    /// the network — the trait method below just supplies the production host.
+    pub(crate) async fn complete_at(
+        &self,
+        base_url: &str,
+        req: &LlmRequest,
+        api_key: &str,
+    ) -> Result<serde_json::Value, String> {
+        let json = post_json(
+            &format!("{base_url}/v1/chat/completions"),
+            &[("authorization", format!("Bearer {}", api_key))],
+            &build_request_body(req),
+        )
+        .await?;
         Ok(normalize_response(&json))
     }
 
-    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
-        let client = reqwest::Client::new();
-        let response = client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("authorization", format!("Bearer {}", api_key))
-            .header("content-type", "application/json")
-            .json(&turn_request_body(t))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"].as_str().unwrap_or("Unknown error").to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
+    /// `turn` against an arbitrary base URL (see [`Self::complete_at`]).
+    pub(crate) async fn turn_at(
+        &self,
+        base_url: &str,
+        t: &Turn,
+        api_key: &str,
+    ) -> Result<TurnResult, String> {
+        let json = post_json(
+            &format!("{base_url}/v1/chat/completions"),
+            &[("authorization", format!("Bearer {}", api_key))],
+            &turn_request_body(t),
+        )
+        .await?;
         Ok(parse_turn_response(&json))
+    }
+}
+
+impl LlmProvider for OpenAiProvider {
+    async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
+        self.complete_at(OPENAI_BASE_URL, req, api_key).await
+    }
+
+    async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
+        self.turn_at(OPENAI_BASE_URL, t, api_key).await
     }
 }
 

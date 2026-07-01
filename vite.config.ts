@@ -6,7 +6,12 @@ import { startupLog, teeLogger } from "./vite-startup-log";
 export default defineConfig(async ({ command }) => ({
   plugins: [react(), startupLog()],
   // `@/…` → `src/…` (#1309) so the feature-first reorg doesn't churn deep-relative imports.
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  // `@data/…` → `src-tauri/data/…` (#1462): the unified packaged-data root. The stage/blueprint
+  // JSON lives there now (outside src/) and is build-time-bundled via import.meta.glob.
+  resolve: { alias: {
+    "@": fileURLToPath(new URL("./src", import.meta.url)),
+    "@data": fileURLToPath(new URL("./src-tauri/data", import.meta.url)),
+  } },
   // Dev-only startup diagnostics (#1031): timestamp + tee Vite's own messages (optimizeDeps
   // re-bundle / full-reload — the cold-start stalls) to `.vite-dev.log`. Off for `vite build`.
   ...(command === "serve" ? { customLogger: teeLogger() } : {}),
@@ -38,7 +43,7 @@ export default defineConfig(async ({ command }) => ({
     // WebView pull it module-by-module in a serial waterfall on first load. This overlaps with
     // the native/WebView2 launch, so by the time the page loads the boot modules are cached.
     warmup: {
-      clientFiles: ["./src/main.tsx", "./src/App.tsx", "./src/store/index.ts", "./src/screens/Console.tsx"],
+      clientFiles: ["./src/app/main.tsx", "./src/app/App.tsx", "./src/store/index.ts", "./src/app/console/ConsoleScreen.tsx"],
     },
     watch: {
       // Vite watches the project root, but this is a Cargo *workspace* — all Rust build output

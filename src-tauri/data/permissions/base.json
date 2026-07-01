@@ -1,0 +1,21 @@
+{
+  "description": "Single source of truth for base-level allowed shell commands (#1880). Backend-owned: embedded at compile time by src-tauri/src/console/settings.rs, and the planner prose in data/planner/process.md + data/stages/permissions.json is drift-guarded against THIS file. The tiers are scaled by a session's bash posture: 'deny' gets mandatory only, 'ask' gets mandatory + readonly, 'allow' gets mandatory + readonly + build. 'mandatory' (gh/git/bsc) is always allowed — the app's GitHub/plan workflow depends on it. Written as explicit Bash(<cmd> *) rules at launch because Claude Code does NOT honor a bare Bash allow as allow-all.",
+  "commandTiers": {
+    "mandatory": ["gh", "git", "bsc"],
+    "readonly": [
+      "ls", "cat", "head", "tail", "grep", "rg", "find", "fd", "pwd", "cd", "echo", "wc",
+      "sort", "uniq", "diff", "tree", "which", "env", "date", "file", "stat", "basename",
+      "dirname", "cut", "sleep", "printf", "test", "sed", "awk", "jq", "tr", "mkdir", "touch",
+      "xargs", "tee", "realpath", "readlink", "du", "df", "ps", "id", "whoami", "hostname",
+      "uname", "column", "nl", "seq", "comm"
+    ],
+    "build": [
+      "cargo", "rustc", "rustup", "npm", "pnpm", "yarn", "npx", "node", "deno", "bun",
+      "python", "python3", "pip", "pip3", "pytest", "make", "go", "tsc", "vite", "eslint",
+      "prettier", "vitest", "jest", "docker", "mvn", "gradle", "dotnet", "ollama",
+      "ruby", "bundle", "rake", "gem", "rails", "php", "composer", "java", "javac", "gradlew",
+      "flutter", "dart", "swift", "poetry", "uv", "ruff", "black", "mypy", "tsx", "cmake",
+      "ninja", "gofmt"
+    ]
+  }
+}

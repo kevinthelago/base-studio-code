@@ -1,0 +1,14 @@
+{
+  "directive": "**Capabilities** (optional) — attach reusable skills/knowledge + MCP servers the blueprint should bundle into projects it seeds; fold them into the blueprint JSON's section or blueprint-level skills/mcp arrays and re-run `bsc plan blueprint set`.",
+  "name": "Capabilities",
+  "glyph": "✦",
+  "gate": "skills + MCP wired",
+  "deps": [
+    "bp_stages"
+  ],
+  "optional": true,
+  "blurb": "Wire each stage's output disposition, attached skills/knowledge, and MCP servers.",
+  "prompt": "OPTIONAL. Decide the reusable SKILLS / knowledge and MCP servers this blueprint should attach so every\nproject seeded from it inherits them. Attach them blueprint-wide or to a specific stage and record them via `bsc plan blueprint set` (a section's skills/mcp arrays, or the blueprint-level skills/mcp). Skip this\nstage if the blueprint needs no bundled capabilities.\n\nGate: the applicable skills + MCP servers are attached (optional).",
+  "icon": "extension",
+  "hue": 75
+}

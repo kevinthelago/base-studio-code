@@ -1,0 +1,70 @@
+/* ProgressionRail (#1869) — the shared status rail for the blueprint cards (compact) and the
+   focused-pane stepper. Self-contained (keyframes included) so any consumer gets the styles by
+   importing the component. Visual language standardized on the BLUEPRINT-CARD look: 24px rounded-
+   square nodes carrying the stage icon, status-colored. Ported from the former inline `nodeStyle`
+   (cards) + `.seqrail-*` (pane). Tokens from styles/tokens.css. */
+
+.prail { display: flex; }
+.prail.compact { align-items: center; }
+.prail.stepper { align-items: flex-start; }
+
+/* The stepper sits in a bordered strip below the pane header (matches the old .seqrail-wrap). */
+.prail-wrap { flex: 0 0 auto; padding: 13px 14px 9px; border-bottom: 1px solid var(--border-soft); background: var(--bg-panel); }
+
+/* The seg wraps a node (+ optional label). Compact: node-sized, inline. Stepper: flex:1 so labels
+   share width, top-aligned with the label pinned below (so the node y is fixed per seg). */
+.prail-seg { position: relative; display: flex; align-items: center; justify-content: center; }
+.prail.compact .prail-seg { flex: 0 0 auto; }
+.prail.stepper .prail-seg { flex: 1; height: 42px; align-items: flex-start; min-width: 0;
+  background: none; border: none; padding: 0; cursor: pointer; }
+
+/* The node: a 24px rounded square. Default look = the card's accent-ringed "in progress" state. */
+.prail-node { width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; line-height: 1; font-weight: 700;
+  position: relative; z-index: 2;
+  background: var(--bg-elev2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent-dim);
+  transition: background .16s, color .16s; }
+.prail-node.complete { background: var(--success); color: oklch(0.20 0.04 145); box-shadow: none; }
+.prail-node.ahead { background: color-mix(in oklch, var(--success), transparent 12%);
+  color: oklch(0.20 0.04 145); box-shadow: inset 0 0 0 1.5px var(--success); }
+.prail-node.active { background: var(--bg-elev2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent-dim); }
+.prail-node.skipped { background: color-mix(in oklch, var(--info), transparent 86%);
+  color: var(--info); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--info), transparent 35%); }
+.prail-node.locked, .prail-node.upcoming { background: var(--bg-elev2); color: var(--fg-dim);
+  box-shadow: inset 0 0 0 1.5px var(--border); }
+
+/* The active node pulses ONLY in the interactive stepper ("you are here") — kept static on the
+   cards so a grid of blueprint previews doesn't shimmer. */
+.prail.stepper .prail-seg.active .prail-node {
+  box-shadow: inset 0 0 0 1.5px var(--accent-dim), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%);
+  animation: prail-ring 2s ease-in-out infinite; }
+@keyframes prail-ring {
+  0%,100% { box-shadow: inset 0 0 0 1.5px var(--accent-dim), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+  50%     { box-shadow: inset 0 0 0 1.5px var(--accent-dim), 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+}
+
+/* selection outline + attention pulse (stepper navigation / flagged incomplete phases) */
+.prail-seg.sel .prail-node { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prail-seg.attn .prail-node { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger), transparent 70%);
+  animation: prail-attn 1.1s ease-in-out infinite; }
+@keyframes prail-attn { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* label pinned just below the top-aligned node (stepper only) */
+.prail-label { position: absolute; bottom: 0; left: 0; right: 0; font-family: var(--mono); font-size: 9px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; color: var(--fg-dim); padding: 0 2px; }
+.prail-seg.complete .prail-label, .prail-seg.ahead .prail-label { color: var(--fg-muted); }
+.prail-seg.active .prail-label, .prail-seg.sel .prail-label { color: var(--accent); font-weight: 600; }
+.prail-seg.skipped .prail-label { color: var(--info); }
+.prail-seg.attn .prail-label { color: var(--danger); }
+
+/* connectors — a thin line between nodes. Compact: centered between inline nodes. Stepper: offset
+   down to the node center (segs top-align; the 24px node centers at ~12px). */
+.prail-conn { height: 2px; border-radius: 2px; }
+.prail.compact .prail-conn { flex: 1 1 0; min-width: 6px; margin: 0 2px; }
+.prail.stepper .prail-conn { flex: 1 1 0; min-width: 8px; margin: 11px -2px 0; }
+.prail-conn.solid { background: var(--success); }
+.prail-conn.dim { background: var(--border-soft); }
+.prail-conn.partial { background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%); }
+.prail-conn.dashed { background-color: transparent;
+  background-image: repeating-linear-gradient(90deg, var(--fg-dim) 0 4px, transparent 4px 9px); }

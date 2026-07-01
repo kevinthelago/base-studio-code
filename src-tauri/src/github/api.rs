@@ -3,6 +3,88 @@
 
 use crate::PerfSpan;
 
+// ── Shared request plumbing ────────────────────────────────────────────────────
+//
+// Every REST call (post/put/patch, the two gists, and the cached GET) sends the same four
+// headers and extracts errors from `json["message"]` the same way. These helpers hold that one
+// copy. GraphQL keeps its own header set (Content-Type, no Accept/version) + error/cache logic,
+// and the cached GET keeps its ETag/304 machinery — they reuse the header + message helpers but
+// not the full request wrappers.
+
+/// Apply the four standard GitHub REST headers — auth, `Accept`, API version, and `User-Agent` —
+/// shared by every REST request. (GraphQL builds its own header set.)
+fn gh_std_headers(req: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
+    req.header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", super::USER_AGENT)
+}
+
+/// The human error string for a failed GitHub response: `json["message"]` when present, else
+/// `fallback`. The one copy of the error extraction shared by the REST + gist error paths.
+fn gh_error_message<'a>(json: &'a serde_json::Value, fallback: &'a str) -> &'a str {
+    json["message"].as_str().unwrap_or(fallback)
+}
+
+/// Issue `method https://api.github.com/{path}` with a JSON body and the standard REST headers,
+/// returning the parsed JSON on a 2xx. On a non-2xx it logs `{log_ctx} HTTP {status}: {msg}` and
+/// returns `GitHub API error ({status}): {msg}` (`msg` from `json["message"]`, else "Unknown
+/// error"). The shared body of `github_post` / `github_put` / `github_patch`.
+async fn gh_request(
+    method: reqwest::Method,
+    path: &str,
+    token: &str,
+    body: &serde_json::Value,
+    log_ctx: &str,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/{}", path);
+    let response = gh_std_headers(client.request(method, url), token)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    if !status.is_success() {
+        let msg = gh_error_message(&json, "Unknown error").to_string();
+        log::warn!("{log_ctx} HTTP {status}: {msg}");
+        return Err(format!("GitHub API error ({}): {}", status, msg));
+    }
+    Ok(json)
+}
+
+/// Issue `method url` with a JSON body and the standard REST headers, returning the gist JSON on
+/// a 2xx. The shared body of `gist_create` / `gist_update`; uses the `op`-prefixed error wording
+/// those commands report (e.g. `gist_create request failed: …`, `gist_create HTTP 422: …`) and,
+/// unlike `gh_request`, does not log.
+async fn gist_request(
+    method: reqwest::Method,
+    url: String,
+    op: &str,
+    token: &str,
+    body: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let response = gh_std_headers(client.request(method, url), token)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| format!("{op} request failed: {e}"))?;
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("{op}: failed to parse response: {e}"))?;
+    if !status.is_success() {
+        let msg = gh_error_message(&json, "unknown error");
+        return Err(format!("{op} HTTP {status}: {msg}"));
+    }
+    Ok(json)
+}
 
 #[tauri::command]
 pub(crate) async fn github_graphql(
@@ -43,7 +125,7 @@ pub(crate) async fn github_graphql(
         .post("https://api.github.com/graphql")
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .header("User-Agent", "base-studio-code/0.2.0")
+        .header("User-Agent", super::USER_AGENT)
         .json(&body)
         .send()
         .await
@@ -83,29 +165,7 @@ pub(crate) async fn github_post(
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
-    let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/{}", path);
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-    if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        log::warn!("github_post {path} HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
-    }
-    Ok(json)
+    gh_request(reqwest::Method::POST, &path, &token, &body, &format!("github_post {path}")).await
 }
 
 #[tauri::command]
@@ -118,29 +178,7 @@ pub(crate) async fn github_put(
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
-    let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/{}", path);
-    let response = client
-        .put(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-    if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        log::warn!("github_put {path} HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
-    }
-    Ok(json)
+    gh_request(reqwest::Method::PUT, &path, &token, &body, &format!("github_put {path}")).await
 }
 
 /// `PATCH https://api.github.com/{path}` with a JSON body. The REST verb GitHub uses to
@@ -157,29 +195,37 @@ pub(crate) async fn github_patch(
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
+    gh_request(reqwest::Method::PATCH, &path, &token, &body, &format!("github_patch {path}")).await
+}
+
+/// `DELETE https://api.github.com/{path}` — e.g. `repos/{owner}/{repo}` to permanently delete a
+/// repository (needs the token's `delete_repo` scope). Unlike the other verbs this does NOT reuse
+/// `gh_request`: repo-delete answers `204 No Content` with an EMPTY body, which `gh_request` would
+/// choke on trying to parse as JSON. Returns `Ok(())` on any 2xx, else a `GitHub API error (...)`.
+#[tauri::command]
+pub(crate) async fn github_delete(token: String, path: String) -> Result<(), String> {
+    let _perf = PerfSpan::new("github_delete");
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
     let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/{}", path);
-    let response = client
-        .patch(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .json(&body)
+    let url = format!("https://api.github.com/{path}");
+    let response = gh_std_headers(client.request(reqwest::Method::DELETE, url), &token)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| format!("Request failed: {e}"))?;
     let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-    if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        log::warn!("github_patch {path} HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
+    if status.is_success() {
+        return Ok(());
     }
-    Ok(json)
+    // The error body may be empty or JSON — extract `message` when present.
+    let body = response.text().await.unwrap_or_default();
+    let msg = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|j| j.get("message").and_then(|m| m.as_str()).map(str::to_string))
+        .unwrap_or_else(|| if body.trim().is_empty() { "Unknown error".into() } else { body });
+    log::warn!("github_delete {path} HTTP {status}: {msg}");
+    Err(format!("GitHub API error ({status}): {msg}"))
 }
 
 // ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
@@ -274,12 +320,7 @@ pub(crate) async fn github_request(
 
     let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{}", path);
-    let mut req = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0");
+    let mut req = gh_std_headers(client.get(&url), &token);
     if let Some(etag) = &cached_etag {
         req = req.header("If-None-Match", etag.clone());
     }
@@ -347,27 +388,14 @@ pub(crate) async fn gist_create(
         .collect();
     let body = serde_json::json!({ "description": description, "public": public, "files": files_json });
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://api.github.com/gists")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("gist_create request failed: {e}"))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("gist_create: failed to parse response: {e}"))?;
-    if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("unknown error");
-        return Err(format!("gist_create HTTP {status}: {msg}"));
-    }
-    Ok(json)
+    gist_request(
+        reqwest::Method::POST,
+        "https://api.github.com/gists".to_string(),
+        "gist_create",
+        &token,
+        &body,
+    )
+    .await
 }
 
 /// Update an EXISTING gist (#970) — PATCH `gists/<id>` with new file content + description, so
@@ -397,33 +425,32 @@ pub(crate) async fn gist_update(
     // `public` is omitted: a gist's visibility is fixed at creation and can't be changed via PATCH.
     let body = serde_json::json!({ "description": description, "files": files_json });
 
-    let client = reqwest::Client::new();
-    let response = client
-        .patch(format!("https://api.github.com/gists/{id}"))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "base-studio-code/0.2.0")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("gist_update request failed: {e}"))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("gist_update: failed to parse response: {e}"))?;
-    if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("unknown error");
-        return Err(format!("gist_update HTTP {status}: {msg}"));
-    }
-    Ok(json)
+    gist_request(
+        reqwest::Method::PATCH,
+        format!("https://api.github.com/gists/{id}"),
+        "gist_update",
+        &token,
+        &body,
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_is_fresh, apply_github_response, CachedGet};
+    use super::{cache_is_fresh, apply_github_response, gh_error_message, CachedGet};
     use std::collections::HashMap;
+
+    #[test]
+    fn gh_error_message_prefers_message_then_fallback() {
+        // Present `message` is returned verbatim (the GitHub error surfaced to the user).
+        let with = serde_json::json!({ "message": "Bad credentials" });
+        assert_eq!(gh_error_message(&with, "Unknown error"), "Bad credentials");
+        // Absent → the caller's fallback. The REST path uses "Unknown error"; the gist path
+        // uses lowercase "unknown error" — both wordings are preserved through this helper.
+        let without = serde_json::json!({ "documentation_url": "x" });
+        assert_eq!(gh_error_message(&without, "Unknown error"), "Unknown error");
+        assert_eq!(gh_error_message(&without, "unknown error"), "unknown error");
+    }
 
     #[test]
     fn cache_is_fresh_only_within_max_age_and_never_when_forced() {

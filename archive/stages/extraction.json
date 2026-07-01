@@ -1,0 +1,13 @@
+{
+  "directive": "**Extraction plan** — sequence the incremental, shippable steps to carve out each service.",
+  "name": "Extraction plan",
+  "glyph": "⤳",
+  "gate": "extraction sequenced",
+  "deps": [
+    "boundaries"
+  ],
+  "blurb": "Incremental, shippable steps to carve each service out.",
+  "prompt": "Sequence the split. For each service: its API/contract, the data it owns + how to\nmigrate it, and the strangler steps to extract it without a big-bang cutover. Order by\ndependency and risk; keep the system shippable and reversible at every step.",
+  "icon": "fork_right",
+  "hue": 90
+}

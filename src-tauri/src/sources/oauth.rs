@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -22,63 +23,91 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
-/// An OAuth provider for a source connector.
+/// An OAuth provider descriptor for a source connector. The descriptors are versioned, editable
+/// **data** in `src-tauri/data/sources/oauth-providers.json` (#1614, mirroring `data/stages/*.json`)
+/// — best-effort defaults (like the connector presets) that may need per-tenant tuning. Note
+/// Dynamics 365's resource scope is org-specific (`{org}.crm.dynamics.com/.default`); set
+/// `BSC_OAUTH_DYNAMICS_SCOPE` to override the packaged default per tenant.
+#[derive(serde::Deserialize)]
 struct OAuthProvider {
-    id: &'static str,
-    authorize_url: &'static str,
-    token_url: &'static str,
-    scopes: &'static str,
-    client_id_env: &'static str,
-    client_secret_env: &'static str,
+    id: String,
+    authorize_url: String,
+    token_url: String,
+    scopes: String,
+    client_id_env: String,
+    client_secret_env: String,
 }
 
-const PROVIDERS: &[OAuthProvider] = &[
-    OAuthProvider {
-        id: "salesforce",
-        authorize_url: "https://login.salesforce.com/services/oauth2/authorize",
-        token_url: "https://login.salesforce.com/services/oauth2/token",
-        scopes: "api refresh_token",
-        client_id_env: "BSC_OAUTH_SALESFORCE_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_SALESFORCE_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "quickbooks",
-        authorize_url: "https://appcenter.intuit.com/connect/oauth2",
-        token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-        scopes: "com.intuit.quickbooks.accounting",
-        client_id_env: "BSC_OAUTH_QUICKBOOKS_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_QUICKBOOKS_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "hubspot",
-        authorize_url: "https://app.hubspot.com/oauth/authorize",
-        token_url: "https://api.hubapi.com/oauth/v1/token",
-        scopes: "crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read",
-        client_id_env: "BSC_OAUTH_HUBSPOT_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_HUBSPOT_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        id: "monday",
-        authorize_url: "https://auth.monday.com/oauth2/authorize",
-        token_url: "https://auth.monday.com/oauth2/token",
-        scopes: "boards:read",
-        client_id_env: "BSC_OAUTH_MONDAY_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_MONDAY_CLIENT_SECRET",
-    },
-    OAuthProvider {
-        // Dynamics 365's resource scope is org-specific ({org}.crm.dynamics.com/.default) — set
-        // BSC_OAUTH_DYNAMICS_SCOPE to override the default below per tenant.
-        id: "dynamics365",
-        authorize_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        scopes: "offline_access openid",
-        client_id_env: "BSC_OAUTH_DYNAMICS_CLIENT_ID",
-        client_secret_env: "BSC_OAUTH_DYNAMICS_CLIENT_SECRET",
-    },
-];
+/// The parsed provider table (lazily initialized; `'static` for the program's lifetime so lookups
+/// can hand out `'static` references). Loaded at runtime via [`crate::platform::config::load_str`]
+/// (#2027 P2) — the user's `sources/oauth-providers.json` under the config dir if present, else the
+/// embedded seed. Panics on first use if the JSON is malformed, guarded by `providers_json_parses`.
+fn providers() -> &'static [OAuthProvider] {
+    static PROVIDERS: OnceLock<Vec<OAuthProvider>> = OnceLock::new();
+    PROVIDERS
+        .get_or_init(|| {
+            serde_json::from_str(&crate::platform::config::load_str("sources/oauth-providers.json"))
+                .expect("oauth-providers.json is valid JSON")
+        })
+        .as_slice()
+}
 
 fn provider(id: &str) -> Option<&'static OAuthProvider> {
-    PROVIDERS.iter().find(|p| p.id == id)
+    providers().iter().find(|p| p.id == id)
+}
+
+/// A fully resolved OAuth descriptor, source-agnostic: the begin flow works the same whether the
+/// endpoints came from a packaged [`OAuthProvider`] (client id/secret from env) or from an
+/// agent-authored [`RuntimeOAuth`](bsc_data::runtime::RuntimeOAuth) block carried by a runtime
+/// preset (PKCE public — empty `client_secret`). (#1972)
+struct ResolvedOAuth {
+    authorize_url: String,
+    token_url: String,
+    scopes: String,
+    client_id: String,
+    client_secret: String,
+}
+
+/// Resolve a connector's OAuth endpoints + client credentials, source-agnostic (#1972).
+///
+/// Resolution order:
+/// 1. A **packaged** provider (`oauth-providers.json`): `client_id` from `$<client_id_env>` (errors
+///    if unset), `client_secret` from `$<client_secret_env>` (optional — empty ⇒ PKCE public),
+///    URLs/scopes from the descriptor.
+/// 2. Else an **agent-authored** runtime preset with `auth == "oauth"` and an `oauth` block: the
+///    endpoints/scopes/client_id come straight from the manifest and `client_secret` is empty (PKCE
+///    public — the manifest never carries a secret, #1194).
+/// 3. Else an error — no OAuth provider for this id.
+fn resolve_oauth(connector_id: &str) -> Result<ResolvedOAuth, String> {
+    if let Some(p) = provider(connector_id) {
+        let client_id = std::env::var(&p.client_id_env)
+            .map_err(|_| format!("OAuth not configured: set {}", p.client_id_env))?;
+        let client_secret = std::env::var(&p.client_secret_env).unwrap_or_default();
+        return Ok(ResolvedOAuth {
+            authorize_url: p.authorize_url.clone(),
+            token_url: p.token_url.clone(),
+            scopes: p.scopes.clone(),
+            client_id,
+            client_secret,
+        });
+    }
+
+    let store = bsc_data::runtime::runtime_store_path();
+    if let Ok(Some(preset)) = bsc_data::runtime::find_runtime_preset(&store, connector_id) {
+        if preset.auth == "oauth" {
+            if let Some(o) = preset.oauth {
+                return Ok(ResolvedOAuth {
+                    authorize_url: o.authorize_url,
+                    token_url: o.token_url,
+                    scopes: o.scopes,
+                    client_id: o.client_id,
+                    client_secret: String::new(), // PKCE public — no secret in the manifest
+                });
+            }
+        }
+    }
+
+    Err(format!("no OAuth provider for `{connector_id}`"))
 }
 
 const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -148,24 +177,23 @@ fn host_for_env(url: &str, connector_id: &str, env: Option<&str>) -> String {
     }
 }
 
-/// Build the provider's authorization URL with PKCE.
+/// Build the resolved provider's authorization URL with PKCE.
 fn build_authorize_url(
-    p: &OAuthProvider,
+    r: &ResolvedOAuth,
     connector_id: &str,
-    client_id: &str,
     redirect: &str,
     state: &str,
     challenge: &str,
     env: Option<&str>,
 ) -> String {
-    let base = host_for_env(p.authorize_url, connector_id, env);
+    let base = host_for_env(&r.authorize_url, connector_id, env);
     let scope = std::env::var("BSC_OAUTH_DYNAMICS_SCOPE")
         .ok()
         .filter(|_| connector_id == "dynamics365")
-        .unwrap_or_else(|| p.scopes.to_string());
+        .unwrap_or_else(|| r.scopes.clone());
     format!(
         "{base}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
-        enc(client_id), enc(redirect), enc(&scope), enc(state), enc(challenge)
+        enc(&r.client_id), enc(redirect), enc(&scope), enc(state), enc(challenge)
     )
 }
 
@@ -199,10 +227,9 @@ pub fn source_oauth_begin(
     source_uid: String,
     env: Option<String>,
 ) -> Result<OAuthBegin, String> {
-    let p = provider(&connector_id).ok_or_else(|| format!("no OAuth provider for `{connector_id}`"))?;
-    let client_id = std::env::var(p.client_id_env)
-        .map_err(|_| format!("OAuth not configured: set {}", p.client_id_env))?;
-    let client_secret = std::env::var(p.client_secret_env).unwrap_or_default();
+    let resolved = resolve_oauth(&connector_id)?;
+    let client_id = resolved.client_id.clone();
+    let client_secret = resolved.client_secret.clone();
 
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -210,15 +237,15 @@ pub fn source_oauth_begin(
     let (verifier, challenge) = pkce();
     let state = random_state();
     let authorize_url =
-        build_authorize_url(p, &connector_id, &client_id, &redirect, &state, &challenge, env.as_deref());
+        build_authorize_url(&resolved, &connector_id, &redirect, &state, &challenge, env.as_deref());
 
-    let token_url = host_for_env(p.token_url, &connector_id, env.as_deref());
+    let token_url = host_for_env(&resolved.token_url, &connector_id, env.as_deref());
     std::thread::spawn(move || {
         let done = match capture_and_exchange(&listener, &token_url, &client_id, &client_secret, &redirect, &verifier, &state) {
             Ok(tok) => {
-                let mut ok = crate::credentials::set_secret(&project, &source_uid, "accessToken", &tok.access).is_ok();
+                let mut ok = crate::sources::credentials::set_secret(&project, &source_uid, "accessToken", &tok.access).is_ok();
                 if let Some(r) = tok.refresh {
-                    ok &= crate::credentials::set_secret(&project, &source_uid, "refreshToken", &r).is_ok();
+                    ok &= crate::sources::credentials::set_secret(&project, &source_uid, "refreshToken", &r).is_ok();
                 }
                 OAuthDone { source_uid: source_uid.clone(), ok, instance: tok.instance, realm: tok.realm, error: None }
             }
@@ -352,10 +379,22 @@ mod tests {
         assert!(!v.contains('=') && !v.contains('+') && !v.contains('/'), "url-safe, unpadded");
     }
 
+    /// Build a `ResolvedOAuth` from a packaged provider with an explicit client id (test helper).
+    fn resolved_from(id: &str, client_id: &str) -> ResolvedOAuth {
+        let p = provider(id).unwrap();
+        ResolvedOAuth {
+            authorize_url: p.authorize_url.clone(),
+            token_url: p.token_url.clone(),
+            scopes: p.scopes.clone(),
+            client_id: client_id.to_string(),
+            client_secret: String::new(),
+        }
+    }
+
     #[test]
     fn authorize_url_carries_pkce_and_redirect() {
-        let p = provider("salesforce").unwrap();
-        let url = build_authorize_url(p, "salesforce", "CID", "http://127.0.0.1:9/callback", "st8", "chal", None);
+        let r = resolved_from("salesforce", "CID");
+        let url = build_authorize_url(&r, "salesforce", "http://127.0.0.1:9/callback", "st8", "chal", None);
         assert!(url.starts_with("https://login.salesforce.com/services/oauth2/authorize?"));
         assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=CID"));
@@ -366,10 +405,56 @@ mod tests {
 
     #[test]
     fn salesforce_sandbox_swaps_the_auth_host() {
-        let p = provider("salesforce").unwrap();
-        let url = build_authorize_url(p, "salesforce", "C", "r", "s", "c", Some("sandbox"));
+        let r = resolved_from("salesforce", "C");
+        let url = build_authorize_url(&r, "salesforce", "r", "s", "c", Some("sandbox"));
         assert!(url.contains("test.salesforce.com"));
         assert!(!url.contains("login.salesforce.com"));
+    }
+
+    /// #1972: a runtime preset's self-describing `oauth` block resolves (PKCE public — empty
+    /// client_secret) and the built authorize URL carries the manifest's client_id + PKCE.
+    #[test]
+    fn resolve_oauth_reads_a_runtime_preset_oauth_block() {
+        use bsc_data::runtime::{RuntimeOAuth, RuntimePreset, RuntimeResource};
+
+        let store = std::env::temp_dir().join("bsc-oauth-resolve-1972.json");
+        let _ = std::fs::remove_file(&store);
+        let preset = RuntimePreset {
+            id: "acme-oauth".to_string(),
+            label: "Acme".to_string(),
+            category: "crm".to_string(),
+            base_url: Some("https://acme.example.com/api".to_string()),
+            auth: "oauth".to_string(),
+            oauth: Some(RuntimeOAuth {
+                authorize_url: "https://acme.example.com/oauth/authorize".to_string(),
+                token_url: "https://acme.example.com/oauth/token".to_string(),
+                scopes: "read".to_string(),
+                client_id: "acme-public-client-id".to_string(),
+            }),
+            resources: vec![RuntimeResource {
+                name: "contacts".to_string(),
+                path: "contacts".to_string(),
+                array_key: Some("data".to_string()),
+            }],
+        };
+        bsc_data::runtime::save_runtime_presets(&store, &[preset]).unwrap();
+
+        // `BSC_CONNECTORS` is process-global; this test owns it for the duration.
+        std::env::set_var("BSC_CONNECTORS", &store);
+        let resolved = resolve_oauth("acme-oauth").expect("runtime oauth resolves");
+        std::env::remove_var("BSC_CONNECTORS");
+        let _ = std::fs::remove_file(&store);
+
+        assert_eq!(resolved.authorize_url, "https://acme.example.com/oauth/authorize");
+        assert_eq!(resolved.token_url, "https://acme.example.com/oauth/token");
+        assert_eq!(resolved.client_id, "acme-public-client-id");
+        assert!(resolved.client_secret.is_empty(), "PKCE public — no secret in the manifest");
+
+        let url = build_authorize_url(&resolved, "acme-oauth", "http://127.0.0.1:9/callback", "st8", "chal", None);
+        assert!(url.starts_with("https://acme.example.com/oauth/authorize?"));
+        assert!(url.contains("client_id=acme-public-client-id"));
+        assert!(url.contains("code_challenge=chal"));
+        assert!(url.contains("code_challenge_method=S256"));
     }
 
     #[test]
@@ -384,5 +469,29 @@ mod tests {
     fn provider_lookup() {
         assert!(provider("salesforce").is_some());
         assert!(provider("quickbase").is_none()); // token connector, not OAuth
+    }
+
+    /// Guard the data extraction (#1614): the packaged `oauth-providers.json` parses, carries every
+    /// known provider, and preserves their URLs/scopes/env-var names — so an edit to the JSON can't
+    /// silently drop a provider or corrupt a descriptor.
+    #[test]
+    fn providers_json_parses() {
+        let all = providers();
+        assert_eq!(all.len(), 5, "five OAuth providers");
+
+        let mut ids: Vec<&str> = all.iter().map(|p| p.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, ["dynamics365", "hubspot", "monday", "quickbooks", "salesforce"]);
+
+        let sf = provider("salesforce").unwrap();
+        assert_eq!(sf.authorize_url, "https://login.salesforce.com/services/oauth2/authorize");
+        assert_eq!(sf.token_url, "https://login.salesforce.com/services/oauth2/token");
+        assert_eq!(sf.scopes, "api refresh_token");
+        assert_eq!(sf.client_id_env, "BSC_OAUTH_SALESFORCE_CLIENT_ID");
+        assert_eq!(sf.client_secret_env, "BSC_OAUTH_SALESFORCE_CLIENT_SECRET");
+
+        let dyn365 = provider("dynamics365").unwrap();
+        assert_eq!(dyn365.scopes, "offline_access openid");
+        assert_eq!(dyn365.client_id_env, "BSC_OAUTH_DYNAMICS_CLIENT_ID");
     }
 }

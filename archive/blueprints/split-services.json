@@ -1,0 +1,29 @@
+{
+  "order": 3,
+  "id": "split-services",
+  "name": "Split into microservices",
+  "desc": "Carve a monolith into services along its seams",
+  "origin": "built-in",
+  "icon": "⧉",
+  "h": 230,
+  "category": "transform",
+  "mode": "operate",
+  "sections": [
+    {
+      "key": "discovery"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "boundaries"
+    },
+    {
+      "key": "extraction"
+    },
+    {
+      "key": "structure",
+      "fleet": true
+    }
+  ]
+}

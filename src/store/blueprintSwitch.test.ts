@@ -1,17 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./";
-import type { GradeResult } from "../screens/planner/grading/grading";
 
 describe("blueprint-per-project + reset (#647)", () => {
   beforeEach(() => {
     useAppStore.setState({
       projectBlueprintId: {},
-      sectionGrades: { p: { ui: [{ graderId: "x" } as unknown as GradeResult] } },
       uiScreens: { p: ["Home"] },
       uiApproved: { p: ["Home"] },
       planStageConfig: {},
       stagePreview: {},
-      stagePipelineRuns: {},
+      stageRuns: {},
       // section state + fleet/automations also drive completion — must reset too (#664)
       planSections: { p: { goal: "# Goal" } },
       planConfirmedSections: { p: ["goal"] },
@@ -25,15 +23,14 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(useAppStore.getState().projectBlueprintId["p"]).toBe("api");
   });
 
-  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (greenfield → transform)", () => {
+  it("applyBlueprintToProject re-seeds the config, records the blueprint, and clears progress (switch)", () => {
     useAppStore.getState().setProjectBlueprintId("p", "default"); // greenfield origin
-    useAppStore.getState().applyBlueprintToProject("p", "refactor"); // → transform (allowed)
+    useAppStore.getState().applyBlueprintToProject("p", "complete"); // → another blueprint (allowed)
     const s = useAppStore.getState();
-    expect(s.projectBlueprintId["p"]).toBe("refactor");
+    expect(s.projectBlueprintId["p"]).toBe("complete");
     expect(s.planStageConfig["p"]).toBeTruthy();
     expect(s.planStageConfig["p"].order.length).toBeGreaterThan(0);
     // progress keyed to the old arc is wiped
-    expect(s.sectionGrades["p"]).toBeUndefined();
     expect(s.uiScreens["p"]).toBeUndefined();
     expect(s.uiApproved["p"]).toBeUndefined();
     // section state + confirmations + automations also cleared so nothing reads complete (#664)
@@ -58,7 +55,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     useAppStore.getState().applyBlueprintToProject("p", "nope");
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBeUndefined();
-    expect(s.sectionGrades["p"]).toBeTruthy(); // untouched
+    expect(s.uiScreens["p"]).toBeTruthy(); // untouched
   });
 
   it("won't switch a project locked to the blueprint-author lifecycle (#923)", () => {
@@ -68,20 +65,20 @@ describe("blueprint-per-project + reset (#647)", () => {
     const s = useAppStore.getState();
     // the switch is refused — the authoring blueprint overrides + locks the project
     expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
-    expect(s.sectionGrades["p"]).toBeTruthy();      // progress NOT wiped
+    expect(s.uiScreens["p"]).toBeTruthy();          // progress NOT wiped
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
   });
 
   it("now allows any project blueprint → any other, re-seeding on switch (#1281)", () => {
-    // greenfield → data is allowed now (was refused under the #923 one-way rule)
+    // any → any is allowed now (was refused under the #923 one-way rule)
     useAppStore.getState().setProjectBlueprintId("p", "default");
-    useAppStore.getState().applyBlueprintToProject("p", "data-migration");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("data-migration"); // switched
-    expect(useAppStore.getState().sectionGrades["p"]).toBeUndefined();             // progress wiped on switch
-    // a transform-origin project can switch too — the soft-lock is gone (#1281)
-    useAppStore.getState().setProjectBlueprintId("p", "refactor");
-    useAppStore.getState().applyBlueprintToProject("p", "harden");
-    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("harden");         // switched
+    useAppStore.getState().applyBlueprintToProject("p", "complete");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("complete"); // switched
+    expect(useAppStore.getState().uiScreens["p"]).toBeUndefined();           // progress wiped on switch
+    // and back again — the soft-lock is gone (#1281)
+    useAppStore.getState().setProjectBlueprintId("p", "complete");
+    useAppStore.getState().applyBlueprintToProject("p", "default");
+    expect(useAppStore.getState().projectBlueprintId["p"]).toBe("default");  // switched
   });
 
   it("is a no-op when switching to the SAME blueprint (#1281)", () => {
@@ -89,7 +86,19 @@ describe("blueprint-per-project + reset (#647)", () => {
     useAppStore.getState().applyBlueprintToProject("p", "default");
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBe("default");
-    expect(s.sectionGrades["p"]).toBeTruthy();                 // progress NOT wiped (refused no-op)
+    expect(s.uiScreens["p"]).toBeTruthy();                     // progress NOT wiped (refused no-op)
     expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
+  });
+
+  it("seedDiscoveryOnlyStages seeds Discovery-only for a fresh project, and is a no-op once set (#1395)", () => {
+    useAppStore.setState({ planStageConfig: {} });
+    useAppStore.getState().seedDiscoveryOnlyStages("fresh");
+    const c = useAppStore.getState().planStageConfig["fresh"];
+    expect(c.enabled.discovery).toBe(true);
+    expect(c.enabled.features).toBe(false); // every non-context stage starts off (additive)
+    // idempotent: re-seeding never clobbers an existing config (a blueprint-seeded or in-progress plan)
+    useAppStore.getState().setStageEnabled("fresh", "features", true);
+    useAppStore.getState().seedDiscoveryOnlyStages("fresh");
+    expect(useAppStore.getState().planStageConfig["fresh"].enabled.features).toBe(true);
   });
 });

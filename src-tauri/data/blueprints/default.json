@@ -1,0 +1,28 @@
+{
+  "order": 0,
+  "id": "default",
+  "name": "Default",
+  "desc": "The simplest greenfield path — context to agent-ready plan",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "skills": ["web-seo"],
+  "sections": [
+    {
+      "key": "discovery"
+    },
+    {
+      "key": "deployment"
+    },
+    {
+      "key": "features"
+    },
+    {
+      "key": "ui",
+      "optional": true
+    },
+    {
+      "key": "streams"
+    }
+  ]
+}

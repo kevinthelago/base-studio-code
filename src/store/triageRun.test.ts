@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./";
-import { triagePaneId } from "../lib/console/paneIdentity";
-import { sanitizeProjectKey } from "../lib/core/projectPaths";
+import { triagePaneId } from "@/app/console/lib/paneIdentity";
+import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 
 // #1004: prepareTriageRun reads plan.db (last-run marker + changed-since delta), renders the resume
 // lead, and stamps a fresh marker; triageStartProject leads each pane's prompt with that delta.

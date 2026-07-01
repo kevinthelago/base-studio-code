@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, TRIAGE_PROMPT } from "./";
-import { fleetProfilesComplete } from "../lib/session/profileGen";
-import type { ViewKey } from "../components/pane/ViewTabs";
-import type { QueuedPane } from "../lib/console/focusQueue";
-import type { FleetPlan } from "../screens/planner/stages/planSections";
-import type { McpServer } from "@/features/extensions/lib/mcpServers";
-import type { Hook } from "@/features/extensions/lib/hooks";
-import { defaultStageConfig } from "../screens/planner/stages/planStages";
-import { makeBlueprints } from "../screens/planner/stages/blueprints";
-import { directorPaneId, fleetPaneId, triagePaneId } from "../lib/console/paneIdentity";
-import { sanitizeProjectKey } from "../lib/core/projectPaths";
+import type { ViewKey } from "@/app/console/panes/viewDefs";
+import type { QueuedPane } from "@/app/console/lib/focusQueue";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
+import type { McpServer } from "@/features/mcp/lib/mcpServers";
+import type { Hook } from "@/features/mcp/lib/hooks";
+import { defaultStageConfig } from "@/features/planner/stages/planStages";
+import { makeBlueprints } from "@/features/planner/stages/blueprints";
+import { directorPaneId, fleetPaneId, triagePaneId, paneIdFor } from "@/app/console/lib/paneIdentity";
+import { sanitizeProjectKey, mintProjectId } from "@/shared/lib/core/projectPaths";
 
 // Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
 // fleet director by `<key>:director`, workers by `<key>:<streamId>`.
@@ -31,14 +31,9 @@ const RESET_STATE = {
   paneCwds: {} as Record<string, string>,
   paneInitCmds: {} as Record<string, string>,
   disabledPanes: {} as Record<string, boolean>,
-  kbBlocks: [],
   schedules: [],
   commands: [],
-  allowedCommands: [] as string[],
   deniedCommands: [] as string[],
-  projectAllowedCommands: {} as Record<string, string[]>,
-  repoAllowedCommands: {} as Record<string, string[]>,
-  paneAllowedCommands: {} as Record<string, string[]>,
   autoAdvanceOnReply: true,
   terminalFontSize: 12,
   focusedAgentName: "",
@@ -99,6 +94,27 @@ describe("autoPlanWithClaude setting (#682)", () => {
   });
 });
 
+describe("sandboxConsoles setting (#1988)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().sandboxConsoles).toBe(false);
+    useAppStore.getState().setSandboxConsoles(true);
+    expect(useAppStore.getState().sandboxConsoles).toBe(true);
+    useAppStore.getState().setSandboxConsoles(false);
+    expect(useAppStore.getState().sandboxConsoles).toBe(false);
+  });
+});
+
+describe("bypassPermissions posture (#1916/#2050)", () => {
+  it("defaults to the safe allow-list (OFF) and toggles via the setter", () => {
+    // #2050: the shipped default is the allow-list (bypass off) — a fresh install is safe-by-default.
+    expect(useAppStore.getState().bypassPermissions).toBe(false);
+    useAppStore.getState().setBypassPermissions(true);
+    expect(useAppStore.getState().bypassPermissions).toBe(true);
+    useAppStore.getState().setBypassPermissions(false);
+    expect(useAppStore.getState().bypassPermissions).toBe(false);
+  });
+});
+
 describe("autoCompleteGates setting (#1068)", () => {
   it("is off by default and toggles via the setter", () => {
     expect(useAppStore.getState().autoCompleteGates).toBe(false);
@@ -138,6 +154,21 @@ describe("LLM provider config (#1085)", () => {
     // restore defaults for other tests
     g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
     g().setOpenaiKey(""); g().setGeminiKey("");
+  });
+
+  it("switching to ollama defaults the model to qwen3-coder, and switching back restores claude", () => {
+    const g = () => useAppStore.getState();
+    // From the anthropic default, picking Ollama swaps the (unrunnable) claude model for the local one.
+    g().setLlmProvider("ollama");
+    expect(g().llmModel).toBe("qwen3-coder");
+    // Switching back reverts the leftover local default to the anthropic default.
+    g().setLlmProvider("anthropic");
+    expect(g().llmModel).toBe("claude-sonnet-4-6");
+    // A model the user typed survives a provider switch.
+    g().setLlmModel("llama3.1"); g().setLlmProvider("ollama");
+    expect(g().llmModel).toBe("llama3.1");
+    // restore defaults for other tests
+    g().setLlmProvider("anthropic"); g().setLlmModel("claude-sonnet-4-6");
   });
 });
 
@@ -290,7 +321,6 @@ describe("deleteLocalProject", () => {
       projectLocalRepos: { "My App": ["o/a"] },
       repoStartupPromptDoc: { "My App::o/a": "d", "Other::o/b": "e" },
       repoTriagePromptDoc: { "My App::o/a": "t" },
-      repoAllowedCommands: { "My App::o/a": ["gh"] },
       activeProjectId: "PVT_id1",
       activeProjectName: "My App",
       projectsView: "planning",
@@ -307,7 +337,6 @@ describe("deleteLocalProject", () => {
     expect(s.repoStartupPromptDoc["My App::o/a"]).toBeUndefined();
     expect(s.repoStartupPromptDoc["Other::o/b"]).toBe("e"); // other project's repo kept
     expect(s.repoTriagePromptDoc["My App::o/a"]).toBeUndefined();
-    expect(s.repoAllowedCommands["My App::o/a"]).toBeUndefined();
     // Active project meta cleared and view sent back to the list.
     expect(s.activeProjectId).toBeNull();
     expect(s.activeProjectName).toBe("");
@@ -603,55 +632,15 @@ describe("pane state", () => {
 
 // ── Knowledge blocks ──────────────────────────────────────────────────────────
 
-// ── Allowed commands ──────────────────────────────────────────────────────────
+// ── Denied commands (the global block-list; allow-scope retired in #1457) ──────
 
-describe("allowed commands", () => {
-  it("addAllowedCommand appends a command", () => {
-    useAppStore.getState().addAllowedCommand("git status");
-    expect(useAppStore.getState().allowedCommands).toContain("git status");
-  });
-
-  it("addAllowedCommand ignores duplicates", () => {
-    useAppStore.getState().addAllowedCommand("cargo test");
-    useAppStore.getState().addAllowedCommand("cargo test");
-    expect(useAppStore.getState().allowedCommands).toHaveLength(1);
-  });
-
-  it("removeAllowedCommand removes a specific command", () => {
-    useAppStore.getState().addAllowedCommand("npm run dev");
-    useAppStore.getState().addAllowedCommand("cargo build");
-    useAppStore.getState().removeAllowedCommand("npm run dev");
-    const { allowedCommands } = useAppStore.getState();
-    expect(allowedCommands).not.toContain("npm run dev");
-    expect(allowedCommands).toContain("cargo build");
-  });
-
-  it("setAllowedCommands replaces the full list", () => {
-    useAppStore.getState().addAllowedCommand("old");
-    useAppStore.getState().setAllowedCommands(["new-a", "new-b"]);
-    expect(useAppStore.getState().allowedCommands).toEqual(["new-a", "new-b"]);
-  });
-
+describe("denied commands", () => {
   it("add/removeDeniedCommand manages the global block list (lowercased, deduped)", () => {
     useAppStore.getState().addDeniedCommand("SCP");
     useAppStore.getState().addDeniedCommand("scp"); // dup ignored
     expect(useAppStore.getState().deniedCommands).toEqual(["scp"]);
     useAppStore.getState().removeDeniedCommand("scp");
     expect(useAppStore.getState().deniedCommands).toEqual([]);
-  });
-
-  it("add/removeProjectAllowedCommand scopes to a project and lowercases", () => {
-    useAppStore.getState().addProjectAllowedCommand("P1", "Cargo");
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
-    useAppStore.getState().addProjectAllowedCommand("P1", "cargo"); // dup ignored
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual(["cargo"]);
-    useAppStore.getState().removeProjectAllowedCommand("P1", "cargo");
-    expect(useAppStore.getState().projectAllowedCommands["P1"]).toEqual([]);
-  });
-
-  it("addRepoAllowedCommand scopes to a project::repo key", () => {
-    useAppStore.getState().addRepoAllowedCommand("P1", "acme/web", "npm");
-    expect(useAppStore.getState().repoAllowedCommands["P1::acme/web"]).toEqual(["npm"]);
   });
 });
 
@@ -848,6 +837,31 @@ describe("triageStartProject", () => {
     expect(paneRepos[`t${before}p5`]).toBeUndefined();
   });
 
+  it("uses a Rust-resolved clonePaths cwd even when bscBaseDir is empty (#1819)", () => {
+    // The crash-recovery condition: the async bscBaseDir mirror is still "" when triage launches.
+    // Pre-#1819 that yielded an empty cwd → TerminalView skipped the settings.json writer →
+    // permission-less session. A backend-resolved clonePaths entry must override the mirror.
+    useAppStore.setState({ bscBaseDir: "" });
+    useAppStore.getState().triageStartProject("rp", ["o/web", "o/api"], "rp", undefined, {
+      "o/web": "/abs/clone/web",
+      "o/api": "/abs/clone/api",
+    });
+    const { paneCwds } = useAppStore.getState();
+    expect(paneCwds[tri("rp", "o/web")]).toBe("/abs/clone/web");
+    expect(paneCwds[tri("rp", "o/api")]).toBe("/abs/clone/api");
+  });
+
+  it("falls back to the bscBaseDir mirror when no clonePaths entry is present (#1819)", () => {
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
+    useAppStore.getState().triageStartProject("fb", ["o/web", "o/api"], "fb", undefined, {
+      "o/web": "/abs/clone/web", // provided → wins
+      // o/api omitted → falls back to the mirror-derived path
+    });
+    const { paneCwds } = useAppStore.getState();
+    expect(paneCwds[tri("fb", "o/web")]).toBe("/abs/clone/web");
+    expect(paneCwds[tri("fb", "o/api")]).toBe("/base/projects/fb/api");
+  });
+
   it("marks each real-repo pane to resume its prior conversation (--continue)", () => {
     useAppStore.getState().triageStartProject("cont", ["o/a", "o/b"]);
     const { paneContinue } = useAppStore.getState();
@@ -934,18 +948,6 @@ describe("triageStartProject", () => {
     expect(paneStartupPromptText[tri("proj", "o/b")]).toBeUndefined();
   });
 
-  it("resolves each triage pane's allowed commands as global ∪ project ∪ repo", () => {
-    useAppStore.setState({
-      allowedCommands: ["docker"],
-      projectAllowedCommands: { P1: ["cargo"] },
-      repoAllowedCommands: { "P1::o/b": ["npm"] },
-    });
-    useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
-    const { paneAllowedCommands } = useAppStore.getState();
-    // o/a: global + project; o/b: global + project + its own repo command.
-    expect(paneAllowedCommands[tri("proj", "o/a")]).toEqual(["docker", "cargo"]);
-    expect(paneAllowedCommands[tri("proj", "o/b")]).toEqual(["docker", "cargo", "npm"]);
-  });
 });
 
 describe("startup prompt assignment setters", () => {
@@ -979,7 +981,6 @@ describe("config profiles", () => {
     name,
     instructions: `# ${name}`,
     tools: { allow: ["Read"], deny: ["Bash"] },
-    kbBlockIds: [],
   });
 
   it("addConfigProfile appends with a unique id", () => {
@@ -1027,11 +1028,6 @@ describe("config profiles", () => {
     expect(configProfiles[0].name).toBe("keep");
   });
 
-  it("addConfigProfile stores kbBlockIds", () => {
-    useAppStore.getState().addConfigProfile({ ...makeProfile("p"), kbBlockIds: ["blk_1", "blk_2"] });
-    const p = useAppStore.getState().configProfiles[0];
-    expect(p.kbBlockIds).toEqual(["blk_1", "blk_2"]);
-  });
 });
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
@@ -1093,6 +1089,32 @@ describe("agent fleet store", () => {
     expect(useAppStore.getState().planFleet["p"].director.role).toBe("integrator");
   });
 
+  it("in-app fleet edits write back to plan.db; the poll read path does not (#1317)", () => {
+    useAppStore.getState().setPlanFleet("p", fleet);
+
+    // setPlanFleet is the poll's READ path (plan.db → store) — it must NOT persist, or
+    // every poll tick would write back and we'd loop.
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().setPlanFleet("p", fleet);
+    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "plan_set_fleet")).toBe(false);
+
+    // A stream edit persists the whole updated fleet to plan.db.
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().setPlanAgentStreamModel("p", "auth-ui", "opus-4.5");
+    const edit = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    expect(edit).toBeTruthy();
+    expect((edit![1] as { projectKey: string }).projectKey).toBe("p");
+    expect((edit![1] as { fleet: FleetPlan }).fleet.streams.find(x => x.id === "auth-ui")!.model)
+      .toBe("opus-4.5");
+
+    // Removal persists the post-removal fleet (plan_set_fleet is a full replace).
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().removePlanAgentStream("p", "api");
+    const rm = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    expect(rm).toBeTruthy();
+    expect((rm![1] as { fleet: FleetPlan }).fleet.streams.some(x => x.id === "api")).toBe(false);
+  });
+
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
     // A published project (has a board id) → director hub lives under projects/ (#904).
     useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });
@@ -1119,10 +1141,11 @@ describe("agent fleet store", () => {
     expect(st.paneCwds[fleetPaneId("proj-key", "api")]).toBe("/base/worktrees/proj-key/api--api");
     expect(st.paneStartupPromptText[fleetPaneId("proj-key", "api")]).toContain("API");
 
-    // worker write boundary (#354): the stream's owned globs feed the role gate so
-    // edits in its lane auto-approve; the director (code:none) gets none.
+    // worker write boundary (#354): the stream's owned globs feed the role gate so edits in
+    // its lane auto-approve. The director (code:none) now OWNS the repo-root commons via the
+    // #851 scoped carve-out — with no stack.md it gets the universal commons set, not no globs.
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "auth-ui")]).toEqual(["src/auth/**"]);
-    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toBeUndefined();
+    expect(st.paneRoleGlobs[directorPaneId("proj-key")]).toContain(".gitignore");
     expect(st.paneRoleGlobs[fleetPaneId("proj-key", "api")]).toBeUndefined();
 
     // repo-scoped session credentials (#158): each worker pane is bound to its repo
@@ -1165,6 +1188,40 @@ describe("agent fleet store", () => {
     st = useAppStore.getState();
     expect(st.paneProviders[directorPaneId("hb-key")]).toBe("bsc-agent");
     expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
+
+    // A local/ollama provider FORCES bsc-agent even with the harness toggle left on "claude" —
+    // Claude Code can't drive Ollama, so selecting it runs the whole fleet on the local model.
+    useAppStore.setState({ fleetHarness: "claude", llmProvider: "ollama" });
+    useAppStore.getState().fleetStartProject("HO", fleet, "ho-key");
+    st = useAppStore.getState();
+    expect(st.paneProviders[directorPaneId("ho-key")]).toBe("bsc-agent");
+    expect(st.paneProviders[fleetPaneId("ho-key", "auth-ui")]).toBe("bsc-agent");
+    useAppStore.setState({ llmProvider: "anthropic" }); // restore for sibling tests
+  });
+
+  it("fleetStartProject binds each worker pane to its role's default profile, or its pinned id (#1828)", () => {
+    // Unified role→profile model: NO per-stream materialization. A stream may pin an explicit
+    // profile id (used verbatim); an unpinned stream binds to its ROLE's default profile
+    // (worker → Autonomous, pf_auto). agentProfiles is never mutated at launch.
+    const fleet2: FleetPlan = {
+      recommended: 1,
+      reasoning: "r",
+      director: { enabled: false },
+      streams: [
+        { id: "ui-modes", name: "UI modes", repo: "own/web", owns: ["src/modes/**"], issues: [], dependsOn: [], profile: "ui-modes-dev", commands: ["vite", "tauri"] },
+        { id: "data", name: "Data", repo: "own/web", owns: ["src/data/**"], issues: [], dependsOn: [] }, // no profile assigned
+      ],
+    };
+    useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub", agentProfiles: [] });
+    useAppStore.getState().fleetStartProject("MZ", fleet2, "mz-key");
+    const st = useAppStore.getState();
+
+    // A pinned profile id binds verbatim.
+    expect(st.paneProfiles[fleetPaneId("mz-key", "ui-modes")]).toBe("ui-modes-dev");
+    // An unpinned worker stream binds to the worker role's default profile.
+    expect(st.paneProfiles[fleetPaneId("mz-key", "data")]).toBe("pf_auto");
+    // No per-stream generation: agentProfiles is untouched by launch.
+    expect(st.agentProfiles).toEqual([]);
   });
 
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
@@ -1234,14 +1291,15 @@ describe("agent fleet store", () => {
     const st = useAppStore.getState();
     const paneKey = (p: number) => p === 0 ? directorPaneId("multi-key") : fleetPaneId("multi-key", ["sci", "ui"][p - 1]);
     const names = (p: number) => (st.paneMcpServers[paneKey(p)] ?? []).map((e) => e.name).sort();
-    // Every session also gets the always-available built-in Research server (#1196).
+    // Every session also gets the always-available built-in servers — Research (#1196) +
+    // Compliance (#1005).
     // Director (pane 0) sees ALL installed servers — including the disabled and other-project ones.
-    expect(names(0)).toEqual(["Disabled", "Glob", "Research", "SciTool"]);
-    // The science worker gets the global baseline + built-in Research + its assigned SciTool
+    expect(names(0)).toEqual(["Compliance", "Disabled", "Glob", "Research", "SciTool"]);
+    // The science worker gets the global baseline + built-ins + its assigned SciTool
     // (disabled/other-project, pulled in by the explicit assignment).
-    expect(names(1)).toEqual(["Glob", "Research", "SciTool"]);
-    // The UI worker, with nothing assigned, gets the global baseline + the built-in Research.
-    expect(names(2)).toEqual(["Glob", "Research"]);
+    expect(names(1)).toEqual(["Compliance", "Glob", "Research", "SciTool"]);
+    // The UI worker, with nothing assigned, gets the global baseline + the built-ins.
+    expect(names(2)).toEqual(["Compliance", "Glob", "Research"]);
   });
 
   it("fleetStartProject normalizes a worker's owned dirs into subtree write globs", () => {
@@ -1254,28 +1312,6 @@ describe("agent fleet store", () => {
     const st = useAppStore.getState();
     // director disabled ⇒ pane 0 is the worker "w".
     expect(st.paneRoleGlobs[fleetPaneId("k", "w")]).toEqual(["src/x/**", "src/y.ts"]);
-  });
-
-  it("generateFleetProfiles materializes unassigned and dangling-reference profiles", () => {
-    const f: FleetPlan = {
-      recommended: 2, reasoning: "", director: { enabled: false },
-      streams: [
-        { id: "a", name: "A", repo: "o/r", owns: ["src/a/**"], issues: [], dependsOn: [] },
-        { id: "b", name: "B", repo: "o/r", owns: ["src/b/**"], issues: [], dependsOn: [], profile: "b-dev" },
-      ],
-    };
-    useAppStore.setState({ planFleet: { gp: f } });
-    useAppStore.getState().generateFleetProfiles("gp");
-    const st = useAppStore.getState();
-    const streams = st.planFleet["gp"].streams;
-    // unassigned -> generated id + a profile whose write paths are its owns
-    expect(streams[0].profile).toBe("gen_a");
-    expect(st.agentProfiles.find((p) => p.id === "gen_a")!.paths.allow).toEqual(["src/a/**"]);
-    // dangling reference -> materialized, keeping the planner-assigned id stable
-    expect(streams[1].profile).toBe("b-dev");
-    expect(st.agentProfiles.find((p) => p.id === "b-dev")!.paths.allow).toEqual(["src/b/**"]);
-    // and the permissions gate now passes: every stream has an assigned, existing profile (#696)
-    expect(fleetProfilesComplete(streams, st.agentProfiles)).toBe(true);
   });
 
   it("isolates co-located agents in separate worktrees with distinct checkpoint docs", () => {
@@ -1436,20 +1472,24 @@ describe("agent fleet store", () => {
 });
 
 describe("pane status — store single source of truth (#435)", () => {
+  // addTab mints a stable tab id, so its panes are keyed `man:<id>:p<n>` (paneIdFor),
+  // NOT positional `t{idx}p{n}` (#1176). Derive the real ids the way the app does.
+  const pid = (idx: number, p: number) => paneIdFor(useAppStore.getState().tabs[idx], idx, p);
+
   it("setPaneStatus records the status and rolls it up to tab.state", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-a", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx); // isolate from shared-store state
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "on");
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("on");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "on");
+    expect(useAppStore.getState().paneStatus[pid(idx, 0)]).toBe("on");
     expect(useAppStore.getState().tabs[idx].state).toBe("on");
     // Any running pane dominates the rollup.
-    useAppStore.getState().setPaneStatus(`t${idx}p1`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 1), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
     // Back to idle when every live pane is idle.
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "idle");
-    useAppStore.getState().setPaneStatus(`t${idx}p1`, "idle");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "idle");
+    useAppStore.getState().setPaneStatus(pid(idx, 1), "idle");
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1458,9 +1498,9 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().addTab({ name: "ps-dis", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
-    useAppStore.getState().setPaneDisabled(`t${idx}p0`, true);
+    useAppStore.getState().setPaneDisabled(pid(idx, 0), true);
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1469,7 +1509,7 @@ describe("pane status — store single source of truth (#435)", () => {
     useAppStore.getState().addTab({ name: "ps-layout", layout: "2×2" });
     const idx = before;
     useAppStore.getState().clearTabStatuses(idx);
-    useAppStore.getState().setPaneStatus(`t${idx}p3`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 3), "run");
     expect(useAppStore.getState().tabs[idx].state).toBe("run");
     useAppStore.getState().setTabLayout(idx, "1×1"); // trims pane 3 out of the grid
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
@@ -1479,9 +1519,9 @@ describe("pane status — store single source of truth (#435)", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-clear", layout: "2×2" });
     const idx = before;
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
+    useAppStore.getState().setPaneStatus(pid(idx, 0), "run");
     useAppStore.getState().clearTabStatuses(idx);
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().paneStatus[pid(idx, 0)]).toBeUndefined();
     expect(useAppStore.getState().tabs[idx].state).toBe("idle");
   });
 
@@ -1489,10 +1529,100 @@ describe("pane status — store single source of truth (#435)", () => {
     const before = useAppStore.getState().tabs.length;
     useAppStore.getState().addTab({ name: "ps-close", layout: "2×2" });
     const idx = before;
-    useAppStore.getState().setPaneStatus(`t${idx}p0`, "run");
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBe("run");
+    const key = pid(idx, 0);
+    useAppStore.getState().setPaneStatus(key, "run");
+    expect(useAppStore.getState().paneStatus[key]).toBe("run");
     useAppStore.getState().closeTab(idx);
-    expect(useAppStore.getState().paneStatus[`t${idx}p0`]).toBeUndefined();
+    expect(useAppStore.getState().paneStatus[key]).toBeUndefined();
+  });
+
+  it("closeTab releases the closed fleet tab's worker state so the warden stops watching them (#1951)", () => {
+    // Regression: the always-on warden (#1102) watches every pane in fleetPaneStreams. If closeTab
+    // left a closed tab's now-dead workers there, it kept re-quarantining them and the "Worker
+    // quarantined" banner reappeared despite the tab + banner being closed.
+    const w1 = "proj:auth-ui";
+    const w2 = "proj:api";
+    const before = useAppStore.getState().tabs.length;
+    useAppStore.getState().addTab({ name: "fleet", layout: "1×2" });
+    const idx = before;
+    // Make it a fleet tab carrying the minted worker identity ids, and seed the warden-watched state.
+    useAppStore.setState((s) => ({
+      tabs: s.tabs.map((t, i) => (i === idx ? { ...t, kind: "build", paneIds: [w1, w2] } : t)),
+      fleetPaneStreams: {
+        ...s.fleetPaneStreams,
+        [w1]: { id: "auth-ui", owns: ["src/auth/**"] } as never,
+        [w2]: { id: "api", owns: [] } as never,
+      },
+      paneCwds: { ...s.paneCwds, [w1]: "/wt/auth", [w2]: "/wt/api" },
+      quarantinedPanes: { ...s.quarantinedPanes, [w1]: { streamId: "auth-ui", summary: "drift", at: 1 } },
+    }));
+    expect(useAppStore.getState().fleetPaneStreams[w1]).toBeDefined();
+
+    useAppStore.getState().closeTab(idx);
+
+    const st = useAppStore.getState();
+    expect(st.fleetPaneStreams[w1]).toBeUndefined();
+    expect(st.fleetPaneStreams[w2]).toBeUndefined();
+    expect(st.paneCwds[w1]).toBeUndefined();
+    expect(st.quarantinedPanes[w1]).toBeUndefined();
+  });
+
+  it("clearProjectQuarantine clears a project's quarantines + stamps a warden floor, leaving other projects", () => {
+    // Triage relaunch must not be re-paused by a prior run's quarantine. Clears every pane under the
+    // `<projectKey>:` prefix and floors the warden for each relaunching pane (incl. not-yet-flagged ones).
+    const w1 = "STEM:data";     // STEM worker, currently quarantined
+    const w2 = "STEM:backend";  // STEM worker, relaunching but not flagged
+    const other = "MARS:ui";    // a different project — must be untouched
+    useAppStore.setState((s) => ({
+      quarantinedPanes: {
+        ...s.quarantinedPanes,
+        [w1]: { streamId: "data", summary: "ran denied `gh pr close 8`", at: 1 },
+        [other]: { streamId: "ui", summary: "drift", at: 1 },
+      },
+      wardenSince: {},
+    }));
+
+    useAppStore.getState().clearProjectQuarantine("STEM", [w1, w2], 5000);
+
+    const st = useAppStore.getState();
+    expect(st.quarantinedPanes[w1]).toBeUndefined();   // STEM quarantine cleared
+    expect(st.quarantinedPanes[other]).toBeDefined();  // other project untouched
+    expect(st.wardenSince[w1]).toBe(5000);             // floor stamped for the flagged pane
+    expect(st.wardenSince[w2]).toBe(5000);             // and the not-yet-flagged relaunching pane
+    expect(st.wardenSince[other]).toBeUndefined();     // other project not floored
+  });
+
+  it("clearQuarantine fully removes the pane AND stamps a warden floor (completion / relaunch lift)", () => {
+    // clearQuarantine is the FULL clear (the warden lifts a completed worker; triage relaunch clears it).
+    // It floors the warden so a stale denied command can't immediately re-trip a re-evaluated pane.
+    const p = "STEM:data";
+    useAppStore.setState((s) => ({
+      quarantinedPanes: { ...s.quarantinedPanes, [p]: { streamId: "data", summary: "ran denied cmd", at: 1 } },
+      wardenSince: {},
+    }));
+
+    const before = Date.now();
+    useAppStore.getState().clearQuarantine(p);
+    const st = useAppStore.getState();
+
+    expect(st.quarantinedPanes[p]).toBeUndefined();           // fully removed
+    expect(st.wardenSince[p]).toBeGreaterThanOrEqual(before); // and the warden is floored to ~now
+  });
+
+  it("acknowledgeQuarantine keeps the pane quarantined (banner hidden) so the warden still skips it", () => {
+    // Dismissing the banner must NOT un-quarantine the pane — its PTY is already dead (paused), and the
+    // warden's skip-set is the quarantinedPanes keys, so keeping the entry (just acknowledged) stops a
+    // still-present out-of-lane diff edit from re-tripping the warden and re-showing the banner.
+    const p = "STEM:data";
+    useAppStore.setState((s) => ({
+      quarantinedPanes: { ...s.quarantinedPanes, [p]: { streamId: "data", summary: "edited out-of-lane X.tsx", at: 1 } },
+    }));
+
+    useAppStore.getState().acknowledgeQuarantine(p);
+    const st = useAppStore.getState();
+
+    expect(st.quarantinedPanes[p]).toBeDefined();           // STILL quarantined (so the warden skips it)
+    expect(st.quarantinedPanes[p].acknowledged).toBe(true); // but acknowledged → the banner hides
   });
 });
 
@@ -1528,8 +1658,8 @@ describe("mcp servers store", () => {
     };
     useAppStore.getState().fleetStartProject("ExtP", fleet, "proj-key");
     // director disabled ⇒ pane 0 is the single worker "s0". Filter the always-present built-in
-    // server (#1196) to keep this focused on user-server scoping.
-    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research");
+    // servers (#1196 Research, #1005 Compliance) to keep this focused on user-server scoping.
+    const ids = (useAppStore.getState().paneMcpServers[fleetPaneId("proj-key", "s0")] ?? []).map(e => e.id).filter(id => id !== "builtin-research" && id !== "builtin-compliance");
     expect(ids).toEqual(["g", "p"]);
   });
 });
@@ -1566,6 +1696,39 @@ describe("draft projects (#379)", () => {
     // deleteLocalProject also purges the draft entry (cleanup)
     st().deleteLocalProject(["acme-x2"]);
     expect(st().localDraftProjects["acme-x2"]).toBeUndefined();
+  });
+});
+
+
+describe("stable project id (#1741)", () => {
+  const st = () => useAppStore.getState();
+
+  it("keeps the workspace key stable across a title change (no path orphaning)", () => {
+    // A new project is created keyed by a minted, NON-title-derived stable id, used as the
+    // planning session key. Renaming edits only the display title in place.
+    const stableId = mintProjectId();
+    st().addDraftProject(stableId, { title: "Acme Web", pitch: "", createdAt: 1 });
+    st().setPlanningSession(stableId);
+    expect(st().planningSessionKey).toBe(stableId);
+
+    // Rename: the title changes but the key (and every on-disk path keyed off it) does NOT.
+    st().updateDraftProject(stableId, { title: "Acme Web — Renamed" });
+    expect(st().planningSessionKey).toBe(stableId);
+    expect(st().localDraftProjects[stableId]?.title).toBe("Acme Web — Renamed");
+    // The record still lives under the original key — no new title-derived entry appeared.
+    expect(Object.keys(st().localDraftProjects)).toContain(stableId);
+    expect(st().localDraftProjects[sanitizeProjectKey("Acme Web — Renamed")]).toBeUndefined();
+  });
+
+  it("gives two projects with the SAME title distinct keys (no collision)", () => {
+    const a = mintProjectId();
+    const b = mintProjectId();
+    expect(a).not.toBe(b);
+    st().addDraftProject(a, { title: "Duplicate", pitch: "", createdAt: 1 });
+    st().addDraftProject(b, { title: "Duplicate", pitch: "", createdAt: 2 });
+    expect(st().localDraftProjects[a]).toBeDefined();
+    expect(st().localDraftProjects[b]).toBeDefined();
+    expect(st().localDraftProjects[a]).not.toBe(st().localDraftProjects[b]);
   });
 });
 
@@ -1665,13 +1828,13 @@ describe("plan stage config (#512)", () => {
     const cfg = useAppStore.getState().planStageConfig["proj"];
     expect(cfg.enabled.automations).toBe(false);
     // other stages keep their default-on value
-    expect(cfg.enabled.context).toBe(true);
-    expect(cfg.enabled.structure).toBe(true);
+    expect(cfg.enabled.discovery).toBe(true);
+    expect(cfg.enabled.streams).toBe(true);
   });
 
   it("reorderStages stores the new order without touching enabled flags", () => {
     useAppStore.getState().setStageEnabled("proj", "ui", false);
-    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["deployment", "discovery", "ui", "streams", "automations", "skills"] as const;
     useAppStore.getState().reorderStages("proj", [...order]);
     const cfg = useAppStore.getState().planStageConfig["proj"];
     expect(cfg.order).toEqual([...order]);
@@ -1686,9 +1849,9 @@ describe("plan stage config (#512)", () => {
 
   it("setProjectStageConfig wholesale-seeds a project's config", () => {
     const d = defaultStageConfig();
-    const order = ["repos", "context", "ui", "structure", "permissions", "automations", "skills"] as const;
+    const order = ["deployment", "discovery", "ui", "streams", "automations", "skills"] as const;
     useAppStore.getState().setProjectStageConfig("seed", { enabled: d.enabled, order: [...order] });
-    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("repos");
+    expect(useAppStore.getState().planStageConfig["seed"].order[0]).toBe("deployment");
   });
 });
 
@@ -1732,7 +1895,8 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(4);
+    // default + complete + blueprint-author after the data/transform blueprints were archived (5def26b7).
+    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(3);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 
@@ -1755,18 +1919,18 @@ describe("blueprints library (#513/#514)", () => {
     expect(copy.name).toMatch(/copy/);
     // editing the copy doesn't touch the source
     const edited = copy.sections.map((s, i) => (i === 0 ? { ...s, enabled: false } : s));
-    useAppStore.getState().setBlueprintSections(id, edited);
+    useAppStore.getState().setBlueprintStages(id, edited);
     const src = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
     expect(src.sections[0].enabled).toBe(true);
   });
 
-  it("setBlueprintSections persists the new sections for that blueprint only", () => {
+  it("setBlueprintStages persists the new sections for that blueprint only", () => {
     const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
-    const flipped = def.sections.map((s) => (s.key === "context" ? { ...s, enabled: false } : s));
-    useAppStore.getState().setBlueprintSections("default", flipped);
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "context")!.enabled).toBe(false);
+    const flipped = def.sections.map((s) => (s.key === "discovery" ? { ...s, enabled: false } : s));
+    useAppStore.getState().setBlueprintStages("default", flipped);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(false);
     // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "context")!.enabled).toBe(true);
+    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {
@@ -1778,22 +1942,22 @@ describe("blueprints library (#513/#514)", () => {
 });
 
 describe("stage pipeline runs (#528/#529)", () => {
-  beforeEach(() => useAppStore.setState({ stagePipelineRuns: {} }));
+  beforeEach(() => useAppStore.setState({ stageRuns: {} }));
 
   it("records a per-project, per-pipeline run state", () => {
-    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "running", lastRun: null });
-    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"].status).toBe("running");
-    useAppStore.getState().setStagePipelineRun("proj", "pl-1", { status: "ok", lastRun: 123 });
-    expect(useAppStore.getState().stagePipelineRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
+    useAppStore.getState().setStageRun("proj", "pl-1", { status: "running", lastRun: null });
+    expect(useAppStore.getState().stageRuns["proj"]["pl-1"].status).toBe("running");
+    useAppStore.getState().setStageRun("proj", "pl-1", { status: "ok", lastRun: 123 });
+    expect(useAppStore.getState().stageRuns["proj"]["pl-1"]).toEqual({ status: "ok", lastRun: 123 });
   });
 
   it("is per-project and per-pipeline (no cross-talk)", () => {
-    useAppStore.getState().setStagePipelineRun("a", "pl-1", { status: "ok", lastRun: 1 });
-    useAppStore.getState().setStagePipelineRun("a", "pl-2", { status: "fail", lastRun: 2 });
-    useAppStore.getState().setStagePipelineRun("b", "pl-1", { status: "blocked", lastRun: 3 });
-    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-1"].status).toBe("ok");
-    expect(useAppStore.getState().stagePipelineRuns["a"]["pl-2"].status).toBe("fail");
-    expect(useAppStore.getState().stagePipelineRuns["b"]["pl-1"].status).toBe("blocked");
+    useAppStore.getState().setStageRun("a", "pl-1", { status: "ok", lastRun: 1 });
+    useAppStore.getState().setStageRun("a", "pl-2", { status: "fail", lastRun: 2 });
+    useAppStore.getState().setStageRun("b", "pl-1", { status: "blocked", lastRun: 3 });
+    expect(useAppStore.getState().stageRuns["a"]["pl-1"].status).toBe("ok");
+    expect(useAppStore.getState().stageRuns["a"]["pl-2"].status).toBe("fail");
+    expect(useAppStore.getState().stageRuns["b"]["pl-1"].status).toBe("blocked");
   });
 });
 
@@ -1804,17 +1968,15 @@ describe("clearPlan (#505)", () => {
       planConfirmedSections: { myproj: ["goal"], other: [] },
       planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
       planSkippedSections: { myproj: ["ui"], other: [] },
-      planKbAssignments: { myproj: ["kb-1"] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
       uiScreens: { myproj: ["Home"] },
       uiApproved: { myproj: ["Home"] },
       planFleet: {},
       issueLinks: { myproj: { F1: { number: 1, url: "u" } } },
-      sectionGrades: { myproj: { ui: [] } },
       projectBlueprintId: { myproj: "default" },
       stagePreview: { myproj: { srcDoc: "<html>", mode: "2d" } },
-      stagePipelineRuns: { myproj: { p1: { status: "ok" } as never } },
+      stageRuns: { myproj: { p1: { status: "ok" } as never } },
       pinnedContext: { myproj: ["x"] },
       projectLocalRepos: { myproj: ["o/r"], other: ["o/keep"] },
     })
@@ -1827,16 +1989,14 @@ describe("clearPlan (#505)", () => {
     expect(s.planConfirmedSections["myproj"]).toBeUndefined();
     expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
     expect(s.planSkippedSections["myproj"]).toBeUndefined();
-    expect(s.planKbAssignments["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
     expect(s.uiApproved["myproj"]).toBeUndefined();
     expect(s.issueLinks["myproj"]).toBeUndefined();
-    expect(s.sectionGrades["myproj"]).toBeUndefined();
     expect(s.projectBlueprintId["myproj"]).toBeUndefined();
     // the rendered UI preview + pipeline runs + pinned context also clear (#651)
     expect(s.stagePreview["myproj"]).toBeUndefined();
-    expect(s.stagePipelineRuns["myproj"]).toBeUndefined();
+    expect(s.stageRuns["myproj"]).toBeUndefined();
     expect(s.pinnedContext["myproj"]).toBeUndefined();
     expect(s.projectLocalRepos["myproj"]).toBeUndefined(); // repos unlinked (#664)
     // other project untouched

@@ -54,7 +54,7 @@ pub(crate) async fn github_device_start(scope: String) -> Result<DeviceStart, St
     let response = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
-        .header("User-Agent", "base-studio-code/0.2.0")
+        .header("User-Agent", super::USER_AGENT)
         .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", scope.as_str())])
         .send()
         .await
@@ -112,7 +112,7 @@ pub(crate) async fn github_device_poll(device_code: String) -> Result<DevicePoll
     let response = client
         .post("https://github.com/login/oauth/access_token")
         .header("Accept", "application/json")
-        .header("User-Agent", "base-studio-code/0.2.0")
+        .header("User-Agent", super::USER_AGENT)
         .form(&[
             ("client_id", GITHUB_CLIENT_ID),
             ("device_code", device_code.as_str()),

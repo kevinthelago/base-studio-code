@@ -3,7 +3,7 @@
 //! mobile client, routing inbound client frames back. The transport-FREE core lives in the parent.
 
 use super::{
-    decode_room_msg, noise, ClientMsg, PaneOutput, ServerMsg, SessionMeta, TunnelState,
+    decode_room_msg, noise, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta, TunnelState,
 };
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -84,7 +84,7 @@ async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &Server
     sink.send(Message::Binary(frame.into())).await.map_err(|e| e.to_string())
 }
 
-async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutput) -> Result<(), String> {
+async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutputChunk) -> Result<(), String> {
     for chunk in split_utf8(&po.data, MAX_PLAINTEXT) {
         let msg = ServerMsg::PaneOutput {
             pane_id: po.pane_id.clone(),
@@ -362,9 +362,9 @@ fn handle_client_msg(app: &AppHandle, msg: ClientMsg, focused: &mut Option<Strin
         return;
     }
     match msg {
-        ClientMsg::PaneInput { pane_id, data } => crate::pty::tunnel_write_pty(app, &pane_id, &data),
+        ClientMsg::PaneInput { pane_id, data } => crate::console::pty::tunnel_write_pty(app, &pane_id, &data),
         ClientMsg::PaneResize { pane_id, cols, rows } => {
-            crate::pty::tunnel_resize_pty(app, &pane_id, cols, rows)
+            crate::console::pty::tunnel_resize_pty(app, &pane_id, cols, rows)
         }
         ClientMsg::PaneFocus { pane_id } => {
             log::debug!("tunnel: focus → pane[{pane_id}]");

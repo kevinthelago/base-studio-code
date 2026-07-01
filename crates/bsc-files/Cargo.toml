@@ -1,0 +1,18 @@
+[package]
+name = "bsc-files"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-files` — the agent-facing filesystem/structure CLI (#1078 follow-up). A LEAN, standalone
+# sidecar (like `bsc-project`): it depends only on the shared CLI scaffold + a gitignore-aware
+# walker, NOT on Tauri, so it spawns cheaply per session AND runs on its own from any terminal.
+[lib]
+name = "bsc_files"
+
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# ripgrep's directory walker: respects .gitignore/.ignore + skips hidden/.git by default, follows no
+# symlinks (avoids the node_modules junction hazard), and yields per-entry metadata for file sizes.
+ignore = "0.4"

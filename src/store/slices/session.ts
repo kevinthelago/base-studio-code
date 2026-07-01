@@ -2,28 +2,18 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import { repoPromptKey } from "../../lib/session/startupPrompt";
-import { DEFAULT_AUTO_FOCUS_MODE } from "../../lib/console/focusQueue";
+import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
+import { setMapEntry } from "../updateHelpers";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
-// to the Extensions feature slice (@/features/extensions/store) (#1309). This slice keeps the
-// command tiers and the session-wide flags/models.
+// to the MCP feature slice (@/features/mcp/store) (#1309). The standalone
+// allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
+// keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "allowedCommands" | "addAllowedCommand" | "removeAllowedCommand" | "setAllowedCommands" | "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "projectAllowedCommands" | "addProjectAllowedCommand" | "removeProjectAllowedCommand" | "repoAllowedCommands" | "addRepoAllowedCommand" | "removeRepoAllowedCommand" | "paneAllowedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
-      allowedCommands: [],
-      addAllowedCommand: (cmd) =>
-        set((s) => ({
-          allowedCommands: s.allowedCommands.includes(cmd)
-            ? s.allowedCommands
-            : [...s.allowedCommands, cmd],
-        })),
-      removeAllowedCommand: (cmd) =>
-        set((s) => ({ allowedCommands: s.allowedCommands.filter((c) => c !== cmd) })),
-      setAllowedCommands: (commands) => set({ allowedCommands: commands }),
-
       deniedCommands: [],
       addDeniedCommand: (cmd) =>
         set((s) => {
@@ -34,42 +24,6 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       removeDeniedCommand: (cmd) =>
         set((s) => ({ deniedCommands: s.deniedCommands.filter((c) => c !== cmd) })),
       setDeniedCommands: (commands) => set({ deniedCommands: commands }),
-
-      projectAllowedCommands: {},
-      addProjectAllowedCommand: (projectId, cmd) =>
-        set((s) => {
-          const c = cmd.trim().toLowerCase();
-          const cur = s.projectAllowedCommands[projectId] ?? [];
-          if (!c || cur.includes(c)) return {};
-          return { projectAllowedCommands: { ...s.projectAllowedCommands, [projectId]: [...cur, c] } };
-        }),
-      removeProjectAllowedCommand: (projectId, cmd) =>
-        set((s) => ({
-          projectAllowedCommands: {
-            ...s.projectAllowedCommands,
-            [projectId]: (s.projectAllowedCommands[projectId] ?? []).filter((x) => x !== cmd),
-          },
-        })),
-      repoAllowedCommands: {},
-      addRepoAllowedCommand: (projectId, repo, cmd) =>
-        set((s) => {
-          const key = repoPromptKey(projectId, repo);
-          const c = cmd.trim().toLowerCase();
-          const cur = s.repoAllowedCommands[key] ?? [];
-          if (!c || cur.includes(c)) return {};
-          return { repoAllowedCommands: { ...s.repoAllowedCommands, [key]: [...cur, c] } };
-        }),
-      removeRepoAllowedCommand: (projectId, repo, cmd) =>
-        set((s) => {
-          const key = repoPromptKey(projectId, repo);
-          return {
-            repoAllowedCommands: {
-              ...s.repoAllowedCommands,
-              [key]: (s.repoAllowedCommands[key] ?? []).filter((x) => x !== cmd),
-            },
-          };
-        }),
-      paneAllowedCommands: {},
 
       autoFocusMode: DEFAULT_AUTO_FOCUS_MODE,
       setAutoFocusMode: (mode) => set({ autoFocusMode: mode, autoAdvanceOnReply: mode !== "off" }),
@@ -83,6 +37,15 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       // resolved). Default OFF = acknowledge-to-clear (findings surfaced; the user reviews + proceeds).
       injectionHardGate: false,
       setInjectionHardGate: (v) => set({ injectionHardGate: v }),
+      // Safe-by-default posture (#2050): sessions run the ALLOW-LIST (Claude's `default` mode enforces
+      // the enumerated allow/deny lists — anything unlisted prompts), NOT bypass. The broad base
+      // allow-list (base.json) covers the typical dev toolchains so it isn't prompt-spammy, and the
+      // deny-hook floor still blocks the dangerous set. Bypass (auto-run-everything) is the opt-in
+      // power-user posture via Settings → Security.
+      bypassPermissions: false,
+      setBypassPermissions: (v) => set({ bypassPermissions: v }),
+      sandboxConsoles: false,
+      setSandboxConsoles: (v) => set({ sandboxConsoles: v }),
 
       autoPlanWithClaude: false,
       setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),
@@ -104,5 +67,5 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       setFleetHarness: (h) => set({ fleetHarness: h }),
       paneModels: {},
       setPaneModel: (paneId, m) =>
-        set((s) => ({ paneModels: { ...s.paneModels, [paneId]: m } })),
+        set((s) => ({ paneModels: setMapEntry(s.paneModels, paneId, m) })),
 });

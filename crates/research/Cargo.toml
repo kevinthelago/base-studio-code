@@ -9,21 +9,23 @@ description = "Native literature research for base-studio-code (#1196) — arXiv
 [lib]
 name = "research"
 
-# The agent-facing MCP server: planner/director/workers call its tools over stdio JSON-RPC.
-# Bundled beside the app exe (Tauri externalBin) and auto-registered in .mcp.json.
-[[bin]]
-name = "bsc-research-mcp"
-path = "src/bin/bsc-research-mcp.rs"
-
 [dependencies]
+# Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
+bsc-util = { path = "../bsc-util" }
+# Shared SQLite plumbing (#1863): the `:memory:`-aware open + default-path + JSON-blob row helpers
+# the cache shares with compliance/plandb/skilldb (`conn` feature pulls in rusqlite there).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, and run-loop. This crate
+# supplies its own `tool_schemas` + `call_tool` + arg parsers via the `ToolServer` trait.
+mcp-rpc = { path = "../mcp-rpc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Blocking HTTP for the source clients — keeps the server a simple synchronous stdin loop (no tokio).
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 # Read-only XML DOM for the Atom (arXiv) + E-utilities (PubMed/PMC) responses — pure Rust, no codegen.
-roxmltree = "0.20"
+roxmltree = "0.21"
 # Local on-disk cache of fetched records + extracted full text (keyed by canonical id), so repeated
 # grounding is fast/offline-friendly and respects upstream rate limits. `bundled` matches plandb.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Native PDF text extraction (no Docker/GROBID) for arXiv/PMC-OA/publisher full text.
-pdf-extract = "0.7"
+pdf-extract = "0.12"

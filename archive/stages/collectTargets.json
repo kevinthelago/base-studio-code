@@ -1,0 +1,12 @@
+{
+  "name": "Targets",
+  "glyph": "◎",
+  "gate": "sources + Data Model bound",
+  "deps": [
+    "discovery"
+  ],
+  "blurb": "Declare the external sources and the Data Model they feed.",
+  "prompt": "Declare the external data sources to collect from — websites to scrape, or datasets/APIs to fetch\n(name them: the URLs, dataset identifiers, or endpoints). For each, note the mode (scrape vs fetch)\nand what entities of the Data Model it's expected to populate. Confirm the target list with the\nuser before checking legitimacy.\n\nWrite `collectTargets.json`: { \"sources\": [{ \"id\", \"mode\": \"scrape\"|\"fetch\", \"label\", \"loc\",\n\"type\", \"feeds\": [entity names], \"scope\": { \"start\", \"pattern\", \"bound\" } }], \"dataModel\": {\n\"name\", \"entities\": [{ \"name\", \"fields\": [field names] }] } }. The Targets pane renders it.",
+  "icon": "account_tree",
+  "hue": 300
+}

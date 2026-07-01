@@ -5,39 +5,25 @@
 //! caller falls back to the network on a miss, so a missing/corrupt cache never breaks a tool call.
 
 use crate::types::Paper;
+use bsc_util::now_secs;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Cache {
     conn: Connection,
 }
 
-fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
-}
-
 impl Cache {
-    /// The default cache path: `$BSC_RESEARCH_CACHE`, else `~/.base-studio-code/research/cache.db`.
+    /// The default cache path: `$BSC_RESEARCH_CACHE`, else `~/.base-studio-code/research/cache.db`
+    /// — the shared [`bsc_sqlite_util::default_store_path`] resolver (#1863).
     pub fn default_path() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("BSC_RESEARCH_CACHE") {
-            let p = p.trim();
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
-        }
-        let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
-        Some(PathBuf::from(home).join(".base-studio-code").join("research").join("cache.db"))
+        bsc_sqlite_util::default_store_path("BSC_RESEARCH_CACHE", &["research", "cache.db"])
     }
 
-    /// Open (creating parent dirs + schema) the cache at `path`. Use `":memory:"` for tests.
+    /// Open (creating parent dirs + schema) the cache at `path`. Use `":memory:"` for tests. The
+    /// `:memory:`-aware open + error labelling is the shared [`bsc_sqlite_util::open_db_str`] (#1863).
     pub fn open(path: &Path) -> Result<Cache, String> {
-        if path.as_os_str() != ":memory:" {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("cache dir: {e}"))?;
-            }
-        }
-        let conn = Connection::open(path).map_err(|e| format!("open cache: {e}"))?;
+        let conn = bsc_sqlite_util::open_db_str(path, "cache")?;
         Cache::init(conn)
     }
 
@@ -50,8 +36,7 @@ impl Cache {
     fn init(conn: Connection) -> Result<Cache, String> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS papers   (id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS fulltext (id TEXT PRIMARY KEY, text TEXT NOT NULL, fetched_at INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS kv       (key TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
+             CREATE TABLE IF NOT EXISTS fulltext (id TEXT PRIMARY KEY, text TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
         )
         .map_err(|e| format!("cache schema: {e}"))?;
         Ok(Cache { conn })
@@ -70,13 +55,9 @@ impl Cache {
         Ok(())
     }
 
-    /// Look up a cached paper by canonical id.
+    /// Look up a cached paper by canonical id (the shared lenient JSON-blob read, #1863).
     pub fn get_paper(&self, id: &str) -> Option<Paper> {
-        let json: String = self
-            .conn
-            .query_row("SELECT json FROM papers WHERE id = ?1", [id], |r| r.get(0))
-            .ok()?;
-        serde_json::from_str(&json).ok()
+        bsc_sqlite_util::get_json(&self.conn, "SELECT json FROM papers WHERE id = ?1", id)
     }
 
     /// Store extracted full text by canonical id.
@@ -96,28 +77,6 @@ impl Cache {
         self.conn
             .query_row("SELECT text FROM fulltext WHERE id = ?1", [id], |r| r.get(0))
             .ok()
-    }
-
-    /// Store an arbitrary JSON-serializable value under `key` (e.g. a search result set).
-    pub fn put_json<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<(), String> {
-        let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
-        self.conn
-            .execute(
-                "INSERT INTO kv (key, json, fetched_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(key) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at",
-                rusqlite::params![key, json, now_secs()],
-            )
-            .map_err(|e| format!("cache put_json: {e}"))?;
-        Ok(())
-    }
-
-    /// Look up a JSON value stored under `key`, deserializing to `T`.
-    pub fn get_json<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
-        let json: String = self
-            .conn
-            .query_row("SELECT json FROM kv WHERE key = ?1", [key], |r| r.get(0))
-            .ok()?;
-        serde_json::from_str(&json).ok()
     }
 }
 
@@ -143,13 +102,9 @@ mod tests {
     }
 
     #[test]
-    fn fulltext_and_kv_roundtrip() {
+    fn fulltext_roundtrip() {
         let cache = Cache::in_memory().unwrap();
         cache.put_fulltext("arxiv:1", "full body text").unwrap();
         assert_eq!(cache.get_fulltext("arxiv:1").as_deref(), Some("full body text"));
-
-        cache.put_json("search:rt", &vec!["a".to_string(), "b".to_string()]).unwrap();
-        let got: Vec<String> = cache.get_json("search:rt").unwrap();
-        assert_eq!(got, vec!["a", "b"]);
     }
 }

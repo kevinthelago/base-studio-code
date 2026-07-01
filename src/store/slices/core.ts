@@ -1,22 +1,26 @@
 // CoreSlice — the residual of the former `automations` grab-bag after the automations CRUD moved
-// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: Knowledge
-// Base blocks, the API-tier LLM provider config, and active-project / draft state. A candidate for
-// a further split (settings vs projects) in a later pass. Typed Pick<AppStore, …>.
+// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: the API-tier
+// LLM provider config and active-project / draft state. A candidate for a further split (settings vs
+// projects) in a later pass. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
+import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
 
 type CoreSlice = Pick<AppStore,
-  "kbBlocks" | "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
-      kbBlocks: [],
       claudeApiKey: "",
       setClaudeApiKey: (key) => set({ claudeApiKey: key }),
 
       // API-tier LLM provider config (#1085). claudeApiKey is the anthropic key.
       llmProvider: "anthropic",
-      setLlmProvider: (p) => set({ llmProvider: p }),
+      // Switch the model field to the new provider's default when it still holds another provider's
+      // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
+      // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
+      setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
       llmModel: "claude-sonnet-4-6",
       setLlmModel: (m) => set({ llmModel: m }),
       openaiKey: "",
@@ -44,14 +48,14 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
           // real data, not the empty node-id key. Frozen on first sighting so a
           // later GitHub rename can't clobber a working alias.
           projectKeyAlias: id && name && !s.projectKeyAlias[id]
-            ? { ...s.projectKeyAlias, [id]: name }
+            ? setMapEntry(s.projectKeyAlias, id, name)
             : s.projectKeyAlias,
         })),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
       addDraftProject: (key, draft) =>
-        set((s) => ({ localDraftProjects: { ...s.localDraftProjects, [key]: draft } })),
+        set((s) => ({ localDraftProjects: setMapEntry(s.localDraftProjects, key, draft) })),
       // Patch a draft record in place (#1222) — used to persist a title edit so it survives a
       // reopen. Keyed by the FROZEN key (not re-derived from the new title), so the on-disk folder
       // stays put. No-ops if the draft is gone.
@@ -59,12 +63,8 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
         set((s) => {
           const cur = s.localDraftProjects[key];
           if (!cur) return {};
-          return { localDraftProjects: { ...s.localDraftProjects, [key]: { ...cur, ...patch } } };
+          return { localDraftProjects: setMapEntry(s.localDraftProjects, key, { ...cur, ...patch }) };
         }),
       removeDraftProject: (key) =>
-        set((s) => {
-          const next = { ...s.localDraftProjects };
-          delete next[key];
-          return { localDraftProjects: next };
-        }),
+        set((s) => ({ localDraftProjects: deleteMapEntry(s.localDraftProjects, key) })),
 });

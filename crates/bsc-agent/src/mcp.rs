@@ -25,6 +25,10 @@ pub struct McpServerCfg {
     pub env: HashMap<String, String>,
 }
 
+/// How long to wait for an MCP server's `initialize` + `tools/list` handshake before giving up and
+/// skipping it. Bounds the per-server startup so one wedged server can't hang the agent launch.
+const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 pub struct McpClient {
     // Held to keep the child process alive — dropping it kills the server.
     _child: Child,
@@ -164,13 +168,25 @@ pub async fn connect(cfg: &McpServerCfg) -> Result<(Arc<Mutex<McpClient>>, Vec<T
     let stdout = BufReader::new(child.stdout.take().ok_or("mcp: no stdout")?);
     let mut client = McpClient { _child: child, stdin, stdout, next_id: 0 };
 
-    // Handshake, then list tools.
-    let id = client.next_id();
-    client.request(&build_initialize(id), id).await?;
-    client.write_msg(&build_initialized()).await?;
-    let id = client.next_id();
-    let resp = client.request(&build_tools_list(id), id).await?;
-    let listed = parse_tools_list(&resp)?;
+    // Handshake, then list tools — BOUNDED by a timeout. A server that spawns but never completes
+    // the JSON-RPC handshake (wrong binary, wedged startup, waiting on stdin) would otherwise block
+    // `connect().await` forever, hanging the whole bsc-agent launch before any model call. On timeout
+    // we drop the client (killing the child) and return an error the caller logs + skips, exactly
+    // like a spawn failure — a misbehaving server degrades to "not connected", never a hang.
+    let handshake = async {
+        let id = client.next_id();
+        client.request(&build_initialize(id), id).await?;
+        client.write_msg(&build_initialized()).await?;
+        let id = client.next_id();
+        let resp = client.request(&build_tools_list(id), id).await?;
+        parse_tools_list(&resp)
+    };
+    let listed = match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake).await {
+        Ok(result) => result?,
+        Err(_) => return Err(format!(
+            "{} handshake timed out after {}s", cfg.command, HANDSHAKE_TIMEOUT.as_secs(),
+        )),
+    };
 
     let shared = Arc::new(Mutex::new(client));
     let tools = listed
@@ -180,14 +196,13 @@ pub async fn connect(cfg: &McpServerCfg) -> Result<(Arc<Mutex<McpClient>>, Vec<T
             let tool_name = name.clone();
             Tool {
                 def: ToolDef { name: format!("mcp__{}__{}", cfg.name, name), description, schema },
-                // The agent's ToolFn is sync but tools/call is async I/O — bridge via
-                // block_in_place + block_on (requires the multi-thread runtime, which bsc-agent
-                // uses; the executor only runs from the agent loop on that runtime).
+                // The agent's ToolFn is sync but tools/call is async I/O — bridge on the ambient
+                // multi-thread runtime via `block_on_tool` (see its "Runtime bridges" note; the
+                // executor only runs from the agent loop on that runtime).
                 run: Box::new(move |args: &Value| {
                     let args = args.clone();
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current()
-                            .block_on(async { client.lock().await.call_tool(&tool_name, &args).await })
+                    crate::agent::block_on_tool(async {
+                        client.lock().await.call_tool(&tool_name, &args).await
                     })
                 }),
             }

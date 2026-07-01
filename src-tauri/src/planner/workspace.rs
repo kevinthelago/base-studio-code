@@ -1,14 +1,7 @@
-use super::templates::*;
+use super::prompts::*;
 use super::directives::*;
-use crate::{PerfSpan, KB_CLAUDE_MD, documents_dir, sanitize_project_key, project_dir, repo_dir};
+use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
 
-#[derive(serde::Deserialize)]
-pub(crate) struct KbBlockData {
-    id:      String,
-    title:   String,
-    tags:    Vec<String>,
-    content: String,
-}
 #[derive(serde::Deserialize)]
 pub(crate) struct AutomationData {
     id:       String,
@@ -18,13 +11,11 @@ pub(crate) struct AutomationData {
 }
 #[derive(serde::Serialize)]
 pub(crate) struct WorkspacePaths {
-    kb_dir:       String,
     planning_dir: String,
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn setup_workspaces(
-    kb_blocks: Vec<KbBlockData>,
+pub(crate) fn setup_workspaces(
     repo_full_names: Vec<String>,
     automations: Vec<AutomationData>,
     is_existing: bool,
@@ -40,11 +31,9 @@ pub(crate) async fn setup_workspaces(
     authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
     let _perf = PerfSpan::new("setup_workspaces");
-    crate::config::sanitize_claude_config();
-    // KB session CWD = the flat reusable document library (`documents/`).
+    crate::session::claude_config::sanitize_claude_config();
     // Planner session CWD = the project hub (`projects/<key>`), holding plan
     // sections + control files FLAT alongside the project's CLAUDE.md.
-    let kb_dir       = documents_dir();
     let safe_key     = sanitize_project_key(&project_key);
     // A blank key would resolve the project dir to `projects/` itself and scatter
     // `.claude/` and the plan sections across the parent — refuse it instead.
@@ -54,7 +43,6 @@ pub(crate) async fn setup_workspaces(
     let planning_dir = project_dir(&project_key);
 
     for dir in &[
-        kb_dir.join(".claude"),
         planning_dir.join(".claude"),
         planning_dir.join("prompts"),
         // Integration contracts (#…): the Plan stage writes one doc per feature seam here;
@@ -63,18 +51,18 @@ pub(crate) async fn setup_workspaces(
     ] {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    // Context-stage discovery sections get their own subdir (#807) — created ONLY when the
-    // blueprint actually carries a context stage. The planner writes `context/<topic>.md`
-    // there; read_plan_sections ingests it alongside the hub root.
-    if enabled_stages.iter().any(|s| s == "context") {
-        std::fs::create_dir_all(planning_dir.join("context")).map_err(|e| e.to_string())?;
+    // Discovery-stage sections get their own subdir (#807) — created ONLY when the blueprint
+    // actually carries a discovery stage. The planner writes `discovery/<topic>.md` there;
+    // read_plan_sections ingests it alongside the hub root.
+    // Migration (#1578: Context stage → Discovery): an in-flight project may have a `context/`
+    // dir from before the rename — move it in place so its prose carries forward.
+    let (legacy, current) = (planning_dir.join("context"), planning_dir.join("discovery"));
+    if legacy.is_dir() && !current.exists() {
+        std::fs::rename(&legacy, &current).map_err(|e| e.to_string())?;
     }
-
-    // KB: read + write/edit markdown only; no web access or shell
-    std::fs::write(
-        kb_dir.join(".claude").join("settings.json"),
-        r#"{"permissions":{"allow":["Read","Write","Edit"],"deny":["Bash","MultiEdit","WebFetch","WebSearch"]}}"#,
-    ).map_err(|e| e.to_string())?;
+    if enabled_stages.iter().any(|s| s == "discovery") {
+        std::fs::create_dir_all(&current).map_err(|e| e.to_string())?;
+    }
 
     // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the
     // `planner` role gate (sessionRoles.ts) and written by `ensure_session_settings` at
@@ -82,31 +70,28 @@ pub(crate) async fn setup_workspaces(
     // instead of a hardcoded literal that drifts from the role. The `.claude` dir is
     // created above; the role-launch call populates the file before the PTY starts.
 
-    std::fs::write(kb_dir.join("CLAUDE.md"), KB_CLAUDE_MD)
-        .map_err(|e| e.to_string())?;
-
     // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
     // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
     // <blueprint> tag spec, and the software-planning process block is omitted entirely.
     let mut planning_md = if authoring.unwrap_or(false) {
-        PLANNING_BLUEPRINT_INTRO.to_string()
+        planning_blueprint_intro()
     } else if is_existing {
         format!(
             "{}{}",
-            PLANNING_EXISTING_INTRO
+            planning_existing_intro()
                 .replace("{PROJECT_NAME}", &project_name)
                 .replace("{PROJECT_NUMBER}", &project_number.to_string()),
-            PLANNING_PROCESS_MD,
+            planning_process_md(),
         )
     } else {
-        format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
+        format!("{}{}", planning_new_intro().replace("{PITCH}", &pitch), planning_process_md())
     };
 
     // Anti prompt-injection framing (#1107) — applied to EVERY planner spec (new / existing /
     // authoring). The planner reads untrusted repo + web content and emits trusted fleet
     // instruction, so it must treat all reviewed content as data and never transcribe an embedded
     // directive into a kickoff/section/profile/issue.
-    planning_md.push_str(PLANNER_INJECTION_RESISTANCE_MD);
+    planning_md.push_str(&planner_injection_resistance_md());
 
     // Modular planning stages (#512/#542): prepend the project's enabled stages (from
     // its blueprint) as the authoritative scope — disabled stages are declared out of
@@ -137,52 +122,11 @@ pub(crate) async fn setup_workspaces(
     std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
         .map_err(|e| e.to_string())?;
 
-    // Sync every KB block to disk as a markdown file (overwrite on each call)
-    for block in &kb_blocks {
-        let content = format!(
-            "---\nid: {}\ntitle: {}\ntags: [{}]\n---\n\n{}",
-            block.id,
-            block.title,
-            block.tags.join(", "),
-            block.content,
-        );
-        std::fs::write(kb_dir.join(format!("{}.md", block.id)), content)
-            .map_err(|e| e.to_string())?;
-    }
-
-    // Write a KB index so Claude can quickly see what's available without
-    // reading every individual block file. The planner's session CWD is this
-    // project hub (`projects/<key>`), and reusable KB blocks live in the flat
-    // library (`documents/`), so the relative reference is `../../documents/{id}.md`.
-    let mut kb_index = String::from(
-        "# Knowledge Base Index\n\n\
-         Read any block file at `../../documents/{id}.md` for full content.\n\
-         Assign a block to this project with: `<kb_assign id=\"{id}\" />`\n\n"
-    );
-    if kb_blocks.is_empty() {
-        kb_index.push_str("_No knowledge blocks in the store yet._\n");
-    } else {
-        for block in &kb_blocks {
-            kb_index.push_str(&format!(
-                "- `{}` — **{}** (tags: {})\n",
-                block.id,
-                block.title,
-                if block.tags.is_empty() { "none".to_string() } else { block.tags.join(", ") },
-            ));
-        }
-    }
-    std::fs::write(planning_dir.join("kb_index.md"), kb_index)
-        .map_err(|e| e.to_string())?;
-
-    // Write automations catalogue so Claude can reference and assign them.
-    let mut auto_md = String::from(
-        "# Automations Catalogue\n\n\
-         Suggest assigning an automation to this project with a single-line tag:\n\
-         `<automation_assign name=\"...\" command=\"...\" schedule=\"0 9 * * 1-5\" description=\"...\" />`\n\n\
-         The `schedule` field is a cron expression (omit for one-shot commands).\n\n"
-    );
+    // Write automations catalogue so Claude can reference and assign them. The header prose lives in
+    // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
+    let mut auto_md = format!("{}\n\n", automations_catalogue_header().trim_end());
     if automations.is_empty() {
-        auto_md.push_str("_No saved automations yet — suggest new ones using the tag above._\n");
+        auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
     } else {
         auto_md.push_str("## Saved automations\n\n");
         for a in &automations {
@@ -239,33 +183,30 @@ pub(crate) async fn setup_workspaces(
     // Write a deterministic context signature so Planning.tsx can surface a
     // "context updated · refresh" badge when inputs diverge from this baseline (#175).
     {
-        let kb_ids: Vec<String> = kb_blocks.iter().map(|b| b.id.clone()).collect();
-        let sig = context_signature(&repo_full_names, &kb_ids, &enabled_stages);
+        let sig = context_signature(&repo_full_names, &enabled_stages);
         std::fs::write(planning_dir.join("context_signature.txt"), sig)
             .map_err(|e| e.to_string())?;
     }
 
     Ok(WorkspacePaths {
-        kb_dir:       kb_dir.to_string_lossy().into_owned(),
         planning_dir: planning_dir.to_string_lossy().into_owned(),
     })
 }
 /// The single source of truth for the planning context signature (#175/#756): the template
-/// version + the sorted inputs (repos, KB block ids, enabled stages). Used by BOTH
-/// `setup_workspaces` (to record the baseline) and `compute_context_signature` (the live
-/// value Planning.tsx compares against) so the two can never disagree on format/version.
-pub(crate) fn context_signature(repos: &[String], kb_ids: &[String], stages: &[String]) -> String {
+/// version + the sorted inputs (repos, enabled stages). Used by BOTH `setup_workspaces` (to
+/// record the baseline) and `compute_context_signature` (the live value Planning.tsx compares
+/// against) so the two can never disagree on format/version.
+pub(crate) fn context_signature(repos: &[String], stages: &[String]) -> String {
     let mut r = repos.to_vec(); r.sort();
-    let mut k = kb_ids.to_vec(); k.sort();
     let mut s = stages.to_vec(); s.sort();
-    format!("v{}|{}|{}|{}", PLANNING_TEMPLATE_VERSION, r.join(","), k.join(","), s.join(","))
+    format!("v{}|{}|{}", PLANNING_TEMPLATE_VERSION, r.join(","), s.join(","))
 }
 /// Compute the CURRENT context signature for the given live inputs, the same way
 /// `setup_workspaces` recorded the baseline — Planning.tsx compares the two to show the
 /// "context updated · refresh" badge. (#756 — fixes the old v1-vs-v{version} mismatch.)
 #[tauri::command]
-pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, kb_ids: Vec<String>, enabled_stages: Vec<String>) -> String {
-    context_signature(&repo_full_names, &kb_ids, &enabled_stages)
+pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, enabled_stages: Vec<String>) -> String {
+    context_signature(&repo_full_names, &enabled_stages)
 }
 /// Read back the context signature that `setup_workspaces` last wrote (#175).
 /// Returns an empty string when the file doesn't exist yet.

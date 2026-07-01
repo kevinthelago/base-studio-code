@@ -8,18 +8,18 @@ description = "Native per-project plan store (SQLite) for base-studio-code (#pla
 [lib]
 name = "plandb"
 
-# The agent-facing CLI: planner writes, workers/director read + drive status. Installed per-session
-# and pointed at the project's plan.db via the BSC_PLAN_DB env var (so it works from a worktree).
-[[bin]]
-name = "bsc-plan"
-path = "src/bin/bsc-plan.rs"
-
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
 rusqlite = { version = "0.40", features = ["bundled"] }
-# Runtime connector presets store (#1235): `bsc-plan integration` reads/writes the same
-# RuntimePreset shape the scan command consumes. `default-features = false` keeps the heavy
+# Runtime connector presets store (#1235): the deprecated `bsc-plan integration` verb (#1721) still
+# reads/writes the same RuntimePreset shape `bsc-data connector` now owns. `default-features = false` keeps the heavy
 # DuckDB store out of the CLI — the preset/connector logic compiles without it.
 bsc-data = { path = "../data", default-features = false }
+# Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the stdin/print
+# helpers the `bsc-plan` CLI shares with `bsc-skill` / `bsc-logs`. `conn` adds the open + busy_timeout
+# connection plumbing the store shares with skilldb/compliance/research (#1863).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
+bsc-cli-util = { path = "../bsc-cli-util" }

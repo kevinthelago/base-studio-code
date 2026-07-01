@@ -1,0 +1,27 @@
+[package]
+name = "skilldb"
+version = "0.1.0"
+edition = "2021"
+description = "Global skills + task-groups store (SQLite) for base-studio-code (#1338, instance of #1325) — shared by the Tauri app and the `bsc-skill` CLI."
+
+# The core lib (no Tauri) so a tiny CLI can reuse it without dragging the whole desktop app in.
+[lib]
+name = "skilldb"
+
+[dependencies]
+# Shared leaf utilities (#1646): the one home-dir resolver.
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Embeds the packaged-skill JSON data files (src-tauri/data/skills/*.json) at compile time so a
+# fresh skills.db seeds them on first open — the SAME files the frontend reads via import.meta.glob
+# (#1715). Mirrors planner/directives.rs::STAGES_DIR.
+include_dir = "0.7"
+# `bundled` compiles SQLite from source (matches src-tauri / plandb) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Shared SQLite CLI+lib helpers (#1621): JSON value-list (de)serialization + the home-dir / stdin
+# helpers the `bsc-skill` CLI shares with `bsc-plan` / `bsc-logs`. `conn` adds the open + busy_timeout
+# connection plumbing the store shares with plandb/compliance/research (#1863).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--db→env→default).
+bsc-cli-util = { path = "../bsc-cli-util" }

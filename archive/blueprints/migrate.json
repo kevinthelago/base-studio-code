@@ -1,0 +1,29 @@
+{
+  "order": 5,
+  "id": "migrate",
+  "name": "Migrate stack",
+  "desc": "Move framework / language / protocol with an incremental cutover",
+  "origin": "built-in",
+  "icon": "⇄",
+  "h": 195,
+  "category": "transform",
+  "mode": "operate",
+  "sections": [
+    {
+      "key": "discovery"
+    },
+    {
+      "key": "repos"
+    },
+    {
+      "key": "migration"
+    },
+    {
+      "key": "testing"
+    },
+    {
+      "key": "structure",
+      "fleet": true
+    }
+  ]
+}

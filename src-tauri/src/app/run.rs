@@ -1,4 +1,14 @@
-use crate::*;
+use crate::prelude::*;
+// Domain modules whose Tauri commands the invoke handler below registers (#1918): explicit per-domain
+// imports replace the old `use crate::*` glob, so each command path names its domain.
+use crate::{app, extensions, fleet, planner, session};
+use crate::console::{discovery, ledger, pty};
+use crate::github::{self, git_hooks, oauth};
+use crate::mobile::tunnel;
+use crate::observability::{self, logs, perf, tokens};
+use crate::platform::docstore;
+use crate::project::{self, plan_db};
+use crate::sources::{credentials, data, oauth as source_oauth};
 use tauri::{Manager, RunEvent};
 
 pub(crate) fn level_color(level: log::Level) -> &'static str {
@@ -32,12 +42,22 @@ pub fn run() {
     // Reap PTY children leaked by a prior run that never reached RunEvent::Exit (#1049). The ledger is
     // authoritative about what THIS app spawned, so this only ever kills our own orphans (owner gone +
     // same process) — never the user's terminals. Runs before any session launches.
-    let reaped = pty_ledger::reconcile_on_boot();
+    let reaped = ledger::reconcile_on_boot();
     if reaped > 0 {
         log::warn!("[startup] reaped {reaped} orphaned PTY child process(es) from a prior unclean run");
     }
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Single-instance guard (#1303): a duplicate launch focuses the running window instead of
+    // spawning a second process (which owns its own PtyState and can't see the live sessions, and
+    // would race over the same on-disk hubs). The plugin MUST be registered first. Bypass with
+    // BSC_ALLOW_MULTIPLE_INSTANCES=1 to run two dev builds side by side.
+    if super::single_instance::guard_enforced() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            super::single_instance::focus_main(app);
+        }));
+    }
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Keep noisy dependencies (tauri/wry/reqwest) quiet — only warnings
@@ -68,7 +88,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
-        .manage(crate::pty::PtyState::new())
+        .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
         .manage(logs::LogState::new())
@@ -78,6 +98,27 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
+            // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
+            // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
+            // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure
+            // the embedded fallback stays in force, so a seed error is non-fatal.
+            if let Err(e) = crate::platform::config::ensure_seeded() {
+                log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
+            }
+            // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
+            // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
+            // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
+            // agent shell loses the `bsc` CLI mid-task. Surface it LOUDLY at boot (with the fix) instead.
+            for (name, path) in crate::console::pty::sidecar_status() {
+                match path {
+                    Some(p) => log::info!("[startup] sidecar `{name}` → {}", p.display()),
+                    None => log::error!(
+                        "[startup] sidecar `{name}` NOT FOUND beside the app exe or in target/{{debug,release}} \
+                         — agent sessions will lack `{name}`. Build it: `npm run build:plan` (dev) or \
+                         `npm run stage:sidecar` (release)."
+                    ),
+                }
+            }
             // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path
             // (#1047). A full read/rewrite of audit.log (≈520 KB) + the other TSV streams is
             // housekeeping, not first-paint work; doing it inline blocked every startup. Defer
@@ -90,13 +131,22 @@ pub fn run() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
                 tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
             });
+            // Reclaim stale fleet worktrees so they don't accumulate to GBs (#worktree-disk): orphans
+            // (deleted project) + merged-and-clean worktrees. Off the synchronous boot path + on a
+            // worker thread (the git probes + recursive deletes are I/O-heavy); never touches a dirty
+            // worktree, so it can't lose work.
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
+                tauri::async_runtime::spawn_blocking(fleet::teardown::gc_worktrees_on_boot);
+            });
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            knowledge::chat::kb_chat,
+            crate::session::llm::llm_complete,
+            crate::session::llm::ollama_models,
             github::github_request,
             github::gist_create,
             github::gist_update,
@@ -105,6 +155,7 @@ pub fn run() {
             github::github_post,
             github::github_put,
             github::github_patch,
+            github::github_delete,
             oauth::github_client_id,
             oauth::github_device_start,
             oauth::github_device_poll,
@@ -114,6 +165,8 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             app::dialog::pick_directory,
+            app::dialog::pick_save_file,
+            app::dialog::pick_open_file,
             data::pick_csv_file,
             data::data_preview_csv,
             data::data_load_csv,
@@ -122,51 +175,73 @@ pub fn run() {
             data::data_source_sample,
             data::data_infer_model,
             data::data_persist_model,
+            data::data_get_model,
             data::data_load_reconciled,
             data::data_platform_scan,
-            data::data_connector_catalog,
+            data::data_runtime_connectors,
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,
             source_oauth::source_oauth_begin,
             planner::workspace::setup_workspaces,
             planner::directives::planner_intro_prompt,
-            knowledge::workspace::setup_kb_workspace,
+            planner::directives::planner_stage_directive,
+            crate::platform::config::export_config_bundle,
+            crate::platform::config::import_config_bundle,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
             extensions::mcp::mcp_status,
             extensions::mcp::mcp_check_update,
+            extensions::skill_store::skill_store_list,
+            extensions::skill_store::skill_store_upsert,
+            extensions::skill_store::skill_store_remove,
+            extensions::skill_store::skill_group_list,
+            extensions::skill_store::skill_group_upsert,
+            extensions::skill_store::skill_group_remove,
+            extensions::skill_store::skill_group_resolve,
             fleet::worktree::ensure_worktree,
+            fleet::teardown::teardown_worktree,
+            fleet::teardown::reclaim_worktrees,
+            fleet::teardown::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
-            config::read_claude_config,
-            config::write_claude_config,
-            console::settings::ensure_session_settings,
+            session::claude_config::read_claude_config,
+            session::claude_config::write_claude_config,
+            session::settings::ensure_session_settings,
+            session::sandbox::wsl_sandbox_status,
+            session::sandbox::provision_sandbox,
+            session::sandbox::sandbox_run,
+            session::sandbox::sandbox_disk_usage,
+            session::sandbox::remove_sandbox,
+            session::sandbox::setup_sandbox_hub,
+            session::sandbox::sandbox_read_file,
+            session::sandbox::read_sandbox_plan_sections,
+            session::sandbox::sync_sandbox_plan_db,
+            session::sandbox::sandbox_clone_repo,
+            session::sandbox::ensure_sandbox_worktree,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
             github::readiness::set_preferred_shell,
             project::plan_files::read_plan_sections,
-            docstore::write_project_plan,
             project::hub::delete_project_dir,
             project::hub::mark_published,
+            project::hub::set_project_title,
             project::plan_files::clear_all_plan_files,
             project::plan_files::clear_project_plan_files,
             project::blueprints::list_blueprints,
             project::blueprints::write_blueprint,
             project::blueprints::delete_blueprint,
             project::hub::list_local_projects,
-            fleet::staging::write_project_file,
-            fleet::staging::write_project_file_bytes,
-            project::inspect::scan_dead_code,
-            fleet::staging::read_project_files,
+            project::files::write_project_file,
+            project::files::write_project_file_bytes,
+            project::dead_code::scan_dead_code,
+            project::files::read_project_files,
             planner::workspace::get_context_signature,
             planner::workspace::compute_context_signature,
-            docstore::list_documents,
             docstore::read_document,
-            docstore::write_document,
             tunnel::tunnel_start,
             tunnel::tunnel_stop,
             tunnel::tunnel_status,
@@ -186,28 +261,33 @@ pub fn run() {
             tunnel::tunnel_automation_ran,
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
-            observability::audit::read_audit_log,
-            observability::audit::read_worktree_changes,
-            observability::audit::read_worktree_branch,
-            observability::audit::read_worktree_commits,
-            observability::audit::find_branch_pr,
-            observability::audit::claude_transcript_path,
-            observability::audit::read_skill_log,
-            observability::audit::read_hook_log,
-            observability::audit::read_mcp_log,
+            observability::logs::read_audit_log,
+            fleet::inspect::read_worktree_changes,
+            fleet::inspect::read_worktree_branch,
+            fleet::inspect::read_worktree_commits,
+            fleet::inspect::find_branch_pr,
+            fleet::inspect::claude_transcript_path,
+            observability::logs::read_skill_log,
+            observability::logs::read_hook_log,
+            observability::logs::read_mcp_log,
             tokens::read_token_usage,
             tokens::read_pane_messages,
-            observability::audit::read_coord_log,
-            project::inspect::read_ui_skeleton,
+            tokens::read_pane_activity,
+            tokens::read_done_panes,
+            observability::logs::read_coord_log,
+            project::ui_skeleton::read_ui_skeleton,
+            project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
-            observability::audit::append_coord_woke,
-            githooks::read_git_hooks,
+            project::hub::repo_dir_path,
+            observability::logs::append_coord_woke,
+            git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
             perf::perf_record_frontend_sample,
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
-            session_discovery::discover_sessions,
+            discovery::discover_sessions,
+            discovery::reap_session,
             logs::list_log_files,
             logs::read_log_tail,
             logs::clear_log,
@@ -225,24 +305,30 @@ pub fn run() {
             plan_db::plan_add_repo,
             plan_db::plan_list_repos,
             plan_db::plan_remove_repo,
-            plan_db::plan_upsert_phase,
-            plan_db::plan_list_phases,
-            plan_db::plan_remove_phase,
             plan_db::plan_set_fleet,
             plan_db::plan_get_fleet,
             plan_db::plan_remove_stream,
             plan_db::plan_set_deploy,
             plan_db::plan_get_deploy,
+            plan_db::plan_set_deps,
+            plan_db::plan_get_deps,
             plan_db::plan_add_mcp,
             plan_db::plan_list_mcp,
             plan_db::plan_remove_mcp,
+            plan_db::plan_list_automations,
+            plan_db::plan_list_startup,
             plan_db::plan_set_blueprint,
             plan_db::plan_get_blueprint,
-            plan_db::plan_list_context,
-            plan_db::plan_require_context,
+            plan_db::plan_list_discovery,
+            plan_db::plan_require_discovery,
             plan_db::plan_triage_record_run,
             plan_db::plan_triage_last_run,
             plan_db::plan_issues_changed_since,
+            plan_db::plan_lesson_list,
+            plan_db::plan_lesson_confirm,
+            plan_db::plan_lesson_discard,
+            plan_db::plan_lesson_remove,
+            plan_db::plan_lesson_expire,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -259,7 +345,33 @@ pub fn run() {
                 let _ = std::fs::remove_file(session_lock_path());
                 // Signal the tunnel transport (#242b) to close before tearing down PTYs.
                 app_handle.state::<tunnel::TunnelState>().shutdown();
-                crate::pty::kill_all_pty_sessions(app_handle.state::<crate::pty::PtyState>().inner());
+                crate::console::pty::kill_all_pty_sessions(app_handle.state::<crate::console::pty::PtyState>().inner());
             }
         });
+}
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn level_color_is_distinct_per_level() {
+        let colors = [
+            level_color(log::Level::Error),
+            level_color(log::Level::Warn),
+            level_color(log::Level::Info),
+            level_color(log::Level::Debug),
+            level_color(log::Level::Trace),
+        ];
+        // every code is a non-empty ANSI escape, and all five are distinct
+        assert!(colors.iter().all(|c| c.starts_with("\x1b[")));
+        let unique: std::collections::HashSet<_> = colors.iter().collect();
+        assert_eq!(unique.len(), colors.len());
+    }
 }

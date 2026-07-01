@@ -1,0 +1,40 @@
+{
+  "directive": "**Deployment** — ONE stage, two parts. (1) **Link** the repositories this project spans: run `bsc plan repo add owner/repo` for each (clones into the hub + records the link in plan.db; `bsc plan repo list` shows the linked set). (2) **Ship**: define how each service DEPLOYS, recorded in plan.db — `bsc plan deploy set` (config JSON: `services`, ONE per repo — each a self-contained deployable unit carrying its OWN target, ≥2 `environments`, a staged `pipeline`, and `secrets` — plus a cloud `release.strategy` (rollout) for `mode:cloud` services; a `mode:local` library/application build has no rollout). The gate needs BOTH: ≥1 repo linked AND every repo's service deploy-ready. `bsc plan deploy get` shows the stored config. (Dependencies are locked in the **Streams** stage now, #1429 — not here.)",
+  "name": "Deployment",
+  "glyph": "⑂",
+  "gate": "≥1 repo linked · shipping defined",
+  "deps": [],
+  "gateRule": {
+    "require": [
+      {
+        "signal": "repoCount",
+        "target": 1,
+        "label": "link at least one repository"
+      },
+      {
+        "signal": "deploymentDefined",
+        "target": true,
+        "label": "define target, environments, pipeline & secrets (+ a rollout strategy for cloud services)"
+      }
+    ]
+  },
+  "output": "issues",
+  "blurb": "Link the repositories this project spans and define how each service ships.",
+  "prompt": "Deployment is TWO parts — BOTH are required to pass the gate; linking a repo is only half.\n\n(1) LINK the repositories this project spans. For each, run `bsc plan repo add owner/repo` — that clones it\ninto the project hub and records the link in the project's **plan DB** (durable). Note each repo's\ndefault branch and its role in the system. Do NOT write repos.json — the link lives in plan.db\n(`bsc plan repo list` shows the linked set; `bsc plan repo remove owner/repo` unlinks one).\n\n(2) DEFINE how each service SHIPS — ONE service per linked repo, recorded with `bsc plan deploy set`\n(`bsc plan deploy get` shows it). For EVERY service, set all five:\n  • TARGET — the deploy target: hosting `platform` + `workload` (cloud), or `localKind`\n    (library / application) for a local build.\n  • ENVIRONMENTS — the ladder (≥2, e.g. dev → staging → prod), each mapped to a branch.\n  • PIPELINE — the CI/CD stages (≥2: build → test → deploy|publish|package, with a gating test).\n  • SECRETS — config + secret NAMES per environment (values live in the host vault), wired for prod.\n  • RELEASE (mode:cloud ONLY) — the rollout strategy (recreate / rolling / blue-green / canary) +\n    rollback policy. A mode:local library/application build has NO rollout — it ships via its\n    pipeline's publish/package stage — so skip this field for local services.\nSee the “Define deployment” substep for the full per-mode field list.\n\nGate: at least one repository is linked AND every service is fully deploy-ready — target, environments,\npipeline & secrets, plus a rollout strategy for every CLOUD service. These shipping decisions become the deploy ISSUES at publish.",
+  "substeps": [
+    {
+      "key": "link",
+      "label": "Link repositories",
+      "gate": "at least one repository is linked",
+      "prompt": "Link the repositories this project spans. For each, run `bsc plan repo add owner/repo` — that clones it\ninto the project hub and records the link in the project's **plan DB** (durable). Note each repo's\ndefault branch and its role in the system. Do NOT write repos.json — the link lives in plan.db\n(`bsc plan repo list` shows the linked set; `bsc plan repo remove owner/repo` unlinks one)."
+    },
+    {
+      "key": "ship",
+      "label": "Define deployment",
+      "gate": "shipping defined for every service",
+      "prompt": "Define how this project SHIPS — per service (one per linked repo). Each service ships in one of two MODES — pick the honest one:\n\n- `mode: \"cloud\"` (default) — a hosted service. Set the deploy TARGET: the hosting `platform` +\n`workload` (static / serverless / container / long-running) and the git `host` (github / gitlab /\nbitbucket / selfhosted). For a CONTAINER workload also set its image `registry`, `orchestrator`\n(k8s / swarm / nomad) and `replicas` (1 / 3 / 5 / auto).\n- `mode: \"local\"` — a library or a build-and-run-here app (a CLI, a desktop app, a local server). NO\ncloud host. Set `localKind`:\n  - `\"library\"` → `publishRegistry` (npm / crates.io / PyPI / internal), `packageName`, a `build`\ncmd, and `publishTrigger` (on-tag / manual). Its pipeline ends in `publish`, not `deploy`.\n  - `\"application\"` → `buildTargets` (OS/arch list or \"desktop installer\"), `build` cmd, `artifact`,\n`runCmd`. Optionally `portForward: { enabled, port, method }` to expose a locally-running app\nremotely — `method` is cloudflared / ngrok / tailscale / LAN (default cloudflared). Its pipeline\nends in `package`.\n\n**Package manager (greenfield Node):** default a NEW Node service to **pnpm** — the app points every worktree AND the triage clone at one shared pnpm store (`npm_config_store_dir`), so pnpm hardlinks its packages and the fleet dedupes `node_modules` on disk instead of N cold installs (#1651). An EXISTING repo keeps its own package manager (npm/yarn) — its warm download cache is shared either way.\n\nThen, for every service (GitHub is the baseline for BOTH modes), the ENVIRONMENT ladder (dev →\nstaging → prod, each mapped to a branch), the CI/CD PIPELINE (build → test → deploy|publish|package,\nwith the gating `test` stage), and CONFIG + SECRETS per environment (names only — values live in the\nhost vault). For `mode:cloud` services ALSO set the RELEASE strategy (recreate / rolling / blue-green\n/ canary) + rollback policy and HEALTH checks / observability — a `mode:local` build skips both\n(rollout + health are running-service concerns; a local build ships via its pipeline's\npublish/package stage).\nRecord it with `bsc plan deploy set` (config JSON on stdin) — each service takes `id`, `repo`,\n`path`, `stack`, `mode`, plus the mode-appropriate fields above. That fills the Deploy pane;\n`bsc plan deploy get` shows it.\n\nThese shipping decisions become deployment ISSUES owned by a `deploy` stream at publish. (Dependencies are locked in the Streams stage now, #1429.)"
+    }
+  ],
+  "icon": "account_tree",
+  "hue": 230
+}

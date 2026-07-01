@@ -5,26 +5,16 @@
 
 use crate::platform::fsx::sanitize_project_key;
 
+/// The user's home directory. Delegates to the shared [`bsc_util::home_dir`] (#1646) so the app
+/// and every `bsc-*` CLI resolve the SAME directory; an unset home falls back to the empty path
+/// (the historical behavior — callers join `.base-studio-code` onto it). The precedence
+/// (`USERPROFILE`-then-`HOME` on Windows, `HOME` on Unix) lives there.
 pub(crate) fn home_dir() -> std::path::PathBuf {
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default())
-    } else {
-        std::env::var("HOME").unwrap_or_default()
-    };
-    std::path::PathBuf::from(home)
+    bsc_util::home_dir().unwrap_or_default()
 }
 
 pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
-    home_dir().join(".base-studio-code")
-}
-
-/// Root of the flat, reusable document library: `~/.base-studio-code/documents`.
-/// Holds standalone markdown blocks (`*.md`) plus the library's own `CLAUDE.md`
-/// and `.claude/settings.json`. These are reusable across every project — they
-/// are referenced from a project's `kb_index.md` via a relative path.
-pub(crate) fn documents_dir() -> std::path::PathBuf {
-    bsc_base_dir().join("documents")
+    bsc_util::bsc_base_dir().unwrap_or_else(|| std::path::PathBuf::from(".base-studio-code"))
 }
 
 /// The project hub directory and the planner session's CWD: `~/.base-studio-code/projects/<key>`.
@@ -44,8 +34,15 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
 /// The published-marker file inside a project hub (#922): `projects/<key>/.published`. Its presence
 /// means the project has been published to GitHub; absence = draft. The source of published-ness,
 /// replacing directory location.
+///
+/// Delegates the path to `bsc_project::published_marker` (#1761) so the `.published` marker logic is
+/// single-sourced with the `bsc project` session CLI; the key is sanitized here (the app boundary,
+/// since the crate treats keys as opaque), and an unresolvable home falls back to the app's relative
+/// base (matching [`bsc_base_dir`]'s historical behavior).
 pub(crate) fn published_marker(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join(".published")
+    let key = sanitize_project_key(project_key);
+    bsc_project::published_marker(&key)
+        .unwrap_or_else(|| bsc_base_dir().join("projects").join(key).join(".published"))
 }
 
 /// Whether a project hub carries the published marker (#922).
@@ -84,18 +81,18 @@ pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
 
 /// Absolute on-disk location of a project's plan section files, which live FLAT
 /// in the project hub: `~/.base-studio-code/projects/<sanitized-project-key>`.
-/// Plan sections sit alongside the control files (CLAUDE.md, kb_index.md, …) in
+/// Plan sections sit alongside the control files (CLAUDE.md, automations.md, …) in
 /// the planner's CWD.
 pub(crate) fn plan_dir_for(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key)
 }
 
-/// The Context-stage discovery sections live in their own subdir of the hub (#807):
-/// `projects/<sanitized-key>/context/`. Keeps the discovery topics easy to find (and the
+/// The Discovery-stage sections live in their own subdir of the hub (#807):
+/// `projects/<sanitized-key>/discovery/`. Keeps the discovery topics easy to find (and the
 /// hub uncluttered) for larger / off-script plans. Created only when the blueprint has a
-/// context stage; read alongside the flat root so pre-existing projects still resolve.
-pub(crate) fn context_dir_for(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join("context")
+/// discovery stage; read alongside the flat root so pre-existing projects still resolve.
+pub(crate) fn discovery_dir_for(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("discovery")
 }
 
 /// The nearest existing ancestor directory of `path` (native form), or "" if none
@@ -110,5 +107,50 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
             Some(parent) => p = parent,
             None => return String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn project_dir_places_the_sanitized_key_directly_under_projects() {
+        // Every hub lives at projects/<key> for life (#922) — no draft/ root, no documents/ prefix.
+        let p = project_dir("studio-code").to_string_lossy().replace('\\', "/");
+        assert!(p.ends_with("/projects/studio-code"), "got {p}");
+        assert!(!p.contains("/documents/"), "got {p}");
+        let s = project_dir("acme/api project").to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/projects/acme_api_project"), "got {s}");
+    }
+    #[test]
+    fn repo_dir_places_the_repo_short_name_under_the_project_hub() {
+        // Backs the `repo_dir_path` command (#1819): triage resolves each repo's absolute clone
+        // dir from Rust so a launch never depends on the async `bscBaseDir` mirror. The path is
+        // projects/<sanitized-key>/<short-repo-name> and mirrors the frontend `projectRepoCwd`.
+        let p = repo_dir("studio-code", "acme/wotos-ui").to_string_lossy().replace('\\', "/");
+        assert!(p.ends_with("/projects/studio-code/wotos-ui"), "got {p}");
+        // The key is sanitized; the repo collapses to its segment after the last '/'.
+        let s = repo_dir("acme/api project", "owner/api").to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/projects/acme_api_project/api"), "got {s}");
+    }
+    #[test]
+    fn worktrees_dir_is_outside_the_project_hub() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("wtdir");
+        let key = "my-proj";
+        let wts = worktrees_dir(key);
+        let hub = project_dir(key);
+        // The whole point of #844: a worker's worktree is NOT under the hub, so the hub's
+        // planner CLAUDE.md is not an ancestor of the worker's cwd.
+        assert!(wts.starts_with(bsc_base_dir().join("worktrees")), "got {wts:?}");
+        assert!(!wts.starts_with(&hub), "worktrees must not be under the hub: {wts:?} ⊄ {hub:?}");
+        std::fs::remove_dir_all(&home).ok();
     }
 }

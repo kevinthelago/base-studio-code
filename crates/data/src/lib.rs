@@ -9,77 +9,52 @@
 //! Migration is strictly **read-only** from the source (decided #782): connectors
 //! only read; the store only loads into the Data Model — nothing writes back.
 
+// The `bsc data` subcommand (#1877) — extracted from the old `bsc-data` binary. Needs the
+// DuckDB-backed MetaStore/DataStore, so it's gated like the store (mirrors the bin's
+// `required-features = ["duckdb-store"]`).
+#[cfg(feature = "duckdb-store")]
+pub mod cli;
+
 pub mod schema;
 pub mod ddl;
 pub mod connector;
 pub mod reconcile;
 pub mod error;
-pub mod infer;
 pub mod behavior;
-pub mod salesforce;
-pub mod monday;
-pub mod quickbooks;
-pub mod quickbase;
-pub mod hubspot;
-pub mod airtable;
-pub mod sql;
-pub mod odata;
-pub mod servicenow;
-pub mod netsuite;
-pub mod zoho;
-pub mod xero;
-pub mod pipedrive;
-pub mod asana;
-pub mod stripe;
-pub mod zendesk;
-pub mod jira;
-pub mod odoo;
-pub mod pipefy;
-pub mod linear;
 pub mod rest;
-pub mod presets;
 pub mod runtime;
-pub mod registry;
+pub mod source_meta;
+pub mod descriptor;
+// Connector dev-loop transport (#1963): authed HTTP + OS-keychain + sample inference for the
+// `bsc data connector probe/try/map` verbs. Pure inference is unit-tested; the network stays behind
+// `build_fetch`. Compiled unconditionally (the verbs that drive it live in the gated `cli`).
+pub mod transport;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
+#[cfg(feature = "duckdb-store")]
+pub mod meta;
 
+#[cfg(feature = "duckdb-store")]
+pub use meta::MetaStore;
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
-pub use connector::{Connector, CsvConnector, RowSet, SourceField, SourceObject};
+pub use connector::{Connector, CsvConnector, FetchFn, RowSet, SourceField, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
-pub use infer::{infer, EntityInference, FieldProvenance, InferResult};
 pub use behavior::{
     Automation, AutomationKind, BusinessProcess, DerivedKind, DerivedLogic, PlatformScan,
 };
-pub use salesforce::{SalesforceConnector, SalesforceField, SalesforceObject};
-pub use monday::MondayConnector;
-pub use quickbooks::QuickBooksConnector;
-pub use quickbase::QuickbaseConnector;
-pub use hubspot::HubSpotConnector;
-pub use airtable::AirtableConnector;
-pub use sql::SqlConnector;
-pub use odata::ODataConnector;
-pub use servicenow::ServiceNowConnector;
-pub use netsuite::NetSuiteConnector;
-pub use zoho::ZohoConnector;
-pub use xero::XeroConnector;
-pub use pipedrive::PipedriveConnector;
-pub use asana::AsanaConnector;
-pub use stripe::StripeConnector;
-pub use zendesk::ZendeskConnector;
-pub use jira::JiraConnector;
-pub use odoo::OdooConnector;
-pub use pipefy::PipefyConnector;
-pub use linear::LinearConnector;
 pub use rest::{RestConnector, RestResource};
-pub use presets::{VendorPreset, CATALOG as VENDOR_PRESETS};
 pub use runtime::{
     find_runtime_preset, load_runtime_presets, remove_runtime_preset, runtime_store_path,
     save_runtime_presets, upsert_runtime_preset, RuntimePreset, RuntimeResource,
     RUNTIME_AUTH_KINDS,
 };
-pub use registry::{source_connector, LiveSupport, SourceAuth, SourceConnectorMeta, SOURCE_CONNECTORS};
+pub use source_meta::{LiveSupport, SourceAuth};
+pub use transport::{build_fetch, resolve_source_secret};
+pub use descriptor::{
+    find as source_connector, ConnectorDescriptor, ConnectorKind, ResourceDef, RestPreset, BUILTINS,
+};
 
 #[cfg(feature = "duckdb-store")]
 pub use store::{DataStore, LoadSource};

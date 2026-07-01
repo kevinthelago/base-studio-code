@@ -1,0 +1,16 @@
+{
+  "id": "sys_planning_autopilot",
+  "name": "Planning Autopilot",
+  "color": "oklch(0.72 0.13 30)",
+  "category": "application",
+  "desc": "Answers the project planner's questions on your behalf, from the pitch, to drive a plan to completion hands-free. Read-only: it sees the pitch + the planner's output and replies; it runs no shell, writes no files, and has no tools.",
+  "surface": "Project planning",
+  "surfaceGlyph": "◇",
+  "session": "sys/planning-autopilot",
+  "owns": "the planning autopilot (simulated user)",
+  "mode": "deny",
+  "commands": [],
+  "tools": { "read": "allow", "grep": "deny", "glob": "deny", "edit": "deny", "write": "deny", "bash": "deny", "web": "deny", "task": "deny" },
+  "paths": { "allow": [], "deny": ["**/*"] },
+  "net": { "allow": [] }
+}

@@ -1,0 +1,25 @@
+/* Pane (#1824) — the ONE detail/editor pane frame. A single header / scrollable-body / footer
+   skeleton shared by every "select an item → edit its fields" surface, in two modes:
+     - drawer:  a slide-over (scrim + slide-in from the right), anchored to the nearest positioned
+                ancestor — the `.screen` container (Screen root, position:relative). Replaces
+                the byte-identical `.drawer`/`.scrim`/`.dr-*` copies mcp.css + skills.css each carried.
+     - inline:  the same 3-zone frame filling its container (no scrim/slide), for master-detail
+                editors (Automations, the planner pane).
+   The FRAME is feature-agnostic and lives here; the body's FIELD styling stays screen-scoped (the
+   pane renders inside its screen, so `.ext-workspace .field` / `.skills-workspace .scope` keep applying). */
+
+.pane-scrim { position:absolute; inset:0; background:color-mix(in oklch, #000, transparent 60%); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:4; }
+.pane-scrim.on { opacity:1; pointer-events:auto; }
+
+.pane-drawer { position:absolute; top:0; right:0; bottom:0; width:var(--pane-w, 460px); max-width:90%; background:var(--bg-panel); border-left:1px solid var(--border-soft); box-shadow:-20px 0 50px rgba(0,0,0,.35); display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s cubic-bezier(.2,.7,.2,1); z-index:5; min-height:0; }
+.pane-drawer.on { transform:translateX(0); }
+
+/* inline mode: the same frame, filling its container (no scrim/slide) */
+.pane-inline { display:flex; flex-direction:column; min-width:0; min-height:0; flex:1; }
+
+.pane-head { height:46px; flex:0 0 46px; padding:0 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; gap:10px; background:var(--bg-elev); }
+.pane-head .name { font-family:var(--mono); font-size:13px; color:var(--fg); font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pane-body { flex:1; overflow:auto; padding:16px 18px; display:flex; flex-direction:column; gap:14px; }
+.pane-body.flush { padding:0; gap:0; }
+.pane-foot { border-top:1px solid var(--border-soft); padding:10px 16px; background:var(--bg-elev); display:flex; align-items:center; gap:8px; }
+.pane-foot .spacer { flex:1; }

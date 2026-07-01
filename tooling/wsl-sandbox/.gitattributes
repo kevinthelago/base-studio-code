@@ -1,0 +1,4 @@
+# These are consumed by Linux (Docker build, WSL) — keep LF or they break (bad interpreter / parse).
+*.sh    text eol=lf
+wsl.conf text eol=lf
+Dockerfile* text eol=lf

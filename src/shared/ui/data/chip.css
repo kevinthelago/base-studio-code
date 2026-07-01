@@ -1,0 +1,20 @@
+/* Chip (#1874) — the shared pill, semantic-tone path (class-based, theme-able). Absorbs the ex `.tag`
+   (tokens.css) + the feature badges (mode/origin/…). The dynamic-colour path stays inline in Chip.tsx.
+   size-sm matches the old `.tag` exactly (1px 7px / 10px). */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 99px; font-family: var(--mono); line-height: 1.6; white-space: nowrap;
+  background: var(--bg-elev2); color: var(--fg-muted); border: 1px solid var(--border-soft);
+}
+.chip-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: 0 0 5px; }
+
+/* sizes */
+.chip.size-xs { padding: 0 6px; font-size: 8.5px; }
+.chip.size-sm { padding: 1px 7px; font-size: 10px; }
+.chip.size-md { padding: 2px 8px; font-size: 10.5px; }
+
+/* tones — translucent hue mix; neutral keeps the base */
+.chip.tone-accent  { color: var(--accent);  border-color: color-mix(in oklch, var(--accent),  transparent 75%); background: color-mix(in oklch, var(--accent),  transparent 90%); }
+.chip.tone-success { color: var(--success); border-color: color-mix(in oklch, var(--success), transparent 75%); background: color-mix(in oklch, var(--success), transparent 90%); }
+.chip.tone-info    { color: var(--info);    border-color: color-mix(in oklch, var(--info),    transparent 75%); background: color-mix(in oklch, var(--info),    transparent 90%); }
+.chip.tone-danger  { color: var(--danger);  border-color: color-mix(in oklch, var(--danger),  transparent 75%); background: color-mix(in oklch, var(--danger),  transparent 90%); }

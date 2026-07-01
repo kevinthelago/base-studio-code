@@ -2,31 +2,35 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
-import type { Tab } from "../../components/chrome/Tabstrip";
-import type { Screen } from "../../components/chrome/Rail";
-import type { AgentStream } from "../../screens/planner/stages/planSections";
-import { WORKFLOW_PRESETS } from "../../lib/fleet/workflow";
-import { startRun } from "../../lib/fleet/conductor";
+import type { Tab } from "@/app/chrome/Tabstrip";
+import type { Workspace } from "@/app/chrome/Rail";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
+import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
+import { startRun } from "@/shared/lib/fleet/conductor";
 import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
-import type { PlanIssue } from "../../screens/planner/issues/planIssues";
-import { checkpointDocRelpath, agentCheckpointDocRelpath } from "../../lib/session/checkpoint";
-import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "../../lib/core/projectPaths";
-import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "../../lib/console/paneIdentity";
-import { clearTabStatuses as clearTabStatusesPure } from "../../lib/console/paneStatus";
-import { repoPromptKey } from "../../lib/session/startupPrompt";
-import { resolveAllowedCommands } from "../../lib/session/allowedCommands";
-import { resolveDirectorDrive } from "../../screens/planner/fleet/directorDrive";
-import { resolveHooks } from "@/features/extensions/lib/hooks";
-import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/extensions/lib/mcpServers";
-import { resolveReferenceContext, resolveStartupPrompt } from "../../lib/session/assignments";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
+import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
+import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
+import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
+import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
+import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
+import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
+import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
+import { roleProfileId } from "@/shared/lib/session/roleProfile";
+import { resolveHooks } from "@/features/mcp/lib/hooks";
+import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp } from "@/features/mcp/lib/mcpServers";
+import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
-import { resolveStrategy, strategySettings } from "../../screens/planner/shared/integrationStrategy";
-import { scriptDocRelpath } from "../../screens/planner/session/planningSession";
+import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
+import { scriptDocRelpath } from "@/features/planner/session/planningSession";
+import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
+import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "refContextDefault" | "refContextProject" | "refContextRepo" | "toggleReferenceContext" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -43,7 +47,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // missing/null in a long-lived persisted store — `Object.entries(undefined)`
           // would throw and (without a boundary) crash the whole app on delete (#874).
           const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k)));
+            deleteMapEntries(m ?? {}, keySet);
           // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
           const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
             Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
@@ -61,7 +65,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planDeployConfig:       byKey(s.planDeployConfig),
             planSkippedSections:    byKey(s.planSkippedSections),
-            planKbAssignments:      byKey(s.planKbAssignments),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
             projectBlueprintId:     byKey(s.projectBlueprintId),
@@ -81,12 +84,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
-            projectAllowedCommands: byKey(s.projectAllowedCommands),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
             repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
-            repoAllowedCommands:    byRepoKey(s.repoAllowedCommands),
-            refContextProject:      byKey(s.refContextProject),
-            refContextRepo:         byRepoKey(s.refContextRepo),
             ...(clearActive
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], planningSessionKey: "", projectsView: "list" as const }
               : {}),
@@ -94,12 +93,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {}, planKbAssignments: {},
-          planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stagePipelineRuns: {}, stagePreview: {}, sectionGrades: {}, planFleet: {}, pinnedContext: {},
-          projectLocalRepos: {}, localDraftProjects: {}, projectAllowedCommands: {},
-          projectKeyAlias: {}, issueLinks: {}, repoAllowedCommands: {}, projectStartupPromptDoc: {},
+          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {},
+          planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
+          projectLocalRepos: {}, localDraftProjects: {},
+          projectKeyAlias: {}, issueLinks: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
-          refContextDefault: [], refContextProject: {}, refContextRepo: {},
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
           planningSessionKey: "", planningTitle: "", planningPitch: "",
@@ -111,28 +109,13 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       setDefaultStartupPromptDoc: (doc) => set({ defaultStartupPromptDoc: doc }),
       projectStartupPromptDoc: {},
       setProjectStartupPromptDoc: (projectId, doc) =>
-        set((s) => ({ projectStartupPromptDoc: { ...s.projectStartupPromptDoc, [projectId]: doc } })),
+        set((s) => ({ projectStartupPromptDoc: setMapEntry(s.projectStartupPromptDoc, projectId, doc) })),
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
-        set((s) => ({ repoStartupPromptDoc: { ...s.repoStartupPromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
-      refContextDefault: [],
-      refContextProject: {},
-      refContextRepo: {},
-      toggleReferenceContext: (level, key, doc) =>
-        set((s) => {
-          const toggle = (list: string[]): string[] =>
-            list.includes(doc) ? list.filter((d) => d !== doc) : [...list, doc];
-          if (level === "default") return { refContextDefault: toggle(s.refContextDefault) };
-          if (level === "project") {
-            const k = key ?? "";
-            return { refContextProject: { ...s.refContextProject, [k]: toggle(s.refContextProject[k] ?? []) } };
-          }
-          const k = key ?? "";
-          return { refContextRepo: { ...s.refContextRepo, [k]: toggle(s.refContextRepo[k] ?? []) } };
-        }),
+        set((s) => ({ repoStartupPromptDoc: setMapEntry(s.repoStartupPromptDoc, repoPromptKey(projectId, repo), doc) })),
       repoTriagePromptDoc: {},
       setRepoTriagePromptDoc: (projectId, repo, doc) =>
-        set((s) => ({ repoTriagePromptDoc: { ...s.repoTriagePromptDoc, [repoPromptKey(projectId, repo)]: doc } })),
+        set((s) => ({ repoTriagePromptDoc: setMapEntry(s.repoTriagePromptDoc, repoPromptKey(projectId, repo), doc) })),
       githubTab: "summary",
       setGithubTab: (t) => set({ githubTab: t }),
       githubBoardOpen: false,
@@ -149,8 +132,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (tabIdx < 0 || tabIdx >= st.tabs.length || st.disabledPanes[paneId]) return {};
           ok = true;
           return {
-            paneStartupPromptText: { ...st.paneStartupPromptText, [paneId]: prompt },
-            paneContinue: { ...st.paneContinue, [paneId]: false },
+            paneStartupPromptText: setMapEntry(st.paneStartupPromptText, paneId, prompt),
+            paneContinue: setMapEntry(st.paneContinue, paneId, false),
             tabs: st.tabs.map((t, i) => (i === tabIdx ? { ...t, runId: (t.runId ?? 0) + 1 } : t)),
           };
         });
@@ -166,11 +149,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           return mountState(s, id, startRun(pipeline, id).run);
         }),
       workflowClear: (item) =>
-        set((s) => {
-          const runs = { ...s.workflowRuns };
-          delete runs[item];
-          return { workflowRuns: runs };
-        }),
+        set((s) => ({ workflowRuns: deleteMapEntry(s.workflowRuns, item) })),
       workflowMount: (item) =>
         set((s) => {
           const run = s.workflowRuns[item];
@@ -188,22 +167,20 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       setPlanningSession: (key) => set({ planningSessionKey: key }),
       pendingPlannerPrompt: {},
       requestPlannerPrompt: (projectKey, text) =>
-        set((s) => ({ pendingPlannerPrompt: { ...s.pendingPlannerPrompt, [projectKey]: text } })),
+        set((s) => ({ pendingPlannerPrompt: setMapEntry(s.pendingPlannerPrompt, projectKey, text) })),
       clearPlannerPrompt: (projectKey) =>
         set((s) => {
           if (!(projectKey in s.pendingPlannerPrompt)) return {};
-          const next = { ...s.pendingPlannerPrompt };
-          delete next[projectKey];
-          return { pendingPlannerPrompt: next };
+          return { pendingPlannerPrompt: deleteMapEntry(s.pendingPlannerPrompt, projectKey) };
         }),
       projectKeyAlias: {},
       setProjectKeyAlias: (nodeId, key) =>
         set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
-          ? { projectKeyAlias: { ...s.projectKeyAlias, [nodeId]: key } }
+          ? { projectKeyAlias: setMapEntry(s.projectKeyAlias, nodeId, key) }
           : {})),
       issueLinks: {},
       setIssueLinks: (projectKey, links) =>
-        set((s) => ({ issueLinks: { ...s.issueLinks, [projectKey]: { ...(s.issueLinks[projectKey] ?? {}), ...links } } })),
+        set((s) => ({ issueLinks: setMapEntry(s.issueLinks, projectKey, { ...(s.issueLinks[projectKey] ?? {}), ...links }) })),
       bscBaseDir: "",
       setBscBaseDir: (dir) => set({ bscBaseDir: dir }),
       projectLocalRepos: {},
@@ -212,7 +189,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         set((s) => {
           const existing = s.projectLocalRepos[projectId] ?? [];
           if (existing.includes(fullName)) return {};
-          return { projectLocalRepos: { ...s.projectLocalRepos, [projectId]: [...existing, fullName] } };
+          return { projectLocalRepos: setMapEntry(s.projectLocalRepos, projectId, [...existing, fullName]) };
         }),
       findTriageTabIdx: (projectName, projectId = "") =>
         findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
@@ -239,7 +216,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }));
         return deltas;
       },
-      triageStartProject: (projectName, repos, projectId = "", deltas) =>
+      triageStartProject: (projectName, repos, projectId = "", deltas, clonePaths) =>
         set((s) => {
           // A triage tab for this project may already exist (re-run): rebuild it in
           // place at the same index. The caller kills the old panes' sessions first
@@ -262,10 +239,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneInitCmds = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
-          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
           const newPaneContinue          = { ...s.paneContinue };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneMcpServers        = { ...s.paneMcpServers };
           const newPaneHooks             = { ...s.paneHooks };
           const newPaneSkills            = { ...s.paneSkills };
@@ -288,9 +263,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneIds[i] = key;
             if (i < count) {
               const fullName = repos[i];
-              // A real repo — launch claude in its clone, ensure it's enabled. Draft projects
-              // live under draft/ (#904); a published project (has a board id) under projects/.
-              newPaneCwds[key]     = projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
+              // A real repo — launch claude in its clone, ensure it's enabled. Prefer the
+              // Rust-resolved absolute clone dir (#1819, `repo_dir_path`) so the launch never
+              // depends on the async-loaded `bscBaseDir` mirror — empty at crash-recovery startup,
+              // which yielded an empty cwd → the settings.json writer skipped → permission-less
+              // session. Falls back to the `bscBaseDir`-derived path when an entry is absent.
+              newPaneCwds[key]     = clonePaths?.[fullName ?? ""] || projectRepoCwd(s.bscBaseDir, projectName, fullName, !!s.activeProjectId);
               newPaneInitCmds[key] = "claude";
               tabPaneNames[i]      = fullName?.split("/")[1] ?? `pane-${i + 1}`;
               // The startup prompt is baked into the claude launch by the backend
@@ -312,17 +290,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
                 newPaneStartupPromptDocs[key] = doc ?? "";
               }
-              // Reference-context docs (#326): injected as background context for
-              // this pane regardless of which startup prompt won above. Keyed by
-              // the sanitized project key (projKey) so KB-page project assignments
-              // — which use the same key — resolve here.
-              const refDocs = resolveReferenceContext(assignments, { projectId: projKey, repo: fullName ?? "" });
-              if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-              newPaneAllowedCommands[key] = resolveAllowedCommands(
-                s.allowedCommands,
-                s.projectAllowedCommands[projectId],
-                s.repoAllowedCommands[repoPromptKey(projectId, fullName ?? "")],
-              );
               // Triage resumes the repo's prior conversation (claude --continue)
               // so each pass builds on the last instead of starting cold.
               newPaneContinue[key] = true;
@@ -364,10 +331,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
-            paneReferenceDocs: newPaneReferenceDocs,
             paneCheckpointDocs: newPaneCheckpointDocs,
             paneContinue: newPaneContinue,
-            paneAllowedCommands: newPaneAllowedCommands,
             paneMcpServers: newPaneMcpServers,
             paneHooks: newPaneHooks,
             paneSkills: newPaneSkills,
@@ -375,11 +340,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneRepos: newPaneRepos,
             disabledPanes: newDisabledPanes,
             // Bumped runId remounts this tab's panes; clear their old statuses so a
-            // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435).
-            paneStatus: clearTabStatusesPure(s.paneStatus, newTabIdx),
-            paneNames: { ...s.paneNames, [newTabIdx]: tabPaneNames },
+            // prior pass's "run"/"on" doesn't stick on the fresh sessions (#435). Clear by
+            // the (reused) tab's identity so its minted triage ids drop too (#1176).
+            paneStatus: clearTabStatusesPure(s.paneStatus, existingIdx >= 0 ? s.tabs[existingIdx] : newTab, newTabIdx),
+            paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
-            activeScreen: "console" as Screen,
+            activeWorkspace: "console" as Workspace,
           };
         }),
 
@@ -398,6 +364,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // caller kills the old panes first), like triageStartProject.
           const baseTabName = `${projectName} · build`;
           const hasDirector = fleet.director.enabled;
+
+          // Director-owned commons (#851): derive the repo-root commons set from the project's stack
+          // (`stack.md`), then (a) strip those paths from every feature stream's `owns` so no worker
+          // owns `.gitignore`/`package.json`/CI config, and (b) gate every feature stream on the
+          // commons-landed sentinel so the director scaffolds + lands them first (Phase 0). The
+          // commons globs also become the director's scoped writeGlobs below (its only code writes).
+          const commonsGlobs = hasDirector
+            ? commonsGlobsForStack(stackTagsFromSection(s.planSections[projectKey]?.stack ?? ""))
+            : [];
+          const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
           const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
@@ -405,7 +381,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Independents first so the launched wave is what can run now.
           // ALL intended workers are launched across however many build tabs are needed
           // (#479 — no silent drop past the recommended count; recommended is advisory).
-          const ordered = [...fleet.streams].sort(
+          const ordered = [...plan.streams].sort(
             (a, b) => (a.dependsOn.length ? 1 : 0) - (b.dependsOn.length ? 1 : 0),
           );
           const workers = ordered;
@@ -421,10 +397,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneInitCmds          = { ...s.paneInitCmds };
           const newPaneStartupPromptDocs = { ...s.paneStartupPromptDocs };
           const newPaneStartupPromptText = { ...s.paneStartupPromptText };
-          const newPaneReferenceDocs     = { ...s.paneReferenceDocs };
           const newPaneContinue          = { ...s.paneContinue };
           const newPaneCheckpointDocs    = { ...s.paneCheckpointDocs };
-          const newPaneAllowedCommands   = { ...s.paneAllowedCommands };
           const newPaneMcpServers        = { ...s.paneMcpServers };
           const newPaneHooks             = { ...s.paneHooks };
           const newPaneSkills            = { ...s.paneSkills };
@@ -432,7 +406,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const newPaneNames             = { ...s.paneNames };
           const newPaneRoles             = { ...s.paneRoles };
           const newPaneProfiles             = { ...s.paneProfiles };
+          // Unified role→profile model: every session gets its ROLE's default profile (director →
+          // Read-only review, worker → Autonomous trusted), resolved from {@link roleProfileId}. No
+          // per-stream profile generation — a stream may still pin an explicit `profile` id.
           const newPaneProviders            = { ...s.paneProviders };
+          const newPaneWslDistro            = { ...s.paneWslDistro };
           const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneRepos                = { ...s.paneRepos };
@@ -441,16 +419,15 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           let   newPaneStatus               = { ...s.paneStatus };
 
           const safeKey = sanitizeProjectKey(projectKey);
-          const projectCmds = resolveAllowedCommands(s.allowedCommands, s.projectAllowedCommands[projectKey], undefined);
           // MCP exposure is role-aware (#1054): the director sees every installed server (it
           // coordinates the whole fleet), while each worker gets the global servers plus only the
           // servers its stream was assigned. Hooks/skills still share the project scope.
           // Which harness the fleet runs on (#1078 P5): "claude" (default) or "bsc-agent" (any LLM).
-          const fleetHarness = s.fleetHarness ?? "claude";
+          // A local/ollama provider forces bsc-agent (Claude Code can't drive it), so selecting
+          // Ollama runs the workers + director on Ollama without the separate harness toggle.
+          const fleetHarness = effectiveHarness(s.llmProvider, s.fleetHarness ?? "claude");
           const fleetAllMcp = resolveAllInstalledMcp(s.mcpServers);
           const fleetHooks = resolveHooks(s.hooks, projectKey);
-          // Reference-context assignments resolved per pane below (#326).
-          const fleetAssignments = buildAssignments(s);
 
           let tabs = s.tabs;
           let firstTabIdx = -1;
@@ -466,8 +443,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             if (firstTabIdx < 0) firstTabIdx = tabIdx;
             const runId = existingIdx >= 0 ? (tabs[existingIdx].runId ?? 0) + 1 : 0;
             // Reused tab → bumped runId remounts its panes; clear their old statuses so
-            // a prior run's "run"/"on" doesn't persist on the fresh sessions (#435).
-            newPaneStatus = clearTabStatusesPure(newPaneStatus, tabIdx);
+            // a prior run's "run"/"on" doesn't persist on the fresh sessions (#435). Clear
+            // by the existing tab's identity so its minted director/worker ids drop (#1176) —
+            // the per-cell delete below only covers the NEW layout's ids.
+            const reusedTab = existingIdx >= 0 ? tabs[existingIdx] : undefined;
+            if (reusedTab) newPaneStatus = clearTabStatusesPure(newPaneStatus, reusedTab, tabIdx);
             // Resume only on re-run. Each worker has its OWN worktree (a distinct
             // cwd), so `claude --continue` is unambiguous even for several agents in
             // one repo — the old shared-cwd hazard is gone.
@@ -492,12 +472,12 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneStatus[key];
               delete newPaneStartupPromptText[key];
               delete newPaneStartupPromptDocs[key];
-              delete newPaneReferenceDocs[key];
               delete newPaneCheckpointDocs[key];
               delete newPaneMcpServers[key];
               delete newPaneHooks[key];
               delete newPaneRoles[key];
               delete newPaneProviders[key];
+              delete newPaneWslDistro[key];
               delete newPaneProfiles[key];
               delete newFleetPaneStreams[key];
               delete newPaneRoleGlobs[key];
@@ -516,18 +496,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newPaneCwds[key]     = paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId);
                   newPaneInitCmds[key] = "claude";
                   newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, "prompts/director-kickoff.md");
-                  newPaneAllowedCommands[key] = projectCmds;
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, "director");
-                  // Project-level reference context for the director (no repo
-                  // scope). Keyed by the sanitized project key (safeKey) to match
-                  // the KB page's project assignments.
-                  {
-                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey });
-                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-                  }
                   tabPaneNames[i] = "director";
-                  newPaneDirectorDrive[key] = resolveDirectorDrive(fleet.director.drive);
-                  newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, fleet.strategy)).director;
+                  newPaneDirectorDrive[key] = resolveDirectorDrive(plan.director.drive);
+                  newPaneDirectorMode[key] = strategySettings(resolveStrategy(undefined, plan.strategy)).director;
+                  // Director-owned commons (#851): the director's scoped write boundary is the
+                  // commons set. With role `code: "none"` this is the carve-out (sessionRoles
+                  // `hasScopedWriteCarveOut`) — it may write EXACTLY these globs (.gitignore,
+                  // manifests, CI config) and is denied every other code write; the bsc-scope hook
+                  // hard-blocks anything outside them. Empty ⇒ no carve-out, full code:none deny.
+                  if (commonsGlobs.length) newPaneRoleGlobs[key] = commonsGlobs;
                 } else {
                   // Worker runs in its own git worktree on its own branch. Prefer the
                   // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
@@ -537,22 +515,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
                   } else {
-                    newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, fleet.strategy));
+                    newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, plan.strategy));
                   }
-                  newPaneAllowedCommands[key] = resolveAllowedCommands(
-                    s.allowedCommands,
-                    s.projectAllowedCommands[projectKey],
-                    s.repoAllowedCommands[repoPromptKey(projectKey, sess.repo)],
-                  );
                   // Per-agent checkpoint doc (keyed by stream id) so each agent keeps
                   // its own "where we left off" note.
                   newPaneCheckpointDocs[key] = agentCheckpointDocRelpath(safeKey, sess.id);
-                  // Repo-scoped reference context for this worker (#326). Keyed by
-                  // the sanitized project key (safeKey) to match KB-page assignments.
-                  {
-                    const refDocs = resolveReferenceContext(fleetAssignments, { projectId: safeKey, repo: sess.repo });
-                    if (refDocs.length > 0) newPaneReferenceDocs[key] = refDocs;
-                  }
                   newPaneStream[key] = { repo: sess.repo, branch: worktreeSlug(sess.id) };
                   tabPaneNames[i] = sess.name;
                   // Bridge pane id → stream so the coordinator can resolve which pane
@@ -566,13 +533,21 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 newPaneHooks[key] = fleetHooks;
                 // Per-session skills (#1056): project-resolved set + this session's override + any
                 // task groups toggled onto it (#skills-groups), keyed by the worker/director's
-                // stable identity id.
+                // stable identity id. The stream's planner-assigned groups (#1338, `sess.groupIds`)
+                // are unioned with the session's manually-toggled groups before expansion, so a
+                // worker inherits the skill groups the planner picked for its stream.
                 newPaneSkills[key] = effectiveSessionSkills(
                   s.skills, projectKey, s.sessionSkillOverrides[key],
-                  new Set(expandGroups(s.sessionSkillGroups[key] ?? [], s.skillGroups)),
+                  new Set(expandGroups(
+                    [...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups,
+                  )),
                 );
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 newPaneProviders[key] = fleetHarness;
+                // #1988: when the launch is sandboxed, this pane spawns INSIDE the sealed distro —
+                // its cwd (from `paths`) is already distro-native; record the distro so pty_create
+                // wraps the spawn in `wsl -d <distro>`. Only meaningful with the bsc-agent harness.
+                if (paths?.wslDistro) newPaneWslDistro[key] = paths.wslDistro;
                 // One roster row per live session (#734). Director has no repo/branch.
                 rosterRows.push(sess === null
                   ? [key, "director", "-", "-", "director"].join("\t")
@@ -580,7 +555,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Bind the worker pane to its repo so its session GH_TOKEN is scoped to
                 // it (#158). The director spans every repo, so it keeps the global token.
                 if (sess && sess.repo) newPaneRepos[key] = sess.repo;
-                if (sess && sess.profile) newPaneProfiles[key] = sess.profile;
+                // Bind the pane to its ROLE's default profile: director → Read-only review,
+                // worker → Autonomous (trusted) — unless the stream pins an explicit profile.
+                newPaneProfiles[key] = sess?.profile ?? roleProfileId(newPaneRoles[key]);
                 // The worker's owned paths become its role write boundary so edits in
                 // its lane auto-approve (dir/ -> dir/** so the subtree matches).
                 if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
@@ -619,16 +596,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneInitCmds: newPaneInitCmds,
             paneStartupPromptDocs: newPaneStartupPromptDocs,
             paneStartupPromptText: newPaneStartupPromptText,
-            paneReferenceDocs: newPaneReferenceDocs,
             paneContinue: newPaneContinue,
             paneCheckpointDocs: newPaneCheckpointDocs,
-            paneAllowedCommands: newPaneAllowedCommands,
             paneMcpServers: newPaneMcpServers,
             paneHooks: newPaneHooks,
             paneSkills: newPaneSkills,
             paneRoles: newPaneRoles,
             paneProviders: newPaneProviders,
+            paneWslDistro: newPaneWslDistro,
             paneProfiles: newPaneProfiles,
+
             fleetPaneStreams: newFleetPaneStreams,
             paneRoleGlobs: newPaneRoleGlobs,
             paneRepos: newPaneRepos,
@@ -640,7 +617,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             disabledPanes: newDisabledPanes,
             paneStatus: newPaneStatus,
             paneNames: newPaneNames,
-            activeScreen: "console" as Screen,
+            activeWorkspace: "console" as Workspace,
           };
         });
         // The caller persists these to the hub (publishFleetRoster) — the store stays

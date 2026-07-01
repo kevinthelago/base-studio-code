@@ -1,4 +1,4 @@
-use crate::*;
+use crate::prelude::*;
 
 /// Clones `full_name` (an `owner/name` GitHub slug) into the project hub at
 /// `projects/<sanitize(project)>/<short-repo-name>` and returns the clone path.
@@ -19,7 +19,7 @@ pub(crate) async fn clone_repo(project: String, full_name: String) -> Result<Str
     let url = format!("https://github.com/{}.git", full_name);
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", &url, &dest.to_string_lossy()]);
-    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
+    let status = crate::platform::process::run_status(&mut cmd).map_err(|e| e.to_string())?;
     if !status.success() {
         log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));

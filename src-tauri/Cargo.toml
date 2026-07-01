@@ -25,10 +25,14 @@ tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
+# Single-instance guard (#1303): a second launch focuses the running window instead of
+# spawning a duplicate process. Desktop-only.
+tauri-plugin-single-instance = "2"
 log = "0.4"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+include_dir = "0.7"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 # FCM push to the paired mobile app (#846): service-account OAuth2 needs an RS256-signed
 # JWT assertion. `jsonwebtoken` reads the service-account PEM private key directly and
@@ -46,7 +50,7 @@ rfd = "0.14"
 snow = "0.10"
 base64 = "0.22"
 # PKCE (#1197 OAuth): SHA-256 of the verifier for the S256 code challenge.
-sha2 = "0.10"
+sha2 = "0.11"
 rand = "0.10"
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time", "net", "io-util"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
@@ -62,6 +66,11 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 
+# Shared leaf utilities (#1646): the ONE home-dir / `~/.base-studio-code` resolver, so the app
+# and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
+# delegates `home_dir`/`bsc_base_dir` here.
+bsc-util = { path = "../crates/bsc-util" }
+
 # Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
@@ -73,10 +82,34 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }
+# Mobile-tunnel wire contract + Noise crypto (#1919) — desktop tunnel glue (state/transport/commands) depends on it.
+bsc-tunnel = { path = "../crates/bsc-tunnel" }
+
+# User blueprint store (#1719) — shared with the `bsc-blueprint` session CLI. The blueprint
+# Tauri commands (`list/write/delete_blueprint`) are a thin wrapper over this crate's `Store`,
+# so the path-traversal slug guard lives in ONE place (#1761).
+bsc-blueprint = { path = "../crates/bsc-blueprint" }
+
+# Cross-project hub lifecycle (#1720) — shared with the `bsc-project` session CLI. The
+# published-marker helpers (`mark_published`/`is_published`/`published_marker`) delegate here so
+# the `.published` marker logic lives in ONE place (#1761).
+bsc-project = { path = "../crates/bsc-project" }
+
+# Global skills + task-groups store (#1338, instance of #1325) — shared with the `bsc-skill`
+# session CLI. The `skill_store_*` Tauri commands are a thin wrapper over this crate's `Store`,
+# so the desktop Skills library and every live console session read/write ONE global skills.db.
+skilldb = { path = "../crates/skilldb" }
 
 # Model-agnostic LLM provider layer (#1097) — shared with the future lean `bsc-agent`
-# binary so neither has to depend on the other. `kb_chat` dispatches through it.
+# binary so neither has to depend on the other. `llm_complete` dispatches through it.
 llm = { path = "../crates/llm", package = "bsc-llm" }
+
+# Unified log-query + cost engine (#1607) — shared with the `bsc-logs` CLI. The desktop
+# token-cost reader (`observability::tokens::cost::read_token_usage`) delegates pricing to
+# this crate's `cost::all_costs` so the price table lives in ONE place (#1686). Aliased to
+# `bsc_logs` to avoid colliding with the in-crate `observability::logs` module (glob-imported
+# via `crate::*`).
+bsc_logs = { path = "../crates/logs", package = "logs" }
 
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls

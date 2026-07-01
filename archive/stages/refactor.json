@@ -1,0 +1,9 @@
+{
+  "directive": "**Refactor** — identify improvement opportunities (dead code, simplification, performance); write one targeted cleanup issue per area. Do NOT produce `phases.json` or `issues.json`.",
+  "name": "Refactor",
+  "glyph": "♻",
+  "gate": "improvement areas identified",
+  "blurb": "Find dead code / simplification / perf wins; one issue per area.",
+  "icon": "rule",
+  "hue": 25
+}

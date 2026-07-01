@@ -367,6 +367,60 @@ pub(crate) fn to_native_path(p: &str) -> String {
     p.to_string()
 }
 
+/// Build the `wsl.exe` invocation that runs `command` inside a WSL2 distro at a distro-native `cwd`
+/// (#1988 — the spawn recipe for the sealed agent sandbox). Returns `(program, args)` for a
+/// `Command`/`CommandBuilder`. An empty `cwd` runs at the distro's default (the user's `~`); the
+/// command is run under a login `bash -lc` so `/etc/profile` + PATH are set. Paths here are
+/// **distro-native** (e.g. `/home/agent/...`), never translated `/mnt/c` — the sealed distro has no
+/// Windows mount. (When the host is git-bash, callers must spawn this directly, not via MSYS, or the
+/// leading-`/` args get path-mangled.)
+pub(crate) fn wsl_invocation(distro: &str, cwd: &str, command: &str) -> (String, Vec<String>) {
+    let mut args = vec!["-d".to_string(), distro.to_string()];
+    if !cwd.is_empty() {
+        args.push("--cd".to_string());
+        args.push(cwd.to_string());
+    }
+    args.push("--".to_string());
+    args.push("bash".to_string());
+    args.push("-lc".to_string());
+    args.push(command.to_string());
+    ("wsl.exe".to_string(), args)
+}
+
+/// The interactive-shell init line for a session running INSIDE the sealed WSL2 distro (#1988).
+/// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch). The host env
+/// does NOT traverse the wsl boundary, so this exports `env` (the session env — e.g. bsc-agent's
+/// provider/model/key + `GH_TOKEN`) INTO the distro shell, then bakes the distro's own `bsc`/`bsc-agent`
+/// paths over the top. Sources no host rc. `cwd` is distro-native (`/home/agent/...`); `launch` (e.g. a
+/// `bsc-agent …` command) is appended to start the agent. (In-distro bsc-* helper rc is a follow-up.)
+pub(crate) fn sandbox_init_line(
+    cwd: &str,
+    launch: Option<&str>,
+    env: &std::collections::HashMap<String, String>,
+) -> String {
+    let cd = if cwd.is_empty() {
+        String::new()
+    } else {
+        format!("cd \"{cwd}\" 2>/dev/null; ")
+    };
+    // Cross the session env in. Only valid shell identifiers; the distro's own BSC_BIN/BSC_AGENT_BIN
+    // below override any crossed value, so the distro's sidecars always win.
+    let mut env_exports = String::new();
+    for (k, v) in env {
+        if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            env_exports.push_str(&format!("export {k}={}; ", bash_ansi_c_quote(v)));
+        }
+    }
+    let launch_suffix = launch.map(|s| format!("; {s}")).unwrap_or_default();
+    format!(
+        "{env_exports}export BSC_BIN=/usr/local/bin/bsc BSC_AGENT_BIN=/usr/local/bin/bsc-agent; \
+         {cd}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+         __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
+         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
+         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{launch_suffix}\n"
+    )
+}
+
 /// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).
 ///
 /// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting
@@ -392,6 +446,40 @@ pub(crate) fn bash_ansi_c_quote(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn wsl_invocation_builds_distro_exec_recipe() {
+        use super::wsl_invocation;
+        let (p, a) = wsl_invocation("bsc-agent-sandbox", "/home/agent", "bsc --help");
+        assert_eq!(p, "wsl.exe");
+        assert_eq!(
+            a,
+            vec!["-d", "bsc-agent-sandbox", "--cd", "/home/agent", "--", "bash", "-lc", "bsc --help"],
+        );
+        // Empty cwd ⇒ no --cd (runs at the distro default ~).
+        let (_, a2) = wsl_invocation("d", "", "pwd");
+        assert_eq!(a2, vec!["-d", "d", "--", "bash", "-lc", "pwd"]);
+    }
+
+    #[test]
+    fn sandbox_init_line_bakes_distro_env_cwd_and_launch() {
+        use super::sandbox_init_line;
+        let mut env = std::collections::HashMap::new();
+        env.insert("BSC_AGENT_PROVIDER".to_string(), "openai".to_string());
+        env.insert("GH_TOKEN".to_string(), "tok".to_string());
+        let l = sandbox_init_line("/home/agent/projects/p", Some("bsc-agent"), &env);
+        // The session env crosses into the distro (so a sandboxed agent has its config).
+        assert!(l.contains("export BSC_AGENT_PROVIDER="));
+        assert!(l.contains("export GH_TOKEN="));
+        assert!(l.contains("export BSC_BIN=/usr/local/bin/bsc"));
+        assert!(l.contains("BSC_AGENT_BIN=/usr/local/bin/bsc-agent"));
+        assert!(l.contains("cd \"/home/agent/projects/p\""));
+        assert!(l.trim_end().ends_with("; bsc-agent"));
+        // Empty cwd ⇒ no cd; no launch ⇒ no trailing command.
+        let bare = sandbox_init_line("", None, &std::collections::HashMap::new());
+        assert!(!bare.contains("cd \""));
+        assert!(bare.trim_end().ends_with("\\033[H'"));
+    }
 
     #[cfg(windows)]
     #[test]
@@ -524,3 +612,54 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn osc7_path_strip_removes_scheme_and_host() {
+        // Mirrors what TerminalView.tsx does in the browser:
+        // data.replace(/^file:\/\/[^/]*/, "")
+        let input = "file://localhost/c/Users/Kevin/project";
+        let stripped = input.trim_start_matches("file://").split_once('/')
+            .map(|(_, rest)| format!("/{}", rest))
+            .unwrap_or_default();
+        assert_eq!(stripped, "/c/Users/Kevin/project");
+    }
+    #[test]
+    fn to_native_path_resolves_git_bash_drive_paths_on_windows() {
+        // The OSC-7 cwd a bash shell reports (and the app persists) — must round back to a native
+        // path so pty_create's is_dir/Command::cwd resolve an EXISTING worktree on restore (#979).
+        let bash = "/c/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience";
+        let got = to_native_path(bash);
+        if cfg!(windows) {
+            assert_eq!(got, "C:/Users/Kevin/.base-studio-code/worktrees/studio-code/base-studio-code--source-experience");
+        } else {
+            assert_eq!(got, bash); // no-op off Windows
+        }
+        // Non-drive POSIX paths and already-native paths pass through unchanged everywhere.
+        assert_eq!(to_native_path("/usr/local/bin"), "/usr/local/bin");
+        assert_eq!(to_native_path("C:/already/native"), "C:/already/native");
+    }
+    #[test]
+    fn ansi_c_quote_wraps_plain_text() {
+        assert_eq!(bash_ansi_c_quote("triage the issues"), "$'triage the issues'");
+    }
+    #[test]
+    fn ansi_c_quote_escapes_newlines_quotes_and_backslashes() {
+        // Newlines collapse to \n so the whole token stays on one physical line;
+        // single quotes and backslashes are escaped. $ and backticks pass through
+        // literally (ANSI-C quoting does not expand them).
+        assert_eq!(
+            bash_ansi_c_quote("line1\nit's $HOME `cmd` \\x"),
+            "$'line1\\nit\\'s $HOME `cmd` \\\\x'"
+        );
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Load & reconcile",
+  "glyph": "⤧",
+  "gate": "load verified + lineage complete",
+  "deps": [
+    "dataClean"
+  ],
+  "blurb": "Director merges into the Data Model by identity key, with lineage.",
+  "prompt": "Plan the load + reconciliation the DIRECTOR runs. When several sources feed the same entity,\nrecords are MERGED by the entity's identity key; conflicts resolve by a declared source-PRECEDENCE\nrule (state it). Every loaded value records LINEAGE — which source, when, under what license — so\nthe result is auditable. Define the verification that confirms the load matched expectations before\nit's treated as done.\n\nWrite `dataLoad.json`: { \"total\", \"entities\", \"lineage\": <pct>, \"validation\": <pct>, \"conflicts\",\n\"precedence\": [source ids, highest first], \"per\": [{ \"entity\", \"rows\", \"nulls\", \"valid\", \"src\":\n[ids], \"merged\", \"conflict\", \"note\" }], \"artifacts\": [{ \"name\", \"detail\", \"glyph\" }], \"issues\":\n[{ \"t\", \"tag\" }] }. The Load pane renders the headline totals, per-entity merge, artifacts & issues.",
+  "icon": "upload",
+  "hue": 330
+}

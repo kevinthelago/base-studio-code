@@ -1,0 +1,21 @@
+[package]
+name = "logs"
+version = "0.1.0"
+edition = "2021"
+description = "Unified log-query engine for base-studio-code (#1607) — reads the app's per-session event streams (tools/skills/mcp/hooks/cost/coord/activity) and powers the `bsc-logs` CLI + the desktop observability commands."
+
+# The core engine (no Tauri) so the CLI + the desktop app share one reader.
+[lib]
+name = "logs"
+
+[dependencies]
+# Shared leaf utilities (#1646): the one home-dir resolver + civil-date parsing.
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `emit` (the lean-TSV-vs-JSON dispatch
+# this CLI re-inlined in every verb arm). Replaced the `bsc-sqlite-util` print_json dependency.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# Read-only access to the metrics DB (perf.db) for `bsc-logs perf` (#1716). `bundled` matches the
+# rest of the workspace (plandb/skilldb/research) so the CLI carries its own SQLite, no system dep.
+rusqlite = { version = "0.40", features = ["bundled"] }

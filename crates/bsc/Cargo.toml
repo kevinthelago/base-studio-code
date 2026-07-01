@@ -1,0 +1,37 @@
+[package]
+name = "bsc"
+version = "0.1.0"
+edition = "2021"
+description = "The unified base-studio-code CLI (#1877): one binary, `bsc <command>` dispatching to every state store / tool that used to be its own `bsc-*` sidecar."
+
+# Single binary named `bsc` — the one sidecar bundled into the app.
+[[bin]]
+name = "bsc"
+path = "src/main.rs"
+
+[features]
+# `bsc data …` (the DuckDB canonical model) is on by default for the shipped app; a lean build can
+# `--no-default-features` to drop DuckDB while keeping the SQLite/fs subcommands (#1877).
+default = ["data"]
+data = ["dep:bsc-data"]
+
+[dependencies]
+# The shared CLI scaffold (#1762): help dispatch + the unknown-command renderer.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The shared dangerous-command registry (#1844) + JSON parsing, for `bsc hook bash-deny` (#1916).
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"
+# Subcommand crates — each exposes `cli::run(args, prog)` (#1877).
+bsc-project = { path = "../bsc-project" }
+skilldb = { path = "../skilldb" }
+compliance = { path = "../compliance" }
+bsc-blueprint = { path = "../bsc-blueprint" }
+logs = { path = "../logs" }
+bsc-files = { path = "../bsc-files" }
+plandb = { path = "../plandb" }
+# DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
+bsc-data = { path = "../data", optional = true }
+# `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each
+# exposes a `mcp::Server::from_env()` run over the shared stdio JSON-RPC core (`mcp_rpc`).
+research = { path = "../research" }
+mcp-rpc = { path = "../mcp-rpc" }

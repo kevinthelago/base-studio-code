@@ -1,34 +1,22 @@
-use crate::*;
+use crate::prelude::*;
+use crate::console::pty;
 
-/// Download (or update) a catalog MCP server repo into the app-managed
-/// `~/.base-studio-code/mcp/<name>` and return its local path (#859 follow-up). The
-/// Extensions catalog's "download" button calls this so a first-party server lands at a
-/// known location ready to build + run, instead of just opening the browser. Idempotent:
-/// an existing clone is fast-forwarded; a fresh one is a shallow clone of the default
-/// branch (`main`). `name` is slugified so it can never escape the `mcp/` root.
 /// Resolve a catalog MCP server's download directory under `~/.base-studio-code/mcp/`,
 /// slugifying `name` (`[A-Za-z0-9._-]`, else `_`) so it can never escape the `mcp/` root.
 /// `Err` for an empty / `.` / `..` name. Pure over the base dir — unit-tested.
 pub(crate) fn mcp_install_dir(name: &str) -> Result<std::path::PathBuf, String> {
-    let safe: String = name
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
-        .collect();
-    if safe.is_empty() || safe == "." || safe == ".." {
-        return Err("mcp_clone: invalid name".into());
-    }
+    let safe = crate::platform::fsx::safe_dir_segment(name, |c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        .map_err(|_| "mcp_install_dir: invalid name".to_string())?;
     Ok(bsc_base_dir().join("mcp").join(safe))
 }
 #[tauri::command]
-pub(crate) async fn mcp_clone(name: String, url: String) -> Result<String, String> {
+pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
     let _perf = PerfSpan::new("mcp_clone");
     let dir = mcp_install_dir(&name)?;
     let dir_str = dir.to_string_lossy().into_owned();
     if dir.join(".git").exists() {
         // Already downloaded — fast-forward to the latest default branch (best-effort).
-        let mut pull = std::process::Command::new("git");
-        pull.args(["-C", &dir_str, "pull", "--ff-only"]);
-        let _ = no_window(&mut pull).status();
+        let _ = git_ok(&dir_str, &["pull", "--ff-only"]);
         log::info!("mcp_clone: updated {name} at {dir_str}");
         return Ok(dir_str);
     }
@@ -37,7 +25,7 @@ pub(crate) async fn mcp_clone(name: String, url: String) -> Result<String, Strin
     }
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", "--depth", "1", &url, &dir_str]);
-    let status = no_window(&mut cmd).status().map_err(|e| e.to_string())?;
+    let status = crate::platform::process::run_status(&mut cmd).map_err(|e| e.to_string())?;
     if !status.success() {
         log::warn!("mcp_clone: git clone failed for {url}");
         return Err(format!("git clone failed for {url}"));
@@ -78,7 +66,7 @@ pub(crate) struct McpBuildResult {
 /// a failed build so the panel can surface stdout/stderr; only setup problems (missing dir,
 /// unknown toolchain) are `Err`.
 #[tauri::command]
-pub(crate) async fn mcp_build(name: String) -> Result<McpBuildResult, String> {
+pub(crate) fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let _perf = PerfSpan::new("mcp_build");
     let dir = mcp_install_dir(&name)?;
     if !dir.exists() {
@@ -95,7 +83,8 @@ pub(crate) async fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let (shell, flag) = ("sh", "-c");
     let mut cmd = std::process::Command::new(shell);
     cmd.current_dir(&dir).args([flag, &command]);
-    let output = no_window(&mut cmd).output().map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
+    let output = crate::platform::process::run_output(&mut cmd)
+        .map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
     // Truncate captured output so a noisy build log doesn't bloat the IPC payload.
     let cap = |b: &[u8]| {
         let s = String::from_utf8_lossy(b);
@@ -126,7 +115,7 @@ pub(crate) struct McpStatusResult {
 /// Report whether a catalog MCP server has been downloaded and built, so the planning page's
 /// MCP panel can open with real install status instead of assuming "not installed".
 #[tauri::command]
-pub(crate) async fn mcp_status(name: String) -> Result<McpStatusResult, String> {
+pub(crate) fn mcp_status(name: String) -> Result<McpStatusResult, String> {
     let dir = mcp_install_dir(&name)?;
     let (downloaded, built) = mcp_status_of(&dir);
     Ok(McpStatusResult { downloaded, built })
@@ -150,7 +139,7 @@ pub(crate) struct McpUpdateStatus {
 /// only — no object download). Also reports downloaded/built so an un-built clone surfaces a
 /// "build" action. `update_available` is false for a non-git / not-downloaded server.
 #[tauri::command]
-pub(crate) async fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> {
+pub(crate) fn mcp_check_update(name: String) -> Result<McpUpdateStatus, String> {
     let _perf = PerfSpan::new("mcp_check_update");
     let dir = mcp_install_dir(&name)?;
     let (downloaded, built) = mcp_status_of(&dir);
@@ -171,35 +160,45 @@ pub(crate) async fn mcp_check_update(name: String) -> Result<McpUpdateStatus, St
 pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Result<(), String> {
     let path = root.join(".mcp.json");
     if mcp_servers.is_empty() && !path.exists() { return Ok(()); }
-    let mut doc: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !doc.is_object() { doc = serde_json::json!({}); }
+    let mut doc = crate::platform::fsx::read_json_object_or_default(&path);
     let servers = doc.as_object_mut().unwrap()
         .entry("mcpServers").or_insert_with(|| serde_json::json!({}));
-    if !servers.is_object() { *servers = serde_json::json!({}); }
+    crate::platform::fsx::ensure_object(servers);
     let smap = servers.as_object_mut().unwrap();
     for m in mcp_servers {
         smap.insert(m.name.clone(), mcp_server_value(m));
     }
-    std::fs::write(&path, serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    crate::platform::fsx::atomic_write_json(&path, &doc).map_err(|e| e.to_string())
 }
 /// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
-/// the bundled `bsc-research-mcp` binary's absolute path at write time.
-pub(crate) const RESEARCH_MCP_MARKER: &str = "bsc-research-mcp";
-/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for the built-in
-/// Research marker (#1196). A non-marker command passes through unchanged; the marker falls back to
-/// the bare name when the bundled binary can't be located (e.g. a dev build without the sidecar).
+/// the unified `bsc` binary's absolute path + the `mcp research` subcommand args at write time
+/// (#1877). Sourced from the canonical registry (#1848) so the server name is defined ONCE.
+pub(crate) const RESEARCH_MCP_MARKER: &str = bsc_util::RESEARCH_MCP;
+/// The same sentinel for the built-in Compliance server (#1005) — rewritten to `<bsc> mcp compliance`
+/// at write time (#1877). From the registry (#1848).
+pub(crate) const COMPLIANCE_MCP_MARKER: &str = bsc_util::COMPLIANCE_MCP;
+/// Resolve a stdio MCP command, substituting the bundled-binary absolute path for a built-in MCP
+/// marker (Research #1196, Compliance #1005). A non-marker command passes through unchanged; a
+/// marker falls back to the bare name when its bundled binary can't be located (e.g. a dev build
+/// without the sidecar).
 pub(crate) fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
-    if command == RESEARCH_MCP_MARKER {
+    if command == RESEARCH_MCP_MARKER || command == COMPLIANCE_MCP_MARKER {
         if let Some(p) = bundled {
             return p.to_string_lossy().to_string();
         }
     }
     command.to_string()
+}
+/// The `bsc mcp <sub>` subcommand args a built-in marker prepends before any user args (#1877): both
+/// bundled servers are now subcommands of the unified `bsc` binary, so the resolved command is the
+/// `bsc` exe and these are the leading args. A non-marker command prepends nothing.
+fn mcp_marker_subargs(command: &str) -> &'static [&'static str] {
+    match command {
+        RESEARCH_MCP_MARKER => &["mcp", "research"],
+        COMPLIANCE_MCP_MARKER => &["mcp", "compliance"],
+        _ => &[],
+    }
 }
 /// One MCP server's `.mcp.json` value: stdio `{command,args,env?}` or http `{type,url}`.
 pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
@@ -207,18 +206,124 @@ pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
         return serde_json::json!({ "type": "http", "url": m.url.clone().unwrap_or_default() });
     }
     let mut v = serde_json::Map::new();
-    let command = resolve_mcp_command(
-        &m.command.clone().unwrap_or_default(),
-        pty::bsc_research_mcp_bin_path(),
-    );
+    let raw = m.command.clone().unwrap_or_default();
+    // Each built-in marker now resolves to the unified `bsc` binary; its `mcp <sub>` subcommand is
+    // prepended to the args so Claude Code spawns `<bsc> mcp research` / `<bsc> mcp compliance`.
+    let subargs = mcp_marker_subargs(&raw);
+    let bundled = if subargs.is_empty() { None } else { pty::bsc_bin_path() };
+    let command = resolve_mcp_command(&raw, bundled);
     v.insert("command".into(), serde_json::Value::String(command));
-    v.insert("args".into(), serde_json::Value::Array(
-        m.args.iter().map(|a| serde_json::Value::String(a.clone())).collect(),
-    ));
+    let args: Vec<serde_json::Value> = subargs
+        .iter()
+        .map(|a| serde_json::Value::String((*a).to_string()))
+        .chain(m.args.iter().map(|a| serde_json::Value::String(a.clone())))
+        .collect();
+    v.insert("args".into(), serde_json::Value::Array(args));
     let env: serde_json::Map<String, serde_json::Value> = m.env.iter()
         .filter(|(k, _)| !k.is_empty())
         .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))
         .collect();
     if !env.is_empty() { v.insert("env".into(), serde_json::Value::Object(env)); }
     serde_json::Value::Object(v)
+}
+
+#[cfg(test)]
+mod relocated_tests {
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::prelude::*;
+    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
+    use crate::fleet::{worktree::*, director::*, inspect::*};
+    use crate::extensions::{mcp::*, cfg::*};
+    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+
+    #[test]
+    fn resolve_mcp_command_substitutes_research_marker(){
+        use std::path::PathBuf;
+        // A normal command is untouched.
+        assert_eq!(resolve_mcp_command("npx", None), "npx");
+        assert_eq!(
+            resolve_mcp_command("npx", Some(PathBuf::from("/x/bsc-research-mcp"))),
+            "npx",
+        );
+        // The Research marker resolves to the bundled binary's absolute path when present…
+        let bin = PathBuf::from("/opt/app/bsc-research-mcp");
+        assert_eq!(resolve_mcp_command("bsc-research-mcp", Some(bin.clone())), bin.to_string_lossy());
+        // …and falls back to the bare marker when the bundled binary can't be located (dev build).
+        assert_eq!(resolve_mcp_command("bsc-research-mcp", None), "bsc-research-mcp");
+        // The Compliance marker (#1005) resolves the same way through its own bundled path.
+        let comp = PathBuf::from("/opt/app/bsc-compliance-mcp");
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", Some(comp.clone())), comp.to_string_lossy());
+        assert_eq!(resolve_mcp_command("bsc-compliance-mcp", None), "bsc-compliance-mcp");
+    }
+    #[test]
+    fn mcp_install_dir_slugifies_and_stays_under_mcp_root() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("mcpdir");
+        let root = bsc_base_dir().join("mcp");
+        // A normal repo name lands directly under mcp/.
+        assert_eq!(mcp_install_dir("compliance-mcp-server").unwrap(), root.join("compliance-mcp-server"));
+        // Path separators are slugified to `_`, so a traversal attempt collapses to a single
+        // literal dir name DIRECTLY under mcp/ — it can't escape (the `..` substring that
+        // survives is just part of a leaf filename, not a real parent ref).
+        let evil = mcp_install_dir("../../etc/passwd").unwrap();
+        assert_eq!(evil.parent(), Some(root.as_path()), "must be a direct child of mcp/: {evil:?}");
+        let leaf = evil.file_name().unwrap().to_string_lossy();
+        assert!(!leaf.contains('/') && !leaf.contains('\\'), "no separators survive the slug: {leaf}");
+        // Empty / dot names are rejected.
+        assert!(mcp_install_dir("").is_err());
+        assert!(mcp_install_dir(".").is_err());
+        assert!(mcp_install_dir("..").is_err());
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn mcp_build_command_detects_the_toolchain() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpbuild-{}", std::process::id()));
+        let uv = base.join("uv");
+        let pnpm = base.join("pnpm");
+        let npm = base.join("npm");
+        let none = base.join("none");
+        for d in [&uv, &pnpm, &npm, &none] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        // Python/uv project → `python -m uv sync` (module form — no PATH dependency, #887).
+        std::fs::write(uv.join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
+        assert_eq!(mcp_build_command(&uv).as_deref(), Some("python -m uv sync"));
+        // pnpm project → pnpm install && build (a package.json is also present, but the
+        // pnpm lockfile wins over the npm fallback).
+        std::fs::write(pnpm.join("package.json"), "{}").unwrap();
+        std::fs::write(pnpm.join("pnpm-lock.yaml"), "lockfileVersion: 9\n").unwrap();
+        assert_eq!(mcp_build_command(&pnpm).as_deref(), Some("pnpm install && pnpm build"));
+        // Plain Node project → npm fallback.
+        std::fs::write(npm.join("package.json"), "{}").unwrap();
+        assert_eq!(mcp_build_command(&npm).as_deref(), Some("npm install && npm run build"));
+        // Unknown toolchain → None.
+        assert_eq!(mcp_build_command(&none), None);
+        std::fs::remove_dir_all(&base).ok();
+    }
+    #[test]
+    fn mcp_status_of_reports_downloaded_and_built() {
+        let base = std::env::temp_dir().join(format!("bsc-mcpstatus-{}", std::process::id()));
+        let dir = base.join("srv");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing yet → neither downloaded nor built.
+        assert_eq!(mcp_status_of(&dir), (false, false));
+        // A clone (.git) → downloaded, not built.
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        assert_eq!(mcp_status_of(&dir), (true, false));
+        // A build artifact (node_modules) → built. (dist / .venv count too.)
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        assert_eq!(mcp_status_of(&dir), (true, true));
+        std::fs::remove_dir_all(&base).ok();
+    }
+    #[test]
+    fn mcp_update_available_compares_heads() {
+        // Differing non-empty shas → update available; equal → none; empty (unknown) → none.
+        assert!(mcp_update_available("aaaa", "bbbb"));
+        assert!(!mcp_update_available("aaaa", "aaaa"));
+        assert!(!mcp_update_available("aaaa", ""));
+        assert!(!mcp_update_available("", "bbbb"));
+        // Trims surrounding whitespace before comparing.
+        assert!(!mcp_update_available(" aaaa\n", "aaaa"));
+    }
 }

@@ -11,8 +11,18 @@ name = "bsc-agent"
 path = "src/main.rs"
 
 [dependencies]
+# Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting.
+bsc-util = { path = "../bsc-util" }
+# The file-structure engine, reused IN-PROCESS by the `list_files`/`file_info` tools (the standalone
+# `bsc-files` binary is the same lib). Avoids a subprocess + the Windows binary-path resolution.
+bsc-files = { path = "../bsc-files" }
 llm = { path = "../llm", package = "bsc-llm" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 glob = "0.3"
+regex = "1"
+# rustls-tls (no native-tls) + blocking — matches the research crate so the workspace
+# resolves a single TLS backend. `webfetch` drives reqwest::blocking on a dedicated OS
+# thread (the agent loop runs tools inline on a tokio worker; a nested runtime panics).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }

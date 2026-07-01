@@ -1,8 +1,8 @@
 //! Anthropic Messages API provider (api.anthropic.com). Returns Anthropic's native
 //! response JSON unchanged — it already carries `content` blocks (text + any
-//! `tool_use`) and `usage`, which is exactly the normalized shape kb_chat returns.
+//! `tool_use`) and `usage`, which is exactly the normalized shape llm_complete returns.
 
-use super::{LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{post_json, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 
 pub struct AnthropicProvider;
 
@@ -69,12 +69,11 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
 /// (`input_tokens`/`output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`);
 /// Anthropic already uses these names, so this just defaults any missing key to 0.
 pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
-    let g = |k: &str| u.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
     serde_json::json!({
-        "input_tokens": g("input_tokens"),
-        "output_tokens": g("output_tokens"),
-        "cache_creation_input_tokens": g("cache_creation_input_tokens"),
-        "cache_read_input_tokens": g("cache_read_input_tokens"),
+        "input_tokens": usage_u64(u, "input_tokens"),
+        "output_tokens": usage_u64(u, "output_tokens"),
+        "cache_creation_input_tokens": usage_u64(u, "cache_creation_input_tokens"),
+        "cache_read_input_tokens": usage_u64(u, "cache_read_input_tokens"),
     })
 }
 
@@ -116,54 +115,61 @@ pub(super) fn build_request_body(req: &LlmRequest) -> serde_json::Value {
     })
 }
 
+/// Base URL for the Anthropic Messages API. Production passes this; tests point the
+/// `*_at` helpers at a localhost mock so the real send path is exercised offline.
+pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+
+/// The Anthropic auth/version headers (identical for `complete` and `turn`).
+fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("x-api-key", api_key.to_string()),
+        ("anthropic-version", "2023-06-01".to_string()),
+    ]
+}
+
+impl AnthropicProvider {
+    /// `complete` against an arbitrary base URL (production passes [`ANTHROPIC_BASE_URL`];
+    /// tests point it at a localhost mock). Threading the base-url here lets the real
+    /// send path (`post_json` + status/error handling) be exercised end-to-end without
+    /// the network — the trait method below just supplies the production host.
+    pub(crate) async fn complete_at(
+        &self,
+        base_url: &str,
+        req: &LlmRequest,
+        api_key: &str,
+    ) -> Result<serde_json::Value, String> {
+        post_json(
+            &format!("{base_url}/v1/messages"),
+            &auth_headers(api_key),
+            &build_request_body(req),
+        )
+        .await
+    }
+
+    /// `turn` against an arbitrary base URL (see [`Self::complete_at`]).
+    pub(crate) async fn turn_at(
+        &self,
+        base_url: &str,
+        t: &Turn,
+        api_key: &str,
+    ) -> Result<TurnResult, String> {
+        let json = post_json(
+            &format!("{base_url}/v1/messages"),
+            &auth_headers(api_key),
+            &turn_request_body(t),
+        )
+        .await?;
+        Ok(parse_turn_response(&json))
+    }
+}
+
 impl LlmProvider for AnthropicProvider {
     async fn complete(&self, req: &LlmRequest, api_key: &str) -> Result<serde_json::Value, String> {
-        let client = reqwest::Client::new();
-        let response = client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&build_request_body(req))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown error")
-                .to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
-        Ok(json)
+        self.complete_at(ANTHROPIC_BASE_URL, req, api_key).await
     }
 
     async fn turn(&self, t: &Turn, api_key: &str) -> Result<TurnResult, String> {
-        let client = reqwest::Client::new();
-        let response = client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&turn_request_body(t))
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
-        let status = response.status();
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if !status.is_success() {
-            let err = json["error"]["message"].as_str().unwrap_or("Unknown error").to_string();
-            return Err(format!("API error ({}): {}", status, err));
-        }
-        Ok(parse_turn_response(&json))
+        self.turn_at(ANTHROPIC_BASE_URL, t, api_key).await
     }
 }
 

@@ -1,0 +1,13 @@
+{
+  "directive": "**Dead & legacy code** — scan for unused/dead code & dependencies, verify each finding, and triage them into refactor units. Do NOT write `issues.json` — the refactor units drive the fleet directly.",
+  "name": "Dead & legacy code",
+  "glyph": "♻",
+  "gate": "findings triaged",
+  "deps": [
+    "repos"
+  ],
+  "blurb": "Unused code, dead dependencies & legacy debt to remove.",
+  "prompt": "Find what to remove or modernize: unused exports/files, unused dependencies, dead\nfeature flags, deprecated APIs, and duplicated code. Run the scan, verify each\ncandidate (static tools have false positives — dynamic refs, public API, test-only\nuse), then list confirmed removals as refactor units with a test safety net.",
+  "icon": "rule",
+  "hue": 25
+}

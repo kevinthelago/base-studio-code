@@ -1,26 +1,35 @@
-pub(crate) mod templates;
+pub(crate) mod prompts;
 pub(crate) mod directives;
 pub(crate) mod workspace;
 
 #[cfg(test)]
 mod tests {
-    use super::templates::*;
+    use super::prompts::*;
     use super::directives::*;
     use super::workspace::*;
+
+    // Content assertions validate the SHIPPED prompt artifacts, so they read the EMBEDDED seed
+    // (`config::embedded_str`), independent of any local config-dir override (#2027 P2). The routing
+    // test compares against the production `planning_greeting_*` accessors (both use `load_str`, so
+    // it stays env-independent).
+    fn process_md() -> String { crate::platform::config::embedded_str("planner/process.md") }
+    fn new_intro() -> String { crate::platform::config::embedded_str("planner/intro.new.md") }
+    fn existing_intro() -> String { crate::platform::config::embedded_str("planner/intro.existing.md") }
+    fn blueprint_intro() -> String { crate::platform::config::embedded_str("planner/intro.blueprint.md") }
 
     #[test]
     fn build_active_stages_md_includes_enabled_excludes_disabled() {
         // Empty → omitted (all-stages default, no behavior change).
         assert_eq!(build_active_stages_md(&[]), "");
 
-        let md = build_active_stages_md(&["context".into(), "structure".into()]);
+        let md = build_active_stages_md(&["discovery".into(), "streams".into()]);
         assert!(md.contains("Active planning stages"));
         assert!(md.contains("OUT OF SCOPE"), "must declare unlisted stages out of scope");
-        assert!(md.contains("**Context**") && md.contains("**Structure**"));
+        assert!(md.contains("**Discovery**") && md.contains("**Streams**"));
         // a stage not in the enabled list is absent
         assert!(!md.contains("**UI**"), "disabled stage must not be instructed");
         // ordered + numbered
-        assert!(md.find("**Context**").unwrap() < md.find("**Structure**").unwrap());
+        assert!(md.find("**Discovery**").unwrap() < md.find("**Streams**").unwrap());
 
         // unknown id → generic line, never panics
         assert!(build_active_stages_md(&["custom-x".into()]).contains("**custom-x**"));
@@ -30,13 +39,13 @@ mod tests {
     /// doesn't create tangential sections that block the gate (#672).
     #[test]
     fn stage_directive_context_seeds_baseline_and_uses_bsc_plan() {
-        let d = stage_directive("context");
+        let d = stage_directive("discovery");
         // Names the baseline required topics — the DYNAMIC set seeded for the project (#1019).
         for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(d.contains(t), "context directive names baseline topic {t}");
         }
-        // The required-set is shaped via bsc-plan context; non-applicable dimensions go to _skipped.
-        assert!(d.contains("bsc-plan context"), "directive shapes the required-set via bsc-plan context");
+        // The required-set is shaped via `bsc plan context`; non-applicable dimensions go to _skipped.
+        assert!(d.contains("bsc plan discovery"), "directive shapes the required-set via `bsc plan context`");
         assert!(d.contains("_skipped.md"),      "must mention _skipped.md fallback");
         // Context files gate on GENERATION, not confirmation (#1028).
         assert!(d.to_lowercase().contains("written"), "directive states required files are done once written");
@@ -54,66 +63,66 @@ mod tests {
         assert!(d.contains("ONE feature"), "must mandate one-feature-at-a-time pacing");
     }
 
-    /// Skills directive must steer the planner to GROUND authored skills in the built-in
-    /// Research MCP and cite real sources (#1056/#1196), not just pick from the library.
+    /// Skills directive authors via `bsc skill` + the per-session group, and points skill
+    /// grounding at the planning guide's Research workflow (the how-to moved there, #1433).
     #[test]
-    fn stage_directive_skills_grounds_in_research() {
+    fn stage_directive_skills_authors_via_bsc_skill() {
         let d = stage_directive("skills");
-        assert!(d.contains("Research"), "skills directive must point at the Research MCP");
-        assert!(d.contains("`skills.json`"), "skills are still recorded in skills.json");
-        // Names the concrete grounding tools and the cite-don't-fabricate rule.
-        assert!(d.contains("search") && d.contains("semantic_search"), "must name the Research tools");
-        assert!(d.to_lowercase().contains("cite") || d.to_lowercase().contains("cited"), "must require citing sources");
-        assert!(d.to_lowercase().contains("never fabricate"), "must forbid fabricated references");
-        // Seed-then-refine loop (#1298): Wikipedia seeds, scientific sources refine.
-        assert!(d.contains("Wikipedia") && d.to_lowercase().contains("seed"), "must steer Wikipedia-first skill seeding");
-        assert!(d.to_lowercase().contains("refine"), "must steer refining the seed with the scientific sources");
+        assert!(d.contains("bsc skill add"), "skills are authored via `bsc skill`");
+        assert!(!d.contains("skills.json"), "the planner must no longer be told to write skills.json (#1412)");
+        // #1419: authored skills pair into the per-session group and the planner can curate it.
+        assert!(d.contains("$BSC_SESSION_SKILL_GROUP"), "must author into the session skill group");
+        assert!(d.contains("group member"), "must tell the planner it can add/remove group members");
+        // #1433: the Research how-to lives in the planning guide now; the directive only points at it.
+        assert!(d.to_lowercase().contains("research"), "must point skill grounding at the Research workflow");
+        assert!(!d.contains("semantic_search"), "the Research tool how-to belongs in the planning guide, not the directive (#1433)");
     }
 
-    /// Context directive must also nudge grounding stack/architecture in Research (#1056/#1196).
+    /// Context directive points technique grounding at the planning guide's Research workflow (#1433).
     #[test]
-    fn stage_directive_context_grounds_techniques_in_research() {
-        let d = stage_directive("context");
-        assert!(d.contains("Research"), "context directive must mention the Research MCP for technique grounding");
+    fn stage_directive_context_points_to_research_workflow() {
+        let d = stage_directive("discovery");
+        assert!(d.to_lowercase().contains("research workflow"), "context directive must point technique grounding at the planning guide's Research workflow");
+        assert!(!d.contains("semantic_search"), "the Research tool how-to belongs in the planning guide, not the directive (#1433)");
+    }
+
+    /// #1433: the Research how-to (Wikipedia-first → compile Skills → refine with research papers)
+    /// lives in the planning guide, not the per-stage directives.
+    #[test]
+    fn planning_process_describes_the_research_workflow() {
+        let md = process_md();
+        assert!(md.contains("Research"), "planning guide must describe the Research MCP");
+        assert!(md.contains("Wikipedia") && md.contains("sources:[\"wikipedia\"]"), "must steer Wikipedia-first research");
+        assert!(md.contains("get_fulltext") && md.contains("semantic_search"), "must name the Research tools");
+        assert!(md.contains("arXiv"), "must steer refining with the scientific sources (research papers)");
+        assert!(md.contains("bsc skill add"), "must compile the findings into Skills");
+        assert!(md.to_lowercase().contains("never fabricate"), "must forbid fabricated references");
     }
 
     /// Context directive surfaces SEO as a web-conditional production-readiness dimension (#1293).
     #[test]
     fn stage_directive_context_includes_web_seo() {
-        let d = stage_directive("context");
-        assert!(d.contains("context/seo.md"), "context directive must name the seo dimension file");
+        let d = stage_directive("discovery");
+        assert!(d.contains("discovery/seo.md"), "context directive must name the seo dimension file");
         assert!(d.contains("Web SEO"), "context directive must point at the Web SEO skill");
     }
 
-    /// Structure directive must mention both workshop modes (#355).
+    /// The Streams directive sequences the feature DAG + plans the fleet (#1914 — the collapsed
+    /// structure+permissions stage). It must never author phases/issues (publish-time artifacts).
     #[test]
-    fn stage_directive_structure_sequences_features_without_authoring_issues() {
-        let d = stage_directive("structure");
-        assert!(d.to_lowercase().contains("do not write phases.json"), "phases live in plan.db — must NOT write phases.json (#plan-db)");
-        assert!(d.to_lowercase().contains("plan.db") || d.to_lowercase().contains("plan db"), "phases live in the plan DB");
-        assert!(d.to_lowercase().contains("generated from the features"), "issues are a publish-time artifact, not authored here (#plan-db)");
-        assert!(d.contains("bsc-plan feature add"), "missing the per-feature phase assignment");
-        assert!(d.contains("inventory"), "missing existing-project handling");
+    fn stage_directive_streams_sequences_features_and_plans_fleet() {
+        let d = stage_directive("streams");
+        assert!(d.contains("dependency DAG") || d.contains("dependsOn"), "streams reviews the feature dependency graph: {d}");
+        assert!(d.contains("bsc plan feature list"), "streams reviews the DAG via the plan DB: {d}");
+        assert!(d.to_lowercase().contains("no milestone phases"), "sequencing is dependsOn-only, no milestone phases: {d}");
+        assert!(d.contains("bsc plan fleet set"), "streams plans the fleet: {d}");
+        assert!(d.contains("bsc plan deps set") && d.contains("sharedDepsLocked"), "streams locks shared deps (#1429): {d}");
     }
 
-    /// Custom/refactor-blueprint stages get real directives, not the generic fallback (#666).
-    #[test]
-    fn stage_directive_custom_stages_have_real_directives() {
-        for id in &["refactor", "cleanup", "testing", "testing-informational", "transform"] {
-            let d = stage_directive(id);
-            assert!(
-                !d.ends_with("configured stage."),
-                "stage '{id}' fell back to generic — needs a real directive"
-            );
-        }
-        // Refactor explicitly says NOT to produce phases.json/issues.json (#666).
-        assert!(stage_directive("refactor").contains("NOT"), "refactor must exclude phases/issues");
-    }
-
-    /// PLANNING_PROCESS_MD Coverage section must carry the gate-item and Context gate text (#672).
+    /// process_md() Coverage section must carry the gate-item and Context gate text (#672).
     #[test]
     fn planning_process_md_coverage_names_context_gate_requirements() {
-        let md = PLANNING_PROCESS_MD;
+        let md = process_md();
         assert!(md.contains("gate item"), "must explain the gate-item concept");
         assert!(md.contains("Context** gate"), "must name the Context gate");
         assert!(md.contains("goal`, `scope`"), "must list the required core files");
@@ -124,45 +133,46 @@ mod tests {
     /// authoritative over the fixed workflow steps (#666).
     #[test]
     fn planner_intros_carry_active_stages_scope_guard() {
-        for t in [PLANNING_NEW_INTRO, PLANNING_EXISTING_INTRO] {
+        for t in [new_intro(), existing_intro()] {
             assert!(
                 t.contains("Active planning stages section at the bottom of this file"),
                 "scope guard missing from intro"
             );
             assert!(
-                t.contains("do not produce their artifacts"),
+                t.contains("DO NOT produce its outputs"),
                 "must declare that unlisted stages are out of scope"
             );
         }
     }
 
-    /// PLANNING_EXISTING_INTRO must include the lifecycle check paragraph (#458).
+    /// existing_intro() must include the lifecycle check paragraph (#458).
     #[test]
     fn planning_existing_intro_has_lifecycle_check() {
-        let intro = PLANNING_EXISTING_INTRO;
+        let intro = existing_intro();
         assert!(intro.contains("Lifecycle check"), "lifecycle check section missing");
         assert!(intro.contains("near-complete"), "must mention near-complete threshold");
         assert!(intro.contains("refactor"), "must mention refactor pass for near-complete projects");
     }
 
     #[test]
-    fn blueprint_author_intro_requires_repos_and_permissions_for_fleet() {
-        // A fleet-launching blueprint that omits a `permissions` stage produces no fleet, so its
-        // projects can never launch (the bug that motivated this guard). The author session must be
-        // told to always include `repos` + `permissions` for build/execution blueprints (#969).
-        let intro = PLANNING_BLUEPRINT_INTRO;
+    fn blueprint_author_intro_requires_deployment_and_streams_for_fleet() {
+        // A fleet-launching blueprint that omits a `streams` stage produces no fleet, so its projects
+        // can never launch (the bug that motivated this guard). #1914: the unified vocabulary means the
+        // author session must require a `deployment` stage (linked repos + shipping) + a `streams`
+        // stage (roadmap + fleet plan + per-agent permissions) for build/execution blueprints (#969).
+        let intro = blueprint_intro();
         assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
-        assert!(intro.contains("`permissions` stage"), "author intro must require a permissions stage for fleets");
-        assert!(intro.contains("`repos` stage"), "author intro must require a repos stage for fleets");
+        assert!(intro.contains("`streams` stage"), "author intro must require a streams stage for fleets");
+        assert!(intro.contains("`deployment` stage"), "author intro must require a deployment stage for fleets");
     }
 
     #[test]
     fn planner_intro_prompt_selects_by_mode() {
         // mode → matching template; unknown ⇒ the new-project intro (default).
-        assert_eq!(planner_intro_prompt("new".into()), PLANNING_INTRO_NEW);
-        assert_eq!(planner_intro_prompt("existing".into()), PLANNING_INTRO_EXISTING);
-        assert_eq!(planner_intro_prompt("blueprint".into()), PLANNING_INTRO_BLUEPRINT);
-        assert_eq!(planner_intro_prompt("garbage".into()), PLANNING_INTRO_NEW);
+        assert_eq!(planner_intro_prompt("new".into()), planning_greeting_new());
+        assert_eq!(planner_intro_prompt("existing".into()), planning_greeting_existing());
+        assert_eq!(planner_intro_prompt("blueprint".into()), planning_greeting_blueprint());
+        assert_eq!(planner_intro_prompt("garbage".into()), planning_greeting_new());
     }
 
     #[test]
@@ -178,7 +188,7 @@ mod tests {
             assert!(t.to_lowercase().contains("stop and wait"), "intro {mode} must stop and wait for the user");
             assert!(t.contains(distinct), "intro {mode} must carry its mode-distinct framing ('{distinct}')");
             // It's a kickoff, not the spec: it must NOT dump the CLI surface at the user.
-            assert!(!t.contains("bsc-plan"), "intro {mode} must not dump the bsc-plan CLI at the user");
+            assert!(!t.contains("bsc plan"), "intro {mode} must not dump the `bsc plan` CLI at the user");
         }
     }
 
@@ -190,7 +200,7 @@ mod tests {
         // bare backticked forms like `gh repo create`; here we guard the args-bearing
         // INSTRUCTION forms that only ever appeared as commands to run, AND that no template
         // describes the publish flow.)
-        for t in [PLANNING_NEW_INTRO, PLANNING_EXISTING_INTRO, PLANNING_PROCESS_MD] {
+        for t in [new_intro(), existing_intro(), process_md()] {
             assert!(!t.contains("--method POST --field"), "planner template instructs `gh api … --method POST`");
             assert!(!t.contains("gh label create \""), "planner template instructs `gh label create`");
             assert!(!t.contains("gh issue create --repo"), "planner template instructs `gh issue create`");
@@ -203,8 +213,8 @@ mod tests {
             assert!(!t.contains("Publish to GitHub"), "planner must not carry a publish step");
         }
         // Positive: the plan-only framing is present, and publishing is framed as the user's job.
-        assert!(PLANNING_PROCESS_MD.contains("plan-only"), "plan-only framing missing");
-        assert!(PLANNING_PROCESS_MD.contains("entirely the user's responsibility"),
+        assert!(process_md().contains("plan-only"), "plan-only framing missing");
+        assert!(process_md().contains("entirely the user's responsibility"),
             "user-owns-publish framing missing");
     }
 
@@ -213,43 +223,40 @@ mod tests {
         // One source of truth (#756): setup_workspaces (baseline) + compute_context_signature
         // (live) call this, so they can never disagree on format/version.
         let a = context_signature(
-            &["b".into(), "a".into()], &["k2".into(), "k1".into()], &["s2".into(), "s1".into()]);
+            &["b".into(), "a".into()], &["s2".into(), "s1".into()]);
         let b = context_signature(
-            &["a".into(), "b".into()], &["k1".into(), "k2".into()], &["s1".into(), "s2".into()]);
+            &["a".into(), "b".into()], &["s1".into(), "s2".into()]);
         assert_eq!(a, b, "order-independent (inputs are sorted)");
-        assert_eq!(a, format!("v{}|a,b|k1,k2|s1,s2", PLANNING_TEMPLATE_VERSION));
+        assert_eq!(a, format!("v{}|a,b|s1,s2", PLANNING_TEMPLATE_VERSION));
         // carries the real template version, not a hardcoded constant — fixes the v1/v{N} mismatch.
         assert!(a.starts_with(&format!("v{}|", PLANNING_TEMPLATE_VERSION)));
     }
 
     #[test]
     fn custom_stage_directives_and_scope_guard() {
-        // Custom transform/operate stages get real directives, not the generic fallback.
-        let cleanup = stage_directive("cleanup");
-        assert!(cleanup.contains("refactor units"), "cleanup has a real directive");
-        assert!(cleanup.to_lowercase().contains("do not write"), "cleanup forbids issues.json");
-        assert!(stage_directive("boundaries").contains("bounded contexts"));
-        // The active-stages section for a refactor-like set (no `structure`) doesn't list
-        // Structure — so its issues.json step is out of scope.
+        // The active-stages section for a stage set WITHOUT `streams` doesn't list Streams —
+        // so its issue-generation step is out of scope (#1914).
         let md = build_active_stages_md(&[
-            "context".to_string(), "repos".to_string(), "cleanup".to_string(),
-            "testing".to_string(), "permissions".to_string(),
+            "discovery".to_string(), "deployment".to_string(),
         ]);
         assert!(md.contains("OUT OF SCOPE"), "scope guard present");
-        assert!(!md.contains("Structure"), "no Structure stage → no issues.json step");
-        assert!(PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
-        // The context directive names the baseline required topics + the bsc-plan context channel that
+        // The deployment directive references the Streams stage in prose ("dependencies are locked in
+        // the Streams stage"), so check the full Streams DIRECTIVE (its issue-generation step) is absent
+        // — not the bare word.
+        assert!(!md.contains(&stage_directive("streams")), "no Streams stage → its issue-generation directive is out of scope");
+        assert!(process_md().contains("authoritative"), "process defers to the active-stages list");
+        // The context directive names the baseline required topics + the `bsc plan context` channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
-        let ctx = stage_directive("context");
+        let ctx = stage_directive("discovery");
         for t in ["goal", "scope", "stack", "architecture", "users", "release"] {
             assert!(ctx.contains(t), "context directive names baseline topic {t}");
         }
-        assert!(ctx.contains("bsc-plan context"), "context directive shapes the dynamic required-set");
+        assert!(ctx.contains("bsc plan discovery"), "context directive shapes the dynamic required-set");
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
-        assert!(PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
+        assert!(process_md().contains("gate item"), "coverage section frames created files as gate items");
         // The discovery checklist itself flags the four files as gate-required and tells the
         // planner the gate can't pass without them — so they aren't lost to "skip" guidance (#736).
-        let proc = PLANNING_PROCESS_MD;
+        let proc = process_md();
         assert!(proc.contains("REQUIRED for the Context gate"), "checklist has the required-files callout");
         assert!(proc.contains("gate-required"), "checklist marks the four required dimensions");
         for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {

@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { persistStorage } from "../lib/core/storage";
-import {       deriveTabIdentity } from "../lib/core/projectPaths";
-import {  refreshBuiltIns, type Blueprint } from "../screens/planner/stages/blueprints";
-import { migrateLegacyExtensions } from "@/features/extensions/lib/migrateExtensions";
-import { createExtensionsSlice } from "@/features/extensions/store";
+import { persistStorage } from "@/shared/lib/core/storage";
+import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
+import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
+import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
+import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
+import { createMcpSlice } from "@/features/mcp/store";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -15,10 +17,12 @@ import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "./slices/core";
-import { createGithubSlice } from "./slices/github";
+import { createGithubSlice } from "@/features/github/store";
+import { createShellSlice } from "./slices/shell";
+import { createTunnelSlice } from "@/features/tunnel/store";
 import { createConsoleSlice } from "./slices/console";
 
-// Re-export the public store API so existing `from "../store"` imports keep resolving.
+// Re-export the public store API so existing `from "@/store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constants";
 export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 
@@ -29,6 +33,8 @@ export const useAppStore = create<AppStore>()(
     (set, get, store) => ({
       ...createConsoleSlice(set, get, store),
       ...createGithubSlice(set, get, store),
+      ...createShellSlice(set, get, store),
+      ...createTunnelSlice(set, get, store),
 
       ...createCoreSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
@@ -37,14 +43,14 @@ export const useAppStore = create<AppStore>()(
       ...createPlanSlice(set, get, store),
       ...createSessionSlice(set, get, store),
       ...createSkillsSlice(set, get, store),
-      ...createExtensionsSlice(set, get, store),
+      ...createMcpSlice(set, get, store),
     }),
     {
       name: "app-state",
       storage: createJSONStorage(() => persistStorage),
       // Exclude transient UI-only state from the persisted snapshot.
       partialize: (s) => ({
-        activeScreen:    s.activeScreen,
+        activeWorkspace:    s.activeWorkspace,
         tabs:            s.tabs,
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
@@ -53,6 +59,7 @@ export const useAppStore = create<AppStore>()(
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
+        paneWslDistro:   s.paneWslDistro,
         paneWasClaude:   s.paneWasClaude,
         paneDirectorDrive: s.paneDirectorDrive,
         paneDirectorMode: s.paneDirectorMode,
@@ -68,6 +75,7 @@ export const useAppStore = create<AppStore>()(
         automationsTab:  s.automationsTab,
         pageTabOrder:    s.pageTabOrder,
         settingsSection: s.settingsSection,
+        sandboxNudgeDismissCount: s.sandboxNudgeDismissCount,
         perfConfig:      s.perfConfig,
         logConfig:       s.logConfig,
         idleReaper:      s.idleReaper,
@@ -77,7 +85,6 @@ export const useAppStore = create<AppStore>()(
         paneRoleGlobs:   s.paneRoleGlobs,
         paneRepos:       s.paneRepos,
         paneFlows:       s.paneFlows,
-        kbBlocks:        s.kbBlocks,
         claudeApiKey:    s.claudeApiKey,
         llmProvider:     s.llmProvider,
         llmModel:        s.llmModel,
@@ -87,14 +94,13 @@ export const useAppStore = create<AppStore>()(
         schedules:            s.schedules,
         commands:             s.commands,
         automations:          s.automations,
-        allowedCommands:      s.allowedCommands,
         deniedCommands:       s.deniedCommands,
-        projectAllowedCommands: s.projectAllowedCommands,
-        repoAllowedCommands:    s.repoAllowedCommands,
         autoFocusMode:        s.autoFocusMode,
         autoAdvanceOnReply:   s.autoAdvanceOnReply,
         autoResumeClaude:     s.autoResumeClaude,
         injectionHardGate:    s.injectionHardGate,
+        bypassPermissions:    s.bypassPermissions,
+        sandboxConsoles:      s.sandboxConsoles,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
         allowGateOverride:    s.allowGateOverride,
@@ -116,9 +122,6 @@ export const useAppStore = create<AppStore>()(
         projectStartupPromptDoc: s.projectStartupPromptDoc,
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
         repoTriagePromptDoc:     s.repoTriagePromptDoc,
-        refContextDefault:       s.refContextDefault,
-        refContextProject:       s.refContextProject,
-        refContextRepo:          s.refContextRepo,
         configProfiles:       s.configProfiles,
         planSections:          s.planSections,
         planConfirmedSections: s.planConfirmedSections,
@@ -127,7 +130,6 @@ export const useAppStore = create<AppStore>()(
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedSections:   s.planSkippedSections,
-        planKbAssignments:     s.planKbAssignments,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
         projectBlueprintId:    s.projectBlueprintId,
@@ -175,9 +177,6 @@ export const useAppStore = create<AppStore>()(
         // Migrate the legacy unified `extensions` list → split `mcpServers` / `hooks` slices and
         // the renamed MCP route key (#mcp-hooks-split). One-time; no-op once migrated.
         migrateLegacyExtensions(state);
-        // The Knowledge Store screen was removed; send a user whose last screen was it
-        // back to the console rather than a blank canvas.
-        if (state && (state.activeScreen as string) === "knowledge") state.activeScreen = "console";
         // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
         // a user whose last mode was it would otherwise land on a blank canvas.
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
@@ -189,6 +188,11 @@ export const useAppStore = create<AppStore>()(
         // imported blueprints are left untouched.
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
+        }
+        // Same idea for permission profiles: refresh the built-ins from the role JSON, drop retired
+        // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
+        if (state?.agentProfiles) {
+          state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
         }
         // Hydrate user blueprints from their on-disk dir (#blueprints): union them in (so one that
         // survived a store reset or a fresh download appears), and migrate any persisted-but-not-yet-
@@ -212,7 +216,7 @@ export const useAppStore = create<AppStore>()(
           }
           for (const b of useAppStore.getState().blueprints) {
             if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
-              void invoke("write_blueprint", { id: b.id, json: JSON.stringify(b) }).catch(() => {});
+              fireInvoke("write_blueprint", { id: b.id, json: JSON.stringify(b) });
             }
           }
         }).catch(() => {});

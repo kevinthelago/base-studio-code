@@ -1,0 +1,19 @@
+/* DataTableRow + DataTableHeader — the columnar table archetype of the row vocabulary (#1865; sibling:
+   CardListRow). A shared `template` (grid-template-columns) on the header and every row keeps the
+   columns aligned; the row supplies zebra striping + hover + selection chrome. Cell content is the
+   caller's. Chrome derives from the ex-SkillsListView header + skill-row inline styles. */
+.dt-header {
+  display: grid; align-items: center; gap: 10px; height: 32px; padding: 0 18px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--fg-dim); position: sticky; top: 0; z-index: 6;
+}
+.dt-row {
+  display: grid; align-items: center; gap: 10px; height: 37px; padding: 0 18px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border-soft); cursor: pointer;
+  transition: background .1s;
+}
+.dt-row.odd { background: var(--bg-elev); }
+.dt-row:hover { background: var(--bg-elev2); }
+.dt-row.selected { background: color-mix(in oklch, var(--accent), transparent 88%); }
+.dt-row.off { opacity: .55; }

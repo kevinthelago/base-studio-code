@@ -1,0 +1,31 @@
+/* SegmentedControl (#1874) — the shared mutually-exclusive / multi-toggle button group. Absorbs the
+   ex `.scope`/`.seg`/`.pill-group` (padded) and `.tri` (joined) widgets; tones cover allow/ask/deny. */
+.seg-ctl { display: inline-flex; align-items: center; }
+.seg-ctl-label { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .08em; margin-right: 8px; }
+
+.seg-grp { display: inline-flex; }
+.seg-btn { border: 0; background: transparent; color: var(--fg-muted); font-family: var(--mono); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.seg-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* sizes */
+.seg-grp.size-sm .seg-btn { height: 22px; padding: 0 10px; font-size: 10.5px; }
+.seg-grp.size-md .seg-btn { height: 24px; padding: 0 14px; font-size: 10.5px; }
+
+/* padded — gapped pill buttons in a padded container */
+.seg-grp.padded { gap: 3px; padding: 3px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+.seg-grp.padded .seg-btn { border: 1px solid transparent; border-radius: 4px; }
+.seg-grp.padded .seg-btn:hover { color: var(--fg); }
+.seg-grp.padded .seg-btn.on { background: var(--bg-canvas); }
+.seg-grp.padded .seg-btn.on.tone-accent { color: var(--accent); border-color: var(--accent-dim); }
+.seg-grp.padded .seg-btn.on.tone-allow { color: var(--success); border-color: color-mix(in oklch, var(--success), transparent 60%); background: color-mix(in oklch, var(--success), transparent 88%); }
+.seg-grp.padded .seg-btn.on.tone-ask { color: var(--accent); border-color: var(--accent-dim); background: color-mix(in oklch, var(--accent), transparent 86%); }
+.seg-grp.padded .seg-btn.on.tone-deny { color: var(--danger); border-color: color-mix(in oklch, var(--danger), transparent 60%); background: color-mix(in oklch, var(--danger), transparent 88%); }
+
+/* joined — a tight shared-border bar */
+.seg-grp.joined { gap: 0; border: 1px solid var(--border-soft); border-radius: 5px; overflow: hidden; }
+.seg-grp.joined .seg-btn { background: var(--bg-canvas); color: var(--fg-dim); border-left: 1px solid var(--border-soft); font-size: 9.5px; }
+.seg-grp.joined .seg-btn:first-child { border-left: 0; }
+.seg-grp.joined .seg-btn.on.tone-accent { color: var(--accent); background: color-mix(in oklch, var(--accent), transparent 82%); }
+.seg-grp.joined .seg-btn.on.tone-allow { color: var(--success); background: color-mix(in oklch, var(--success), transparent 82%); }
+.seg-grp.joined .seg-btn.on.tone-ask { color: var(--accent); background: color-mix(in oklch, var(--accent), transparent 82%); }
+.seg-grp.joined .seg-btn.on.tone-deny { color: var(--danger); background: color-mix(in oklch, var(--danger), transparent 82%); }

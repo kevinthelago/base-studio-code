@@ -84,6 +84,104 @@ pub(crate) fn forget_pane(pane_id: &str) {
     }
 }
 
+/// The project key a ledger pane id belongs to: everything before the first `:` of an identity
+/// id (`<key>:<stream>` / `<key>:director` / `<key>:<repo>:triage`). `None` for a manual scratch
+/// pane (`man:…`, never project-owned) or a key-less positional id (`t<idx>p<idx>`).
+pub(crate) fn project_key_of(pane_id: &str) -> Option<&str> {
+    if pane_id.starts_with("man:") {
+        return None;
+    }
+    match pane_id.split_once(':') {
+        Some((key, _)) if !key.is_empty() => Some(key),
+        _ => None,
+    }
+}
+
+/// Pure split of a project's reap (#1279): of every ledger entry, partition out the ones belonging
+/// to `key` (`<key>:…` identity panes) — return the live pids to tree-kill and the survivors to keep.
+/// A dead pid is simply dropped (nothing to kill). Manual/positional panes never match a project key.
+pub(crate) fn select_project_shells(
+    entries: &[LedgerEntry],
+    key: &str,
+    probe: &impl ProcProbe,
+) -> (Vec<u32>, Vec<LedgerEntry>) {
+    let mut kill = Vec::new();
+    let mut keep = Vec::new();
+    for e in entries {
+        if project_key_of(&e.pane_id) == Some(key) {
+            if probe.alive(e.pid) {
+                kill.push(e.pid);
+            }
+            // forgotten either way (killed or already dead) — not pushed to `keep`
+        } else {
+            keep.push(e.clone());
+        }
+    }
+    (kill, keep)
+}
+
+/// Reap a deleted project's still-running shells (#1279): tree-kill every live pid whose ledger
+/// pane id is `<key>:…` and forget all of the project's ledger entries, so a deleted project's
+/// shells can't survive as orphaned pids that discovery would surface as unrestorable. Returns the
+/// count of live shells killed (for logging). Best-effort: a missing/empty ledger is a no-op.
+pub(crate) fn reap_project_shells(key: &str) -> usize {
+    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let entries = load_unlocked();
+    if entries.is_empty() {
+        return 0;
+    }
+    let (kill, keep) = select_project_shells(&entries, key, &OsProbe);
+    for pid in &kill {
+        log::warn!("[pty-reaper] reaping shell pid={pid} of deleted project {key:?}");
+        tree_kill(*pid);
+    }
+    if keep.len() != entries.len() {
+        save_unlocked(&keep);
+    }
+    kill.len()
+}
+
+/// Pure split for reaping ONE session by its identity pane id (#1266 "Discard"): return its live pid
+/// to tree-kill (if any) and the survivors to keep. A dead/absent pid kills nothing. Testable with a
+/// fake probe.
+pub(crate) fn select_session_shell(
+    entries: &[LedgerEntry],
+    pane_id: &str,
+    probe: &impl ProcProbe,
+) -> (Option<u32>, Vec<LedgerEntry>) {
+    let mut kill = None;
+    let mut keep = Vec::new();
+    for e in entries {
+        if e.pane_id == pane_id {
+            if probe.alive(e.pid) {
+                kill = Some(e.pid);
+            }
+            // dropped from `keep` either way (killed or already dead → forgotten)
+        } else {
+            keep.push(e.clone());
+        }
+    }
+    (kill, keep)
+}
+
+/// Reap ONE discovered session by its identity pane id (#1266 "Discard"): tree-kill its still-running
+/// shell (if any) and forget its ledger entry. Backs the recovery panel's Discard action for an
+/// orphaned/unwanted session. Returns true if a live shell was killed. Best-effort: an unknown pane id
+/// is a no-op (returns false).
+pub(crate) fn reap_session(pane_id: &str) -> bool {
+    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let entries = load_unlocked();
+    let (kill, keep) = select_session_shell(&entries, pane_id, &OsProbe);
+    if let Some(pid) = kill {
+        log::warn!("[pty-reaper] reaping discarded session pid={pid} pane={pane_id:?}");
+        tree_kill(pid);
+    }
+    if keep.len() != entries.len() {
+        save_unlocked(&keep);
+    }
+    kill.is_some()
+}
+
 /// Drop every entry this app instance owns. Called from `kill_all_pty_sessions` (clean exit), so a
 /// graceful shutdown leaves the ledger clean and the next boot has nothing to reconcile.
 pub(crate) fn forget_all_owned() {
@@ -338,6 +436,58 @@ mod tests {
         assert!(token_ok(Some(42), 42)); // exact match
         assert!(!token_ok(Some(43), 42)); // mismatch (recycled)
         assert!(!token_ok(None, 42)); // had a token, can't read now → conservative skip
+    }
+
+    #[test]
+    fn project_key_of_parses_identity_ids() {
+        assert_eq!(project_key_of("proj:auth-ui"), Some("proj"));
+        assert_eq!(project_key_of("proj:director"), Some("proj"));
+        assert_eq!(project_key_of("proj:own/web:triage"), Some("proj"));
+        assert_eq!(project_key_of("man:scratch:p0"), None); // manual — never project-owned
+        assert_eq!(project_key_of("t0p1"), None); // positional — no key
+        assert_eq!(project_key_of(":bad"), None); // empty key
+    }
+
+    /// #1279: reaping a deleted project's shells kills its LIVE pids and forgets ALL its ledger
+    /// entries (live or dead), while every other project's entries are kept untouched.
+    #[test]
+    fn select_project_shells_kills_and_forgets_only_the_deleted_project() {
+        let entries = vec![
+            LedgerEntry { pid: 100, pane_id: "gone:auth".into(), owner_pid: 1, start_token: 0 }, // live → KILL + forget
+            LedgerEntry { pid: 101, pane_id: "gone:director".into(), owner_pid: 1, start_token: 0 }, // dead → forget only
+            LedgerEntry { pid: 102, pane_id: "keep:api".into(), owner_pid: 1, start_token: 0 }, // other project → KEEP
+            LedgerEntry { pid: 103, pane_id: "man:s:p0".into(), owner_pid: 1, start_token: 0 }, // manual → KEEP
+        ];
+        let probe = Fake {
+            alive: HashSet::from([100, 102, 103]), // 101 (gone's director) is dead
+            tokens: HashMap::new(),
+        };
+        let (kill, keep) = select_project_shells(&entries, "gone", &probe);
+        assert_eq!(kill, vec![100]); // only the deleted project's LIVE shell is killed
+        // Both of "gone"'s entries are dropped; the other project + manual survive.
+        assert_eq!(
+            keep.iter().map(|e| e.pane_id.as_str()).collect::<Vec<_>>(),
+            vec!["keep:api", "man:s:p0"],
+        );
+    }
+
+    #[test]
+    fn select_session_shell_kills_live_and_forgets_only_that_pane() {
+        let entries = vec![
+            LedgerEntry { pid: 200, pane_id: "proj:auth".into(), owner_pid: 1, start_token: 0 }, // target, live → KILL + forget
+            LedgerEntry { pid: 201, pane_id: "proj:api".into(), owner_pid: 1, start_token: 0 },  // other pane → KEEP
+        ];
+        let probe = Fake { alive: HashSet::from([200, 201]), tokens: HashMap::new() };
+        let (kill, keep) = select_session_shell(&entries, "proj:auth", &probe);
+        assert_eq!(kill, Some(200));
+        assert_eq!(keep.iter().map(|e| e.pane_id.as_str()).collect::<Vec<_>>(), vec!["proj:api"]);
+
+        // A dead target is forgotten without a kill; an unknown pane id is a pure no-op (keeps all).
+        let dead = Fake { alive: HashSet::new(), tokens: HashMap::new() };
+        assert_eq!(select_session_shell(&entries, "proj:auth", &dead).0, None);
+        let (k, keep_all) = select_session_shell(&entries, "proj:nope", &probe);
+        assert_eq!(k, None);
+        assert_eq!(keep_all.len(), 2);
     }
 
     #[test]

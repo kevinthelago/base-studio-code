@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -44,7 +45,7 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
 
   if (rows.length === 0) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
+      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
         No runs yet — armed automations record their runs here.
       </div>
     );
@@ -53,10 +54,10 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
   return (
     <>
       <div className="hist-summary">
-        <div className="card"><div className="k">total runs</div><div className="v">{rows.length}</div><div className="sub">across {automations.length} automations</div></div>
-        <div className="card"><div className="k">success rate</div><div className="v success">{succRate}%</div><div className="sub">{ok} ok · {skipped} skipped · {fail} fail</div></div>
-        <div className="card"><div className="k">skipped</div><div className="v">{skipped}</div><div className="sub">target wasn't open</div></div>
-        <div className="card"><div className="k">failed</div><div className="v danger">{fail}</div><div className="sub">dispatch errored</div></div>
+        <StatTile k="total runs" v={rows.length} sub={<>across {automations.length} automations</>} />
+        <StatTile k="success rate" v={`${succRate}%`} tone="success" sub={<>{ok} ok · {skipped} skipped · {fail} fail</>} />
+        <StatTile k="skipped" v={skipped} sub="target wasn't open" />
+        <StatTile k="failed" v={fail} tone="danger" sub="dispatch errored" />
       </div>
 
       <div className="history-toolbar">

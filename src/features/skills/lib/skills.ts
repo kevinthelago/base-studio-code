@@ -8,9 +8,9 @@
 // lib/mcpServers.ts.
 
 import {
-  SKILLS, SKILL_CATALOG, KIND, PROFILE_COLOR,
+  SKILLS, KIND, PROFILE_COLOR,
   type Skill, type SkillKind, type SkillSource, type SkillProfile,
-} from "@/data/skills";
+} from "@/shared/data/skills";
 
 const KIND_KEYS = Object.keys(KIND) as SkillKind[];
 const PROFILE_KEYS = Object.keys(PROFILE_COLOR) as SkillProfile[];
@@ -238,7 +238,7 @@ export function applySessionSkillChoice(
 // ── Task groups (#skills-groups) ────────────────────────────────────────────────
 // A "task group" is a named, reusable bundle of skills (the redesign's ⬡). Many-to-many with
 // skills (a skill can belong to several groups), keyed by stable skill id. A group is the unit of
-// bulk toggling: toggle a group onto a session (manually, Surface B) or onto a fleet stream (the
+// bulk toggling: toggle a group onto a session (manually, Workspace B) or onto a fleet stream (the
 // planner) and every member skill is enabled at once. Groups are LIVE references — editing a
 // group's membership updates every session/stream that has it on, rather than freezing the set.
 
@@ -302,6 +302,8 @@ export function parseSkillGroupsFile(raw: string, all: SkillDef[]): Array<Omit<S
 // Shape handed to `ensure_session_settings` (field names match the Rust SkillCfg).
 
 export interface SkillCfg {
+  /** Stable skilldb id — carried so the backend can count an attach as a use (#A). */
+  id: string;
   name: string;
   description: string;
   prompt: string;
@@ -309,12 +311,13 @@ export interface SkillCfg {
 }
 
 /** Resolved skills → their `.claude/skills/<slug>/SKILL.md` payloads. Skips any
- *  skill whose name slugs to empty (nothing to key the directory on). */
+ *  skill whose name slugs to empty (nothing to key the directory on). Carries the
+ *  stable id so the launch path can count an attach as a use (#A). */
 export function toSkillCfgs(defs: SkillDef[]): SkillCfg[] {
   const out: SkillCfg[] = [];
   for (const s of defs) {
     if (!skillSlug(s.name)) continue;
-    out.push({ name: s.name, description: s.desc, prompt: s.prompt, tools: s.tools });
+    out.push({ id: s.id, name: s.name, description: s.desc, prompt: s.prompt, tools: s.tools });
   }
   return out;
 }
@@ -322,41 +325,6 @@ export function toSkillCfgs(defs: SkillDef[]): SkillCfg[] {
 /** Directory-safe slug for a skill name (matches the Rust slugger). */
 export function skillSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-// ── Catalog templates ─────────────────────────────────────────────────────────
-
-/** A ready-to-add SkillDef (minus id) for a catalog entry — disabled + global by
- *  default; the caller assigns the id and the user fills the prompt/tools. */
-export function defFromCatalog(name: string): Omit<SkillDef, "id"> {
-  // A packaged skill (re-)added from the catalog restores its full def — body,
-  // tools, kind, profiles — not just the one-line description.
-  const packaged = SKILLS.find(s => s.name === name);
-  if (packaged) {
-    const { id: _id, ...rest } = fromSample(packaged);
-    return { ...rest, enabled: false };
-  }
-  const c = SKILL_CATALOG.find(x => x.name === name);
-  const kind = c ? kindForGlyph(c.glyph) : "workflow";
-  return {
-    name,
-    kind,
-    source: c?.by === "first-party" ? "first-party" : c?.by === "team" ? "team" : "community",
-    desc: c?.desc ?? "",
-    prompt: c?.desc ?? "",
-    tools: [],
-    profiles: ["build"],
-    projects: [],
-    enabled: false,
-    pinned: false,
-    invocations: 0, success: 0, avgTokensK: 0, trend: [],
-  };
-}
-
-/** Map a catalog glyph back to a kind (the catalog reuses the KIND glyphs). */
-function kindForGlyph(glyph: string): SkillKind {
-  const hit = KIND_KEYS.find(k => KIND[k].glyph === glyph);
-  return hit ?? "workflow";
 }
 
 /** A blank custom skill, ready for the new-skill form. */

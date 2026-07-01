@@ -16,10 +16,29 @@
   --violet:     oklch(0.72 0.12 300);
   --danger:     oklch(0.68 0.18 25);
 
+  /* session-state + provider hues + accent helpers (used by the console pane chrome and the
+     planner focused pane) — oklch, aligned to the app palette. Formerly scoped to the dropped
+     .console-theme reskin; live in :root so they're defined app-wide. */
+  --state-run:     oklch(0.70 0.14 150);  /* running — green */
+  --state-wait:    oklch(0.80 0.13 80);   /* waiting — amber */
+  --state-idle:    oklch(0.45 0.012 250); /* idle — muted gray */
+  --state-stopped: oklch(0.66 0.17 25);   /* stopped — red */
+  --prov-anthropic: oklch(0.70 0.10 50);
+  --prov-openai:    oklch(0.72 0.08 175);
+  --prov-google:    oklch(0.70 0.12 255);
+  --prov-local:     oklch(0.65 0.012 250);
+  --accent-soft:   oklch(0.27 0.045 70);  /* role-badge / active-row wash — dark amber */
+  --accent-text:   oklch(0.85 0.11 78);   /* accent-on-dark text — bright amber */
+
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
 
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  /* modal chrome (#1776): one scrim color + z-index for every modal/overlay.
+     --z-modal sits above app chrome + menus (≤3000) and below the achievement toast (9999);
+     --z-modal-float is for a fixed toast that must float above its own modal. */
+  --scrim: oklch(0 0 0 / 0.55);
+  --z-modal: 4000; --z-modal-float: 4010;
 }
 
 /* ===== light theme override ===== */
@@ -33,43 +52,6 @@
   --fg:          oklch(0.16 0.005 250);
   --fg-muted:    oklch(0.42 0.008 250);
   --fg-dim:      oklch(0.58 0.008 250);
-}
-
-/* ===== console theme (#1149) — the Live-agent-console "Console Shell" look ===== */
-/* A cool indigo/near-black palette SCOPED to the console surface (applied to the
-   ConsoleScreen root). It overrides the design tokens so the existing pane chrome,
-   views, and menus recolor to the new theme without per-component rewrites, and adds
-   a few helper vars (session-state + LLM-provider hues) the new pane header/footer use.
-   The rest of the app keeps the warm-orange `:root` tokens; lift these to `:root` to go
-   app-wide. Values are taken verbatim from `design/Live agent console design/Console Shell.dc.html`. */
-.console-theme {
-  --bg-canvas:   #070809;  /* pane-grid background (darkest) */
-  --bg-panel:    #0b0d10;  /* pane body */
-  --bg-elev:     #0c0e11;  /* pane header / chrome rows */
-  --bg-elev2:    #15181d;  /* raised chips / inputs */
-  --border:      #262b33;
-  --border-soft: #1a1e24;
-  --fg:          #e7e9ed;
-  --fg-muted:    #7a808a;
-  --fg-dim:      #565c66;
-  --accent:      #5e6ad2;  /* indigo */
-  --accent-dim:  #3a4170;
-  --success:     #46b27f;
-  --info:        #9aa6f0;
-  --violet:      #7d6ae0;
-  --danger:      #db5b54;
-
-  /* Helper vars (new) — session state + provider hues, used by the pane header/footer. */
-  --state-run:     #46b27f;
-  --state-wait:    #d2a24c;
-  --state-idle:    #3a3f48;
-  --state-stopped: #db5b54;
-  --prov-anthropic:#c8825a;
-  --prov-openai:   #5fb3a3;
-  --prov-google:   #5e6ad2;
-  --prov-local:    #969ca6;
-  --accent-soft:   #1a1d3a; /* role-badge / active-row wash */
-  --accent-text:   #9aa6f0; /* accent-on-dark text */
 }
 
 /* ===== reset ===== */
@@ -98,8 +80,6 @@ html, body {
   -webkit-user-select:none; -webkit-app-region:drag;
 }
 .tl-title{ font-size:11px; letter-spacing:0.04em; white-space:nowrap; }
-.tl-meta{ display:flex; gap:14px; font-size:10.5px; }
-.tl-meta b{ color:var(--fg); font-weight:500; }
 
 /* titlebar — macOS: lights left, title centered */
 .titlebar.mac{ padding:0 14px; }
@@ -117,7 +97,6 @@ html, body {
 /* titlebar — Windows/Linux: title left, controls right */
 .titlebar.win{ padding-left:14px; }
 .titlebar.win .tl-title{ flex:1; }
-.titlebar.win .tl-meta{ flex:1; justify-content:flex-end; padding-right:6px; }
 .tl-controls{
   display:flex; align-items:stretch; height:32px;
   -webkit-app-region:no-drag;
@@ -183,7 +162,6 @@ html, body {
   margin-left:5px; padding:0 5px; border-radius:8px; font-size:9.5px;
   background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);
 }
-.tabbar-right{ display:flex; align-items:center; gap:10px; padding-right:6px; align-self:center; }
 /* tear-off preview: a small window mock that follows the cursor when a tab is
    dragged out of the strip (drop = open in a new window, #430). */
 .tab-tearoff-preview{
@@ -253,35 +231,30 @@ html, body {
   background:var(--fg-muted); transition:left .15s, background .15s; }
 .sw.on i{ left:14px; background:#1a120a; }
 .sw.dis{ opacity:.5; cursor:default; }
-/* prompt-module textarea */
-.pm{ width:100%; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md);
-  color:var(--fg-muted); font-family:var(--mono); font-size:11px; line-height:1.65; padding:10px 12px; resize:vertical; min-height:96px; outline:none; }
-.pm:focus{ border-color:var(--accent-dim); color:var(--fg); }
 /* small select + text input */
 .sel{ height:24px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-sm);
   color:var(--fg-muted); font-family:var(--mono); font-size:10px; padding:0 6px; cursor:pointer; outline:none; }
 .sel:focus{ border-color:var(--accent-dim); }
-.ti{ height:28px; width:100%; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-md);
-  color:var(--fg); font-family:var(--mono); font-size:11px; padding:0 10px; outline:none; }
-.ti:focus{ border-color:var(--accent-dim); }
-/* drag handles + drop indicators */
-.drag-handle{ cursor:grab; color:var(--fg-dim); font-size:13px; line-height:1; user-select:none; }
-.drag-handle:active{ cursor:grabbing; }
 .dragging{ opacity:.4; }
-.drop-before{ box-shadow:inset 0 2px 0 0 var(--accent); }
-.drop-after{ box-shadow:inset 0 -2px 0 0 var(--accent); }
 /* small icon button */
 .icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:transparent; color:var(--fg-dim);
   cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
 .icon-btn:hover{ background:var(--bg-elev2); color:var(--fg); }
 .icon-btn.danger:hover{ color:var(--danger); }
+.icon-btn.sm{ width:20px; height:20px; font-size:12px; }
+.icon-btn.xs{ width:16px; height:16px; border-radius:4px; font-size:11px; }
+.icon-btn:disabled{ opacity:.5; cursor:not-allowed; }
 /* modal */
-.overlay{ position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
+.overlay{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
+.overlay.blur{ backdrop-filter:blur(2px); }
 .modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
   border-radius:var(--r-lg); box-shadow:0 20px 60px rgba(0,0,0,.5); }
-/* pulsing status dot */
-@keyframes bp-pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
-.pulse-dot{ width:6px; height:6px; border-radius:50%; background:var(--success); animation:bp-pulse 1.4s ease-in-out infinite; display:inline-block; }
+/* shared centered-modal scrim (#1776) — the single overlay wrapper behind <ModalScrim>/<Dialog> */
+.modal-scrim{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
+.modal-scrim.start{ align-items:flex-start; }
+.modal-scrim.blur{ backdrop-filter:blur(2px); }
+/* a fixed toast/floater that must sit above its own open modal */
+.above-modal{ z-index:var(--z-modal-float); }
 
 .input{
   height:28px; padding:0 10px; border-radius:var(--r-md);
@@ -293,6 +266,14 @@ html, body {
 .field{ display:flex; flex-direction:column; gap:6px; }
 .field label{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }
 .hint{ font-size:10.5px; color:var(--fg-dim); }
+
+/* ===== mono text vocabulary (#typography) — `.mono` is the base font (one place to change it);
+   the semantic classes bake the canonical micro-label / caption / value look. Compose with an
+   inline color/size override for emphasis or a non-canonical variant. ===== */
+.mono { font-family: var(--mono); }
+.mono-label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-dim); }
+.mono-caption { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+.mono-value { font-family: var(--mono); font-size: 12px; color: var(--fg); }
 
 .card{
   background:var(--bg-panel); border:1px solid var(--border-soft);
@@ -306,18 +287,7 @@ html, body {
   border-radius:4px; font-family:var(--mono); font-size:10px;
   color:var(--fg-muted); background:var(--bg-elev);
 }
-.tag{
-  display:inline-flex; align-items:center; padding:1px 7px; border-radius:99px;
-  font-family:var(--mono); font-size:10px; line-height:1.6;
-  background:var(--bg-elev2); color:var(--fg-muted);
-  border:1px solid var(--border-soft);
-}
-.tag.amber{ color:var(--accent); border-color:color-mix(in oklch, var(--accent), transparent 75%);
-  background:color-mix(in oklch, var(--accent), transparent 90%); }
-.tag.green{ color:var(--success); border-color:color-mix(in oklch, var(--success), transparent 75%);
-  background:color-mix(in oklch, var(--success), transparent 90%); }
-.tag.info { color:var(--info);    border-color:color-mix(in oklch, var(--info),    transparent 75%);
-  background:color-mix(in oklch, var(--info),    transparent 90%); }
+/* (.tag retired — every site now composes the shared <Chip tone>, #1874) */
 
 /* image / asset placeholders (striped) */
 .placeholder{
@@ -337,11 +307,7 @@ html, body {
   flex:0 0 5px; align-self:stretch; cursor:col-resize;
   background:transparent; transition:background .12s; touch-action:none;
 }
-.resize-y{
-  flex:0 0 5px; cursor:row-resize;
-  background:transparent; transition:background .12s; touch-action:none;
-}
-.resize-x:hover,.resize-y:hover,.resize-x:active,.resize-y:active{ background:var(--accent-dim); }
+.resize-x:hover,.resize-x:active{ background:var(--accent-dim); }
 
 /* ===== console grid ===== */
 .console-grid{
@@ -356,44 +322,11 @@ html, body {
   overflow:hidden;
 }
 .pane.focused{ border-color:var(--accent-dim); box-shadow:0 0 0 1px color-mix(in oklch, var(--accent), transparent 60%); }
-.pane-head{
-  height:26px; flex:0 0 26px; padding:0 8px; display:flex; align-items:center; gap:8px;
-  background:var(--bg-elev); border-bottom:1px solid var(--border-soft);
-  font-family:var(--mono); font-size:10.5px;
-}
-.pane-head .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); }
-.pane-head .dot.idle{ background:var(--fg-dim); }
-.pane-head .dot.run{ background:var(--accent); animation:pulse 1.4s ease-in-out infinite; }
-.pane-head .name{ color:var(--fg); }
-.pane-head .meta{ color:var(--fg-dim); margin-left:auto; }
-.pane-body{
-  flex:1; min-height:0; padding:8px 10px; overflow:hidden;
-  font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); line-height:1.55;
-}
-.pane-body .msg{ margin-bottom:6px; }
-.pane-body .msg .role{ color:var(--accent); }
-.pane-body .msg.user .role{ color:var(--info); }
-.pane-body .msg.tool .role{ color:var(--success); }
-.pane-input{
-  height:28px; flex:0 0 28px; border-top:1px solid var(--border-soft);
-  background:var(--bg-canvas); padding:0 8px; display:flex; align-items:center; gap:6px;
-  font-family:var(--mono); font-size:10.5px; color:var(--fg-dim);
-}
-.pane-input .chev{ color:var(--accent); }
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
 
 /* Indeterminate progress sweep — a short bar tracking left→right (source-stage scan, #source-pane). */
 @keyframes scan{ 0%{transform:translateX(-100%)} 100%{transform:translateX(320%)} }
-
-@keyframes confirm-flash {
-  0%   { box-shadow: 0 0 0 0 transparent;                                            transform: scale(1);    }
-  20%  { box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent), transparent 30%); transform: scale(1.06); }
-  50%  { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 50%); transform: scale(1.03); }
-  80%  { box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent), transparent 30%); transform: scale(1.06); }
-  100% { box-shadow: 0 0 0 0 transparent;                                            transform: scale(1);    }
-}
-.confirm-flash { animation: confirm-flash 0.6s ease-in-out; }
 
 /* Attention pulse — drawn on incomplete plan sections when the user clicks a locked
    Triage button. Plays a few times then settles, so the flagged state stays visible
@@ -401,42 +334,12 @@ html, body {
 @keyframes attn-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 .attn-pulse { animation: attn-pulse 0.75s ease-in-out 4; }
 
-/* ===== plan section markdown ===== */
-.plan-md { font-size: 12px; color: var(--fg-muted); line-height: 1.7; }
-.plan-md > * { margin: 0 0 6px; }
-.plan-md > *:last-child { margin-bottom: 0; }
-.plan-md p { margin: 0 0 6px; }
-.plan-md h1,.plan-md h2,.plan-md h3,.plan-md h4 {
-  font-family: var(--mono); font-weight: 600;
-  color: var(--fg); margin: 10px 0 4px;
-}
-.plan-md h1 { font-size: 13px; }
-.plan-md h2 { font-size: 12px; }
-.plan-md h3,.plan-md h4 { font-size: 11.5px; }
-.plan-md ul,.plan-md ol { padding-left: 18px; margin: 0 0 6px; }
-.plan-md li { margin-bottom: 3px; }
-.plan-md code {
-  font-family: var(--mono); font-size: 10.5px;
-  background: var(--bg-elev); color: var(--accent);
-  padding: 1px 5px; border-radius: 3px;
-}
-.plan-md pre {
+/* ===== dropdown menu (panel + items) ===== */
+.menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 100;
   background: var(--bg-elev); border: 1px solid var(--border-soft);
-  border-radius: 4px; padding: 10px 12px; overflow-x: auto; margin: 6px 0;
+  border-radius: var(--r-md); padding: 4px 0; box-shadow: 0 6px 22px rgba(0,0,0,0.45);
 }
-.plan-md pre code { background: none; padding: 0; color: var(--fg); }
-.plan-md blockquote {
-  border-left: 3px solid var(--accent-dim);
-  margin: 6px 0; padding: 2px 10px;
-  color: var(--fg-dim);
-}
-.plan-md strong { color: var(--fg); font-weight: 600; }
-.plan-md em { color: var(--fg-muted); }
-.plan-md hr { border: none; border-top: 1px solid var(--border-soft); margin: 8px 0; }
-.plan-md a { color: var(--accent); text-decoration: none; }
-.plan-md a:hover { text-decoration: underline; }
-
-/* ===== dropdown menu items ===== */
 .menu-item {
   width: 100%; padding: 7px 14px; border: none; background: transparent;
   color: var(--fg-muted); font-family: var(--mono); font-size: 11px;
@@ -456,3 +359,10 @@ html, body {
 }
 ::-webkit-scrollbar-thumb:hover { background: oklch(0.50 0.008 250 / 0.8); }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* Shared rail-screen shell (#1821) — the layout every tabbed screen (<Screen>) uses.
+   Features add their own scoping class via Screen's className (e.g. .ext-workspace), so their
+   component CSS keeps working; this just owns the flex-column page/body layout once. */
+.screen { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
+.screen .screen-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.screen .screen-body { flex: 1; overflow: auto; min-width: 0; }

@@ -52,6 +52,7 @@ jobs:
               - '.github/workflows/ci.yml'
             rust:
               - 'src-tauri/**'
+              - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.github/workflows/ci.yml'
@@ -87,7 +88,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: lts/*
           cache: npm
@@ -123,7 +124,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: lts/*
           cache: npm
@@ -132,7 +133,7 @@ jobs:
         run: npm ci
 
       - name: Plan contract (blueprint-driven structural validator)
-        run: npm run test -- --reporter=verbose src/lib/planner/planContract/planContract.test.ts src/lib/planner/planEval/planEval.test.ts
+        run: npm run test -- --reporter=verbose src/features/planner/lib/planContract/planContract.test.ts src/features/planner/lib/planEval/planEval.test.ts
 
   rust:
     name: Rust (check + clippy + test)
@@ -174,13 +175,13 @@ jobs:
             patchelf
 
       - name: Check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo check --workspace
 
       - name: Clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --workspace
 
   # Single always-run check to require on branch protection. The frontend/rust jobs
   # are conditional (skipped when their paths don't change), and a *skipped* required
