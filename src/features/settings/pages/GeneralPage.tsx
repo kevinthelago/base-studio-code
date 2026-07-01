@@ -8,6 +8,7 @@ import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
+import { ConfigBundleCard } from "../cards/ConfigBundleCard";
 
 /** A settings page sub-section header — the group label within a page (scaled-down page h2). */
 function Sub({ children }: { children: string }) {
@@ -29,6 +30,9 @@ export function GeneralPage() {
       <WorkspaceCard />
       <DefaultModelCard />
       <SessionsBehaviorCard />
+
+      <Sub>Configuration</Sub>
+      <ConfigBundleCard />
 
       <Sub>Required dependencies</Sub>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 -4px", fontSize: 12, lineHeight: 1.55 }}>

@@ -165,6 +165,8 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             app::dialog::pick_directory,
+            app::dialog::pick_save_file,
+            app::dialog::pick_open_file,
             data::pick_csv_file,
             data::data_preview_csv,
             data::data_load_csv,
