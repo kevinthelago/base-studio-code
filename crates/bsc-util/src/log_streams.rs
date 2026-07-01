@@ -48,6 +48,10 @@ pub const LOG_STREAMS: &[LogStream] = &[
     // Coordination (#199): the coord emitters (`bsc-landed`/`bsc-ask`/`bsc-answer`/…) append
     // structured `ts·pane·kind·…` events the Coordination inbox reads.
     LogStream { key: "coord", env_var: "BSC_COORD_LOG", filename: "coord.log", reader_stream: true },
+    // Permission denials (#1607 slice 2): the deny hooks — `bsc-confine`/`bsc-scope` (via `__bsc_perm`)
+    // and the Rust `bsc hook bash-deny` — append one `ts·pane·gate·verdict·target·reason` line per
+    // block, so a denial is joinable to its session in `bsc logs perm`/`session` (it was unlogged).
+    LogStream { key: "perm", env_var: "BSC_PERM_LOG", filename: "perm.log", reader_stream: true },
     // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook appends one
     // `ts·pane·session_id·transcript_path` line; `read_token_usage` parses + prices the transcript.
     // Read via the separate cost path (`crates/logs::cost`), so NOT a unified reader stream.
@@ -93,6 +97,7 @@ mod tests {
                 ("activity", "activity.log"),
                 ("done", "done.log"),
                 ("coord", "coord.log"),
+                ("perm", "perm.log"),
             ],
         );
         // The token/cost stream is staged + written but read via the cost path, so it's excluded.
