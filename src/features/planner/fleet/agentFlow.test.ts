@@ -4,7 +4,6 @@ import {
   FLOW_AUTONOMY, FLOW_PUSH, FLOW_TRIGGER, FLOW_GATE,
 } from "./agentFlow";
 import { parseFleetFile } from "./planFleet";
-import { parseAgentAssigns } from "../session/planningSession";
 
 describe("agentFlow model", () => {
   it("DEFAULT_FLOW is continuous / auto-pr / per-issue / hard", () => {
@@ -39,23 +38,10 @@ describe("agentFlow model", () => {
   });
 });
 
-describe("flow round-trips through both plan channels", () => {
-  it("parseAgentAssigns reads autonomy/push/trigger/gate attrs", () => {
-    const text = `<agent_assign id="auth-ui" repo="o/r" autonomy="confirm" push="push-confirm" trigger="per-stage" gate="soft" />`;
-    const [s] = parseAgentAssigns(text);
-    expect(s.flow).toEqual({ autonomy: "confirm", push: "push-confirm", trigger: "per-stage", gate: "soft" });
-  });
-
-  it("parseAgentAssigns leaves flow undefined when no flow attrs present (pre-flow plans)", () => {
-    const [s] = parseAgentAssigns(`<agent_assign id="x" repo="o/r" owns="src/**" />`);
-    expect(s.flow).toBeUndefined();
-  });
-
-  it("a single flow attr materializes a full flow with defaults for the rest", () => {
-    const [s] = parseAgentAssigns(`<agent_assign id="x" repo="o/r" push="none" />`);
-    expect(s.flow).toEqual({ ...DEFAULT_FLOW, push: "none" });
-  });
-
+describe("flow round-trips through the fleet channel", () => {
+  // (Flow-attr parsing itself is covered by the flowOrUndefined/normalizeFlow tests above; the old
+  // <agent_assign> tag channel was removed in the tag→bsc migration, so the fleet.json channel is
+  // the only one left.)
   it("parseFleetFile reads stream.flow (and the previously-dropped profile)", () => {
     const raw = JSON.stringify({
       recommended: 1,

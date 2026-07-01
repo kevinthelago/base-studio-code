@@ -125,12 +125,12 @@ pub(crate) fn setup_workspaces(
     // Write automations catalogue so Claude can reference and assign them.
     let mut auto_md = String::from(
         "# Automations Catalogue\n\n\
-         Suggest assigning an automation to this project with a single-line tag:\n\
-         `<automation_assign name=\"...\" command=\"...\" schedule=\"0 9 * * 1-5\" description=\"...\" />`\n\n\
-         The `schedule` field is a cron expression (omit for one-shot commands).\n\n"
+         Assign an automation to this project with the bundled `bsc` CLI:\n\
+         `bsc plan automations add \"<name>\" --command \"<cmd>\" --schedule \"0 9 * * 1-5\" --description \"<text>\"`\n\n\
+         `--schedule` is a cron expression (omit for one-shot commands); `bsc plan automations list` shows the set.\n\n"
     );
     if automations.is_empty() {
-        auto_md.push_str("_No saved automations yet — suggest new ones using the tag above._\n");
+        auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
     } else {
         auto_md.push_str("## Saved automations\n\n");
         for a in &automations {
