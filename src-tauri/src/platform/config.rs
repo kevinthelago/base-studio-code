@@ -41,6 +41,19 @@ fn load_from(root: &Path, rel: &str) -> String {
         .to_string()
 }
 
+/// The EMBEDDED seed's text for `rel`, IGNORING any on-disk override — the shipped artifact. For
+/// tests that validate the packaged content (drift guards, prompt/protocol-content assertions): they
+/// must stay independent of a developer's local config-dir edits, so they read the seed directly, not
+/// [`load_str`]. Returns `""` if `rel` isn't in the packaged tree.
+#[cfg(test)]
+pub(crate) fn embedded_str(rel: &str) -> String {
+    EMBEDDED
+        .get_file(rel)
+        .and_then(|f| f.contents_utf8())
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
 /// so a user edit is never clobbered. Idempotent — safe to call on every boot. Best-effort; on an I/O
 /// error the embedded fallback stays in force, so a seed failure is non-fatal.
