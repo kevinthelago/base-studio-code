@@ -79,6 +79,7 @@ pub fn canonical_stream(name: &str) -> Option<&'static str> {
         "activity" => Some("activity"),
         "done" => Some("done"),
         "coord" => Some("coord"),
+        "perm" | "perms" | "deny" | "denials" => Some("perm"),
         _ => None,
     }
 }
@@ -107,6 +108,12 @@ fn parse_line(stream: &'static str, line: &str) -> Option<LogEvent> {
         "done" => mk(f[1].into(), "done".into(), vec![]),
         // ts·pane·kind·a·b
         "coord" => mk(f[1].into(), format!("{} {} {}", f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&""), f.get(4).unwrap_or(&"")).trim().into(), f[2..].to_vec()),
+        // ts·pane·gate·verdict·target·reason (#1607 slice 2) — a permission denial from a deny hook.
+        "perm" => mk(
+            f[1].into(),
+            format!("{} {} {}", f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&""), f.get(4).unwrap_or(&"")).trim().into(),
+            f[2..].to_vec(),
+        ),
         // #1743: new lines are ts·pane·server·tool·outcome·ms·detail (7 cols); legacy lines have no
         // pane (ts·server·tool·outcome·ms·detail, 6 cols → unattributed "?"). Detect by column count.
         "mcp" => {
@@ -323,6 +330,29 @@ mod tests {
         assert_eq!(hooks[0].fields, vec!["PreToolUse", "Block PII", "block"]);
         assert_eq!(hooks[1].session, "?");
         assert_eq!(hooks[1].summary, "PostToolUse Auto-format ok");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn parses_perm_denials_and_tags_pane() {
+        // #1607 slice 2: perm.log is ts·pane·gate·verdict·target·reason — one row per deny-hook block.
+        // The Rust bash-deny writes epoch-ms ts; the shell hooks write epoch-ms too — both parse.
+        let d = tmp();
+        std::fs::write(
+            d.join("perm.log"),
+            "1782468000000\tk:web\tscope\tblock\tsrc/App.tsx\toutside the write scope\n\
+             1782468000001\tk:web\tdeny\tblock\tgit push --force\tthe built-in dangerous-command floor\n",
+        ).unwrap();
+
+        let perm = read_stream(&d, "perm");
+        assert_eq!(perm.len(), 2);
+        assert_eq!(perm[0].session, "k:web");
+        assert_eq!(perm[0].stream, "perm");
+        assert_eq!(perm[0].summary, "scope block src/App.tsx");
+        assert_eq!(perm[0].fields, vec!["scope", "block", "src/App.tsx", "outside the write scope"]);
+        assert_eq!(perm[1].summary, "deny block git push --force");
+        // The alias resolves to the canonical stream.
+        assert_eq!(canonical_stream("denials"), Some("perm"));
         let _ = std::fs::remove_dir_all(&d);
     }
 
