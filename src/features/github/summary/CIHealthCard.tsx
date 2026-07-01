@@ -1,5 +1,6 @@
 // CI health card — pass/fail matrix over the last 7 days per repo (#1644).
 
+import { Text } from "@/shared/ui/typography/Text";
 import type { CiRow } from "../lib/githubSummary";
 
 export function CIHealthCard({ matrix, loading }: {
@@ -13,12 +14,12 @@ export function CIHealthCard({ matrix, loading }: {
         <span className="hint">last 7 days · all branches</span>
       </div>
       {matrix.length === 0 && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No CI runs found.</div>
+        <Text mono size="sm" tone="dim" as="div" style={{ padding: "4px 0" }}>No CI runs found.</Text>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {matrix.map(({ name, days }) => (
           <div key={name} style={{ display: "grid", gridTemplateColumns: "80px 1fr 28px", gap: 8, alignItems: "center" }}>
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+            <Text mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</Text>
             <div style={{ display: "flex", gap: 4 }}>
               {days.map((d, i) => (
                 <div key={i} style={{
@@ -28,9 +29,9 @@ export function CIHealthCard({ matrix, loading }: {
                 }} />
               ))}
             </div>
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", textAlign: "right" }}>
+            <Text mono size={10.5} tone="dim" style={{ textAlign: "right" }}>
               {days.filter(d => d === true).length}/{days.filter(d => d !== null).length}
-            </span>
+            </Text>
           </div>
         ))}
       </div>
