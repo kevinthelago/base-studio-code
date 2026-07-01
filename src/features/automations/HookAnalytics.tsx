@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FillBar } from "@/shared/ui/data/FillBar";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
-import { StatCard, StackedDayBars } from "@/shared/ui/charts";
+import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
 
 // Hook Analytics tab (#865 PR 2) — KPI cards + 3 charts over the hook-fire telemetry
 // (~/.base-studio-code/hooks.log via read_hook_log + hookTelemetry.ts). The over-time chart + KPI
@@ -53,57 +52,25 @@ export function HookAnalyticsTab() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {/* Fires per hook */}
-        <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Fires per hook</h3>
-            <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>by event · matcher</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-            {an.perHook.length === 0 && <span className="hint">No hook fires recorded yet.</span>}
-            {an.perHook.map(h => (
-              <div key={h.hook}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{h.hook}</span>
-                  <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{h.event}</span>
-                  <div style={{ flex: 1 }} />
-                  <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{h.fires}</span>
-                </div>
-                <FillBar value={h.fires / maxHookFires} />
-              </div>
-            ))}
-          </div>
-        </div>
+        <TelemetryPanel title="Fires per hook" hint="by event · matcher">
+          <ItemBars
+            rows={an.perHook.map(h => ({ key: h.hook, label: h.hook, meta: h.event, value: h.fires, fraction: h.fires / maxHookFires }))}
+            empty={<span className="hint">No hook fires recorded yet.</span>}
+          />
+        </TelemetryPanel>
 
         {/* Blocks vs allows */}
-        <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Blocks vs allows</h3>
-            <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>PreToolUse hooks only</span>
-          </div>
+        <TelemetryPanel title="Blocks vs allows" hint="PreToolUse hooks only">
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {an.perPreHook.length === 0 && <span className="hint">No PreToolUse decisions yet.</span>}
-            {an.perPreHook.map(p => {
-              const tot = Math.max(1, p.allows + p.blocks);
-              return (
-                <div key={p.hook}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{p.hook}</span>
-                    <div style={{ flex: 1 }} />
-                    <span className="mono" style={{ fontSize: 10, color: "var(--success)" }}>{p.allows} allow</span>
-                    <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{p.blocks} block</span>
-                  </div>
-                  <div style={{ height: 10, borderRadius: 99, overflow: "hidden", display: "flex", background: "var(--bg-elev2)" }}>
-                    <div style={{ height: "100%", width: `${(p.allows / tot) * 100}%`, background: "var(--success)" }} />
-                    <div style={{ height: "100%", width: `${(p.blocks / tot) * 100}%`, background: "var(--danger)" }} />
-                  </div>
-                </div>
-              );
-            })}
+            {an.perPreHook.map(p => (
+              <SplitBar key={p.hook} label={p.hook} a={p.allows} b={p.blocks} aLabel="allow" bLabel="block" />
+            ))}
           </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
             Parsed from <span className="mono" style={{ color: "var(--fg-muted)" }}>~/.base-studio-code/hooks.log</span> via <span className="mono" style={{ color: "var(--fg-muted)" }}>hookTelemetry.ts</span> — one line per fire (ts · event · hook · outcome).
           </div>
-        </div>
+        </TelemetryPanel>
       </div>
     </div>
   );

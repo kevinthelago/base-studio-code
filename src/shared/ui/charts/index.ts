@@ -11,3 +11,6 @@ export {
 export {
   fmt, StatCard, CardHead, RangeToggle, Avatar, useTip, type StatTone,
 } from "./primitives";
+export {
+  TelemetryPanel, ItemBars, SplitBar, type ItemBarRow,
+} from "./telemetry";
