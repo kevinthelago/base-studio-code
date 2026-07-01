@@ -630,6 +630,139 @@ pub(crate) fn sandbox_read_file(path: String) -> Result<String, String> {
     sandbox_read(&path)
 }
 
+/// Workspace CONTROL files the plan-section sweep excludes — mirrors the private list in
+/// `ingest_section_files` (platform/fsx.rs), so the sandbox reader can't drift from the host reader.
+const SECTION_CONTROL_FILES: &[&str] = &["CLAUDE.md", "automations.md", "extensions.md", "github_context.md", "fleet.json"];
+
+/// Parse the NUL-delimited `<path>\n<content>` dump from [`read_sandbox_plan_sections`]' wsl script
+/// into the `{stem: content}` map, applying the SAME rules as `ingest_section_files`: skip control
+/// files, key by file stem, trim, drop empties. Root records precede `discovery/` ones so a discovery
+/// section overrides a stale root copy (last write wins). Pure — unit-tested against a live dump.
+fn parse_section_dump(dump: &str) -> std::collections::HashMap<String, String> {
+    let mut sections = std::collections::HashMap::new();
+    for rec in dump.split('\0') {
+        let Some((path, content)) = rec.split_once('\n') else { continue };
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if SECTION_CONTROL_FILES.contains(&name) { continue; }
+        let stem = name.rsplit_once('.').map(|(s, _)| s).unwrap_or(name);
+        let content = content.trim();
+        if !stem.is_empty() && !content.is_empty() {
+            sections.insert(stem.to_string(), content.to_string());
+        }
+    }
+    sections
+}
+
+/// Read a sandboxed project's plan sections from the DISTRO hub (#1988) — the sandbox-side mirror of
+/// `read_plan_sections`, so the planner's right pane reflects the sections a sandboxed planner writes
+/// INSIDE the cage. One `wsl` exec dumps every `.md`/`.json` under the hub root + `discovery/`; the
+/// control-file / stem / trim / discovery-wins semantics match `ingest_section_files` (via
+/// [`parse_section_dump`]). Empty map on a not-yet-relocated hub (the glob simply matches nothing).
+#[tauri::command]
+pub(crate) fn read_sandbox_plan_sections(key: String) -> Result<std::collections::HashMap<String, String>, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let hub = sh_squote(&sandbox_project_path(&key));
+    // Root globs first, then discovery/ — later records win (matches read_plan_sections' ingest order).
+    let script = format!(
+        "for f in {hub}/*.md {hub}/*.json {hub}/discovery/*.md {hub}/discovery/*.json; do [ -f \"$f\" ] || continue; printf '%s\\n' \"$f\"; cat \"$f\"; printf '\\0'; done"
+    );
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(decode_wsl(&out.stderr).trim().to_string());
+    }
+    Ok(parse_section_dump(&decode_wsl(&out.stdout)))
+}
+
+/// Read a file's raw bytes from the sandbox distro (#1988) — binary-safe, for the SQLite `plan.db`.
+/// The distro `base64`-encodes the file so the transfer over the `wsl` pipe is pure ASCII (raw binary
+/// stdout gets mangled by the Windows console layer — verified); we keep only the base64 alphabet
+/// (stripping any wrapping/CR wsl adds) and decode. Round-trip verified byte-exact against the distro.
+fn sandbox_read_bytes(linux_path: &str) -> Result<Vec<u8>, String> {
+    let script = format!("base64 -w0 {}", sh_squote(linux_path));
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(decode_wsl(&out.stderr).trim().to_string());
+    }
+    let b64: String = decode_wsl(&out.stdout)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='))
+        .collect();
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()).map_err(|e| format!("base64 decode: {e}"))
+}
+
+/// Mirror a sandboxed project's `plan.db` from the distro hub back to the HOST hub (#1988), so every
+/// host-side plan.db reader (`plan_list_issues`/`plan_get_fleet`/… the poll uses, plus publish + fleet
+/// launch) reflects what the in-cage planner wrote. Called each poll tick while a planner runs
+/// sandboxed. A no-op — `Ok(false)` — when there's no in-distro db yet or its bytes are unchanged
+/// (so an identical db never churns the file or its readers); `Ok(true)` when it copied.
+#[tauri::command]
+pub(crate) fn sync_sandbox_plan_db(key: String) -> Result<bool, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let distro_db = format!("{}/plan.db", sandbox_project_path(&key));
+    let bytes = match sandbox_read_bytes(&distro_db) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return Ok(false), // the sandboxed planner hasn't written a plan.db yet — nothing to sync
+    };
+    let host_db = crate::platform::paths::project_dir(&key).join("plan.db");
+    if std::fs::read(&host_db).map(|h| h == bytes).unwrap_or(false) {
+        return Ok(false); // unchanged
+    }
+    if let Some(parent) = host_db.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&host_db, &bytes).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// The https clone URL for a `owner/name` repo, with a GitHub PAT injected for private repos (empty
+/// token → a plain public URL). Pure — kept out of [`sandbox_clone_repo`] so it can be unit-tested
+/// without leaking the token into a test that shells out.
+fn clone_url(repo: &str, token: &str) -> String {
+    if token.is_empty() {
+        format!("https://github.com/{repo}.git")
+    } else {
+        format!("https://{token}@github.com/{repo}.git")
+    }
+}
+
+/// Clone a linked repo (`owner/name`) INTO the sandbox distro's project hub (#1988) — the foundation
+/// for running triage/fleet inside the cage: repos are git-CLONED in-distro (not file-copied over the
+/// wsl pipe, which `copy_dir_to_sandbox` skips). The sealed distro has git + network + ca-certs
+/// (verified — a plain https clone succeeds), so this just runs `git clone` there; `token` authorizes
+/// a private repo. Idempotent (a re-clone of an existing checkout is skipped). Returns the distro
+/// clone path. Any token echoed in git's error output is redacted.
+#[tauri::command]
+pub(crate) fn sandbox_clone_repo(key: String, repo: String, token: String) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let dest = format!("{}/{}", sandbox_project_path(&key), short);
+    let script = format!(
+        "test -d {dest}/.git && exit 0; rm -rf {dest}; git clone {url} {dest}",
+        dest = sh_squote(&dest), url = sh_squote(&clone_url(&repo, &token)),
+    );
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(dest)
+    } else {
+        let mut err = decode_wsl(&out.stderr).trim().to_string();
+        if !token.is_empty() { err = err.replace(&token, "***"); }
+        Err(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +778,26 @@ mod tests {
     fn sh_squote_wraps_and_escapes() {
         assert_eq!(sh_squote("/home/agent/x"), "'/home/agent/x'");
         assert_eq!(sh_squote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn parse_section_dump_matches_ingest_semantics() {
+        // The live wsl dump shape (verified against the distro): `<path>\n<content>`, records
+        // NUL-separated, root globs before discovery/. Control files skipped, empties dropped, keyed
+        // by stem, and a discovery/ section overrides a same-stem root copy (last write wins, #1988).
+        let dump = "/h/goal.md\nroot goal\n\0/h/CLAUDE.md\nspec\n\0/h/empty.md\n\0/h/discovery/goal.md\ndiscovery goal\n\0/h/discovery/scope.md\nthe scope\n\0";
+        let s = parse_section_dump(dump);
+        assert_eq!(s.get("goal").map(String::as_str), Some("discovery goal"), "discovery overrides root");
+        assert_eq!(s.get("scope").map(String::as_str), Some("the scope"));
+        assert!(!s.contains_key("CLAUDE"), "control files excluded");
+        assert!(!s.contains_key("empty"), "empty sections dropped");
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn clone_url_injects_token_for_private_repos_only() {
+        assert_eq!(clone_url("octocat/Hello-World", ""), "https://github.com/octocat/Hello-World.git");
+        assert_eq!(clone_url("acme/private", "ghp_secret"), "https://ghp_secret@github.com/acme/private.git");
     }
 
     #[test]
