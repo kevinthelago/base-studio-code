@@ -11,25 +11,9 @@ import { type IntegrationStrategy, normalizeStrategy } from "../lib/integrationS
 // quotes doesn't silently break tag detection. Mirrors the other planner tags.
 const Q = '["“”]';
 
-const PLAN_FOCUS_RE = () => new RegExp(`<plan_focus\\s+section=${Q}(\\w+)${Q}\\s*\\/>`, "g");
-
-/**
- * Extract the section keys from every `<plan_focus section="key" />` tag in a
- * chunk of (ANSI-stripped) terminal output, in order of appearance. Returns []
- * when none are present.
- */
-export function parsePlanFocus(text: string): string[] {
-  const re = PLAN_FOCUS_RE();
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) out.push(m[1]);
-  return out;
-}
-
-/** Remove every `<plan_focus>` tag from the buffer so it never prints in the terminal. */
-export function stripPlanFocus(text: string): string {
-  return text.replace(PLAN_FOCUS_RE(), "");
-}
+// The `<plan_focus>` stream tag was removed (#2017): the "active topic" card-highlight it drove was
+// dropped in the focused-pane redesign (#652), so it fed a discarded state value. The stepper follows
+// the live session off the section files the planner writes, not a tag.
 
 /**
  * The message injected into Claude's PTY when the user confirms a section in the

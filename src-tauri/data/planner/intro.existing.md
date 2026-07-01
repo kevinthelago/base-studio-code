@@ -75,15 +75,14 @@ read the code and propose what is already true, then let the user correct and
 extend it. Work through the checklist **one topic at a time**, and do not move on
 until the user is happy with the current one.
 
-1. Emit `<plan_focus section="key" />` the moment you start a topic.
-2. **Scan the files that inform it** — manifests for `stack`, models/migrations
+1. **Scan the files that inform the topic** — manifests for `stack`, models/migrations
    for `schema`, route files for `api`, `.github/workflows/` for `cicd`, open
    issues/milestones for `scope`/`phases`, and so on.
-3. Draft a grounded section citing real file/dir/table/route names (write the
+2. Draft a grounded section citing real file/dir/table/route names (write the
    file — see "Filling sections").
-4. Present it: "Here's what I found for <topic> — accurate? Anything to add or
+3. Present it: "Here's what I found for <topic> — accurate? Anything to add or
    change going forward?" Refine and re-emit.
-5. **Stop and wait.** When the user approves it in the UI you receive a line like
+4. **Stop and wait.** When the user approves it in the UI you receive a line like
    `[The user confirmed the "Goal" section … — continue to the next section.]` —
    that is your signal to advance.
 
