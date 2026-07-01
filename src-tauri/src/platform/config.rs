@@ -41,6 +41,15 @@ fn load_from(root: &Path, rel: &str) -> String {
         .to_string()
 }
 
+/// Like [`load_str`] but returns `None` when the surface exists in NEITHER the config dir nor the
+/// embedded seed (vs `""`), so a caller can distinguish "absent" (e.g. an unknown id) from "present".
+pub(crate) fn load_opt(rel: &str) -> Option<String> {
+    if let Ok(s) = std::fs::read_to_string(config_root().join(rel)) {
+        return Some(s);
+    }
+    EMBEDDED.get_file(rel).and_then(|f| f.contents_utf8()).map(str::to_string)
+}
+
 /// The EMBEDDED seed's text for `rel`, IGNORING any on-disk override — the shipped artifact. For
 /// tests that validate the packaged content (drift guards, prompt/protocol-content assertions): they
 /// must stay independent of a developer's local config-dir edits, so they read the seed directly, not
@@ -52,6 +61,24 @@ pub(crate) fn embedded_str(rel: &str) -> String {
         .and_then(|f| f.contents_utf8())
         .unwrap_or_default()
         .to_string()
+}
+
+/// The EMBEDDED files directly under `dir_rel` (non-recursive), as `(file_stem, utf8_contents)` — for
+/// tests that enumerate a packaged surface (e.g. the stage-directive key set), ignoring on-disk
+/// overrides so they validate the SHIPPED set. Empty if the dir isn't packaged.
+#[cfg(test)]
+pub(crate) fn embedded_dir_files(dir_rel: &str) -> Vec<(String, String)> {
+    EMBEDDED
+        .get_dir(dir_rel)
+        .map(|d| {
+            d.files()
+                .filter_map(|f| {
+                    let stem = f.path().file_stem()?.to_string_lossy().into_owned();
+                    Some((stem, f.contents_utf8()?.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
