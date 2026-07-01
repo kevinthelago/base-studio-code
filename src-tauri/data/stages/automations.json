@@ -1,5 +1,5 @@
 {
-  "directive": "**Automations** — propose cron automations (emit `<automation_assign>`).",
+  "directive": "**Automations** — propose cron automations and arm each with `bsc plan automations add <name> --command <cmd> [--schedule <cron>]`.",
   "name": "Automations",
   "glyph": "⚡",
   "gate": "≥1 automation armed",
@@ -16,7 +16,7 @@
     ]
   },
   "blurb": "Cron rules that load context or dispatch commands.",
-  "prompt": "Propose cron-triggered rules that load a knowledge block or dispatch a command\ninto a console pane. Record each rule's trigger, target pane, and cadence. Write\nautomations.md.\n\nGate: at least one automation is armed.",
+  "prompt": "Propose cron-triggered rules that load a knowledge block or dispatch a command\ninto a console pane. Arm each with `bsc plan automations add <name> --command <cmd>\n[--schedule <cron>] [--description <text>]` — omit --schedule for on-demand. You can\nalso keep recipe notes in automations.md, but the gate reads the armed automations.\n\nGate: at least one automation is armed.",
   "icon": "bolt",
   "hue": 145
 }
