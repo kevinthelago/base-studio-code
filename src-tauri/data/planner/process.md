@@ -756,8 +756,7 @@ worker blocks on a permission prompt for that command.
 > single-binary invocations where practical — note that a pipeline can still prompt even
 > when every binary in it is allowed.
 
-(There is no `commands.json` file or `<allow_command>` tag — those were retired; the
-stream's `commands` is the only channel.)
+(The stream's `commands` array is the only channel — there is no `commands.json` file.)
 
 **Declare the agent fleet** (the parallel-execution plan). `bsc plan fleet set` (see
 "Plan the agent fleet") is the authoritative channel; these tags are the fast path that

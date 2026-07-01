@@ -80,7 +80,7 @@ until the user is happy with the current one.
    for `schema`, route files for `api`, `.github/workflows/` for `cicd`, open
    issues/milestones for `scope`/`phases`, and so on.
 3. Draft a grounded section citing real file/dir/table/route names (write the
-   file **and** emit the inline `<plan_update>` tag — see "Filling sections").
+   file — see "Filling sections").
 4. Present it: "Here's what I found for <topic> — accurate? Anything to add or
    change going forward?" Refine and re-emit.
 5. **Stop and wait.** When the user approves it in the UI you receive a line like
