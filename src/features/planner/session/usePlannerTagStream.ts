@@ -19,7 +19,6 @@ import { parseDataModelTag, stripDataModelTags } from "./planningParse";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
-  parseAgentAssigns, stripAgentAssigns, parseFleetPlan, stripFleetPlan,
 } from "./planningSession";
 
 interface TagStreamDeps {
@@ -145,26 +144,9 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     // <allow_command> retired (#1457): command auto-approval is a per-agent profile property
     // now, not a planner-declared project/repo allowlist.
 
-    // ── <fleet_plan recommended="N" reasoning="…" director="true" … /> ─────
-    // The fleet-level header: optimal concurrent session count + reasoning +
-    // whether a director session is recommended. fleet.json is authoritative;
-    // this is the fast path for immediate display before the next poll.
-    const fleetMeta = parseFleetPlan(bufRef.current);
-    if (fleetMeta) {
-      const store = useAppStore.getState();
-      store.setPlanFleetMeta(projIdSnap, fleetMeta.recommended, fleetMeta.reasoning, fleetMeta.strategy); // #C
-      store.setPlanDirector(projIdSnap, fleetMeta.director, fleetMeta.directorRole);
-      bufRef.current = stripFleetPlan(bufRef.current);
-    }
-
-    // ── <agent_assign id="…" repo="…" owns="…" issues="…" … /> ────────────
-    // One per work stream. Merged by id so a re-emitted tag refines in place.
-    const agentStreams = parseAgentAssigns(bufRef.current);
-    if (agentStreams.length > 0) {
-      const store = useAppStore.getState();
-      for (const st of agentStreams) store.addPlanAgentStream(projIdSnap, st);
-      bufRef.current = stripAgentAssigns(bufRef.current);
-    }
+    // Fleet (recommended count + director + per-stream streams) moved to plan.db (#2008) — the planner
+    // records it with `bsc plan fleet set`; the DB poll reflects the WHOLE fleet into planFleet, so the
+    // pre-poll stream tags are gone. (Were <fleet_plan> + <agent_assign>.)
 
     // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
     // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
