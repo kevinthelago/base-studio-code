@@ -18,8 +18,8 @@ echo '{ …the whole blueprint… }' | bsc plan blueprint set   # bsc plan bluep
 ```
 
 The app polls the DB, validates the blueprint, renders it live in the focused pane, and the user
-publishes it from the Review stage — you never publish it yourself. Do NOT write a `blueprint.json`
-file or emit a `<blueprint>` tag; the plan DB is the single source of truth.
+publishes it from the Review stage — you never publish it yourself. Record it with `bsc plan blueprint set`
+(the plan DB is the single source of truth); do NOT write a `blueprint.json` file.
 
 ```
 {

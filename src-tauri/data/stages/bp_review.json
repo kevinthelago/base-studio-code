@@ -16,7 +16,7 @@
     ]
   },
   "blurb": "Validate the blueprint, choose its visibility, and publish it to the catalog.",
-  "prompt": "Review the assembled blueprint with the user: purpose, every stage (intent, prompt, gate, deps,\noptional), and attached capabilities. Emit the FINAL, complete <blueprint> tag. When the user\napproves, THEY publish it to a gist from the footer — you do not publish it yourself.\n\nGate: the assembled blueprint is complete and valid.",
+  "prompt": "Review the assembled blueprint with the user: purpose, every stage (intent, prompt, gate, deps,\noptional), and attached capabilities. Record the FINAL, complete blueprint via `bsc plan blueprint set`. When the user\napproves, THEY publish it to a gist from the footer — you do not publish it yourself.\n\nGate: the assembled blueprint is complete and valid.",
   "icon": "fact_check",
   "hue": 290
 }
