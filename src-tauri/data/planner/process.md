@@ -45,11 +45,6 @@ right panel. Overwrite to refine — each write replaces the previous version.
   with `--full` / `--fields a,b` / `--limit N` / `--since <epoch>`. Don't dump full lists to skim —
   it wastes the context budget; read lean, then drill in.
 
-Mark the topic you are actively discussing so the UI highlights it:
-```
-<plan_focus section="key" />
-```
-
 ## Coverage — record what you skip
 
 **Each discovery file you create is a gate item** — the stage completes once every required
@@ -140,7 +135,7 @@ For each repo `{short}`:
      repo's open issues (priority labels P0–P3, this repo's label/area
      conventions, what "stale" means here), grounded in the plan's priorities.
 5. **Register both** so the app auto-assigns them as that repo's startup prompts
-   (see `<startup_script>` under "App integration tags"). Once registered,
+   (see `bsc plan startup add` under "App integration tags"). Once registered,
    opening this repo's console uses the kickoff and its triage pane uses the
    triage script — no manual assignment needed.
 
@@ -166,8 +161,8 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
   secret values (tokens/connection strings stay blank for the user to fill in the MCP screen).
   Read `extensions.md` for the live list of installed servers; a name not yet installed is
   downloaded from the MCP screen.
-- **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
-  (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
+- **Automations** — assign scheduled/on-demand commands with `bsc plan automations
+  add` (omit `--schedule` for on-demand). Suggest the ones that fit the stack (a daily
   `npm audit`, a lint/test sweep, a dependency-bump check).
 
 Both surface in the project's Automations & extensions UI and persist with the plan.
@@ -270,9 +265,8 @@ files and rarely need a human.
    `auto-pr`|`self-merge`|`push-confirm`|`commit-only`|`none`; `trigger` =
    `per-issue`|`per-stage`|`on-green`; `gate` = `soft`|`hard`. Omit `flow` (or any of its
    fields) to take the default (`continuous` + `auto-pr` + `per-issue` + `hard`). The
-   flat attribute form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top
-   level, as the `<agent_assign>` tag emits) is ALSO accepted on ingest for back-compat,
-   but emit the nested `"flow"` object here.
+   flat form (`"autonomy":…,"push":…,"trigger":…,"gate":…` at the stream's top level) is
+   ALSO accepted on ingest for back-compat, but emit the nested `"flow"` object here.
    **Generating each stream's permission set is a REQUIRED part of defining the stream —
    not a later step, not a manual button.** As you author each stream, DERIVE its
    least-privilege permissions from the project stack + the stream's `owns`/role and write
@@ -667,15 +661,16 @@ context; you never mutate it.
 
 ## App integration tags
 
-**Link a repository** (emit once per repo the moment it's confirmed — created,
-listed, or discovered; duplicates are harmless):
+**Link a repository** (run once per repo the moment it's confirmed — created,
+listed, or discovered; duplicates are harmless — it clones the repo into the hub
+and records the link durably in plan.db):
 ```
-<repo_link full_name="owner/repo" />
+bsc plan repo add owner/repo
 ```
-**Suggest an automation** (read `automations.md` first; omit `schedule` for
-on-demand commands — otherwise it's a cron expression):
+**Assign an automation** (read `automations.md` first for recipe ideas; omit
+`--schedule` for on-demand commands — otherwise it's a cron expression):
 ```
-<automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
+bsc plan automations add "Daily audit" --command "npm audit" --schedule "0 9 * * 1-5" --description "Runs every weekday morning"
 ```
 **Assign an MCP server/extension** (#174; read `extensions.md` for the live installed
 list). For a tool every worker needs, scope it **project-wide** with the tag below — `name`
@@ -712,12 +707,12 @@ echo '{
   "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
 }' | bsc plan deploy set
 ```
-**Register a per-repo starting script** (emit once you've written the file to
-`prompts/`; `mode` is `dev` or `triage`, `path` is relative to this directory).
+**Register a per-repo starting script** (run once you've written the file to
+`prompts/`; `--mode` is `dev` or `triage`, `--path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
 ```
-<startup_script repo="owner/repo" mode="dev" path="prompts/web-kickoff.md" />
-<startup_script repo="owner/repo" mode="triage" path="prompts/web-triage.md" />
+bsc plan startup add owner/repo --mode dev --path prompts/web-kickoff.md
+bsc plan startup add owner/repo --mode triage --path prompts/web-triage.md
 ```
 
 **Grant each stream its shell commands** — YOU GENERATE this allowlist at plan time, as
@@ -756,16 +751,14 @@ worker blocks on a permission prompt for that command.
 > single-binary invocations where practical — note that a pipeline can still prompt even
 > when every binary in it is allowed.
 
-(There is no `commands.json` file or `<allow_command>` tag — those were retired; the
-stream's `commands` is the only channel.)
+(The stream's `commands` array is the only channel — there is no `commands.json` file.)
 
 **Declare the agent fleet** (the parallel-execution plan). `bsc plan fleet set` (see
-"Plan the agent fleet") is the authoritative channel; these tags are the fast path that
-reveals the fleet live. Emit the header once, then one
-`agent_assign` per stream. List attributes (`owns`, `issues`, `depends_on`) are
-comma-separated; `depends_on` is comma-separated stream ids. An optional `profile`
-attribute carries an AgentProfile id that scopes the stream's session (commands +
-tools + write-paths) — generate one per agent or reuse an existing profile.
+"Plan the agent fleet") is the channel — pipe the whole FleetPlan JSON to `bsc plan fleet set`:
+the header (`recommended` count + `reasoning` + `director` + `topology`), then one entry per
+`stream`. Each stream carries `owns` / `issues` / `dependsOn` (stream ids) and an optional
+`profile` (an AgentProfile id that scopes the stream's session — commands + tools + write-paths;
+generate one per agent or reuse an existing profile).
 
 Each stream also carries an optional **flow** (#297) — how it runs and pushes —
 via four attributes, all defaulting if omitted:
@@ -781,8 +774,7 @@ Default = `continuous` + `auto-pr` + `per-issue` + `hard`. Set a tighter flow fo
 agent whose work you want to review before it lands (e.g. `push=push-confirm gate=hard`),
 or `push=none` for a pure reviewer/explorer.
 ```
-<fleet_plan recommended="4" reasoning="..." director="true" director_role="async integrator: review/merge PRs, resolve logged decisions, keep milestones current" />
-<agent_assign id="auth-ui" name="Auth UI" repo="owner/web" owns="src/auth/**,src/components/login/**" issues="#12,#15" depends_on="" prompt="prompts/auth-ui-kickoff.md" profile="auth-ui-dev" autonomy="continuous" push="auto-pr" trigger="per-issue" gate="hard" />
+echo '{"recommended":4,"reasoning":"...","director":{"enabled":true,"drive":"async integrator: review/merge PRs, resolve logged decisions, keep milestones current"},"topology":"director","streams":[{"id":"auth-ui","name":"Auth UI","repo":"owner/web","owns":["src/auth/**","src/components/login/**"],"issues":["#12","#15"],"dependsOn":[],"profile":"auth-ui-dev","flow":{"autonomy":"continuous","push":"auto-pr","trigger":"per-issue","gate":"hard"}}]}' | bsc plan fleet set
 ```
 
 **Manage the Skills library** (reusable procedures the fleet can invoke). Author each

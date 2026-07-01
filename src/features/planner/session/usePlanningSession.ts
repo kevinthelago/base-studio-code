@@ -40,7 +40,6 @@ export interface PlanningSessionDeps {
   stageIdsFor: (key: string) => string[];
   /** Re-read the baseline signature the backend last wrote (#756). */
   refreshSetupSig: () => void;
-  setRepoLinkFullNames: Dispatch<SetStateAction<string[]>>;
   setShowBlueprintModal: Dispatch<SetStateAction<boolean>>;
   setShowClearConfirm: Dispatch<SetStateAction<boolean>>;
   setSwitchOpen: Dispatch<SetStateAction<boolean>>;
@@ -58,7 +57,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
   const {
     termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
-    stageIdsFor, refreshSetupSig, setRepoLinkFullNames,
+    stageIdsFor, refreshSetupSig,
     setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
   } = deps;
 
@@ -166,7 +165,6 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
     store.clearPlan(effectiveProjectId);
     store.setActiveProjectRepos([]);
-    setRepoLinkFullNames([]);
     store.setPlanningContext(planningPitch, "");
     void handleRestart();
   }
@@ -182,7 +180,6 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     if (store.projectBlueprintId[effectiveProjectId] === before) return; // switch was refused — leave as-is
     await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
     store.setActiveProjectRepos([]);
-    setRepoLinkFullNames([]);
     store.setPlanningContext(planningPitch, "");
     void handleRestart();
   }

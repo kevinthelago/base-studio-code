@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/store";
+import { useAppStore, type AutomationSuggestion } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY } from "../fleet/planFleet";
@@ -17,6 +17,11 @@ import { parseDeployConfigTag } from "../lib/deployConfig";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp/lib/mcpInstall";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
+import { scriptDocRelpath } from "./planningSession";
+import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+
+/** A per-repo startup script row from plan.db (`bsc plan startup`, #2010). */
+interface StartupScriptRow { repo: string; mode: "dev" | "triage"; path: string }
 
 interface SectionPollDeps {
   visible: boolean;
@@ -35,6 +40,8 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
+  const autoAppliedRef = useRef<Record<string, string>>({});
+  const startupAppliedRef = useRef<Record<string, string>>({});
   const lastBpJsonRef = useRef<string>("");
 
   // Poll the section files Claude writes every 2 seconds while visible. Each
@@ -148,6 +155,37 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           }
           if (toDownload.length) void enqueueMcpDownloads(toDownload);
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
+
+        // Automations are DB-owned (#2009) — the planner assigns them with `bsc plan automations add`
+        // (replacing the <automation_assign> stream tag). Reflect the stored list into planAutomations
+        // (a full replace, which the `automations` gate reads). Guard on the serialized list so an
+        // unchanged set doesn't churn the store every tick.
+        try {
+          const dbAutos = await invoke<AutomationSuggestion[]>("plan_list_automations", { projectKey: effectiveProjectId });
+          const raw = JSON.stringify(dbAutos ?? []);
+          if (raw !== autoAppliedRef.current[effectiveProjectId]) {
+            autoAppliedRef.current[effectiveProjectId] = raw;
+            store.setPlanAutomations(effectiveProjectId, dbAutos ?? []);
+          }
+        } catch { /* plan.db not created until the planner assigns an automation — ignore */ }
+
+        // Startup scripts are DB-owned (#2010) — the planner assigns per-repo kickoff/triage prompt
+        // docs with `bsc plan startup add` (replacing the <startup_script> stream tag). Resolve each
+        // `path` to a unified-store relpath and auto-assign it as that repo's dev/triage startup doc,
+        // so opening the repo's console or triage pane launches with it. Guard on the serialized list.
+        try {
+          const dbStartup = await invoke<StartupScriptRow[]>("plan_list_startup", { projectKey: effectiveProjectId });
+          const raw = JSON.stringify(dbStartup ?? []);
+          if (raw !== startupAppliedRef.current[effectiveProjectId]) {
+            startupAppliedRef.current[effectiveProjectId] = raw;
+            const key = sanitizeProjectKey(effectiveProjectId);
+            for (const sc of dbStartup ?? []) {
+              const relpath = scriptDocRelpath(key, sc.path);
+              if (sc.mode === "triage") store.setRepoTriagePromptDoc(effectiveProjectId, sc.repo, relpath);
+              else                      store.setRepoStartupPromptDoc(effectiveProjectId, sc.repo, relpath);
+            }
+          }
+        } catch { /* plan.db not created until the planner assigns a startup script — ignore */ }
 
         // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
         // blueprint set`; coerce the stored JSON into the in-progress blueprint (the same coerceBlueprint

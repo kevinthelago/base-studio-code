@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
-  isConnected, connectedCount, allSourcesConnected, sourceChecks, coerceSourceConfig, parseSourceConfigTag,
+  isConnected, connectedCount, allSourcesConnected, sourceChecks,
   deriveDataModel, migrationActive, datamodelSignals, downstreamImpact, proposeFromPitch,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
@@ -65,28 +65,6 @@ describe("sourceConfig — scan samples + handle", () => {
     expect(redactedHandle(src({ connectorId: "quickbase", instance: "acme realm", env: "production" }))).toBe("acme realm · production · held by app");
     // With no static catalog (#1976), an undeclared instance falls back to the connector id itself.
     expect(redactedHandle(src({ connectorId: "quickbooks" }))).toBe("quickbooks · held by app");
-  });
-});
-
-describe("sourceConfig — coercion (planner channel)", () => {
-  it("keeps non-secret field hints but DROPS any secret-looking key, and resets status to declared", () => {
-    const cfg = coerceSourceConfig({
-      dataModelName: "Acme Core",
-      proposed: ["quickbooks", "acme-authored"],
-      sources: [{ connectorId: "quickbase", status: "scanned", fields: { realm: "acme.quickbase.com", userToken: "SECRET-LEAK" } }],
-    });
-    expect(cfg.dataModelName).toBe("Acme Core");
-    // Every non-empty id is a valid agent-authored connector now (#1976) — none are filtered.
-    expect(cfg.proposed).toEqual(["quickbooks", "acme-authored"]);
-    expect(cfg.sources[0].fields.realm).toBe("acme.quickbase.com");
-    expect(cfg.sources[0].fields.userToken).toBeUndefined(); // secret-looking key never carried over the channel
-    expect(cfg.sources[0].status).toBe("declared"); // never trusted as pre-connected
-  });
-
-  it("parseSourceConfigTag extracts JSON and returns null when absent", () => {
-    expect(parseSourceConfigTag("blah no json here")).toBeNull();
-    const parsed = parseSourceConfigTag('prose { "proposed": ["salesforce"] } trailing');
-    expect(parsed?.proposed).toEqual(["salesforce"]);
   });
 });
 

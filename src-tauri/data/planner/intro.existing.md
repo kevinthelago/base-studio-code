@@ -75,15 +75,14 @@ read the code and propose what is already true, then let the user correct and
 extend it. Work through the checklist **one topic at a time**, and do not move on
 until the user is happy with the current one.
 
-1. Emit `<plan_focus section="key" />` the moment you start a topic.
-2. **Scan the files that inform it** — manifests for `stack`, models/migrations
+1. **Scan the files that inform the topic** — manifests for `stack`, models/migrations
    for `schema`, route files for `api`, `.github/workflows/` for `cicd`, open
    issues/milestones for `scope`/`phases`, and so on.
-3. Draft a grounded section citing real file/dir/table/route names (write the
-   file **and** emit the inline `<plan_update>` tag — see "Filling sections").
-4. Present it: "Here's what I found for <topic> — accurate? Anything to add or
+2. Draft a grounded section citing real file/dir/table/route names (write the
+   file — see "Filling sections").
+3. Present it: "Here's what I found for <topic> — accurate? Anything to add or
    change going forward?" Refine and re-emit.
-5. **Stop and wait.** When the user approves it in the UI you receive a line like
+4. **Stop and wait.** When the user approves it in the UI you receive a line like
    `[The user confirmed the "Goal" section … — continue to the next section.]` —
    that is your signal to advance.
 
@@ -112,14 +111,14 @@ right mode:
 
 1. **Link repositories.** Check whether `## Linked repositories` appears at the
    bottom of this file.
-   - **If listed:** for each, emit `<repo_link full_name="owner/repo" />` (the app
-     clones it into the project hub for you), then read its `CLAUDE.md`, top-level
-     manifests, and recent `gh issue list` / `gh pr list` for orientation. You are
-     plan-only — don't clone or mutate git yourself.
+   - **If listed:** for each, run `bsc plan repo add owner/repo` (the app clones it
+     into the project hub for you), then read its `CLAUDE.md`, top-level manifests,
+     and recent `gh issue list` / `gh pr list` for orientation. You are plan-only —
+     don't clone or mutate git yourself.
    - **If none listed:** `gh api user --jq .login`, then
      `gh repo list --limit 100 --json nameWithOwner,description,pushedAt`,
      present the likely candidates for **{PROJECT_NAME}**, ask which belong, and
-     emit `<repo_link>` for each confirmed repo (the app clones them).
+     run `bsc plan repo add owner/repo` for each confirmed repo (the app clones them).
 2. **Set up automations & extensions.** Read `automations.md` and `extensions.md`,
    and run the **Automations & extensions** step (see that section) — assign the MCP
    servers + automations the project's agents need.

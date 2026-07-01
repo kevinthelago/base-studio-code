@@ -4,7 +4,7 @@
 
 import {
   PIPE_TRIGGERS, RELEASE_STRATEGIES,
-  serviceChecks, finalStageName,
+  serviceChecks, finalStageName, serviceMode,
   type DeployService, type ReleaseStrategy,
 } from "../lib/deployConfig";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
@@ -104,10 +104,13 @@ export function ServiceDeploySections({ svc, setSvc }: {
         )}
       </Card>
 
-      {/* 5 · Rollout & health — release strategy + auto-rollback, then the health/migrate toggles.
-          The two former bare tail rows folded into one card so every configurable block is boxed. */}
-      <Card n="05" title="Rollout & health" hint={svc.release.strategy || undefined} done={ck("release")}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* 5 · Rollout & health — CLOUD ONLY (#2023): the rollout strategy (recreate/rolling/blue-green/
+          canary), health probe, and migrate-with-deploy are running-cloud-service concerns; a local
+          build (library publish / application package) ships via its pipeline's publish/package stage,
+          so this card is hidden for local mode. Boxed as a collapsible card like the others (#1421). */}
+      {serviceMode(svc) === "cloud" && (
+        <Card n="05" title="Rollout & health" hint={svc.release.strategy || undefined} done={ck("release")}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ ...grpLabel }}>rollout</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
@@ -129,8 +132,9 @@ export function ServiceDeploySections({ svc, setSvc }: {
             <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
             <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
           </div>
-        </div>
-      </Card>
+          </div>
+        </Card>
+      )}
     </>
   );
 }

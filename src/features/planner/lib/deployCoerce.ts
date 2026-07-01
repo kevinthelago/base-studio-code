@@ -10,9 +10,9 @@
 import { repoShortName } from "@/shared/lib/core/projectPaths";
 import { platform, type Workload } from "./deployPlatforms";
 import {
-  PIPE_TRIGGERS, RELEASE_STRATEGIES, PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
+  PIPE_TRIGGERS, PUBLISH_REGISTRIES, PUBLISH_TRIGGERS, PORT_FORWARD_METHODS,
   type DeployEnvironment, type Pipeline, type DeployConfigBlock, type DeployConfigRow, type DeploySecretRow,
-  type ReleasePolicy, type ReleaseStrategy, type HealthPolicy, type PipeTrigger,
+  type ReleasePolicy, type HealthPolicy, type PipeTrigger,
   type DeployMode, type LocalKind, type PublishRegistry, type PublishTrigger, type PortForward, type PortForwardMethod,
 } from "./deployEnv";
 import { defaultDeployConfig, defaultService, type DeployService, type DeployConfig } from "./deployServices";
@@ -71,9 +71,12 @@ function coerceConfigBlock(o: Raw, envs: DeployEnvironment[]): DeployConfigBlock
 
 function coerceRelease(o: Raw, base: ReleasePolicy): ReleasePolicy {
   const rawRel = (o.release && typeof o.release === "object" ? o.release : {}) as Raw;
-  const strat = asStr(rawRel.strategy) as ReleaseStrategy;
   return {
-    strategy: RELEASE_STRATEGIES.some((s) => s.id === strat) ? strat : "",
+    // Preserve ANY non-empty strategy the planner authored — not just the four cloud-rollout enum
+    // values (#2021). A release-artifact deploy (GitHub Pages/Releases, npm publish, packaging) has a
+    // legitimate free-text strategy; the old enum-only check dropped it to "" and silently jammed the
+    // deploy gate (the poll's coercion disagreed with `normalizeDeployConfig`, which the gate trusts).
+    strategy: asStr(rawRel.strategy),
     autoRollback: asBool(rawRel.autoRollback, base.autoRollback),
     keep: typeof rawRel.keep === "number" ? rawRel.keep : base.keep,
     migrateWithDeploy: asBool(rawRel.migrateWithDeploy, base.migrateWithDeploy),

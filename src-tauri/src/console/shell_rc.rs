@@ -162,8 +162,18 @@ pub(crate) const BSC_DONE_RC: &str = concat!(
 /// Mirrors `isPathConfined` / `isConfigProtected` in `src/shared/lib/session/fsConfine.ts` (the
 /// unit-tested decision). String-based + no realpath so it's portable; `return 2` (not `exit`) so it
 /// never kills a shell that sources it. Covers the AI's file tools only — Bash needs OS-level sandboxing.
+/// The `__bsc_perm` helper (#1607 slice 2): appends one pane-tagged permission-denial row —
+/// `ts·pane·gate·verdict·target·reason` — to the app-wide `$BSC_PERM_LOG`, so a block by the deny
+/// hooks (`bsc-confine`/`bsc-scope` here; the Rust `bsc hook bash-deny` writes the same shape) is
+/// visible to `bsc logs perm`/`session` and joinable to its session. Best-effort + always returns 0
+/// (a failed log must never change the hook's block verdict). `$1`=gate `$2`=target `$3`=reason.
+pub(crate) const BSC_PERM_RC: &str = concat!(
+    r#"__bsc_perm() { l="${BSC_PERM_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; t="$(printf '%s' "$2" | tr '\t\n' '  ' | cut -c1-160)"; r="$(printf '%s' "$3" | tr '\t\n' '  ' | cut -c1-160)"; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "block" "$t" "$r" >> "$l"; return 0; }"#,
+    "\n",
+);
+
 pub(crate) const BSC_CONFINE_RC: &str = concat!(
-    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp rel; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; rel="${fp#"$root"/}"; rel="${rel#./}"; case "$rel" in .claude|.claude/*) echo "blocked: '$fp' is the session's .claude config — #1916 config-protection" >&2; return 2 ;; esac; case "$fp" in ..|../*|*/../*|*/..) echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp rel; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; rel="${fp#"$root"/}"; rel="${rel#./}"; case "$rel" in .claude|.claude/*) __bsc_perm confine "$fp" "config-protection (.claude)"; echo "blocked: '$fp' is the session's .claude config — #1916 config-protection" >&2; return 2 ;; esac; case "$fp" in ..|../*|*/../*|*/..) __bsc_perm confine "$fp" "leaves the repo root"; echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) __bsc_perm confine "$fp" "outside the repo root"; echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
@@ -179,7 +189,7 @@ pub(crate) const BSC_CONFINE_RC: &str = concat!(
 /// patterns against the cwd; `return 2` (not `exit`) so it never kills a shell that sources it.
 /// Covers the AI's WRITE tools only (Read is unrestricted — the planner must read for context).
 pub(crate) const BSC_SCOPE_RC: &str = concat!(
-    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ "$globs" = "__bsc_deny_all__" ] && { echo "blocked: this session is code:none (no write scope) -- file writes are denied (#1916)" >&2; return 2; }; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
+    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ "$globs" = "__bsc_deny_all__" ] && { __bsc_perm scope "" "code:none — no write scope"; echo "blocked: this session is code:none (no write scope) -- file writes are denied (#1916)" >&2; return 2; }; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; __bsc_perm scope "$fp" "outside the write scope"; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
     "\n",
 );
 
@@ -296,6 +306,7 @@ pub(crate) const ALL_BSC_RC: &[&str] = &[
     BSC_TOKENS_RC,
     BSC_ACTIVITY_RC,
     BSC_DONE_RC,
+    BSC_PERM_RC,
     BSC_CONFINE_RC,
     BSC_SCOPE_RC,
     BSC_DENY_RC,
