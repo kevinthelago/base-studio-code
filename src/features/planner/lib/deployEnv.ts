@@ -72,7 +72,11 @@ export const RELEASE_STRATEGIES: { id: ReleaseStrategy; label: string; desc: str
   { id: "canary",     label: "canary",     desc: "Shift a % of traffic, watch, then ramp." },
 ];
 export interface ReleasePolicy {
-  strategy: ReleaseStrategy | "";
+  /** The rollout/release strategy. {@link RELEASE_STRATEGIES} are the KNOWN cloud-rollout options the
+   *  picker offers, but the field accepts ANY non-empty string — a release-artifact deploy (GitHub
+   *  Pages/Releases, npm publish, packaging) legitimately carries a free-text strategy like
+   *  `github-release (tag on main → …)` that isn't one of the four. `""` = unset. */
+  strategy: string;
   autoRollback: boolean;
   keep: number;
   migrateWithDeploy: boolean;
