@@ -37,7 +37,12 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       // resolved). Default OFF = acknowledge-to-clear (findings surfaced; the user reviews + proceeds).
       injectionHardGate: false,
       setInjectionHardGate: (v) => set({ injectionHardGate: v }),
-      bypassPermissions: true,
+      // Safe-by-default posture (#2050): sessions run the ALLOW-LIST (Claude's `default` mode enforces
+      // the enumerated allow/deny lists — anything unlisted prompts), NOT bypass. The broad base
+      // allow-list (base.json) covers the typical dev toolchains so it isn't prompt-spammy, and the
+      // deny-hook floor still blocks the dangerous set. Bypass (auto-run-everything) is the opt-in
+      // power-user posture via Settings → Security.
+      bypassPermissions: false,
       setBypassPermissions: (v) => set({ bypassPermissions: v }),
       sandboxConsoles: false,
       setSandboxConsoles: (v) => set({ sandboxConsoles: v }),
