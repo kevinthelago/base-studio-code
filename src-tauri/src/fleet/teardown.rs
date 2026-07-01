@@ -272,7 +272,25 @@ pub(crate) fn reclaim_project_worktrees(project_key: &str) -> usize {
     }
     // Drop the (now hopefully empty) per-project worktrees root.
     let _ = std::fs::remove_dir(&root);
+    // Reap the project's shared per-repo build cache too (#1651) — the pkgcache `CARGO_TARGET_DIR`
+    // tree at caches/cargo-target/<key> is the biggest disk offender and is keyed to THIS project.
+    reclaim_project_caches(project_key);
     removed
+}
+
+/// Reap a project's shared per-repo build cache when its worktrees are reclaimed (#1651). The
+/// pkgcache relocates every worktree's `CARGO_TARGET_DIR` to `caches/cargo-target/<key>/<repo>`
+/// (shared across a repo's worktrees + its triage clone), so nothing under a worktree owns it and the
+/// worktree delete never reaches it — hence this explicit project-scoped reap. Only the per-PROJECT
+/// keyed cache is removed; the global download caches/stores (npm/pnpm/pip/uv/go) are content-addressed
+/// and shared across every project, so they're deliberately left intact. Best-effort.
+pub(crate) fn reclaim_project_caches(project_key: &str) {
+    let dir = crate::bsc_base_dir().join("caches").join("cargo-target").join(project_key);
+    if !dir.exists() { return; }
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => log::info!("reclaimed project build cache {}", dir.display()),
+        Err(e) => log::warn!("reclaim_project_caches: {}: {e}", dir.display()),
+    }
 }
 
 /// Is `wt` a worktree that's SAFE to reclaim at boot? Only when it's a real git worktree, its tree
@@ -637,9 +655,19 @@ mod tests {
         make_wt(&api, "api--svc", "svc");
         assert!(wts.join("web--auth").exists() && wts.join("api--svc").exists());
 
+        // The pkgcache's per-project shared build cache (`caches/cargo-target/<key>/…`, #1651) — a
+        // sibling of a DIFFERENT project's cache that must survive the reclaim.
+        let cargo_cache = crate::bsc_base_dir().join("caches").join("cargo-target");
+        fs::create_dir_all(cargo_cache.join(key).join("web")).unwrap();
+        fs::write(cargo_cache.join(key).join("web").join("o"), vec![0u8; 4096]).unwrap();
+        fs::create_dir_all(cargo_cache.join("other-proj").join("web")).unwrap();
+
         let removed = reclaim_project_worktrees(key);
         assert_eq!(removed, 2, "both worktrees removed");
         assert!(!wts.exists(), "per-project worktrees root dropped");
+        // THIS project's build cache is reaped; another project's is untouched (#1651).
+        assert!(!cargo_cache.join(key).exists(), "the project's shared build cache is reclaimed");
+        assert!(cargo_cache.join("other-proj").exists(), "another project's cache is left intact");
 
         // Both clones' admin records pruned.
         for clone in [&web, &api] {
