@@ -74,24 +74,24 @@ pub(crate) fn setup_workspaces(
     // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
     // <blueprint> tag spec, and the software-planning process block is omitted entirely.
     let mut planning_md = if authoring.unwrap_or(false) {
-        PLANNING_BLUEPRINT_INTRO.to_string()
+        planning_blueprint_intro()
     } else if is_existing {
         format!(
             "{}{}",
-            PLANNING_EXISTING_INTRO
+            planning_existing_intro()
                 .replace("{PROJECT_NAME}", &project_name)
                 .replace("{PROJECT_NUMBER}", &project_number.to_string()),
-            PLANNING_PROCESS_MD,
+            planning_process_md(),
         )
     } else {
-        format!("{}{}", PLANNING_NEW_INTRO.replace("{PITCH}", &pitch), PLANNING_PROCESS_MD)
+        format!("{}{}", planning_new_intro().replace("{PITCH}", &pitch), planning_process_md())
     };
 
     // Anti prompt-injection framing (#1107) — applied to EVERY planner spec (new / existing /
     // authoring). The planner reads untrusted repo + web content and emits trusted fleet
     // instruction, so it must treat all reviewed content as data and never transcribe an embedded
     // directive into a kickoff/section/profile/issue.
-    planning_md.push_str(PLANNER_INJECTION_RESISTANCE_MD);
+    planning_md.push_str(&planner_injection_resistance_md());
 
     // Modular planning stages (#512/#542): prepend the project's enabled stages (from
     // its blueprint) as the authoritative scope — disabled stages are declared out of
@@ -124,7 +124,7 @@ pub(crate) fn setup_workspaces(
 
     // Write automations catalogue so Claude can reference and assign them. The header prose lives in
     // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
-    let mut auto_md = format!("{}\n\n", AUTOMATIONS_CATALOGUE_HEADER.trim_end());
+    let mut auto_md = format!("{}\n\n", automations_catalogue_header().trim_end());
     if automations.is_empty() {
         auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
     } else {
