@@ -5,6 +5,7 @@
 //   • UNPUBLISHED draft (#1222) — commit persists to the draft record keyed by the frozen key.
 import { useState, useCallback } from "react";
 import { useAppStore } from "@/store";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { planRename, applyRename } from "./renameProject";
 import { planDraftCommit } from "./draftTitle";
@@ -48,7 +49,10 @@ export function usePlanningTitle(opts: {
         repos: activeProjectRepos,
       }),
     );
-  }, [titleEdit, activeProjectName, activeProjectId, activeProjectNumber, activeProjectRepos, projectKeyAlias]);
+    // Keep the on-disk hub title (`projects/<key>/.title`) in step with the rename so the durable
+    // name — read by list_local_projects and the session skill-group naming — reflects the new title.
+    fireInvoke("set_project_title", { projectKey: effectiveProjectId, title: plan.title });
+  }, [titleEdit, activeProjectName, activeProjectId, activeProjectNumber, activeProjectRepos, projectKeyAlias, effectiveProjectId]);
 
   // ── Persist a DRAFT title edit (#1222) ──────────────────────────────────────────
   const [draftTitleErr, setDraftTitleErr] = useState<string | null>(null);
@@ -64,6 +68,9 @@ export function usePlanningTitle(opts: {
     if (plan.kind === "noop") { setDraftTitleErr(null); return; }
     if (plan.kind === "error") { setDraftTitleErr(plan.message); return; } // keep the typed value to fix
     st.updateDraftProject(effectiveProjectId, { title: plan.title });
+    // Mirror the draft rename into the durable hub title (`.title`) so the on-disk name doesn't fall
+    // back to a key-derived placeholder once goal.md/the store drift out of view.
+    fireInvoke("set_project_title", { projectKey: effectiveProjectId, title: plan.title });
     setDraftTitleErr(null);
   }, [planningTitle, effectiveProjectId, activeProjectId, projectKeyAlias]);
 

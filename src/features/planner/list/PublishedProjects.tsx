@@ -2,7 +2,7 @@ import { useState, useRef, type Dispatch, type SetStateAction } from "react";
 import { Chip, tagTone } from "@/shared/ui/data/Chip";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { ExternalLink, MoreHorizontal, Trash2, Search } from "lucide-react";
 import { useAppStore } from "@/store";
 import { mintProjectId, findByTitle } from "@/shared/lib/core/projectPaths";
@@ -413,6 +413,10 @@ export function PublishedProjects({
     setPlanningContext("", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(draftKey, { title: titleTrimmed, pitch: "", createdAt: Date.now() });
+    // Persist the user's title into the hub (`projects/<key>/.title`) so the on-disk name is their
+    // input from the start — not a title fabricated from the opaque key when `goal.md` isn't authored
+    // yet (which then leaked into the session skill-group name, GitHub structure, and tab labels).
+    fireInvoke("set_project_title", { projectKey: draftKey, title: titleTrimmed });
     // Bind the blueprint AT CREATION (#988) — the explicit consent point — capturing whatever's
     // selected now. Opening the project later never adopts the (freely-changing) global selection,
     // so its blueprint can't switch without the user's intent.
