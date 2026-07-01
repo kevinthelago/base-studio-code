@@ -11,11 +11,9 @@
 // live deps through a ref, so the once-attached `pty_data` listener never captures a stale value.
 
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { stripAnsi } from "./planningTerminal";
-import { parseDataModelTag, stripDataModelTags } from "./planningParse";
 import {
   parsePlanFocus, stripPlanFocus,
   parseStartupScripts, stripStartupScripts, scriptDocRelpath,
@@ -158,19 +156,9 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
     // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
 
-    // ── <data_model>{"name":"...","entities":[...]}</data_model> ──────────
-    // Persists the planner's inferred Data Model to the project's DuckDB store (#1446)
-    // hub (#se-persist). `refined` starts false; the source pane sets it to true
-    // once the user confirms/refines the model interactively.
-    const dm = parseDataModelTag(bufRef.current);
-    if (dm) {
-      fireInvoke("data_persist_model", {
-        projectKey: projIdSnap,
-        model: dm,
-        refined: false,
-      }, (e: unknown) => console.warn("data_persist_model failed:", e));
-      bufRef.current = stripDataModelTags(bufRef.current);
-    }
+    // Data Model persistence moved off the planner channel — the DuckDB model is inferred by the
+    // source scan and read via `bsc data model get` (persisted with `bsc data model set`), so the
+    // <data_model> stream tag is gone.
 
     // Cap buffer to prevent unbounded growth while preserving any partial
     // in-progress tag that hasn't received its closing counterpart yet.
