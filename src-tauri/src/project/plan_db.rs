@@ -2,7 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
-use plandb::{Lesson, PlanFeature, PlanIssue, Store, STATUSES};
+use plandb::{Automation, Lesson, PlanFeature, PlanIssue, Store, STATUSES};
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
@@ -204,6 +204,14 @@ pub(crate) fn plan_add_mcp(project_key: String, name: String) -> Result<(), Stri
 #[tauri::command]
 pub(crate) fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
     open(&project_key)?.mcp_list().map_err(|e| e.to_string())
+}
+
+// ── automations (#2009) — structured cron/on-demand recipes assigned to the project; the section
+//    poll reflects `plan_list_automations` into the store (replacing the <automation_assign> tag). ──
+
+#[tauri::command]
+pub(crate) fn plan_list_automations(project_key: String) -> Result<Vec<Automation>, String> {
+    open(&project_key)?.automation_list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

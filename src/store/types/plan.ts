@@ -90,7 +90,9 @@ export interface PlanState {
    *  stuck on a stale title-named section (#803). */
   canonicalizePlanSections: (projectId: string) => void;
   planAutomations:    Record<string, AutomationSuggestion[]>;
-  addPlanAutomation:  (projectId: string, a: AutomationSuggestion) => void;
+  /** Replace a project's automations with the DB-owned list (reflected by the section poll from
+   *  `bsc plan automations`, #2009). */
+  setPlanAutomations: (projectId: string, list: AutomationSuggestion[]) => void;
   clearPlanAutomations: (projectId: string) => void;
   // Modular planning stages (#512): per-project on/off + ordering of the planning
   // stages. Defaults (all-on, registry order) are resolved lazily via

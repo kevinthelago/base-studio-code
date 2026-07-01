@@ -172,7 +172,7 @@ export const PLAN_STAGES: Stage[] = [
   {
     id: "automations",
     label: "Automations",
-    description: "Cron and on-demand automations (emit <automation_assign> tags)",
+    description: "Cron and on-demand automations (bsc plan automations add)",
     optional: true,
     hasOutputFile: false,
     dependsOn: ["streams"],
