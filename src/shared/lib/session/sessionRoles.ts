@@ -7,6 +7,13 @@
 // gate that USES it is the role's denied-command set plus a write-path guard on the
 // write tool, applied alongside the per-agent profile (#1457). Free of React / xterm /
 // Tauri imports so it's unit-testable in isolation.
+//
+// The role→capability TABLE + the write-glob / db-owned / dep-manifest lists are externalized to
+// `@data/permissions/role-capabilities.json` (#2027 P1) — the single source (Rust does NOT duplicate
+// it: TS computes each session's permissions here and passes them to `ensure_session_settings`).
+// This module keeps the TYPES + the enforcement logic + the exported const NAMES over that data.
+
+import roleCaps from "@data/permissions/role-capabilities.json";
 
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
@@ -40,64 +47,29 @@ export interface RoleCapability {
   writeGlobs: string[];
 }
 
-// Plan-file globs auto-approved for the planner (#509). These are the section files
-// the planning session writes directly: markdown sections, JSON manifests, and the
-// prompts/ kickoff scripts. The planner still has no git/GitHub writes.
-export const PLANNER_WRITE_GLOBS: string[] = [
-  "*.md", "*.json", "prompts/*.md", "prompts/*",
-  // Context-stage discovery sections live in their own subdir (#807).
-  "discovery/*.md", "discovery/*",
-];
-
-// Structured plan state that lives in plan.db, written ONLY via the `bsc-plan` CLI
-// (repo/phase/feature/fleet/deploy). The planner must never write these as FILES — a stray
-// `deploy.md` / `phases.json` doesn't feed the DB or clear a stage gate, it just rots (#1070).
-// {@link roleWriteRules} denies their file forms for the planner so its `*.md`/`*.json` write glob
-// can't auto-approve them (deny > allow); the planner is forced to the CLI. Section files
-// (`goal.md`, `scope.md`, …) stay writable.
-export const DB_OWNED_PLAN_FILES: string[] = [
-  "deploy.md", "deploy.json",
-  "phases.json", "issues.json", "fleet.json", "repos.json", "features.json",
-];
-
-// Dependency manifests + lockfiles a WORKER must not hand-edit (#1111). The planner locks the
-// project's dependencies once and publish seeds these into every repo; a worker that edits its
-// own manifest in its worktree is exactly the parallel-redefinition that collides at integration.
-// {@link roleWriteRules} denies the file-write tools on these for workers (deny > allow) even when
-// the path falls inside the worker's owned globs — a new dep routes through the director instead.
-// (This gates the Edit/Write TOOLS only; `npm install` / `cargo build` via Bash still regenerate
-// lockfiles normally, so installing the already-locked deps is unaffected.)
-export const DEP_MANIFEST_FILES: string[] = [
-  "package.json", "package-lock.json",
-  "Cargo.toml", "Cargo.lock",
-  "pnpm-lock.yaml", "yarn.lock",
-];
-
-/**
- * Default capability per role. `writeGlobs` are filled per assignment (a worker owns
- * its stream's globs); the defaults are empty so a session with no assigned boundary
- * can't write code. The **planner is plan-only** — read-only git/GitHub; its code writes
- * are scoped to plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a
- * permission prompt to write goal.md / phases.json / fleet.json / prompts/*.
- */
-// `net: "read"` across the board preserves today's behavior (WebFetch is currently allowed for
-// every session via the broad Bash grant). The field exists so a per-agent `net` profile (#289) — or
-// a future planner "no web" toggle (#1107) — can set `none` to deny WebFetch/WebSearch at launch.
-export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = {
-  planner: { role: "planner", github: "read", git: "read", code: "write", net: "read", writeGlobs: PLANNER_WRITE_GLOBS },
-  worker: { role: "worker", github: "read", git: "write", code: "write", net: "read", writeGlobs: [] },
-  director: { role: "director", github: "write", git: "write", code: "none", net: "read", writeGlobs: [] },
-  triage: { role: "triage", github: "write", git: "none", code: "none", net: "read", writeGlobs: [] },
-  // #220 stage roles -- least privilege: observe + report, never edit or merge.
-  tester: { role: "tester", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
-  reviewer: { role: "reviewer", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
-  conductor: { role: "conductor", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
-  // #376 issuer -- may open GitHub issues (github:write) but never writes code or git;
-  // it only shapes intake and hands off to the director.
-  issuer: { role: "issuer", github: "write", git: "read", code: "none", net: "read", writeGlobs: [] },
-  // #394 juror -- a scoped, read-only reviewer; judges, never edits or merges.
-  juror: { role: "juror", github: "read", git: "read", code: "none", net: "read", writeGlobs: [] },
-};
+// The role→capability table + the write-glob / db-owned / dep-manifest lists load from
+// `@data/permissions/role-capabilities.json` (#2027 P1) — see the file's `_comment` for the policy.
+// The exported names below keep the SAME semantics they always had:
+//
+// - ROLE_DEFAULTS — default capability per role. `writeGlobs` are filled per assignment (a worker
+//   owns its stream's globs); the defaults are empty so a session with no assigned boundary can't
+//   write code. The **planner is plan-only** — read-only git/GitHub; its code writes are scoped to
+//   plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a prompt to write goal.md /
+//   phases.json / fleet.json / prompts/*. `net: "read"` across the board preserves today's behavior
+//   (WebFetch allowed via the broad Bash grant); a per-agent `net` profile (#289) or a planner
+//   "no web" toggle (#1107) can set `none` to deny WebFetch/WebSearch at launch.
+// - PLANNER_WRITE_GLOBS (#509) — the section files the planner writes directly (md sections, JSON
+//   manifests, prompts/ + discovery/ #807). Derived from the planner role so the glob list lives once.
+// - DB_OWNED_PLAN_FILES (#1070) — structured plan state that lives in plan.db, written ONLY via the
+//   `bsc plan` CLI. {@link roleWriteRules} denies their FILE forms for the planner (deny > allow) so
+//   its `*.md`/`*.json` glob can't auto-approve them; section files (goal.md, …) stay writable.
+// - DEP_MANIFEST_FILES (#1111) — dependency manifests + lockfiles a WORKER must not hand-edit (a new
+//   dep routes through the director). {@link roleWriteRules} denies the Edit/Write TOOLS on these
+//   even inside the worker's owned globs; `npm install` / `cargo build` via Bash still regenerate them.
+export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleCaps.roleDefaults as Record<SessionRole, RoleCapability>;
+export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner.writeGlobs;
+export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles;
+export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles;
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
 export function roleCapability(role: SessionRole, override: Partial<RoleCapability> = {}): RoleCapability {
