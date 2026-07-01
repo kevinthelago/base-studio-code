@@ -12,11 +12,10 @@ static STAGES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/data/stages");
 #[tauri::command]
 pub(crate) fn planner_intro_prompt(mode: String) -> String {
     match mode.as_str() {
-        "blueprint" => PLANNING_GREETING_BLUEPRINT,
-        "existing" => PLANNING_GREETING_EXISTING,
-        _ => PLANNING_GREETING_NEW,
+        "blueprint" => planning_greeting_blueprint(),
+        "existing" => planning_greeting_existing(),
+        _ => planning_greeting_new(),
     }
-    .to_string()
 }
 /// Return one planning stage's directive prose by id (the same text `build_active_stages_md`
 /// embeds) so the frontend can bake the FIRST active stage's directive into a bsc-agent planner's
@@ -53,7 +52,7 @@ pub(crate) fn build_active_stages_md(stages: &[String]) -> String {
     }
     // The preamble prose lives in `@data/planner/active-stages-preamble.md` (#2027 P1); the surrounding
     // newlines that frame it in the CLAUDE.md + the per-stage lines below stay here.
-    let mut s = format!("\n{}\n\n", PLANNING_ACTIVE_STAGES_PREAMBLE.trim_end());
+    let mut s = format!("\n{}\n\n", planning_active_stages_preamble().trim_end());
     for (i, id) in stages.iter().enumerate() {
         s.push_str(&format!("{}. {}\n", i + 1, stage_directive(id)));
     }
