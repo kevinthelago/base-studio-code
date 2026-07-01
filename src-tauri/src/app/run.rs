@@ -188,6 +188,7 @@ pub fn run() {
             planner::directives::planner_stage_directive,
             crate::platform::config::export_config_bundle,
             crate::platform::config::import_config_bundle,
+            crate::platform::config::get_config_files,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,

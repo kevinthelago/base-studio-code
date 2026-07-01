@@ -13,7 +13,11 @@
 // it: TS computes each session's permissions here and passes them to `ensure_session_settings`).
 // This module keeps the TYPES + the enforcement logic + the exported const NAMES over that data.
 
-import roleCaps from "@data/permissions/role-capabilities.json";
+import roleCapsEmbedded from "@data/permissions/role-capabilities.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+const roleCaps = overlayFile("permissions/role-capabilities.json", roleCapsEmbedded);
 
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
