@@ -91,6 +91,23 @@ describe("blueprints — seed library", () => {
     expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
   });
 
+  it("includes a 'feature-add' transform blueprint: operate mode, canonical stages, no legacy keys", () => {
+    const bp = makeBlueprints().find((b) => b.id === "feature-add");
+    expect(bp).toBeTruthy();
+    expect(bp!.category).toBe("transform");
+    expect(bp!.mode).toBe("operate");
+    expect(bp!.origin).toBe("built-in");
+    const keys = bp!.sections.map((s) => s.key);
+    // Converted from the old imported vocabulary (context/repos/architecture/structure/permissions/
+    // testing) into the current model: discovery → deployment → features → ui? → streams.
+    expect(keys).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    // every stage key resolves to a real def (no orphan/legacy keys survive the conversion)
+    for (const k of keys) expect(STAGE_DEFS[k], `stage '${k}' resolves`).toBeTruthy();
+    // Features before UI (#825), and UI is the only optional stage
+    expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("ui"));
+    expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+  });
+
   it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
