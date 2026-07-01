@@ -14,6 +14,7 @@ import { deriveProjectTitle } from "./projectTitle";
 import { parseFeaturesFile } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
+import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
@@ -120,7 +121,17 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     setTriageNote(null);
     setTriaging(true);
     try {
-      await Promise.all(publishRepos.map(fullName =>
+      // #1988: when the sandbox is on AND the fleet runs on the model-agnostic bsc-agent harness (the
+      // only runtime baked into the sealed distro), the whole fleet launches INSIDE the WSL2 cage —
+      // the hub is relocated to the distro's ext4, repos are cloned + worktrees created in-distro, and
+      // every pane spawns via `wsl -d <distro>`. Otherwise it's the normal host launch.
+      const store0 = useAppStore.getState();
+      const sandbox = store0.sandboxConsoles === true
+        && effectiveHarness(store0.llmProvider, store0.fleetHarness ?? "claude") === "bsc-agent";
+      const SANDBOX_DISTRO = "bsc-agent-sandbox";
+      // Host clones seed the on-disk repo list the UI reads; skip them for a sandboxed launch (repos
+      // are git-cloned in-distro by ensure_sandbox_worktree — nothing lands on the Windows host).
+      if (!sandbox) await Promise.all(publishRepos.map(fullName =>
         invoke<string>("clone_repo", { project: effectiveProjectId, fullName })
           .then(() => addProjectRepo(activeProjectId ?? effectiveProjectId, fullName))
           .catch(e => console.error(`clone ${fullName} failed:`, e)),
@@ -151,14 +162,19 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
-      const worktreeResults = await Promise.all(launchPlan.streams.map(st =>
+      const worktreeResults = await Promise.all(launchPlan.streams.map(st => {
         // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
         // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
-        // the hub so the planner spec is no longer an ancestor (#844).
-        invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd: buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id)) })
+        // the hub so the planner spec is no longer an ancestor (#844). In-distro when sandboxed
+        // (ensure_sandbox_worktree clones the repo + adds the worktree on the distro's ext4, #1988).
+        const scopeMd = buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id));
+        const call = sandbox
+          ? invoke<string>("ensure_sandbox_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd, token: githubToken })
+          : invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd });
+        return call
           .then(path => ({ id: st.id, path, err: null as string | null }))
-          .catch(e => ({ id: st.id, path: null as string | null, err: String(e) })),
-      ));
+          .catch(e => ({ id: st.id, path: null as string | null, err: String(e) }));
+      }));
       const failed = worktreeResults.filter(r => r.err || !r.path);
       if (failed.length > 0) {
         setTriageError(`launch failed — ${failed[0].id}: ${failed[0].err ?? "empty path"}`);
@@ -170,14 +186,18 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // worktree path ensure_worktree just returned; the director uses the hub dir.
       const worktreePaths: Record<string, string> = {};
       for (const r of worktreeResults) if (r.path) worktreePaths[r.id] = r.path;
-      const hubPath = await safeInvoke<string>("project_dir_path", { projectKey: effectiveProjectId }, "");
+      // The director's cwd is the hub. Sandboxed → relocate the host hub onto the distro's ext4 and use
+      // its distro-native path (setup_sandbox_hub); otherwise the on-host hub dir (#905).
+      const hubPath = sandbox
+        ? await safeInvoke<string>("setup_sandbox_hub", { key: effectiveProjectId }, "")
+        : await safeInvoke<string>("project_dir_path", { projectKey: effectiveProjectId }, "");
       // Give the director its standing protocol at the hub (#375) so it gets the bsc-fleet
       // roster instruction + answers worker questions (the refactor dropped this call; #734).
       if (launchPlan.director.enabled) {
         await safeInvoke("ensure_director_protocol", { projectKey: effectiveProjectId }, undefined,
           e => console.error("director protocol failed:", e));
       }
-      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId, { hubPath, worktreePaths });
+      const roster = fleetStartProject(projectTitle, launchPlan, effectiveProjectId, { hubPath, worktreePaths, wslDistro: sandbox ? SANDBOX_DISTRO : undefined });
       publishFleetRoster(effectiveProjectId, roster); // #734: hub fleet.roster.tsv for bsc-fleet
     } catch (e) {
       console.error("fleet launch failed:", e);

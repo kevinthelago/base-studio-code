@@ -260,6 +260,10 @@ export interface ConsoleState {
   /** Console provider id per pane (persisted). Absent ⇒ "claude" (default). */
   paneProviders: Record<string, string>;
   setPaneProvider: (paneId: string, providerId: string) => void;
+  /** WSL2 sandbox distro a pane spawns INTO (#1988). Set at fleet/triage launch when the sandbox is
+   *  on and the harness is bsc-agent — its cwd is a distro-native path + the session runs in the cage.
+   *  Absent ⇒ the normal host shell. Persisted so a restored sandboxed pane reconnects into the cage. */
+  paneWslDistro: Record<string, string>;
   /** Whether a Claude session is the running program in each pane (#1158) — transient. Drives the
    *  native console input (which replaces Claude's prompt) and hides the pane's status footer. */
   paneClaudeActive: Record<string, boolean>;
