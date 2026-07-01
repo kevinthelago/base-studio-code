@@ -1,0 +1,34 @@
+{
+  "platforms": [
+    { "id": "vercel",     "name": "Vercel",             "kinds": ["static", "serverless"], "h": 250, "glyph": "▲" },
+    { "id": "netlify",    "name": "Netlify",            "kinds": ["static", "serverless"], "h": 195, "glyph": "◆" },
+    { "id": "cloudflare", "name": "Cloudflare",         "kinds": ["static", "serverless"], "h": 70,  "glyph": "☁" },
+    { "id": "fly",        "name": "Fly.io",             "kinds": ["container", "service"], "h": 300, "glyph": "✦" },
+    { "id": "railway",    "name": "Railway",            "kinds": ["container", "service"], "h": 300, "glyph": "◇" },
+    { "id": "render",     "name": "Render",             "kinds": ["container", "service"], "h": 230, "glyph": "◉" },
+    { "id": "aws",        "name": "AWS",                "kinds": ["serverless", "container", "service"], "h": 70,  "glyph": "❯" },
+    { "id": "gcp",        "name": "GCP",                "kinds": ["serverless", "container", "service"], "h": 230, "glyph": "◐" },
+    { "id": "azure",      "name": "Azure",              "kinds": ["serverless", "container", "service"], "h": 250, "glyph": "◭" },
+    { "id": "ghpages",    "name": "GitHub Pages",       "kinds": ["static"], "h": 250, "glyph": "⎇" },
+    { "id": "docker",     "name": "Self-host · Docker", "kinds": ["container"], "h": 230, "glyph": "⬢" },
+    { "id": "k8s",        "name": "Self-host · K8s",    "kinds": ["container", "service"], "h": 230, "glyph": "⎈" }
+  ],
+  "workloads": {
+    "static":     { "label": "static",       "c": "var(--info)" },
+    "serverless": { "label": "serverless",   "c": "var(--accent)" },
+    "container":  { "label": "container",    "c": "var(--violet)" },
+    "service":    { "label": "long-running", "c": "var(--success)" }
+  },
+  "gitHosts": {
+    "github":     { "key": "github",     "domain": "github.com",    "label": "GitHub",      "kind": "cloud",       "color": "var(--info)" },
+    "gitlab":     { "key": "gitlab",     "domain": "gitlab.com",    "label": "GitLab",      "kind": "cloud",       "color": "var(--accent)" },
+    "bitbucket":  { "key": "bitbucket",  "domain": "bitbucket.org", "label": "Bitbucket",   "kind": "cloud",       "color": "var(--info)" },
+    "selfhosted": { "key": "selfhosted", "domain": "self-hosted",   "label": "self-hosted", "kind": "self-hosted", "color": "var(--violet)" }
+  },
+  "orchestrators": [
+    { "id": "k8s", "label": "Kubernetes" },
+    { "id": "swarm", "label": "Docker Swarm" },
+    { "id": "nomad", "label": "Nomad" }
+  ],
+  "replicaOptions": ["1", "3", "5", "auto"]
+}
