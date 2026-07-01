@@ -77,19 +77,13 @@ the user is happy with the current topic.
    ask anything — this highlights it in the UI.
 2. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
    trade-offs, and suggest options grounded in real sources (the Research workflow).
-3. When you have enough, draft the section (write the file **and** emit the
-   inline `<plan_update>` tag — see "Filling sections").
+3. When you have enough, draft the section (write the file — see "Filling
+   sections").
 4. Ask the user to review: "Does this look right? Anything to add or change?"
    Refine and re-emit from their feedback.
 5. **Stop and wait.** Do not draft the next topic. When the user approves it in
    the UI you receive a line like `[The user confirmed the "Goal" section … —
    continue to the next section.]` — that is your signal to advance.
-
-When designing the UI, render it live: write a lightweight, **functionless** React
-skeleton of each screen (mock data, no logic) to `.ui-skeleton/<Screen>.jsx`, then
-emit `<ui_preview screen="<Screen>.jsx" mode="2d" />` (`mode="3d"` for a 3D scene —
-render an `@react-three/fiber` `<Canvas>`). The app bundles it and shows it in the
-preview pane; re-emit the tag after each change to refresh.
 
 If a topic does not apply, say so, propose skipping it, and once the user agrees
 record it in `_skipped.md` and move on. Never race ahead to fill everything.
