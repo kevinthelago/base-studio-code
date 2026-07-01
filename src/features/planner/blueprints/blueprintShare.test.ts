@@ -48,10 +48,9 @@ describe("blueprintShare (#598)", () => {
     // maps it onto the internal `sections`. Stages = the planning STEPS, one per pane.
     const bp = coerceBlueprint({
       id: "x", name: "Authored", category: "greenfield",
-      stages: [{ key: "discovery", name: "Discovery" }, { key: "structure", name: "Structure" }],
+      stages: [{ key: "discovery", name: "Discovery" }, { key: "streams", name: "Streams" }],
     });
     expect(bp).not.toBeNull();
-    // #1914: a legacy `structure` key canonicalizes to `streams` on import.
     expect(bp!.sections.map((s) => s.key)).toEqual(["discovery", "streams"]);
     // `stages` wins when both are present (it's the canonical planner-facing field).
     const both = coerceBlueprint({
@@ -91,7 +90,7 @@ describe("blueprintShare (#598)", () => {
       id: "x", name: "Imported", category: "transform", mode: "operate",
       skills: ["bp-skill-1"], mcp: ["Compliance"],
       sections: [{
-        key: "structure", name: "Structure",
+        key: "streams", name: "Streams",
         skills: ["sk-a", "sk-b"], mcp: ["Complexity Analyzer", "Dependency Graph"],
         optional: true, output: "issues",
       }],
@@ -102,7 +101,7 @@ describe("blueprintShare (#598)", () => {
     expect(bp!.mcp).toEqual(["Compliance"]);
     expect(bp!.category).toBe("transform");
     expect(bp!.mode).toBe("operate");
-    // Per-section capabilities + shape survive (the legacy `structure` key canonicalizes to `streams`, #1914).
+    // Per-section capabilities + shape survive import.
     const s = bp!.sections[0];
     expect(s.key).toBe("streams");
     expect(s.skills).toEqual(["sk-a", "sk-b"]);
