@@ -145,7 +145,7 @@ export function SessionRecoveryBanner() {
       </Banner>
 
       {open && (
-        <div style={{ background: "color-mix(in oklch, var(--info), transparent 88%)", borderBottom: "1px solid var(--border-soft)", fontFamily: "var(--sans)", color: "var(--fg)", padding: "4px 14px 12px", display: "grid", gap: 12, maxHeight: 320, overflowY: "auto" }}>
+        <div className="banner-drawer" style={{ gap: 12 }}>
           {[...groups.entries()].map(([key, sessions]) => {
             const manual = key === " manual", orphan = key === " orphan";
             const restorable = sessions.filter((s) => !s.reapOnly);
@@ -195,28 +195,57 @@ export function SessionRecoveryBanner() {
 function QuarantineBanner() {
   const quarantinedPanes = useAppStore((s) => s.quarantinedPanes);
   const acknowledgeQuarantine = useAppStore((s) => s.acknowledgeQuarantine);
+  const [open, setOpen] = useState(false);
 
   // Hide acknowledged quarantines — dismissing acknowledges (the worker stays paused + the warden
   // keeps skipping it), so a still-present out-of-lane edit can't re-trip and re-show the banner.
   const entries = Object.entries(quarantinedPanes).filter(([, info]) => !info.acknowledged);
   if (entries.length === 0) return null;
+  const n = entries.length;
 
+  // ONE summary banner for the whole set — the per-pane detail (and per-worker Acknowledge) lives in
+  // an expandable drawer, so N quarantined workers read as a single alert instead of N stacked bars.
   return (
     <>
-      {entries.map(([paneId, info]) => (
-        <Banner
-          key={paneId}
-          variant="bar"
-          tone="danger"
-          lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
-          onDismiss={() => acknowledgeQuarantine(paneId)}
-        >
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <b>Worker quarantined</b> — stream <b>{info.streamId}</b> ({paneId}) was paused: {info.summary}.
-            Review before relaunching.
+      <Banner
+        variant="bar"
+        tone="danger"
+        role="alert"
+        lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
+        right={
+          <span style={{ display: "inline-flex", gap: 6 }}>
+            <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>
+            {n > 1 && (
+              <button className="btn ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
+                Ack all
+              </button>
+            )}
           </span>
-        </Banner>
-      ))}
+        }
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <b>{n} worker{n === 1 ? "" : "s"} quarantined</b> — {n === 1 ? "a stream was" : `${n} streams were`} paused off-plan.
+          Review before relaunching.
+        </span>
+      </Banner>
+
+      {open && (
+        <div className="banner-drawer">
+          {entries.map(([paneId, info]) => (
+            <div key={paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start", padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), transparent 90%)" }}>
+              <span style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {info.streamId} · {paneId}
+                </span>
+                <span className="hint" style={{ fontSize: 10.5 }}>{info.summary}</span>
+              </span>
+              <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
+                Acknowledge
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -276,14 +305,19 @@ export function SandboxSetupBanner() {
   );
 }
 
-/** The set of full-width banners pinned at the top of the app shell, mounted once by App. */
+/**
+ * The app-shell alerts, floated in a FIXED top-right overlay (`.app-banner-stack`) so they never push
+ * the shell down or cram the UI. Each adapter gates its own visibility (an empty stack is inert —
+ * `pointer-events: none`). Multi-item alerts (quarantine, session recovery) collapse to ONE summary
+ * banner with a "Review" drawer rather than one bar per item. Mounted once by App.
+ */
 export function AppBanners() {
   return (
-    <>
+    <div className="app-banner-stack">
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
-    </>
+    </div>
   );
 }
