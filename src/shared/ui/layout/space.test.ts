@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { space, pad, flexStyle } from "./space";
+import { space, pad, flexStyle, alignValue, justifyValue } from "./space";
 
 describe("space()", () => {
   it("maps named rungs to their pixel values", () => {
@@ -48,5 +48,22 @@ describe("flexStyle()", () => {
   });
   it("omits keys that were not provided", () => {
     expect(flexStyle({})).toEqual({});
+  });
+});
+
+describe("alignValue() / justifyValue()", () => {
+  it("resolves friendly align names to their CSS box-alignment value", () => {
+    expect(alignValue("start")).toBe("flex-start");
+    expect(alignValue("center")).toBe("center");
+    expect(alignValue("end")).toBe("flex-end");
+    expect(alignValue("baseline")).toBe("baseline");
+    expect(alignValue("stretch")).toBe("stretch");
+  });
+  it("resolves friendly justify names to their CSS distribution value", () => {
+    expect(justifyValue("start")).toBe("flex-start");
+    expect(justifyValue("end")).toBe("flex-end");
+    expect(justifyValue("between")).toBe("space-between");
+    expect(justifyValue("around")).toBe("space-around");
+    expect(justifyValue("evenly")).toBe("space-evenly");
   });
 });

@@ -4,6 +4,7 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
+import { Grid } from "@/shared/ui/layout/Grid";
 
 export function ReposGrid({ repos, loading }: {
   repos: RepoCardData[];
@@ -21,7 +22,7 @@ export function ReposGrid({ repos, loading }: {
       {repos.length === 0 && !loading && (
         <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+      <Grid cols={2} gap="sm">
         {repos.map(r => (
           <div key={r.full_name} onClick={() => setGithubPageMode("repos")} style={{
             padding: "12px 14px", borderRadius: 6,
@@ -45,7 +46,7 @@ export function ReposGrid({ repos, loading }: {
             </div>
           </div>
         ))}
-      </div>
+      </Grid>
     </div>
   );
 }
