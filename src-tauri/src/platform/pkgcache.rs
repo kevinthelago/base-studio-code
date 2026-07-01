@@ -17,25 +17,42 @@
 //!   * **Python** — `PIP_CACHE_DIR` + `UV_CACHE_DIR` (uv hardlinks from its cache → dedup).
 //!   * **Go** — `GOMODCACHE` + `GOCACHE`.
 //!
-//! Scoped to fleet worktrees only (cwd under `<base>/worktrees/<key>/<repo>--<slug>`); a manual or
-//! planner console keeps its normal global caches.
+//! Scoped to a project's REPO-scoped sessions — the fleet's worktrees AND the per-repo triage clone
+//! (#1651), so triage shares the warm cache the fleet pulled instead of cold-installing on its own; a
+//! manual or planner-HUB console keeps its normal global caches.
 
 use std::path::Path;
 
-/// The per-repo cache key (`<projectKey>/<repoStem>`) for a fleet worktree `cwd` under
-/// `<base>/worktrees/<key>/<repoStem>--<slug>`, or `None` for any non-worktree cwd (the planner hub,
-/// a manual console) so we never relocate an unrelated repo's outputs. All of a repo's worktrees map
-/// to the same key, which is the whole point — they share one cargo target dir. Pure + testable.
+/// The per-repo cache key (`<projectKey>/<repoStem>`) for a repo-scoped session, or `None` for a cwd
+/// that isn't repo-scoped (the planner hub, a manual console). Two cwd shapes map to the SAME key so
+/// they share one cache — one cargo target dir + one warm download cache per repo:
+///   * a fleet **worktree** — `<base>/worktrees/<key>/<repoStem>--<slug>`
+///   * the repo's main **clone** (where TRIAGE runs `claude --continue`, #1651) — `<base>/projects/<key>/<repo>`
+///
+/// The planner HUB itself (`<base>/projects/<key>`, no repo segment) is excluded — it keeps its
+/// global caches. Pure + testable.
 pub(crate) fn repo_cache_key(base: &Path, cwd: &str) -> Option<String> {
-    let rest = Path::new(cwd).strip_prefix(base.join("worktrees")).ok()?;
-    let mut comps = rest.components();
-    let key = comps.next()?.as_os_str().to_string_lossy().into_owned();
-    let name = comps.next()?.as_os_str().to_string_lossy().into_owned();
-    // `<repoStem>--<slug>` → `<repoStem>`. (A repo whose short name contains `--` just gets less
-    // sharing across its agents, never incorrect behavior.)
-    let repo = name.split("--").next().unwrap_or(&name);
-    if key.is_empty() || repo.is_empty() { return None; }
-    Some(format!("{key}/{repo}"))
+    let cwd = Path::new(cwd);
+    // Fleet worktree: <base>/worktrees/<key>/<repoStem>--<slug> → <key>/<repoStem>.
+    if let Ok(rest) = cwd.strip_prefix(base.join("worktrees")) {
+        let mut comps = rest.components();
+        let key = comps.next()?.as_os_str().to_string_lossy().into_owned();
+        let name = comps.next()?.as_os_str().to_string_lossy().into_owned();
+        // `<repoStem>--<slug>` → `<repoStem>`. (A repo whose short name contains `--` just gets less
+        // sharing across its agents, never incorrect behavior.)
+        let repo = name.split("--").next().unwrap_or(&name);
+        return (!key.is_empty() && !repo.is_empty()).then(|| format!("{key}/{repo}"));
+    }
+    // Triage / repo-scoped clone: <base>/projects/<key>/<repo>[/…] → <key>/<repo>, mapping the main
+    // clone onto the SAME key as the repo's worktrees so triage shares their cache. The HUB root
+    // (`projects/<key>`, only one component) yields `None` — its global caches are left alone.
+    if let Ok(rest) = cwd.strip_prefix(base.join("projects")) {
+        let mut comps = rest.components();
+        let key = comps.next()?.as_os_str().to_string_lossy().into_owned();
+        let repo = comps.next()?.as_os_str().to_string_lossy().into_owned();
+        return (!key.is_empty() && !repo.is_empty()).then(|| format!("{key}/{repo}"));
+    }
+    None
 }
 
 /// Env pairs (NATIVE OS paths — these are read by native tools, not the bash shell) that point each
@@ -89,9 +106,22 @@ mod tests {
     }
 
     #[test]
-    fn non_worktree_cwd_has_no_key_and_no_env() {
-        // The planner hub / a clone / a manual console — keep their normal global caches.
-        let hub = base().join("projects").join("k").join("web");
+    fn the_triage_clone_shares_the_repos_worktree_key() {
+        // Triage runs in the repo's MAIN CLONE (`projects/<key>/<repo>`); it must map to the SAME key
+        // as that repo's worktrees so it shares their warm cache instead of cold-installing (#1651).
+        let clone = base().join("projects").join("k").join("web");
+        let wt = base().join("worktrees").join("k").join("web--stream-a");
+        assert_eq!(repo_cache_key(&base(), &clone.to_string_lossy()), Some("k/web".into()));
+        assert_eq!(repo_cache_key(&base(), &clone.to_string_lossy()),
+                   repo_cache_key(&base(), &wt.to_string_lossy()),
+                   "triage clone and the repo's worktrees must share one cache key");
+        assert!(!package_cache_env(&base(), &clone.to_string_lossy()).is_empty());
+    }
+
+    #[test]
+    fn the_planner_hub_and_unrelated_cwds_have_no_key_and_no_env() {
+        // The planner HUB root (no repo segment) and any cwd outside the app tree keep global caches.
+        let hub = base().join("projects").join("k");
         assert_eq!(repo_cache_key(&base(), &hub.to_string_lossy()), None);
         assert!(package_cache_env(&base(), &hub.to_string_lossy()).is_empty());
         assert!(package_cache_env(&base(), "/some/other/place").is_empty());
