@@ -763,9 +763,105 @@ pub(crate) fn sandbox_clone_repo(key: String, repo: String, token: String) -> Re
     }
 }
 
+/// The distro-native path of a fleet worker's worktree (#1988) — mirrors the host `worktrees_dir`
+/// layout (`~/.base-studio-code/worktrees/<key>/<repoShort>--<slug>`), but on the distro's ext4 and
+/// OUTSIDE the hub (so the planner spec isn't an ancestor, #844). Pure — the branch/dir names match
+/// the frontend's `worktreeSlug(streamId)` so the launched pane's cwd + branch line up.
+fn sandbox_worktree_path(key: &str, repo: &str, agent_id: &str) -> String {
+    let short = repo.rsplit('/').next().unwrap_or(repo);
+    let slug = crate::platform::fsx::worktree_slug(agent_id);
+    format!(
+        "/home/agent/.base-studio-code/worktrees/{}/{short}--{slug}",
+        crate::platform::fsx::sanitize_project_key(key),
+    )
+}
+
+/// The sealed-distro analogue of [`crate::fleet::worktree::ensure_worktree`] (#1988): ensure `repo`
+/// is git-cloned in the distro hub, then create (idempotently) a git worktree for one fleet agent on
+/// a branch named after its stream — all on the distro's ext4, so a sandboxed worker never touches
+/// the Windows host. Returns the worktree's distro-native path (the pane's `cwd`).
+///
+/// The clone + worktree run as ONE in-distro shell script that self-heals the two ways a prior
+/// aborted run blocks a re-add (a dangling worktree record; a branch the failed `-b` half-created) —
+/// the same prune + re-probe dance as the host `add_worktree_healing`, expressed in `sh`. After the
+/// tree exists, the worker's `CLAUDE.local.md` (its `scope_md` + the fleet coordination protocol +
+/// the injection-resistance preamble) is written in, mirroring `write_worker_context`. `token`
+/// authorizes a private clone and is redacted from any surfaced error.
+#[tauri::command]
+pub(crate) fn ensure_sandbox_worktree(
+    project_key: String,
+    repo: String,
+    agent_id: String,
+    scope_md: Option<String>,
+    token: String,
+) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("The WSL2 agent sandbox is Windows-only.".into());
+    }
+    let short = repo.rsplit('/').next().unwrap_or(&repo).to_string();
+    let clone = format!("{}/{short}", sandbox_project_path(&project_key));
+    let wt = sandbox_worktree_path(&project_key, &repo, &agent_id);
+    let slug = crate::platform::fsx::worktree_slug(&agent_id);
+    // One idempotent, self-healing script: clone-if-absent, then worktree-add with the reuse-vs-create
+    // probe + prune/re-probe retry (the `sh` twin of `add_worktree_healing`).
+    let script = format!(
+        r#"set -e
+clone={clone}; wt={wt}; slug={slug}; url={url}
+[ -d "$clone/.git" ] || {{ rm -rf "$clone"; git clone "$url" "$clone"; }}
+if [ ! -e "$wt/.git" ]; then
+  mkdir -p "$(dirname "$wt")"
+  add() {{
+    if git -C "$clone" rev-parse --verify --quiet "refs/heads/$slug" >/dev/null 2>&1; then
+      git -C "$clone" worktree add "$wt" "$slug"
+    else
+      git -C "$clone" worktree add -b "$slug" "$wt"
+    fi
+  }}
+  add || {{ git -C "$clone" worktree prune; add; }}
+fi"#,
+        clone = sh_squote(&clone),
+        wt = sh_squote(&wt),
+        slug = sh_squote(&slug),
+        url = sh_squote(&clone_url(&repo, &token)),
+    );
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()]).env("WSL_UTF8", "1");
+    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        let mut err = decode_wsl(&out.stderr).trim().to_string();
+        if !token.is_empty() { err = err.replace(&token, "***"); }
+        return Err(err);
+    }
+    // Seed the worker context in-distro (scope + protocol + injection resistance), matching the host
+    // `write_worker_context` lead order. Best-effort beyond the tree itself — a context write failure
+    // must not fail an otherwise-good launch.
+    let mut md = String::new();
+    if let Some(scope) = scope_md.as_deref() {
+        let scope = scope.trim();
+        if !scope.is_empty() {
+            md.push_str(scope);
+            md.push_str("\n\n");
+        }
+    }
+    md.push_str(&crate::fleet::protocols::fleet_protocol_md());
+    md.push_str(&crate::fleet::protocols::injection_resistance_md());
+    let _ = sandbox_write(&format!("{wt}/CLAUDE.local.md"), md.as_bytes());
+    Ok(wt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_worktree_path_mirrors_host_layout_native_and_sanitized() {
+        assert_eq!(
+            sandbox_worktree_path("proj", "octocat/Hello-World", "api-stream"),
+            "/home/agent/.base-studio-code/worktrees/proj/Hello-World--api-stream",
+        );
+        // Key sanitized (no traversal); a repo with no slash keeps its whole name.
+        assert!(!sandbox_worktree_path("../etc", "r", "s").contains(".."));
+    }
 
     #[test]
     fn sandbox_project_path_is_distro_native_and_sanitized() {

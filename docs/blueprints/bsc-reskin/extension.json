@@ -29,8 +29,8 @@
         "prompt": "You are restyling **base-studio-code itself** by rewriting its design tokens. First, capture the desired aesthetic — one topic at a time, each a short `context/<topic>.md` — and confirm with the user:\n- **palette / brand** — the accent hue + overall color feel (e.g. warm amber, cool indigo, high-contrast mono).\n- **mode** — dark, light, or both (the app ships dark by default with a `[data-theme=\"light\"]` override).\n- **typography** — the feel for the sans + mono families (and any specific fonts to load).\n- **shape & density** — rounded vs. sharp, airy vs. compact.\n- **mood** — a sentence or two; if the user has **Claude Design** files, accept them as references.\nDo NOT propose concrete token values yet — that's the Theme tokens stage. Read the **Reskin base-studio-code** skill now; it is the source of truth for the token system and the guardrails (especially: `design/` is REFERENCE-ONLY — never edit it)."
       },
       {
-        "key": "repos",
-        "name": "Repos",
+        "key": "deployment",
+        "name": "Deployment",
         "glyph": "▤",
         "gate": "clone linked",
         "deps": ["context"],
@@ -42,7 +42,7 @@
         "name": "Theme tokens",
         "glyph": "◧",
         "gate": "token map defined",
-        "deps": ["repos"],
+        "deps": ["deployment"],
         "skills": ["reskin-bsc"],
         "blurb": "Translate the look into concrete oklch values for every :root token.",
         "prompt": "Translate the captured look into **concrete oklch values for every `:root` token** in `src/styles/tokens.css`, and matching values in the `[data-theme=\"light\"]` block (and/or the dark default). Cover the full catalog: backgrounds `--bg-canvas/-panel/-elev/-elev2`, borders `--border/-border-soft`, foreground `--fg/-muted/-dim`, accent `--accent/-dim` (+ any `--accent-soft/-text`), and state colors `--success/-info/-violet/-danger`. Keep values in **oklch** (lightness, chroma, hue) — adjust hue for the brand, keep enough lightness/chroma separation that text stays readable and surfaces stay layered. Present the proposed token map (dark + light) as a table and get the user's confirmation. Per the skill: keep contrast accessible and never edit `design/`."

@@ -478,7 +478,7 @@ mod tests {
         // Empty cwd ⇒ no cd; no launch ⇒ no trailing command.
         let bare = sandbox_init_line("", None, &std::collections::HashMap::new());
         assert!(!bare.contains("cd \""));
-        assert!(bare.trim_end().ends_with("\\033[H"));
+        assert!(bare.trim_end().ends_with("\\033[H'"));
     }
 
     #[cfg(windows)]

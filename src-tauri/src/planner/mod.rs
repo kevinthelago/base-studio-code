@@ -139,7 +139,7 @@ mod tests {
                 "scope guard missing from intro"
             );
             assert!(
-                t.contains("do not produce their artifacts"),
+                t.contains("DO NOT produce its outputs"),
                 "must declare that unlisted stages are out of scope"
             );
         }

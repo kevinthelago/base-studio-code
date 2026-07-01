@@ -346,10 +346,13 @@ mod relocated_tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("llp");
         let root = bsc_base_dir().join("projects");
-        // A real project: goal.md drives the title (first sentence, heading stripped).
-        write_file(&root.join("monkeys-paw").join("goal.md"), "# A wish-granting app.\n\nmore");
+        // A real project: goal.md drives the title (first sentence of the body; the leading `# Goal`
+        // heading LINE is skipped whole — matches the frontend `deriveProjectTitle`, so a `# Goal`
+        // heading never leaks as the title).
+        write_file(&root.join("monkeys-paw").join("goal.md"), "# Goal\n\nA wish-granting app. more");
         // A project with only CLAUDE.md (no goal/scope, no .title) → neutral "Untitled project"; the
-        // opaque key is NEVER humanized into a display name anymore (#…).
+        // opaque key is NEVER humanized into a display name anymore (#…). CLAUDE.md is written into
+        // EVERY hub at setup, so it's EXCLUDED from has_plan — a CLAUDE.md-only hub is has_plan=false.
         write_file(&root.join("p-abc-xyz").join("CLAUDE.md"), "spec");
         // The `.title` sidecar (the user's input) OUTRANKS the goal-derived title (#…).
         write_file(&root.join("p-titled-1").join("goal.md"), "# Goal\n\nSome goal prose here.");
@@ -362,7 +365,7 @@ mod relocated_tests {
         assert_eq!(by("monkeys-paw").unwrap().title, "A wish-granting app");
         assert!(by("monkeys-paw").unwrap().has_plan);
         assert_eq!(by("p-abc-xyz").unwrap().title, "Untitled project", "opaque key must not become the title");
-        assert!(by("p-abc-xyz").unwrap().has_plan);
+        assert!(!by("p-abc-xyz").unwrap().has_plan, "CLAUDE.md-only hub is excluded from has_plan");
         assert_eq!(by("p-titled-1").unwrap().title, "Acme CRM", ".title sidecar wins over goal.md");
         assert!(!by("empty-scaffold").unwrap().has_plan, "bare scaffold flagged has_plan=false");
 
