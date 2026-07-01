@@ -1,0 +1,74 @@
+[
+  {
+    "id": "discovery",
+    "label": "Discovery",
+    "description": "Goal, users, scope, stack, and architecture — the discovery checklist",
+    "optional": false,
+    "hasOutputFile": false,
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "id": "deployment",
+    "label": "Deployment",
+    "description": "Link repositories + define how each service ships",
+    "optional": true,
+    "hasOutputFile": true,
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "id": "source",
+    "label": "Source",
+    "description": "Migration source — inventory it, infer the data model, confirm the schema",
+    "optional": true,
+    "hasOutputFile": false,
+    "dependsOn": ["discovery", "deployment"],
+    "defaultEnabled": true
+  },
+  {
+    "id": "features",
+    "label": "Features",
+    "description": "Define the user-facing capabilities, one at a time — each becomes a stream",
+    "optional": true,
+    "hasOutputFile": true,
+    "dependsOn": ["discovery"],
+    "defaultEnabled": true
+  },
+  {
+    "id": "ui",
+    "label": "UI",
+    "description": "Author the Claude Design kickoff + route the user's design files (#1404)",
+    "optional": true,
+    "hasOutputFile": false,
+    "dependsOn": ["discovery", "features"],
+    "defaultEnabled": true
+  },
+  {
+    "id": "streams",
+    "label": "Streams",
+    "description": "Review the feature dependency graph + plan the agent fleet + least-privilege profiles",
+    "optional": true,
+    "hasOutputFile": true,
+    "dependsOn": ["discovery", "deployment", "features"],
+    "defaultEnabled": true
+  },
+  {
+    "id": "automations",
+    "label": "Automations",
+    "description": "Cron and on-demand automations (bsc plan automations add)",
+    "optional": true,
+    "hasOutputFile": false,
+    "dependsOn": ["streams"],
+    "defaultEnabled": true
+  },
+  {
+    "id": "skills",
+    "label": "Skills",
+    "description": "Reusable skill procedures for the fleet (authored via bsc-skill)",
+    "optional": true,
+    "hasOutputFile": false,
+    "dependsOn": [],
+    "defaultEnabled": true
+  }
+]
