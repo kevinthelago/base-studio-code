@@ -509,6 +509,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // repo cwd that this scratch-shell behavior would wrongly blank (the bug where sandboxed triage
       // agents got no start command). The planner's own sandbox path lives in usePlannerTerminal (#1999).
       const sandboxed = st.sandboxConsoles === true && isManualPaneId(paneId);
+      // #1988: an IDENTITY pane (fleet/triage) launched into the cage carries a distro in `paneWslDistro`
+      // (set by fleetStartProject). Unlike the manual scratch shell above, it keeps its FULL launch —
+      // its cwd is already a distro-native path (the in-distro worktree/hub), initCmd is the bsc-agent
+      // runtime, and its kickoff prompt is baked — so we only wrap the spawn in `wsl -d <distro>`.
+      const paneDistro = st.paneWslDistro[paneId];
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
@@ -525,8 +530,9 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         checkpointDoc,
         env: agentEnv,
         providerId,
-        // The sealed distro to spawn into (#1988), or undefined for the normal host shell.
-        wslDistro: sandboxed ? "bsc-agent-sandbox" : undefined,
+        // The sealed distro to spawn into (#1988): the manual scratch shell, else an identity pane's
+        // cage distro (paneWslDistro), else undefined for the normal host shell.
+        wslDistro: sandboxed ? "bsc-agent-sandbox" : (paneDistro || undefined),
       }, true, (e) => log.error(`console[${paneId}] pty_create failed: ${e}`));
 
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100

@@ -410,6 +410,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Read-only review, worker → Autonomous trusted), resolved from {@link roleProfileId}. No
           // per-stream profile generation — a stream may still pin an explicit `profile` id.
           const newPaneProviders            = { ...s.paneProviders };
+          const newPaneWslDistro            = { ...s.paneWslDistro };
           const newFleetPaneStreams      = { ...s.fleetPaneStreams };
           const newPaneRoleGlobs            = { ...s.paneRoleGlobs };
           const newPaneRepos                = { ...s.paneRepos };
@@ -476,6 +477,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneHooks[key];
               delete newPaneRoles[key];
               delete newPaneProviders[key];
+              delete newPaneWslDistro[key];
               delete newPaneProfiles[key];
               delete newFleetPaneStreams[key];
               delete newPaneRoleGlobs[key];
@@ -542,6 +544,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 );
                 newPaneRoles[key] = sess === null ? "director" : "worker";
                 newPaneProviders[key] = fleetHarness;
+                // #1988: when the launch is sandboxed, this pane spawns INSIDE the sealed distro —
+                // its cwd (from `paths`) is already distro-native; record the distro so pty_create
+                // wraps the spawn in `wsl -d <distro>`. Only meaningful with the bsc-agent harness.
+                if (paths?.wslDistro) newPaneWslDistro[key] = paths.wslDistro;
                 // One roster row per live session (#734). Director has no repo/branch.
                 rosterRows.push(sess === null
                   ? [key, "director", "-", "-", "director"].join("\t")
@@ -597,6 +603,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneSkills: newPaneSkills,
             paneRoles: newPaneRoles,
             paneProviders: newPaneProviders,
+            paneWslDistro: newPaneWslDistro,
             paneProfiles: newPaneProfiles,
 
             fleetPaneStreams: newFleetPaneStreams,

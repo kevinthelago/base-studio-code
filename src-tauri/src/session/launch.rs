@@ -110,7 +110,7 @@ mod relocated_tests {
     }
     #[test]
     fn has_claude_history_detects_jsonl_in_project_dir() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("history");
         let cwd = r"C:\Users\Kevin\Projects\demo";
         let proj = home.join(".claude").join("projects").join(claude_project_dir_name(cwd));
@@ -133,7 +133,7 @@ mod relocated_tests {
     #[test]
     fn bsc_agent_session_path_keys_off_cwd() {
         // Deterministic per-cwd path under agent-sessions/, slugged like Claude's projects dir.
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _home = temp_home("agentsess-path");
         let cwd = r"C:\Users\Kevin\Projects\demo";
         let p = bsc_agent_session_path(cwd).unwrap();
@@ -146,7 +146,7 @@ mod relocated_tests {
     }
     #[test]
     fn has_bsc_agent_history_requires_nonempty_session_file() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _home = temp_home("agentsess-hist");
         let cwd = r"C:\Users\Kevin\Projects\demo";
         let path = bsc_agent_session_path(cwd).unwrap();

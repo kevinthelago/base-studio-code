@@ -104,6 +104,17 @@ describe("sandboxConsoles setting (#1988)", () => {
   });
 });
 
+describe("bypassPermissions posture (#1916/#2050)", () => {
+  it("defaults to the safe allow-list (OFF) and toggles via the setter", () => {
+    // #2050: the shipped default is the allow-list (bypass off) — a fresh install is safe-by-default.
+    expect(useAppStore.getState().bypassPermissions).toBe(false);
+    useAppStore.getState().setBypassPermissions(true);
+    expect(useAppStore.getState().bypassPermissions).toBe(true);
+    useAppStore.getState().setBypassPermissions(false);
+    expect(useAppStore.getState().bypassPermissions).toBe(false);
+  });
+});
+
 describe("autoCompleteGates setting (#1068)", () => {
   it("is off by default and toggles via the setter", () => {
     expect(useAppStore.getState().autoCompleteGates).toBe(false);
