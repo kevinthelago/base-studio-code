@@ -18,6 +18,7 @@ import {
   reorderStages, addStage, deleteStage, toggleDep, setOutput, setStageField,
   addSkill, removeSkill, addMcpServer, removeMcpServer, depCandidates,
 } from "./blueprintEdit";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import type { Blueprint, BlueprintStage } from "../stages/blueprints";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
@@ -119,7 +120,7 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
         <Lbl hint="how it appears in the library">Catalog preview</Lbl>
         <div className="bp-card" style={{ cursor: "default" }}>
           <div className="bp-top">
-            <span className="bp-icon" style={{ background: tint(h, 0.16), color: hue(h), borderColor: tint(h, 0.4) }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</span>
+            <IconBox size={34} radius={8} fontSize={15} background={tint(h, 0.16)} color={hue(h)} border={`1px solid ${tint(h, 0.4)}`}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</IconBox>
             <div style={{ minWidth: 0 }}>
               <h3>{bp.name || "Untitled blueprint"}</h3>
               <p className="bp-desc">{bp.pitch || "Add a one-line pitch…"}</p>

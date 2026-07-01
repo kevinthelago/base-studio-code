@@ -14,6 +14,7 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
@@ -178,10 +179,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
       >
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
-          <span style={{
-            width: 32, height: 32, flex: "0 0 32px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-            background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)",
-          }}><Download size={16} /></span>
+          <IconBox size={32} radius={8} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)"><Download size={16} /></IconBox>
           <div style={{ minWidth: 0 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
             <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>your published blueprint gists</div>

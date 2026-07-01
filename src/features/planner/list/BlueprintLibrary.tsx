@@ -12,6 +12,7 @@ import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import type { DraftRow } from "./drafts";
 
 // ── Blueprint display helpers (#…): a hued icon tile keyed by lifecycle category, a visibility
@@ -121,10 +122,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         borderRadius: 9, cursor: "pointer", position: "relative",
       }}>
       <div className="bp-rail-card-head" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span className="bp-rail-card-icon" style={{
-          width: 30, height: 30, flex: "0 0 30px", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-          background: `color-mix(in oklch, ${hue}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 70%)`, color: hue,
-        }}><Icon size={15} /></span>
+        <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Icon size={15} /></IconBox>
         <div className="bp-rail-card-titlewrap" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
           <span className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
           <span className="bp-rail-card-cat mono" style={{

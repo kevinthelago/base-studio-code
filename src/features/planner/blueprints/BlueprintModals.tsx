@@ -8,6 +8,7 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Ic } from "./blueprintIcons";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -34,7 +35,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
       <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
         <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <span className="mh-ico mono" style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, background: iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)", color: iconColor ?? "var(--accent)" }}>{icon}</span>
+            <IconBox size={30} radius={7} fontSize={13} background={iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)"} color={iconColor ?? "var(--accent)"}>{icon}</IconBox>
             <div><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
             <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
           </div>
@@ -102,7 +103,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
       {phase === "preview" && preview ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <span className="bp-icon mono" style={{ width: 30, height: 30, flex: "0 0 30px", fontSize: 14, background: tint(preview.h, 0.16), color: hue(preview.h), display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, fontWeight: 700 }}>{preview.icon}</span>
+            <IconBox size={30} radius={8} fontSize={14} background={tint(preview.h, 0.16)} color={hue(preview.h)}>{preview.icon}</IconBox>
             <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{preview.name}</div><div className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</div></div>
             <span style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
           </div>
