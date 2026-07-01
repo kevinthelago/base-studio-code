@@ -2,7 +2,7 @@
 //! (#1607, #1325).
 //!
 //! A read-only query over the app's per-session event streams (tools / skills / mcp / hooks /
-//! cost / coord / activity) under `~/.base-studio-code/` (`$BSC_LOG_DIR` overrides). Mirrors
+//! cost / coord / activity / perm) under `~/.base-studio-code/` (`$BSC_LOG_DIR` overrides). Mirrors
 //! `bsc plan`'s house style: lean TSV with a header by default, `--json` (compact) / `--pretty`,
 //! `--session` / `--stream` / `--since` / `--limit`.
 //!
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use crate::{canonical_stream, cost, perf, query, role_of, sessions, LogEvent, SessionRow};
 use bsc_cli_util::{emit, CmdDoc};
 
-const TAGLINE: &str = "query a console session's logs — tools/skills/mcp/hooks/cost/coord/activity + perf (read-only, #1607)";
+const TAGLINE: &str = "query a console session's logs — tools/skills/mcp/hooks/cost/coord/activity/perm + perf (read-only, #1607)";
 
 /// The command catalog — drives the shared help system. One detailed `usage` block per command keeps
 /// the overview tiny and the detail one-fetch-away. The event-category verbs (audit|skill|…) share
@@ -45,13 +45,14 @@ Every event for <id> across all streams, merged into one timeline, plus its toke
     },
     CmdDoc {
         name: "<stream>",
-        summary: "one event category: audit|skill|mcp|hook|coord|activity|done",
+        summary: "one event category: audit|skill|mcp|hook|coord|activity|done|perm",
         usage: "\
 USAGE:
   bsc logs <stream> [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
 
-The verb is the category name itself — one of: audit, skill, mcp, hook, coord, activity, done.
-Prints that stream's events (optionally filtered to one --session).",
+The verb is the category name itself — one of: audit, skill, mcp, hook, coord, activity, done, perm.
+`perm` is the permission-denial stream (the deny hooks' blocks). Prints that stream's events
+(optionally filtered to one --session).",
     },
     CmdDoc {
         name: "cost",
