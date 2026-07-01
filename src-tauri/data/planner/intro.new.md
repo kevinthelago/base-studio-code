@@ -102,15 +102,14 @@ record it in `_skipped.md` and move on. Never race ahead to fill everything.
    - `gh api user --jq .login` for the authenticated owner (read-only).
    - Ask what distinct codebases the project needs (name, purpose, language,
      visibility); skip what the pitch already makes obvious.
-   - For each confirmed repo, emit `<repo_link full_name="{owner}/{name}" />`. Do
-     NOT run `gh repo create` or `git clone` yourself — you are plan-only. Emitting
-     `<repo_link>` registers the repo and triggers an immediate clone of any existing
-     repo into the project hub, so it's ready to read without you touching git.
+   - For each confirmed repo, run `bsc plan repo add {owner}/{name}`. Do NOT run
+     `gh repo create` or `git clone` yourself — you are plan-only. Linking the repo
+     triggers an immediate clone of any existing repo into the project hub, so it's
+     ready to read without you touching git.
    - The link is recorded **durably in the plan store** (plan.db) — there is no
      `repos.json` file. `bsc plan repo list` shows the linked set, `bsc plan repo add
-     owner/repo` links one directly, and `bsc plan repo remove owner/repo` unlinks;
-     this is the same durable store the `<repo_link>` tag writes, so the linked repos
-     survive a session resume and the right pane reads them from there.
+     owner/repo` links one, and `bsc plan repo remove owner/repo` unlinks; the linked
+     repos survive a session resume and the right pane reads them from there.
 2. **Walk the discovery checklist as a QUICK orientation** (see "The discovery
    checklist") — document the core dimensions (goal, users, scope, stack,
    architecture) briefly, skip the rest unless they're central, and don't dwell.

@@ -10,7 +10,7 @@
 // autopilotTxRef) keep their existing access. `processChunk` is a stable callback that reads its
 // live deps through a ref, so the once-attached `pty_data` listener never captures a stale value.
 
-import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/store";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { stripAnsi } from "./planningTerminal";
@@ -22,7 +22,6 @@ import {
 interface TagStreamDeps {
   projectId: string;
   setActiveSection: (key: string) => void;
-  setRepoLinkFullNames: Dispatch<SetStateAction<string[]>>;
 }
 
 export interface PlannerTagStream {
@@ -48,7 +47,7 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
   useEffect(() => { depsRef.current = deps; });
 
   const processChunk = useCallback((payload: string) => {
-    const { projectId: projIdSnap, setActiveSection, setRepoLinkFullNames } = depsRef.current;
+    const { projectId: projIdSnap, setActiveSection } = depsRef.current;
 
     // Parse structured tags out of the stripped output stream.
     bufRef.current += stripAnsi(payload);
@@ -76,25 +75,9 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
       bufRef.current = stripPlanFocus(bufRef.current);
     }
 
-    // ── <repo_link full_name="owner/repo" /> ─────────────────────────────
-    const repoLinkRe = new RegExp(
-      `<repo_link\\s+full_name=${Q}([^\\u0022\\u201c\\u201d]+)${Q}\\s*\\/>`,'g'
-    );
-    let foundLink = false;
-    while ((m = repoLinkRe.exec(bufRef.current)) !== null) {
-      const fullName = m[1];
-      setRepoLinkFullNames(prev =>
-        prev.includes(fullName) ? prev : [...prev, fullName]
-      );
-      // The headless auto-clone effect clones repos as repoLinkFullNames grows — no action needed here.
-      foundLink = true;
-    }
-    if (foundLink) {
-      bufRef.current = bufRef.current.replace(
-        new RegExp(`<repo_link\\s+full_name=${Q}[^\\u0022\\u201c\\u201d]+${Q}\\s*\\/>`, 'g'),
-        ""
-      );
-    }
+    // Repo links are DB-owned: the planner runs `bsc plan repo add owner/repo`, the section poll
+    // reflects `plan_list_repos` into effectiveRepos, and the headless auto-clone effect clones each
+    // new entry. No stream tag is parsed here anymore.
 
     // ── <automation_assign name="..." command="..." … /> ──────────────────
     const autoAssignRe = /<automation_assign([^/]*)\s*\/>/g;
