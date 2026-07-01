@@ -166,8 +166,8 @@ needs. Read `extensions.md` (the catalog of available MCP servers) and
   secret values (tokens/connection strings stay blank for the user to fill in the MCP screen).
   Read `extensions.md` for the live list of installed servers; a name not yet installed is
   downloaded from the MCP screen.
-- **Automations** — assign scheduled/on-demand commands with `<automation_assign>`
-  (omit `schedule` for on-demand). Suggest the ones that fit the stack (a daily
+- **Automations** — assign scheduled/on-demand commands with `bsc plan automations
+  add` (omit `--schedule` for on-demand). Suggest the ones that fit the stack (a daily
   `npm audit`, a lint/test sweep, a dependency-bump check).
 
 Both surface in the project's Automations & extensions UI and persist with the plan.
@@ -672,10 +672,10 @@ and records the link durably in plan.db):
 ```
 bsc plan repo add owner/repo
 ```
-**Suggest an automation** (read `automations.md` first; omit `schedule` for
-on-demand commands — otherwise it's a cron expression):
+**Assign an automation** (read `automations.md` first for recipe ideas; omit
+`--schedule` for on-demand commands — otherwise it's a cron expression):
 ```
-<automation_assign name="Daily audit" command="npm audit" schedule="0 9 * * 1-5" description="Runs every weekday morning" />
+bsc plan automations add "Daily audit" --command "npm audit" --schedule "0 9 * * 1-5" --description "Runs every weekday morning"
 ```
 **Assign an MCP server/extension** (#174; read `extensions.md` for the live installed
 list). For a tool every worker needs, scope it **project-wide** with the tag below — `name`

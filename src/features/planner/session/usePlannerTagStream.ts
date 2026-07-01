@@ -53,13 +53,6 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     bufRef.current += stripAnsi(payload);
     autopilotTxRef.current += stripAnsi(payload); // un-consumed copy for the autopilot (#746)
 
-    // Quote-flexible helper: matches " U+0022, " U+201C, " U+201D so LLM
-    // smart-quote output doesn't silently break tag detection.
-    // q(s) wraps a string in a char-class that matches any of those three.
-    const Q = '["“”]';
-
-    let m: RegExpExecArray | null;
-
     // Discovery/context section CONTENT now lives in `context/<topic>.md` files the planner
     // writes (read by the section poll + by workers) — the single channel (#1019). The redundant
     // `<plan_update section>` stream tag is retired; its required-set + confirm state moved to the
@@ -79,30 +72,8 @@ export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
     // reflects `plan_list_repos` into effectiveRepos, and the headless auto-clone effect clones each
     // new entry. No stream tag is parsed here anymore.
 
-    // ── <automation_assign name="..." command="..." … /> ──────────────────
-    const autoAssignRe = /<automation_assign([^/]*)\s*\/>/g;
-    let foundAuto = false;
-    while ((m = autoAssignRe.exec(bufRef.current)) !== null) {
-      const attrs  = m[1];
-      // Each attr value may use straight or curly quotes
-      const attrRe = (k: string) => new RegExp(`\\b${k}=${Q}([^\\u0022\\u201c\\u201d]*)${Q}`);
-      const nameM  = attrRe("name").exec(attrs);
-      const cmdM   = attrRe("command").exec(attrs);
-      const schedM = attrRe("schedule").exec(attrs);
-      const descM  = attrRe("description").exec(attrs);
-      if (nameM && cmdM) {
-        useAppStore.getState().addPlanAutomation(projIdSnap, {
-          name:        nameM[1],
-          command:     cmdM[1],
-          schedule:    schedM?.[1],
-          description: descM?.[1],
-        });
-      }
-      foundAuto = true;
-    }
-    if (foundAuto) {
-      bufRef.current = bufRef.current.replace(/<automation_assign[^/]*\/>/g, "");
-    }
+    // Automations are DB-owned: the planner runs `bsc plan automations add`, and the section poll
+    // reflects `plan_list_automations` into planAutomations. No stream tag is parsed here anymore.
 
     // ── <startup_script repo="owner/repo" mode="dev|triage" path="..." /> ──
     // Registers a per-repo starting script the planner wrote to prompts/.
