@@ -1,22 +1,18 @@
-// usePlannerTagStream (#1474) — the planner's PTY tag-parse stream, extracted verbatim from
-// Planning.tsx. Owns the two output buffers and a `processChunk` that, per PTY data chunk:
-// strips ANSI, accumulates, parses + dispatches every structured `<tag>` the planner emits, and
-// caps the buffer. The terminal write itself stays in the caller; this hook is the tag side only.
+// usePlannerTagStream (#1474) — the planner's PTY output buffer. Owns the two output buffers and a
+// `processChunk` that, per PTY data chunk, strips ANSI, accumulates, and caps the buffer. The
+// planner used to emit structured `<tag>`s parsed here; every one has since moved to plan.db via a
+// `bsc plan …` command reflected by the section poll (the last, `<plan_focus>`, removed in #2017),
+// so this hook no longer parses anything — it just maintains the buffers the autopilot reads.
 //
-//   bufRef         — the tag-scan buffer (drained by the parsers as tags are consumed)
+//   bufRef         — the accumulated output buffer (the caller's restart clears it)
 //   autopilotTxRef — an UN-consumed copy of the same output, read by the autopilot idle-detector
 //
 // Both refs are returned so the caller's restart (clears bufRef) and autopilot (reads
-// autopilotTxRef) keep their existing access. `processChunk` is a stable callback that reads its
-// live deps through a ref, so the once-attached `pty_data` listener never captures a stale value.
+// autopilotTxRef) keep their existing access. `processChunk` is a stable callback, so the
+// once-attached `pty_data` listener is set up a single time.
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { stripAnsi } from "./planningTerminal";
-import { parsePlanFocus, stripPlanFocus } from "./planningSession";
-
-interface TagStreamDeps {
-  setActiveSection: (key: string) => void;
-}
 
 export interface PlannerTagStream {
   /** Feed one PTY data chunk: accumulate it and parse/dispatch any structured tags it completes. */
@@ -27,72 +23,19 @@ export interface PlannerTagStream {
   autopilotTxRef: React.MutableRefObject<string>;
 }
 
-export function usePlannerTagStream(deps: TagStreamDeps): PlannerTagStream {
-  // Accumulated stripped output used to scan for complete tags.
+export function usePlannerTagStream(): PlannerTagStream {
+  // Accumulated stripped output. Historically drained by the tag parsers as they consumed tags;
+  // every planner tag now writes to plan.db via `bsc plan …` and is reflected by the section poll,
+  // so nothing is parsed here anymore (the last, `<plan_focus>`, was removed in #2017). The buffer +
+  // its un-consumed autopilot copy remain: the autopilot idle-detector (#746) reads them, and the
+  // cap keeps them bounded.
   const bufRef = useRef("");
-  // Autopilot (#746): an un-consumed copy of the planner's raw output (bufRef is drained by
-  // the tag parsers), for idle-detection + the user-sim.
+  // Autopilot (#746): an un-consumed copy of the planner's raw output, for idle-detection + user-sim.
   const autopilotTxRef = useRef("");
 
-  // Keep the live deps in a ref so `processChunk` stays a stable identity (the listener is
-  // attached once) while never reading a stale projectId/setter. Updated post-commit; the
-  // listener only fires after mount, so the ref is always current by the first chunk.
-  const depsRef = useRef(deps);
-  useEffect(() => { depsRef.current = deps; });
-
   const processChunk = useCallback((payload: string) => {
-    const { setActiveSection } = depsRef.current;
-
-    // Parse structured tags out of the stripped output stream.
     bufRef.current += stripAnsi(payload);
     autopilotTxRef.current += stripAnsi(payload); // un-consumed copy for the autopilot (#746)
-
-    // Discovery/context section CONTENT now lives in `context/<topic>.md` files the planner
-    // writes (read by the section poll + by workers) — the single channel (#1019). The redundant
-    // `<plan_update section>` stream tag is retired; its required-set + confirm state moved to the
-    // plan.db context manifest (`bsc-plan context` + the manifest poll above).
-
-    // ── <plan_focus section="key" /> ─────────────────────────────────────
-    // Marks the section Claude is currently discussing. The last focus tag
-    // in this chunk wins (Claude emits one per section as it advances). Any
-    // key is accepted — the focused section may not exist as a card yet.
-    const focusKeys = parsePlanFocus(bufRef.current);
-    if (focusKeys.length > 0) {
-      setActiveSection(focusKeys[focusKeys.length - 1]);
-      bufRef.current = stripPlanFocus(bufRef.current);
-    }
-
-    // Repo links are DB-owned: the planner runs `bsc plan repo add owner/repo`, the section poll
-    // reflects `plan_list_repos` into effectiveRepos, and the headless auto-clone effect clones each
-    // new entry. No stream tag is parsed here anymore.
-
-    // Automations are DB-owned: the planner runs `bsc plan automations add`, and the section poll
-    // reflects `plan_list_automations` into planAutomations. No stream tag is parsed here anymore.
-
-    // Startup scripts moved to plan.db (#2010) — the planner records per-repo kickoff/triage prompt
-    // docs with `bsc plan startup add`, and the DB poll resolves + auto-assigns each. (Was a
-    // <startup_script> stream tag.)
-
-    // <allow_command> retired (#1457): command auto-approval is a per-agent profile property
-    // now, not a planner-declared project/repo allowlist.
-
-    // Fleet (recommended count + director + per-stream streams) moved to plan.db (#2008) — the planner
-    // records it with `bsc plan fleet set`; the DB poll reflects the WHOLE fleet into planFleet, so the
-    // pre-poll stream tags are gone. (Were <fleet_plan> + <agent_assign>.)
-
-    // MCP assignments moved to plan.db (#1021) — the planner now records them with `bsc-plan mcp
-    // add`, and the DB poll below resolves each into the MCP-servers store. (Was a <mcp_assign> tag.)
-
-    // Authored blueprint moved to plan.db (#1022) — the planner now records it with `bsc-plan
-    // blueprint set`, and the DB poll below coerces it into the authored blueprint + pins the
-    // authoring binding. (Was a <blueprint> stream tag + a blueprint.json file.)
-
-    // Deploy config moved to plan.db (#1020) — the planner now records it with `bsc-plan deploy
-    // set`, and the DB poll below coerces it into planDeployConfig. (Was a <deploy_config> tag.)
-
-    // Data Model persistence moved off the planner channel — the DuckDB model is inferred by the
-    // source scan and read via `bsc data model get` (persisted with `bsc data model set`), so the
-    // <data_model> stream tag is gone.
 
     // Cap buffer to prevent unbounded growth while preserving any partial
     // in-progress tag that hasn't received its closing counterpart yet.
