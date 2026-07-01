@@ -140,7 +140,10 @@ export interface ProjectsState {
      *  (`ensure_worktree`) for its worker. Used verbatim so the launch never
      *  depends on the async-loaded `bscBaseDir` mirror; falls back to the
      *  `bscBaseDir`-derived path per pane when an entry is absent. */
-    paths?: { hubPath?: string; worktreePaths?: Record<string, string> },
+    paths?: { hubPath?: string; worktreePaths?: Record<string, string>;
+      /** When set (#1988), the fleet spawns INSIDE this WSL2 distro: hubPath/worktreePaths are
+       *  distro-native paths and each pane records `paneWslDistro` so pty_create runs in the cage. */
+      wslDistro?: string },
   ) => string[];
   // Index of this project's primary "· build" tab, matched on its STABLE projectKey
   // (#457) — pass the same projectKey used to launch the fleet. -1 when none.

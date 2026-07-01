@@ -59,6 +59,7 @@ export const useAppStore = create<AppStore>()(
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
         paneCwds:        s.paneCwds,
+        paneWslDistro:   s.paneWslDistro,
         paneWasClaude:   s.paneWasClaude,
         paneDirectorDrive: s.paneDirectorDrive,
         paneDirectorMode: s.paneDirectorMode,
