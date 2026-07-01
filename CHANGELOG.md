@@ -9,6 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Layout kit foundation (#2056)** — the first composable *layout* primitives, toward the v1.0.5 kit/SDK-like buildable UI. A spacing scale in `tokens.css` (`--sp-1`…`--sp-6`) plus three primitives under `shared/ui/layout/` — `Stack` (flex column), `Row` (flex row, centered by default), and `Spacer` (flexible/fixed filler) — sharing one `Space`/`Align`/`Justify` prop vocabulary (`space.ts`). Named rungs (`gap="md"`) map 1:1 to the CSS tokens, and raw px stays legal (`gap={10}`) so the ~667 hand-rolled `display:flex` divs, ~700 `gap:` usages, and ~40 `<div style={{flex:1}}/>` spacers convert losslessly. `OpenPRsCard` converted as the adoption proof; the codebase-wide sweep, `Grid`, and a kit manifest are follow-ups.
+
 ## [1.0.41] — 2026-07-01
 
 A consolidation **checkpoint** on the `1.0.4` line, ahead of the `1.0.5` UI release — the codebase

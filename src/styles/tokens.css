@@ -34,6 +34,11 @@
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
 
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  /* spacing scale (#2056) — the one gap/padding vocabulary the layout kit references.
+     JS side: the Space named sizes in shared/ui/layout/space.ts map 1:1 (xs=4 … xl=24).
+     Raw pixel values (e.g. the very common gap:10) stay legal as numbers; these are the
+     canonical rungs to reach for first. */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
   /* modal chrome (#1776): one scrim color + z-index for every modal/overlay.
      --z-modal sits above app chrome + menus (≤3000) and below the achievement toast (9999);
      --z-modal-float is for a fixed toast that must float above its own modal. */
