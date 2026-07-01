@@ -71,13 +71,16 @@ export function ServiceDeploySections({ svc, setSvc }: {
           <span style={monoSm}>No config or secrets yet — the planner proposes them per environment.</span>
         ) : (
           <>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 10.5 }}>
+            {/* Horizontal scroll so long values / many env columns scroll WITHIN the card instead of
+                overflowing the pane (#1421 follow-up); the table keeps a readable minimum width. */}
+            <div style={{ overflowX: "auto", margin: "0 -2px" }}>
+            <table style={{ minWidth: 320, width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 10.5 }}>
               <thead><tr style={{ color: "var(--fg-dim)", textAlign: "left" }}><th style={{ padding: "3px 6px", fontWeight: 400 }}>variable</th>{svc.envs.map((e) => <th key={e.id} style={{ padding: "3px 6px", fontWeight: 400 }}>{e.name}</th>)}</tr></thead>
               <tbody>
                 {svc.config.config.map((row) => (
                   <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
                     <td style={{ padding: "4px 6px", color: "var(--fg)" }}><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--info)", marginRight: 6 }} />{row.key}</td>
-                    {svc.envs.map((e) => <td key={e.id} style={{ padding: "4px 6px", color: "var(--fg-muted)" }}>{row[e.id] || "—"}</td>)}
+                    {svc.envs.map((e) => <td key={e.id} title={row[e.id] || undefined} style={{ padding: "4px 6px", color: "var(--fg-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row[e.id] || "—"}</td>)}
                   </tr>
                 ))}
                 {svc.config.secrets.map((row) => (
@@ -95,33 +98,39 @@ export function ServiceDeploySections({ svc, setSvc }: {
                 ))}
               </tbody>
             </table>
+            </div>
             <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", marginTop: 8 }}>🔒 secret values live in the vault, never here — only wiring state is shown.</div>
           </>
         )}
       </Card>
 
-      {/* Rollout (release strategy + auto-rollback) + a compact health row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 12px", flexWrap: "wrap" }}>
-        <span style={{ ...grpLabel }}>rollout</span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {RELEASE_STRATEGIES.map((s) => {
-            const on = svc.release.strategy === s.id;
-            return (
-              <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
-                fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
-                background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
-                border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
-              }}>{s.label}</button>
-            );
-          })}
+      {/* 5 · Rollout & health — release strategy + auto-rollback, then the health/migrate toggles.
+          The two former bare tail rows folded into one card so every configurable block is boxed. */}
+      <Card n="05" title="Rollout & health" hint={svc.release.strategy || undefined} done={ck("release")}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ ...grpLabel }}>rollout</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {RELEASE_STRATEGIES.map((s) => {
+                const on = svc.release.strategy === s.id;
+                return (
+                  <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
+                    fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
+                    background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",
+                    border: "1px solid " + (on ? "var(--accent)" : "var(--border-soft)"), color: on ? "var(--accent)" : "var(--fg-dim)",
+                  }}>{s.label}</button>
+                );
+              })}
+            </div>
+            <span style={{ flex: 1 }} />
+            <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+            <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
+            <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
+          </div>
         </div>
-        <span style={{ flex: 1 }} />
-        <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "2px 4px" }}>
-        <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
-        <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
-      </div>
+      </Card>
     </>
   );
 }
