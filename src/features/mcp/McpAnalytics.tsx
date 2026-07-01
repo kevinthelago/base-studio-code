@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { invoke } from "@tauri-apps/api/core";
-import { FillBar } from "@/shared/ui/data/FillBar";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
-import { StatCard, StackedDayBars } from "@/shared/ui/charts";
+import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). The over-time chart +
@@ -72,63 +71,37 @@ export function McpAnalyticsTab() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         {/* Calls per server */}
-        <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Calls per server</h3>
-            <div style={{ flex: 1 }} />
+        <TelemetryPanel
+          title="Calls per server"
+          right={<>
             <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</span>
             <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-            {an.perServer.length === 0 && <span className="hint">No MCP calls recorded yet.</span>}
-            {an.perServer.map((s) => {
+          </>}
+        >
+          <ItemBars
+            rows={an.perServer.map((s) => {
               const transport = transportByServer[s.server] ?? "stdio";
-              const c = transport === "http" ? "var(--info)" : "var(--violet, oklch(0.70 0.12 300))";
-              return (
-                <div key={s.server}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{s.server}</span>
-                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{transport}</span>
-                    <div style={{ flex: 1 }} />
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{s.calls}</span>
-                  </div>
-                  <FillBar value={s.calls / maxServerCalls} color={c} />
-                </div>
-              );
+              return {
+                key: s.server, label: s.server, meta: transport, value: s.calls, fraction: s.calls / maxServerCalls,
+                color: transport === "http" ? "var(--info)" : "var(--violet, oklch(0.70 0.12 300))",
+              };
             })}
-          </div>
-        </div>
+            empty={<span className="hint">No MCP calls recorded yet.</span>}
+          />
+        </TelemetryPanel>
 
         {/* Success vs errors */}
-        <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-            <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Success vs errors</h3>
-            <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>per server</span>
-          </div>
+        <TelemetryPanel title="Success vs errors" hint="per server">
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {an.perServerSplit.length === 0 && <span className="hint">No calls yet.</span>}
-            {an.perServerSplit.map((p) => {
-              const tot = Math.max(1, p.ok + p.errors);
-              return (
-                <div key={p.server}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{p.server}</span>
-                    <div style={{ flex: 1 }} />
-                    <span className="mono" style={{ fontSize: 10, color: "var(--success)" }}>{p.ok} ok</span>
-                    <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{p.errors} err</span>
-                  </div>
-                  <div style={{ height: 10, borderRadius: 99, overflow: "hidden", display: "flex", background: "var(--bg-elev2)" }}>
-                    <div style={{ height: "100%", width: `${(p.ok / tot) * 100}%`, background: "var(--success)" }} />
-                    <div style={{ height: "100%", width: `${(p.errors / tot) * 100}%`, background: "var(--danger)" }} />
-                  </div>
-                </div>
-              );
-            })}
+            {an.perServerSplit.map((p) => (
+              <SplitBar key={p.server} label={p.server} a={p.ok} b={p.errors} aLabel="ok" bLabel="err" />
+            ))}
           </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
             Parsed from <span className="mono" style={{ color: "var(--fg-muted)" }}>~/.base-studio-code/mcp.log</span> via <span className="mono" style={{ color: "var(--fg-muted)" }}>mcpTelemetry.ts</span> — one line per call (ts · server · tool · outcome · ms).
           </div>
-        </div>
+        </TelemetryPanel>
       </div>
 
       {/* Call results log */}
