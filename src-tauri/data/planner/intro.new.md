@@ -73,15 +73,13 @@ Discovery is a guided conversation, not a form to rush. Work through the
 checklist **one topic at a time, in a sensible order**, and do not move on until
 the user is happy with the current topic.
 
-1. Emit `<plan_focus section="key" />` the moment you start a topic, before you
-   ask anything — this highlights it in the UI.
-2. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
+1. Ask 1–3 focused questions and genuinely discuss: dig into the *why*, surface
    trade-offs, and suggest options grounded in real sources (the Research workflow).
-3. When you have enough, draft the section (write the file — see "Filling
+2. When you have enough, draft the section (write the file — see "Filling
    sections").
-4. Ask the user to review: "Does this look right? Anything to add or change?"
+3. Ask the user to review: "Does this look right? Anything to add or change?"
    Refine and re-emit from their feedback.
-5. **Stop and wait.** Do not draft the next topic. When the user approves it in
+4. **Stop and wait.** Do not draft the next topic. When the user approves it in
    the UI you receive a line like `[The user confirmed the "Goal" section … —
    continue to the next section.]` — that is your signal to advance.
 

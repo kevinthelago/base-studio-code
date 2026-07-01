@@ -45,11 +45,6 @@ right panel. Overwrite to refine — each write replaces the previous version.
   with `--full` / `--fields a,b` / `--limit N` / `--since <epoch>`. Don't dump full lists to skim —
   it wastes the context budget; read lean, then drill in.
 
-Mark the topic you are actively discussing so the UI highlights it:
-```
-<plan_focus section="key" />
-```
-
 ## Coverage — record what you skip
 
 **Each discovery file you create is a gate item** — the stage completes once every required

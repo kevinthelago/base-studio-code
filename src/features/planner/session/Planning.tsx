@@ -471,20 +471,14 @@ export function Planning({ visible }: { visible: boolean }) {
   // Publish / triage / recovery state + callbacks live in usePlanPublish (#1490) — the hook is
   // called below, once all the plan data it reads is in scope.
 
-  // The section Claude is currently discussing, driven by <plan_focus> tags.
-  // Null until the first focus tag arrives. Highlights the matching card.
-  const [, setActiveSection] = useState<string | null>(null);
-
   // Drag-to-resize the plan-sections panel (#43; the terminal flexes to fill the rest).
   const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
   // The xterm terminal + PTY refs (containerRef, termRef) come from usePlannerTerminal, called below
   // once its inputs (processChunk, stageIdsFor, refreshSetupSig) are in scope.
-  // The planner's PTY tag-parse stream (#1474): owns bufRef + autopilotTxRef and a `processChunk`
-  // that parses + dispatches every structured <tag> the planner emits. bufRef is the tag-scan
-  // buffer (cleared on restart); autopilotTxRef is the un-consumed copy the autopilot reads.
-  const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream({
-    setActiveSection,
-  });
+  // The planner's PTY output buffer (#1474): owns bufRef + autopilotTxRef and a `processChunk` that
+  // strips/accumulates/caps the output. bufRef is cleared on restart; autopilotTxRef is the
+  // un-consumed copy the autopilot reads. (No longer parses tags — all moved to plan.db, #2017.)
+  const { processChunk, bufRef, autopilotTxRef } = usePlannerTagStream();
   const apLastSnapLen  = useRef(0);
   const apLastAnswered = useRef(0);
   // Tracks whether the auto-send of the initial pitch has fired this session
