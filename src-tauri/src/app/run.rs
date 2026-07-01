@@ -218,6 +218,7 @@ pub fn run() {
             session::sandbox::sandbox_read_file,
             session::sandbox::read_sandbox_plan_sections,
             session::sandbox::sync_sandbox_plan_db,
+            session::sandbox::sandbox_clone_repo,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
