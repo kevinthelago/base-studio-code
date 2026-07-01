@@ -18,6 +18,38 @@ pub(crate) fn mark_published(project_key: String) -> Result<(), String> {
     log::info!("marked project published: {:?}", project_dir(&project_key));
     Ok(())
 }
+/// Persist a project's DISPLAY TITLE into its hub as `projects/<key>/.title` (#…). This is the durable
+/// source `list_local_projects` reads back, so the on-disk name reflects the user's actual input
+/// instead of a title fabricated from the opaque `p-…` key. Called at project creation and on every
+/// rename. An empty/blank title CLEARS the marker (the listing then falls back to the goal.md-derived
+/// name, else "Untitled project"). `create_dir_all` so it works even before the hub is fully set up.
+/// Idempotent.
+#[tauri::command]
+pub(crate) fn set_project_title(project_key: String, title: String) -> Result<(), String> {
+    let key = sanitize_project_key(&project_key);
+    if key.is_empty() {
+        return Err("set_project_title: empty project_key".into());
+    }
+    let dir = project_dir(&project_key);
+    let path = dir.join(".title");
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        let _ = std::fs::remove_file(&path); // clear → fall back to goal-derived / "Untitled project"
+        return Ok(());
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(&path, trimmed).map_err(|e| e.to_string())?;
+    Ok(())
+}
+/// The durable hub title written by [`set_project_title`] (the `.title` sidecar), if present and
+/// non-empty (first line, trimmed). `None` lets `list_local_projects` fall back to the goal-derived
+/// title, then a neutral placeholder — it NEVER fabricates a name from the opaque key.
+fn read_hub_title(dir: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(".title"))
+        .ok()
+        .and_then(|c| c.lines().next().map(|l| l.trim().to_string()))
+        .filter(|s| !s.is_empty())
+}
 /// Delete a project's on-disk hub (`projects/<sanitized-key>`) and everything in
 /// it — plan sections, prompts, cloned repos. Best-effort: a missing dir is fine.
 /// Refuses an empty key so it can never wipe the `projects/` root.
@@ -101,8 +133,10 @@ pub(crate) struct LocalProject {
 /// List the on-disk local projects (the `projects/<key>/` dirs) so the Projects page can surface
 /// unpublished local work, not just GitHub boards + the store's draft map (#…). The on-disk hub is
 /// the durable source of truth; the store had drifted out of sync, hiding real projects. `title`
-/// is the first non-empty line of `goal.md` (heading markers stripped, first sentence, capped),
-/// else the humanized key. `has_plan` marks a real project (a plan SECTION — goal/scope — present),
+/// resolution: the durable `.title` sidecar (the user's input, written by `set_project_title`), else
+/// the first real sentence of `goal.md` (heading lines skipped, capped), else a neutral "Untitled
+/// project" — it NEVER fabricates a name from the opaque `p-…` key (that produced gibberish like
+/// "p mqwroabz fbtub8"). `has_plan` marks a real project (a plan SECTION — goal/scope — present),
 /// NOT `CLAUDE.md` (which EVERY hub gets at setup, so it can't tell a bare scaffold apart).
 /// `updated_at` is the dir mtime in ms since the epoch (for recency sorting).
 #[tauri::command]
@@ -122,22 +156,25 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
         let goal = dir.join("goal.md");
         // Real project vs bare scaffold: a plan SECTION (goal/scope) is present. CLAUDE.md is
         // EXCLUDED — it's written into EVERY hub at setup, so counting it made `has_plan` always true,
-        // surfacing a freshly-created/empty hub (just CLAUDE.md + an empty plan.db) as a draft named by
-        // its raw `p-…` key (the title falls back to the humanized key when goal.md is absent).
+        // surfacing a freshly-created/empty hub (just CLAUDE.md + an empty plan.db) as a draft.
         let has_plan = goal.exists() || dir.join("scope.md").exists();
-        let title = std::fs::read_to_string(&goal)
-            .ok()
-            .and_then(|c| {
-                // First real (non-empty, non-heading) line → its first sentence. SKIP heading lines
-                // (`# Goal`) rather than just stripping the `#` — otherwise every hub whose goal.md
-                // opens with `# Goal` would be titled "Goal" (matches the frontend deriveProjectTitle).
-                c.lines()
-                    .map(|l| l.trim())
-                    .find(|l| !l.is_empty() && !l.starts_with('#'))
-                    .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
+        // Title precedence: the durable `.title` sidecar (the user's own input) → the goal.md-derived
+        // first sentence → a neutral placeholder. Crucially the old `key.replace(['_','-'], " ")`
+        // fabrication is GONE — the opaque key must never masquerade as a display name (#…).
+        let title = read_hub_title(&dir)
+            .or_else(|| {
+                std::fs::read_to_string(&goal).ok().and_then(|c| {
+                    // First real (non-empty, non-heading) line → its first sentence. SKIP heading lines
+                    // (`# Goal`) rather than just stripping the `#` — otherwise every hub whose goal.md
+                    // opens with `# Goal` would be titled "Goal" (matches the frontend deriveProjectTitle).
+                    c.lines()
+                        .map(|l| l.trim())
+                        .find(|l| !l.is_empty() && !l.starts_with('#'))
+                        .map(|l| l.split(['.', '!', '?']).next().unwrap_or(l).trim().chars().take(80).collect::<String>())
+                })
+                .filter(|t| !t.is_empty())
             })
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| key.replace(['_', '-'], " "));
+            .unwrap_or_else(|| "Untitled project".to_string());
         let updated_at = std::fs::metadata(&dir)
             .ok()
             .and_then(|m| m.modified().ok())
@@ -311,8 +348,12 @@ mod relocated_tests {
         let root = bsc_base_dir().join("projects");
         // A real project: goal.md drives the title (first sentence, heading stripped).
         write_file(&root.join("monkeys-paw").join("goal.md"), "# A wish-granting app.\n\nmore");
-        // A project with only CLAUDE.md still counts as has_plan, title falls back to humanized key.
-        write_file(&root.join("artist_portfolio").join("CLAUDE.md"), "spec");
+        // A project with only CLAUDE.md (no goal/scope, no .title) → neutral "Untitled project"; the
+        // opaque key is NEVER humanized into a display name anymore (#…).
+        write_file(&root.join("p-abc-xyz").join("CLAUDE.md"), "spec");
+        // The `.title` sidecar (the user's input) OUTRANKS the goal-derived title (#…).
+        write_file(&root.join("p-titled-1").join("goal.md"), "# Goal\n\nSome goal prose here.");
+        write_file(&root.join("p-titled-1").join(".title"), "Acme CRM");
         // A bare scaffold dir (no plan artifacts) is listed but flagged has_plan=false.
         std::fs::create_dir_all(root.join("empty-scaffold").join("prompts")).unwrap();
 
@@ -320,8 +361,9 @@ mod relocated_tests {
         let by = |k: &str| found.iter().find(|p| p.key == k);
         assert_eq!(by("monkeys-paw").unwrap().title, "A wish-granting app");
         assert!(by("monkeys-paw").unwrap().has_plan);
-        assert_eq!(by("artist_portfolio").unwrap().title, "artist portfolio");
-        assert!(by("artist_portfolio").unwrap().has_plan);
+        assert_eq!(by("p-abc-xyz").unwrap().title, "Untitled project", "opaque key must not become the title");
+        assert!(by("p-abc-xyz").unwrap().has_plan);
+        assert_eq!(by("p-titled-1").unwrap().title, "Acme CRM", ".title sidecar wins over goal.md");
         assert!(!by("empty-scaffold").unwrap().has_plan, "bare scaffold flagged has_plan=false");
 
         // The wire format MUST be camelCase — Tauri doesn't rename return fields, and the
@@ -331,6 +373,27 @@ mod relocated_tests {
         assert!(json.contains("\"updatedAt\""), "expected camelCase updatedAt in {json}");
         assert!(!json.contains("has_plan") && !json.contains("updated_at"), "must not emit snake_case: {json}");
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn set_project_title_persists_then_clears_the_hub_title() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("spt");
+        let key = "p-xyz-title";
+        // A hub with a plan section so list_local_projects surfaces it.
+        write_file(&project_dir(key).join("goal.md"), "# Goal\n\nGoal prose.");
+        let title = |k: &str| list_local_projects().unwrap().into_iter().find(|p| p.key == k).unwrap().title;
+
+        // Persisting the user's title (trimmed) wins over the goal-derived one.
+        set_project_title(key.to_string(), "  My Project  ".to_string()).unwrap();
+        assert_eq!(title(key), "My Project", "trimmed .title sidecar drives the listed title");
+
+        // Clearing it falls back to the goal-derived title — never the opaque key.
+        set_project_title(key.to_string(), "   ".to_string()).unwrap();
+        assert_eq!(title(key), "Goal prose", "blank title clears the sidecar → goal fallback");
+
+        // An empty key is refused (never writes to the projects/ root).
+        assert!(set_project_title(String::new(), "x".to_string()).is_err());
         std::fs::remove_dir_all(&home).ok();
     }
     #[test]
