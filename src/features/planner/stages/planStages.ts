@@ -13,6 +13,14 @@
 //
 // Everything here is pure — no React/Tauri — so the registry + config logic stays
 // unit-testable, and both the bar and the Rust prompt assembler key off the same ids.
+//
+// The registry DATA (the ordered stage set + each stage's label/optional/deps/defaultEnabled) is
+// externalized to `@data/planner/stage-registry.json` (#2027 P1) — editable without touching code and
+// part of the exportable app-config bundle. (It lives OUTSIDE `@data/stages/`, whose per-stage prompt
+// JSONs are loaded by a `@data/stages/*.json` glob that would otherwise grab the registry.) This
+// module keeps the TYPES + the config logic (defaultStageConfig / enabledOrderedStages / STAGE_BY_ID).
+
+import stageRegistry from "@data/planner/stage-registry.json";
 
 /** All valid stage identifiers, in pipeline order.
  *  `load` is signal-only — it has no PLAN_STAGES entry and is never shown in the bar,
@@ -101,93 +109,13 @@ export interface StageConfig {
 }
 
 // ── The canonical stage registry ─────────────────────────────────────────────
-// Default order puts `ui` before `structure` so issues can reference approved
-// screens (#510). `dependsOn` documents the real prerequisites; runtime gating
-// reads each stage's declarative JSON `gateRule` / `deps`, not this registry.
-export const PLAN_STAGES: Stage[] = [
-  {
-    id: "discovery",
-    label: "Discovery",
-    description: "Goal, users, scope, stack, and architecture — the discovery checklist",
-    optional: false,
-    hasOutputFile: false,
-    dependsOn: [],
-    defaultEnabled: true,
-  },
-  {
-    // deployment: link repositories + define how each service ships (the collapsed repos+deploy
-    // stage, #1914 — was two folded keys, now one canonical `deployment`).
-    id: "deployment",
-    label: "Deployment",
-    description: "Link repositories + define how each service ships",
-    optional: true,
-    hasOutputFile: true,
-    dependsOn: [],
-    defaultEnabled: true,
-  },
-  {
-    // source: connects the migration source, infers the data model, and confirms the schema.
-    // Signal-only sibling `load` (StageId "load") is NOT in this array — it has no bar entry.
-    id: "source",
-    label: "Source",
-    description: "Migration source — inventory it, infer the data model, confirm the schema",
-    optional: true,
-    hasOutputFile: false,  // the Data Model lives in the project's DuckDB store now (#1446), not a file
-    dependsOn: ["discovery", "deployment"],
-    defaultEnabled: true,
-  },
-  {
-    id: "features",
-    label: "Features",
-    description: "Define the user-facing capabilities, one at a time — each becomes a stream",
-    optional: true,
-    hasOutputFile: true,  // features.json
-    dependsOn: ["discovery"],
-    defaultEnabled: true,
-  },
-  {
-    id: "ui",
-    label: "UI",
-    description: "Author the Claude Design kickoff + route the user's design files (#1404)",
-    optional: true,
-    hasOutputFile: false,
-    // Features come FIRST so the UI stage can author a Claude Design kickoff from the defined
-    // capabilities (the planner plans the UI — it does not design/generate the screens) (#825/#1404).
-    dependsOn: ["discovery", "features"],
-    defaultEnabled: true,
-  },
-  {
-    // streams: review the feature DAG/roadmap + plan the agent fleet (the collapsed
-    // structure+permissions stage, #1914 — was two folded keys, now one canonical `streams`).
-    id: "streams",
-    label: "Streams",
-    description: "Review the feature dependency graph + plan the agent fleet + least-privilege profiles",
-    // optional: true so refactor/cleanup blueprints can legitimately omit the
-    // plan synthesis (they produce targeted issues only, not a roadmap) (#666).
-    optional: true,
-    hasOutputFile: true,
-    dependsOn: ["discovery", "deployment", "features"],
-    defaultEnabled: true,
-  },
-  {
-    id: "automations",
-    label: "Automations",
-    description: "Cron and on-demand automations (bsc plan automations add)",
-    optional: true,
-    hasOutputFile: false,
-    dependsOn: ["streams"],
-    defaultEnabled: true,
-  },
-  {
-    id: "skills",
-    label: "Skills",
-    description: "Reusable skill procedures for the fleet (authored via bsc-skill)",
-    optional: true,
-    hasOutputFile: false,  // authored straight into the global skills.db via `bsc-skill add` — no file
-    dependsOn: [],
-    defaultEnabled: true,
-  },
-];
+// From `@data/planner/stage-registry.json`. Ordering rationale baked into that file's order: `ui`
+// sits after `features` so its Claude Design kickoff can reference the defined capabilities
+// (#825/#1404); `deployment`/`streams` are the collapsed repos+deploy / structure+permissions stages
+// (#1914). `dependsOn` DOCUMENTS the real prerequisites — runtime gating reads each stage's
+// declarative `@data/stages/<id>.json` `gateRule`/`deps`, not this registry. (The signal-only `load`
+// sibling has NO registry entry — it never shows in the bar — but exists in the StageId union.)
+export const PLAN_STAGES: Stage[] = stageRegistry as Stage[];
 
 export const STAGE_BY_ID: Record<StageId, Stage> = Object.fromEntries(
   PLAN_STAGES.map((s) => [s.id, s]),
