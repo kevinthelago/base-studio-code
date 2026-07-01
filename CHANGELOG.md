@@ -9,6 +9,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.41] — 2026-07-01
+
+A consolidation **checkpoint** on the `1.0.4` line, ahead of the `1.0.5` UI release — the codebase
+refactor & consolidation sweep, integrations as agent-authored connectors, a data-driven planner, and
+planner/fleet hardening. (Semver note: `1.0.41` sorts *after* `1.0.5`; read it as "`1.0.4`, revision 1".)
+
 ### Changed
 - **Deny-list permission model (#1916)** — sessions flip to `bypassPermissions` with a **deny-list** as the primary control plus per-session worktree filesystem confinement (`bsc-scope`): `code:none` roles hard-block every write (#1916 Step 3.5), each session runs the deny-list switch (Step 4), and the old enumerated allow-list stays available as an opt-in **posture toggle**
 - **Maintenance mode (#1957)** — a worker that completes its owned issues no longer ends; it stays alive in a ready **maintenance** posture (PTY + worktree kept), and the progress-gated relaunch brings completed workers back **into** maintenance (available for the director to dispatch new/regressed lane work to) rather than skipping them
