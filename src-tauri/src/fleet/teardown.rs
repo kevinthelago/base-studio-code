@@ -631,7 +631,7 @@ mod tests {
     /// Uses real clones so the admin records are pruned too.
     #[test]
     fn reclaim_removes_all_project_worktrees() {
-        let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = crate::testutil::temp_home("reclaim");
 
         // Two repos cloned under the hub; one worktree each.

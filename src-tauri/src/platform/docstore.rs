@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn read_document_reads_store_files_and_rejects_traversal() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("readdoc");
         let base = bsc_base_dir();
 
