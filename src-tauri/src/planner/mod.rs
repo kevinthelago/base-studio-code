@@ -8,6 +8,15 @@ mod tests {
     use super::directives::*;
     use super::workspace::*;
 
+    // Content assertions validate the SHIPPED prompt artifacts, so they read the EMBEDDED seed
+    // (`config::embedded_str`), independent of any local config-dir override (#2027 P2). The routing
+    // test compares against the production `planning_greeting_*` accessors (both use `load_str`, so
+    // it stays env-independent).
+    fn process_md() -> String { crate::platform::config::embedded_str("planner/process.md") }
+    fn new_intro() -> String { crate::platform::config::embedded_str("planner/intro.new.md") }
+    fn existing_intro() -> String { crate::platform::config::embedded_str("planner/intro.existing.md") }
+    fn blueprint_intro() -> String { crate::platform::config::embedded_str("planner/intro.blueprint.md") }
+
     #[test]
     fn build_active_stages_md_includes_enabled_excludes_disabled() {
         // Empty → omitted (all-stages default, no behavior change).
@@ -81,7 +90,7 @@ mod tests {
     /// lives in the planning guide, not the per-stage directives.
     #[test]
     fn planning_process_describes_the_research_workflow() {
-        let md = PLANNING_PROCESS_MD;
+        let md = process_md();
         assert!(md.contains("Research"), "planning guide must describe the Research MCP");
         assert!(md.contains("Wikipedia") && md.contains("sources:[\"wikipedia\"]"), "must steer Wikipedia-first research");
         assert!(md.contains("get_fulltext") && md.contains("semantic_search"), "must name the Research tools");
@@ -110,10 +119,10 @@ mod tests {
         assert!(d.contains("bsc plan deps set") && d.contains("sharedDepsLocked"), "streams locks shared deps (#1429): {d}");
     }
 
-    /// PLANNING_PROCESS_MD Coverage section must carry the gate-item and Context gate text (#672).
+    /// process_md() Coverage section must carry the gate-item and Context gate text (#672).
     #[test]
     fn planning_process_md_coverage_names_context_gate_requirements() {
-        let md = PLANNING_PROCESS_MD;
+        let md = process_md();
         assert!(md.contains("gate item"), "must explain the gate-item concept");
         assert!(md.contains("Context** gate"), "must name the Context gate");
         assert!(md.contains("goal`, `scope`"), "must list the required core files");
@@ -124,7 +133,7 @@ mod tests {
     /// authoritative over the fixed workflow steps (#666).
     #[test]
     fn planner_intros_carry_active_stages_scope_guard() {
-        for t in [PLANNING_NEW_INTRO, PLANNING_EXISTING_INTRO] {
+        for t in [new_intro(), existing_intro()] {
             assert!(
                 t.contains("Active planning stages section at the bottom of this file"),
                 "scope guard missing from intro"
@@ -136,10 +145,10 @@ mod tests {
         }
     }
 
-    /// PLANNING_EXISTING_INTRO must include the lifecycle check paragraph (#458).
+    /// existing_intro() must include the lifecycle check paragraph (#458).
     #[test]
     fn planning_existing_intro_has_lifecycle_check() {
-        let intro = PLANNING_EXISTING_INTRO;
+        let intro = existing_intro();
         assert!(intro.contains("Lifecycle check"), "lifecycle check section missing");
         assert!(intro.contains("near-complete"), "must mention near-complete threshold");
         assert!(intro.contains("refactor"), "must mention refactor pass for near-complete projects");
@@ -151,7 +160,7 @@ mod tests {
         // can never launch (the bug that motivated this guard). #1914: the unified vocabulary means the
         // author session must require a `deployment` stage (linked repos + shipping) + a `streams`
         // stage (roadmap + fleet plan + per-agent permissions) for build/execution blueprints (#969).
-        let intro = PLANNING_BLUEPRINT_INTRO;
+        let intro = blueprint_intro();
         assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
         assert!(intro.contains("`streams` stage"), "author intro must require a streams stage for fleets");
         assert!(intro.contains("`deployment` stage"), "author intro must require a deployment stage for fleets");
@@ -160,10 +169,10 @@ mod tests {
     #[test]
     fn planner_intro_prompt_selects_by_mode() {
         // mode → matching template; unknown ⇒ the new-project intro (default).
-        assert_eq!(planner_intro_prompt("new".into()), PLANNING_GREETING_NEW);
-        assert_eq!(planner_intro_prompt("existing".into()), PLANNING_GREETING_EXISTING);
-        assert_eq!(planner_intro_prompt("blueprint".into()), PLANNING_GREETING_BLUEPRINT);
-        assert_eq!(planner_intro_prompt("garbage".into()), PLANNING_GREETING_NEW);
+        assert_eq!(planner_intro_prompt("new".into()), planning_greeting_new());
+        assert_eq!(planner_intro_prompt("existing".into()), planning_greeting_existing());
+        assert_eq!(planner_intro_prompt("blueprint".into()), planning_greeting_blueprint());
+        assert_eq!(planner_intro_prompt("garbage".into()), planning_greeting_new());
     }
 
     #[test]
@@ -191,7 +200,7 @@ mod tests {
         // bare backticked forms like `gh repo create`; here we guard the args-bearing
         // INSTRUCTION forms that only ever appeared as commands to run, AND that no template
         // describes the publish flow.)
-        for t in [PLANNING_NEW_INTRO, PLANNING_EXISTING_INTRO, PLANNING_PROCESS_MD] {
+        for t in [new_intro(), existing_intro(), process_md()] {
             assert!(!t.contains("--method POST --field"), "planner template instructs `gh api … --method POST`");
             assert!(!t.contains("gh label create \""), "planner template instructs `gh label create`");
             assert!(!t.contains("gh issue create --repo"), "planner template instructs `gh issue create`");
@@ -204,8 +213,8 @@ mod tests {
             assert!(!t.contains("Publish to GitHub"), "planner must not carry a publish step");
         }
         // Positive: the plan-only framing is present, and publishing is framed as the user's job.
-        assert!(PLANNING_PROCESS_MD.contains("plan-only"), "plan-only framing missing");
-        assert!(PLANNING_PROCESS_MD.contains("entirely the user's responsibility"),
+        assert!(process_md().contains("plan-only"), "plan-only framing missing");
+        assert!(process_md().contains("entirely the user's responsibility"),
             "user-owns-publish framing missing");
     }
 
@@ -235,7 +244,7 @@ mod tests {
         // the Streams stage"), so check the full Streams DIRECTIVE (its issue-generation step) is absent
         // — not the bare word.
         assert!(!md.contains(&stage_directive("streams")), "no Streams stage → its issue-generation directive is out of scope");
-        assert!(PLANNING_PROCESS_MD.contains("authoritative"), "process defers to the active-stages list");
+        assert!(process_md().contains("authoritative"), "process defers to the active-stages list");
         // The context directive names the baseline required topics + the `bsc plan context` channel that
         // shapes the dynamic required-set, so the planner seeds what the gate keys on (#1019).
         let ctx = stage_directive("discovery");
@@ -244,10 +253,10 @@ mod tests {
         }
         assert!(ctx.contains("bsc plan discovery"), "context directive shapes the dynamic required-set");
         assert!(ctx.contains("_skipped.md"), "context directive points non-applicable dimensions at _skipped");
-        assert!(PLANNING_PROCESS_MD.contains("gate item"), "coverage section frames created files as gate items");
+        assert!(process_md().contains("gate item"), "coverage section frames created files as gate items");
         // The discovery checklist itself flags the four files as gate-required and tells the
         // planner the gate can't pass without them — so they aren't lost to "skip" guidance (#736).
-        let proc = PLANNING_PROCESS_MD;
+        let proc = process_md();
         assert!(proc.contains("REQUIRED for the Context gate"), "checklist has the required-files callout");
         assert!(proc.contains("gate-required"), "checklist marks the four required dimensions");
         for f in ["goal.md", "scope.md", "stack.md", "architecture.md"] {
