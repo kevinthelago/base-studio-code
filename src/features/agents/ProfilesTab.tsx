@@ -32,6 +32,11 @@ export interface ProfilesTabProps {
   setTool: (t: ToolKey, v: Tier) => void;
   removeCmd: (c: string) => void;
   addCmd: () => void;
+  addPath: (kind: "allow" | "deny") => void;
+  editPath: (kind: "allow" | "deny", index: number, value: string) => void;
+  removePath: (kind: "allow" | "deny", index: number) => void;
+  addHost: () => void;
+  removeHost: (host: string) => void;
   toggleAssign: (consoleId: string, paneId: string) => void;
   find: (id: string) => AgentProfile | undefined;
   editable: boolean;
@@ -91,7 +96,7 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
   );
 }
 
-function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAssign, find, editable, onDelete }: ProfilesTabProps & { p: AgentProfile }) {
+function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath, editPath, removePath, addHost, removeHost, toggleAssign, find, editable, onDelete }: ProfilesTabProps & { p: AgentProfile }) {
   const isApp = p.category === "application";
   // Application roles are app-managed: lock their policy editors (visually + clicks).
   const lock: CSSProperties | undefined = editable ? undefined : { opacity: 0.55, pointerEvents: "none" };
@@ -208,19 +213,28 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             return (
               <div className="scope-line" key={`a${i}`}>
                 <span className="gly allow">＋</span>
-                <input className="input" defaultValue={g} disabled={placeholder} style={placeholder ? { opacity: 0.5 } : undefined} />
-                {!placeholder && <button className="x">×</button>}
+                <input
+                  className="input"
+                  value={g}
+                  disabled={placeholder}
+                  onChange={placeholder ? undefined : (e) => editPath("allow", i, e.target.value)}
+                  style={placeholder ? { opacity: 0.5 } : undefined}
+                />
+                {!placeholder && <button className="x" onClick={() => removePath("allow", i)}>×</button>}
               </div>
             );
           })}
           {p.paths.deny.map((g, i) => (
             <div className="scope-line" key={`d${i}`}>
               <span className="gly deny">－</span>
-              <input className="input" defaultValue={g} />
-              <button className="x">×</button>
+              <input className="input" value={g} onChange={(e) => editPath("deny", i, e.target.value)} />
+              <button className="x" onClick={() => removePath("deny", i)}>×</button>
             </div>
           ))}
-          <button className="cmd-add" style={{ marginTop: 2 }}>+ add path rule</button>
+          <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+            <button className="cmd-add" onClick={() => addPath("allow")}>+ allow path</button>
+            <button className="cmd-add" onClick={() => addPath("deny")}>+ deny path</button>
+          </div>
         </div>
       </div>
 
@@ -230,12 +244,17 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
         {p.net.allow.length ? (
           <div className="cmd-chips">
             {p.net.allow.map((h) => (
-              <span key={h} className="cmd-chip">{h === "*" ? <span style={{ color: "var(--accent)" }}>* all hosts</span> : h}<span className="x">×</span></span>
+              <span key={h} className="cmd-chip">{h === "*" ? <span style={{ color: "var(--accent)" }}>* all hosts</span> : h}<span className="x" onClick={() => removeHost(h)}>×</span></span>
             ))}
-            <button className="cmd-add">+ add host</button>
+            <button className="cmd-add" onClick={addHost}>+ add host</button>
           </div>
         ) : (
-          <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--fg-dim)" }}>⊘</span>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
+          <>
+            <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--fg-dim)" }}>⊘</span>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
+            <div className="cmd-chips" style={{ marginTop: 9 }}>
+              <button className="cmd-add" onClick={addHost}>+ add host</button>
+            </div>
+          </>
         )}
       </div>
 
