@@ -4,6 +4,7 @@
 // (repository, project board, milestone, issue) and carries a status that the publish flow updates
 // in place so the user can watch each object get created.
 import type { GhNode, GhRepoNode, GhStructure } from "../github/ghStructure";
+import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -115,27 +116,24 @@ function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatus
 
 export function GitHubStructureCard({ structure, status }: { structure: GhStructure; status: GhStatusMap }) {
   return (
-    <Stack gap={12} style={{
-      padding: "12px 14px", borderRadius: 6,
-      background: "color-mix(in oklch, var(--info), transparent 92%)",
-      border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-      flexShrink: 0,
-    }}>
-      <Text as="div" mono size={10} style={{
-        color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
-      }}>
-        github structure
-      </Text>
-      <GhGroup title="Project board" nodes={[structure.project]} status={status} />
-      <GhReposGroup repos={structure.repos} status={status} />
-      {structure.streams.length > 0 && (
-        <GhGroup
-          title="Agents"
-          count={structure.streams.length}
-          nodes={structure.streams.map(s => ({ id: s.id, label: `${s.label} · stream:${s.id.replace(/^stream:/, "")}` }))}
-          status={status}
-        />
-      )}
-    </Stack>
+    <Card tone="var(--info)" style={{ padding: "12px 14px", flexShrink: 0 }}>
+      <Stack gap={12}>
+        <Text as="div" mono size={10} style={{
+          color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
+        }}>
+          github structure
+        </Text>
+        <GhGroup title="Project board" nodes={[structure.project]} status={status} />
+        <GhReposGroup repos={structure.repos} status={status} />
+        {structure.streams.length > 0 && (
+          <GhGroup
+            title="Agents"
+            count={structure.streams.length}
+            nodes={structure.streams.map(s => ({ id: s.id, label: `${s.label} · stream:${s.id.replace(/^stream:/, "")}` }))}
+            status={status}
+          />
+        )}
+      </Stack>
+    </Card>
   );
 }

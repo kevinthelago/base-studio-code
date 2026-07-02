@@ -1,6 +1,7 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -43,16 +44,10 @@ export function PermissionPostureCard() {
             lineHeight: 1.5,
           }}
         >
-          <Box
-            as="span"
-            bg={sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)"} style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              marginTop: 4,
-              flexShrink: 0,
-            }}
-            aria-hidden
+          <StatusDot
+            color={sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)"}
+            size={8}
+            style={{ marginTop: 4 }}
           />
           <Box>
             <b>

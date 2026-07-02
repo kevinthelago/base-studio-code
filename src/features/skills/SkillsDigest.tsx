@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { Card } from "@/shared/ui/data/Card";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { HBars } from "@/shared/ui/charts";
 import { KIND, fmtCount } from "@/shared/data/skills";
 import { deriveSkillKpis, type SkillDef } from "./lib/skills";
@@ -47,13 +49,11 @@ export function SkillsDigest({ merged, stats, kpis, digestOpen, onToggle }: {
             { label: "Avg success", value: kpis.invWeek ? kpis.avgSuccess + "%" : "—", sub: "across active" },
             { label: "Never run", value: String(neverRun), sub: "candidates to prune" },
           ].map((t) => (
-            <Box key={t.label} pad={[11, 13]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: "0 0 auto", width: 150}}>
-              <Box className="mono-label">{t.label}</Box>
-              <Text as="div" mono size={20} weight={600} style={{ color: "var(--fg)", marginTop: 5 }}>{t.value}</Text>
-              <Text as="div" size={10.5} tone="muted" style={{ marginTop: 2 }}>{t.sub}</Text>
+            <Box key={t.label} style={{ flex: "0 0 auto", width: 150 }}>
+              <StatTile k={t.label} v={t.value} sub={t.sub} />
             </Box>
           ))}
-          <Box className="skills-leaderboard" pad={[10, 14]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: 1}}>
+          <Card className="skills-leaderboard" style={{ flex: 1 }}>
             <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</Text>
             {leaders.length === 0 ? (
               <Text as="div" size={11} tone="dim">No invocations yet — run the fleet to populate the leaderboard.</Text>
@@ -69,7 +69,7 @@ export function SkillsDigest({ merged, stats, kpis, digestOpen, onToggle }: {
                 fmtV={(v) => fmtCount(v) + "×"}
               />
             )}
-          </Box>
+          </Card>
         </Row>
       )}
     </Box>

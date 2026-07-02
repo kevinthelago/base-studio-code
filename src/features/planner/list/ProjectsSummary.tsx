@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useAppStore } from "@/store";
-import { Card } from "@/shared/ui/data/Card";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -66,14 +66,14 @@ export function ProjectsSummary() {
             ["milestones",  loading ? "…" : String(totalMilestones),    "due in next 2 weeks",               "info"   ],
             ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
           ] as const).map(([k, v, sub, tone]) => (
-            <Card key={k} style={{ padding: "10px 12px" }}>
-              <Box className="mono-label">{k}</Box>
-              <Box className="mono" style={{
-                fontSize: 18, fontWeight: 600, marginTop: 2,
-                color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : "var(--fg)",
-              }}>{v}</Box>
-              <Text as="div" size={10} tone="muted" style={{ marginTop: 1 }}>{sub}</Text>
-            </Card>
+            <StatTile
+              key={k}
+              k={k}
+              v={v}
+              sub={sub}
+              tone={tone === "accent" ? "accent" : undefined}
+              vStyle={tone === "info" ? { color: "var(--info)" } : undefined}
+            />
           ))}
         </Grid>
 

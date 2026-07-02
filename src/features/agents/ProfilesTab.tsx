@@ -8,6 +8,8 @@
 import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
+import { Card } from "@/shared/ui/data/Card";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -51,7 +53,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
   const { roles, profiles, consoles, selected, onSelect, onCreate } = props;
   return (
     <Box className="prof-layout">
-      <Box className="card prof-list">
+      <Card className="prof-list">
         <Box className="head">
           <Box className="head-row">
             <h3>Roles</h3>
@@ -69,7 +71,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
             <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</Button>
           </Box>
         </Box>
-      </Box>
+      </Card>
       <Box className="prof-detail"><ProfDetail {...props} p={selected} /></Box>
     </Box>
   );
@@ -139,10 +141,10 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
           </Stack>
         )}
         <Box className="pd-stat">
-          <Box><Box className="k">base policy</Box><Box className="v" style={{ color: modeColor(p.mode) }}>{MODE_LABEL[p.mode]}</Box></Box>
-          <Box><Box className="k">{isApp ? "scope" : "assigned"}</Box><Box className="v">{isApp ? "singleton session" : `${paneCount(p.id, consoles)} panes · ${consoleCount(p.id, consoles)} consoles`}</Box></Box>
-          <Box><Box className="k">commands</Box><Box className="v">{p.commands.length} + {GUARANTEED.length} guaranteed</Box></Box>
-          <Box><Box className="k">origin</Box><Box className="v">{originLabel}</Box></Box>
+          <StatTile k="base policy" v={MODE_LABEL[p.mode]} vStyle={{ color: modeColor(p.mode) }} />
+          <StatTile k={isApp ? "scope" : "assigned"} v={isApp ? "singleton session" : `${paneCount(p.id, consoles)} panes · ${consoleCount(p.id, consoles)} consoles`} />
+          <StatTile k="commands" v={`${p.commands.length} + ${GUARANTEED.length} guaranteed`} />
+          <StatTile k="origin" v={originLabel} />
         </Box>
       </Box>
 

@@ -3,16 +3,12 @@ import type { PaneSkill } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
   const list = skills ?? [];
   if (list.length === 0) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">◈</Box>
-        <Box as="span">No skills attached</Box>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="◈" title="No skills attached" />;
   }
   // Skills authored by this planning session (#1056) render FIRST and highlighted, so freshly
   // generated skills are obvious. Stable sort keeps each group's original order.

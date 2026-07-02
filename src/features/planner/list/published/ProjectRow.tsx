@@ -4,6 +4,7 @@ import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
@@ -30,9 +31,7 @@ function FleetPill({ running, paused }: { running: number; paused: number }) {
 function ProgressBar({ pct }: { pct: number }) {
   return (
     <Box as="span" title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <Box as="span" bg="var(--bg-elev2)" radius={99} style={{ width: 56, height: 4, overflow: "hidden", display: "inline-block" }}>
-        <Box as="span" bg={pct >= 1 ? "var(--success)" : "var(--accent)"} style={{ display: "block", height: "100%", width: `${pct * 100}%`}} />
-      </Box>
+      <FillBar value={pct} height={4} color={pct >= 1 ? "var(--success)" : "var(--accent)"} style={{ width: 56, display: "inline-block" }} />
       <Text as="span" mono size={9.5} tone="dim">{Math.round(pct * 100)}%</Text>
     </Box>
   );

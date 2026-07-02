@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -152,7 +153,7 @@ export function KeyboardCard() {
       )}
 
       {error && (
-        <Box style={{ fontSize: 12, color: "var(--danger, #e06c75)", marginBottom: 12 }}>{error}</Box>
+        <InlineError style={{ marginBottom: 12 }}>{error}</InlineError>
       )}
 
       {SHORTCUT_GROUPS.map((group) => (

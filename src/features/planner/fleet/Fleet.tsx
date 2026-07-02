@@ -13,6 +13,7 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -207,12 +208,11 @@ export function Fleet() {
   if (!hasFleet) {
     return (
       <section className="an-page">
-        <Stack align="center" justify="center" gap={10} style={{ flex: 1, padding: 48, textAlign: "center" }}>
-          <h2 className="mono" style={{ margin: 0, fontSize: 18 }}>No fleet running</h2>
-          <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
-            Launch a fleet from a project's plan to orchestrate parallel agents — workers, status, and coordination appear here live.
-          </p>
-        </Stack>
+        <EmptyState
+          iconVariant="dashed"
+          title="No fleet running"
+          description="Launch a fleet from a project's plan to orchestrate parallel agents — workers, status, and coordination appear here live."
+        />
       </section>
     );
   }

@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
@@ -148,11 +150,9 @@ export function DiagnosticsCard() {
       </Row>
 
       {error && (
-        <Box className="mono" pad={[10, 14]} style={{ color: "var(--danger)", fontSize: 11,
-          borderBottom: "1px solid var(--border-soft)",
-        }}>
+        <InlineError radius={0} borderFade={100} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           Probe failed: {error}
-        </Box>
+        </InlineError>
       )}
 
       {report && report.prereqs.length > 0 ? (
@@ -160,9 +160,7 @@ export function DiagnosticsCard() {
           {report.prereqs.map((v, i) => <PrereqRow key={v.name} verdict={v} alt={i % 2 === 1} />)}
         </Stack>
       ) : !running && !error ? (
-        <Box className="mono" pad={[20, 14]} style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
-          No prerequisite data yet.
-        </Box>
+        <EmptyState iconVariant="dashed" title="No prerequisite data yet." />
       ) : null}
     </Card>
   );

@@ -1,18 +1,13 @@
 // Automations stage body (split from FocusedBodies.tsx #1757).
 import type { PaneAutomation } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
-import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 export function AutomationsBody({ automations }: { automations?: PaneAutomation[] }) {
   const list = automations ?? [];
   if (list.length === 0) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">⏱</Box>
-        <Box as="span">No automations yet</Box>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="⏱" title="No automations yet" />;
   }
   return (
     <Stack gap={5}>

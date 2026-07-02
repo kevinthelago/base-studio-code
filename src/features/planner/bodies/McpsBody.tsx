@@ -12,6 +12,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Code } from "@/shared/ui/data/Code";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { McpHandlers } from "./focusedHandlers";
 
 const MCP_TRANSPORT: Record<string, { c: string; label: string }> = {
@@ -54,7 +55,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
       </Row>
 
       {list.length === 0 && (
-        <Box className="empty-state"><Box as="span" className="empty-icon">⊕</Box><Box as="span">No MCP servers yet — assign one below or have the planner add it</Box></Box>
+        <EmptyState iconVariant="dashed" icon="⊕" title="No MCP servers yet — assign one below or have the planner add it" />
       )}
 
       <Stack gap={8}>
