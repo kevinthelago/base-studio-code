@@ -36,6 +36,17 @@ fn gh_error_message<'a>(json: &'a serde_json::Value, fallback: &'a str) -> &'a s
     json["message"].as_str().unwrap_or(fallback)
 }
 
+/// The standard non-2xx GitHub error for a REST/GraphQL response: log `{log_ctx} HTTP {status}:
+/// {msg}` (`msg` from `json["message"]`, else "Unknown error") and return the
+/// `GitHub API error ({status}): {msg}` string every caller reports. The one copy shared by
+/// `gh_request`, `github_graphql`, and `github_request`. (Gist requests keep their own
+/// `{op}`-prefixed, non-logged wording in `gist_request`.)
+fn gh_status_error(status: reqwest::StatusCode, json: &serde_json::Value, log_ctx: &str) -> String {
+    let msg = gh_error_message(json, "Unknown error");
+    log::warn!("{log_ctx} HTTP {status}: {msg}");
+    format!("GitHub API error ({status}): {msg}")
+}
+
 /// Issue `method https://api.github.com/{path}` with a JSON body and the standard REST headers,
 /// returning the parsed JSON on a 2xx. On a non-2xx it logs `{log_ctx} HTTP {status}: {msg}` and
 /// returns `GitHub API error ({status}): {msg}` (`msg` from `json["message"]`, else "Unknown
@@ -55,9 +66,7 @@ async fn gh_request(
     )
     .await?;
     if !status.is_success() {
-        let msg = gh_error_message(&json, "Unknown error").to_string();
-        log::warn!("{log_ctx} HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
+        return Err(gh_status_error(status, &json, log_ctx));
     }
     Ok(json)
 }
@@ -130,9 +139,7 @@ pub(crate) async fn github_graphql(
     )
     .await?;
     if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        log::warn!("github_graphql HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
+        return Err(gh_status_error(status, &json, "github_graphql"));
     }
     if let Some(errors) = json.get("errors") {
         if errors.is_array() && !errors.as_array().unwrap().is_empty() {
@@ -340,9 +347,7 @@ pub(crate) async fn github_request(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
     if !status.is_success() {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        log::warn!("github_request {path} HTTP {status}: {msg}");
-        return Err(format!("GitHub API error ({}): {}", status, msg));
+        return Err(gh_status_error(status, &json, &format!("github_request {path}")));
     }
     let mut cache = github_cache().lock().unwrap();
     apply_github_response(&mut cache, &path, false, etag, Some(json.clone()));
@@ -418,7 +423,10 @@ pub(crate) async fn gist_update(
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_is_fresh, apply_github_response, gh_error_message, require_token, CachedGet};
+    use super::{
+        cache_is_fresh, apply_github_response, gh_error_message, gh_status_error, require_token,
+        CachedGet,
+    };
     use std::collections::HashMap;
 
     #[test]
@@ -438,6 +446,24 @@ mod tests {
         let without = serde_json::json!({ "documentation_url": "x" });
         assert_eq!(gh_error_message(&without, "Unknown error"), "Unknown error");
         assert_eq!(gh_error_message(&without, "unknown error"), "unknown error");
+    }
+
+    #[test]
+    fn gh_status_error_formats_status_and_message() {
+        use reqwest::StatusCode;
+        // The exact `GitHub API error (status): msg` wording every REST/GraphQL caller returns —
+        // pinned so the shared helper can't drift from the three sites it replaced.
+        let json = serde_json::json!({ "message": "Not Found" });
+        assert_eq!(
+            gh_status_error(StatusCode::NOT_FOUND, &json, "github_request repos/x"),
+            "GitHub API error (404 Not Found): Not Found",
+        );
+        // Absent `message` → the "Unknown error" fallback.
+        let empty = serde_json::json!({ "documentation_url": "x" });
+        assert_eq!(
+            gh_status_error(StatusCode::UNPROCESSABLE_ENTITY, &empty, "github_graphql"),
+            "GitHub API error (422 Unprocessable Entity): Unknown error",
+        );
     }
 
     #[test]
