@@ -221,6 +221,18 @@ USAGE:
 Usually captured via the `bsc-learned` helper. Candidates de-dupe on a normalized mistake|rule key.",
     },
     CmdDoc {
+        name: "triage",
+        summary: "per-repo triage-run markers + the since-marker issue delta (#1004)",
+        usage: "\
+USAGE:
+  bsc plan triage record <owner/repo>                # mark a triage launch at now; prints the epoch-seconds
+  bsc plan triage last <owner/repo>                  # the last triage-launch timestamp (JSON number, or null)
+  bsc plan triage changed <owner/repo> --since <ts>  # issues whose status changed since <ts> (repo-scoped; JSON)
+
+A per-repo \"last triage launch\" marker so the next triage resumes from the delta (issues changed
+since T) instead of re-ingesting the whole project. Empty repo on `changed` = the whole project.",
+    },
+    CmdDoc {
         name: "section",
         summary: "the project's flat prose files (goal/scope/stack/…)",
         usage: "\
@@ -391,6 +403,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "discovery" => nouns::cmd_discovery(&args),
         "integration" => nouns::cmd_integration(&args),
         "lesson" => nouns::cmd_lesson(&args),
+        "triage" => nouns::cmd_triage(&args),
         "section" => hub::cmd_section(&args),
         "automations" => hub::cmd_automations(&args),
         "startup" => hub::cmd_startup(&args),
@@ -503,7 +516,7 @@ mod tests {
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
             "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
-            "lesson", "section", "automations", "startup", "github-context",
+            "lesson", "triage", "section", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }
