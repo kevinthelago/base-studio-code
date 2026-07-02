@@ -14,6 +14,9 @@
 import { useState } from "react";
 import { type DeployConfig, type DeployService } from "../lib/deployConfig";
 import { RepoDeployCard } from "./DeployView";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import type { Repo } from "../pane/projectPane.types";
 
 const MONO = "var(--mono)";
@@ -58,7 +61,7 @@ export function DeploymentBody({
   const submitLink = () => { const v = linkInput.trim(); if (v.includes("/")) { onLinkRepo?.(v); setLinkInput(""); setLinking(false); } };
   const linkAffordance = onLinkRepo && (
     linking ? (
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <Row gap={6}>
         <input
           autoFocus aria-label="Link a repository" value={linkInput} placeholder="owner/repo"
           onChange={(e) => setLinkInput(e.target.value)}
@@ -71,7 +74,7 @@ export function DeploymentBody({
           fontFamily: MONO, fontSize: 9.5, cursor: "pointer",
         }}>link</button>
         <button onClick={() => { setLinking(false); setLinkInput(""); }} style={{ height: 26, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border-soft)", background: "transparent", color: "var(--fg-muted)", fontFamily: MONO, fontSize: 9.5, cursor: "pointer" }}>cancel</button>
-      </div>
+      </Row>
     ) : (
       <button type="button" onClick={() => setLinking(true)} style={{
         width: "100%", border: "1px dashed var(--border)", borderRadius: 8, padding: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -108,31 +111,31 @@ export function DeploymentBody({
   if (total === 0) {
     body = (
       <>
-        <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
+        <Stack align="center" gap={12} style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", textAlign: "center", background: "var(--bg-canvas)" }}>
           <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
           <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
           <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
-        </div>
+        </Stack>
         {linkAffordance}
       </>
     );
   } else {
     body = (
       <>
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <Stack gap={9}>
           {list.map((r) => {
             const svc = serviceForRepo(r.id);
             if (!svc) {
               // A linked repo whose deploy service isn't seeded yet (config out of sync) — show its
               // identity so it's not dropped; the service seeds when the plan is next saved.
               return (
-                <div key={r.id} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
+                <Row key={r.id} gap={9} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px" }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
                   <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
                   {repoMeta(r)}
-                  <span style={{ flex: 1 }} />
+                  <Spacer />
                   <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>deploy seeds on save</span>
-                </div>
+                </Row>
               );
             }
             return (
@@ -147,14 +150,14 @@ export function DeploymentBody({
             );
           })}
           {linkAffordance}
-        </div>
+        </Stack>
       </>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Stack gap={12}>
       {body}
-    </div>
+    </Stack>
   );
 }

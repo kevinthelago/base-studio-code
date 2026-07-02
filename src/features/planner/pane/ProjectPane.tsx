@@ -4,6 +4,8 @@
 // so the planning workflow is one focused stage at a time.
 import { useState, useEffect } from "react";
 import { Pane } from "@/shared/ui/overlay/Pane";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
@@ -101,26 +103,26 @@ export function ProjectPane({
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
   const viewerModal = viewing && (
     <div className="modal-scrim" onClick={() => setViewing(null)} style={{ padding: 24 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+      <Stack onClick={(e) => e.stopPropagation()} style={{
+        width: "min(720px, 92vw)", maxHeight: "84vh",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
         borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
       }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+        <Row gap={8} style={{
+          padding: "12px 14px",
           borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
         }}>
           <KindDot kind={viewing.kind} />
           <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
           <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
           <span className="mono" onClick={() => setViewing(null)} style={{ cursor: "pointer", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
-        </div>
+        </Row>
         <pre className="mono" style={{
           margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
           fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>{viewing.content || "(empty)"}</pre>
-      </div>
+      </Stack>
     </div>
   );
 

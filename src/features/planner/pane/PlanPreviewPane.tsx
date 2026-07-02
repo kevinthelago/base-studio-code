@@ -6,6 +6,8 @@
 
 import { useState, useCallback } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -87,7 +89,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
       }
       footer={declared.length > 0 && (
         <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
-          <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
+          <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <span>screens</span>
             <button
               className="btn ghost sm"
@@ -102,8 +104,8 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
             <span style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
               {approvedCount}/{declared.length} approved
             </span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          </Row>
+          <Stack gap={2}>
             {declared.map((s) => {
               const ok = approvedList.includes(s);
               return (
@@ -119,11 +121,11 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
                 </button>
               );
             })}
-          </div>
+          </Stack>
         </div>
       )}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {status === "fail" ? (
           <div className="mono" style={{ padding: 16, fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
             {run?.message || "Preview failed to build."}
@@ -131,20 +133,20 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         ) : preview?.srcDoc ? (
           <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
         ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
+          <Stack align="center" justify="center" gap={12} style={{ flex: 1, padding: 24, textAlign: "center" }}>
             <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
               {status === "running" ? "Bundling…" : "No preview yet"}
             </div>
             <div className="hint" style={{ maxWidth: 280 }}>
               The UI stage renders generated screens here via the render-preview pipeline.
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <Row gap={8} align="stretch">
               <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
               <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
-            </div>
-          </div>
+            </Row>
+          </Stack>
         )}
-      </div>
+      </Stack>
     </StageScreenFrame>
   );
 }

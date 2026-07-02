@@ -13,6 +13,9 @@ import {
   type SourceConfig, type ScanViewEntity, type ScanViewField,
   type ScanAutomation, type ScanAutomationKind,
 } from "../lib/sourceConfig";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 const MONO = "var(--mono)";
 type View = "graph" | "list" | "process";
@@ -110,13 +113,13 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
     <div style={{ position: "relative", overflow: "auto", maxHeight: 560, background: "radial-gradient(circle at 1px 1px, var(--bg-elev) 1px, transparent 0) 0 0 / 22px 22px, var(--bg-canvas)" }}>
       <div style={{ position: "relative", width: layout.width, height: layout.height }}>
         {/* type legend */}
-        <div style={{ position: "absolute", top: 10, left: 10, zIndex: 5, display: "flex", gap: 6, alignItems: "center", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 9px" }}>
+        <Row gap={6} style={{ position: "absolute", top: 10, left: 10, zIndex: 5, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 9px" }}>
           <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", letterSpacing: ".06em" }}>TYPES</span>
           <span style={chip("var(--info)")}>ref</span>
           <span style={chip("var(--violet)")}>enum</span>
           <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>string</span>
           <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--success)" }}>🔑 identity</span>
-        </div>
+        </Row>
 
         {/* edges */}
         <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
@@ -150,22 +153,22 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
               borderRadius: "var(--r-lg)", overflow: "hidden",
               boxShadow: isHub ? "0 0 0 4px color-mix(in oklab, var(--info), transparent 92%)" : undefined,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)", borderLeft: `3px solid ${e.srcColor}` }}>
+              <Row gap={8} style={{ padding: "9px 11px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)", borderLeft: `3px solid ${e.srcColor}` }}>
                 <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.label}</span>
                 <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>{e.count.toLocaleString()}</span>
-              </div>
+              </Row>
               {multi && e.source && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 11px", borderBottom: "1px solid var(--border-soft)" }}>
+                <Row gap={5} style={{ padding: "4px 11px", borderBottom: "1px solid var(--border-soft)" }}>
                   <span style={{ width: 6, height: 6, borderRadius: 99, background: e.srcColor }} />
                   <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>{e.source}</span>
-                </div>
+                </Row>
               )}
               {e.fields.map((f) => (
-                <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 11px", borderTop: "1px solid var(--border-soft)" }}>
+                <Row key={f.key} gap={7} style={{ padding: "5px 11px", borderTop: "1px solid var(--border-soft)" }}>
                   {f.identity && <span style={{ fontSize: 9, color: "var(--success)" }}>🔑</span>}
                   <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.key}</span>
                   <TypeChip f={f} />
-                </div>
+                </Row>
               ))}
             </div>
           );
@@ -179,45 +182,45 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
 function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean }) {
   const { open, toggle } = useExpandable(entities.slice(0, 2).map((e) => e.key));
   return (
-    <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+    <Stack gap={8} style={{ padding: "12px 14px 14px" }}>
       {entities.map((e) => {
         const expanded = open.has(e.key);
         const oneliner = `${e.fields.length} fields · ` + e.fields.slice(0, 4).map((f) => f.key + (f.identity ? "🔑" : "") + (f.ref ? `→${f.refLabel ?? f.ref}` : "")).join(", ");
         return (
           <div key={e.key} data-testid={`scan-list-${e.key}`} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
-            <div onClick={() => toggle(e.key)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", background: "var(--bg-elev)", cursor: "pointer" }}>
+            <Row onClick={() => toggle(e.key)} gap={9} style={{ padding: "9px 12px", background: "var(--bg-elev)", cursor: "pointer" }}>
               <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>{expanded ? "▾" : "▸"}</span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{e.label}</span>
               <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)" }}>{e.key}</span>
-              <span style={{ flex: 1 }} />
+              <Spacer />
               <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)" }}>{e.count.toLocaleString()} rows · {e.fields.length} fields</span>
               {multi && e.source && (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "2px 7px" }}>
                   <span style={{ width: 6, height: 6, borderRadius: 99, background: e.srcColor }} />{e.source}
                 </span>
               )}
-            </div>
+            </Row>
             {expanded ? (
-              <div style={{ display: "flex", flexDirection: "column" }}>
+              <Stack>
                 {e.fields.map((f) => (
-                  <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 12px", borderTop: "1px solid var(--border-soft)" }}>
+                  <Row key={f.key} gap={9} style={{ padding: "6px 12px", borderTop: "1px solid var(--border-soft)" }}>
                     <span style={{ width: 14, textAlign: "center" }}>{f.identity && <span style={{ fontSize: 9, color: "var(--success)" }}>🔑</span>}</span>
                     <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", minWidth: 128 }}>{f.key}</span>
                     {f.type === "ref" ? <span style={chip("var(--info)")}>ref → {f.refLabel ?? f.ref}</span> : f.type === "enum" ? <span style={chip("var(--violet)")}>enum{f.enumValues && f.enumValues.length ? ` · ${f.enumValues.join(" · ")}` : ""}</span> : (
                       <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>{f.type}</span>
                     )}
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
                     {f.required && <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--accent)" }}>required</span>}
-                  </div>
+                  </Row>
                 ))}
-              </div>
+              </Stack>
             ) : (
               <div style={{ padding: "7px 12px", borderTop: "1px solid var(--border-soft)", fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{oneliner}</div>
             )}
           </div>
         );
       })}
-    </div>
+    </Stack>
   );
 }
 
@@ -239,81 +242,81 @@ function Process({ cfg, multi }: { cfg: SourceConfig; multi: boolean }) {
     return <div style={{ padding: "20px 16px", fontSize: 12, color: "var(--fg-dim)" }}>No automations, processes, or derived logic captured for this source.</div>;
   }
   return (
-    <div style={{ padding: "13px 16px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+    <Stack gap={16} style={{ padding: "13px 16px 16px" }}>
       {p.businessProcesses.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <Stack gap={9}>
           <div style={grpLabel}>business processes</div>
           {p.businessProcesses.map((bp, i) => (
-            <div key={i} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+            <Stack key={i} gap={10} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: 12 }}>
+              <Row gap={9} wrap>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{bp.name}</span>
                 <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>on {bp.object || "—"}</span>
                 <span style={chip(bp.active ? "var(--success)" : "var(--fg-dim)")}>{bp.active ? "active" : "inactive"}</span>
-                <span style={{ flex: 1 }} />
+                <Spacer />
                 {multi && <SrcBadge source={bp.source} />}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              </Row>
+              <Row gap={7} wrap>
                 {bp.steps.map((s, j) => (
                   <span key={j} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                     <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 11px" }}>{s}</span>
                     {j < bp.steps.length - 1 && <span style={{ color: "var(--fg-dim)", fontSize: 12 }}>→</span>}
                   </span>
                 ))}
-              </div>
-            </div>
+              </Row>
+            </Stack>
           ))}
-        </div>
+        </Stack>
       )}
 
       {groups.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <Stack gap={9}>
           <div style={grpLabel}>automations · by kind</div>
           {groups.map((g) => (
-            <div key={g.kind} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Stack key={g.kind} gap={7}>
+              <Row gap={8}>
                 <span style={chip("var(--accent)")}>{KIND_LABEL[g.kind]}</span>
                 {g.legacy && <span style={chip("var(--danger)")}>⚠ legacy · migrate this</span>}
-              </div>
+              </Row>
               {g.items.map((a, i) => (
-                <div key={i} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 11px", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Stack key={i} gap={8} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 11px" }}>
+                  <Row gap={8} wrap>
                     <span style={{ fontSize: 12, fontWeight: 500 }}>{a.name}</span>
                     {a.object && <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>on {a.object}</span>}
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
                     {multi && <SrcBadge source={a.source} />}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                  </Row>
+                  <Row gap={7} wrap>
                     {a.trigger && <><span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>trigger</span><Tok>{a.trigger}</Tok><Arr /></>}
                     {a.condition && <><span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>if</span><Tok>{a.condition}</Tok><Arr /></>}
                     {a.actions.map((ac, j) => (
                       <span key={j} style={{ fontFamily: MONO, fontSize: 10, color: "var(--accent)", background: "color-mix(in oklab, var(--accent), transparent 90%)", border: "1px solid color-mix(in oklab, var(--accent), transparent 80%)", borderRadius: "var(--r-sm)", padding: "3px 8px" }}>{ac}</span>
                     ))}
-                  </div>
-                </div>
+                  </Row>
+                </Stack>
               ))}
-            </div>
+            </Stack>
           ))}
-        </div>
+        </Stack>
       )}
 
       {p.derivedLogic.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <Stack gap={9}>
           <div style={grpLabel}>derived logic</div>
           {p.derivedLogic.map((d, i) => (
-            <div key={i} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Stack key={i} gap={7} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "9px 11px" }}>
+              <Row gap={8} wrap>
                 <span style={chip("var(--violet)")}>{d.kind}</span>
                 <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)" }}>{d.name}</span>
                 {d.object && <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>on {d.object}</span>}
-                <span style={{ flex: 1 }} />
+                <Spacer />
                 {multi && <SrcBadge source={d.source} />}
-              </div>
+              </Row>
               {d.expression && <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg-muted)", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "7px 10px", overflowX: "auto" }}>{d.expression}</div>}
-            </div>
+            </Stack>
           ))}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Stack>
   );
 }
 function Tok({ children }: { children: React.ReactNode }) {
@@ -341,20 +344,20 @@ export function ScanViews({ cfg, dataModelName, version = 1 }: { cfg: SourceConf
   return (
     <div data-testid="scan-views" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
       {/* recap header + toggle */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "12px 14px", borderBottom: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Row justify="between" gap={14} style={{ padding: "12px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Stack gap={4} style={{ minWidth: 0 }}>
+          <Row gap={8}>
             <span style={{ fontSize: 14, fontWeight: 600 }}>Scanned result</span>
             <span style={chip("var(--success)")}>READ-ONLY</span>
-          </div>
+          </Row>
           <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.4 }}>
             <span style={{ color: "var(--violet)", fontFamily: MONO, fontSize: 10.5 }}>⬡ {dataModelName} · v{version}</span>
             {" · "}seeds <b style={{ color: "var(--fg)" }}>{impact.entities} {impact.entities === 1 ? "entity" : "entities"} · {impact.fields} fields</b> into features + structure
             {impact.behaviors > 0 && <> · <b style={{ color: "var(--fg)" }}>{impact.behaviors} behaviors</b> carried over</>}
           </div>
-        </div>
+        </Stack>
         <Toggle view={view} onView={setView} />
-      </div>
+      </Row>
 
       {view === "graph" && <Graph entities={entities} multi={multi} />}
       {view === "list" && <List entities={entities} multi={multi} />}

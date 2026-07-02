@@ -19,12 +19,14 @@ import {
   addSkill, removeSkill, addMcpServer, removeMcpServer, depCandidates,
 } from "./blueprintEdit";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import type { Blueprint, BlueprintStage } from "../stages/blueprints";
 import type { BlueprintSkillItem } from "./blueprintSkills";
 import type { McpLibraryItem } from "./blueprintMcp";
 
-const col = (gap = 12): CSSProperties => ({ display: "flex", flexDirection: "column", gap });
-const rowS = (gap = 10): CSSProperties => ({ display: "flex", alignItems: "center", gap });
 const gateCount = (s: BlueprintStage) => (s.gateRule ? 1 : 0);
 
 export interface AuthorViewProps {
@@ -68,28 +70,28 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
   const stages = bp.sections ?? [];
 
   return (
-    <div style={col(18)}>
+    <Stack gap={18}>
       <div>
         <Lbl hint="name & accent">Identity</Lbl>
-        <div style={{ ...rowS(11), alignItems: "flex-start" }}>
-          <div style={{ ...col(7), alignItems: "center" }}>
+        <Row gap={11} align="start">
+          <Stack gap={7} align="center">
             <span className="ed-icon" style={{ width: 44, height: 44, fontSize: 19, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9,
               background: tint(h, 0.18), color: hue(h), border: `1px solid ${tint(h, 0.4)}` }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</span>
-            <div style={rowS(4)}>
+            <Row gap={4}>
               {HUE_CHOICES.map((c) => (
                 <span key={c} onClick={() => set({ h: c })} title="accent hue"
                   style={{ width: 13, height: 13, borderRadius: 4, cursor: "pointer", background: hue(c),
                     outline: h === c ? "2px solid var(--fg)" : "none", outlineOffset: 1 }} />
               ))}
-            </div>
-          </div>
-          <div style={{ ...col(8), flex: 1 }}>
+            </Row>
+          </Stack>
+          <Stack gap={8} style={{ flex: 1 }}>
             <input className="input" value={bp.name} placeholder="Blueprint name" style={{ fontSize: 13 }}
               onChange={(e) => set({ name: e.target.value, icon: (e.target.value[0] || "B").toUpperCase() })} />
             <input className="input" value={bp.pitch ?? ""} placeholder="One-line pitch — shown in the catalog"
               onChange={(e) => set({ pitch: e.target.value })} />
-          </div>
-        </div>
+          </Stack>
+        </Row>
       </div>
 
       <div>
@@ -145,7 +147,7 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
           </div>
         </div>
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -197,8 +199,8 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
             </div>
 
             {sel && (
-              <div className="card" style={{ margin: "2px 4px 8px 30px", padding: 13 }}>
-                <div style={{ ...rowS(8), marginBottom: 11 }}>
+              <Card style={{ margin: "2px 4px 8px 30px", padding: 13 }}>
+                <Row gap={8} style={{ marginBottom: 11 }}>
                   <input className="d-name" style={{ fontSize: 13, minWidth: 0, flex: 1, marginLeft: 0 }}
                     value={s.name} onChange={(e) => setSections(setStageField(stages, s.uid, { name: e.target.value }))} />
                   <button className="icon-btn danger" title="Delete stage" aria-label="Delete stage" onClick={() => {
@@ -206,7 +208,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                     setSections(next);
                     if (next[0]) onSelectStage?.(next[0].uid);
                   }}>🗑</button>
-                </div>
+                </Row>
                 <div className="d-kind" style={{ paddingLeft: 0, marginBottom: 11 }}>{k.title} · {k.blurb}</div>
 
                 <Lbl hint="what Claude is told in this stage">Prompt module</Lbl>
@@ -230,7 +232,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                     })}
                   </div>
                 )}
-              </div>
+              </Card>
             )}
 
             {i < stages.length - 1 && <div className={"stage-conn" + (stages[i + 1].deps.includes(s.key) ? " dep" : "")} />}
@@ -240,14 +242,14 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
 
       <div className="addstage">
         {!adding ? (
-          <button className="btn ghost sm" style={{ width: "100%", justifyContent: "center", borderStyle: "dashed", marginTop: 8 }} onClick={() => setAdding(true)}>+ Add stage</button>
+          <Button variant="ghost" size="sm" style={{ width: "100%", justifyContent: "center", borderStyle: "dashed", marginTop: 8 }} onClick={() => setAdding(true)}>+ Add stage</Button>
         ) : (
-          <div className="card" style={{ padding: 11, marginTop: 8 }}>
-            <div style={{ ...rowS(0), marginBottom: 6 }}>
+          <Card style={{ padding: 11, marginTop: 8 }}>
+            <Row gap={0} style={{ marginBottom: 6 }}>
               <span className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-muted)" }}>Add a stage</span>
               <span style={{ flex: 1 }} />
               <IconButton aria-label="cancel" onClick={() => setAdding(false)} />
-            </div>
+            </Row>
             <div className="palette">
               {STAGE_KIND_KEYS.map((kk) => {
                 const k = stageKind(kk);
@@ -259,7 +261,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                 );
               })}
             </div>
-          </div>
+          </Card>
         )}
       </div>
     </div>
@@ -276,7 +278,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
   const totalMcp = new Set(stages.flatMap((s) => s.mcp ?? [])).size;
 
   return (
-    <div style={col(12)}>
+    <Stack gap={12}>
       <div className="stats" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 4 }}>
         <div className="stat"><div className="sk">stages</div><div className="sv">{stages.length}</div></div>
         <div className="stat"><div className="sk">skills wired</div><div className="sv">{totalSkills}</div></div>
@@ -290,19 +292,19 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
         const addableSkills = skillLibrary.filter((sk) => !attachedSkills.includes(sk.id));
         const addableMcp = mcpLibrary.filter((m) => !attachedMcp.includes(m.id));
         return (
-          <div key={s.uid} className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ ...rowS(10), padding: "11px 13px", cursor: "pointer" }} onClick={() => toggle(s.uid)}>
+          <Card key={s.uid} style={{ padding: 0, overflow: "hidden" }}>
+            <Row gap={10} style={{ padding: "11px 13px", cursor: "pointer" }} onClick={() => toggle(s.uid)}>
               <StageGlyph k={s.key} />
-              <div style={{ ...col(2), flex: 1, minWidth: 0 }}>
+              <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                 <span className="mono-value">{s.name}</span>
                 <span style={{ fontSize: 10, color: "var(--fg-dim)", display: "flex", gap: 8 }}>
                   <span>{attachedSkills.length} skill{attachedSkills.length !== 1 ? "s" : ""}</span>
                   <span>{attachedMcp.length} MCP</span>
                   <span>→ {DISPOSITIONS[s.output ?? ""]?.title ?? "plan file"}</span>
                 </span>
-              </div>
+              </Stack>
               <span className="dim mono" style={{ fontSize: 10 }}>{isOpen ? "▼" : "▶"}</span>
-            </div>
+            </Row>
 
             {isOpen && (
               <div style={{ padding: "0 13px 14px", borderTop: "1px solid var(--border-soft)" }}>
@@ -359,10 +361,10 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                 )}
               </div>
             )}
-          </div>
+          </Card>
         );
       })}
-    </div>
+    </Stack>
   );
 }
 
@@ -398,7 +400,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
   const totalMcp = new Set(stages.flatMap((s) => s.mcp ?? [])).size;
 
   return (
-    <div style={col(16)}>
+    <Stack gap={16}>
       <div className="hero" style={{ marginBottom: 0 }}>
         <span className="hicon" style={{ background: tint(h, 0.16), color: hue(h) }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</span>
         <div className="htxt">
@@ -432,7 +434,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
 
       <div>
         <Lbl hint="lint · must pass to publish">Validation</Lbl>
-        <div style={col(5)}>
+        <Stack gap={5}>
           {checks.map((c) => (
             <div key={c.id} className={"diff-line " + (c.ok ? "add" : "del")} style={{ marginBottom: 0 }}>
               <span className="dmark">{c.ok ? "✓" : "✕"}</span>
@@ -441,7 +443,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
               <span className="dim" style={{ fontSize: 10 }}>{c.detail}</span>
             </div>
           ))}
-        </div>
+        </Stack>
       </div>
 
       <div>
@@ -457,12 +459,12 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
         </div>
       </div>
 
-      <button className="btn primary" disabled={!allPass || published} onClick={onPublish}
+      <Button variant="primary" disabled={!allPass || published} onClick={onPublish}
         style={{ height: 38, justifyContent: "center", fontSize: 12 }}>
         {published ? "✓ Published"
-          : allPass ? <span style={rowS(7)}><Ic n="upload" size={14} /> {vis === "local" ? "Save to library" : "Publish blueprint"}</span>
+          : allPass ? <span style={{ display: "flex", alignItems: "center", gap: 7 }}><Ic n="upload" size={14} /> {vis === "local" ? "Save to library" : "Publish blueprint"}</span>
           : `Resolve ${checks.length - passed} check${checks.length - passed > 1 ? "s" : ""} to publish`}
-      </button>
-    </div>
+      </Button>
+    </Stack>
   );
 }

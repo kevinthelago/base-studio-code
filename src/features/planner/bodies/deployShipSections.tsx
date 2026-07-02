@@ -9,6 +9,9 @@ import {
 } from "../lib/deployConfig";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 import { chip, Card, Seg, Toggle } from "./deployPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 /** The per-repo ship sections (#1421) — every repo owns its OWN pipeline, environments,
  *  config/secrets, and rollout. Rendered inside each {@link RepoDeployCard} once a target is set. */
@@ -20,49 +23,49 @@ export function ServiceDeploySections({ svc, setSvc }: {
     <>
       {/* 2 · CI/CD pipeline */}
       <Card n="02" title="CI / CD pipeline" accent="var(--accent)" done={ck("pipeline")} right={<span style={chip}>{svc.pipeline.provider}</span>}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <Stack gap={6}>
           {svc.pipeline.stages.map((st, i) => {
             const isFinal = i === svc.pipeline.stages.length - 1;
             const stageName = isFinal && (["deploy", "publish", "package"] as string[]).includes(st.name) ? finalStageName(svc) : st.name;
             return (
-              <div key={st.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Stack key={st.id} gap={6}>
+                <Stack gap={8} style={{ padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
+                  <Row gap={6}>
                     <span style={{ width: 7, height: 7, borderRadius: 99, background: st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)" }} />
                     <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{stageName}</span>
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
                     {st.gate && <span style={{ ...chip, fontSize: 7.5, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 85%)" }}>⛒ gate</span>}
-                  </div>
+                  </Row>
                   <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", lineHeight: 1.35 }}>{st.cmd || "—"}</span>
                   <Seg value={st.trigger} options={PIPE_TRIGGERS}
                     onChange={(v) => setSvc({ pipeline: { ...svc.pipeline, stages: svc.pipeline.stages.map((x) => x.id === st.id ? { ...x, trigger: v } : x) } })} />
-                </div>
+                </Stack>
                 {i < svc.pipeline.stages.length - 1 && (
                   <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 13, color: svc.pipeline.stages[i + 1].gate ? "var(--accent)" : "var(--fg-dim)" }}>{svc.pipeline.stages[i + 1].gate ? "⟱" : "↓"}</span>
                 )}
-              </div>
+              </Stack>
             );
           })}
-        </div>
+        </Stack>
       </Card>
 
       {/* 3 · Environments */}
       <Card n="03" title="Environments" hint="branch → env" done={ck("envs")}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <Stack gap={6}>
           {svc.envs.map((e, i) => (
-            <div key={e.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
+            <Stack key={e.id} gap={6}>
+              <Row gap={9} style={{ padding: "9px 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
                 <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: e.id === "prod" ? "var(--success)" : "var(--fg-dim)" }} />
                 <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", width: 52 }}>{e.name}</span>
                 <span style={{ ...chip, fontSize: 7.5, ...(e.auto ? {} : { color: "var(--accent)", borderColor: "var(--accent-dim)" }) }}>{e.auto ? "auto" : "manual"}</span>
                 <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--info)", padding: "1px 6px", borderRadius: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {e.branch}</span>
-                <span style={{ flex: 1 }} />
+                <Spacer />
                 <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "42%" }}>{e.url || "—"}</span>
-              </div>
+              </Row>
               {i < svc.envs.length - 1 && <span style={{ alignSelf: "center", fontFamily: MONO, fontSize: 11, color: "var(--fg-dim)" }}>↓</span>}
-            </div>
+            </Stack>
           ))}
-        </div>
+        </Stack>
       </Card>
 
       {/* 4 · Config & secrets */}
@@ -110,10 +113,10 @@ export function ServiceDeploySections({ svc, setSvc }: {
           so this card is hidden for local mode. Boxed as a collapsible card like the others (#1421). */}
       {serviceMode(svc) === "cloud" && (
         <Card n="05" title="Rollout & health" hint={svc.release.strategy || undefined} done={ck("release")}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Stack gap={12}>
+          <Row gap={10} wrap>
             <span style={{ ...grpLabel }}>rollout</span>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            <Row wrap gap={5} align="stretch">
               {RELEASE_STRATEGIES.map((s) => {
                 const on = svc.release.strategy === s.id;
                 return (
@@ -124,15 +127,15 @@ export function ServiceDeploySections({ svc, setSvc }: {
                   }}>{s.label}</button>
                 );
               })}
-            </div>
-            <span style={{ flex: 1 }} />
+            </Row>
+            <Spacer />
             <Toggle on={svc.release.autoRollback} onClick={() => setSvc({ release: { ...svc.release, autoRollback: !svc.release.autoRollback } })} label="auto-rollback" />
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+          </Row>
+          <Row wrap gap={14} align="stretch">
             <Toggle on={svc.health.probeOn} onClick={() => setSvc({ health: { ...svc.health, probeOn: !svc.health.probeOn } })} label="health probe" value={svc.health.probe} />
             <Toggle on={svc.release.migrateWithDeploy} onClick={() => setSvc({ release: { ...svc.release, migrateWithDeploy: !svc.release.migrateWithDeploy } })} label="migrate with deploy" />
-          </div>
-          </div>
+          </Row>
+          </Stack>
         </Card>
       )}
     </>

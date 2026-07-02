@@ -1,6 +1,7 @@
 // Automations stage body (split from FocusedBodies.tsx #1757).
 import type { PaneAutomation } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function AutomationsBody({ automations }: { automations?: PaneAutomation[] }) {
   const list = automations ?? [];
@@ -13,7 +14,7 @@ export function AutomationsBody({ automations }: { automations?: PaneAutomation[
     );
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+    <Stack gap={5}>
       {list.map((a) => (
         <ListItemCard
           key={a.name}
@@ -21,6 +22,6 @@ export function AutomationsBody({ automations }: { automations?: PaneAutomation[
           meta={`${a.command}${a.schedule ? ` · ${a.schedule}` : ""}`}
         />
       ))}
-    </div>
+    </Stack>
   );
 }

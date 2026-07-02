@@ -2,6 +2,8 @@ import { useAppStore } from "@/store";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 
 /**
  * GitHub-not-connected state for the Projects page — the leaner of the two
@@ -31,7 +33,7 @@ export function ProjectsEmpty() {
             onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
             style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
           >
-            <span className="mono" style={{ fontSize: 15 }}>⎇</span>
+            <Text mono size={15}>⎇</Text>
             Connect with GitHub
           </button>
         }
@@ -42,11 +44,11 @@ export function ProjectsEmpty() {
             textAlign: "left",
           }}>
             <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Row gap={6} align="stretch" wrap>
               {["repo", "project", "issues", "read:org"].map(s => (
                 <Chip key={s}>{s}</Chip>
               ))}
-            </div>
+            </Row>
           </div>
         }
       />

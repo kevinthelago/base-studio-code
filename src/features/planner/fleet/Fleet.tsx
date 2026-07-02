@@ -6,6 +6,10 @@
 import { useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -18,32 +22,32 @@ const GRID = "150px 96px 1fr 70px 22px";
 
 function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: LiveWorker) => void }) {
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Worker board" hint="one agent per stream · click a worker to open it"
         right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{workers.length} live</span>} />
       <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-        <div className="mono" style={{
-          display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "7px 12px",
+        <Grid cols={GRID} gap={10} className="mono" style={{
+          padding: "7px 12px",
           background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
           fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em",
         }}>
           <span>worker</span><span>status</span><span>current</span><span style={{ textAlign: "right" }}>issues</span><span />
-        </div>
+        </Grid>
         {workers.map((w, i) => {
           const st = STATUS[w.status];
           return (
-            <div key={w.id} className="hrow" onClick={() => onOpen(w)} style={{
-              display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "9px 12px", alignItems: "center", fontSize: 11,
+            <Grid cols={GRID} gap={10} align="center" key={w.id} className="hrow" onClick={() => onOpen(w)} style={{
+              padding: "9px 12px", fontSize: 11,
               background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
               borderLeft: `2px solid ${w.profileColor}`, cursor: "pointer",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+              <Row gap={7} style={{ minWidth: 0 }}>
                 <Avatar login={w.name} bot size={18} />
                 <div style={{ minWidth: 0 }}>
                   <div className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
                   <div className="mono" style={{ fontSize: 9, color: w.profileColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.profileLabel}</div>
                 </div>
-              </div>
+              </Row>
               <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: st.color }}>
                 <span className={`wd ${w.status}`} />{st.label}
               </span>
@@ -53,18 +57,18 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
               </div>
               <span className="mono" style={{ textAlign: "right", fontSize: 10.5, color: "var(--fg-muted)" }}>{w.ownedTotal}</span>
               <span className="mono" style={{ textAlign: "right", fontSize: 13, color: "var(--fg-dim)" }}>›</span>
-            </div>
+            </Grid>
           );
         })}
       </div>
-      <div className="mono" style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap", fontSize: 10, color: "var(--fg-muted)" }}>
+      <Row gap={14} align="stretch" wrap className="mono" style={{ marginTop: 10, fontSize: 10, color: "var(--fg-muted)" }}>
         {Object.values(STATUS).map(s => (
           <span key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <ColorSwatch color={s.color} />{s.label}
           </span>
         ))}
-      </div>
-    </div>
+      </Row>
+    </Card>
   );
 }
 
@@ -72,21 +76,21 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
   const slices = (Object.entries(counts) as Array<[LiveWorker["status"], number]>)
     .map(([k, v]) => ({ name: STATUS[k].label, value: v, color: STATUS[k].color }));
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Fleet status" hint="right now" />
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <Row gap={16}>
         <Donut slices={slices} center={{ value: total, label: "workers" }} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+        <Stack gap={6} style={{ flex: 1 }}>
           {slices.map(s => (
-            <div key={s.name} className="mono" style={{ display: "grid", gridTemplateColumns: "12px 1fr 24px", gap: 8, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
+            <Grid key={s.name} cols="12px 1fr 24px" gap={8} align="center" className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
               <ColorSwatch color={s.color} />
               <span>{s.name}</span>
               <span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
-            </div>
+            </Grid>
           ))}
-        </div>
-      </div>
-    </div>
+        </Stack>
+      </Row>
+    </Card>
   );
 }
 
@@ -103,7 +107,7 @@ function Throughput({ gh }: { gh: FleetGithub }) {
   const d = sliceThroughput(gh.throughput, range);
   const total = d.landed.reduce((a, b) => a + b, 0) + d.merged.reduce((a, b) => a + b, 0);
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Fleet throughput" hint="issues landed vs PRs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       {gh.loading && total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>Loading from GitHub…</div>
@@ -119,7 +123,7 @@ function Throughput({ gh }: { gh: FleetGithub }) {
             ]} />
           </>}
       {tip.node}
-    </div>
+    </Card>
   );
 }
 
@@ -127,7 +131,7 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
   const tip = useTip();
   const total = gh.timeToLand.reduce((a, b) => a + b.v, 0);
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Time-to-land" hint="PR open → merged · last 14d" />
       {total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</div>
         : <>
@@ -138,45 +142,45 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
             </div>
           </>}
       {tip.node}
-    </div>
+    </Card>
   );
 }
 
 function MergeQueue({ gh }: { gh: FleetGithub }) {
   const tone: Record<string, string> = { green: "var(--success)", running: "var(--accent)", blocked: "var(--danger)", draft: "var(--fg-dim)" };
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
         right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{gh.mergeQueue.length}</span>} />
       {gh.mergeQueue.length === 0
         ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</div>
         : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+          <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
             {gh.mergeQueue.map((q, i) => (
-              <div key={`${q.repo}${q.pr}`} className="hrow" style={{ display: "grid", gridTemplateColumns: "42px 1fr 64px", gap: 8, alignItems: "center", padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+              <Grid key={`${q.repo}${q.pr}`} cols="42px 1fr 64px" gap={8} align="center" className="hrow" style={{ padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
                 <span className="mono" style={{ color: "var(--fg-dim)" }}>{q.pr}</span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.title}</div>
                   <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</div>
                 </div>
                 <span className="mono" style={{ textAlign: "right", fontSize: 10, color: tone[q.state] }}>● {q.state}</span>
-              </div>
+              </Grid>
             ))}
-          </div>
+          </Stack>
         )}
-    </div>
+    </Card>
   );
 }
 
 /** Tokens/spend still need per-session accounting (#416) — honest note, no fake numbers. */
 function SpendNote() {
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Tokens & spend" hint="not measured yet" />
       <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>
         Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -200,12 +204,12 @@ export function Fleet() {
   if (!hasFleet) {
     return (
       <section className="an-page">
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 48, textAlign: "center" }}>
+        <Stack align="center" justify="center" gap={10} style={{ flex: 1, padding: 48, textAlign: "center" }}>
           <h2 className="mono" style={{ margin: 0, fontSize: 18 }}>No fleet running</h2>
           <p className="hint" style={{ maxWidth: 380, margin: 0 }}>
             Launch a fleet from a project's plan to orchestrate parallel agents — workers, status, and coordination appear here live.
           </p>
-        </div>
+        </Stack>
       </section>
     );
   }
@@ -213,7 +217,7 @@ export function Fleet() {
   return (
     <section className="an-page">
       <div className="an-wrap">
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+        <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Fleet</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
@@ -227,7 +231,7 @@ export function Fleet() {
             onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
             launch worker
           </button>
-        </div>
+        </Row>
 
         <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
           <StatCard k="active workers" v={`${kpis.active}/${kpis.total}`} sub="running now" tone="accent" />
@@ -238,18 +242,18 @@ export function Fleet() {
           <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <Grid cols="1.6fr 1fr" gap={14}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <WorkerBoard workers={workers} onOpen={setSelected} />
             <Throughput gh={gh} />
             <TimeToLand gh={gh} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          </Stack>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <FleetStatus counts={counts} total={kpis.total} />
             <MergeQueue gh={gh} />
             <SpendNote />
-          </div>
-        </div>
+          </Stack>
+        </Grid>
       </div>
     </section>
   );

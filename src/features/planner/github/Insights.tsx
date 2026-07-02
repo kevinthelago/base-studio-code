@@ -4,6 +4,12 @@ import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { StatCard } from "@/shared/ui/charts";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,11 +75,10 @@ function HBar({
 }: { label: string; count: number; max: number; color: string; pct?: boolean }) {
   const w = max > 0 ? (count / max) * 100 : 0;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 40px", gap: 10, alignItems: "center" }}>
-      <div className="mono" style={{
-        fontSize: 10.5, color: "var(--fg-muted)",
+    <Grid cols="130px 1fr 40px" gap={10} align="center">
+      <Text as="div" mono size={10.5} tone="muted" style={{
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      }}>{label}</div>
+      }}>{label}</Text>
       <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
         <div style={{
           height: "100%", width: `${w}%`,
@@ -81,10 +86,10 @@ function HBar({
           transition: "width 0.3s ease",
         }} />
       </div>
-      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
+      <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>
         {pct ? `${Math.round(w)}%` : count}
-      </div>
-    </div>
+      </Text>
+    </Grid>
   );
 }
 
@@ -260,52 +265,52 @@ export function Insights() {
           <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {isLoading && (
-            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
+            <Text as="div" mono size={12} tone="dim" style={{ padding: "40px 0", textAlign: "center" }}>
               Loading insights…
-            </div>
+            </Text>
           )}
 
           {!isLoading && (
             <>
               {/* Stat cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
+              <Grid cols={4} gap={10} style={{ marginBottom: 18 }}>
                 <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="fg"      />
                 <StatCard k="completion"    v={`${completionPct}%`} sub={`${closed} of ${total} closed`}          tone="success" />
                 <StatCard k="velocity"      v={`${velocity}/wk`} sub="issues closed · last 4 weeks"               tone="info"    />
                 <StatCard k="open issues"   v={String(open)}     sub={`${total > 0 ? Math.round((open / total) * 100) : 0}% remaining`} tone="accent" />
-              </div>
+              </Grid>
 
               {/* Middle row: status + assignees */}
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}>
+              <Grid cols="1.4fr 1fr" gap={14} style={{ marginBottom: 14 }}>
                 {/* Status distribution */}
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
                     <h3 style={{ margin: 0 }}>Status distribution</h3>
                     <span className="hint">{total} items</span>
-                  </div>
+                  </Row>
                   {statusDist.length === 0 ? (
-                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No status field found.</div>
+                    <Text as="div" mono size={11} tone="dim">No status field found.</Text>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Stack gap={8}>
                       {statusDist.map(s => (
                         <HBar key={s.name} label={s.name} count={s.count} max={maxStatusCount} color={s.color} />
                       ))}
-                    </div>
+                    </Stack>
                   )}
-                </div>
+                </Card>
 
                 {/* Assignee workload */}
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
                     <h3 style={{ margin: 0 }}>Assignee workload</h3>
                     <span className="hint">open issues</span>
-                  </div>
+                  </Row>
                   {assigneeDist.length === 0 ? (
-                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No open issues.</div>
+                    <Text as="div" mono size={11} tone="dim">No open issues.</Text>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Stack gap={8}>
                       {assigneeDist.map(a => (
-                        <div key={a.login} style={{ display: "grid", gridTemplateColumns: "18px 112px 1fr 32px", gap: 8, alignItems: "center" }}>
+                        <Grid key={a.login} cols="18px 112px 1fr 32px" gap={8} align="center">
                           {a.login === "(unassigned)" ? (
                             <span className="mono" style={{
                               width: 16, height: 16, borderRadius: "50%",
@@ -321,9 +326,9 @@ export function Insights() {
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>{a.login[0]?.toUpperCase()}</span>
                           )}
-                          <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          <Text as="div" mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {a.login}
-                          </div>
+                          </Text>
                           <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
                             <div style={{
                               height: "100%",
@@ -332,21 +337,21 @@ export function Insights() {
                               borderRadius: 3,
                             }} />
                           </div>
-                          <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{a.count}</div>
-                        </div>
+                          <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>{a.count}</Text>
+                        </Grid>
                       ))}
-                    </div>
+                    </Stack>
                   )}
-                </div>
-              </div>
+                </Card>
+              </Grid>
 
               {/* Weekly activity */}
-              <div className="card" style={{ padding: "16px 20px", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+              <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
+                <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
                   <h3 style={{ margin: 0 }}>Weekly activity</h3>
                   <span className="hint">last 8 weeks</span>
-                  <div style={{ flex: 1 }} />
-                  <div className="mono" style={{ display: "flex", gap: 14, fontSize: 10, color: "var(--fg-dim)" }}>
+                  <Spacer />
+                  <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--info), transparent 40%)", display: "inline-block" }} />
                       opened
@@ -355,24 +360,24 @@ export function Insights() {
                       <span style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--success), transparent 40%)", display: "inline-block" }} />
                       closed
                     </span>
-                  </div>
-                </div>
+                  </Row>
+                </Row>
                 <SparkBars weeks={weeklyActivity} />
-              </div>
+              </Card>
 
               {/* Label distribution */}
               {labelDist.length > 0 && (
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
                     <h3 style={{ margin: 0 }}>Label frequency</h3>
                     <span className="hint">top {labelDist.length}</span>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 32px" }}>
+                  </Row>
+                  <Grid cols={2} style={{ gap: "6px 32px" }}>
                     {labelDist.map(l => (
                       <HBar key={l.name} label={l.name} count={l.count} max={maxLabelCount} color={l.color} />
                     ))}
-                  </div>
-                </div>
+                  </Grid>
+                </Card>
               )}
             </>
           )}

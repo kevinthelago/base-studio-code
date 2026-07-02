@@ -16,6 +16,9 @@ import {
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
 
 export const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",
@@ -76,7 +79,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
       <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)" }}>
         {field.label} <span style={{ color: "var(--accent)" }}>●</span> <span style={{ color: "var(--fg-dim)" }}>secret</span>
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Row gap={8}>
         <input
           type={revealed ? "text" : "password"}
           value={value}
@@ -96,7 +99,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
             background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", cursor: "pointer", fontSize: 13,
           }}
         >👁</button>
-      </div>
+      </Row>
     </label>
   );
 }
@@ -121,19 +124,19 @@ function ScanBar() {
 function ScanResult({ src, dataModelName }: { src: DeclaredSource; dataModelName: string }) {
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      <Grid cols={2} gap={6}>
         {(src.objects ?? []).map((o) => (
-          <div key={o.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 9px" }}>
+          <Row key={o.name} justify="between" style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 9px" }}>
             <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{o.name}</span>
             <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--fg)" }}>{o.count.toLocaleString()}</span>
-          </div>
+          </Row>
         ))}
-      </div>
+      </Grid>
       {(src.behaviors ?? []).length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "color-mix(in oklch, var(--violet), transparent 92%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)", borderRadius: "var(--r-sm)", padding: "6px 10px" }}>
+        <Row gap={8} wrap style={{ background: "color-mix(in oklch, var(--violet), transparent 92%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)", borderRadius: "var(--r-sm)", padding: "6px 10px" }}>
           <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: ".06em", color: "var(--violet)" }}>BEHAVIORS</span>
           {(src.behaviors ?? []).map((b) => <span key={b.label} style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>⚙ {b.label}</span>)}
-        </div>
+        </Row>
       )}
       <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--violet)" }}>→ feeds the «{dataModelName}» Data Model</div>
     </>
@@ -176,7 +179,7 @@ export function SourceCard({
   return (
     <div data-testid={`source-card-${src.uid}`} style={{ background: "var(--bg-panel)", border: `1px solid ${borderColor}`, borderRadius: "var(--r-lg)", overflow: "hidden" }}>
       {/* header */}
-      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 13px", background: "var(--bg-elev)", cursor: "pointer" }}>
+      <Row onClick={onToggle} gap={9} style={{ padding: "11px 13px", background: "var(--bg-elev)", cursor: "pointer" }}>
         <span style={{ width: 8, height: 8, borderRadius: 99, flex: "0 0 8px", background: STATUS_DOT[src.status], animation: (src.status === "connecting" || src.status === "scanning") ? "pulse 1.2s ease-in-out infinite" : undefined }} />
         <Badge text={c.badge} />
         <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -186,10 +189,10 @@ export function SourceCard({
           <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: 99, padding: "2px 7px" }}>FAILED</span>
         ) : <ReadOnlyPill />}
         <span style={{ color: "var(--fg-dim)", fontSize: 11 }}>{expanded ? "▾" : "▸"}</span>
-      </div>
+      </Row>
 
       {expanded && (
-        <div style={{ padding: "12px 13px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <Stack gap={10} style={{ padding: "12px 13px" }}>
           {/* declared / not connected → the spec-driven connect form */}
           {src.status === "declared" && (
             <>
@@ -201,9 +204,9 @@ export function SourceCard({
                     color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 91%)", border: "1px solid var(--accent-dim)", borderRadius: "var(--r-md)", padding: "10px 16px", cursor: "pointer",
                   }}>⟳ {spec.oauthLabel} ↗</button>
                   {spec.envs && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <Stack gap={5}>
                       <span style={grpLabel}>environment</span>
-                      <div style={{ display: "flex", gap: 7 }}>
+                      <Row gap={7} align="stretch">
                         {(["production", "sandbox"] as const).map((env) => {
                           const on = (src.env ?? "production") === env;
                           return (
@@ -213,8 +216,8 @@ export function SourceCard({
                             }}>{on ? "◉" : "○"} {env[0].toUpperCase() + env.slice(1)}</button>
                           );
                         })}
-                      </div>
-                    </div>
+                      </Row>
+                    </Stack>
                   )}
                 </>
               ) : spec.auth === "upload" ? (
@@ -263,10 +266,10 @@ export function SourceCard({
           {/* connected (scanned) */}
           {src.status === "scanned" && (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Row gap={8} wrap>
                 <InfoChip color="var(--success)">🔑 saved to keychain</InfoChip>
                 {src.handle && <InfoChip>↗ shared: «{src.handle}»</InfoChip>}
-              </div>
+              </Row>
               <ScanResult src={src} dataModelName={dataModelName} />
             </>
           )}
@@ -274,14 +277,14 @@ export function SourceCard({
           {/* error / auth failed */}
           {src.status === "error" && (
             <>
-              <div style={{ background: "color-mix(in oklch, var(--danger), transparent 92%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 78%)", borderRadius: "var(--r-md)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+              <Stack gap={3} style={{ background: "color-mix(in oklch, var(--danger), transparent 92%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 78%)", borderRadius: "var(--r-md)", padding: "8px 10px" }}>
                 <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--danger)" }}>✕ {src.error ?? "connection failed"}</span>
                 <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>check the connection details and try again</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              </Stack>
+              <Row gap={8} align="stretch">
                 <button data-testid={`retry-${src.uid}`} onClick={onRetry} style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>↻ retry</button>
                 <button onClick={onRemove} style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>remove source</button>
-              </div>
+              </Row>
               <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>⚠ gate held until resolved</span>
             </>
           )}
@@ -290,7 +293,7 @@ export function SourceCard({
           {connected && (
             <button onClick={onRemove} style={{ alignSelf: "flex-start", fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "3px 10px", cursor: "pointer" }}>remove source</button>
           )}
-        </div>
+        </Stack>
       )}
     </div>
   );

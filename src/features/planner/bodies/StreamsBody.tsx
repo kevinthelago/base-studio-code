@@ -12,6 +12,7 @@ import { PlanBody } from "./FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
 import { SharedDependenciesSection } from "./SharedDependencies";
 import { CollapsibleCard } from "./collapsibleCard";
+import { Stack } from "@/shared/ui/layout/Stack";
 import type { FleetHandlers } from "./focusedHandlers";
 
 export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
@@ -33,7 +34,7 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
           <span>No fleet yet — plan the work streams first</span>
         </div>
       ) : (
-        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+        <Stack gap={10} style={{ marginTop: 18 }}>
           {/* Coordination — fleet-wide topology + director drive. */}
           <CollapsibleCard title="Coordination" icon="◎" hint={topology}>
             <CoordinationControls data={data} onTopology={handlers.onTopology} onDirectorDrive={handlers.onDirectorDrive} />
@@ -55,7 +56,7 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
           <CollapsibleCard title="Shared dependencies" icon="⇄" hint="repos 2+ streams build">
             <SharedDependenciesSection agents={data?.agents} dependencies={data?.dependencies} registries={data?.registries} />
           </CollapsibleCard>
-        </div>
+        </Stack>
       ))}
     </>
   );

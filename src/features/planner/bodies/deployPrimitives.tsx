@@ -5,6 +5,8 @@
 
 import { useState } from "react";
 import { Toggle as Switch } from "@/shared/ui/controls/Toggle";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 export const prop: React.CSSProperties = { fontFamily: MONO, fontSize: 9, color: "var(--accent)" };
@@ -30,9 +32,10 @@ export function Card({ n, title, hint, right, accent, done, defaultOpen = false,
       // Confirmed (done) cards read as outline-only — green border, no green background fill (#1498).
       background: "var(--bg-panel)",
     }}>
-      <div
+      <Row
         onClick={() => setOpen((o) => !o)}
-        style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
+        gap={9}
+        style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
         <span style={{
           width: 20, height: 20, borderRadius: 6, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
@@ -42,10 +45,10 @@ export function Card({ n, title, hint, right, accent, done, defaultOpen = false,
         }}>{done ? "✓" : n}</span>
         <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
         {hint && <span style={monoSm}>{hint}</span>}
-        <span style={{ flex: 1 }} />
+        <Spacer />
         {right}
         <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
-      </div>
+      </Row>
       {open && children}
     </div>
   );
@@ -54,10 +57,10 @@ export function Card({ n, title, hint, right, accent, done, defaultOpen = false,
 /** Group divider — "A · HOW IT SHIPS", colored rule. */
 export function Divider({ label, color }: { label: string; color: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
+    <Row gap={10} style={{ marginTop: 2 }}>
       <span style={{ fontFamily: MONO, fontSize: 9.5, color, letterSpacing: ".1em", fontWeight: 600 }}>{label}</span>
       <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-    </div>
+    </Row>
   );
 }
 
@@ -88,12 +91,12 @@ export function Field({ label, value, onChange }: { label: string; value: string
 
 export function Toggle({ on, onClick, label, value }: { on: boolean; onClick: () => void; label: string; value?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+    <Row gap={9}>
       <Switch on={on} onClick={onClick} size="sm" tone="success" />
       <span style={{ fontFamily: MONO, fontSize: 10, color: on ? "var(--fg)" : "var(--fg-muted)", lineHeight: 1.3 }}>{label}</span>
-      <span style={{ flex: 1 }} />
+      <Spacer />
       {value && <span style={{ fontFamily: MONO, fontSize: 9.5, color: on ? "var(--fg-muted)" : "var(--fg-dim)" }}>{value}</span>}
-    </div>
+    </Row>
   );
 }
 
