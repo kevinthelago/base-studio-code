@@ -34,14 +34,16 @@ const COMMANDS: &[CmdDoc] = &[
         usage: "\
 USAGE:
   bsc skill list [--kind k] [--source s] [--project p] [--group g] [--pinned] [--query q]
-                 [--sort rank|uses|updated|name] [--limit N] [--offset M] [--pretty]
+                 [--sort rank|uses|updated|name] [--limit N] [--offset M] [--full] [--pretty]
 
 Navigate the library the way the Skills page does. Filters: --kind, --source, --project (global +
 project-scoped), --group (members of a task group), --pinned, --query (name/desc/id substring).
 Sort (default `rank` = usage weighted by update-recency, so regularly-used + fresh skills surface
 first): rank | uses | updated | name. Paginated: --limit (default 20) + --offset; the result is
 { skills:[lean rows], total, offset, limit, returned } — page until `returned` is 0. Each row omits
-the heavy `prompt` body (one `get <id>` away).",
+the heavy `prompt` body (one `get <id>` away). --full emits the COMPLETE skill objects (prompt +
+tools/profiles/packaged) as a plain array, unpaginated — the full-fidelity read for library
+hydration (#2142).",
     },
     CmdDoc {
         name: "add",
@@ -134,6 +136,10 @@ struct Args {
     /// Indent the JSON output (#1762). The default is compact, matching every other `bsc-*` CLI;
     /// `--json` is accepted as an explicit no-op since `bsc skill`'s output is always JSON.
     pretty: bool,
+    /// `list --full`: emit the COMPLETE `Skill` objects (with the heavy `prompt` body + `tools`/
+    /// `profiles`/`packaged`) as a plain JSON array, bypassing the lean paginated projection — the
+    /// full-fidelity read the desktop library hydration needs (#2142). Ignored by other subcommands.
+    full: bool,
     // ── navigation facets + pagination (#A): the same axes the user navigates the Skills page by ──
     kind: Option<String>,
     source: Option<String>,
@@ -151,7 +157,7 @@ struct Args {
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
-        db: None, off: false, group: None, pretty: false, kind: None, source: None,
+        db: None, off: false, group: None, pretty: false, full: false, kind: None, source: None,
         project: None, pinned: false, sort: None, query: None, limit: None, offset: 0,
         positional: Vec::new(),
     };
@@ -162,6 +168,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--off" => a.off = true,
             "--group" => a.group = Some(it.next().ok_or("--group needs a group id")?),
             "--pretty" => a.pretty = true,
+            "--full" => a.full = true,
             // Output is always JSON; --json is accepted so callers can be explicit.
             "--json" => {}
             "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
@@ -314,7 +321,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "name" => skills.sort_by_key(|s| s.name.to_lowercase()),
                 other => return Err(format!("unknown --sort '{other}' (expected rank|uses|updated|name)")),
             }
-            paginate(skills, args.limit.unwrap_or(DEFAULT_PAGE), args.offset, args.pretty);
+            if args.full {
+                // Full-fidelity, unpaginated: the complete `Skill` objects (prompt/tools/profiles/
+                // packaged included) as a plain array — the exact shape the retired `skill_store_list`
+                // Tauri command returned, for the desktop library hydration (#2142).
+                print_json(&skills, args.pretty);
+            } else {
+                paginate(skills, args.limit.unwrap_or(DEFAULT_PAGE), args.offset, args.pretty);
+            }
             Ok(())
         }
         // Find groups (the "display just a group's skills" entry point): every task group + its live
@@ -541,6 +555,14 @@ mod tests {
         assert_eq!(recency_bucket(now, now), 4);
         assert_eq!(recency_bucket(now - 365 * day, now), 0);
         assert!(recency_bucket(now - 3 * day, now) >= recency_bucket(now - 20 * day, now));
+    }
+
+    #[test]
+    fn full_flag_parses_and_defaults_off() {
+        // `--full` (the #2142 full-fidelity library read) flips the flag; it is off by default so the
+        // lean paginated projection stays the default `list` shape.
+        assert!(!parse_args(vec!["list".into()]).unwrap().full, "default list is lean/paginated");
+        assert!(parse_args(vec!["list".into(), "--full".into()]).unwrap().full, "--full opts into full rows");
     }
 
     #[test]
