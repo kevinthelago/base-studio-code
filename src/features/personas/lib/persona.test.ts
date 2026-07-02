@@ -1,12 +1,39 @@
 import { describe, it, expect } from "vitest";
-import { BUILTIN_PERSONAS, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./persona";
+import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./persona";
 
-describe("persona built-ins (#2094)", () => {
+describe("persona built-ins (#2094 / externalized #2185)", () => {
   it("every built-in references a real, distinct id and is flagged builtin", () => {
     const ids = BUILTIN_PERSONAS.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);           // no dup ids
     expect(BUILTIN_PERSONAS.every((p) => p.builtin)).toBe(true);
     expect(BUILTIN_PERSONAS.some((p) => p.id === "persona-documentor" && p.role === "reviewer")).toBe(true);
+  });
+
+  it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
+    const built = makeBuiltinPersonas();
+    // The nine packaged personas are all present, one per role (+ documentor).
+    for (const id of [
+      "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-documentor",
+    ]) {
+      expect(built.some((p) => p.id === id)).toBe(true);
+    }
+    // Ordered by each def's `order` field: planner leads, documentor trails.
+    expect(built[0]?.id).toBe("persona-planner");
+    expect(built[built.length - 1]?.id).toBe("persona-documentor");
+    // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
+    expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
+  });
+
+  it("resolves the real fleet protocol prose into the worker/director start prompts", () => {
+    const byId = new Map(makeBuiltinPersonas().map((p) => [p.id, p]));
+    const worker = byId.get("persona-worker")!;
+    const director = byId.get("persona-director")!;
+    // Wired from @data/fleet/*-protocol.md (single source of truth), not the old empty placeholder.
+    expect(worker.startPrompt).toContain("bsc-ask");
+    expect(worker.startPrompt).toContain("MAINTENANCE");
+    expect(director.startPrompt).toContain("bsc-answer");
+    expect(director.startPrompt.length).toBeGreaterThan(200);
   });
 });
 
@@ -45,6 +72,18 @@ describe("reconcilePersonas (#2094)", () => {
     expect(worker.startPrompt).toBe("edited");    // edit kept
     expect(worker.skills).toEqual(["s1"]);        // edit kept
     expect(worker.builtin).toBe(true);            // identity restored — cannot become deletable
+  });
+
+  it("an EMPTY saved startPrompt on a built-in inherits the packaged prose (the #2185 upgrade path)", () => {
+    // Simulates an install seeded by an older app: worker persisted with an empty prompt. Reconcile
+    // must NOT keep the empty string — it inherits the newly-wired fleet protocol prose.
+    const persisted: Persona[] = [
+      { id: "persona-worker", name: "Worker", blurb: "", role: "worker",
+        startPrompt: "", skills: [], builtin: true },
+    ];
+    const worker = reconcilePersonas(persisted).find((p) => p.id === "persona-worker")!;
+    expect(worker.startPrompt.trim().length).toBeGreaterThan(0);
+    expect(worker.startPrompt).toContain("bsc-ask");
   });
 
   it("re-seeds a built-in the persisted set dropped", () => {
