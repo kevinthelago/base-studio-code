@@ -145,11 +145,7 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn project_dir_places_the_sanitized_key_directly_under_projects() {

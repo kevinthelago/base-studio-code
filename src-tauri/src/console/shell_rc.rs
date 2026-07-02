@@ -356,6 +356,38 @@ pub(crate) fn bsc_rc_body() -> String {
 #[cfg(test)]
 mod tests {
 
+    /// The (shell, temp dir, bash-form rc path) handed to a shell-rc subshell test (#2077).
+    struct RcSub {
+        shell: String,
+        dir: std::path::PathBuf,
+        rc_bash: String,
+    }
+
+    /// Bash-subshell harness for the rc helper-run tests (#2077). Resolves the SAME shell the
+    /// PTY launches; when there is no usable bash it prints the skip note and returns WITHOUT
+    /// invoking `f` (the test no-ops, exactly like the old inline early-`return`). Otherwise it
+    /// makes a fresh temp dir (`bsc-<tag>-<pid>`), writes `rc_body` to `bsc-env.sh`, and hands
+    /// `f` the shell, the dir, and the bash-form rc path. `f` owns the dir and removes it.
+    fn with_rc_subshell(tag: &str, rc_body: &str, f: impl FnOnce(RcSub)) {
+        use std::process::Command;
+        let shell = crate::platform::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping {tag} subshell test: no usable bash ({shell})");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("bsc-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc = dir.join("bsc-env.sh");
+        // Post-#2064 the per-helper BSC_*_RC constants call the shared __bsc_* functions, so every
+        // subshell must install BSC_SHARED_RC first; prepending it here centralizes that (harmless
+        // for the few constants that don't use the shared helpers).
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, rc_body)).unwrap();
+        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        f(RcSub { shell, dir, rc_bash });
+    }
+
     #[test]
     fn bsc_checkpoint_rc_defines_hyphenated_helper_reading_the_doc_var() {
         // The helper keeps its hyphenated, user-facing name (so it can't be exported
@@ -379,22 +411,10 @@ mod tests {
         // Resolve the SAME shell the PTY launches (Git Bash on Windows, never the WSL
         // System32 stub — which can't read a /c/... BASH_ENV path). A bare `bash` would
         // resolve via PATH and may hit that stub, failing for reasons unrelated to the fix.
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_checkpoint subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-ckpt-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_CHECKPOINT_RC).unwrap();
+        with_rc_subshell("ckpt", super::BSC_CHECKPOINT_RC, |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the doc's parent.
         let doc = dir.join("nested").join("checkpoint.md");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let doc_bash = crate::to_bash_path(&doc.to_string_lossy());
 
         let mut child = Command::new(&shell)
@@ -412,6 +432,7 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&doc).unwrap(), "left off: step 3\n");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -448,23 +469,10 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc issuer-emit subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-issuer-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        // The coord emitters now call the shared __bsc_logline, so install the shared helpers too.
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_COORD_EMIT_RC)).unwrap();
+        with_rc_subshell("issuer", super::BSC_COORD_EMIT_RC, |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("coord.log");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         let run = |cmd: &str, body: &str| {
@@ -494,6 +502,7 @@ mod tests {
         assert_eq!(&assign[2..], &["assign", "t0p1", "do the retry work", "412", "Retry uploads"]);
 
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -501,17 +510,7 @@ mod tests {
         // bsc-fleet (#734): the director's roster view. Joins fleet.roster.tsv with each
         // session's latest own-state event in coord.log → PANE/stream/repo/branch/role/STATE.
         use std::process::{Command, Stdio};
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc-fleet test: no usable bash ({shell})");
-            return;
-        }
-        let dir = std::env::temp_dir().join(format!("bsc-fleet-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_FLEET_RC).unwrap();
+        with_rc_subshell("fleet", super::BSC_FLEET_RC, |RcSub { shell, dir, rc_bash }| {
         let roster = dir.join("fleet.roster.tsv");
         std::fs::write(&roster,
             "t0p0\tdirector\t-\t-\tdirector\n\
@@ -524,7 +523,6 @@ mod tests {
              2026-01-01T00:01:00Z\tt0p2\task\tshould I merge?\tcp\n\
              2026-01-01T00:02:00Z\tt0p3\twoke\n").unwrap();
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let roster_bash = crate::to_bash_path(&roster.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
@@ -545,6 +543,7 @@ mod tests {
         assert!(text.lines().find(|l| l.starts_with("t0p3")).unwrap_or("").contains("active"), "woke→active: {text}");
         assert!(text.lines().find(|l| l.starts_with("t0p0")).unwrap_or("").contains("idle"), "director idle: {text}");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -555,22 +554,10 @@ mod tests {
         // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
         // (the exact format! pty_create uses) catches it; per-constant tests do not.
         use std::process::{Command, Stdio};
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping full-rc syntax test: no usable bash ({shell})");
-            return;
-        }
         // Concatenate via the shared ALL_BSC_RC slice — the single source of truth for the
         // fragment order, the same one wire_bsc_env writes (bsc_rc_body). A new helper added to
         // the slice is covered here automatically, so the writer + this guard can't drift apart.
-        let rc_body = super::bsc_rc_body();
-        let dir = std::env::temp_dir().join(format!("bsc-rc-syntax-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, &rc_body).unwrap();
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        with_rc_subshell("rc-syntax", &super::bsc_rc_body(), |RcSub { shell, dir, rc_bash }| {
         let out = Command::new(&shell).arg("-n").arg(&rc_bash).stderr(Stdio::piped()).output().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(
@@ -579,6 +566,7 @@ mod tests {
 {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        });
     }
 
     #[test]
@@ -678,23 +666,11 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_note subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-note-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
         // The installed rc is the checkpoint + decisions helpers concatenated.
-        std::fs::write(&rc, format!("{}{}", super::BSC_CHECKPOINT_RC, super::BSC_DECISIONS_RC)).unwrap();
+        with_rc_subshell("note", &format!("{}{}", super::BSC_CHECKPOINT_RC, super::BSC_DECISIONS_RC), |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the doc's parent.
         let doc = dir.join("nested").join("DECISIONS.md");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let doc_bash = crate::to_bash_path(&doc.to_string_lossy());
 
         let run = |msg: &str| {
@@ -717,6 +693,7 @@ mod tests {
             "- [t0p1] chose cursor pagination\n- [t0p1] used JWT for auth\n",
         );
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -728,23 +705,10 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_skill subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-skill-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        // bsc-skill's telemetry branch now uses the shared __bsc_jstr/__bsc_logline.
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_SKILL_RC)).unwrap();
+        with_rc_subshell("skill", super::BSC_SKILL_RC, |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("skills.log");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         let mut child = Command::new(&shell)
@@ -767,6 +731,7 @@ mod tests {
         assert_eq!(fields[2], "PreToolUse", "event field should be hook_event_name");
         assert_eq!(fields[3], "open-a-clean-pr", "skill field should be skill_name");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -778,18 +743,7 @@ mod tests {
         // isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_skill dispatch test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-skill-cli-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_SKILL_RC).unwrap();
+        with_rc_subshell("skill-cli", super::BSC_SKILL_RC, |RcSub { shell, dir, rc_bash }| {
 
         // The stub "CLI": write its args to args.txt. A shebang lets bash exec it by path.
         let stub = dir.join("bsc-skill-stub.sh");
@@ -803,7 +757,6 @@ mod tests {
         }
 
         let log = dir.join("skills.log");
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let stub_bash = crate::to_bash_path(&stub.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
@@ -821,6 +774,7 @@ mod tests {
         assert_eq!(got.trim(), "skill list myskill", "the CLI stub should receive `skill` + the subcommand args");
         assert!(!log.exists(), "the telemetry log must NOT be written when bsc-skill runs with args");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -831,19 +785,8 @@ mod tests {
         // provenance came through. Skips where bash isn't on PATH (same gating as the other helper-run tests).
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_learned test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-learned-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
         // bsc-learned delegates to the unified `bsc` helper (`bsc plan …`), so install BOTH fragments.
-        std::fs::write(&rc, format!("{}{}", super::BSC_RC, super::BSC_LEARNED_RC)).unwrap();
+        with_rc_subshell("learned", &format!("{}{}", super::BSC_RC, super::BSC_LEARNED_RC), |RcSub { shell, dir, rc_bash }| {
 
         // Stub `bsc` ($BSC_BIN): write its args, one per line, to args.txt.
         let stub = dir.join("bsc-stub.sh");
@@ -856,7 +799,6 @@ mod tests {
             std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let stub_bash = crate::to_bash_path(&stub.to_string_lossy());
 
         let status = Command::new(&shell)
@@ -878,6 +820,7 @@ mod tests {
         let from_i = lines.iter().position(|l| *l == "--from").expect("--from present");
         assert!(lines[from_i + 1].contains("t0p2"), "provenance carries the pane id: {:?}", lines[from_i + 1]);
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -890,22 +833,10 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_activity subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-activity-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_ACTIVITY_RC)).unwrap();
+        with_rc_subshell("activity", super::BSC_ACTIVITY_RC, |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("activity.log");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         // Fire bsc-activity <state> with hook JSON on stdin, exactly as Claude Code invokes it.
@@ -934,6 +865,7 @@ mod tests {
         assert_eq!((lines[0][1], lines[0][2]), ("t0p2", "run"));
         assert_eq!((lines[1][1], lines[1][2]), ("t0p2", "idle"));
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -943,21 +875,9 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_done subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-done-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_DONE_RC)).unwrap();
+        with_rc_subshell("done", super::BSC_DONE_RC, |RcSub { shell, dir, rc_bash }| {
         let log = dir.join("nested").join("done.log"); // nested ⇒ exercises mkdir -p
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         let mut child = Command::new(&shell)
@@ -975,6 +895,7 @@ mod tests {
         assert!(fields[0].chars().all(|c| c.is_ascii_digit()), "ts is epoch ms: {:?}", fields[0]);
         assert_eq!(fields[1], "proj:api", "the pane is the BSC_AUDIT_PANE tag");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -986,20 +907,8 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_hook subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-hook-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_HOOK_RC)).unwrap();
+        with_rc_subshell("hook", super::BSC_HOOK_RC, |RcSub { shell, dir, rc_bash }| {
         let log = dir.join("nested").join("hooks.log");
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         // Run a helper: a PreToolUse hook whose command exits with `code`, fed JSON on stdin.
@@ -1036,6 +945,7 @@ mod tests {
         assert_eq!(lines[1][4], "allow");
         assert_eq!(lines[2][4], "ok");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -1046,20 +956,7 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_scope subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-scope-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        // bsc-scope's path extraction now uses the shared __bsc_jstr, so install the shared helpers too.
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_SCOPE_RC)).unwrap();
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
+        with_rc_subshell("scope", super::BSC_SCOPE_RC, |RcSub { shell, dir, rc_bash }| {
 
         // Fire bsc-scope as a PreToolUse hook would, with a given glob set + tool JSON on stdin.
         let fire = |globs: &str, path: &str| -> std::process::ExitStatus {
@@ -1092,6 +989,7 @@ mod tests {
         assert!(fire("", "anything/at/all.rs").success(), "empty scope is a no-op");
 
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -1103,20 +1001,8 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_taint subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-taint-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_TAINT_RC)).unwrap();
+        with_rc_subshell("taint", super::BSC_TAINT_RC, |RcSub { shell, dir, rc_bash }| {
         let taint_dir = dir.join("marks");
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let taint_bash = crate::to_bash_path(&taint_dir.to_string_lossy());
 
         // Fire bsc-taint as a PreToolUse hook would, fed the tool JSON on stdin.
@@ -1150,6 +1036,7 @@ mod tests {
         assert!(fire(safe).success(), "safe commands pass even while tainted");
 
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -1161,22 +1048,10 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_mcp subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-mcp-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_MCP_RC)).unwrap();
+        with_rc_subshell("mcp", super::BSC_MCP_RC, |RcSub { shell, dir, rc_bash }| {
         let log = dir.join("nested").join("mcp.log");
         let tmp = dir.join("tmp");
         std::fs::create_dir_all(&tmp).unwrap();
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
         let tmp_bash = crate::to_bash_path(&tmp.to_string_lossy());
 
@@ -1220,6 +1095,7 @@ mod tests {
         assert_eq!((lines[1][2], lines[1][3], lines[1][4]), ("playwright", "navigate", "fail"));
         assert_eq!(lines[1][6], "spawn npx ENOENT", "fail detail pulled from the response text");
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -1232,22 +1108,10 @@ mod tests {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let shell = crate::platform::shell::resolve_shell();
-        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-        if !usable {
-            eprintln!("skipping bsc_tokens subshell test: no usable bash ({shell})");
-            return;
-        }
-
-        let dir = std::env::temp_dir().join(format!("bsc-tokens-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_TOKENS_RC)).unwrap();
+        with_rc_subshell("tokens", super::BSC_TOKENS_RC, |RcSub { shell, dir, rc_bash }| {
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("tokens.log");
 
-        let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
         let mut child = Command::new(&shell)
@@ -1280,6 +1144,7 @@ mod tests {
             r"C:\Users\k\.claude\projects\p\abc-123.jsonl",
         );
         let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 }
 

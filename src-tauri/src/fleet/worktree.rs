@@ -482,11 +482,7 @@ mod tests {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
     /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's
