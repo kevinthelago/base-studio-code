@@ -1,6 +1,7 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function PlanningAutomationCard() {
   const { autoPlanWithClaude, setAutoPlanWithClaude } = useAppStore();
@@ -11,7 +12,7 @@ export function PlanningAutomationCard() {
 
   return (
     <Card title="Planning automation">
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Stack gap={12}>
         <ToggleRow
           on={autoPlanWithClaude}
           onToggle={() => setAutoPlanWithClaude(!autoPlanWithClaude)}
@@ -41,7 +42,7 @@ export function PlanningAutomationCard() {
           blocked stage's advance button becomes a cautionary <b>override gate &amp; continue</b> you
           can click to move on anyway. Off by default — only the user can override, never the planner.
         </ToggleRow>
-      </div>
+      </Stack>
     </Card>
   );
 }

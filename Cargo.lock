@@ -531,7 +531,6 @@ name = "base-studio-code"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "bsc-blueprint",
  "bsc-data",
  "bsc-llm",
  "bsc-project",
@@ -543,7 +542,6 @@ dependencies = [
  "keyring",
  "libc",
  "log",
- "logs",
  "plandb",
  "portable-pty",
  "rand 0.10.1",
@@ -749,6 +747,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-data",
  "bsc-files",
+ "bsc-persona",
  "bsc-project",
  "bsc-util",
  "compliance",
@@ -780,10 +779,7 @@ name = "bsc-blueprint"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
- "bsc-sqlite-util",
- "bsc-util",
- "serde",
- "serde_json",
+ "bsc-json-store",
 ]
 
 [[package]]
@@ -799,6 +795,7 @@ name = "bsc-data"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-sqlite-util",
  "csv",
  "duckdb",
  "keyring",
@@ -818,6 +815,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-json-store"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-llm"
 version = "0.1.0"
 dependencies = [
@@ -827,6 +834,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-persona"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
 ]
 
 [[package]]

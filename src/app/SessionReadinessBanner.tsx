@@ -7,6 +7,9 @@
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];
@@ -29,13 +32,14 @@ export function SessionReadinessBanner({
       loud
       role="alert"
       onDismiss={onDismiss}
-      lead={<span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>}
+      lead={<Text weight={600} style={{ whiteSpace: "nowrap" }}>⚠ GitHub</Text>}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+      <Stack gap={3} style={{ flex: 1 }}>
         {warnings.map((w) => (
-          <span key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span>{w.message}</span>
+          <Box as="span" key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <Text>{w.message}</Text>
             {w.id === "gh-auth" && onSignInGitHub && (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Sign in" link-button (currentColor border, banner-scoped styling)
               <button
                 onClick={onSignInGitHub}
                 style={{
@@ -52,9 +56,9 @@ export function SessionReadinessBanner({
                 Install →
               </a>
             )}
-          </span>
+          </Box>
         ))}
-      </div>
+      </Stack>
     </Banner>
   );
 }

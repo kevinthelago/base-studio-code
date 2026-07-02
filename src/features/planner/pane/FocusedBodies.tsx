@@ -25,6 +25,7 @@ import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
 import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
 // (ProjectPane imports `AuthoringWiring`).
@@ -34,7 +35,7 @@ export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../
    FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
+export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onPersona, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
   stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
@@ -50,6 +51,7 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   onView?: (f: ContextFile) => void;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
   onTopology?: (t: Topology) => void;
   onDirectorDrive?: (d: DirectorDrive) => void;
   onToggleMcp?: (id: string) => void;
@@ -59,7 +61,7 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
 }) {
   // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
-  const fleetHandlers: FleetHandlers = { onFlow, onModel, onTopology, onDirectorDrive };
+  const fleetHandlers: FleetHandlers = { onFlow, onModel, onPersona, onTopology, onDirectorDrive };
   const mcpHandlers: McpHandlers = { onToggle: onToggleMcp, onBuild: onBuildMcp, onAdd: onAddMcp, onRemove: onRemoveMcp };
   switch (stage.key) {
     case "source":
@@ -102,11 +104,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
     case "bp_review":
       return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
-      return (
-        <div className="empty-state">
-          <span className="empty-icon">⋯</span>
-          <span>The planner documents this stage.</span>
-        </div>
-      );
+      return <EmptyState iconVariant="dashed" icon="⋯" title="The planner documents this stage." />;
   }
 }

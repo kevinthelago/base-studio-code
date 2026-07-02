@@ -33,13 +33,13 @@ export interface PlannerTunnelSyncOpts {
   planningDir: string;
   paneId: string;
   projectTitle: string;
-  confirmPlanSection: (projectId: string, key: string) => void;
+  confirmPlanStage: (projectId: string, key: string) => void;
 }
 
 export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
   const {
     effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
-    planningDir, paneId, projectTitle, confirmPlanSection,
+    planningDir, paneId, projectTitle, confirmPlanStage,
   } = opts;
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
@@ -140,10 +140,10 @@ export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
   // planner PTY. Gated Rust-side behind the input grant (a view-only phone can't steer).
   useEffect(() => {
     const subs = [
-      listen<{ section: string }>("tunnel://plan-confirm", (e) => confirmPlanSection(effectiveProjectId, e.payload.section)),
-      listen<{ stageKey: string }>("tunnel://plan-advance", (e) => confirmPlanSection(effectiveProjectId, e.payload.stageKey)),
+      listen<{ section: string }>("tunnel://plan-confirm", (e) => confirmPlanStage(effectiveProjectId, e.payload.section)),
+      listen<{ stageKey: string }>("tunnel://plan-advance", (e) => confirmPlanStage(effectiveProjectId, e.payload.stageKey)),
       listen<{ text: string }>("tunnel://plan-chat", (e) => { void invoke("pty_write", { paneId, data: e.payload.text + "\r" }); }),
     ];
     return () => { for (const s of subs) void s.then((off) => off()); };
-  }, [effectiveProjectId, paneId, confirmPlanSection]);
+  }, [effectiveProjectId, paneId, confirmPlanStage]);
 }

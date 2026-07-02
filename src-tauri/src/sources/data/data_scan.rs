@@ -10,6 +10,7 @@
 //! scan-persist hook (#786).
 
 #[cfg(feature = "source-stage")]
+use crate::StrErr;
 use bsc_data::{Connector, FieldType, RestPreset};
 #[cfg(feature = "source-stage")]
 use super::data_csv::{infer_field_type, store_path};
@@ -172,7 +173,7 @@ fn declared_fields(declared: &[bsc_data::SourceField]) -> Vec<ScanField> {
 /// Run objects() (bounded, with a sample-count read) + scan_platform() over a built connector.
 #[cfg(feature = "source-stage")]
 fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, String> {
-    let objs = conn.objects().map_err(|e| e.to_string())?;
+    let objs = conn.objects().str_err()?;
     let mut objects = Vec::new();
     for o in objs.into_iter().take(12) {
         let rs = conn.read(&o.name).ok();
@@ -186,7 +187,7 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
         };
         objects.push(ScanObject { name: o.name, count, fields });
     }
-    let platform = conn.scan_platform().map_err(|e| e.to_string())?;
+    let platform = conn.scan_platform().str_err()?;
     let behaviors = behaviors_summary(&platform);
     Ok(ScanResult {
         live: true,
@@ -221,14 +222,12 @@ fn build_url(base: &str, path: &str) -> String {
 /// JSON. Descriptors are joined onto `base` via [`build_url`] (absolute descriptors pass through).
 #[cfg(feature = "source-stage")]
 fn bearer_fetch(base: String, token: String) -> impl Fn(&str) -> bsc_data::Result<serde_json::Value> + Send + Sync + 'static {
-    let client = reqwest::blocking::Client::new();
     move |path: &str| {
-        let req = client.get(build_url(&base, path)).header("Accept", "application/json");
+        let req = crate::platform::http::blocking_client()
+            .get(build_url(&base, path))
+            .header("Accept", "application/json");
         let req = if token.is_empty() { req } else { req.bearer_auth(&token) };
-        req.send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.json())
-            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+        crate::platform::http::blocking_send_json(req, |e| bsc_data::DataError::Io(e.to_string()))
     }
 }
 
@@ -236,16 +235,14 @@ fn bearer_fetch(base: String, token: String) -> impl Fn(&str) -> bsc_data::Resul
 /// onto `base` via [`build_url`].
 #[cfg(feature = "source-stage")]
 fn basic_fetch(base: String, user: String, pass: String) -> impl Fn(&str) -> bsc_data::Result<serde_json::Value> + Send + Sync + 'static {
-    let client = reqwest::blocking::Client::new();
     move |path: &str| {
-        client
-            .get(build_url(&base, path))
-            .basic_auth(&user, Some(&pass))
-            .header("Accept", "application/json")
-            .send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.json())
-            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+        crate::platform::http::blocking_send_json(
+            crate::platform::http::blocking_client()
+                .get(build_url(&base, path))
+                .basic_auth(&user, Some(&pass))
+                .header("Accept", "application/json"),
+            |e| bsc_data::DataError::Io(e.to_string()),
+        )
     }
 }
 
@@ -277,8 +274,8 @@ fn persist_scan(project_key: &str, scan: &bsc_data::PlatformScan) {
         return;
     }
     let result = (|| -> Result<std::path::PathBuf, String> {
-        let db = store_path(project_key).map_err(|e| e.to_string())?;
-        bsc_data::MetaStore::open(&db).and_then(|s| s.set_scan(scan)).map_err(|e| e.to_string())?;
+        let db = store_path(project_key).str_err()?;
+        bsc_data::MetaStore::open(&db).and_then(|s| s.set_scan(scan)).str_err()?;
         Ok(db)
     })();
     match result {
@@ -309,7 +306,7 @@ fn scan_runtime_preset(
     source_uid: &str,
     fields: &std::collections::HashMap<String, String>,
 ) -> Result<ScanResult, String> {
-    match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).map_err(|e| e.to_string())? {
+    match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).str_err()? {
         Some(preset) => {
             let secret = crate::sources::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
                 .unwrap_or_default();

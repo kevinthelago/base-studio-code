@@ -5,8 +5,8 @@
 // empty · error. Pure-ish presentational shell over `listBlueprintGists`; CRUD is the parent's
 // `onImport` (resolve + dedupe-by-gist-id). The page-oriented gist catalog, in a modal.
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye, FileJson } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, Cloud, RefreshCw, Link2, X, Search, Check, ArrowUpCircle, AlertTriangle, Inbox, Loader2, Eye } from "lucide-react";
 import "../../../styles/blueprintImport.css";
 import { hue, tint, gistUpdateAvailable } from "./blueprintCatalog";
 import { listBlueprintGists, type BlueprintGistItem } from "@/features/planner/lib/gist/gist";
@@ -14,9 +14,17 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Banner } from "@/shared/ui/feedback/Banner";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
-import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
+import { type PreviewBlueprint } from "./BlueprintModals";
+import { GistPreview } from "./GistPreview";
+import { spin, shimmer, pill, type PreviewEntry } from "./blueprintImport.helpers";
 
 export interface BlueprintImportModalProps {
   /** GitHub account to pull blueprint gists from (the user's own login). */
@@ -35,55 +43,6 @@ export interface BlueprintImportModalProps {
   /** Fall back to the manual paste-a-URL / ID dialog. */
   onManualImport: () => void;
   onClose: () => void;
-}
-
-
-const spin: CSSProperties = { animation: "bim-spin .8s linear infinite" };
-const shimmer: CSSProperties = {
-  background: "linear-gradient(90deg,var(--bg-elev) 0%,var(--bg-elev2) 50%,var(--bg-elev) 100%)",
-  backgroundSize: "260px 100%", animation: "bim-shimmer 1.1s linear infinite",
-};
-
-/** A fetched blueprint-preview cache entry for a gist row (#1037). */
-type PreviewEntry = { loading?: boolean; data?: PreviewBlueprint; error?: string };
-
-/** The expanded preview under a gist row: what the user is about to download — the blueprint's
- *  stages (the structured view that drives the decision) + the raw JSON file itself. */
-function GistPreview({ entry }: { entry?: PreviewEntry }) {
-  const [raw, setRaw] = useState(false);
-  const box: CSSProperties = {
-    margin: "-3px 0 9px", padding: "11px 13px", borderRadius: "var(--r-md)",
-    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-    fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
-  };
-  if (!entry || entry.loading) {
-    return <div style={{ ...box, display: "flex", alignItems: "center", gap: 8 }}><Loader2 size={12} style={spin} />reading the blueprint…</div>;
-  }
-  if (entry.error) {
-    return <div style={{ ...box, color: "var(--danger)", display: "flex", alignItems: "flex-start", gap: 8 }}><AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 1 }} />couldn't read this blueprint: {entry.error}</div>;
-  }
-  const p = entry.data!;
-  const bp = p.blueprint;                          // the fully-coerced blueprint, when present
-  const sections = bp?.sections ?? p.sections;     // top-level sections always exist
-  const caps = sections.reduce((n, s) => n + (s.skills?.length ?? 0) + (s.mcp?.length ?? 0), 0);
-  return (
-    <div style={box}>
-      <div style={{ color: "var(--fg-dim)", marginBottom: 8 }}>
-        {bp?.category ?? "greenfield"}{bp?.mode ? ` · ${bp.mode}` : ""} · {sections.length} stage{sections.length === 1 ? "" : "s"}{caps > 0 ? ` · ${caps} attached` : ""}
-      </div>
-      <StageSummary sections={sections} />
-      <button
-        onClick={() => setRaw((r) => !r)}
-        className="mono"
-        style={{ marginTop: 9, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--fg-dim)", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5 }}
-      ><FileJson size={11} />{raw ? "hide" : "view"} raw JSON</button>
-      {raw && (
-        <pre style={{ marginTop: 7, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10, lineHeight: 1.5, whiteSpace: "pre" }}>
-          {JSON.stringify(bp ?? { name: p.name, sections }, null, 2)}
-        </pre>
-      )}
-    </div>
-  );
 }
 
 export function BlueprintImportModal({ source, token = "", importedById = {}, onImport, onPreview, onManualImport, onClose }: BlueprintImportModalProps) {
@@ -158,93 +117,76 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
     : statusError ? "—"
     : `${rows.length} result${rows.length === 1 ? "" : "s"}`;
 
-  // ── shared style atoms ──
-  const pill = (color: string): CSSProperties => ({
-    display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 7px", borderRadius: 99,
-    fontFamily: "var(--mono)", fontSize: 9, lineHeight: 1.7, color,
-    border: `1px solid color-mix(in oklch, ${color}, transparent 72%)`,
-    background: `color-mix(in oklch, ${color}, transparent 90%)`,
-  });
-
   return (
     <ModalScrim onDismiss={onClose} blur style={{ padding: 36 }}>
-      <div
+      <Box
         role="dialog" aria-modal="true" aria-label="Import blueprint from gist"
-        style={{
+        bg="var(--bg-panel)" border radius="lg" style={{
           width: 760, maxWidth: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column",
-          background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
           boxShadow: "0 28px 80px rgba(0,0,0,.6)", overflow: "hidden",
           animation: "bim-pop .24s cubic-bezier(.2,.8,.2,1)",
         }}
       >
         {/* header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
+        <Row gap={12} style={{ padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
           <IconBox size={32} radius={8} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)"><Download size={16} /></IconBox>
-          <div style={{ minWidth: 0 }}>
-            <h2 className="mono" style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
-            <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>your published blueprint gists</div>
-          </div>
-          <span style={{ flex: 1 }} />
-          <span className="mono" style={{
-            display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 10px", borderRadius: 99,
-            fontSize: 10, border: "1px solid var(--border-soft)", background: "var(--bg-elev)", color: "var(--fg-muted)",
-          }}><Cloud size={11} />gist source · <b style={{ color: "var(--fg)", fontWeight: 600 }}>{source}</b></span>
+          <Box style={{ minWidth: 0 }}>
+            <Text as="h2" mono size={14.5} weight={600} style={{ margin: 0, letterSpacing: ".01em" }}>Import blueprint</Text>
+            <Text as="div" size={10.5} tone="dim" style={{ marginTop: 2 }}>your published blueprint gists</Text>
+          </Box>
+          <Box as="span" style={{ flex: 1 }} />
+          <Box as="span" className="mono" pad={[0, 10]} bg="var(--bg-elev)" border="soft" radius={99} style={{
+            display: "inline-flex", alignItems: "center", gap: 7, height: 26,
+            fontSize: 10, color: "var(--fg-muted)",
+          }}><Cloud size={11} />gist source · <b style={{ color: "var(--fg)", fontWeight: 600 }}>{source}</b></Box>
           <IconButton onClick={load} title="Refresh list" aria-label="Refresh list"><RefreshCw size={14} /></IconButton>
           <Button onClick={onManualImport} title="Import by URL or ID"><Link2 size={13} />URL / ID</Button>
           <IconButton onClick={onClose} title="Close" aria-label="Close"><X size={15} /></IconButton>
-        </div>
+        </Row>
 
         {/* sticky search */}
-        <div style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ position: "relative", flex: 1 }}>
-            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><Search size={13} /></span>
+        <Row gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+          <Box style={{ position: "relative", flex: 1 }}>
+            <Box as="span" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><Search size={13} /></Box>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline search input (absolute-positioned icon overlay; not the .input/.field stack) */}
             <input
               value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="search blueprints by name, description, owner…"
               className="mono"
               style={{ height: 30, width: "100%", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", color: "var(--fg)", fontSize: 11, padding: "0 10px 0 30px", outline: "none" }}
             />
-          </div>
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>{resultLabel}</span>
-        </div>
+          </Box>
+          <Text as="span" size={10.5} tone="dim" className="mono" style={{ whiteSpace: "nowrap" }}>{resultLabel}</Text>
+        </Row>
 
         {/* body */}
-        <div style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto", padding: "14px 20px" }}>
+        <Box pad={[14, 20]} style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto"}}>
           {importError && (
-            <div
+            <Banner
               role="alert"
-              className="mono"
-              style={{
-                display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 11, padding: "10px 12px",
-                borderRadius: "var(--r-md)", fontSize: 11, lineHeight: 1.5,
-                color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)",
-                border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
-              }}
+              tone="danger"
+              lead={<AlertTriangle size={14} style={{ flex: "0 0 auto" }} />}
+              onDismiss={() => setImportError(null)}
+              style={{ marginBottom: 11 }}
             >
-              <AlertTriangle size={14} style={{ flex: "0 0 auto", marginTop: 1 }} />
-              <span style={{ flex: 1, color: "var(--fg)" }}>{importError}</span>
-              <button
-                onClick={() => setImportError(null)}
-                aria-label="Dismiss error"
-                style={{ background: "transparent", border: 0, color: "var(--fg-dim)", cursor: "pointer", padding: 0, display: "flex" }}
-              ><X size={13} /></button>
-            </div>
+              <Box as="span" style={{ flex: 1, color: "var(--fg)" }}>{importError}</Box>
+            </Banner>
           )}
           {statusLoading && (
             <>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 15px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", marginBottom: 9 }}>
-                  <div style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, ...shimmer }} />
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
-                    <div style={{ width: "42%", height: 11, borderRadius: 4, ...shimmer }} />
-                    <div style={{ width: "64%", height: 9, borderRadius: 4, ...shimmer }} />
-                  </div>
-                  <div style={{ width: 78, height: 24, borderRadius: "var(--r-md)", background: "var(--bg-elev)" }} />
-                </div>
+                <Row key={i} gap={14} style={{ padding: "13px 15px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", marginBottom: 9 }}>
+                  <Box radius={7} style={{ width: 30, height: 30, flex: "0 0 30px", ...shimmer }} />
+                  <Stack gap={7} style={{ flex: 1 }}>
+                    <Box radius={4} style={{ width: "42%", height: 11, ...shimmer }} />
+                    <Box radius={4} style={{ width: "64%", height: 9, ...shimmer }} />
+                  </Stack>
+                  <Box bg="var(--bg-elev)" radius="md" style={{ width: 78, height: 24}} />
+                </Row>
               ))}
-              <div className="mono" style={{ textAlign: "center", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Row className="mono" gap={8} justify="center" style={{ textAlign: "center", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px" }}>
                 <Loader2 size={13} style={spin} />fetching {source}'s blueprint gists…
-              </div>
+              </Row>
             </>
           )}
 
@@ -259,34 +201,36 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 const isHover = hover === it.id;
                 const expanded = previewId === it.id;
                 return (
-                  <div key={it.id}>
-                  <div
+                  <Box key={it.id}>
+                  <Row
+                    gap={14}
                     onMouseEnter={() => setHover(it.id)}
                     onMouseLeave={() => setHover((cur) => (cur === it.id ? null : cur))}
                     style={{
-                      display: "flex", alignItems: "center", gap: 14, padding: "12px 15px",
+                      padding: "12px 15px",
                       background: isHover ? "color-mix(in oklch, var(--bg-panel), var(--bg-elev) 35%)" : "var(--bg-panel)",
                       border: "1px solid " + (isHover ? "var(--border)" : "var(--border-soft)"),
                       borderRadius: "var(--r-md)", marginBottom: 9, transition: "border-color .12s, background .12s",
                       animation: "bim-row .26s ease", animationDelay: `${i * 0.035}s`,
                     }}
                   >
-                    <div className="mono" style={{
-                      width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
-                      fontWeight: 700, fontSize: 13, background: tint(h, 0.16), color: hue(h),
-                    }}>{it.name[0]?.toUpperCase() ?? "B"}</div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="mono" style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
-                        {!busy && imported && !stale && <span style={pill("var(--success)")}>imported</span>}
-                        {!busy && stale && <span style={pill("var(--accent)")}>update available</span>}
-                      </div>
-                      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <Box className="mono" bg={tint(h, 0.16)} radius={7} style={{
+                      width: 30, height: 30, flex: "0 0 30px", display: "flex", alignItems: "center", justifyContent: "center",
+                      fontWeight: 700, fontSize: 13, color: hue(h),
+                    }}>{it.name[0]?.toUpperCase() ?? "B"}</Box>
+                    <Box style={{ minWidth: 0, flex: 1 }}>
+                      <Row className="mono" gap={8} style={{ fontSize: 12.5, fontWeight: 600 }}>
+                        <Box as="span" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</Box>
+                        {!busy && imported && !stale && <Box as="span" style={pill("var(--success)")}>imported</Box>}
+                        {!busy && stale && <Box as="span" style={pill("var(--accent)")}>update available</Box>}
+                      </Row>
+                      <Box className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         gist.github.com/{it.owner}/{it.id.slice(0, 7)}{it.updatedAt && ` · updated ${timeAgo(it.updatedAt)}`}
-                      </div>
-                      {it.description && <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.description.replace(/^blueprint:\s*/i, "")}</div>}
-                    </div>
-                    <span style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      </Box>
+                      {it.description && <Box style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.description.replace(/^blueprint:\s*/i, "")}</Box>}
+                    </Box>
+                    <Box as="span" style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline preview-toggle button */}
                       <button
                         onClick={() => togglePreview(it)}
                         aria-expanded={expanded}
@@ -295,14 +239,17 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                         style={{ height: 26, padding: "0 10px", borderRadius: "var(--r-md)", background: expanded ? "var(--bg-elev2)" : "transparent", border: "1px solid var(--border-soft)", color: expanded ? "var(--fg)" : "var(--fg-muted)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
                       ><Eye size={13} />Preview</button>
                       {busy ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "importing…" status button
                         <button disabled className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.85 }}>
                           <Loader2 size={12} style={spin} />importing…
                         </button>
                       ) : imported && !stale ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Imported" status button
                         <button disabled title="Already in your library — up to date" className="mono" style={{ height: 26, padding: "0 11px", borderRadius: "var(--r-md)", background: "transparent", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)", color: "var(--success)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <Check size={13} />Imported
                         </button>
                       ) : stale ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Update" button
                         <button onClick={() => void doImport(it)} title="Upstream has newer changes — pull the update" className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <ArrowUpCircle size={13} />Update
                         </button>
@@ -311,68 +258,64 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                           <Download size={13} />Import
                         </Button>
                       )}
-                    </span>
-                  </div>
+                    </Box>
+                  </Row>
                   {expanded && <GistPreview entry={previews[it.id]} />}
-                  </div>
+                  </Box>
                 );
               })}
               {rows.length === 0 && (
-                <div className="mono" style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)", padding: "30px 0" }}>No blueprints match “{query}”.</div>
+                <Box className="mono" pad={[30, 0]} style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)"}}>No blueprints match “{query}”.</Box>
               )}
             </>
           )}
 
           {statusEmpty && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-dim)" }}><Inbox size={22} /></div>
-              <div>
-                <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>No blueprint gists yet</div>
-                <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 380 }}>
-                  <b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.
-                </div>
-              </div>
-              <Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>
-            </div>
+            <EmptyState
+              iconVariant="dashed"
+              icon={<Inbox size={22} />}
+              title="No blueprint gists yet"
+              description={<><b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.</>}
+              actions={<Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>}
+            />
           )}
 
           {statusError && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)", color: "var(--danger)" }}><AlertTriangle size={22} /></div>
-              <div>
-                <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>Couldn't reach GitHub</div>
-                <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 400 }}>
-                  The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry.
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Button onClick={load}><RefreshCw size={13} />Retry</Button>
-                <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
-              </div>
-            </div>
+            <EmptyState
+              iconVariant="dashed"
+              icon={<AlertTriangle size={22} />}
+              title="Couldn't reach GitHub"
+              description="The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry."
+              actions={
+                <>
+                  <Button onClick={load}><RefreshCw size={13} />Retry</Button>
+                  <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
+                </>
+              }
+            />
           )}
-        </div>
+        </Box>
 
         {/* footer */}
-        <div className="mono" style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontSize: 10, color: "var(--fg-dim)" }}>
-          <span>importing pulls the gist into your library &amp; links it upstream</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            press <span style={{ display: "inline-block", padding: "1px 6px", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", background: "var(--bg-elev)" }}>Esc</span> to close
-          </span>
-        </div>
-      </div>
+        <Row className="mono" gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontSize: 10, color: "var(--fg-dim)" }}>
+          <Text as="span">importing pulls the gist into your library &amp; links it upstream</Text>
+          <Box as="span" style={{ flex: 1 }} />
+          <Box as="span" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            press <Box as="span" pad={[1, 6]} bg="var(--bg-elev)" border radius={4} style={{ display: "inline-block", color: "var(--fg-muted)"}}>Esc</Box> to close
+          </Box>
+        </Row>
+      </Box>
 
       {/* toast */}
       {toast && (
-        <div className="above-modal mono" style={{
+        <Row className="above-modal mono" gap={9} style={{
           position: "fixed", left: "50%", bottom: 40, transform: "translateX(-50%)",
-          display: "flex", alignItems: "center", gap: 9, padding: "9px 15px", background: "var(--bg-elev2)",
+          padding: "9px 15px", background: "var(--bg-elev2)",
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
           fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
         }}>
           <StatusDot size={7} color="var(--success)" />{toast}
-        </div>
+        </Row>
       )}
     </ModalScrim>
   );

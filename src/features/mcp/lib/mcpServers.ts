@@ -4,6 +4,9 @@
 // Pure (no React / Tauri) so it's shared by the store, the MCP screen, and TerminalView.
 // Split out of the former unified `extensions.ts` (mcp + hook discriminated union).
 
+import builtinServersEmbedded from "@data/mcp/builtin-servers.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
 export type McpTransport = "stdio" | "http";
 
 /** A user-configured MCP server. Scoped per-server via {@link McpServer.projects}. */
@@ -26,11 +29,12 @@ export interface McpServer {
  * the Rust side rewrites to the bundled binary's absolute path when writing `.mcp.json` (Claude Code
  * spawns `.mcp.json` commands directly, with no PATH/shell-rc). They behave like a global, enabled
  * server: the planner/director see them, and every session (incl. workers) gets them by default.
+ *
+ * The DATA is externalized to `@data/mcp/builtin-servers.json` (#2146, epic #2027 tail) — editable
+ * without touching code + part of the exportable config bundle; the config-dir copy (#2047) overlays
+ * the embedded default via `overlayFile`.
  */
-export const BUILTIN_MCP_SERVERS: McpServer[] = [
-  { id: "builtin-research", name: "Research", enabled: true, projects: [], transport: "stdio", command: "bsc-research-mcp", args: "" },
-  { id: "builtin-compliance", name: "Compliance", enabled: true, projects: [], transport: "stdio", command: "bsc-compliance-mcp", args: "" },
-];
+export const BUILTIN_MCP_SERVERS: McpServer[] = overlayFile("mcp/builtin-servers.json", builtinServersEmbedded as McpServer[]);
 
 /** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive). */
 function withBuiltins(servers: McpServer[]): McpServer[] {

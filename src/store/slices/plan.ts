@@ -1,7 +1,7 @@
 // PlanSlice — extracted from the store implementation (store split, stage 2).
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
@@ -39,26 +39,27 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planSections" | "setPlanSection" | "planConfirmedSections" | "confirmPlanSection" | "unconfirmPlanSection" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedSections" | "skipPlanSection" | "unskipPlanSection" | "canonicalizePlanSections" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
 // <id>.json so they survive a store reset and a download has a real home (#blueprints). Best-effort,
-// fire-and-forget — the store stays the in-memory source; the dir is the durable copy.
+// fire-and-forget over the `bsc` bridge (`bsc blueprint set`/`remove`, #2143) — the store stays the
+// in-memory source; the dir is the durable copy. Blueprints are GLOBAL (no project key) → `null`.
 const syncBlueprintFile = (bp?: Blueprint) => {
   if (bp && bp.origin !== "built-in") {
-    fireInvoke("write_blueprint", { id: bp.id, json: JSON.stringify(bp) });
+    void bscWrite(null, ["blueprint", "set"], bp);
   }
 };
 const deleteBlueprintFile = (id: string) => {
-  fireInvoke("delete_blueprint", { id });
+  void bscRun(null, ["blueprint", "remove", id]);
 };
 
 export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, get) => {
   // In-app fleet edits must reach plan.db (#1317), so the director / recovery / planning poll see
   // them and they survive a reload. `updater` gets the current fleet (or undefined) and returns the
   // new fleet — or null to no-op (no change, no persist). NOT used by the poll's READ path
-  // (`setPlanFleet`), so there is no read→write loop. plan_set_fleet does a full replace, so
+  // (`setPlanFleet`), so there is no read→write loop. `bsc plan fleet set` does a full replace, so
   // persisting the whole post-edit fleet covers add/remove/edit.
   const mutateFleet = (
     projectId: string,
@@ -67,7 +68,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
     const next = updater(get().planFleet[projectId]);
     if (next === null) return;
     set({ planFleet: setMapEntry(get().planFleet, projectId, next) });
-    fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
+    void bscWrite(projectId, ["plan", "fleet", "set"], next);
   };
   return ({
       configProfiles: [],
@@ -87,24 +88,24 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       removeConfigProfile: (id) =>
         set((s) => ({ configProfiles: s.configProfiles.filter((p) => p.id !== id) })),
 
-      planSections: {},
-      setPlanSection: (projectId, key, content) =>
+      planStages: {},
+      setPlanStage: (projectId, key, content) =>
         set((s) => ({
-          planSections: setMapEntry(s.planSections, projectId, { ...(s.planSections[projectId] ?? {}), [key]: content }),
+          planStages: setMapEntry(s.planStages, projectId, { ...(s.planStages[projectId] ?? {}), [key]: content }),
         })),
-      planConfirmedSections: {},
-      confirmPlanSection: (projectId, key) =>
+      planConfirmedStages: {},
+      confirmPlanStage: (projectId, key) =>
         set((s) => {
-          const existing = s.planConfirmedSections[projectId] ?? [];
+          const existing = s.planConfirmedStages[projectId] ?? [];
           if (existing.includes(key)) return {};
-          return { planConfirmedSections: setMapEntry(s.planConfirmedSections, projectId, [...existing, key]) };
+          return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
         }),
-      unconfirmPlanSection: (projectId, key) =>
+      unconfirmPlanStage: (projectId, key) =>
         set((s) => ({
-          planConfirmedSections: setMapEntry(
-            s.planConfirmedSections,
+          planConfirmedStages: setMapEntry(
+            s.planConfirmedStages,
             projectId,
-            (s.planConfirmedSections[projectId] ?? []).filter((k) => k !== key),
+            (s.planConfirmedStages[projectId] ?? []).filter((k) => k !== key),
           ),
         })),
       planAuthoredBlueprint: {},
@@ -130,24 +131,24 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planInjectionAck: {},
       acknowledgePlanInjections: (projectId, signature) =>
         set((s) => ({ planInjectionAck: setMapEntry(s.planInjectionAck, projectId, signature) })),
-      planSkippedSections: {},
-      skipPlanSection: (projectId, key) =>
+      planSkippedStages: {},
+      skipPlanStage: (projectId, key) =>
         set((s) => {
-          const existing = s.planSkippedSections[projectId] ?? [];
+          const existing = s.planSkippedStages[projectId] ?? [];
           if (existing.includes(key)) return {};
-          return { planSkippedSections: setMapEntry(s.planSkippedSections, projectId, [...existing, key]) };
+          return { planSkippedStages: setMapEntry(s.planSkippedStages, projectId, [...existing, key]) };
         }),
-      unskipPlanSection: (projectId, key) =>
+      unskipPlanStage: (projectId, key) =>
         set((s) => ({
-          planSkippedSections: setMapEntry(
-            s.planSkippedSections,
+          planSkippedStages: setMapEntry(
+            s.planSkippedStages,
             projectId,
-            (s.planSkippedSections[projectId] ?? []).filter((k) => k !== key),
+            (s.planSkippedStages[projectId] ?? []).filter((k) => k !== key),
           ),
         })),
-      canonicalizePlanSections: (projectId) =>
+      canonicalizePlanStages: (projectId) =>
         set((s) => {
-          const sections = s.planSections[projectId];
+          const sections = s.planStages[projectId];
           if (!sections) return {};
           let changed = false;
           const nextSections: Record<string, string> = {};
@@ -157,7 +158,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             // The canonical key's own content always wins; an alias only fills if absent.
             if (k === ck || nextSections[ck] === undefined) nextSections[ck] = v;
           }
-          const confirmed = s.planConfirmedSections[projectId];
+          const confirmed = s.planConfirmedStages[projectId];
           let nextConfirmed = confirmed;
           if (confirmed) {
             const mapped = [...new Set(confirmed.map(canonicalTopicKey))];
@@ -168,9 +169,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           }
           if (!changed) return {};
           return {
-            planSections: setMapEntry(s.planSections, projectId, nextSections),
+            planStages: setMapEntry(s.planStages, projectId, nextSections),
             ...(nextConfirmed !== confirmed
-              ? { planConfirmedSections: setMapEntry(s.planConfirmedSections, projectId, nextConfirmed) }
+              ? { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, nextConfirmed) }
               : {}),
           };
         }),
@@ -248,8 +249,8 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           // drops) so no section reads as completed afterwards, then re-seed the stage
           // config from the new blueprint + record it (#664).
           return {
-            planSections:          drop(s.planSections),
-            planConfirmedSections: drop(s.planConfirmedSections),
+            planStages:          drop(s.planStages),
+            planConfirmedStages: drop(s.planConfirmedStages),
             planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
             planDeployConfig:      drop(s.planDeployConfig),
             planSourceConfig:      drop(s.planSourceConfig),
@@ -257,7 +258,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             reposPublic:           drop(s.reposPublic),
             repoPublic:            dropRepoScoped(s.repoPublic, projectId),
             planInjectionAck:      drop(s.planInjectionAck),
-            planSkippedSections:   drop(s.planSkippedSections),
+            planSkippedStages:   drop(s.planSkippedStages),
             planAutomations:       drop(s.planAutomations),
             planFleet:             drop(s.planFleet),
             issueLinks:            drop(s.issueLinks),
@@ -401,6 +402,14 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
             x.id === streamId ? { ...x, strategy } : x);
           return { ...cur, streams };
         }),
+      // #2094: the persona a stream launches as — resolved at fleet launch to role/prompt/skills/model.
+      setPlanAgentStreamPersona: (projectId, streamId, personaId) =>
+        mutateFleet(projectId, (cur) => {
+          if (!cur) return null;
+          const streams = cur.streams.map((x) =>
+            x.id === streamId ? { ...x, persona: personaId ?? undefined } : x);
+          return { ...cur, streams };
+        }),
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         mutateFleet(projectId, (raw) => {
           const cur = raw ?? emptyFleet();
@@ -422,8 +431,8 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) => {
           const omitKey = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, key);
           return {
-          planSections:          omitKey(s.planSections),
-          planConfirmedSections: omitKey(s.planConfirmedSections),
+          planStages:          omitKey(s.planStages),
+          planConfirmedStages: omitKey(s.planConfirmedStages),
           planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
           planDeployConfig:      omitKey(s.planDeployConfig),
           planSourceConfig:      omitKey(s.planSourceConfig),
@@ -431,7 +440,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           reposPublic:           omitKey(s.reposPublic),
           repoPublic:            dropRepoScoped(s.repoPublic, key),
           planInjectionAck:      omitKey(s.planInjectionAck),
-          planSkippedSections:   omitKey(s.planSkippedSections),
+          planSkippedStages:   omitKey(s.planSkippedStages),
           planAutomations:       omitKey(s.planAutomations),
           planStageConfig:       omitKey(s.planStageConfig),
           projectBlueprintId:    omitKey(s.projectBlueprintId),

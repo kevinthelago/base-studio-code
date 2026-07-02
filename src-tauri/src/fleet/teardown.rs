@@ -10,8 +10,9 @@
 //!   * [`remove_worktree`] / [`remove_worktree_at`] — `git worktree remove --force` the directory
 //!     **and** the owning repo's worktree admin record, junction-safe.
 //!   * [`reclaim_project_worktrees`] — sweep every worktree of a project (project close / reap).
-//!   * [`project_disk_usage`] / [`worktrees_disk_usage`] — the inventory backing the Settings disk
-//!     surface (size of each worktree + its `target/`) so the user can see and reclaim the space.
+//!
+//! The read-only disk-usage inventory that backs the Settings "reclaim space" surface (size of each
+//! worktree + its `target/`) lives in the sibling [`crate::fleet::disk`] module.
 //!
 //! ## The `node_modules` junction hazard (memory: worktree-junction-hazard)
 //! A worktree's `node_modules` may be a Windows **junction** to the main clone's `node_modules`.
@@ -22,8 +23,11 @@
 
 use std::path::Path;
 
+// `no_window` is only used in the Windows junction-detach branch and in tests; gate the import so a
+// non-Windows non-test build (e.g. a Linux/macOS CI leg) doesn't flag it unused.
+#[cfg(any(windows, test))]
 use crate::platform::process::no_window;
-use crate::{repo_dir, worktree_slug, worktrees_dir};
+use crate::{parse_worktree_dir_name, repo_dir, worktree_dir_name, worktrees_dir};
 
 /// Directories that a build leaks into a worktree and that must be kept out of the worker's git
 /// status (and are dropped wholesale on teardown). Excluded via the worktree's `info/exclude` so the
@@ -113,134 +117,8 @@ pub(crate) fn remove_worktree_at(clone: &Path, wt: &Path) -> Result<(), String> 
 /// (`remove_worktree_at`). Idempotent: a worker that was never launched (no worktree) is `Ok(())`.
 pub(crate) fn remove_worktree(project_key: &str, repo: &str, agent_id: &str) -> Result<(), String> {
     let clone = repo_dir(project_key, repo);
-    let short = repo.rsplit('/').next().unwrap_or(repo);
-    let wt = worktrees_dir(project_key).join(format!("{short}--{}", worktree_slug(agent_id)));
+    let wt = worktrees_dir(project_key).join(worktree_dir_name(repo, agent_id));
     remove_worktree_at(&clone, &wt)
-}
-
-/// Recursive byte size of `dir` (best-effort; unreadable entries contribute 0). Used by the disk
-/// surface to report per-worktree + per-`target/` footprint.
-pub(crate) fn dir_size(dir: &Path) -> u64 {
-    fn walk(dir: &Path) -> u64 {
-        let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
-        let mut total = 0u64;
-        for entry in rd.flatten() {
-            let Ok(ft) = entry.file_type() else { continue };
-            // Never traverse a symlink/junction — its bytes belong to the target, not this worktree.
-            if ft.is_symlink() {
-                continue;
-            }
-            if ft.is_dir() {
-                total += walk(&entry.path());
-            } else if let Ok(meta) = entry.metadata() {
-                total += meta.len();
-            }
-        }
-        total
-    }
-    walk(dir)
-}
-
-/// One fleet worktree's disk footprint, for the Settings reclaim surface (#1080).
-#[derive(Debug, Clone, serde::Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorktreeUsage {
-    /// Sanitized project key the worktree belongs to.
-    pub project_key: String,
-    /// The `<repo>--<slug>` directory name.
-    pub name: String,
-    /// Absolute worktree path.
-    pub path: String,
-    /// Total bytes under the worktree (excluding symlinked/junctioned dirs).
-    pub size_bytes: u64,
-    /// Bytes under the worktree's own `target/` (the dominant, Cargo-leaked component).
-    pub target_bytes: u64,
-}
-
-/// Total + `target/` bytes of one worktree, in a SINGLE pass over its top level — the old code walked
-/// `target/` twice (once inside the full size, once standalone), and `target/` is the dominant
-/// component, so this ~halves the per-worktree work. Skips symlinked/junctioned children (#worktree-
-/// junction-hazard — their bytes belong to the target, not this worktree).
-fn worktree_sizes(wt: &Path) -> (u64, u64) {
-    let Ok(rd) = std::fs::read_dir(wt) else { return (0, 0) };
-    let (mut total, mut target) = (0u64, 0u64);
-    for entry in rd.flatten() {
-        let Ok(ft) = entry.file_type() else { continue };
-        if ft.is_symlink() {
-            continue;
-        }
-        let sz = if ft.is_dir() {
-            dir_size(&entry.path())
-        } else {
-            entry.metadata().map(|m| m.len()).unwrap_or(0)
-        };
-        total += sz;
-        if ft.is_dir() && entry.file_name() == "target" {
-            target = sz;
-        }
-    }
-    (total, target)
-}
-
-/// The worktree dirs (project_key, name, path) under one project — cheap (one `read_dir`, no size walk).
-fn enumerate_project_worktrees(base_dir: &Path, project_key: &str) -> Vec<(String, String, std::path::PathBuf)> {
-    let key = crate::sanitize_project_key(project_key);
-    let root = base_dir.join("worktrees").join(&key);
-    let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
-    rd.flatten()
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .map(|e| (key.clone(), e.file_name().to_string_lossy().into_owned(), e.path()))
-        .collect()
-}
-
-/// Size every enumerated worktree CONCURRENTLY, biggest-first. The cost is I/O-bound metadata syscalls
-/// over huge `target/` trees, so fanning the walks out (bounded to available parallelism) cuts
-/// wall-time. Enumeration is cheap + already done; only the size walks fan out.
-fn sizes_biggest_first(entries: Vec<(String, String, std::path::PathBuf)>) -> Vec<WorktreeUsage> {
-    if entries.is_empty() {
-        return Vec::new();
-    }
-    let n = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(4).min(entries.len());
-    let chunk = entries.len().div_ceil(n);
-    let mut out: Vec<WorktreeUsage> = std::thread::scope(|s| {
-        entries
-            .chunks(chunk)
-            .map(|c| {
-                s.spawn(move || {
-                    c.iter()
-                        .map(|(key, name, path)| {
-                            let (size_bytes, target_bytes) = worktree_sizes(path);
-                            WorktreeUsage {
-                                project_key: key.clone(),
-                                name: name.clone(),
-                                path: path.to_string_lossy().into_owned(),
-                                size_bytes,
-                                target_bytes,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|h| h.join().unwrap_or_default())
-            .collect()
-    });
-    out.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then(a.name.cmp(&b.name)));
-    out
-}
-
-/// Every project's worktree usage, biggest-first — the size walks fan out across ALL worktrees at
-/// once (not just within a project). Pure over a base dir for testability.
-pub(crate) fn worktrees_disk_usage_impl(base_dir: &Path) -> Vec<WorktreeUsage> {
-    let root = base_dir.join("worktrees");
-    let Ok(projects) = std::fs::read_dir(&root) else { return Vec::new() };
-    let entries: Vec<_> = projects
-        .flatten()
-        .filter(|p| p.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .flat_map(|p| enumerate_project_worktrees(base_dir, &p.file_name().to_string_lossy()))
-        .collect();
-    sizes_biggest_first(entries)
 }
 
 /// Remove every worktree of a project (project close / session reap / explicit reclaim), junction-
@@ -260,8 +138,8 @@ pub(crate) fn reclaim_project_worktrees(project_key: &str) -> usize {
         // worktree_slug never produces `--`, and a repo short name can't contain `--` (it's the
         // part after the last `/`), so the FIRST `--` is the boundary.
         let name = entry.file_name().to_string_lossy().into_owned();
-        let clone = match name.split_once("--") {
-            Some((repo_short, _)) => repo_dir(project_key, repo_short),
+        let clone = match parse_worktree_dir_name(&name) {
+            Some((short, _)) => repo_dir(project_key, short),
             // No boundary (shouldn't happen) — remove the dir without an owning clone.
             None => std::path::PathBuf::new(),
         };
@@ -307,10 +185,7 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
     let clone_str = clone.to_string_lossy();
     // Clean tree: `status --porcelain` prints nothing. Untracked source files block reclaim;
     // node_modules/target are git-excluded (ensure_worktree) so they never appear here.
-    let mut st = std::process::Command::new("git");
-    st.args(["-C", &wt_str, "status", "--porcelain"]);
-    let clean = no_window(&mut st).output().map(|o| o.stdout.is_empty()).unwrap_or(false);
-    if !clean {
+    if !crate::git_lines(&wt_str, &["status", "--porcelain"]).is_empty() {
         return false;
     }
     // Merged: the worktree's HEAD is an ancestor of the clone's current HEAD (local merge).
@@ -347,8 +222,8 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
             }
             let name = w.file_name().to_string_lossy().into_owned();
             // `<repoShort>--<slug>` → the owning clone (first `--` is the boundary).
-            let clone = match name.split_once("--") {
-                Some((repo_short, _)) => base_dir.join("projects").join(&key).join(repo_short),
+            let clone = match parse_worktree_dir_name(&name) {
+                Some((short, _)) => base_dir.join("projects").join(&key).join(short),
                 None => std::path::PathBuf::new(),
             };
             let disposable = hub_gone || worktree_is_disposable(&clone, &wt);
@@ -389,20 +264,10 @@ pub(crate) fn reclaim_worktrees(project_key: String) -> usize {
     reclaim_project_worktrees(&project_key)
 }
 
-/// Disk footprint of every fleet worktree across every project — the Settings "reclaim space"
-/// surface (#1080). Sorted biggest-first. Async + `spawn_blocking` so the recursive size walk (every
-/// file in every worktree's `target/` — potentially hundreds of thousands) runs OFF the main thread
-/// instead of freezing the window while Settings → Planner → Storage mounts (#1916 perf).
-#[tauri::command]
-pub(crate) async fn worktrees_disk_usage() -> Vec<WorktreeUsage> {
-    tauri::async_runtime::spawn_blocking(|| worktrees_disk_usage_impl(&crate::bsc_base_dir()))
-        .await
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::unique_dir;
     use std::fs;
 
     /// Stand up a real git clone with one commit, so `git worktree add/remove` work end to end.
@@ -421,18 +286,10 @@ mod tests {
         run(&["commit", "-q", "-m", "init"]);
     }
 
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("bsc-teardown-{tag}-{}-{nanos}", std::process::id()))
-    }
-
     /// git worktree remove drops BOTH the directory AND the owning clone's admin record.
     #[test]
     fn remove_worktree_drops_dir_and_admin_record() {
-        let base = unique_dir("rm");
+        let base = unique_dir("bsc-teardown", "rm");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("wt");
@@ -461,7 +318,7 @@ mod tests {
     /// Tearing down a MISSING worktree is a no-op success (idempotent reap).
     #[test]
     fn remove_missing_worktree_is_ok() {
-        let base = unique_dir("missing");
+        let base = unique_dir("bsc-teardown", "missing");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("never-made");
@@ -473,7 +330,7 @@ mod tests {
     /// NEVER a dirty or unmerged-with-work worktree.
     #[test]
     fn gc_reclaims_merged_and_orphans_but_keeps_dirty_and_ahead() {
-        let base = unique_dir("gc");
+        let base = unique_dir("bsc-teardown", "gc");
         let key = "projk";
         let clone = base.join("projects").join(key).join("web");
         init_clone(&clone);
@@ -525,7 +382,7 @@ mod tests {
     /// elsewhere; on Unix this asserts the symlink case.)
     #[test]
     fn junction_detach_preserves_shared_target() {
-        let base = unique_dir("junction");
+        let base = unique_dir("bsc-teardown", "junction");
         let shared = base.join("main-node_modules");
         fs::create_dir_all(shared.join(".bin")).unwrap();
         fs::write(shared.join(".bin").join("vite"), "binary").unwrap();
@@ -561,7 +418,7 @@ mod tests {
     /// exclude_build_artifacts writes target/ (etc.) to the worktree's info/exclude, idempotently.
     #[test]
     fn exclude_writes_build_dirs_to_git_exclude() {
-        let base = unique_dir("excl");
+        let base = unique_dir("bsc-teardown", "excl");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("wt");
@@ -585,44 +442,6 @@ mod tests {
         st.args(["-C", &wt.to_string_lossy(), "status", "--porcelain"]);
         let out = String::from_utf8_lossy(&no_window(&mut st).output().unwrap().stdout).into_owned();
         assert!(!out.contains("target"), "target/ excluded from status: {out:?}");
-
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    /// dir_size sums file bytes and does NOT follow symlinked/junctioned subdirs.
-    #[test]
-    fn dir_size_sums_files_and_skips_links() {
-        let base = unique_dir("size");
-        let d = base.join("d");
-        fs::create_dir_all(d.join("sub")).unwrap();
-        fs::write(d.join("a.bin"), vec![0u8; 1000]).unwrap();
-        fs::write(d.join("sub").join("b.bin"), vec![0u8; 500]).unwrap();
-        assert_eq!(dir_size(&d), 1500);
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    /// worktrees_disk_usage_impl reports each worktree's size + target size (single-walk), biggest first.
-    #[test]
-    fn worktrees_disk_usage_reports_target_size() {
-        let base = unique_dir("usage");
-        let key = "proj";
-        let root = base.join("worktrees").join(key);
-        let wt_a = root.join("web--auth");
-        let wt_b = root.join("api--svc");
-        fs::create_dir_all(wt_a.join("target")).unwrap();
-        fs::create_dir_all(&wt_b).unwrap();
-        fs::write(wt_a.join("src.rs"), vec![0u8; 100]).unwrap();
-        fs::write(wt_a.join("target").join("big.bin"), vec![0u8; 5000]).unwrap();
-        fs::write(wt_b.join("only.rs"), vec![0u8; 50]).unwrap();
-
-        let usage = worktrees_disk_usage_impl(&base);
-        assert_eq!(usage.len(), 2);
-        // Biggest first: web--auth (5100) before api--svc (50).
-        assert_eq!(usage[0].name, "web--auth");
-        assert_eq!(usage[0].size_bytes, 5100);
-        assert_eq!(usage[0].target_bytes, 5000);
-        assert_eq!(usage[1].name, "api--svc");
-        assert_eq!(usage[1].target_bytes, 0);
 
         let _ = fs::remove_dir_all(&base);
     }

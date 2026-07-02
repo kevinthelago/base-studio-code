@@ -53,7 +53,7 @@ that block is the canonical index of the backend's command surface.
 | [`fleet/`](../src-tauri/src/fleet/) | The parallel worker fleet | `worktree.rs` (`ensure_worktree` — per-agent git worktree + `CLAUDE.local.md`), `teardown.rs` (`teardown_worktree`, `reclaim_worktrees`, build-artifact excludes), `director.rs` (`ensure_director_protocol`), `protocols.rs` (the injected worker/injection-resistance MD consts + the idempotent `append_section_once` helper), `inspect.rs` (the per-worker worktree audit — uncommitted changes, branch, recent commits, the `WorktreeCommit` struct; fleet owns worktrees so the audit lives here) |
 | [`github/`](../src-tauri/src/github/) | GitHub integration & auth | `api.rs` (REST/GraphQL/gist proxy — `github_request`, `github_graphql`, `github_post/put/patch`), `oauth.rs` (device flow), `repos.rs` (`clone_repo`), `readiness.rs` (`gh`/`git`/`gh auth` preflight probe), `git_hooks.rs` (hook inspection) |
 | [`sources/`](../src-tauri/src/sources/) | Migration data sources / the "Source pane" | `data/` (dir-module split #1661 — `data/data_csv.rs`: CSV ingest; `data/data_scan.rs`: platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
-| [`extensions/`](../src-tauri/src/extensions/) | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `skill_store.rs` (the `skill_store_*`/`skill_group_*` commands over `crates/skilldb`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) |
+| [`extensions/`](../src-tauri/src/extensions/) | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) — the global skills store (`crates/skilldb`) is reached through the generic `bsc` command (`bsc skill …`, #2142), not per-verb commands |
 | [`observability/`](../src-tauri/src/observability/) | Logs, metrics, accounting | `logs.rs` (managed log streams + caps, and the readers for the app-wide `bsc-*` TSVs — audit/skill/hook/mcp/coord, #1689), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens/` (dir-module #1659 — `tokens/cost.rs`: `read_token_usage`, delegating pricing to `crates/logs`; `tokens/activity.rs` · `tokens/messages.rs`). The worktree-changes/commits/branch audit moved to `fleet/inspect.rs` (#1667). |
 | [`mobile/`](../src-tauri/src/mobile/) | The paired mobile companion (desktop glue) | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands; re-exports the wire protocol + Noise from the `bsc-tunnel` crate), `tunnel/state.rs` (the in-process bus + FCM worker), `tunnel/transport.rs` (relay dial-out + pump), `tunnel/commands.rs`. The Tauri-free wire types + Noise crypto live in [`crates/bsc-tunnel`](../crates/bsc-tunnel/) (#1919). |
 | [`tests.rs`](../src-tauri/src/tests.rs) / `testutil.rs` | Cross-cutting integration tests + the shared test harness (`temp_home`, `ENV_LOCK`, `write_file`) | — |
@@ -78,7 +78,7 @@ of these crates and exposes thin command wrappers over them.
 | [`research`](../crates/research/) | `research` | **`bsc-research-mcp`** | Literature research (arXiv · Semantic Scholar · PubMed/PMC · Crossref) + native PDF extraction + citation-grounded semantic search, with an on-disk SQLite cache. Shipped as a bundled stdio MCP server (Tauri `externalBin`) so the planner can ground plans/skills in real sources with no download/build/Docker. |
 | [`compliance`](../crates/compliance/) | `compliance` | **`bsc-compliance-mcp`** + **`bsc-compliance`** | User-updatable store of current compliance standards (WCAG 2.2, GDPR, CCPA, SOC 2, …) in SQLite. Two bins: the bundled stdio MCP server (`bsc-compliance-mcp`, so the planner bakes the right requirements in) and the session-side state CLI (`bsc-compliance standards list/get`), refreshable without an app release. |
 | [`logs`](../crates/logs/) | `logs` | **`bsc-logs`** | The unified log/perf/cost engine (epic #1607): one place for the `bsc-*` TSV readers, the `perf.db` series, and the token price table + usage parser + cost math (`logs::cost`, which `observability/tokens` delegates to, #1686). The session-side `bsc-logs` CLI reads logs + perf from a live shell. |
-| [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc-blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). Shared by the desktop's `project/blueprints.rs` and the session-side `bsc-blueprint` CLI. |
+| [`bsc-blueprint`](../crates/bsc-blueprint/) | `bsc_blueprint` | **`bsc-blueprint`** | The user blueprint store (file CRUD under `~/.base-studio-code/blueprints/` + the one path-traversal slug guard, #1761). The desktop UI reaches it through the generic `bsc` command (`bsc blueprint …`, #2143) and a session's own shell through the same CLI. |
 | [`bsc-project`](../crates/bsc-project/) | `bsc_project` | **`bsc-project`** | Project-hub enumeration store: `bsc-project list` (every local hub) and `bsc-project published` (a hub's `.published` marker), so a live session can introspect the project set. |
 | [`mcp-rpc`](../crates/mcp-rpc/) | `mcp_rpc` | — | The shared stdio JSON-RPC scaffold the bundled MCP servers (`research`, `compliance`) build on. |
 | [`bsc-tunnel`](../crates/bsc-tunnel/) | `bsc_tunnel` | — | The mobile-tunnel wire contract (serde types matching mobile's `types.ts`) + Noise IK crypto — Tauri-free, shared with mobile-studio-code (#1919). |
@@ -133,7 +133,7 @@ Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** 
 `dd`, force-push, `curl … | sh`, …) plus any per-session `denied_commands` on top. The mandatory tier
 (`gh`, `git`, `bsc`) from the backend-owned `data/permissions/base.json` is always auto-approved.
 Claude Code precedence is **deny > ask > allow**.
-The role gate (planner / worker / director / triage / tester / reviewer / conductor / issuer / juror) maps to the
+The role gate (planner / worker / director / triage / tester / reviewer / issuer / juror) maps to the
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard
 push-confirm gate.
 
@@ -180,8 +180,9 @@ fixtures, resolved by filename via `find_fixture`, must stay byte-exact).
 escape the root); `write_mcp_json` registers servers (incl. the bundled `bsc-research-mcp` /
 `bsc-compliance-mcp`) into a session's `.mcp.json`. `write_session_hooks` writes the user's hooks
 (wrapped through `bsc-hook` for telemetry); `write_session_skills` materializes attached skills as
-real `.claude/skills/<slug>/SKILL.md` files. The `skill_store_*` / `skill_group_*` commands are the
-desktop's thin wrapper over the global `crates/skilldb` store.
+real `.claude/skills/<slug>/SKILL.md` files. The desktop Skills library reaches the global
+`crates/skilldb` store through the generic `bsc` command — `bsc skill …` / `bsc skill group …` over
+the same CLI a live session uses (#2142) — not a per-verb Tauri command layer.
 
 ---
 

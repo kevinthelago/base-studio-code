@@ -2,6 +2,8 @@
 // tiers, so the console (PaneMenu / PaneShell), Settings, and the planner's Permissions stage all
 // reference one list instead of duplicating it. Each id maps to a Claude CLI tier alias at launch
 // (`opus-4.5` → `claude --model opus`), so a tier tracks the latest model in that family.
+import modelsEmbedded from "@data/console/models.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** A selectable model tier. The trailing version is cosmetic — the harness maps it to a CLI tier
  *  alias (`opus`/`sonnet`/`haiku`), which always resolves to the latest model in that tier. */
@@ -15,12 +17,11 @@ export interface ModelOption {
   price: string;
 }
 
+// The tier DATA is externalized to `@data/console/models.json` (#2146, epic #2027 tail) — editable
+// without touching code + part of the exportable config bundle; the config-dir copy (#2047) overlays
+// the embedded default via `overlayFile`. This module keeps the TYPES + accessor/derivation helpers.
 /** The model tiers offered in the UI, cheapest → most capable. */
-export const MODELS: ModelOption[] = [
-  { id: "haiku-4.5",  tone: "fast",     price: "$"   },
-  { id: "sonnet-4.5", tone: "balanced", price: "$$"  },
-  { id: "opus-4.5",   tone: "deep",     price: "$$$" },
-];
+export const MODELS: ModelOption[] = overlayFile("console/models.json", modelsEmbedded as ModelOption[]);
 
 export const MODEL_IDS: ModelId[] = MODELS.map((m) => m.id);
 

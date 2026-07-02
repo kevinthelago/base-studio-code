@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
@@ -8,6 +7,8 @@ import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blue
 import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
+import { createPersonasSlice } from "@/features/personas/store";
+import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -44,6 +45,7 @@ export const useAppStore = create<AppStore>()(
       ...createSessionSlice(set, get, store),
       ...createSkillsSlice(set, get, store),
       ...createMcpSlice(set, get, store),
+      ...createPersonasSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -111,7 +113,6 @@ export const useAppStore = create<AppStore>()(
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
-        workflowRuns:         s.workflowRuns,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,
@@ -123,13 +124,13 @@ export const useAppStore = create<AppStore>()(
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
         repoTriagePromptDoc:     s.repoTriagePromptDoc,
         configProfiles:       s.configProfiles,
-        planSections:          s.planSections,
-        planConfirmedSections: s.planConfirmedSections,
+        planStages:          s.planStages,
+        planConfirmedStages: s.planConfirmedStages,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
-        planSkippedSections:   s.planSkippedSections,
+        planSkippedStages:   s.planSkippedStages,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
         projectBlueprintId:    s.projectBlueprintId,
@@ -153,6 +154,7 @@ export const useAppStore = create<AppStore>()(
         // Task groups + per-session group toggles (#skills-groups) — reusable skill bundles.
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
+        personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
@@ -186,6 +188,10 @@ export const useAppStore = create<AppStore>()(
         // who seeded their store before the change. We replace each persisted built-in with
         // its current definition (by id) and add any new built-ins; user-created / forked /
         // imported blueprints are left untouched.
+        // Reconcile the persona library with the packaged built-ins (#2094): re-seed any dropped
+        // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
+        // code-owned-template discipline as the blueprints refresh below.
+        if (state?.personas) state.personas = reconcilePersonas(state.personas);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }
@@ -194,18 +200,20 @@ export const useAppStore = create<AppStore>()(
         if (state?.agentProfiles) {
           state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
         }
-        // Hydrate user blueprints from their on-disk dir (#blueprints): union them in (so one that
-        // survived a store reset or a fresh download appears), and migrate any persisted-but-not-yet-
-        // on-disk user blueprint forward to the dir. The dir is the durable home; the persisted list
-        // is a cache; built-ins stay code-owned. Async — runs after hydration settles.
-        void invoke<string[]>("list_blueprints").then((rows) => {
-          const parse = (s: string): Blueprint | undefined => {
-            try {
-              const b = JSON.parse(s);
-              return b && typeof b.id === "string" && Array.isArray(b.sections) ? (b as Blueprint) : undefined;
-            } catch { return undefined; }
-          };
-          const fromDir = (rows ?? []).map(parse).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
+        // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
+        // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
+        // fresh download appears), and migrate any persisted-but-not-yet-on-disk user blueprint forward
+        // to the dir (`bsc blueprint set`). The dir is the durable home; the persisted list is a cache;
+        // built-ins stay code-owned. Blueprints are GLOBAL (no project key) → `null`. `bscJson` degrades
+        // to `[]` when the bridge is unreachable — safe here: an empty list simply unions nothing (the
+        // `if (fromDir.length)` guard), so it never blanks the seeded/persisted set. Async — runs after
+        // hydration settles.
+        void bscJson<unknown[]>(null, ["blueprint", "list", "--full"], []).then((rows) => {
+          const coerce = (b: unknown): Blueprint | undefined =>
+            b && typeof (b as Blueprint).id === "string" && Array.isArray((b as Blueprint).sections)
+              ? (b as Blueprint)
+              : undefined;
+          const fromDir = rows.map(coerce).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
           const onDiskIds = new Set(fromDir.map((b) => b.id));
           if (fromDir.length) {
             useAppStore.setState((s) => {
@@ -216,10 +224,10 @@ export const useAppStore = create<AppStore>()(
           }
           for (const b of useAppStore.getState().blueprints) {
             if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
-              fireInvoke("write_blueprint", { id: b.id, json: JSON.stringify(b) });
+              void bscWrite(null, ["blueprint", "set"], b);
             }
           }
-        }).catch(() => {});
+        });
         // Same for the packaged skills (#677-style): replace the code-owned set from
         // code and prune any retired packaged skill, so a store seeded with the old
         // dev-workflow skills picks up the compliance/standards library on next load.

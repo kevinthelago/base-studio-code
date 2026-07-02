@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileIntakePane } from "./FileIntakePane";
-import { STAGE_DEFS } from "../stages/blueprints";
 import { useAppStore } from "@/store";
 
 describe("FileIntakePane (#604)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
-    useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedSections: {} });
+    useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedStages: {} });
   });
 
   it("renders the drop zone with click-to-browse-a-folder (#831)", () => {
@@ -27,18 +26,18 @@ describe("FileIntakePane (#604)", () => {
     expect(screen.getByText("image")).toBeInTheDocument(); // kind chip
   });
 
-  it("the Route button queues the route prompt for the planner (#604 slice 2)", async () => {
-    vi.mocked(invoke).mockResolvedValue(undefined as never); // un-mocked calls (sync_design_to_skeleton) still return a promise
+  // #2121 — the pane no longer has ANY route/confirm control inside it. Syncing the skeleton,
+  // stamping routed hashes, and confirming the `ui` stage are driven entirely by the UI stage's
+  // footer action (Planning.tsx `routeDesignToProject`); the per-repo routing happens change-aware
+  // on triage (#2097). This surface is intake-only, so there's no in-pane action to assert here.
+  it("has no route/confirm button inside the pane (#2121) — the surface is intake-only", async () => {
     vi.mocked(invoke).mockResolvedValueOnce([
-      ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1 }])],
+      ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1, hash: "h1" }])],
     ]);
     render(<FileIntakePane projectKey="proj-x" />);
-    fireEvent.click(await screen.findByRole("button", { name: /Route to project/i }));
-    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(STAGE_DEFS.ui.routePrompt);
-    // routing also completes the UI stage by confirming the `ui` section (#837)
-    expect(useAppStore.getState().planConfirmedSections["proj-x"]).toContain("ui");
-    // …and promotes the dropped design into .ui-skeleton/ so the preview shows it (#1373)
-    expect(invoke).toHaveBeenCalledWith("sync_design_to_skeleton", { projectKey: "proj-x" });
+    expect(await screen.findByText("hero.png")).toBeInTheDocument(); // staged list renders
+    expect(screen.queryByRole("button", { name: /Confirm design staged/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /route design/i })).toBeNull();
   });
 });
 

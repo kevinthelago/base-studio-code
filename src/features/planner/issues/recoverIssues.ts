@@ -4,7 +4,7 @@
 // machine-switched plan.db can be rehydrated from the durable GitHub store.
 //
 // Pure (no React/Tauri) so the reverse-parse is unit-testable and round-trips against
-// renderIssueBody. The orchestration (gh fetch + plan_upsert_issue) lives in Planning.tsx.
+// renderIssueBody. The orchestration (gh fetch + `bsc plan add`) lives in Planning.tsx.
 
 import { parseRefMarker, type PlanIssue, type PlanIssueStatus } from "./planIssues";
 

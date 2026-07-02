@@ -2,7 +2,7 @@
 //! its output: line lists, trimmed stdout, worktree-aware path resolution, and `info/exclude`
 //! maintenance. Extracted verbatim from `lib.rs`.
 
-use crate::platform::process::{run_capture, run_ok, run_output};
+use crate::prelude::{run_capture, run_ok, run_output};
 
 /// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
 /// failure (non-zero exit, git missing).
@@ -84,14 +84,15 @@ pub(crate) fn git_exclude(repo_root: &std::path::Path, entry: &str) {
         return;
     }
     if let Some(parent) = exclude.parent() { let _ = std::fs::create_dir_all(parent); }
-    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
-    if existing.lines().any(|l| l.trim() == entry) { return; }
-    let next = if existing.trim().is_empty() {
-        format!("{}\n", entry)
-    } else {
-        format!("{}\n{}\n", existing.trim_end(), entry)
-    };
-    let _ = std::fs::write(&exclude, next);
+    // Idempotent line-append via the shared helper: the whole-line presence check (an entry counts
+    // as present only as its own trimmed line, never as a substring of another) is preserved as the
+    // predicate, and the entry — with its own trailing newline — is joined after a single newline.
+    let _ = crate::platform::fsx::append_block_once(
+        &exclude,
+        |existing| existing.lines().any(|l| l.trim() == entry),
+        "\n",
+        &format!("{entry}\n"),
+    );
 }
 
 #[cfg(test)]

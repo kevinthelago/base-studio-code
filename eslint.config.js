@@ -30,6 +30,45 @@ export default tseslint.config(
     },
   },
   {
+    // No-raw-div discipline (#2079): the UI kit owns every element. In features + the app shell,
+    // reach for a primitive — `Box` (generic container, `@/shared/ui/layout/Box`), `Text`
+    // (`@/shared/ui/typography/Text`), or the layout primitives `Stack`/`Row`/`Spacer`/`Grid` —
+    // never a raw `<div>`/`<span>`. The primitives themselves (`src/shared/ui/**`) render the real
+    // elements and are outside this scope. Genuinely-unavoidable raw elements (a DOM `ref` — the
+    // primitives aren't forwardRef; a portal/measured mount; the crash ErrorBoundary; an isolated
+    // preview surface) carry an inline `// eslint-disable-next-line no-restricted-syntax -- <reason>`.
+    files: ["src/features/**/*.tsx", "src/app/**/*.tsx"],
+    ignores: ["src/features/**/*.test.tsx", "src/app/**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": ["error",
+        {
+          selector: "JSXOpeningElement[name.name='div']",
+          message: "Use a UI-kit primitive instead of a raw <div> — <Box> (generic container), or <Stack>/<Row>/<Grid> for layout. See src/shared/ui. If truly required (DOM ref, portal/measured mount, crash boundary, isolated preview), add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='span']",
+          message: "Use a UI-kit primitive instead of a raw <span> — <Text> for text, or <Box as=\"span\"> for an inline container. See src/shared/ui. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use a UI-kit primitive instead of a raw <button> — <Button> (variant/size/danger), <IconButton> for icon-glyph actions, or <SegmentedControl> for a toggle group. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message: "Use a UI-kit primitive instead of a raw <input> — <TextField> (labelled) or wrap the control with <Field>; <Checkbox>/<Toggle> for booleans. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: "Use a UI-kit primitive instead of a raw <select> — <SelectField>. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message: "Use a UI-kit primitive instead of a raw <textarea>. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+      ],
+    },
+  },
+  {
     // Architecture boundary (#1626 / #1703): `shared/` is feature- AND app-agnostic — features and
     // the app shell import from shared, never the reverse. Forbid VALUE imports from `@/features/*`
     // and `@/app/*` (and their relative `**/features/*` / `**/app/*` forms) in shared runtime

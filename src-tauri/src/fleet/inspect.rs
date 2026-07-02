@@ -108,10 +108,7 @@ pub(crate) fn claude_transcript_path(cwd: String) -> Option<String> {
     if cwd.trim().is_empty() {
         return None;
     }
-    let dir = home_dir()
-        .join(".claude")
-        .join("projects")
-        .join(claude_project_dir_name(&cwd));
+    let dir = claude_project_transcripts_dir(&cwd);
     let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let p = entry.path();
@@ -138,11 +135,7 @@ pub(crate) fn merge_change_lists(a: Vec<String>, b: Vec<String>) -> Vec<String> 
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn worktree_audit_commands_tolerate_empty_cwd() {

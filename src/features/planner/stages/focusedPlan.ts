@@ -126,7 +126,7 @@ export function gatePill(stage: Stage): GatePill {
   return stage.status === "complete" || stage.status === "ahead" ? "pass" : "wait";
 }
 
-export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "publish";
+export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "route-design" | "publish";
 
 export interface FooterAction {
   kind: FooterKind;
@@ -151,11 +151,16 @@ export interface FooterAction {
  */
 export function footerAction(
   selectedIdx: number, activeIdx: number, planComplete: boolean, currentGateReady: boolean,
-  activeSkippable = false,
+  activeSkippable = false, routeDesign = false,
 ): FooterAction {
   if (selectedIdx > activeIdx) return { kind: "back-to-current", enabled: true };
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
+  // #2121: the active UI stage whose design is missing or stale → the primary action ROUTES the
+  // design (sync the skeleton + mark it current) instead of advancing. While route-design is the
+  // primary action, SKIP is hidden — offering both "route the design" and "skip the stage" at once
+  // is contradictory; skip only reappears on the normal approve-continue once the design is routed.
+  if (routeDesign) return { kind: "route-design", enabled: true, canSkip: false };
   return { kind: "approve-continue", enabled: currentGateReady, canSkip: activeSkippable };
 }
 

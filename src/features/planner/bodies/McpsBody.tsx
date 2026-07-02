@@ -6,6 +6,13 @@
 import { useState } from "react";
 import { useExpandable } from "@/shared/hooks/useExpandable";
 import type { McpServer } from "@/features/planner/pane/projectPaneData";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { McpHandlers } from "./focusedHandlers";
 
 const MCP_TRANSPORT: Record<string, { c: string; label: string }> = {
@@ -33,105 +40,107 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
   const busy = (s: McpServer) => s.status === "downloading" || s.status === "building";
 
   const tile = (v: React.ReactNode, k: string, c?: string) => (
-    <div style={{ flex: 1, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 11px" }}>
-      <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: c ?? "var(--fg)" }}>{v}</div>
-      <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</div>
-    </div>
+    <Box pad={[8, 11]} bg="var(--bg-canvas)" border="soft" radius={8} style={{ flex: 1}}>
+      <Text as="div" mono size={18} weight={600} style={{ color: c ?? "var(--fg)" }}>{v}</Text>
+      <Box className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</Box>
+    </Box>
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        {tile(<>{ready}<span style={{ fontSize: 11, color: "var(--fg-dim)" }}> / {list.length}</span></>, "ready", "var(--success)")}
+    <Stack gap={12}>
+      <Row gap={8} align="stretch">
+        {tile(<>{ready}<Text as="span" size={11} tone="dim"> / {list.length}</Text></>, "ready", "var(--success)")}
         {tile(list.filter((s) => s.enabled).length, "enabled")}
         {tile(errored, errored === 1 ? "needs attention" : "need attention", errored ? "var(--danger)" : undefined)}
-      </div>
+      </Row>
 
       {list.length === 0 && (
-        <div className="empty-state"><span className="empty-icon">⊕</span><span>No MCP servers yet — assign one below or have the planner add it</span></div>
+        <EmptyState iconVariant="dashed" icon="⊕" title="No MCP servers yet — assign one below or have the planner add it" />
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <Stack gap={8}>
         {list.map((s) => {
           const tr = MCP_TRANSPORT[s.transport] ?? MCP_TRANSPORT.stdio;
           const stat = MCP_STATUS[s.status];
           const isOpen = open.has(s.id);
           const isErr = s.enabled && s.status === "error";
           return (
-            <div key={s.id} style={{
-              borderRadius: 9, background: "var(--bg-canvas)", overflow: "hidden",
+            <Box key={s.id} bg="var(--bg-canvas)" radius={9} style={{ overflow: "hidden",
               border: "1px solid " + (isErr ? "color-mix(in oklch, var(--danger), transparent 60%)" : isOpen ? "var(--border)" : "var(--border-soft)"),
               opacity: s.enabled ? 1 : 0.72,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>
-                <span className="mono" style={{
-                  width: 24, height: 24, borderRadius: 6, display: "grid", placeItems: "center", flex: "0 0 24px",
+              <Row gap={10} style={{ padding: "10px 12px" }}>
+                <Box as="span" className="mono" radius={6} style={{
+                  width: 24, height: 24, display: "grid", placeItems: "center", flex: "0 0 24px",
                   fontSize: 12, color: tr.c,
                   border: `1px solid color-mix(in oklch, ${tr.c}, transparent 55%)`,
-                }}>{(s.name[0] ?? "?").toUpperCase()}</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => toggleOpen(s.id)}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span className="mono-value">{s.name}</span>
-                    {s.official && <span className="chip" style={{ fontSize: 8 }}>official</span>}
-                    {!s.official && s.downloadable && <span className="chip" style={{ fontSize: 8 }}>first-party</span>}
-                    <span className="chip" style={{ fontSize: 8, color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</span>
-                  </span>
-                  {s.desc && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</span>}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
-                    <span className="mono" style={{ fontSize: 9.5, color: stat.c }}>{stat.label}</span>
-                  </span>
-                  <span className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
-                </div>
-              </div>
+                }}>{(s.name[0] ?? "?").toUpperCase()}</Box>
+                <Stack gap={3} onClick={() => toggleOpen(s.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+                  <Row gap={7}>
+                    <Box as="span" className="mono-value">{s.name}</Box>
+                    {s.official && <Text as="span" className="chip" size={8}>official</Text>}
+                    {!s.official && s.downloadable && <Text as="span" className="chip" size={8}>first-party</Text>}
+                    <Text as="span" className="chip" size={8} style={{ color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</Text>
+                  </Row>
+                  {s.desc && <Box as="span" className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</Box>}
+                </Stack>
+                <Stack align="end" gap={5}>
+                  <Row gap={5}>
+                    <Box as="span" className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
+                    <Text as="span" mono size={9.5} style={{ color: stat.c }}>{stat.label}</Text>
+                  </Row>
+                  <Box as="span" className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
+                </Stack>
+              </Row>
 
               {isErr && s.err && (
-                <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 12px 10px" }}>
-                  <span className="mono" style={{ fontSize: 9.5, color: "var(--danger)" }}>⚠ {s.err}</span>
-                  <span style={{ flex: 1 }} />
+                <Row gap={7} style={{ padding: "0 12px 10px" }}>
+                  <Text as="span" mono size={9.5} tone="danger">⚠ {s.err}</Text>
+                  <Spacer />
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
-                </div>
+                </Row>
               )}
 
               {isOpen && (
-                <div style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 4 }}>command</div>
-                  <div className="mono" style={{
-                    fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-elev)",
-                    border: "1px solid var(--border-soft)", borderRadius: 6, padding: "6px 9px", marginBottom: 11,
-                    overflowX: "auto", whiteSpace: "nowrap",
-                  }}><span style={{ color: "var(--accent)" }}>$ </span>{s.cmd || "—"}</div>
+                <Box style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
+                  <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 4 }}>command</Text>
+                  <Code style={{
+                    background: "var(--bg-elev)", borderRadius: 6, padding: "6px 9px",
+                    marginBottom: 11, whiteSpace: "nowrap",
+                  }}><Text as="span" tone="accent">$ </Text>{s.cmd || "—"}</Code>
 
-                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 6 }}>scope · {s.scope}</div>
+                  <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 6 }}>scope · {s.scope}</Text>
                   {s.agents.length > 0 ? (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 11 }}>
+                    <Row gap={6} wrap align="stretch" style={{ marginBottom: 11 }}>
                       {s.agents.map((id) => (
-                        <span key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</span>
+                        <Box as="span" key={id} className="mono" pad={[2, 8]} bg="var(--bg-elev)" border="soft" radius={99} style={{ fontSize: 9.5, color: "var(--fg)"}}>@{id}</Box>
                       ))}
-                    </div>
+                    </Row>
                   ) : (
-                    <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 11 }}>not wired yet — enable to grant the fleet access</div>
+                    <Text as="div" mono size={9.5} tone="dim" style={{ marginBottom: 11 }}>not wired yet — enable to grant the fleet access</Text>
                   )}
 
-                  <div style={{ display: "flex", gap: 7 }}>
+                  <Row gap={7} align="stretch">
                     {s.downloadable && s.status !== "ready" && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control
                       <button className="mini accent" disabled={busy(s)} onClick={() => onBuild?.(s)}>
                         {s.status === "downloading" ? "downloading…" : s.status === "building" ? "building…" : s.status === "available" ? "download + build" : "build"}
                       </button>
                     )}
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
+                    {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                     <button className="mini" onClick={() => onRemove?.(s.id)}>remove</button>
-                  </div>
-                </div>
+                  </Row>
+                </Box>
               )}
-            </div>
+            </Box>
           );
         })}
-      </div>
+      </Stack>
 
-      <div style={{ display: "flex", gap: 7 }}>
+      <Row gap={7} align="stretch">
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline add-row input (flex Row + Enter handler); TextField's .field wrapper would change layout */}
         <input
           className="input"
           placeholder="＋ add an MCP server — catalog name, command, or remote URL"
@@ -140,8 +149,9 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}
           style={{ flex: 1, height: 28, fontSize: 10.5 }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control */}
         <button className="mini accent" disabled={!draft.trim()} onClick={() => { if (draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}>add</button>
-      </div>
-    </div>
+      </Row>
+    </Stack>
   );
 }

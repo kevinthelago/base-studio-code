@@ -2,8 +2,13 @@
 // v5: stage-focused one-at-a-time view (#652) with real data (#674).
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
 // so the planning workflow is one focused stage at a time.
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Pane } from "@/shared/ui/overlay/Pane";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
@@ -25,6 +30,7 @@ export function ProjectPane({
   projectId,
   onFlow,
   onModel,
+  onPersona,
   // focused mode: one-stage sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
@@ -42,6 +48,7 @@ export function ProjectPane({
   onFlow?: (streamId: string, flow: Flow) => void;
   /** Permissions stage: set a stream's per-agent LLM model (undefined ⇒ global default) (#…). */
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
   /** The sequenced-rail focused mode (#652) — the sole render path (#1061 removed the legacy
    *  staged/flat view + its hardcoded PLAN_STAGES gate). */
   focus?: {
@@ -88,40 +95,34 @@ export function ProjectPane({
    *  per-stage "?" prompt helper (`sendPrompt` in Planning.tsx). */
   onInject?: (text: string) => void;
 }) {
-  // Context file viewer modal
+  // Context file viewer modal — its scrim (ModalScrim) owns Escape + backdrop dismiss.
   const [viewing, setViewing] = useState<ContextFile | null>(null);
-  useEffect(() => {
-    if (!viewing) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setViewing(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [viewing]);
 
   // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
   const viewerModal = viewing && (
-    <div className="modal-scrim" onClick={() => setViewing(null)} style={{ padding: 24 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+    <ModalScrim onDismiss={() => setViewing(null)} style={{ padding: 24 }}>
+      <Stack style={{
+        width: "min(720px, 92vw)", maxHeight: "84vh",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
         borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
       }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+        <Row gap={8} style={{
+          padding: "12px 14px",
           borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
         }}>
           <KindDot kind={viewing.kind} />
-          <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
-          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
-          <span className="mono" onClick={() => setViewing(null)} style={{ cursor: "pointer", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
-        </div>
+          <Text as="span" mono size={12} style={{ flex: 1, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</Text>
+          <Text as="span" mono size={9.5} tone="dim">{viewing.tok} · {viewing.scope}</Text>
+          <Text as="span" mono onClick={() => setViewing(null)} size={13} tone="muted" style={{ cursor: "pointer", padding: "0 2px 0 8px" }}>✕</Text>
+        </Row>
         <pre className="mono" style={{
           margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
           fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>{viewing.content || "(empty)"}</pre>
-      </div>
-    </div>
+      </Stack>
+    </ModalScrim>
   );
 
   // Focused mode: sequenced-rail one-stage view (#652)
@@ -134,11 +135,11 @@ export function ProjectPane({
         <FocusedStepper stages={focus.stages} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
         <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
-        <div className="pp-scroll">
+        <Box className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
-            onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            onFlow={onFlow} onModel={onModel} onPersona={onPersona} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} onInject={onInject} />
-        </div>
+        </Box>
         <FocusedStageFooter stage={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
       </Pane>

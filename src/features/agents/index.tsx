@@ -8,7 +8,7 @@
 // composition + light view state only.
 import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -46,10 +46,9 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const paneProfiles = useAppStore((s) => s.paneProfiles);
   const activeRepoName = useAppStore((s) => s.activeRepoName);
 
-  // Coordination & workflows (the Flow tab): the fleet's live work-flow, cross-referenced
-  // with the profile each session runs under — the Agents screen's angle on #199/#220.
+  // Coordination (the Flow tab): the fleet's live work-flow, cross-referenced with the
+  // profile each session runs under — the Agents screen's angle on #199.
   const wakePane = useAppStore((s) => s.wakePane);
-  const workflowRuns = useAppStore((s) => s.workflowRuns);
 
   // Application roles are app-managed singletons (display-only here).
   const roles = APP_ROLES;
@@ -70,14 +69,14 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     { id: "profiles", label: "Profiles", count: roles.length + profiles.length, hint: "· application + custom roles" },
     { id: "assignments", label: "Assignments", count: consoles.length, hint: "· consoles & panes" },
     { id: "activity", label: "Activity", count: auditRows.length },
-    { id: "flow", label: "Flow", count: Object.keys(workflowRuns).length, hint: "· coordination & workflows" },
-  ], [roles.length, profiles.length, consoles.length, auditRows.length, workflowRuns]);
+    { id: "flow", label: "Flow", hint: "· coordination" },
+  ], [roles.length, profiles.length, consoles.length, auditRows.length]);
   const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
   const tab = pageOverride ?? activeId; // active section
 
   usePoll(async (isCancelled) => {
     if (tab !== "activity") return;
-    const lines = await safeInvoke<string[]>("read_audit_log", { limit: 300 }, []);
+    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
     const rows = buildAuditRows(lines, { consoles, profiles, paneProfiles, paneRoles });
     if (!isCancelled()) setAuditRows(rows);
   }, 3000, [tab, paneProfiles, profiles, paneRoles, consoles]);
@@ -85,9 +84,9 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
 
-  // Resolve the profile a coord/workflow session (a pane id like `t0p1`) runs under, so the
-  // Flow tab can show who is parked/flowing and under which permission profile. Falls back
-  // to the safe default when a pane has no explicit assignment.
+  // Resolve the profile a coordination session (a pane id like `t0p1`) runs under, so the
+  // Flow tab can show who is parked and under which permission profile. Falls back to the
+  // safe default when a pane has no explicit assignment.
   const profileFor = useCallback(
     (session: string): AgentProfile | undefined => find(paneProfiles[session] ?? "pf_sandbox"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,6 +115,41 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     const k = v?.trim().toLowerCase();
     const p = find(selectedId);
     if (k && p && !p.commands.includes(k)) updateAgentProfile(selectedId, { commands: [...p.commands, k] });
+  }
+  // Filesystem write-scope (#1795): add/edit/remove allow & deny globs. Mirrors addCmd/removeCmd
+  // — updateAgentProfile no-ops for application-role ids (not in agentProfiles), so app roles
+  // stay read-only even though find() resolves them.
+  async function addPath(kind: "allow" | "deny") {
+    const v = await prompt({
+      title: kind === "allow" ? "Allow a write path" : "Block a path",
+      label: kind === "allow" ? "Glob the agent may write to (e.g. src/**)" : "Glob the agent is blocked from (e.g. .env)",
+      placeholder: kind === "allow" ? "src/**" : ".env",
+      confirmLabel: kind === "allow" ? "Allow" : "Block",
+    });
+    const g = v?.trim();
+    const p = find(selectedId);
+    if (g && p && !p.paths[kind].includes(g)) updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: [...p.paths[kind], g] } });
+  }
+  function editPath(kind: "allow" | "deny", index: number, value: string) {
+    const p = find(selectedId);
+    if (!p) return;
+    updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: p.paths[kind].map((g, i) => (i === index ? value : g)) } });
+  }
+  function removePath(kind: "allow" | "deny", index: number) {
+    const p = find(selectedId);
+    if (!p) return;
+    updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: p.paths[kind].filter((_, i) => i !== index) } });
+  }
+  // Network allowlist (#1795): add/remove reachable hosts.
+  async function addHost() {
+    const v = await prompt({ title: "Allow a host", label: "Hostname the agent may reach (e.g. api.github.com, or * for all)", placeholder: "api.github.com", confirmLabel: "Allow" });
+    const h = v?.trim();
+    const p = find(selectedId);
+    if (h && p && !p.net.allow.includes(h)) updateAgentProfile(selectedId, { net: { allow: [...p.net.allow, h] } });
+  }
+  function removeHost(host: string) {
+    const p = find(selectedId);
+    if (p) updateAgentProfile(selectedId, { net: { allow: p.net.allow.filter((h) => h !== host) } });
   }
   function toggleAssign(_consoleId: string, paneId: string) {
     setPaneProfile(paneId, paneProfiles[paneId] === selectedId ? null : selectedId);
@@ -177,6 +211,8 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           roles={roles} profiles={profiles} consoles={consoles} selected={selected}
           onSelect={setSelectedId} setMode={setMode} setTool={setTool}
           removeCmd={removeCmd} addCmd={addCmd} toggleAssign={toggleAssign} find={find}
+          addPath={addPath} editPath={editPath} removePath={removePath}
+          addHost={addHost} removeHost={removeHost}
           editable={editable} onCreate={createProfile} onDelete={deleteProfile}
         />
       )}
@@ -196,7 +232,7 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
         />
       )}
       {tab === "flow" && (
-        <FlowTab runs={workflowRuns} wakePane={wakePane} profileFor={profileFor} />
+        <FlowTab wakePane={wakePane} profileFor={profileFor} />
       )}
     </Screen>
   );

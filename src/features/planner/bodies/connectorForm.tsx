@@ -16,6 +16,12 @@ import {
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
 import { Chip } from "@/shared/ui/data/Chip";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export const STATUS_DOT: Record<SourceStatus, string> = {
   declared: "var(--fg-dim)",
@@ -25,25 +31,20 @@ export const STATUS_DOT: Record<SourceStatus, string> = {
   error: "var(--danger)",
 };
 
-/** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance. */
+/** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance.
+ *  Folded onto the shared color-mix Chip (#2160) — same shape as InfoChip below. */
 function ReadOnlyPill() {
   return (
-    <span style={{
-      fontFamily: MONO, fontSize: 9, color: "var(--success)", whiteSpace: "nowrap",
-      background: "color-mix(in oklch, var(--success), transparent 88%)",
-      border: "1px solid color-mix(in oklch, var(--success), transparent 74%)",
-      borderRadius: 99, padding: "2px 7px",
-    }}>READ-ONLY</span>
+    <Chip color="var(--success)" fontSize={9} padding="2px 7px" borderAlpha={74} style={{ whiteSpace: "nowrap" }}>READ-ONLY</Chip>
   );
 }
 
 /** A small mono badge tile, e.g. "QB". */
 function Badge({ text }: { text: string }) {
   return (
-    <span style={{
-      fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-canvas)",
-      border: "1px solid var(--border)", borderRadius: "var(--r-sm)", padding: "2px 5px", whiteSpace: "nowrap",
-    }}>{text}</span>
+    <Box as="span" pad={[2, 5]} bg="var(--bg-canvas)" border radius="sm" style={{
+      fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap",
+    }}>{text}</Box>
   );
 }
 
@@ -51,9 +52,10 @@ function Badge({ text }: { text: string }) {
 function Field({ field, value, onChange }: { field: SpecField; value: string; onChange: (v: string) => void }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)" }}>
-        {field.label}{field.optional && <span style={{ color: "var(--fg-dim)" }}> · optional{field.hint ? `, ${field.hint}` : ""}</span>}
-      </span>
+      <Text as="span" mono size={10} tone="muted">
+        {field.label}{field.optional && <Text as="span" tone="dim"> · optional{field.hint ? `, ${field.hint}` : ""}</Text>}
+      </Text>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled field input (local Field component; not the shared .input/.field) */}
       <input
         value={value}
         placeholder={field.placeholder}
@@ -73,10 +75,11 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
 }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)" }}>
-        {field.label} <span style={{ color: "var(--accent)" }}>●</span> <span style={{ color: "var(--fg-dim)" }}>secret</span>
-      </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Text as="span" mono size={10} tone="muted">
+        {field.label} <Text as="span" tone="accent">●</Text> <Text as="span" tone="dim">secret</Text>
+      </Text>
+      <Row gap={8}>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled secret input (masked, keychain-bound; not the shared .input) */}
         <input
           type={revealed ? "text" : "password"}
           value={value}
@@ -89,6 +92,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
             fontFamily: MONO, fontSize: 13, letterSpacing: revealed ? 0 : ".06em", color: "var(--fg)",
           }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled reveal toggle (custom dimensions, no .icon-btn hover state) */}
         <button
           onClick={onReveal} title={revealed ? "Hide" : "Reveal"} aria-label={`${revealed ? "Hide" : "Reveal"} ${field.label}`}
           style={{
@@ -96,7 +100,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
             background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", cursor: "pointer", fontSize: 13,
           }}
         >👁</button>
-      </div>
+      </Row>
     </label>
   );
 }
@@ -111,9 +115,9 @@ function InfoChip({ children, color = "var(--info)" }: { children: React.ReactNo
 /** Indeterminate scan bar (the only place the pane animates — a genuinely live op). */
 function ScanBar() {
   return (
-    <div style={{ height: 5, borderRadius: 99, background: "var(--bg-elev)", overflow: "hidden", position: "relative" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "30%", background: "var(--accent)", borderRadius: 99, animation: "scan 1.3s ease-in-out infinite" }} />
-    </div>
+    <Box bg="var(--bg-elev)" radius={99} style={{ height: 5, overflow: "hidden", position: "relative" }}>
+      <Box bg="var(--accent)" radius={99} style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "30%", animation: "scan 1.3s ease-in-out infinite" }} />
+    </Box>
   );
 }
 
@@ -121,21 +125,21 @@ function ScanBar() {
 function ScanResult({ src, dataModelName }: { src: DeclaredSource; dataModelName: string }) {
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      <Grid cols={2} gap={6}>
         {(src.objects ?? []).map((o) => (
-          <div key={o.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 9px" }}>
-            <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{o.name}</span>
-            <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--fg)" }}>{o.count.toLocaleString()}</span>
-          </div>
+          <Row key={o.name} justify="between" style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 9px" }}>
+            <Text as="span" size={11.5} tone="muted">{o.name}</Text>
+            <Text as="span" mono size={11.5} style={{ color: "var(--fg)" }}>{o.count.toLocaleString()}</Text>
+          </Row>
         ))}
-      </div>
+      </Grid>
       {(src.behaviors ?? []).length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "color-mix(in oklch, var(--violet), transparent 92%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)", borderRadius: "var(--r-sm)", padding: "6px 10px" }}>
-          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: ".06em", color: "var(--violet)" }}>BEHAVIORS</span>
-          {(src.behaviors ?? []).map((b) => <span key={b.label} style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>⚙ {b.label}</span>)}
-        </div>
+        <Row gap={8} wrap style={{ background: "color-mix(in oklch, var(--violet), transparent 92%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 80%)", borderRadius: "var(--r-sm)", padding: "6px 10px" }}>
+          <Text as="span" mono size={9} style={{ letterSpacing: ".06em", color: "var(--violet)" }}>BEHAVIORS</Text>
+          {(src.behaviors ?? []).map((b) => <Text as="span" key={b.label} size={11.5} tone="muted">⚙ {b.label}</Text>)}
+        </Row>
       )}
-      <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--violet)" }}>→ feeds the «{dataModelName}» Data Model</div>
+      <Text as="div" mono size={10} style={{ color: "var(--violet)" }}>→ feeds the «{dataModelName}» Data Model</Text>
     </>
   );
 }
@@ -174,50 +178,53 @@ export function SourceCard({
   const canConnect = spec.auth === "oauth" || spec.auth === "upload" || spec.fields.every(filled);
 
   return (
-    <div data-testid={`source-card-${src.uid}`} style={{ background: "var(--bg-panel)", border: `1px solid ${borderColor}`, borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+    <Box data-testid={`source-card-${src.uid}`} bg="var(--bg-panel)" radius="lg" style={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}>
       {/* header */}
-      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 13px", background: "var(--bg-elev)", cursor: "pointer" }}>
-        <span style={{ width: 8, height: 8, borderRadius: 99, flex: "0 0 8px", background: STATUS_DOT[src.status], animation: (src.status === "connecting" || src.status === "scanning") ? "pulse 1.2s ease-in-out infinite" : undefined }} />
+      <Row onClick={onToggle} gap={9} style={{ padding: "11px 13px", background: "var(--bg-elev)", cursor: "pointer" }}>
+        <Box as="span" bg={STATUS_DOT[src.status]} radius={99} style={{ width: 8, height: 8, flex: "0 0 8px", animation: (src.status === "connecting" || src.status === "scanning") ? "pulse 1.2s ease-in-out infinite" : undefined }} />
         <Badge text={c.badge} />
-        <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {c.name}{src.instance && <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", fontWeight: 400 }}> · {src.instance}</span>}
-        </span>
+        <Box as="span" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {c.name}{src.instance && <Text as="span" mono size={10.5} tone="muted" weight={400}> · {src.instance}</Text>}
+        </Box>
         {src.status === "error" ? (
-          <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: 99, padding: "2px 7px" }}>FAILED</span>
+          <Box as="span" pad={[2, 7]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={99} style={{ fontFamily: MONO, fontSize: 9, color: "var(--danger)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)"}}>FAILED</Box>
         ) : <ReadOnlyPill />}
-        <span style={{ color: "var(--fg-dim)", fontSize: 11 }}>{expanded ? "▾" : "▸"}</span>
-      </div>
+        <Text as="span" tone="dim" size={11}>{expanded ? "▾" : "▸"}</Text>
+      </Row>
 
       {expanded && (
-        <div style={{ padding: "12px 13px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <Stack gap={10} style={{ padding: "12px 13px" }}>
           {/* declared / not connected → the spec-driven connect form */}
           {src.status === "declared" && (
             <>
               <InfoChip>🛡 Credentials stay on this device — the planning agent never sees them</InfoChip>
               {spec.auth === "oauth" ? (
                 <>
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled OAuth connect button */}
                   <button data-testid={`connect-${src.uid}`} onClick={onConnect} style={{
                     alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 9, fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600,
                     color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 91%)", border: "1px solid var(--accent-dim)", borderRadius: "var(--r-md)", padding: "10px 16px", cursor: "pointer",
                   }}>⟳ {spec.oauthLabel} ↗</button>
                   {spec.envs && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <span style={grpLabel}>environment</span>
-                      <div style={{ display: "flex", gap: 7 }}>
+                    <Stack gap={5}>
+                      <Box as="span" style={grpLabel}>environment</Box>
+                      <Row gap={7} align="stretch">
                         {(["production", "sandbox"] as const).map((env) => {
                           const on = (src.env ?? "production") === env;
                           return (
+                            // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled environment toggle
                             <button key={env} onClick={() => onEnv(env)} style={{
                               fontFamily: MONO, fontSize: 11, cursor: "pointer", borderRadius: "var(--r-sm)", padding: "5px 11px",
                               color: on ? "var(--fg)" : "var(--fg-dim)", background: on ? "var(--bg-elev2)" : "var(--bg-elev)", border: "1px solid " + (on ? "var(--border)" : "var(--border-soft)"),
                             }}>{on ? "◉" : "○"} {env[0].toUpperCase() + env.slice(1)}</button>
                           );
                         })}
-                      </div>
-                    </div>
+                      </Row>
+                    </Stack>
                   )}
                 </>
               ) : spec.auth === "upload" ? (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled upload connect button
                 <button data-testid={`connect-${src.uid}`} onClick={onConnect} style={{
                   alignSelf: "flex-start", fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--accent)",
                   background: "color-mix(in oklch, var(--accent), transparent 91%)", border: "1px solid var(--accent-dim)", borderRadius: "var(--r-md)", padding: "9px 15px", cursor: "pointer",
@@ -229,24 +236,25 @@ export function SourceCard({
                   ) : (
                     <Field key={f.key} field={f} value={src.fields[f.key] ?? ""} onChange={(v) => onField(f.key, v)} />
                   ))}
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled save-and-connect button */}
                   <button data-testid={`connect-${src.uid}`} onClick={onConnect} disabled={!canConnect} style={{
                     alignSelf: "flex-start", fontFamily: "var(--sans)", fontSize: 12.5, fontWeight: 600, color: "oklch(0.20 0.04 70)",
                     background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "8px 15px", cursor: canConnect ? "pointer" : "not-allowed", opacity: canConnect ? 1 : 0.45,
                   }}>Save &amp; connect →</button>
                 </>
               )}
-              <div style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5, borderTop: "1px dashed var(--border-soft)", paddingTop: 9 }}>
+              <Box style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5, borderTop: "1px dashed var(--border-soft)", paddingTop: 9 }}>
                 will contribute → {spec.contributes}
-              </div>
+              </Box>
             </>
           )}
 
           {/* connecting / validating */}
           {src.status === "connecting" && (
             <>
-              <div style={{ fontSize: 12.5, color: "var(--accent)" }}>Validating {c.name} credentials…</div>
+              <Text as="div" size={12.5} tone="accent">Validating {c.name} credentials…</Text>
               <ScanBar />
-              <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>checking scopes · read-only</div>
+              <Text as="div" mono size={9} tone="dim">checking scopes · read-only</Text>
             </>
           )}
 
@@ -255,7 +263,7 @@ export function SourceCard({
             <>
               <InfoChip color="var(--success)">🔑 saved to keychain</InfoChip>
               {src.handle && <InfoChip>↗ planner sees: «{src.handle}»</InfoChip>}
-              <div style={{ fontSize: 12.5, color: "var(--accent)" }}>scanning… discovering objects</div>
+              <Text as="div" size={12.5} tone="accent">scanning… discovering objects</Text>
               <ScanBar />
             </>
           )}
@@ -263,10 +271,10 @@ export function SourceCard({
           {/* connected (scanned) */}
           {src.status === "scanned" && (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Row gap={8} wrap>
                 <InfoChip color="var(--success)">🔑 saved to keychain</InfoChip>
                 {src.handle && <InfoChip>↗ shared: «{src.handle}»</InfoChip>}
-              </div>
+              </Row>
               <ScanResult src={src} dataModelName={dataModelName} />
             </>
           )}
@@ -274,24 +282,29 @@ export function SourceCard({
           {/* error / auth failed */}
           {src.status === "error" && (
             <>
-              <div style={{ background: "color-mix(in oklch, var(--danger), transparent 92%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 78%)", borderRadius: "var(--r-md)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
-                <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--danger)" }}>✕ {src.error ?? "connection failed"}</span>
-                <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>check the connection details and try again</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <InlineError pad={[8, 10]} radius="md" borderFade={78}>
+                <Stack gap={3}>
+                  <Text as="span" mono size={10.5} tone="danger">✕ {src.error ?? "connection failed"}</Text>
+                  <Text as="span" mono size={9} tone="dim">check the connection details and try again</Text>
+                </Stack>
+              </InlineError>
+              <Row gap={8} align="stretch">
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled retry button */}
                 <button data-testid={`retry-${src.uid}`} onClick={onRetry} style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>↻ retry</button>
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled remove-source button */}
                 <button onClick={onRemove} style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>remove source</button>
-              </div>
-              <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>⚠ gate held until resolved</span>
+              </Row>
+              <Text as="span" mono size={9} tone="dim">⚠ gate held until resolved</Text>
             </>
           )}
 
           {/* a connected source can always be removed (collapsed footer affordance) */}
           {connected && (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled remove-source affordance
             <button onClick={onRemove} style={{ alignSelf: "flex-start", fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "3px 10px", cursor: "pointer" }}>remove source</button>
           )}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Box>
   );
 }

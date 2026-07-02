@@ -56,6 +56,20 @@ describe("parseFleetFile", () => {
     expect(fleet.streams[1].commands).toBeUndefined();
   });
 
+  it("carries a stream's persona reference, undefined when none (#2094)", () => {
+    const raw = JSON.stringify({
+      streams: [
+        { id: "docs", repo: "o/r", persona: "persona-documentor" },
+        { id: "ui", repo: "o/r" },
+        { id: "blank", repo: "o/r", persona: "  " }, // whitespace ⇒ undefined
+      ],
+    });
+    const fleet = parseFleetFile(raw)!;
+    expect(fleet.streams[0].persona).toBe("persona-documentor");
+    expect(fleet.streams[1].persona).toBeUndefined();
+    expect(fleet.streams[2].persona).toBeUndefined();
+  });
+
   it("round-trips a per-stream model (the `claude --model` tier), validating it", () => {
     const raw = JSON.stringify({
       streams: [

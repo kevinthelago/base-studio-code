@@ -17,6 +17,8 @@ export type SyncState = "idle" | "running" | "done" | "error";
 export interface FleetHandlers {
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  /** #2094: set/clear the persona a stream launches as (resolves role/prompt/skills/model at launch). */
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
   /** Set the project's coordination topology (#…). */
   onTopology?: (t: Topology) => void;
   /** Set the director's drive mode (#…) — only meaningful when the topology routes through it. */

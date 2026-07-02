@@ -21,11 +21,11 @@ pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
         return Ok(dir_str);
     }
     if let Some(parent) = dir.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).str_err()?;
     }
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", "--depth", "1", &url, &dir_str]);
-    let status = crate::platform::process::run_status(&mut cmd).map_err(|e| e.to_string())?;
+    let status = run_status(&mut cmd).str_err()?;
     if !status.success() {
         log::warn!("mcp_clone: git clone failed for {url}");
         return Err(format!("git clone failed for {url}"));
@@ -83,7 +83,7 @@ pub(crate) fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let (shell, flag) = ("sh", "-c");
     let mut cmd = std::process::Command::new(shell);
     cmd.current_dir(&dir).args([flag, &command]);
-    let output = crate::platform::process::run_output(&mut cmd)
+    let output = run_output(&mut cmd)
         .map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
     // Truncate captured output so a noisy build log doesn't bloat the IPC payload.
     let cap = |b: &[u8]| {
@@ -168,7 +168,7 @@ pub(crate) fn write_mcp_json(root: &std::path::Path, mcp_servers: &[McpServerCfg
     for m in mcp_servers {
         smap.insert(m.name.clone(), mcp_server_value(m));
     }
-    crate::platform::fsx::atomic_write_json(&path, &doc).map_err(|e| e.to_string())
+    crate::platform::fsx::atomic_write_json(&path, &doc).str_err()
 }
 /// The sentinel command the frontend sets for the built-in Research server (#1196). It carries no
 /// real path (the frontend can't know where the app exe lives), so `mcp_server_value` rewrites it to
@@ -231,11 +231,7 @@ pub(crate) fn mcp_server_value(m: &McpServerCfg) -> serde_json::Value {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn resolve_mcp_command_substitutes_research_marker(){

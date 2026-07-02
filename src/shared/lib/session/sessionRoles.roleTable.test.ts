@@ -16,7 +16,6 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       triage:    "write/none/none/read",
       tester:    "read/read/none/read",
       reviewer:  "read/read/none/read",
-      conductor: "read/read/none/read",
       issuer:    "write/read/none/read",
       juror:     "read/read/none/read",
     });

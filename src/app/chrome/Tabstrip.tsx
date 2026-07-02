@@ -6,6 +6,10 @@
 
 import { Pencil } from "lucide-react";
 import { TabBar, type TabItem } from "./TabBar";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export interface Tab {
   /** Stable identity (#463), minted at creation. Survives reorder/close/detach,
@@ -59,6 +63,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
 }) {
   return (
     <>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke context-menu item with hover-swap inline styling (not the .btn kit) */}
       <button
         onClick={onRename}
         style={{
@@ -71,16 +76,17 @@ function LayoutMenu({ layout, onRename, onPick }: {
       >
         <Pencil size={12} /> Rename
       </button>
-      <div style={{ height: 1, background: "var(--border-soft)", margin: "0 8px" }} />
-      <div style={{ padding: "6px 12px 10px" }}>
-        <div style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+      <Box bg="var(--border-soft)" style={{ height: 1, margin: "0 8px" }} />
+      <Box style={{ padding: "6px 12px 10px" }}>
+        <Text as="div" size={9.5} tone="dim" style={{ marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.07em" }}>
           Layout
-        </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        </Text>
+        <Row gap={5} align="stretch" wrap>
           {LAYOUTS.map((l) => {
             const [c, r] = l.split("×").map(Number);
             const current = layout === l;
             return (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke layout-swatch button (grid-preview + active-state inline styling, not the .btn kit)
               <button
                 key={l}
                 className="mono"
@@ -95,17 +101,17 @@ function LayoutMenu({ layout, onRename, onPick }: {
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 }}
               >
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${c}, 8px)`, gridTemplateRows: `repeat(${r}, 5px)`, gap: 1.5 }}>
+                <Grid cols={`repeat(${c}, 8px)`} rows={`repeat(${r}, 5px)`} gap={1.5}>
                   {Array.from({ length: c * r }).map((_, idx) => (
-                    <div key={idx} style={{ borderRadius: 1, background: current ? "var(--accent)" : "var(--border)" }} />
+                    <Box key={idx} bg={current ? "var(--accent)" : "var(--border)"} radius={1} />
                   ))}
-                </div>
+                </Grid>
                 {l}
               </button>
             );
           })}
-        </div>
-      </div>
+        </Row>
+      </Box>
     </>
   );
 }

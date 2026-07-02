@@ -144,7 +144,8 @@ describe("McpWorkspace + HooksView", () => {
       .find((t) => t.textContent?.includes("Analytics")) as HTMLElement;
     expect(analyticsTab).toBeTruthy();
     fireEvent.click(analyticsTab);
-    // KPI cards + the call-results zero state render (read_mcp_log mock resolves null → empty).
+    // KPI cards + the call-results zero state render (the `bsc logs tail mcp` bridge read degrades to
+    // an empty list under the default invoke mock).
     expect(await screen.findByText("Total calls")).toBeTruthy();
     expect(screen.getByText("Calls over time")).toBeTruthy();
     expect(screen.getByText(/No calls recorded yet/)).toBeTruthy();
@@ -155,6 +156,19 @@ describe("McpWorkspace + HooksView", () => {
     const hasAnalytics = Array.from(container.querySelectorAll(".tabstrip .tab"))
       .some((t) => t.textContent?.includes("Analytics"));
     expect(hasAnalytics).toBe(false);
+  });
+
+  it("surfaces the always-on bsc-* system hooks as read-only (no toggle)", () => {
+    render(<HooksView />);
+    // The security floor is listed under its own read-only section.
+    expect(screen.getByText("System hooks")).toBeTruthy();
+    expect(screen.getByText("bsc-deny")).toBeTruthy();
+    expect(screen.getByText("bsc-confine")).toBeTruthy();
+    expect(screen.getByText("bsc-scope")).toBeTruthy();
+    // Marked "system · always on" and NOT toggleable — its rows carry no enable toggle.
+    const systemRow = screen.getByText("bsc-deny").closest(".card-list-row") as HTMLElement;
+    expect(within(systemRow).getByText("system · always on")).toBeTruthy();
+    expect(systemRow.querySelector(".toggle")).toBeNull();
   });
 
   it("adds a custom hook from the Hooks view and opens its drawer", () => {

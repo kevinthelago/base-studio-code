@@ -10,8 +10,10 @@ mod agent;
 mod mcp;
 mod permissions;
 mod telemetry;
+mod tools;
 
-use agent::{bsc_cli_tool, default_tools, run_agent, Tool};
+use agent::{run_agent, Tool};
+use tools::{bsc_cli_tool, default_tools};
 use llm::{LlmProvider, Msg};
 use permissions::Permissions;
 use std::io::Read;
@@ -385,7 +387,7 @@ mod tests {
         let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
         assert_eq!(
             names,
-            vec!["plan", "data", "skill", "logs", "compliance", "blueprint", "project", "files"],
+            vec!["plan", "data", "skill", "logs", "compliance", "blueprint", "persona", "project", "files"],
             "lists every advertised subcommand, in order, once $BSC_BIN is staged",
         );
 

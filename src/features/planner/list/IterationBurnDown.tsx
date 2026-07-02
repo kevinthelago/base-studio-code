@@ -3,6 +3,8 @@
 
 import { type ReactNode } from "react";
 import type { BurndownResult } from "../github/burndown";
+import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
 
 function BurnCard({ hint, badge, children }: {
   hint: string;
@@ -10,20 +12,20 @@ function BurnCard({ hint, badge, children }: {
   children?: ReactNode;
 }) {
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
-        <span className="hint">{hint}</span>
-        <div style={{ flex: 1 }} />
-        {badge && <span className="mono" style={{ fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
-      </div>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Iteration burn-down"
+      hint={hint}
+      right={badge ? <Text as="span" mono size={10.5} style={{ color: badge.tone }}>● {badge.text}</Text> : undefined}
+      headMb={6}
+    >
       {children}
-    </div>
+    </Card>
   );
 }
 
 const burnNote = (text: string): ReactNode => (
-  <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "12px 0" }}>{text}</div>
+  <Text as="div" mono size={11} tone="dim" style={{ padding: "12px 0" }}>{text}</Text>
 );
 
 export function IterationBurnDown({ data, loading }: { data: BurndownResult | null; loading: boolean }) {

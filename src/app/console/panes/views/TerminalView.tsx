@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -14,53 +15,23 @@ import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
-import { IconButton } from "@/shared/ui/controls/IconButton";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly } from "@/app/console/lib/sessionLaunch";
+import {
+  PENDING_BYTES_CAP,
+  AUTO_NUDGE_DELAY_MS,
+  JUMBLE_CHROME_ROWS,
+  JUMBLE_STRIKES,
+  JUMBLE_RECHECK_MS,
+  TERM_THEME,
+} from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
-import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
-import { SessionFailure } from "@/app/SessionFailure";
+import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
 import { type PaneActivity, isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
-
-// Background-pane buffer cap. While a pane is hidden we skip xterm.write
-// entirely and accumulate the PTY bytes here; on becoming visible we flush
-// them in one go. 256 KB ≈ a few thousand lines of dense output — generous for
-// realistic switch-away durations and far above what's likely useful before
-// xterm's own scrollback truncates it anyway.
-const PENDING_BYTES_CAP = 256 * 1024;
-
-// Grace before the automatic post-launch redraw nudge (#1221) — long enough for Claude's TUI to
-// finish its first paint, so the nudge repaints a fully-drawn (and possibly jumbled) screen rather
-// than an empty one. The nudge is idempotent + non-destructive, so an imprecise delay is harmless.
-const AUTO_NUDGE_DELAY_MS = 700;
-
-// Mid-session jumble probe (#1250): at each Claude settle, sample the bottom input-box rows and
-// auto-nudge when the box chrome is shattered. Hysteresis — two malformed samples (the settle + one
-// quick re-check) before firing — so a lone mid-draw frame doesn't trigger a needless repaint.
-// (#1239 reverted the input overlay/clip box, so these now guard Claude's own native input box.)
-const JUMBLE_CHROME_ROWS = 10; // bottom viewport rows that hold Claude's input box + hint lines
-const JUMBLE_STRIKES = 2;
-const JUMBLE_RECHECK_MS = 250;
-
-// Hex equivalents of the oklch design tokens so xterm can use them
-const TERM_THEME: import("@xterm/xterm").ITheme = {
-  background:          "#181a1f",
-  foreground:          "#eeeae4",
-  cursor:              "#c4923a",
-  cursorAccent:        "#181a1f",
-  selectionBackground: "#c4923a44",
-  black:               "#181a1f", brightBlack:   "#44474f",
-  red:                 "#d4554f", brightRed:     "#e06c75",
-  green:               "#5fb467", brightGreen:   "#98c379",
-  yellow:              "#c4923a", brightYellow:  "#e5c07b",
-  blue:                "#5694c7", brightBlue:    "#61afef",
-  magenta:             "#9b59b6", brightMagenta: "#c678dd",
-  cyan:                "#4aabb5", brightCyan:    "#64d5e4",
-  white:               "#939aa4", brightWhite:   "#eeeae4",
-};
 
 interface TerminalViewProps {
   paneId: string;
@@ -523,6 +494,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
         startupPrompt: sandboxed ? undefined : (bakesPrompt ? startupPrompt : undefined),
+        // #2052: on a crash-restore remount, suppress re-submitting the baked startup prompt /
+        // checkpoint note into the resumed (`--continue`) conversation — otherwise Claude submits
+        // it into the restored session, re-running or (if it was a `/clear`) wiping its history.
+        // Only true on the crash-recovery relaunch (restoreRequested); normal launches deliver.
+        startupPromptFreshOnly: resolveStartupPromptFreshOnly(st, paneId, isClaudeProvider),
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
@@ -615,24 +591,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   // Turn-open gating poller (#1184): poll the `bsc-activity` hook log for THIS pane's latest
   // turn-boundary state and keep `turnOpenRef` in sync, so the silence-timer callback above can
-  // tell "working but silent" from "done". `read_pane_activity` returns every pane's latest state;
+  // tell "working but silent" from "done". `bsc logs pane-activity` returns every pane's latest state;
   // we read off our own. Empty/missing (a non-bash session, or a pane that hasn't taken a turn)
   // leaves the ref false — the silence timer stays authoritative, so there's no regression. Polled
   // every 1s (faster than the 4s token poll) so the gate re-arms promptly when a new turn opens.
   // Debounced (#1184): a worker's blocked Stop records `idle` for the gap before its next turn's
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const rows = await safeInvoke<PaneActivity[]>("read_pane_activity", undefined, []);
-      if (cancelled) return;
-      turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
-    };
-    poll();
-    const id = setInterval(poll, 1000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [paneId]);
+  usePoll(async (isCancelled) => {
+    const rows = await bscJson<PaneActivity[]>(null, ["logs", "pane-activity", "--json"], []);
+    if (isCancelled()) return;
+    turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
+  }, 1000, [paneId]);
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the
@@ -736,6 +706,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   }, [redrawNonce]);
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- terminal region with conditional display (flex/none)
     <div
       style={{
         flex: 1, minHeight: 0, position: "relative",
@@ -744,42 +715,25 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         flexDirection: "column",
       }}
     >
-      {criticalChecks.length > 0 && (
-        <SessionFailure critical={criticalChecks} onRetry={retryReadiness} />
-      )}
-      {criticalChecks.length === 0 && !warnDismissed && warningChecks.length > 0 && (
-        <SessionReadinessBanner
-          warnings={warningChecks}
-          onDismiss={() => setWarnDismissed(true)}
-          onSignInGitHub={
-            warningChecks.some((c) => c.id === "gh-auth")
-              ? () => { useAppStore.getState().setWorkspace("settings"); }
-              : undefined
-          }
-        />
-      )}
-      {permsStale && (
-        <div className="mono" style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
-          fontSize: 11, color: "var(--accent)",
-          background: "color-mix(in oklch, var(--accent), transparent 90%)",
-          borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
-        }}>
-          <span>⟳</span>
-          <span style={{ flex: 1, color: "var(--fg-muted)" }}>
-            Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
-          </span>
-          <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
-        </div>
-      )}
+      <TerminalBanners
+        paneId={paneId}
+        criticalChecks={criticalChecks}
+        warningChecks={warningChecks}
+        onRetry={retryReadiness}
+        warnDismissed={warnDismissed}
+        onDismissWarn={() => setWarnDismissed(true)}
+        permsStale={permsStale}
+      />
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
           box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view
           beneath our native overlay) was reverted along with the overlay. */}
+      {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount region (measured) */}
       <div style={{
         flex: 1, minHeight: 0, overflow: "hidden",
         background: TERM_THEME.background as string,
         display: criticalChecks.length > 0 ? "none" : undefined,
       }}>
+        {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount ref */}
         <div
           ref={containerRef}
           style={{ height: "100%", padding: "6px 4px" }}

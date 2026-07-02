@@ -9,6 +9,9 @@ import {
 } from "./lib/auditRows";
 import type { AgentProfile, ConsoleSession } from "./lib/agentProfiles";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export interface ActivityTabProps {
   rows: AuditDisplayRow[];
@@ -22,44 +25,45 @@ export interface ActivityTabProps {
 export function ActivityTab({ rows, consoles, actDecision, setActDecision, actConsole, setActConsole, allow, ask, block, find }: ActivityTabProps) {
   const shown = filterAuditRows(rows, actDecision, actConsole);
   const decChip = (d: DecFilter, label: string, n?: number) => (
-    <span className={`dchip ${actDecision === d ? "on" : ""}`} data-d={d === "all" ? undefined : d} onClick={() => setActDecision(d)}>
-      <span className="dot" />{label}{n !== undefined && <span style={{ color: "var(--fg-dim)", marginLeft: 2 }}>{n}</span>}
-    </span>
+    <Box as="span" className={`dchip ${actDecision === d ? "on" : ""}`} data-d={d === "all" ? undefined : d} onClick={() => setActDecision(d)}>
+      <Box as="span" className="dot" />{label}{n !== undefined && <Text as="span" tone="dim" style={{ marginLeft: 2 }}>{n}</Text>}
+    </Box>
   );
   return (
     <>
-      <div className="summary">
+      <Box className="summary">
         <StatTile k="decisions" v={rows.length} sub={<>across {consoles.length} consoles</>} />
         <StatTile k="auto-allowed" v={allow} tone="success" sub="ran without a prompt" />
         <StatTile k="prompted" v={ask} tone="accent" sub="you confirmed" />
         <StatTile k="blocked" v={block} tone="danger" sub="policy denied" />
-      </div>
+      </Box>
 
-      <div className="act-toolbar">
-        <span className="lbl">decision</span>
-        <div style={{ display: "flex", gap: 4 }}>
+      <Box className="act-toolbar">
+        <Box as="span" className="lbl">decision</Box>
+        <Row gap={4} align="stretch">
           {decChip("all", "all")}
           {decChip("allow", "allowed", allow)}
           {decChip("ask", "asked", ask)}
           {decChip("block", "blocked", block)}
-        </div>
-        <span className="lbl" style={{ marginLeft: 14 }}>console</span>
+        </Row>
+        <Box as="span" className="lbl" style={{ marginLeft: 14 }}>console</Box>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
         <select className="input" style={{ width: 200 }} value={actConsole} onChange={(e) => setActConsole(e.target.value)}>
           <option value="all">all consoles</option>
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
         </select>
-        <div className="spacer" />
-        <span className="hint mono">per the configured policy</span>
-      </div>
+        <Box className="spacer" />
+        <Box as="span" className="hint mono">per the configured policy</Box>
+      </Box>
 
-      <div className="act-table">
-        <div className="act-row head">
-          <span>time</span><span>console › pane</span><span>profile</span><span>command / action</span><span>decision</span>
-        </div>
+      <Box className="act-table">
+        <Box className="act-row head">
+          <Box as="span">time</Box><Box as="span">console › pane</Box><Box as="span">profile</Box><Box as="span">command / action</Box><Box as="span">decision</Box>
+        </Box>
         {shown.length === 0 && (
-          <div className="mono" style={{ padding: "18px 14px", fontSize: 11.5, color: "var(--fg-dim)" }}>
+          <Text as="div" mono tone="dim" size={11.5} style={{ padding: "18px 14px" }}>
             No activity yet. Tool attempts are logged once a pane has a profile or role assigned.
-          </div>
+          </Text>
         )}
         {shown.map((r, i) => {
           const p = find(r.profileId);
@@ -67,16 +71,16 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           const decLabel = r.decision === "allow" ? "allowed" : r.decision === "ask" ? "asked" : "blocked";
           const kindGlyph = r.kind === "cmd" ? "$" : r.kind === "net" ? "⇡" : "⚒";
           return (
-            <div className="act-row" key={i}>
-              <span className="when">{fmtAuditTime(r.ts)}</span>
-              <span style={{ color: "var(--fg-muted)" }}>{r.console} <span style={{ color: "var(--fg-dim)" }}>›</span> {r.pane}</span>
-              <span className="prof">{p && <span className="sw" style={{ background: p.color }} />}{p?.name ?? r.profileId}</span>
-              <span className="cmd"><span style={{ color: "var(--fg-dim)" }}>{kindGlyph}</span> {r.target}</span>
-              <span className={`dec ${r.decision}`}>{sym} {decLabel}</span>
-            </div>
+            <Box className="act-row" key={i}>
+              <Box as="span" className="when">{fmtAuditTime(r.ts)}</Box>
+              <Text as="span" tone="muted">{r.console} <Text as="span" tone="dim">›</Text> {r.pane}</Text>
+              <Box as="span" className="prof">{p && <Box as="span" className="sw" bg={p.color} />}{p?.name ?? r.profileId}</Box>
+              <Box as="span" className="cmd"><Text as="span" tone="dim">{kindGlyph}</Text> {r.target}</Box>
+              <Box as="span" className={`dec ${r.decision}`}>{sym} {decLabel}</Box>
+            </Box>
           );
         })}
-      </div>
+      </Box>
     </>
   );
 }

@@ -2,6 +2,7 @@
 //! Noise responder handshake, and pumps the `TunnelState` bus (PTY output + events) to the paired
 //! mobile client, routing inbound client frames back. The transport-FREE core lives in the parent.
 
+use crate::StrErr;
 use super::{
     decode_room_msg, noise, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta, TunnelState,
 };
@@ -72,16 +73,16 @@ fn ct_eq(a: &str, b: &str) -> bool {
 
 /// Encrypt a JSON-serialized message into one Noise transport frame.
 pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Vec<u8>, String> {
-    let json = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+    let json = serde_json::to_vec(msg).str_err()?;
     let mut buf = vec![0u8; json.len() + 16];
-    let n = tx.write_message(&json, &mut buf).map_err(|e| e.to_string())?;
+    let n = tx.write_message(&json, &mut buf).str_err()?;
     buf.truncate(n);
     Ok(buf)
 }
 
 async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
     let frame = encode(tx, msg)?;
-    sink.send(Message::Binary(frame.into())).await.map_err(|e| e.to_string())
+    sink.send(Message::Binary(frame.into())).await.str_err()
 }
 
 async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutputChunk) -> Result<(), String> {
@@ -170,92 +171,12 @@ async fn session(
     let (mut sink, mut read) = ws.split();
     log::info!("tunnel: connected to relay as host; waiting for mobile peer (room {room})");
 
-    // Noise IK responder: read the mobile's first handshake message, answer it.
-    let mut hs = noise::responder(static_priv).map_err(|e| e.to_string())?;
-    let mut scratch = vec![0u8; 65535];
-    let msg1 = next_binary(&mut read).await?;
-    log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
-    hs.read_message(&msg1, &mut scratch)
-        .map_err(|e| format!("handshake msg1 read failed: {e}"))?;
-    let n = hs
-        .write_message(&[], &mut scratch)
-        .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
-    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.map_err(|e| e.to_string())?;
-    log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
-    let mut noise_tx = hs.into_transport_mode().map_err(|e| e.to_string())?;
+    // Run the Noise IK responder handshake + validate the mobile's auth frame; on success
+    // this yields the live Noise transport state for the rest of the session.
+    let mut noise_tx = noise_handshake_and_auth(app, &mut sink, &mut read, static_priv).await?;
 
-    // First app frame must be `auth`; validate the pairing secret.
-    let frame = next_binary(&mut read).await?;
-    match decode_room_msg(&mut noise_tx, &frame)? {
-        ClientMsg::Auth { token, fcm_token } => {
-            let psk = app
-                .try_state::<TunnelState>()
-                .map(|s| s.psk())
-                .unwrap_or_default();
-            if !ct_eq(&token, &psk) {
-                log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
-                return Err("auth rejected (bad pairing secret)".into());
-            }
-            // Persist the device's FCM push token (#846) so a `user_request` can reach it
-            // even after the app backgrounds/quits and drops this relay connection.
-            if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
-                state.add_fcm_token(t);
-            }
-            log::info!("tunnel: auth accepted");
-        }
-        _ => return Err("expected auth as the first frame".into()),
-    }
-    send_msg(&mut sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
-
-    // Replay current pane list + session state to the freshly-paired client.
-    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) = app
-        .try_state::<TunnelState>()
-        .map(|s| s.snapshot())
-        .unwrap_or_default();
-    send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneList { panes }).await?;
-    for s in &sessions {
-        send_msg(&mut sink, &mut noise_tx, &super::session_state_msg(s)).await?;
-    }
-    // Replay each pane's current PTY size so mobile renders at the desktop's width
-    // before any output arrives.
-    let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
-    for (pane_id, cols, rows) in sizes {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
-    }
-
-    // Replay plan manifests so mobile can start reconciling immediately (#588).
-    let plan_manifests = app
-        .try_state::<TunnelState>()
-        .map(|s| s.plan_manifests_snapshot())
-        .unwrap_or_default();
-    for (project_id, files) in plan_manifests {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
-    }
-
-    // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
-    // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
-    let plan_frames = app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
-    for frame in plan_frames {
-        send_msg(&mut sink, &mut noise_tx, &frame).await?;
-    }
-
-    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
-    let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
-    if !fleet.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
-    }
-
-    // Replay automation list (A2).
-    let automations = app.try_state::<TunnelState>().map(|s| s.automations_snapshot()).unwrap_or_default();
-    if !automations.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::AutomationList { automations }).await?;
-    }
-
-    // Replay MCP extension list (M2).
-    let mcp = app.try_state::<TunnelState>().map(|s| s.mcp_snapshot()).unwrap_or_default();
-    if !mcp.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::McpList { extensions: mcp }).await?;
-    }
+    // Replay the full initial-state sequence to the freshly-paired client.
+    replay_state(app, &mut sink, &mut noise_tx).await?;
 
     // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
     let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
@@ -320,6 +241,121 @@ async fn session(
             },
         }
     }
+}
+
+/// Run the Noise IK responder handshake, then validate the mobile's first (`auth`) frame
+/// against the pairing secret. Reads the peer's handshake msg1 off `read`, writes msg2 back
+/// over `sink`, promotes to transport mode, then decrypts the first app frame — which must be
+/// `Auth` carrying the correct PSK (constant-time compared). Persists the device's FCM push
+/// token (#846) when present, sends `AuthOk`, and returns the live Noise transport state.
+/// Any handshake read/write failure, a bad pairing secret, or a non-`auth` first frame is an
+/// early `Err` that tears the session down (and triggers a backoff reconnect in `run`).
+async fn noise_handshake_and_auth(
+    app: &AppHandle,
+    sink: &mut WsSink,
+    read: &mut WsStream,
+    static_priv: &[u8],
+) -> Result<snow::TransportState, String> {
+    // Noise IK responder: read the mobile's first handshake message, answer it.
+    let mut hs = noise::responder(static_priv).str_err()?;
+    let mut scratch = vec![0u8; 65535];
+    let msg1 = next_binary(read).await?;
+    log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
+    hs.read_message(&msg1, &mut scratch)
+        .map_err(|e| format!("handshake msg1 read failed: {e}"))?;
+    let n = hs
+        .write_message(&[], &mut scratch)
+        .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
+    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.str_err()?;
+    log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
+    let mut noise_tx = hs.into_transport_mode().str_err()?;
+
+    // First app frame must be `auth`; validate the pairing secret.
+    let frame = next_binary(read).await?;
+    match decode_room_msg(&mut noise_tx, &frame)? {
+        ClientMsg::Auth { token, fcm_token } => {
+            let psk = app
+                .try_state::<TunnelState>()
+                .map(|s| s.psk())
+                .unwrap_or_default();
+            if !ct_eq(&token, &psk) {
+                log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
+                return Err("auth rejected (bad pairing secret)".into());
+            }
+            // Persist the device's FCM push token (#846) so a `user_request` can reach it
+            // even after the app backgrounds/quits and drops this relay connection.
+            if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
+                state.add_fcm_token(t);
+            }
+            log::info!("tunnel: auth accepted");
+        }
+        _ => return Err("expected auth as the first frame".into()),
+    }
+    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+    Ok(noise_tx)
+}
+
+/// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
+/// wire order the mobile app expects: pane list + per-session state, per-pane PTY sizes,
+/// plan manifests (#588), the last live planner frames (#934), then the fleet roster (F2),
+/// automation list (A2), and MCP extension list (M2). Each `*_snapshot()` reads through
+/// `try_state`, so a missing `TunnelState` replays nothing rather than erroring. Called
+/// once after `auth_ok`, before subscribing to the live bus, so nothing is double-sent.
+async fn replay_state(
+    app: &AppHandle,
+    sink: &mut WsSink,
+    tx: &mut snow::TransportState,
+) -> Result<(), String> {
+    /// Read one `TunnelState` snapshot through `try_state`, so a missing `TunnelState` yields the
+    /// default (empty) value rather than erroring. `f` selects the specific `*_snapshot()`/getter.
+    fn snap<R: Default>(app: &AppHandle, f: impl FnOnce(&TunnelState) -> R) -> R {
+        app.try_state::<TunnelState>().map(|s| f(&s)).unwrap_or_default()
+    }
+
+    // Replay current pane list + session state to the freshly-paired client.
+    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) = snap(app, |s| s.snapshot());
+    send_msg(sink, tx, &ServerMsg::PaneList { panes }).await?;
+    for s in &sessions {
+        send_msg(sink, tx, &super::session_state_msg(s)).await?;
+    }
+    // Replay each pane's current PTY size so mobile renders at the desktop's width
+    // before any output arrives.
+    let sizes = snap(app, |s| s.pane_sizes());
+    for (pane_id, cols, rows) in sizes {
+        send_msg(sink, tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
+    }
+
+    // Replay plan manifests so mobile can start reconciling immediately (#588).
+    let plan_manifests = snap(app, |s| s.plan_manifests_snapshot());
+    for (project_id, files) in plan_manifests {
+        send_msg(sink, tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
+    }
+
+    // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
+    // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
+    let plan_frames = snap(app, |s| s.plan_frames_snapshot());
+    for frame in plan_frames {
+        send_msg(sink, tx, &frame).await?;
+    }
+
+    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
+    let fleet = snap(app, |s| s.fleet_snapshot());
+    if !fleet.is_empty() {
+        send_msg(sink, tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
+    }
+
+    // Replay automation list (A2).
+    let automations = snap(app, |s| s.automations_snapshot());
+    if !automations.is_empty() {
+        send_msg(sink, tx, &ServerMsg::AutomationList { automations }).await?;
+    }
+
+    // Replay MCP extension list (M2).
+    let mcp = snap(app, |s| s.mcp_snapshot());
+    if !mcp.is_empty() {
+        send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
+    }
+    Ok(())
 }
 
 /// Decide whether a decrypted mobile frame may be applied to the desktop PTY given the

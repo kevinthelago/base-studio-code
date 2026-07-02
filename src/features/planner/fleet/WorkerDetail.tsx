@@ -4,54 +4,31 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
-import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { BackButton } from "@/shared/ui/controls/BackButton";
-import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { CardHead, StatCard, Avatar } from "@/shared/ui/charts";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
-import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";
 import { loadDoneAudit, type DoneAudit } from "@/shared/lib/fleet/workerAudit";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-
-const TIER_COLOR: Record<string, string> = {
-  allow: "var(--success)", ask: "var(--accent)", deny: "var(--danger)",
-};
-
-function Modal({ title, children, onClose, footer }: {
-  title: string; children: React.ReactNode; onClose: () => void; footer?: React.ReactNode;
-}) {
-  return (
-    <ModalScrim onDismiss={onClose}>
-      <div style={{ width: 440, maxWidth: "90vw", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>{title}</h3>
-          <div style={{ flex: 1 }} />
-          <IconButton aria-label="close" onClick={onClose} />
-        </div>
-        <div style={{ padding: 16 }}>{children}</div>
-        {footer && <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-soft)", display: "flex", justifyContent: "flex-end", gap: 8 }}>{footer}</div>}
-      </div>
-    </ModalScrim>
-  );
-}
-
-function Placeholder({ title, hint, body }: { title: string; hint: string; body: string }) {
-  return (
-    <div className="card">
-      <CardHead title={title} hint={hint} />
-      <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>{body}</div>
-    </div>
-  );
-}
+import { TIER_COLOR, type WorkerModal } from "./workerDetail.helpers";
+import { Placeholder } from "./WorkerDetailPlaceholder";
+import { WorkerModals } from "./WorkerModals";
 
 export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: () => void }) {
   const stream      = useAppStore((s) => s.fleetPaneStreams[worker.id]);
@@ -73,7 +50,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const owned = stream?.issues ?? [];
   const st = STATUS[worker.status];
 
-  const [modal, setModal] = useState<null | "steer" | "answer" | "stop" | "profile">(null);
+  const [modal, setModal] = useState<WorkerModal | null>(null);
   const [draft, setDraft] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   function flash(m: string) { setToast(m); setTimeout(() => setToast(null), 2200); }
@@ -81,13 +58,12 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   // Real per-worker activity from the bsc-audit log (#257): tool attempts tagged
   // with this pane id, polled while the page is open, newest first.
   const [audit, setAudit] = useState<AuditRecord[]>([]);
-  usePoll((isCancelled) => invoke<string[]>("read_audit_log", { limit: 4000 })
+  usePoll((isCancelled) => bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "4000", "--json"], [])
     .then((lines) => {
       if (isCancelled()) return;
       const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
       setAudit(rows.slice(-12).reverse());
-    })
-    .catch(() => {}), 4000, [worker.id]);
+    }), 4000, [worker.id]);
 
   // Done-time audit snapshot (#920): the worker's concrete output — branch, commits, changed
   // files, PR, and the transcript path — read from the worktree at view time. Reloads when the
@@ -124,95 +100,96 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   return (
     <section style={{ flex: 1, overflow: "auto", minWidth: 0, background: "var(--bg-canvas)" }}>
       {/* sticky header + actions */}
-      <div style={{ position: "sticky", top: 0, zIndex: 50, background: "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", padding: "12px 24px" }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+      <Box pad={[12, 24]} bg="var(--bg-panel)" style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid var(--border-soft)"}}>
+        <Box style={{ maxWidth: 1180, margin: "0 auto" }}>
+          <Row gap={12} style={{ marginBottom: 12 }}>
             <BackButton variant="icon" onClick={onBack} aria-label="Back to fleet" />
-            <div style={{ width: 1, height: 18, background: "var(--border-soft)" }} />
+            <Box bg="var(--border-soft)" style={{ width: 1, height: 18}} />
             <Avatar login={worker.name} bot size={26} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <span className="mono" style={{ fontSize: 15, color: "var(--fg)" }}>{worker.name}</span>
-                <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, background: paused ? "var(--fg-dim)" : st.color }} />{paused ? "paused" : st.label}
-                </span>
-              </div>
-              <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>
-                {worker.id} · {worker.repo} · <span style={{ color: worker.profileColor }}>{worker.profileLabel}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {worker.status === "asking" && <button className="btn primary" onClick={() => setModal("answer")}>answer question →</button>}
-            <button className="btn" onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
+            <Box style={{ minWidth: 0 }}>
+              <Row gap={9}>
+                <Text as="span" mono size={15} style={{ color: "var(--fg)" }}>{worker.name}</Text>
+                <Box as="span" className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
+                  <Box as="span" bg={paused ? "var(--fg-dim)" : st.color} radius={99} style={{ width: 7, height: 7}} />{paused ? "paused" : st.label}
+                </Box>
+              </Row>
+              <Text as="div" mono size={10} tone="dim" style={{ marginTop: 2 }}>
+                {worker.id} · {worker.repo} · <Text as="span" style={{ color: worker.profileColor }}>{worker.profileLabel}</Text>
+              </Text>
+            </Box>
+          </Row>
+          <Row gap={8} wrap>
+            {worker.status === "asking" && <Button variant="primary" onClick={() => setModal("answer")}>answer question →</Button>}
+            <Button onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
               {paused ? "▶ resume" : "⏸ pause"}
-            </button>
-            <button className="btn ghost" onClick={() => setModal("steer")}>✎ steer</button>
-            <button className="btn ghost" onClick={openSession}>▤ open session</button>
-            <button className="btn ghost" onClick={() => setModal("profile")}>⛉ profile</button>
-            <div style={{ flex: 1 }} />
-            <button className="btn danger" onClick={() => setModal("stop")}>stop &amp; remove</button>
-          </div>
-        </div>
-      </div>
+            </Button>
+            <Button variant="ghost" onClick={() => setModal("steer")}>✎ steer</Button>
+            <Button variant="ghost" onClick={openSession}>▤ open session</Button>
+            <Button variant="ghost" onClick={() => setModal("profile")}>⛉ profile</Button>
+            <Spacer />
+            <Button danger onClick={() => setModal("stop")}>stop &amp; remove</Button>
+          </Row>
+        </Box>
+      </Box>
 
-      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "18px 24px" }}>
+      <Box pad={[18, 24]} style={{ maxWidth: 1180, margin: "0 auto"}}>
         {/* current / parked banner */}
-        <div className="card" style={{ padding: "12px 16px", marginBottom: 14,
+        <Card style={{ padding: "12px 16px", marginBottom: 14,
           borderColor: worker.note ? st.color : "var(--border-soft)",
           background: worker.note ? `color-mix(in oklch, ${st.color}, transparent 92%)` : "var(--bg-panel)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span className="mono-label">current</span>
-            <span className="mono-value">{worker.issue}</span>
-            {worker.note && <span className="mono" style={{ fontSize: 11, color: st.color }}>· {worker.note}</span>}
-          </div>
-        </div>
+          <Row gap={10} wrap>
+            <Box as="span" className="mono-label">current</Box>
+            <Box as="span" className="mono-value">{worker.issue}</Box>
+            {worker.note && <Text as="span" mono size={11} style={{ color: st.color }}>· {worker.note}</Text>}
+          </Row>
+        </Card>
 
         {/* KPIs — real where measured, explicit "—" otherwise */}
-        <div className="statgrid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 14 }}>
+        <Box className="statgrid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 14 }}>
           <StatCard k="issues owned" v={String(owned.length)} sub="assigned to this stream" tone="fg" />
           <StatCard k="profile" v={(profile?.name ?? worker.profileLabel).split(" ")[0]} sub={profile?.origin ?? "—"} tone="fg" />
           <StatCard k="status" v={st.label} sub="right now" tone={worker.status === "running" ? "accent" : worker.status === "blocked" ? "danger" : "fg"} />
           <StatCard k="repo" v={worker.repo.split("/")[1] ?? worker.repo} sub="worktree" tone="info" />
-        </div>
+        </Box>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <Grid cols="1.6fr 1fr" gap={14}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             {/* Owned issues (real) */}
-            <div className="card">
+            <Card>
               <CardHead title="Owned issues" hint={`${owned.length} assigned to this stream`} />
               {owned.length === 0
-                ? <div className="hint mono" style={{ fontSize: 11 }}>No issues assigned to this stream.</div>
+                ? <Box className="hint mono" style={{ fontSize: 11 }}>No issues assigned to this stream.</Box>
                 : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                  <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                     {owned.map((ref, i) => (
-                      <div key={ref} className="hrow" style={{ display: "grid", gridTemplateColumns: "1fr 70px", gap: 8, alignItems: "center", padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                        <span className="mono" style={{ color: "var(--fg)" }}>{ref}</span>
-                        <span className="mono" style={{ textAlign: "right", fontSize: 10, color: ref === worker.issue ? st.color : "var(--fg-dim)" }}>
+                      <Grid key={ref} cols="1fr 70px" gap={8} align="center" className="hrow" style={{ padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                        <Text as="span" mono style={{ color: "var(--fg)" }}>{ref}</Text>
+                        <Text as="span" mono size={10} style={{ textAlign: "right", color: ref === worker.issue ? st.color : "var(--fg-dim)" }}>
                           ● {ref === worker.issue ? worker.status : "owned"}
-                        </span>
-                      </div>
+                        </Text>
+                      </Grid>
                     ))}
-                  </div>
+                  </Stack>
                 )}
-            </div>
-            <div className="card">
+            </Card>
+            <Card>
               <CardHead
                 title="Done-time audit"
                 hint={ended ? `ended ${ended.state} · ${ended.summary}` : "live snapshot of this worker's output"}
               />
               {!cwd ? (
-                <div className="hint mono" style={{ fontSize: 11 }}>No worktree bound to this pane.</div>
+                <Box className="hint mono" style={{ fontSize: 11 }}>No worktree bound to this pane.</Box>
               ) : !doneAudit ? (
-                <div className="hint mono" style={{ fontSize: 11 }}>reading the worktree…</div>
+                <Box className="hint mono" style={{ fontSize: 11 }}>reading the worktree…</Box>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <Stack gap={10}>
                   {/* branch + PR + transcript */}
-                  <div className="mono" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 10.5 }}>
+                  <Row className="mono" gap={8} wrap style={{ fontSize: 10.5 }}>
                     {doneAudit.branch && (
-                      <span style={{ padding: "2px 8px", borderRadius: 99, border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</span>
+                      <Box as="span" pad={[2, 8]} border="soft" radius={99} style={{ color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</Box>
                     )}
                     {doneAudit.pr ? (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke PR-status pill button (custom inline styles, not a .btn)
                       <button
                         onClick={() => openUrl(doneAudit.pr!.url).catch(() => {})}
                         title="Open the pull request"
@@ -225,154 +202,118 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                         {doneAudit.pr.merged ? "✓ merged" : doneAudit.pr.state.toLowerCase()} · PR #{doneAudit.pr.number} ↗
                       </button>
                     ) : (
-                      <span style={{ color: "var(--fg-dim)" }}>no PR yet</span>
+                      <Text as="span" tone="dim">no PR yet</Text>
                     )}
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
                     {doneAudit.transcriptPath && (
-                      <button className="btn ghost" style={{ height: 22, fontSize: 10 }}
+                      <Button variant="ghost" size="sm" style={{ height: 22, fontSize: 10 }}
                         onClick={() => revealItemInDir(doneAudit.transcriptPath!).catch(() => {})}
-                        title={doneAudit.transcriptPath}>transcript ↗</button>
+                        title={doneAudit.transcriptPath}>transcript ↗</Button>
                     )}
-                  </div>
+                  </Row>
                   {/* changed files + commits */}
-                  <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+                  <Text as="div" mono size={10} tone="dim">
                     {doneAudit.changedFiles.length} uncommitted file{doneAudit.changedFiles.length === 1 ? "" : "s"} · {doneAudit.commits.length} recent commit{doneAudit.commits.length === 1 ? "" : "s"}
-                  </div>
+                  </Text>
                   {doneAudit.commits.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                    <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                       {doneAudit.commits.slice(0, 8).map((c, i) => (
-                        <div key={c.hash + i} style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 8, alignItems: "center", padding: "7px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                          <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)" }}>{c.hash}</span>
-                          <span className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
-                        </div>
+                        <Grid key={c.hash + i} cols="60px 1fr" gap={8} align="center" style={{ padding: "7px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                          <Text as="span" mono size={9.5} tone="accent">{c.hash}</Text>
+                          <Text as="span" mono size={10} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</Text>
+                        </Grid>
                       ))}
-                    </div>
+                    </Stack>
                   )}
-                </div>
+                </Stack>
               )}
-            </div>
-            <div className="card">
+            </Card>
+            <Card>
               <CardHead title="Activity & audit" hint={`this worker · ${audit.length ? "tool attempts, newest first" : "from the bsc-audit log"}`} />
               {audit.length === 0
-                ? <div className="hint mono" style={{ fontSize: 11 }}>
+                ? <Box className="hint mono" style={{ fontSize: 11 }}>
                     No tool attempts logged yet for this worker. Gated panes append one line per tool use here.
-                  </div>
+                  </Box>
                 : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+                  <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                     {audit.map((a, i) => (
-                      <div key={i} className="hrow" style={{ display: "grid", gridTemplateColumns: "62px 1fr", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                        <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)" }}>{a.toolName}</span>
-                        <span className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.target || "—"}</span>
-                      </div>
+                      <Grid key={i} cols="62px 1fr" gap={8} align="center" className="hrow" style={{ padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                        <Text as="span" mono size={9.5} tone="accent">{a.toolName}</Text>
+                        <Text as="span" mono size={10} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.target || "—"}</Text>
+                      </Grid>
                     ))}
-                  </div>
+                  </Stack>
                 )}
-            </div>
-          </div>
+            </Card>
+          </Stack>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             {/* Permissions (real, from the profile) */}
-            <div className="card">
+            <Card>
               <CardHead title="Permissions" hint={profile ? `${profile.name} · ${profile.origin}` : "no profile assigned"} />
               {profile ? (
                 <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 18px", marginBottom: 12 }}>
+                  <Grid cols={2} style={{ gap: "5px 18px", marginBottom: 12 }}>
                     {[perms.slice(0, half), perms.slice(half)].flat().map((r) => (
-                      <div key={r.key} className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10.5 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: 99, background: TIER_COLOR[r.tier], flexShrink: 0 }} />
-                        <span style={{ color: "var(--fg)", width: 42 }}>{r.key}</span>
-                        <span style={{ color: TIER_COLOR[r.tier] }}>{r.tier}</span>
-                      </div>
+                      <Row key={r.key} gap={8} className="mono" style={{ fontSize: 10.5 }}>
+                        <Box as="span" bg={TIER_COLOR[r.tier]} radius={99} style={{ width: 7, height: 7, flexShrink: 0 }} />
+                        <Text as="span" style={{ color: "var(--fg)", width: 42 }}>{r.key}</Text>
+                        <Text as="span" style={{ color: TIER_COLOR[r.tier] }}>{r.tier}</Text>
+                      </Row>
                     ))}
-                  </div>
-                  <div className="mono" style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6, fontSize: 10, color: "var(--fg-muted)" }}>
-                    <div><span style={{ color: "var(--fg-dim)" }}>paths allow </span>{profile.paths.allow.length ? profile.paths.allow.join(", ") : "—"}</div>
-                    <div><span style={{ color: "var(--fg-dim)" }}>paths deny </span>{profile.paths.deny.length ? profile.paths.deny.join(", ") : "—"}</div>
-                    <div><span style={{ color: "var(--fg-dim)" }}>network </span>{profile.net.allow.length ? profile.net.allow.join(", ") : "none"}</div>
-                  </div>
+                  </Grid>
+                  <Stack className="mono" gap={6} style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 10, fontSize: 10, color: "var(--fg-muted)" }}>
+                    <Box><Text as="span" tone="dim">paths allow </Text>{profile.paths.allow.length ? profile.paths.allow.join(", ") : "—"}</Box>
+                    <Box><Text as="span" tone="dim">paths deny </Text>{profile.paths.deny.length ? profile.paths.deny.join(", ") : "—"}</Box>
+                    <Box><Text as="span" tone="dim">network </Text>{profile.net.allow.length ? profile.net.allow.join(", ") : "none"}</Box>
+                  </Stack>
                 </>
               ) : (
-                <div className="hint mono" style={{ fontSize: 11 }}>
+                <Box className="hint mono" style={{ fontSize: 11 }}>
                   This worker runs under its role gate only — no least-privilege profile was assigned during planning.
-                </div>
+                </Box>
               )}
-            </div>
+            </Card>
 
             {/* Execution flow (real, from the flow) */}
-            <div className="card">
+            <Card>
               <CardHead title="Execution flow" hint="set during planning" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+              <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
                 {flowRows(flow).map((r, i) => (
-                  <div key={r.key} style={{ display: "grid", gridTemplateColumns: "80px 110px 1fr", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                    <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{r.key}</span>
-                    <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{r.value}</span>
-                    <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>{r.desc}</span>
-                  </div>
+                  <Grid key={r.key} cols="80px 110px 1fr" gap={8} align="center" style={{ padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+                    <Text as="span" mono size={10} tone="dim">{r.key}</Text>
+                    <Text as="span" mono size={10.5} tone="accent">{r.value}</Text>
+                    <Text as="span" size={10} tone="muted">{r.desc}</Text>
+                  </Grid>
                 ))}
-              </div>
-            </div>
+              </Stack>
+            </Card>
 
             <Placeholder title="Tokens & spend" hint="not measured yet"
               body="Per-session token + cost accounting isn't wired up yet. Once it lands, this worker's token burn and spend appear here." />
-          </div>
-        </div>
-      </div>
+          </Stack>
+        </Grid>
+      </Box>
 
       {toast && (
-        <div className="above-modal mono" style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
-          background: "var(--bg-elev2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px",
-          fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</div>
+        <Box className="above-modal mono" pad={[9, 16]} bg="var(--bg-elev2)" border radius={8} style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</Box>
       )}
 
-      {(modal === "steer" || modal === "answer") && (
-        <Modal title={modal === "answer" ? `Answer ${worker.name}` : `Steer ${worker.name}`} onClose={() => setModal(null)}
-          footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</button>
-          </>}>
-          {modal === "answer" && worker.note && (
-            <div className="mono" style={{ padding: "10px 12px", borderRadius: 8, background: `color-mix(in oklch, ${st.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
-              {worker.note}
-            </div>
-          )}
-          <div className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</div>
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
-            placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
-            className="mono"
-            style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontSize: 12, outline: "none" }} />
-        </Modal>
-      )}
-      {modal === "stop" && (
-        <Modal title="Stop & remove worker" onClose={() => setModal(null)}
-          footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn danger" onClick={stop}>stop &amp; remove</button>
-          </>}>
-          <div style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
-            This stops <b style={{ color: "var(--fg)" }}>{worker.name}</b>'s session (disables its pane). Its worktree is
-            preserved; re-enable the console to resume.
-          </div>
-        </Modal>
-      )}
-      {modal === "profile" && (
-        <Modal title="Change profile" onClose={() => setModal(null)}>
-          <div className="hint" style={{ marginBottom: 10 }}>Switch the least-privilege profile this worker runs under (applies on its next launch).</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflow: "auto" }}>
-            {agentProfiles.map((p) => (
-              <button key={p.id} onClick={() => { setPaneProfile(worker.id, p.id); setModal(null); flash(`Profile → ${p.name}`); }} style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", textAlign: "left", cursor: "pointer",
-                background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
-                border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
-              }}>
-                <ColorSwatch color={p.color} size={8} />
-                <span className="mono" style={{ fontSize: 11.5, flex: 1 }}>{p.name}</span>
-                <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>base {p.mode}</span>
-                {p.id === profileId && <span className="mono" style={{ fontSize: 9.5, color: p.color }}>current</span>}
-              </button>
-            ))}
-          </div>
-        </Modal>
-      )}
+      <WorkerModals
+        modal={modal}
+        setModal={setModal}
+        worker={worker}
+        st={st}
+        draft={draft}
+        setDraft={setDraft}
+        send={send}
+        stop={stop}
+        agentProfiles={agentProfiles}
+        profileId={profileId}
+        setPaneProfile={setPaneProfile}
+        flash={flash}
+      />
     </section>
   );
 }

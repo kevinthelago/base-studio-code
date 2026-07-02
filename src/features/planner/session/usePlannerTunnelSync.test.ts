@@ -27,7 +27,7 @@ const base: PlannerTunnelSyncOpts = {
   planningDir: "/tmp/proj",
   paneId: "planning_proj",
   projectTitle: "Proj",
-  confirmPlanSection: () => {},
+  confirmPlanStage: () => {},
 };
 
 const render = (p: PlannerTunnelSyncOpts) =>

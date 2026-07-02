@@ -1,5 +1,6 @@
 import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Button } from "@/shared/ui/controls/Button";
 
 /**
  * Shown when a project is opened whose blueprint / planner-template version differs from the one
@@ -26,13 +27,8 @@ export function BlueprintUpdateModal({ busy, onGoBack, onKeep, onRestart, onDism
       actions={
         <>
           <BackButton variant="text" label="go back" className="btn ghost" onClick={onGoBack} aria-label="Go back" />
-          <button className="btn" disabled={busy} onClick={onKeep}>keep previous plan files</button>
-          <button
-            className="btn"
-            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-            disabled={busy}
-            onClick={onRestart}
-          >restart the plan</button>
+          <Button disabled={busy} onClick={onKeep}>keep previous plan files</Button>
+          <Button danger disabled={busy} onClick={onRestart}>restart the plan</Button>
         </>
       }
     >

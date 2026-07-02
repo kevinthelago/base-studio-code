@@ -4,7 +4,6 @@
 // predicate) was removed in #897 Phase 4c — there was never a production trigger pump,
 // and the three remaining behaviors run by DIRECT dispatch (see their modules). What's
 // left here is just the shared run-state shapes those dispatches + the store use.
-// (Distinct from #220's fleet conductor, now named "workflow" — its runs are `workflowRuns`.)
 
 /** What a stage helper receives: the stage's identity + its read-only artifacts. */
 export interface StageContext {
@@ -34,5 +33,3 @@ export interface StageRunState {
   lastRun: number | null;
   message?: string;
 }
-
-export const IDLE_RUN: StageRunState = { status: "idle", lastRun: null };

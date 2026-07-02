@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { AgentsWorkspace } from "./";
 import { useAppStore } from "@/store";
-import { startRun } from "@/shared/lib/fleet/conductor";
-import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
 
 /**
- * #199/#220 — the Agents-screen "Flow" tab surfaces the fleet's coordination + workflow
- * state (parked/ready/stalled/deadlocked sessions, workflow lanes), cross-referenced with
- * the profile each session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the
- * mocked read_coord_log; workflow runs come from the store.
+ * #199 — the Agents-screen "Flow" tab surfaces the fleet's coordination state
+ * (parked/ready/stalled/deadlocked sessions), cross-referenced with the profile each
+ * session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the mocked
+ * `bsc logs tail coord` bridge read.
  */
 const TS = "2026-05-30T18:00:00Z";
 const mockInvoke = vi.mocked(invoke);
 
-/** Drive invoke per-command: read_coord_log returns `coordLines`, everything else null. */
+/** Drive invoke: `bsc logs tail coord` returns `coordLines` (as a JSON string, #2144); else null. */
 function seedCoordLog(coordLines: string[]) {
-  mockInvoke.mockImplementation(async (cmd: string) => {
-    if (cmd === "read_coord_log") return coordLines as unknown as null;
+  mockInvoke.mockImplementation(async (cmd: string, payload?: unknown) => {
+    if (cmd === "bsc" && (payload as { args: string[] }).args?.[2] === "coord") {
+      return JSON.stringify(coordLines) as unknown as null;
+    }
     return null;
   });
 }
@@ -30,14 +30,13 @@ function openFlow(container: HTMLElement) {
   fireEvent.click(tab);
 }
 
-describe("Agents · Flow tab (#199/#220)", () => {
+describe("Agents · Flow tab (#199)", () => {
   beforeEach(() => {
     useAppStore.setState({
       tabs: [{ name: "w", layout: "1×1", state: "idle" as const }],
       activeTabIdx: 0,
       paneProfiles: {} as Record<string, string>,
       disabledPanes: {} as Record<string, boolean>,
-      workflowRuns: {},
     });
   });
   afterEach(() => {
@@ -75,23 +74,5 @@ describe("Agents · Flow tab (#199/#220)", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("pty_kill", { paneId: "t0p0" });
     });
-  });
-
-  it("renders workflow lanes with their stage sequence", async () => {
-    const presetKey = Object.keys(WORKFLOW_PRESETS)[0];
-    const run = startRun(WORKFLOW_PRESETS[presetKey], "#42").run;
-    useAppStore.setState({ workflowRuns: { "#42": run } });
-    seedCoordLog([]);
-
-    const { container } = render(<AgentsWorkspace />);
-    openFlow(container);
-
-    await waitFor(() => {
-      const section = container.querySelector(".body")!;
-      expect(within(section as HTMLElement).getByText("#42")).toBeInTheDocument();
-    });
-    // The first preset stage name appears as a chip.
-    const firstStage = Object.values(run.workflow.stages)[0].name;
-    expect(container.textContent).toContain(firstStage);
   });
 });

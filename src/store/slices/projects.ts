@@ -5,9 +5,7 @@ import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
-import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
-import { startRun } from "@/shared/lib/fleet/conductor";
-import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
+import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -17,7 +15,12 @@ import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/a
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
+import { personaStreamPrompt } from "@/features/planner/fleet/streamPersona";
+import { roleCapability } from "@/shared/lib/session/sessionRoles";
+import { MODEL_IDS, type ModelId } from "@/app/console/lib/models";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
+import { parseIntake, changedDesignFiles, markRouted, renderDesignDelta, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "@/features/planner/lib/fileIntake";
+import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
 import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
@@ -28,9 +31,10 @@ import { resolveStrategy, strategySettings } from "@/features/planner/lib/integr
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
+import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -39,7 +43,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Resolve each passed key (project title OR GitHub node id) to its data key via the alias,
           // so the per-project maps — keyed by the sanitized slug (`effectiveProjectId`) — are
           // actually dropped, not just the raw title/id. Deleting a PUBLISHED project passes its node
-          // id; without this the slug-keyed planSections/planFleet/… leak (#997).
+          // id; without this the slug-keyed planStages/planFleet/… leak (#997).
           const keySet = new Set(
             keys.flatMap((k) => (k ? [k, s.projectKeyAlias[k]] : [])).filter(Boolean) as string[],
           );
@@ -60,11 +64,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             (s.activeProjectId != null && keySet.has(s.activeProjectId)) ||
             (!!s.planningSessionKey && keySet.has(s.planningSessionKey));
           return {
-            planSections:           byKey(s.planSections),
-            planConfirmedSections:  byKey(s.planConfirmedSections),
+            planStages:           byKey(s.planStages),
+            planConfirmedStages:  byKey(s.planConfirmedStages),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planDeployConfig:       byKey(s.planDeployConfig),
-            planSkippedSections:    byKey(s.planSkippedSections),
+            planSkippedStages:    byKey(s.planSkippedStages),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
             projectBlueprintId:     byKey(s.projectBlueprintId),
@@ -93,7 +97,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {},
+          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
           projectKeyAlias: {}, issueLinks: {}, projectStartupPromptDoc: {},
@@ -140,22 +144,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         return ok;
       },
       fleetPaneStreams: {},
-      workflowRuns: {},
-      workflowStart: (presetKey, item) =>
-        set((s) => {
-          const pipeline = WORKFLOW_PRESETS[presetKey];
-          const id = item.trim();
-          if (!pipeline || !id) return {};
-          return mountState(s, id, startRun(pipeline, id).run);
-        }),
-      workflowClear: (item) =>
-        set((s) => ({ workflowRuns: deleteMapEntry(s.workflowRuns, item) })),
-      workflowMount: (item) =>
-        set((s) => {
-          const run = s.workflowRuns[item];
-          return run ? mountState(s, item, run) : {};
-        }),
-      workflowSetRuns: (runs) => set({ workflowRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",
@@ -201,19 +189,38 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         const deltas: Record<string, string> = {};
         await Promise.all(repos.map(async (repo) => {
           try {
-            const lastRun = await invoke<number | null>("plan_triage_last_run", { projectKey, repo });
+            const lastRun = await bscJson<number | null>(projectKey, ["plan", "triage", "last", repo], null);
             const changed = lastRun != null
-              ? await invoke<PlanIssue[]>("plan_issues_changed_since", { projectKey, repo, since: lastRun })
+              ? await bscJson<PlanIssue[]>(projectKey, ["plan", "triage", "changed", repo, "--since", String(lastRun)], [])
               : [];
             deltas[repo] = renderTriageDelta(
               changed.map((c) => ({ ref: c.ref, title: c.title, status: c.status ?? "open" })),
               lastRun ?? null,
             );
-            await invoke("plan_triage_record_run", { projectKey, repo });
+            await bscJson<number>(projectKey, ["plan", "triage", "record", repo], 0);
           } catch (e) {
             console.error(`triage delta prep ${repo} failed:`, e);
           }
         }));
+        // #2097 — route the design files that CHANGED since the last route as part of triage. Read
+        // the project's design manifest, diff content hashes, and if any changed: sync the skeleton,
+        // prepend the route lead to the first repo's triage prompt (the routePrompt itself sends UI
+        // assets to the owning repo), and stamp the routed hashes. Nothing changed ⇒ no-op (no
+        // reroute, no prompt). Non-fatal.
+        try {
+          const files = await invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR });
+          const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
+          const entries = manifest ? parseIntake(manifest) : [];
+          const changed = changedDesignFiles(entries);
+          if (changed.length > 0 && repos.length > 0) {
+            const first = repos[0];
+            deltas[first] = renderDesignDelta(changed, STAGE_DEFS.ui.routePrompt ?? "") + (deltas[first] ?? "");
+            await invoke("sync_design_to_skeleton", { projectKey });
+            await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(markRouted(entries)) });
+          }
+        } catch (e) {
+          console.error("triage design-route prep failed:", e);
+        }
         return deltas;
       },
       triageStartProject: (projectName, repos, projectId = "", deltas, clonePaths) =>
@@ -371,7 +378,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // commons-landed sentinel so the director scaffolds + lands them first (Phase 0). The
           // commons globs also become the director's scoped writeGlobs below (its only code writes).
           const commonsGlobs = hasDirector
-            ? commonsGlobsForStack(stackTagsFromSection(s.planSections[projectKey]?.stack ?? ""))
+            ? commonsGlobsForStack(stackTagsFromSection(s.planStages[projectKey]?.stack ?? ""))
             : [];
           const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
@@ -489,6 +496,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneStream[key];
               if (i < count) {
                 const sess = chunk[i];
+                // #2094: a worker stream may launch AS a persona — resolve it (a live reference to the
+                // shared library) so its role/prompt/skills/model drive this pane below. Unknown/unset
+                // id ⇒ undefined ⇒ the historical plain-worker defaults.
+                const persona = sess?.persona ? s.personas.find((p) => p.id === sess.persona) : undefined;
                 if (sess === null) {
                   // Director session at the project root — sees every repo + worktree.
                   // Prefer the Rust-resolved absolute hub path (#905) so the launch never
@@ -514,6 +525,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
+                  } else if (persona) {
+                    // A persona stream gets its persona-identity kickoff (role-aware), not the
+                    // worker-only buildStreamPrompt — so a reviewer/documentor stream isn't briefed
+                    // as a code-writing worker (#2094).
+                    newPaneStartupPromptText[key] = personaStreamPrompt(persona, sess, resolveStrategy(sess.strategy, plan.strategy));
                   } else {
                     newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, plan.strategy));
                   }
@@ -538,11 +554,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // worker inherits the skill groups the planner picked for its stream.
                 newPaneSkills[key] = effectiveSessionSkills(
                   s.skills, projectKey, s.sessionSkillOverrides[key],
-                  new Set(expandGroups(
-                    [...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups,
-                  )),
+                  // #2094: a persona's attached skills (direct skill ids) join the stream's resolved
+                  // set alongside the expanded task-groups + session toggles.
+                  new Set([
+                    ...expandGroups([...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups),
+                    ...(persona?.skills ?? []),
+                  ]),
                 );
-                newPaneRoles[key] = sess === null ? "director" : "worker";
+                // #2094: a persona stream launches AS its persona's role (documentor/reviewer/…),
+                // overriding the default worker; no persona ⇒ the historical worker/director.
+                newPaneRoles[key] = sess === null ? "director" : (persona?.role ?? "worker");
                 newPaneProviders[key] = fleetHarness;
                 // #1988: when the launch is sandboxed, this pane spawns INSIDE the sealed distro —
                 // its cwd (from `paths`) is already distro-native; record the distro so pty_create
@@ -559,12 +580,17 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // worker → Autonomous (trusted) — unless the stream pins an explicit profile.
                 newPaneProfiles[key] = sess?.profile ?? roleProfileId(newPaneRoles[key]);
                 // The worker's owned paths become its role write boundary so edits in
-                // its lane auto-approve (dir/ -> dir/** so the subtree matches).
-                if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
+                // its lane auto-approve (dir/ -> dir/** so the subtree matches). #2094: only for a
+                // code-WRITING role — a read-only persona stream (reviewer/juror/…) must NOT get a
+                // write carve-out from its owns, or the read-only floor would leak.
+                if (sess && sess.owns.length && roleCapability(newPaneRoles[key]).code === "write")
+                  newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
                 if (sess && sess.flow) newPaneFlows[key] = sess.flow;
                 // Per-agent model (#…) → the pane's `claude --model` at launch. Director (sess===null)
                 // and unset workers fall back to the global `defaultModel` (resolved at pane mount).
-                if (sess && sess.model) newPaneModels[key] = sess.model;
+                // #2094: the stream's own model wins; else its persona's model (validated as a tier).
+                const streamModel = sess?.model ?? (persona?.model && (MODEL_IDS as readonly string[]).includes(persona.model) ? persona.model as ModelId : undefined);
+                if (sess && streamModel) newPaneModels[key] = streamModel;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.

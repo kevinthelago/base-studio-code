@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 
 /** The console grid layouts a new tab can open with. */
 export const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];
@@ -27,13 +30,14 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
       </>
     }>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="field">
+        <Box className="field">
           <label>Layout</label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Row gap={6} align="stretch" wrap>
             {LAYOUTS.map((l) => {
               const [c, r] = l.split("×").map(Number);
               const active = l === layout;
               return (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke layout-swatch button (grid-preview + active-state inline styling, not the .btn kit)
                 <button
                   key={l}
                   className="mono"
@@ -49,25 +53,17 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                   }}
                 >
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${c}, 10px)`,
-                    gridTemplateRows: `repeat(${r}, 7px)`,
-                    gap: 2,
-                  }}>
+                  <Grid cols={`repeat(${c}, 10px)`} rows={`repeat(${r}, 7px)`} gap={2}>
                     {Array.from({ length: c * r }).map((_, i) => (
-                      <div key={i} style={{
-                        borderRadius: 1,
-                        background: active ? "var(--accent)" : "var(--border)",
-                      }} />
+                      <Box key={i} bg={active ? "var(--accent)" : "var(--border)"} radius={1} />
                     ))}
-                  </div>
+                  </Grid>
                   {l}
                 </button>
               );
             })}
-          </div>
-        </div>
+          </Row>
+        </Box>
       </form>
     </Dialog>
   );

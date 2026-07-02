@@ -1,0 +1,204 @@
+// Blueprint model TYPES (#513/#514, split out #2148): the pure type surface behind the
+// Blueprints page — the substeps, the section/stage defs, the Blueprint shape, and the
+// status result types. No runtime data or logic; the built-in library lives in
+// blueprintBuiltins.ts and the pure helpers in blueprintStages.ts (both re-exported by
+// the ./blueprints barrel).
+
+import { type ClassificationSignals } from "./classification";
+import { type StageGate, type Requirement } from "./stageGate";
+
+// ── Substeps ─────────────────────────────────────────────────────────────────
+// A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
+// advances when its artifact is written + confirmed — incremental, instead of front-loading
+// the whole stage's instructions. A `loop` substep repeats once per dynamic item discovered
+// during the stage (the feature workshop), so the conductor drives "one feature at a time".
+export type SubStepLoop = "features" | "repos" | "topics";
+export interface SubStep {
+  /** Canonical key / artifact stem (e.g. "goal" → goal.md). For a loop, the loop's id. */
+  key: string;
+  label: string;
+  /** Injected into the session when this substep becomes active. Plan-only — never describes
+   *  publishing (the user owns that). */
+  prompt: string;
+  /** Human "done when…"; absent ⇒ informational (no gate of its own). */
+  gate?: string;
+  /** Repeat once per dynamic item (a feature, a repo). Absent ⇒ a single static substep. */
+  loop?: SubStepLoop;
+}
+
+// ── Sections (the canonical planning stages) ─────────────────────────────────
+
+/** One discovery-checklist dimension. The editor-presentation fields (`icon`/`hue`/`blurb`)
+ *  are present only for the dimensions that double as add-stage palette kinds (#1603); plain
+ *  checklist dimensions carry just `key` + `title`. */
+export interface DimensionMeta {
+  key: string;
+  title: string;
+  /** Material/Lucide icon name (the editor `<Ic>` glyph). */
+  icon?: string;
+  /** Accent hue (oklch) for the palette card. */
+  hue?: number;
+  blurb?: string;
+}
+
+export interface SectionDef {
+  name: string;
+  /** Unicode symbol rendered as text in the focused-pane stepper (`focusedPlan.ts`). */
+  glyph: string;
+  /** Material/Lucide icon name for the editor/bar `<Ic>` component (#1603 — the editor
+   *  presentation metadata, single-sourced here from the stage's own JSON). */
+  icon: string;
+  /** Accent hue (oklch) for the stage's editor/palette card (#1603). */
+  hue: number;
+  /** Human-readable gate description, shown in the editor and the readiness feedback. */
+  gate: string;
+  deps: string[];
+  blurb: string;
+  prompt: string;
+  /** UI stage only (#604): the self-contained instruction the file-intake "Route" action injects
+   *  into the planner to read the staged design files and route each to the right repo. Carried as
+   *  stage DATA (like `prompt`) so it isn't hardcoded in the frontend. Absent ⇒ no route prompt. */
+  routePrompt?: string;
+  /** Declarative completion gate (#…) — the DATA that decides this section's
+   *  done-ness. Carried on every section instance so a section is fully serializable
+   *  and distributable; the app evaluates it via {@link evalGate}. Absent ⇒ the
+   *  section is informational (vacuously complete). */
+  gateRule?: StageGate;
+  /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
+   *  the section always applies. */
+  appliesWhen?: Requirement;
+  /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
+   *  downstream dependents, and it's off the critical path (currentStage skips it) — the
+   *  user can fill it or skip it (#676). */
+  optional?: boolean;
+  /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
+   *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with
+   *  `bsc-plan context require/unrequire`. Absent ⇒ the universal {@link DISCOVERY_BASELINE}. */
+  requires?: string[];
+  /** Discovery stage only (#1603): the checklist dimensions, carried as data so the editor's
+   *  add-stage palette + the dimension vocabulary (`KNOWN_DIMENSIONS`) single-source from here. */
+  dimensions?: DimensionMeta[];
+  /** Output disposition (#609) — what happens to this stage's artifact (a key into
+   *  DISPOSITIONS: plan-file / issues / milestones / skill-index / knowledge / scratch).
+   *  Editor metadata; the runtime doesn't read it. Absent ⇒ defaultDisposition(key). */
+  output?: string;
+  /** Attached skills/knowledge (#636) — library item ids (KB blocks or Skills) injected
+   *  into the agent's context for this stage. Resolved at planning + fleet launch
+   *  (slice b). Reference-by-id; unresolved ids surface a warning. */
+  skills?: string[];
+  /** Attached MCP servers (#897) — server NAMES (the portable ref, matching the catalog +
+   *  `<mcp_assign>`), scoped to the project at launch so the planner/fleet can call them.
+   *  Kept SEPARATE from `skills`: MCP servers are tools (research/analysis/grading), skills are
+   *  knowledge. Reference-by-name; an unresolved name surfaces a warning in the editor. */
+  mcp?: string[];
+  /** Ordered substeps the conductor injects one at a time (#…). Absent ⇒ the stage is driven
+   *  by a single prompt (its `prompt`). Pipeline `triggerTarget`s reference these by `key`. */
+  substeps?: SubStep[];
+  /** The planner-facing directive prose (#1462) — the single source of truth, shared byte-for-byte
+   *  with the Rust `stage_directive`, read from this stage's `prompts/stages/<id>.json`. Only the
+   *  duplicated stages carry one; stages without it use the generic Rust fallback. */
+  directive?: string;
+  /** Reserved (populated by #1395) — the classification signals that gate this stage's applicability,
+   *  and its ordering tier. Typed now so #1395 fills them without re-churning files; unset today. */
+  signals?: ClassificationSignals;
+  phase?: "discover" | "decide" | "generate";
+}
+
+export interface BlueprintStage extends SectionDef {
+  uid: string;
+  key: string;
+  enabled: boolean;
+  expanded: boolean;
+}
+
+/** Where a blueprint came from (#609) — drives the card's origin tag. */
+export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
+
+/** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
+ *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
+ *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
+export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
+
+/** Whether a blueprint starts from a pitch (create) or runs against existing repos
+ *  (operate) — selects the planner intro at launch. */
+export type BlueprintMode = "create" | "operate";
+
+/** Gist link state for a blueprint (#609) — the publish/sync state-machine. Slice 5
+ *  populates this; the Library card reads it for the sync badge. Absent ⇒ local-only. */
+export interface BlueprintGist {
+  state: "local" | "dirty" | "synced" | "forked";
+  /** Whether an upstream update is available (forked blueprints). */
+  behind?: boolean;
+  rev?: string;
+  author?: string;
+  id?: string;
+  url?: string;
+  public?: boolean;
+  /** The upstream gist's `updated_at` recorded at import/sync. Compared against the gist's CURRENT
+   *  `updated_at` on the import-from-gist page to detect an available update (#955). */
+  updatedAt?: string;
+}
+
+export interface Blueprint {
+  id: string;
+  name: string;
+  desc: string;
+  sections: BlueprintStage[];
+  /** Display + provenance metadata (#609). All optional — the Library derives sensible
+   *  fallbacks (icon from the name, hue from the id, origin "local", local-only gist). */
+  icon?: string;
+  /** Accent hue (oklch) for the card/editor icon. */
+  h?: number;
+  origin?: BlueprintOrigin;
+  tags?: string[];
+  gist?: BlueprintGist;
+  /** How many projects this blueprint has seeded. */
+  uses?: number;
+  updatedAt?: string;
+  /** Blueprint-wide attached skills/knowledge (#636) — applied across every stage,
+   *  in addition to each section's own `skills`. Library item ids. */
+  skills?: string[];
+  /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
+   *  each section's own `mcp`. Server NAMES (the portable ref). */
+  mcp?: string[];
+  /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
+  category?: BlueprintCategory;
+  /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
+  mode?: BlueprintMode;
+  /** Authoring metadata (#923, blueprint-author design): a one-line catalog pitch, the audience it
+   *  serves, and the publish visibility. `tags` doubles as the design's "best for" catalog tags. */
+  pitch?: string;
+  audience?: string;
+  visibility?: "local" | "private-gist" | "catalog";
+  /** Deliverable / output lifecycle (#923). Absent ⇒ the normal software deliverable: the planner
+   *  publishes repos + a project board + milestones + issues, then a fleet builds them. `"blueprint"`
+   *  marks an AUTHORING lifecycle — the planner designs a reusable blueprint and "publish" ships it
+   *  to a gist; there is no code, so no fleet and no triage (see `isAuthoringBlueprint`). */
+  deliverable?: "blueprint";
+}
+
+/** The JSON shape of a built-in blueprint definition (stages/blueprints/*.json): blueprint
+ *  metadata + an ordered list of section KEYS (chaining to stages/sections/*.json). The keys
+ *  resolve to full section instances via mkStage at load — no blueprint data lives in TS. */
+export interface BlueprintDef extends Omit<Blueprint, "sections"> {
+  /** Display order within the built-in library. */
+  order?: number;
+  /** Ordered section refs: a key into STAGE_DEFS + an optional per-blueprint `optional` flag. */
+  sections: { key: string; optional?: boolean }[];
+}
+
+export interface SectionStatus { locked: boolean; unmet: string[]; satisfied: boolean }
+
+/** Render status of a blueprint section. `na` = not applicable to this project. */
+export type StageRenderStatus = "locked" | "in-progress" | "complete" | "na";
+
+/** A blueprint section that isn't satisfied yet — what the user still has to finish. */
+export interface IncompleteStage {
+  key: string;
+  /** The section's display name, straight from the blueprint. */
+  name: string;
+  /** The section's own gate description (`gate`) — the human "what's left". */
+  reason: string;
+  /** Locked behind an unfinished dependency vs. simply in progress. */
+  status: "locked" | "in-progress";
+}

@@ -2,13 +2,20 @@ import { useState, useEffect, useCallback } from "react";
 import { LifeBuoy, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import {
   discoverSessions, reconcileSessions, type RecoverableSession,
 } from "@/app/console/lib/sessionRecovery";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Button } from "@/shared/ui/controls/Button";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // App banners — the full-width status strips pinned at the top of the app shell. Each is a small
@@ -42,13 +49,13 @@ function CrashRecoveryBanner() {
       tone="accent"
       onDismiss={() => setHidden(true)}
       right={
-        <button
-          className="btn primary"
+        <Button
+          variant="primary"
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => { restoreSessionsFromCrash(); setHidden(true); }}
         >
           <RotateCcw size={13} /> Restore {count}
-        </button>
+        </Button>
       }
     >
       Your last session ended unexpectedly —{" "}
@@ -94,7 +101,7 @@ export function SessionRecoveryBanner() {
     const build = sessions.filter((s) => s.kind === "director" || s.kind === "worker");
     const triage = sessions.filter((s) => s.kind === "triage");
     if (build.length) {
-      const fleet = await invoke<FleetPlan | null>("plan_get_fleet", { projectKey }).catch(() => null);
+      const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
       if (fleet) fleetStartProject(projectKey, fleet, projectKey);
     }
     if (triage.length) {
@@ -136,50 +143,50 @@ export function SessionRecoveryBanner() {
         variant="bar"
         tone="info"
         lead={<LifeBuoy size={14} style={{ color: "var(--info)", flexShrink: 0 }} />}
-        right={<button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>}
+        right={<Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>}
         onDismiss={() => setDismissed(true)}
       >
-        <span style={{ flex: 1, minWidth: 0 }}>
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
           <b>{recoverable.length} session{recoverable.length === 1 ? "" : "s"}</b> found on disk that {recoverable.length === 1 ? "isn't" : "aren't"} open — restore or discard?
-        </span>
+        </Box>
       </Banner>
 
       {open && (
-        <div className="banner-drawer" style={{ gap: 12 }}>
+        <Box className="banner-drawer" style={{ gap: 12 }}>
           {[...groups.entries()].map(([key, sessions]) => {
             const manual = key === " manual", orphan = key === " orphan";
             const restorable = sessions.filter((s) => !s.reapOnly);
             const label = manual ? "Manual scratch shells" : orphan ? "Orphaned (deleted project)" : key;
             return (
-              <div key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg-panel)" }}>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                  <span className="hint" style={{ fontSize: 10.5 }}>{sessions.length}</span>
+              <Box key={key} border="soft" radius={6} style={{ overflow: "hidden" }}>
+                <Row gap={8} style={{ padding: "6px 10px", background: "var(--bg-panel)" }}>
+                  <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</Box>
+                  <Text className="hint" size={10.5}>{sessions.length}</Text>
                   {restorable.length > 0 && (
-                    <button className="btn primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
+                    <Button variant="primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
                       onClick={() => restoreProject(key, restorable)}>
                       <RotateCcw size={12} /> Restore {restorable.length}
-                    </button>
+                    </Button>
                   )}
-                </div>
+                </Row>
                 {sessions.map((s) => (
-                  <div key={s.paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 8, alignItems: "center", padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
-                    <span style={{ minWidth: 0, display: "grid", gap: 1 }}>
-                      <span className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</span>
-                      <span className="hint" style={{ fontSize: 10 }}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</span>
-                    </span>
-                    {s.reapOnly ? <span className="hint" style={{ fontSize: 10 }}>reap-only</span> : <span />}
-                    <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => drop(new Set([s.paneId]))} title="Ignore for now">Ignore</button>
-                    <button className="btn ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 8px", color: "var(--danger)" }}
+                  <Grid key={s.paneId} cols="1fr auto auto auto" gap={8} align="center" style={{ padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
+                    <Box as="span" style={{ minWidth: 0, display: "grid", gap: 1 }}>
+                      <Box as="span" className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</Box>
+                      <Text className="hint" size={10}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</Text>
+                    </Box>
+                    {s.reapOnly ? <Text className="hint" size={10}>reap-only</Text> : <Box as="span" />}
+                    <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => drop(new Set([s.paneId]))} title="Ignore for now">Ignore</Button>
+                    <Button variant="ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 8px", color: "var(--danger)" }}
                       onClick={() => discard(s)} title={s.livePid ? `Kill pid ${s.livePid} + forget` : "Forget"}>
                       <Trash2 size={12} /> Discard
-                    </button>
-                  </div>
+                    </Button>
+                  </Grid>
                 ))}
-              </div>
+              </Box>
             );
           })}
-        </div>
+        </Box>
       )}
     </>
   );
@@ -213,38 +220,39 @@ function QuarantineBanner() {
         role="alert"
         lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
         right={
-          <span style={{ display: "inline-flex", gap: 6 }}>
-            <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>
+          <Box as="span" style={{ display: "inline-flex", gap: 6 }}>
+            <Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>
             {n > 1 && (
-              <button className="btn ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
+              <Button variant="ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
                 Ack all
-              </button>
+              </Button>
             )}
-          </span>
+          </Box>
         }
       >
-        <span style={{ flex: 1, minWidth: 0 }}>
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
           <b>{n} worker{n === 1 ? "" : "s"} quarantined</b> — {n === 1 ? "a stream was" : `${n} streams were`} paused off-plan.
           Review before relaunching.
-        </span>
+        </Box>
       </Banner>
 
       {open && (
-        <div className="banner-drawer">
+        <Box className="banner-drawer">
           {entries.map(([paneId, info]) => (
-            <div key={paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start", padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), transparent 90%)" }}>
-              <span style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <Grid key={paneId} cols="1fr auto" gap={8} align="start" style={{ padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), var(--bg-panel) 90%)" }}>
+              <Box as="span" style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+
                   {info.streamId} · {paneId}
-                </span>
-                <span className="hint" style={{ fontSize: 10.5 }}>{info.summary}</span>
-              </span>
-              <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
+                </Box>
+                <Text className="hint" size={10.5}>{info.summary}</Text>
+              </Box>
+              <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
                 Acknowledge
-              </button>
-            </div>
+              </Button>
+            </Grid>
           ))}
-        </div>
+        </Box>
       )}
     </>
   );
@@ -284,23 +292,23 @@ export function SandboxSetupBanner() {
       lead={<ShieldAlert size={14} style={{ color: "var(--warn)", flexShrink: 0 }} />}
       right={
         sandbox.autoInstallable ? (
-          <button className="btn primary" onClick={install} disabled={installing}>
+          <Button variant="primary" onClick={install} disabled={installing}>
             {installing ? "Installing…" : label}
-          </button>
+          </Button>
         ) : undefined
       }
       onDismiss={dismiss}
     >
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-        <span>
+      <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+        <Text>
           <b>Agent sandbox not set up</b> — {installing ? "installing…" : (installMsg ?? sandbox.detail)}
-        </span>
+        </Text>
         {installing && (
-          <div aria-hidden style={{ height: 3, borderRadius: 2, background: "color-mix(in oklch, var(--warn), transparent 75%)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
-          </div>
+          <Box aria-hidden bg="color-mix(in oklch, var(--warn), transparent 75%)" radius={2} style={{ height: 3, overflow: "hidden" }}>
+            <Box bg="var(--warn)" style={{ height: "100%", width: "30%", animation: "scan 1.1s linear infinite" }} />
+          </Box>
         )}
-      </div>
+      </Stack>
     </Banner>
   );
 }
@@ -313,11 +321,11 @@ export function SandboxSetupBanner() {
  */
 export function AppBanners() {
   return (
-    <div className="app-banner-stack">
+    <Box className="app-banner-stack">
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
-    </div>
+    </Box>
   );
 }

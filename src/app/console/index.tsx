@@ -1,27 +1,21 @@
-import { useEffect, useRef, useCallback, memo } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { PaneShell } from "@/app/console/panes/PaneShell";
-import { TerminalView } from "@/app/console/panes/views/TerminalView";
-import { FilesView } from "@/app/console/panes/views/FilesView";
-import { BranchesView } from "@/app/console/panes/views/BranchesView";
-import { ChangesView } from "@/app/console/panes/views/ChangesView";
-import { LogView } from "@/app/console/panes/views/LogView";
-import { ToolsView } from "@/app/console/panes/views/ToolsView";
-import { TelemetryView } from "@/app/console/panes/views/TelemetryView";
 import { useAppStore } from "@/store";
-import { usePaneTokenUsage, type PaneTokenUsage } from "@/app/console/lib/usePaneTokenUsage";
+import { usePaneTokenUsage } from "@/app/console/lib/usePaneTokenUsage";
 import { recordRender } from "@/shared/lib/core/perf";
 import { resetLaunchGate } from "@/shared/lib/fleet/launchGate";
 import { shouldAdvanceOnReply } from "@/app/console/lib/consoleFocus";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
-import type { EndedInfo } from "@/store/types";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
-import { useWorkflowConductor } from "@/shared/lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "./useDirectorPump";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
+import { PaneAt } from "./PaneAt";
 
 function resolvePaneName(
   tabIdx: number,
@@ -29,183 +23,6 @@ function resolvePaneName(
   names: Record<number, Record<number, string>>,
 ): string {
   return names[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
-}
-
-interface PaneAtProps {
-  i: number;
-  tabIdx: number;
-  /** Stable identity id for this pane (#1176) — resolved from the tab, not the grid position. */
-  paneId: string;
-  name: string;
-  view: ViewKey;
-  status: "run" | "on" | "idle";
-  cwd?: string;
-  initCmd?: string;
-  // Dispatchers take (tabIdx, paneIdx, …) so a single handler in ConsoleWorkspace
-  // can route events to the right tab. Stable across renders so the memo below
-  // holds; PaneAt binds its own (tabIdx, i) into the no-arg callbacks the chrome
-  // expects. Background-tab panes are mounted (display:none) so their PTY
-  // listeners stay live, and their callbacks must record against THEIR tab —
-  // not the currently-active one (#186).
-  onRename: (tabIdx: number, i: number, name: string) => void;
-  onMenuToggle: (tabIdx: number, i: number) => void;
-  onFocus: (tabIdx: number, i: number) => void;
-  onViewChange: (tabIdx: number, i: number, v: ViewKey) => void;
-  onPickDirectory: (tabIdx: number, i: number) => void;
-  onCwdChange: (tabIdx: number, i: number, path: string) => void;
-  onStatusChange: (tabIdx: number, i: number, status: "run" | "idle") => void;
-  onToggleFullscreen: (tabIdx: number, i: number) => void;
-  onToggleDisable: (tabIdx: number, i: number) => void;
-  onRedraw: (tabIdx: number, i: number) => void;
-  // Per-pane booleans (not the raw indices) so a focus/menu change only re-renders
-  // the two panes whose flag actually flipped — not all N.
-  menuOpen: boolean;
-  focused: boolean;
-  fullscreen: boolean;
-  disabled: boolean;
-  hidden: boolean;
-  /** This pane's live token/cost rollup (#1181) — the actual running model + the Telemetry view. */
-  usage?: PaneTokenUsage;
-}
-
-const PaneAt = memo(function PaneAt({
-  i, tabIdx, paneId: pid, name, view, status, cwd, initCmd,
-  onRename, onMenuToggle, onFocus, onViewChange, onPickDirectory, onCwdChange, onStatusChange,
-  onToggleFullscreen, onToggleDisable, onRedraw, menuOpen, focused, fullscreen, disabled, hidden, usage,
-}: PaneAtProps) {
-  const defaultModel = useAppStore((s) => s.defaultModel);
-  const paneModel = useAppStore((s) => s.paneModels[pid]);
-  const setPaneModel = useAppStore((s) => s.setPaneModel);
-  // Header/footer chrome data (#1149) — read from the store where known; the header degrades
-  // gracefully when a field is absent (e.g. no role/branch assigned to an ad-hoc console).
-  const paneRole = useAppStore((s) => s.paneRoles[pid]);
-  const paneProvider = useAppStore((s) => s.paneProviders[pid]);
-  const paneRepoFull = useAppStore((s) => s.paneRepos[pid]);
-  const paneBranch = useAppStore((s) => s.paneStream[pid]?.branch);
-  // While a Claude session is active, the native console input replaces the status footer (#1158).
-  const claudeActive = useAppStore((s) => !!s.paneClaudeActive[pid]);
-  // Prefer the assigned repo's short name; fall back to the cwd's basename.
-  const repoShort = (paneRepoFull ?? cwd)?.split(/[\\/]/).filter(Boolean).pop();
-  // Idle-reaped (#849): the PTY was killed for idleness. Unmount the terminal (this frees
-  // its renderer buffer + the dead session) and show a resume placeholder; resuming clears
-  // the flag, remounting TerminalView, which spawns a fresh PTY (--continue resumes it).
-  const dormant = useAppStore((s) => !!s.dormantPanes[pid]);
-  const resumePane = useAppStore((s) => s.resumePane);
-  // Auto-ended (#920): the worker finished and its PTY exited; show a resting card (state from
-  // plan.db) instead of a dead terminal. Persisted, so it survives a restart; reopen relaunches.
-  const ended = useAppStore((s) => s.endedPanes[pid]);
-  const reopenPane = useAppStore((s) => s.reopenPane);
-  return (
-    <PaneShell
-      agent={name}
-      onRename={(n) => onRename(tabIdx, i, n)}
-      onMenuToggle={() => onMenuToggle(tabIdx, i)}
-      onToggleFullscreen={() => onToggleFullscreen(tabIdx, i)}
-      onToggleDisable={() => onToggleDisable(tabIdx, i)}
-      onRedraw={() => onRedraw(tabIdx, i)}
-      onFocus={() => onFocus(tabIdx, i)}
-      onPickDirectory={() => onPickDirectory(tabIdx, i)}
-      status={disabled ? "idle" : status}
-      model={paneModel ?? defaultModel}
-      onModel={(m) => setPaneModel(pid, m)}
-      runningModel={usage?.model}
-      repo={repoShort}
-      branch={paneBranch}
-      role={paneRole}
-      provider={paneProvider}
-      claudeActive={claudeActive}
-      available={["console", "files", "branches", "changes", "log", "tools", "telemetry"]}
-      active={view}
-      menuOpen={menuOpen}
-      focused={focused}
-      fullscreen={fullscreen}
-      disabled={disabled}
-      hidden={hidden}
-      onViewChange={(v) => onViewChange(tabIdx, i, v)}
-    >
-      {disabled ? (
-        <DisabledConsole onEnable={() => onToggleDisable(tabIdx, i)} />
-      ) : ended ? (
-        <EndedConsole info={ended} onReopen={() => reopenPane(pid)} />
-      ) : dormant ? (
-        <DormantConsole onResume={() => resumePane(pid)} />
-      ) : (
-      <>
-      {/* Terminal stays mounted so the PTY session survives view switches */}
-      <TerminalView
-        paneId={pid}
-        visible={view === "console" && !hidden}
-        focused={focused}
-        initialCwd={cwd}
-        initCmd={initCmd}
-        onCwdChange={(path) => onCwdChange(tabIdx, i, path)}
-        onStatusChange={(s) => onStatusChange(tabIdx, i, s)}
-        onFocus={() => onFocus(tabIdx, i)}
-      />
-      {view === "files"    && <FilesView    small tree={[]} cwd={cwd} />}
-      {view === "branches" && <BranchesView small branches={[]} />}
-      {view === "changes"  && <ChangesView  small hunks={[]} />}
-      {view === "log"      && <LogView      small commits={[]} />}
-      {view === "tools"    && <ToolsView    small role={paneRole} />}
-      {view === "telemetry"&& <TelemetryView small usage={usage} />}
-      </>
-      )}
-    </PaneShell>
-  );
-});
-
-function DisabledConsole({ onEnable }: { onEnable: () => void }) {
-  return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 12,
-      background: "var(--bg-canvas)", color: "var(--fg-dim)",
-      fontSize: 11,
-    }}>
-      <span>console disabled · session stopped</span>
-      <button className="btn" onClick={onEnable}>enable</button>
-    </div>
-  );
-}
-
-/** Resting card for a fleet worker auto-ended after its PTY exited (#920). State + summary
- *  come from plan.db owned-issue status (done / needs-attention / blocked). Persisted +
- *  recovery-gated, so it survives a restart (the worker is never silently re-opened); the
- *  full audit lives on the worker's detail page. Reopen relaunches the session. */
-function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => void }) {
-  const tone =
-    info.state === "done" ? { color: "var(--success, #2ea043)", label: "✓ finished" }
-    : info.state === "blocked" ? { color: "var(--danger)", label: "■ blocked / failed" }
-    : { color: "var(--accent)", label: "▲ stopped early" };
-  return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 10, padding: 16, textAlign: "center",
-      background: "var(--bg-canvas)", color: "var(--fg-dim)", fontSize: 11,
-    }}>
-      <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
-      <span style={{ color: "var(--fg-muted)", maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</span>
-      <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>session ended · audit on the worker detail page</span>
-      <button className="btn" onClick={onReopen}>reopen</button>
-    </div>
-  );
-}
-
-/** Placeholder for an idle-reaped pane (#849): its PTY was killed to free memory after a
- *  long idle. Resuming relaunches the session (its cwd persists; `--continue` resumes the
- *  conversation), so reaping is non-destructive. */
-function DormantConsole({ onResume }: { onResume: () => void }) {
-  return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 12,
-      background: "var(--bg-canvas)", color: "var(--fg-dim)",
-      fontSize: 11,
-    }}>
-      <span>session dormant · reaped after idle to free memory</span>
-      <button className="btn" onClick={onResume}>resume</button>
-    </div>
-  );
 }
 
 export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number } = {}) {
@@ -216,8 +33,6 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
   // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.
   const tokenUsage = usePaneTokenUsage();
-  // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
-  useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
   // anywhere else in the store (GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this
@@ -438,18 +253,18 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
+    <Stack style={{ flex: 1, minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
-        <div className="mono" style={{
+        <Row className="mono" gap={8} style={{
           padding: "3px 14px",
           background: "color-mix(in oklch, var(--accent), transparent 82%)",
           borderBottom: "1px solid var(--accent-dim)",
           fontSize: 10, color: "var(--accent)",
-          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          flexShrink: 0,
         }}>
-          <span>⟳ broadcast · input mirrors to all panes</span>
-          <span style={{ color: "var(--fg-dim)" }}>· Ctrl+Shift+C to exit</span>
-        </div>
+          <Text as="span">⟳ broadcast · input mirrors to all panes</Text>
+          <Text tone="dim">· Ctrl+Shift+C to exit</Text>
+        </Row>
       )}
       {/* Render every tab's grid; inactive tabs are display:none so their
           xterm instances stay mounted (PTY listener live, scrollback intact)
@@ -466,6 +281,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
         // moment the user switches back.
         const isFullscreenInTab = isActiveTab && fullscreenPaneIdx >= 0 && fullscreenPaneIdx < tPaneCount;
         return (
+          // eslint-disable-next-line no-restricted-syntax -- conditional-display grid (toggles grid/none per active tab)
           <div
             key={ti}
             className="console-grid"
@@ -479,6 +295,6 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
           </div>
         );
       })}
-    </div>
+    </Stack>
   );
 }

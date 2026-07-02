@@ -5,7 +5,11 @@
 // without touching code and part of the exportable app-config bundle. This module keeps only the
 // TYPES + accessor helpers over that data (no React/Tauri, so it stays unit-testable).
 
-import taxonomy from "@data/deploy/taxonomy.json";
+import taxonomyEmbedded from "@data/deploy/taxonomy.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+const taxonomy = overlayFile("deploy/taxonomy.json", taxonomyEmbedded);
 
 /** Workload kind a service deploys as. */
 export type Workload = "static" | "serverless" | "container" | "service";

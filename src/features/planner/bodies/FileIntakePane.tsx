@@ -5,15 +5,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { useAppStore } from "@/store";
 import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
-  classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
+  classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake, hashContent,
   INTAKE_DIR, INTAKE_MANIFEST, type IntakeEntry, type IntakeKind,
 } from "../lib/fileIntake";
-import { STAGE_DEFS } from "../stages/blueprints";
 import type { StageScreenProps } from "../preview/stageScreens";
 import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../lib/dropFiles";
 
@@ -32,13 +33,10 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
-  const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
-  const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [routed, setRouted] = useState(false);
   // A second hidden input with `webkitdirectory` — the native FOLDER picker (#831). The
   // attribute isn't in React's input types, so it's set imperatively once mounted.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -77,12 +75,19 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
       for (const { file, path } of dropped) {
         const kind = classifyFile(file.name, file.type || undefined);
         const relpath = `${INTAKE_DIR}/${path}`;
+        // Hash the exact content we stage, so a later re-drop of an edited file is detected as
+        // changed and re-routed on triage (#2097).
+        let hash: string;
         if (isBinaryKind(kind)) {
-          await invoke("write_project_file_bytes", { projectKey, relpath, b64: await fileToBase64(file) });
+          const b64 = await fileToBase64(file);
+          await invoke("write_project_file_bytes", { projectKey, relpath, b64 });
+          hash = hashContent(b64);
         } else {
-          await invoke("write_project_file", { projectKey, relpath, contents: await file.text() });
+          const text = await file.text();
+          await invoke("write_project_file", { projectKey, relpath, contents: text });
+          hash = hashContent(text);
         }
-        added.push(intakeEntry(path, file.size, file.type || undefined));
+        added.push(intakeEntry(path, file.size, hash, file.type || undefined));
       }
       const merged = mergeIntake(entries, added);
       await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(merged) });
@@ -121,7 +126,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
       fullWidth
       bare
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, gap: 12, overflow: "auto" }}>
+      <Stack gap={12} style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {/* Drop zone */}
         <label
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -135,51 +140,34 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
             background: dragOver ? "color-mix(in oklch, var(--accent), transparent 90%)" : "var(--bg-canvas)",
           }}
         >
-          <span style={{ fontSize: 22 }}>⬇</span>
-          <span className="mono-value">Drop design files or a folder here</span>
-          <span className="hint">or click to browse a folder — images, SVG, components, markup, anything</span>
+          <Text as="span" size={22}>⬇</Text>
+          <Box as="span" className="mono-value">Drop design files or a folder here</Box>
+          <Box as="span" className="hint">or click to browse a folder — images, SVG, components, markup, anything</Box>
           {/* The drop box IS the browse affordance: clicking it opens the native folder picker
               (webkitdirectory is set on this input via the effect above). Files can also be dragged in. */}
+          {/* eslint-disable-next-line no-restricted-syntax -- native file-picker input (type=file + imperative webkitdirectory); no primitive covers it */}
           <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
 
-        {error &&<div className="mono" style={{ color: "var(--danger)", fontSize: 11 }}>{error}</div>}
+        {error &&<Text as="div" mono size={11} tone="danger">{error}</Text>}
 
         {/* Staged files */}
         {entries.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <div className="ulabel" style={{ color: "var(--fg-dim)" }}>staged · {entries.length}</div>
+          <Stack gap={5}>
+            <Text as="div" className="ulabel" tone="dim">staged · {entries.length}</Text>
             {entries.map((e) => (
-              <div key={e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
+              <Row key={e.name} gap={8} style={{ padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
                 <Chip style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</Chip>
-                <span className="mono" style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
-                <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
-              </div>
+                <Box as="span" className="mono" style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</Box>
+                <Text as="span" mono size={9.5} tone="dim">{(e.size / 1024).toFixed(1)}k</Text>
+              </Row>
             ))}
-            <button
-              className="btn primary"
-              style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
-              disabled={busy}
-              onClick={() => {
-                // The route instruction is the UI stage's data (ui.json → routePrompt), not hardcoded.
-                const routePrompt = STAGE_DEFS.ui.routePrompt ?? "";
-                if (routePrompt) requestPlannerPrompt(projectKey, routePrompt);
-                // Promote the dropped components into .ui-skeleton/ so the preview shows the REAL
-                // design, not the demo (#1373) — deterministic, alongside the planner's routing.
-                fireInvoke("sync_design_to_skeleton", { projectKey });
-                // Routing the design to the project completes the UI stage (#837).
-                confirmPlanSection(projectKey, "ui");
-                setRouted(true);
-              }}
-            >Route to project →</button>
-            {routed && (
-              <div className="hint" style={{ color: "var(--success)" }}>
-                Sent to the planner — it will classify each file and route it to the right repo (it may ask you when a destination is ambiguous).
-              </div>
-            )}
-          </div>
+            {/* No route control of any kind lives inside the pane (#2121). Routing is driven entirely
+                by the UI stage's footer action; the actual per-repo routing happens change-aware on
+                triage (#2097). This surface is intake-only. */}
+          </Stack>
         )}
-      </div>
+      </Stack>
     </StageScreenFrame>
   );
 }

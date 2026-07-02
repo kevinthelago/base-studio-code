@@ -1,21 +1,23 @@
 import { IssueSecurityCard } from "../cards/IssueSecurityCard";
 import { AgentsCard } from "../cards/AgentsCard";
+import { AgentRolesCard } from "../cards/AgentRolesCard";
 import { PermissionPostureCard } from "../cards/PermissionPostureCard";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { SettingsPageHeader } from "./SettingsPageHeader";
 
 export function SecurityPage() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
-      {/* Header */}
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Security</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
-        Configure application security parameters, the default agent permission profile, and
-        untrusted planning issue safeguards.
-      </p>
+    <Stack gap={18} style={{ maxWidth: 820 }}>
+      <SettingsPageHeader
+        title="Security"
+        description="Configure application security parameters, the default agent permission profile, and untrusted planning issue safeguards."
+      />
 
       {/* Security Cards */}
+      <AgentRolesCard />
       <AgentsCard />
       <PermissionPostureCard />
       <IssueSecurityCard />
-    </div>
+    </Stack>
   );
 }

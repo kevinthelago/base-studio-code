@@ -4,7 +4,7 @@
 //
 // Pure (no React / xterm / Tauri) so it can be unit-tested in isolation and shared
 // between the planner UI, the store, and the fleet helpers. Split out of the former
-// planSections.ts (#1615), which conflated this fleet machinery with the discovery
+// planStages.ts (#1615), which conflated this fleet machinery with the discovery
 // topic-file helpers; those now live in stages/planTopics.ts.
 
 import type { AgentFlow } from "./agentFlow";
@@ -99,6 +99,11 @@ export interface AgentStream {
   prompt?: string;
   /** Id of the AgentProfile this stream's session launches under (#289). */
   profile?: string;
+  /** Id of the PERSONA this stream launches as (#2094): a live reference resolved at fleet launch to
+   *  the stream's ROLE (overriding the default `worker`), start prompt, skills, and model. Unset ⇒ a
+   *  plain worker (the historical default). Lets a fleet mix e.g. a documentor / reviewer stream with
+   *  workers — the persona is the behavioral identity, the role it references is the permission floor. */
+  persona?: string;
   /** Per-agent execution flow (#297): autonomy + GitHub push policy. Unset ⇒ DEFAULT_FLOW at launch. */
   flow?: AgentFlow;
   /** Per-agent LLM model (#…) — launches this stream's session under `claude --model <tier>`.
@@ -214,6 +219,9 @@ export function parseFleetFile(raw: string): FleetPlan | null {
       prompt,
       mcp: mcp.length ? mcp : undefined,
       profile: typeof so.profile === "string" && so.profile.trim() ? so.profile.trim() : undefined,
+      // Persona reference (#2094) — the stream's behavioral identity, resolved to role/prompt/skills/
+      // model at fleet launch. Kept verbatim (an id); an unknown id just resolves to no persona.
+      persona: typeof so.persona === "string" && so.persona.trim() ? so.persona.trim() : undefined,
       flow,
       // Per-agent model (#…) — the tier this stream's session launches under (`claude --model`).
       // Round-trips through plan.db (the planner / agent editor / `bsc-plan fleet set` may set it);

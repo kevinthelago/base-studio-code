@@ -6,6 +6,11 @@
 
 import { useState, useCallback } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Button } from "@/shared/ui/controls/Button";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -73,78 +78,82 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         <>
           {/* Approve the screen that's rendered; each approval advances the UI stage (#546). */}
           {preview && currentScreen && (
-            <button
-              className={currentApproved ? "btn sm" : "btn ghost sm"}
+            <Button
+              variant={currentApproved ? "default" : "ghost"}
+              size="sm"
               onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
               title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
               style={currentApproved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
             >
               {currentApproved ? "✓ approved" : "approve"}
-            </button>
+            </Button>
           )}
-          {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
+          {preview && <Button variant="ghost" size="sm" onClick={renderDemo} title="Rebuild">↻</Button>}
         </>
       }
       footer={declared.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
-          <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
-            <span>screens</span>
-            <button
-              className="btn ghost sm"
+        <Box pad={[8, 12]} style={{ borderTop: "1px solid var(--border-soft)", maxHeight: 180, overflow: "auto" }}>
+          <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
+            <Box as="span">screens</Box>
+            <Button
+              variant="ghost"
+              size="sm"
               title="Copy a Claude Design prompt for these screens — paste it into Claude Design, then drop the exports into the Drop-files stage"
               onClick={() => {
                 void navigator.clipboard?.writeText(buildClaudeDesignBrief(declared));
                 setBriefCopied(true);
                 setTimeout(() => setBriefCopied(false), 1600);
               }}
-            >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</button>
-            <span style={{ flex: 1 }} />
-            <span style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
+            >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</Button>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
               {approvedCount}/{declared.length} approved
-            </span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            </Text>
+          </Row>
+          <Stack gap={2}>
             {declared.map((s) => {
               const ok = approvedList.includes(s);
               return (
-                <button
+                <Button
                   key={s}
-                  className="btn ghost sm mono"
+                  variant="ghost"
+                  size="sm"
+                  className="mono"
                   onClick={() => setUiScreenApproved(projectKey, s, !ok)}
                   title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
                   style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontSize: 11 }}
                 >
-                  <span style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</span>
-                  <span style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</span>
-                </button>
+                  <Text as="span" style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</Text>
+                  <Text as="span" style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</Text>
+                </Button>
               );
             })}
-          </div>
-        </div>
+          </Stack>
+        </Box>
       )}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {status === "fail" ? (
-          <div className="mono" style={{ padding: 16, fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
+          <Text as="div" mono size={11} tone="danger" style={{ padding: 16, whiteSpace: "pre-wrap", overflow: "auto" }}>
             {run?.message || "Preview failed to build."}
-          </div>
+          </Text>
         ) : preview?.srcDoc ? (
           <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
         ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-            <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
+          <Stack align="center" justify="center" gap={12} style={{ flex: 1, padding: 24, textAlign: "center" }}>
+            <Text as="div" mono size={11.5} tone="muted">
               {status === "running" ? "Bundling…" : "No preview yet"}
-            </div>
-            <div className="hint" style={{ maxWidth: 280 }}>
+            </Text>
+            <Box className="hint" style={{ maxWidth: 280 }}>
               The UI stage renders generated screens here via the render-preview pipeline.
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
-              <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
-            </div>
-          </div>
+            </Box>
+            <Row gap={8} align="stretch">
+              <Button onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</Button>
+              <Button variant="ghost" onClick={renderDemo} disabled={status === "running"}>demo</Button>
+            </Row>
+          </Stack>
         )}
-      </div>
+      </Stack>
     </StageScreenFrame>
   );
 }

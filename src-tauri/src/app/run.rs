@@ -2,12 +2,12 @@ use crate::prelude::*;
 // Domain modules whose Tauri commands the invoke handler below registers (#1918): explicit per-domain
 // imports replace the old `use crate::*` glob, so each command path names its domain.
 use crate::{app, extensions, fleet, planner, session};
-use crate::console::{discovery, ledger, pty};
+use crate::console::{bsc, discovery, ledger, pty};
 use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
 use crate::observability::{self, logs, perf, tokens};
 use crate::platform::docstore;
-use crate::project::{self, plan_db};
+use crate::project;
 use crate::sources::{credentials, data, oauth as source_oauth};
 use tauri::{Manager, RunEvent};
 
@@ -90,8 +90,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
-        .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
-        .manage(logs::LogState::new())
+        .manage(perf::PerfState::new(perf_db()))
+        .manage(logs::LogState::new(logs::LogConfig::default()))
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
@@ -164,6 +164,7 @@ pub fn run() {
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_kill,
+            bsc::bsc,
             app::dialog::pick_directory,
             app::dialog::pick_save_file,
             app::dialog::pick_open_file,
@@ -171,14 +172,18 @@ pub fn run() {
             data::data_preview_csv,
             data::data_load_csv,
             data::data_reconcile_csvs,
+            #[cfg(feature = "source-stage")]
             data::data_source_inventory,
+            #[cfg(feature = "source-stage")]
             data::data_source_sample,
+            #[cfg(feature = "source-stage")]
             data::data_infer_model,
-            data::data_persist_model,
+            #[cfg(feature = "source-stage")]
             data::data_get_model,
+            #[cfg(feature = "source-stage")]
             data::data_load_reconciled,
+            #[cfg(feature = "source-stage")]
             data::data_platform_scan,
-            data::data_runtime_connectors,
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,
@@ -188,22 +193,16 @@ pub fn run() {
             planner::directives::planner_stage_directive,
             crate::platform::config::export_config_bundle,
             crate::platform::config::import_config_bundle,
+            crate::platform::config::get_config_files,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
             extensions::mcp::mcp_status,
             extensions::mcp::mcp_check_update,
-            extensions::skill_store::skill_store_list,
-            extensions::skill_store::skill_store_upsert,
-            extensions::skill_store::skill_store_remove,
-            extensions::skill_store::skill_group_list,
-            extensions::skill_store::skill_group_upsert,
-            extensions::skill_store::skill_group_remove,
-            extensions::skill_store::skill_group_resolve,
             fleet::worktree::ensure_worktree,
             fleet::teardown::teardown_worktree,
             fleet::teardown::reclaim_worktrees,
-            fleet::teardown::worktrees_disk_usage,
+            fleet::disk::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
             session::claude_config::read_claude_config,
@@ -216,7 +215,7 @@ pub fn run() {
             session::sandbox::remove_sandbox,
             session::sandbox::setup_sandbox_hub,
             session::sandbox::sandbox_read_file,
-            session::sandbox::read_sandbox_plan_sections,
+            session::sandbox::read_sandbox_plan_stages,
             session::sandbox::sync_sandbox_plan_db,
             session::sandbox::sandbox_clone_repo,
             session::sandbox::ensure_sandbox_worktree,
@@ -225,15 +224,12 @@ pub fn run() {
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
             github::readiness::set_preferred_shell,
-            project::plan_files::read_plan_sections,
+            project::plan_files::read_plan_stages,
             project::hub::delete_project_dir,
             project::hub::mark_published,
             project::hub::set_project_title,
             project::plan_files::clear_all_plan_files,
             project::plan_files::clear_project_plan_files,
-            project::blueprints::list_blueprints,
-            project::blueprints::write_blueprint,
-            project::blueprints::delete_blueprint,
             project::hub::list_local_projects,
             project::files::write_project_file,
             project::files::write_project_file_bytes,
@@ -261,20 +257,14 @@ pub fn run() {
             tunnel::tunnel_automation_ran,
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
-            observability::logs::read_audit_log,
             fleet::inspect::read_worktree_changes,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,
             fleet::inspect::find_branch_pr,
             fleet::inspect::claude_transcript_path,
-            observability::logs::read_skill_log,
-            observability::logs::read_hook_log,
-            observability::logs::read_mcp_log,
-            tokens::read_token_usage,
+            // The observability READ commands (audit/skill/hook/mcp/coord tails, token usage, pane
+            // activity, done panes) moved to the `bsc logs` CLI over the `bsc` bridge (#2144).
             tokens::read_pane_messages,
-            tokens::read_pane_activity,
-            tokens::read_done_panes,
-            observability::logs::read_coord_log,
             project::ui_skeleton::read_ui_skeleton,
             project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
@@ -295,40 +285,6 @@ pub fn run() {
             logs::log_get_config,
             logs::log_set_config,
             logs::enforce_log_caps,
-            plan_db::plan_upsert_issue,
-            plan_db::plan_list_issues,
-            plan_db::plan_remove_issue,
-            plan_db::plan_set_issue_status,
-            plan_db::plan_upsert_feature,
-            plan_db::plan_list_features,
-            plan_db::plan_remove_feature,
-            plan_db::plan_add_repo,
-            plan_db::plan_list_repos,
-            plan_db::plan_remove_repo,
-            plan_db::plan_set_fleet,
-            plan_db::plan_get_fleet,
-            plan_db::plan_remove_stream,
-            plan_db::plan_set_deploy,
-            plan_db::plan_get_deploy,
-            plan_db::plan_set_deps,
-            plan_db::plan_get_deps,
-            plan_db::plan_add_mcp,
-            plan_db::plan_list_mcp,
-            plan_db::plan_remove_mcp,
-            plan_db::plan_list_automations,
-            plan_db::plan_list_startup,
-            plan_db::plan_set_blueprint,
-            plan_db::plan_get_blueprint,
-            plan_db::plan_list_discovery,
-            plan_db::plan_require_discovery,
-            plan_db::plan_triage_record_run,
-            plan_db::plan_triage_last_run,
-            plan_db::plan_issues_changed_since,
-            plan_db::plan_lesson_list,
-            plan_db::plan_lesson_confirm,
-            plan_db::plan_lesson_discard,
-            plan_db::plan_lesson_remove,
-            plan_db::plan_lesson_expire,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -354,11 +310,7 @@ pub fn run() {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn level_color_is_distinct_per_level() {

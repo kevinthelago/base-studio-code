@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Block PII",
+    "by": "first-party",
+    "icon": "⊘",
+    "desc": "Hook · PreToolUse — scans outbound tool inputs for PII patterns."
+  },
+  {
+    "name": "Auto-format",
+    "by": "first-party",
+    "icon": "§",
+    "desc": "Hook · PostToolUse — runs project formatter on every Write."
+  },
+  {
+    "name": "Session end",
+    "by": "first-party",
+    "icon": "⏹",
+    "desc": "Hook · Stop — runs a command when the agent finishes its turn (notify, snapshot, wrap-up)."
+  }
+]

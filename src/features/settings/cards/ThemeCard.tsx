@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";
@@ -21,8 +23,9 @@ export function ThemeCard() {
 
   return (
     <Card title="Theme">
-      <div style={{ display: "flex", gap: 8 }}>
+      <Row gap={8} align="stretch">
         {(["dark", "light"] as const).map((t) => (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke accent pill toggle with custom on-state bg/color; not the .btn family, SegmentedControl's .seg CSS would change rendering
           <button
             key={t}
             className="mono"
@@ -37,11 +40,11 @@ export function ThemeCard() {
             }}
           >{t.charAt(0).toUpperCase() + t.slice(1)}</button>
         ))}
-      </div>
-      <div className="hint" style={{ marginTop: 10 }}>
+      </Row>
+      <Box className="hint" style={{ marginTop: 10 }}>
         Persisted across restarts. Light mode moves all surfaces to the token layer —
         a few hardcoded terminal palette values may still appear dark.
-      </div>
+      </Box>
     </Card>
   );
 }

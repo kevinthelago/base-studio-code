@@ -3,7 +3,14 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
-import { StatCard } from "@/shared/ui/charts";
+import { Bars, HBars, StatCard } from "@/shared/ui/charts";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
+import { Box } from "@/shared/ui/layout/Box";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,72 +68,6 @@ query($id: ID!) {
     }
   }
 }`;
-
-// ── Chart primitives ──────────────────────────────────────────────────────────
-
-function HBar({
-  label, count, max, color, pct,
-}: { label: string; count: number; max: number; color: string; pct?: boolean }) {
-  const w = max > 0 ? (count / max) * 100 : 0;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 40px", gap: 10, alignItems: "center" }}>
-      <div className="mono" style={{
-        fontSize: 10.5, color: "var(--fg-muted)",
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      }}>{label}</div>
-      <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
-        <div style={{
-          height: "100%", width: `${w}%`,
-          background: color, borderRadius: 3,
-          transition: "width 0.3s ease",
-        }} />
-      </div>
-      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>
-        {pct ? `${Math.round(w)}%` : count}
-      </div>
-    </div>
-  );
-}
-
-function SparkBars({ weeks }: { weeks: Array<{ label: string; opened: number; closed: number }> }) {
-  const maxVal = Math.max(...weeks.flatMap(w => [w.opened, w.closed]), 1);
-  const barW = 28;
-  const gap   = 8;
-  const H     = 80;
-  const PAD   = { t: 10, b: 20, l: 0, r: 0 };
-  const innerH = H - PAD.t - PAD.b;
-  const totalW = weeks.length * (barW * 2 + gap + 4);
-
-  return (
-    <svg width={totalW} height={H} style={{ display: "block", width: "100%", maxWidth: totalW }}>
-      {weeks.map((w, i) => {
-        const x = i * (barW * 2 + gap + 4);
-        const hO = Math.round((w.opened / maxVal) * innerH);
-        const hC = Math.round((w.closed / maxVal) * innerH);
-        return (
-          <g key={i}>
-            {/* opened bar */}
-            <rect
-              x={x} y={PAD.t + innerH - hO} width={barW} height={hO}
-              rx="2" fill="color-mix(in oklch, var(--info), transparent 40%)"
-            />
-            {/* closed bar */}
-            <rect
-              x={x + barW + 2} y={PAD.t + innerH - hC} width={barW} height={hC}
-              rx="2" fill="color-mix(in oklch, var(--success), transparent 40%)"
-            />
-            {/* week label */}
-            <text
-              x={x + barW + 1} y={H - 4}
-              textAnchor="middle"
-              fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)"
-            >{w.label}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 // ── Insights screen ───────────────────────────────────────────────────────────
 
@@ -255,129 +196,136 @@ export function Insights() {
     <>
       <ProjectsHeader project={project} />
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+        <Box style={{ maxWidth: 1240, margin: "0 auto" }}>
 
           <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {isLoading && (
-            <div className="mono" style={{ padding: "40px 0", textAlign: "center", fontSize: 12, color: "var(--fg-dim)" }}>
+            <Text as="div" mono size={12} tone="dim" style={{ padding: "40px 0", textAlign: "center" }}>
               Loading insights…
-            </div>
+            </Text>
           )}
 
           {!isLoading && (
             <>
               {/* Stat cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
+              <Grid cols={4} gap={10} style={{ marginBottom: 18 }}>
                 <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="fg"      />
                 <StatCard k="completion"    v={`${completionPct}%`} sub={`${closed} of ${total} closed`}          tone="success" />
                 <StatCard k="velocity"      v={`${velocity}/wk`} sub="issues closed · last 4 weeks"               tone="info"    />
                 <StatCard k="open issues"   v={String(open)}     sub={`${total > 0 ? Math.round((open / total) * 100) : 0}% remaining`} tone="accent" />
-              </div>
+              </Grid>
 
               {/* Middle row: status + assignees */}
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}>
+              <Grid cols="1.4fr 1fr" gap={14} style={{ marginBottom: 14 }}>
                 {/* Status distribution */}
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Status distribution</h3>
-                    <span className="hint">{total} items</span>
-                  </div>
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                    <Text as="h3" style={{ margin: 0 }}>Status distribution</Text>
+                    <Box as="span" className="hint">{total} items</Box>
+                  </Row>
                   {statusDist.length === 0 ? (
-                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No status field found.</div>
+                    <Text as="div" mono size={11} tone="dim">No status field found.</Text>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {statusDist.map(s => (
-                        <HBar key={s.name} label={s.name} count={s.count} max={maxStatusCount} color={s.color} />
-                      ))}
-                    </div>
+                    <HBars
+                      max={maxStatusCount}
+                      rows={statusDist.map(s => ({ label: s.name, value: s.count, color: s.color }))}
+                    />
                   )}
-                </div>
+                </Card>
 
                 {/* Assignee workload */}
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Assignee workload</h3>
-                    <span className="hint">open issues</span>
-                  </div>
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                    <Text as="h3" style={{ margin: 0 }}>Assignee workload</Text>
+                    <Box as="span" className="hint">open issues</Box>
+                  </Row>
                   {assigneeDist.length === 0 ? (
-                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No open issues.</div>
+                    <Text as="div" mono size={11} tone="dim">No open issues.</Text>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Stack gap={8}>
                       {assigneeDist.map(a => (
-                        <div key={a.login} style={{ display: "grid", gridTemplateColumns: "18px 112px 1fr 32px", gap: 8, alignItems: "center" }}>
+                        <Grid key={a.login} cols="18px 112px 1fr 32px" gap={8} align="center">
                           {a.login === "(unassigned)" ? (
-                            <span className="mono" style={{
+                            <Box as="span" className="mono" style={{
                               width: 16, height: 16, borderRadius: "50%",
                               border: "1px dashed var(--border)", color: "var(--fg-dim)",
                               fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>?</span>
+                            }}>?</Box>
                           ) : (
-                            <span className="mono" style={{
-                              width: 16, height: 16, borderRadius: "50%",
-                              background: avatarColor(a.login), color: "#1a120a",
+                            <Box as="span" className="mono" bg={avatarColor(a.login)} style={{
+                              width: 16, height: 16, borderRadius: "50%", color: "#1a120a",
                               fontWeight: 700, fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>{a.login[0]?.toUpperCase()}</span>
+                            }}>{a.login[0]?.toUpperCase()}</Box>
                           )}
-                          <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          <Text as="div" mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {a.login}
-                          </div>
-                          <div style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                            <div style={{
+                          </Text>
+                          <Box bg="var(--bg-elev2)" radius={3} style={{ height: 10, overflow: "hidden" }}>
+                            <Box bg={avatarColor(a.login === "(unassigned)" ? "?" : a.login)} radius={3} style={{
                               height: "100%",
                               width: `${(a.count / maxAssigneeCount) * 100}%`,
-                              background: avatarColor(a.login === "(unassigned)" ? "?" : a.login),
-                              borderRadius: 3,
                             }} />
-                          </div>
-                          <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textAlign: "right" }}>{a.count}</div>
-                        </div>
+                          </Box>
+                          <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>{a.count}</Text>
+                        </Grid>
                       ))}
-                    </div>
+                    </Stack>
                   )}
-                </div>
-              </div>
+                </Card>
+              </Grid>
 
               {/* Weekly activity */}
-              <div className="card" style={{ padding: "16px 20px", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-                  <h3 style={{ margin: 0 }}>Weekly activity</h3>
-                  <span className="hint">last 8 weeks</span>
-                  <div style={{ flex: 1 }} />
-                  <div className="mono" style={{ display: "flex", gap: 14, fontSize: 10, color: "var(--fg-dim)" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--info), transparent 40%)", display: "inline-block" }} />
+              <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
+                <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                  <Text as="h3" style={{ margin: 0 }}>Weekly activity</Text>
+                  <Box as="span" className="hint">last 8 weeks</Box>
+                  <Spacer />
+                  <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+                    <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <Box as="span" bg="color-mix(in oklch, var(--info), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
                       opened
-                    </span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--success), transparent 40%)", display: "inline-block" }} />
+                    </Box>
+                    <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <Box as="span" bg="color-mix(in oklch, var(--success), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
                       closed
-                    </span>
-                  </div>
-                </div>
-                <SparkBars weeks={weeklyActivity} />
-              </div>
+                    </Box>
+                  </Row>
+                </Row>
+                <Bars
+                  labels={weeklyActivity.map(w => w.label)}
+                  height={100}
+                  groups={[
+                    { name: "opened", color: "color-mix(in oklch, var(--info), transparent 40%)",    data: weeklyActivity.map(w => w.opened) },
+                    { name: "closed", color: "color-mix(in oklch, var(--success), transparent 40%)", data: weeklyActivity.map(w => w.closed) },
+                  ]}
+                />
+              </Card>
 
               {/* Label distribution */}
               {labelDist.length > 0 && (
-                <div className="card" style={{ padding: "16px 20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Label frequency</h3>
-                    <span className="hint">top {labelDist.length}</span>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 32px" }}>
-                    {labelDist.map(l => (
-                      <HBar key={l.name} label={l.name} count={l.count} max={maxLabelCount} color={l.color} />
+                <Card style={{ padding: "16px 20px" }}>
+                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                    <Text as="h3" style={{ margin: 0 }}>Label frequency</Text>
+                    <Box as="span" className="hint">top {labelDist.length}</Box>
+                  </Row>
+                  <Grid cols={2} gap={32}>
+                    {[labelDist.slice(0, Math.ceil(labelDist.length / 2)), labelDist.slice(Math.ceil(labelDist.length / 2))].map((half, col) => (
+                      <HBars
+                        key={col}
+                        max={maxLabelCount}
+                        rows={half.map(l => ({ label: l.name, value: l.count, color: l.color }))}
+                      />
                     ))}
-                  </div>
-                </div>
+                  </Grid>
+                </Card>
               )}
             </>
           )}
 
-        </div>
+        </Box>
       </section>
     </>
   );

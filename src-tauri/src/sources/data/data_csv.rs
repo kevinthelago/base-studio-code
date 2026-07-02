@@ -6,9 +6,12 @@
 //! `source-stage`-gated half powers the data-source connection UX (inventory / sample / infer /
 //! persist / load) shared with the live platform scan in `data_scan`.
 
+use crate::StrErr;
 use std::path::{Path, PathBuf};
 
-use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, Entity, Field, FieldType, LoadSource, Precedence, SourceLoad};
+use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, LoadSource, Precedence, SourceLoad};
+#[cfg(feature = "source-stage")]
+use bsc_data::{Entity, Field, FieldType};
 
 /// A preview of a CSV source: its columns and the first `limit` rows.
 #[derive(serde::Serialize)]
@@ -40,9 +43,11 @@ pub struct NullCount {
 
 /// Per-Data-Model DuckDB file under `~/.base-studio-code/data/<store_id>.duckdb`.
 pub(super) fn store_path(store_id: &str) -> std::io::Result<PathBuf> {
-    let dir = crate::bsc_base_dir().join("data");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("{}.duckdb", crate::sanitize_project_key(store_id))))
+    let db = crate::platform::paths::data_db_path(store_id);
+    if let Some(dir) = db.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    Ok(db)
 }
 
 /// Core load — factored out of the command so it's testable with explicit paths
@@ -82,7 +87,7 @@ pub async fn pick_csv_file() -> Option<String> {
 /// Preview a CSV's columns + first rows, without loading anything.
 #[tauri::command]
 pub fn data_preview_csv(path: String, limit: usize) -> Result<CsvPreview, String> {
-    let rs = CsvConnector::new(&path).read("").map_err(|e| e.to_string())?;
+    let rs = CsvConnector::new(&path).read("").str_err()?;
     let total = rs.rows.len();
     Ok(CsvPreview { columns: rs.columns, rows: rs.rows.into_iter().take(limit).collect(), total })
 }
@@ -99,9 +104,9 @@ pub fn data_load_csv(
     license: String,
     loaded_at: String,
 ) -> Result<LoadReport, String> {
-    let db = store_path(&store_id).map_err(|e| e.to_string())?;
+    let db = store_path(&store_id).str_err()?;
     let src = LoadSource { source, license, loaded_at };
-    run_load(&db, model, &entity, &csv_path, src).map_err(|e| e.to_string())
+    run_load(&db, model, &entity, &csv_path, src).str_err()
 }
 
 /// One CSV source for a reconcile run.
@@ -161,8 +166,8 @@ pub fn data_reconcile_csvs(
     precedence: Vec<String>,
     loaded_at: String,
 ) -> Result<ReconcileReport, String> {
-    let db = store_path(&store_id).map_err(|e| e.to_string())?;
-    run_reconcile(&db, model, &entity, &sources, precedence, &loaded_at).map_err(|e| e.to_string())
+    let db = store_path(&store_id).str_err()?;
+    run_reconcile(&db, model, &entity, &sources, precedence, &loaded_at).str_err()
 }
 
 // ── source-stage commands (#se-commands) ─────────────────────────────────────
@@ -226,7 +231,7 @@ fn safe_key(raw: &str) -> String {
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_source_inventory(csv_path: String) -> Result<Vec<SourceObjectView>, String> {
-    let objs = CsvConnector::new(&csv_path).objects().map_err(|e| e.to_string())?;
+    let objs = CsvConnector::new(&csv_path).objects().str_err()?;
     Ok(objs.into_iter().map(|o| SourceObjectView { name: o.name, columns: o.columns }).collect())
 }
 
@@ -235,9 +240,9 @@ pub fn data_source_inventory(csv_path: String) -> Result<Vec<SourceObjectView>, 
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_source_sample(csv_path: String, limit: usize) -> Result<CsvPreview, String> {
-    let rs = CsvConnector::new(&csv_path).read("").map_err(|e| e.to_string())?;
-    let total = rs.rows.len();
-    Ok(CsvPreview { columns: rs.columns, rows: rs.rows.into_iter().take(limit).collect(), total })
+    // Same behavior as `data_preview_csv` — one implementation, two command names for the
+    // load-loop vs the source-stage connection UX.
+    data_preview_csv(csv_path, limit)
 }
 
 /// Infer a canonical Data Model from a CSV file.
@@ -250,7 +255,7 @@ pub fn data_source_sample(csv_path: String, limit: usize) -> Result<CsvPreview, 
 #[tauri::command]
 pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataModel, String> {
     let conn = CsvConnector::new(&csv_path);
-    let rs = conn.read("").map_err(|e| e.to_string())?;
+    let rs = conn.read("").str_err()?;
     let path = std::path::Path::new(&csv_path);
     let entity_raw = path.file_stem().and_then(|s| s.to_str()).unwrap_or("data");
     let entity_key = safe_key(entity_raw);
@@ -286,20 +291,6 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
         version: 1,
         entities: vec![Entity { key: entity_key, label: entity_label, fields, identity }],
     })
-}
-
-/// Persist the canonical Data Model into the project's DuckDB store (#1446) — the metadata table,
-/// colocated with the loaded data. `refined` is false on first inference; true once the user
-/// confirms/refines it in the pane. (Replaced the legacy `datamodel.json` file.)
-#[cfg(feature = "source-stage")]
-#[tauri::command]
-pub fn data_persist_model(project_key: String, model: DataModel, refined: bool) -> Result<(), String> {
-    let db = store_path(&project_key).map_err(|e| format!("data_persist_model: {e}"))?;
-    bsc_data::MetaStore::open(&db)
-        .and_then(|s| s.set_model(&model, refined))
-        .map_err(|e| format!("data_persist_model: {e}"))?;
-    log::info!("data_persist_model({project_key}): wrote Data Model to {db:?} (refined={refined})");
-    Ok(())
 }
 
 /// The persisted canonical Data Model for a project (from its DuckDB store), or null when none.

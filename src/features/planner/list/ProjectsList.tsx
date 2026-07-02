@@ -5,7 +5,11 @@ import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
-import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
 import { buildDrafts, type DraftRow } from "./drafts";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
@@ -255,7 +259,7 @@ export function ProjectsList() {
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
 
   return (
-    <section style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
+    <Box as="section" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
       <PublishedProjects
         visibleProjects={visibleProjects}
         grouped={grouped}
@@ -292,32 +296,30 @@ export function ProjectsList() {
       {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕
           must not delete instantly. Shared by the Drafts chips and the Blueprints rail. */}
       {draftDeleteTarget && (
-        <div className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
-          <div style={{
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
+        <ModalScrim onDismiss={() => setDraftDeleteTarget(null)}>
+          <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 420, maxWidth: "90vw",
           }}>
             <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
               Delete draft?
             </h3>
-            <p style={{ margin: "0 0 20px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+            <Text as="p" size={12} tone="muted" style={{ margin: "0 0 20px", lineHeight: 1.6 }}>
               <b style={{ color: "var(--fg)" }}>{draftDeleteTarget.title}</b> and its local planning folder
               will be permanently deleted. This draft was never published to GitHub, so there's nothing on
               GitHub to remove.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn ghost" onClick={() => setDraftDeleteTarget(null)}>cancel</button>
-              <button
-                className="btn danger"
+            </Text>
+            <Row gap={8} align="stretch" justify="end">
+              <Button variant="ghost" onClick={() => setDraftDeleteTarget(null)}>cancel</Button>
+              <Button
+                danger
                 onClick={confirmDeleteDraft}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
               >
                 <Trash2 size={12} /> delete draft
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </Row>
+          </Box>
+        </ModalScrim>
       )}
-    </section>
+    </Box>
   );
 }

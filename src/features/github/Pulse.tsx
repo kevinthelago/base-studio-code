@@ -6,6 +6,14 @@
 import { useState } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Card } from "@/shared/ui/data/Card";
+import { FillBar } from "@/shared/ui/data/FillBar";
+import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   LineArea, Bars, Donut, HBars, Legend,
@@ -30,33 +38,32 @@ function sliceVelocity(v: VelocitySlice, range: string): VelocitySlice {
 function PulseDigest({ kpis, churnAreas, ci, partialDiffs }: { kpis: PulseKpis; churnAreas: ChurnArea[]; ci: CiHealth; partialDiffs: boolean }) {
   const hottest = churnAreas[0];
   return (
-    <div className="card" style={{
+    <Card style={{
       padding: "13px 18px", marginBottom: 14,
       background: "linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 88%), var(--bg-panel) 60%)",
       border: "1px solid var(--accent-dim)",
     }}>
-      <div style={{ display: "flex", gap: 12 }}>
-        <div className="mono" style={{
+      <Row gap={12} align="stretch">
+        <Row className="mono" justify="center" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
           color: "#1a120a", fontWeight: 700, fontSize: 13,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>G</div>
-        <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</span>
-            <span className="hint">live from the GitHub API</span>
-          </div>
-          <p style={{ margin: 0 }}>
-            <b style={{ color: "var(--fg)" }}>{kpis.commitsWeek} commits</b> and <b style={{ color: "var(--fg)" }}>{kpis.prsMerged} merged PRs</b> in the last 7 days
-            {kpis.contributors > 0 && <> across <b style={{ color: "var(--fg)" }}>{kpis.contributors} contributors</b> ({kpis.botShare}% bot)</>}.
-            CI pass rate is <b style={{ color: ci.passRate >= 90 ? "var(--success)" : "var(--danger)" }}>{ci.passRate}%</b>.
-            {hottest && <> Hottest area: <b style={{ color: "oklch(0.7 0.12 290)" }}>{hottest.area}</b>.</>}
-            {partialDiffs && <span className="hint"> · line/churn panels reflect the most recent commits</span>}
-          </p>
-        </div>
-      </div>
-    </div>
+        }}>G</Row>
+        <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
+          <Row align="baseline" gap={8} style={{ marginBottom: 3 }}>
+            <Text as="span" mono size={11} tone="accent" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</Text>
+            <Box as="span" className="hint">live from the GitHub API</Box>
+          </Row>
+          <Text as="p" style={{ margin: 0 }}>
+            <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.commitsWeek} commits</Text> and <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.prsMerged} merged PRs</Text> in the last 7 days
+            {kpis.contributors > 0 && <> across <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.contributors} contributors</Text> ({kpis.botShare}% bot)</>}.
+            CI pass rate is <Text weight={700} tone={ci.passRate >= 90 ? "success" : "danger"}>{ci.passRate}%</Text>.
+            {hottest && <> Hottest area: <Text weight={700} style={{ color: "oklch(0.7 0.12 290)" }}>{hottest.area}</Text>.</>}
+            {partialDiffs && <Box as="span" className="hint"> · line/churn panels reflect the most recent commits</Box>}
+          </Text>
+        </Box>
+      </Row>
+    </Card>
   );
 }
 
@@ -71,9 +78,9 @@ function KpiRow({ kpis, runs }: { kpis: PulseKpis; runs: number }) {
     { k: "contributors", v: String(kpis.contributors), sub: `${kpis.botShare}% bot commits`, tone: "info" },
   ];
   return (
-    <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+    <Box className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
       {cards.map(c => <StatCard key={c.k} {...c} />)}
-    </div>
+    </Box>
   );
 }
 
@@ -83,7 +90,7 @@ function Velocity({ velocity }: { velocity: VelocitySlice }) {
   const tip = useTip();
   const d = sliceVelocity(velocity, range);
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Commit & PR velocity" hint="daily commits, PRs opened vs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       <LineArea labels={d.labels} height={160} tip={tip} series={[
@@ -97,7 +104,7 @@ function Velocity({ velocity }: { velocity: VelocitySlice }) {
         { color: "var(--accent)", label: "PRs merged" },
       ]} />
       {tip.node}
-    </div>
+    </Card>
   );
 }
 
@@ -107,7 +114,7 @@ function NetLines({ velocity, partialDiffs }: { velocity: VelocitySlice; partial
   const tip = useTip();
   const d = sliceVelocity(velocity, range);
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Lines changed" hint={partialDiffs ? "additions vs deletions · recent commits" : "additions vs deletions / day"}
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       <Bars labels={d.labels} height={140} fmtY={(v) => fmt(v)} tip={tip} groups={[
@@ -119,7 +126,7 @@ function NetLines({ velocity, partialDiffs }: { velocity: VelocitySlice; partial
         { color: "var(--danger)", label: "removed" },
       ]} />
       {tip.node}
-    </div>
+    </Card>
   );
 }
 
@@ -128,15 +135,15 @@ function ChurnByArea({ areas }: { areas: ChurnArea[] }) {
   if (!areas.length) return null;
   const rows: HBarRow[] = areas.map(a => ({
     label: a.area, value: a.add + a.del, color: a.color, strong: true,
-    tag: <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
-      <span style={{ color: "var(--success)" }}>+{fmt(a.add)}</span> / <span style={{ color: "var(--danger)" }}>−{fmt(a.del)}</span> · {a.files}f
-    </span>,
+    tag: <Text as="span" mono size={9} tone="dim">
+      <Text as="span" tone="success">+{fmt(a.add)}</Text> / <Text as="span" tone="danger">−{fmt(a.del)}</Text> · {a.files}f
+    </Text>,
   }));
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Churn by area" hint="lines changed · recent commits" />
       <HBars rows={rows} fmtV={(v) => fmt(v)} />
-    </div>
+    </Card>
   );
 }
 
@@ -145,29 +152,29 @@ function FileChurn({ files }: { files: ChurnFile[] }) {
   if (!files.length) return null;
   const max = Math.max(...files.map(f => f.w));
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Hottest files" hint="±lines · recent commits · darker = hotter" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+      <Grid cols={4} gap={4}>
         {files.map(f => {
           const t = f.w / max;
           const a = 0.16 + 0.74 * t;
           const dark = t > 0.55;
           return (
-            <div key={f.p} title={`${f.p} · ±${f.w}`} className="mono" style={{
+            <Stack key={f.p} title={`${f.p} · ±${f.w}`} className="mono" justify="between" style={{
               padding: "8px 9px", borderRadius: 4, minHeight: 52,
               background: `color-mix(in oklch, var(--accent) ${Math.round(a * 100)}%, var(--bg-elev))`,
               border: "1px solid var(--border-soft)",
               fontSize: 9.5, lineHeight: 1.35,
-              display: "flex", flexDirection: "column", justifyContent: "space-between", overflow: "hidden",
+              overflow: "hidden",
             }}>
-              <span style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: dark ? "#1a120a" : "var(--fg)" }}>{f.p.split("/").pop()}</span>
-              <span style={{ fontSize: 8.5, color: dark ? "#1a120a" : "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.p.replace(/\/[^/]+$/, "") || "/"}</span>
-              <span style={{ fontSize: 9.5, fontWeight: 600, color: dark ? "#1a120a" : "var(--fg-muted)" }}>±{f.w}</span>
-            </div>
+              <Box as="span" style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: dark ? "#1a120a" : "var(--fg)" }}>{f.p.split("/").pop()}</Box>
+              <Box as="span" style={{ fontSize: 8.5, color: dark ? "#1a120a" : "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.p.replace(/\/[^/]+$/, "") || "/"}</Box>
+              <Text as="span" size={9.5} weight={600} style={{ color: dark ? "#1a120a" : "var(--fg-muted)" }}>±{f.w}</Text>
+            </Stack>
           );
         })}
-      </div>
-    </div>
+      </Grid>
+    </Card>
   );
 }
 
@@ -180,36 +187,36 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
   const humanCommits = sorted.filter(c => !c.bot).reduce((s, c) => s + c.commits, 0);
   const botShare = botCommits + humanCommits ? Math.round(botCommits / (botCommits + humanCommits) * 100) : 0;
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Contributors" hint="commits · bots vs humans (per GitHub)"
-        right={<span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
-          <span style={{ color: "var(--accent)" }}>◆ {botCommits}</span> bot · <span style={{ color: "var(--fg)" }}>{humanCommits}</span> human
-        </span>} />
-      <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
-        <div title="bots" style={{ width: `${botShare}%`, background: "var(--accent)" }} />
-        <div title="humans" style={{ flex: 1, background: "oklch(0.68 0.12 250)" }} />
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        right={<Text as="span" mono size={10} tone="dim">
+          <Text as="span" tone="accent">◆ {botCommits}</Text> bot · <Text as="span" style={{ color: "var(--fg)" }}>{humanCommits}</Text> human
+        </Text>} />
+      <Row align="stretch" style={{ height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
+        <Box title="bots" bg="var(--accent)" style={{ width: `${botShare}%`}} />
+        <Box title="humans" bg="oklch(0.68 0.12 250)" style={{ flex: 1}} />
+      </Row>
+      <Stack gap={7}>
         {sorted.map(c => (
-          <div key={c.name} className="hrow" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 40px", gap: 10, alignItems: "center", padding: "1px 2px", borderRadius: 4 }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="mono" style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, fontSize: 10.5, color: "var(--fg)" }}>
+          <Grid key={c.name} className="hrow" cols="minmax(0,1fr) 40px" gap={10} align="center" style={{ padding: "1px 2px", borderRadius: 4 }}>
+            <Box style={{ minWidth: 0 }}>
+              <Row className="mono" gap={7} style={{ marginBottom: 3, fontSize: 10.5, color: "var(--fg)" }}>
                 <Avatar login={c.name} bot={c.bot} size={15} />
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                <Box as="span" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Box>
                 <Chip tone={c.bot ? "accent" : "neutral"} style={{ fontSize: 8.5 }}>{c.bot ? "bot" : "human"}</Chip>
                 {(c.add > 0 || c.del > 0) && (
-                  <span className="mono" style={{ fontSize: 8.5, color: "var(--fg-dim)" }}>
-                    <span style={{ color: "var(--success)" }}>+{fmt(c.add)}</span> <span style={{ color: "var(--danger)" }}>−{fmt(c.del)}</span>
-                  </span>
+                  <Text as="span" mono size={8.5} tone="dim">
+                    <Text as="span" tone="success">+{fmt(c.add)}</Text> <Text as="span" tone="danger">−{fmt(c.del)}</Text>
+                  </Text>
                 )}
-              </div>
-              <div className="meter"><i style={{ width: `${c.commits / max * 100}%`, background: c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)" }} /></div>
-            </div>
-            <div className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg)" }}>{c.commits}</div>
-          </div>
+              </Row>
+              <FillBar value={c.commits / max} height={6} color={c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)"} />
+            </Box>
+            <Text as="div" mono size={11} style={{ textAlign: "right", color: "var(--fg)" }}>{c.commits}</Text>
+          </Grid>
         ))}
-      </div>
-    </div>
+      </Stack>
+    </Card>
   );
 }
 
@@ -221,36 +228,36 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
     { name: "cancelled", value: ci.cancelled, color: "var(--fg-dim)" },
   ];
   return (
-    <div className="card">
+    <Card>
       <CardHead title="CI health" hint={`${ci.runs} runs · 14d`} />
       {ci.runs === 0 ? (
-        <div className="hint" style={{ padding: "8px 2px" }}>No workflow runs in the window.</div>
+        <Box className="hint" pad={[8, 2]}>No workflow runs in the window.</Box>
       ) : (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+          <Row gap={16} style={{ marginBottom: 12 }}>
             <Donut slices={slices} size={112} thickness={14} center={{ value: `${ci.passRate}%`, label: "pass" }} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            <Stack gap={6} style={{ flex: 1 }}>
               {slices.map(s => (
-                <div key={s.name} className="mono" style={{ display: "grid", gridTemplateColumns: "12px 1fr 28px", gap: 8, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
+                <Grid key={s.name} className="mono" cols="12px 1fr 28px" gap={8} align="center" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
                   <ColorSwatch color={s.color} />
-                  <span>{s.name}</span><span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
-                </div>
+                  <Text>{s.name}</Text><Text as="span" style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</Text>
+                </Grid>
               ))}
-              <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {ci.avgMin}m</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <Box className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 2 }}>avg duration {ci.avgMin}m</Box>
+            </Stack>
+          </Row>
+          <Stack gap={5}>
             {workflows.map(w => (
-              <div key={w.name} className="mono" style={{ display: "grid", gridTemplateColumns: "120px 1fr 34px", gap: 8, alignItems: "center", fontSize: 10, color: "var(--fg-muted)" }}>
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</span>
-                <div className="meter" style={{ height: 5 }}><i style={{ width: `${w.pass}%`, background: w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)" }} /></div>
-                <span style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</span>
-              </div>
+              <Grid key={w.name} className="mono" cols="120px 1fr 34px" gap={8} align="center" style={{ fontSize: 10, color: "var(--fg-muted)" }}>
+                <Box as="span" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</Box>
+                <FillBar value={w.pass / 100} height={5} color={w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)"} />
+                <Text as="span" style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</Text>
+              </Grid>
             ))}
-          </div>
+          </Stack>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -258,27 +265,27 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
 function Branches({ branches }: { branches: Branch[] }) {
   if (!branches.length) return null;
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Active branches" hint="ahead/behind the default branch"
-        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{branches.length}</span>} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+        right={<Text as="span" mono size={10.5} tone="accent">{branches.length}</Text>} />
+      <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
         {branches.map((b, i) => {
           const st = BRANCH_STATUS[b.status];
           return (
-            <div key={b.n} className="hrow" style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: 8, alignItems: "center", padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+            <Grid key={b.n} className="hrow" cols="1fr 70px 70px" gap={8} align="center" style={{ padding: "8px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
+              <Row gap={7} style={{ minWidth: 0 }}>
                 {b.owner && <Avatar login={b.owner} bot={b.bot} size={15} />}
-                <span className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.n}</span>
-              </div>
-              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>
-                <span style={{ color: "var(--success)" }}>↑{b.ahead}</span> <span style={{ color: "var(--danger)" }}>↓{b.behind}</span>
-              </span>
-              <span className="mono" style={{ textAlign: "right", fontSize: 9.5, color: st.color }}>● {st.label}</span>
-            </div>
+                <Box as="span" className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.n}</Box>
+              </Row>
+              <Text as="span" mono size={9.5} tone="dim">
+                <Text as="span" tone="success">↑{b.ahead}</Text> <Text as="span" tone="danger">↓{b.behind}</Text>
+              </Text>
+              <Text as="span" mono size={9.5} style={{ textAlign: "right", color: st.color }}>● {st.label}</Text>
+            </Grid>
           );
         })}
-      </div>
-    </div>
+      </Stack>
+    </Card>
   );
 }
 
@@ -287,32 +294,32 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
   const tip = useTip();
   const total = buckets.reduce((s, b) => s + b.v, 0);
   return (
-    <div className="card">
+    <Card>
       <CardHead title="Review latency" hint="PR open → merged · last 14d" />
       {total === 0 ? (
-        <div className="hint" style={{ padding: "8px 2px" }}>No merged PRs in the window.</div>
+        <Box className="hint" pad={[8, 2]}>No merged PRs in the window.</Box>
       ) : (
         <>
           <Bars labels={buckets.map(b => b.label)} height={116} tip={tip}
             groups={[{ name: "PRs", color: "var(--info)", data: buckets.map(b => b.v) }]} />
-          <div className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+          <Box className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
             median <b style={{ color: "var(--fg)" }}>{medianH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
-          </div>
+          </Box>
         </>
       )}
       {tip.node}
-    </div>
+    </Card>
   );
 }
 
 // ── states ───────────────────────────────────────────────────────────────────
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <section className="an-page">
-      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 48, color: "var(--fg-muted)", fontSize: 13 }}>
+    <Box as="section" className="an-page">
+      <Row className="mono" justify="center" style={{ flex: 1, padding: 48, color: "var(--fg-muted)", fontSize: 13 }}>
         {children}
-      </div>
-    </section>
+      </Row>
+    </Box>
   );
 }
 
@@ -329,44 +336,44 @@ export function Pulse({ repo }: { repo: GithubRepo | null }) {
 function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
   const r = data.repo;
   return (
-    <section className="an-page">
-      <div className="an-wrap">
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Pulse</h2>
-              <span className="mono" style={{ fontSize: 13, color: "var(--fg-muted)" }}>{r.name}</span>
+    <Box as="section" className="an-page">
+      <Box className="an-wrap">
+        <Row align="start" gap={14} style={{ marginBottom: 14 }}>
+          <Box style={{ flex: 1 }}>
+            <Row align="baseline" gap={10} wrap>
+              <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Pulse</Text>
+              <Text as="span" mono size={13} tone="muted">{r.name}</Text>
               <Chip tone="accent">● {r.pushedMin}m ago</Chip>
               <Chip>{r.lang}</Chip>
-            </div>
-            {r.desc && <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{r.desc}</div>}
-          </div>
-          <button className="btn ghost" onClick={() => openUrl(`https://github.com/${r.name}`)}>open on github →</button>
-        </div>
+            </Row>
+            {r.desc && <Text as="div" tone="muted" size="md" style={{ marginTop: 4 }}>{r.desc}</Text>}
+          </Box>
+          <Button variant="ghost" onClick={() => openUrl(`https://github.com/${r.name}`)}>open on github →</Button>
+        </Row>
 
         <PulseDigest kpis={data.kpis} churnAreas={data.churnAreas} ci={data.ci} partialDiffs={data.partialDiffs} />
         <KpiRow kpis={data.kpis} runs={data.ci.runs} />
 
         {/* The branches map — carried over from the old Repositories view. */}
-        <div style={{ marginBottom: 14 }}>
+        <Box style={{ marginBottom: 14 }}>
           <BranchGraph repo={repo} />
-        </div>
+        </Box>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <Grid cols="1.6fr 1fr" gap={14}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <Velocity velocity={data.velocity} />
             <NetLines velocity={data.velocity} partialDiffs={data.partialDiffs} />
             <ChurnByArea areas={data.churnAreas} />
             <FileChurn files={data.hottestFiles} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          </Stack>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <CIHealth ci={data.ci} workflows={data.workflows} />
             <Contributors contributors={data.contributors} />
             <Branches branches={data.branches} />
             <ReviewLatency buckets={data.reviewBuckets} medianH={data.kpis.reviewLatencyH} />
-          </div>
-        </div>
-      </div>
-    </section>
+          </Stack>
+        </Grid>
+      </Box>
+    </Box>
   );
 }

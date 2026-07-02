@@ -1,6 +1,10 @@
 // Activity heatmap card — 28-week × 7-day contribution calendar (#1644).
 
 import { useState } from "react";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Card } from "@/shared/ui/data/Card";
 import { heatFill } from "../heatFill";
 import { formatHeatDate } from "../lib/githubSummary";
 
@@ -40,19 +44,21 @@ export function ActivityHeatmap({
   })() : null;
 
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Activity · last 28 weeks</h3>
-        <span className="hint">all contributions · GitHub calendar</span>
-        <div style={{ flex: 1 }} />
-        <span className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Activity · last 28 weeks"
+      hint="all contributions · GitHub calendar"
+      right={
+        <Box as="span" className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
           less
           {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
-            <span key={i} style={{ width: 10, height: 10, borderRadius: 2, display: "inline-block", background: heatFill(v) }} />
+            <Box as="span" key={i} bg={heatFill(v)} radius={2} style={{ width: 10, height: 10, display: "inline-block"}} />
           ))}
           more
-        </span>
-      </div>
+        </Box>
+      }
+      headMb={10}
+    >
       <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: "block", width: "100%", overflow: "visible" }}>
         {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
           <text key={i} x={0} y={4 + i * (cell + gap) + cell / 2}
@@ -84,13 +90,13 @@ export function ActivityHeatmap({
           </g>
         )}
       </svg>
-      <div className="mono" style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
-        <span>28 weeks ago</span><span>today</span>
-      </div>
-      <div className="mono" style={{ display: "flex", gap: 24, marginTop: 12, fontSize: 10.5, color: "var(--fg-muted)" }}>
-        <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalContribs}</b> contributions</span>
-        <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalMerged}</b> PRs merged</span>
-      </div>
-    </div>
+      <Row className="mono" justify="between" align="stretch" style={{ marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
+        <Text>28 weeks ago</Text><Text>today</Text>
+      </Row>
+      <Row className="mono" gap={24} align="stretch" style={{ marginTop: 12, fontSize: 10.5, color: "var(--fg-muted)" }}>
+        <Text><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalContribs}</b> contributions</Text>
+        <Text><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalMerged}</b> PRs merged</Text>
+      </Row>
+    </Card>
   );
 }

@@ -5,6 +5,9 @@ import { type ViewKey, VIEW_DEFS } from "./viewDefs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 import { placeMenu, type MenuPlacement } from "./menuPlacement";
 import { toModelId } from "@/app/console/lib/modelDisplay";
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 
 // The canonical pane-status vocabulary lives in lib/paneStatus (#435); re-exported
 // here so existing PaneShell importers keep their import path.
@@ -68,6 +71,8 @@ interface PaneShellProps {
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
   onModel?: (model: ModelId) => void;
+  /** Adopt a persona onto this pane (#2094): stamps its role/model/start-prompt for the next launch. */
+  onPersona?: (personaId: string) => void;
   children: React.ReactNode;
 }
 
@@ -99,6 +104,7 @@ export function PaneShell({
   onRename,
   onPickDirectory,
   onModel,
+  onPersona,
   children,
 }: PaneShellProps) {
   const paneRef = useRef<HTMLDivElement>(null);
@@ -162,10 +168,11 @@ export function PaneShell({
   const triggerColor = running ? "var(--accent)" : sm.color;
 
   const chip = (txt: string, bg: string, col: string) => (
-    <span className="mono" style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col, fontSize: 9 }}>{txt}</span>
+    <Text mono size={9} style={{ padding: "0 4px", borderRadius: 5, background: bg, color: col }}>{txt}</Text>
   );
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- pane root needs a real DOM ref (focus + measure)
     <div
       ref={paneRef}
       className={focused ? "pane focused" : "pane"}
@@ -182,9 +189,8 @@ export function PaneShell({
       {/* Head — the Console-Shell pane header (#1149, reworked #1319): the compact menu trigger
           (current-view glyph tinted by status + ▾) at the far left · name · repo · badges, then
           the role badge. Model/harness/view-switching all live inside the menu the trigger opens. */}
-      <div style={{
+      <Row gap={7} style={{
         height: 36, flex: "0 0 36px", padding: "0 10px",
-        display: "flex", alignItems: "center", gap: 7,
         background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)",
       }}>
 
@@ -192,6 +198,7 @@ export function PaneShell({
             glyph = the CURRENT view's icon (console/files/branches/…) tinted by SESSION STATUS
             (accent + pulse when live, the state color when idle) + a ▾. One compact control answers
             "what am I looking at" + "is it live" and signals the menu (model · views · pane) opens. */}
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke menu-trigger needs a real DOM ref (measured placement) + status-tinted inline styling */}
         <button
           ref={menuButtonRef}
           title="Model, screens & pane options"
@@ -210,11 +217,12 @@ export function PaneShell({
               animation: running && sm.pulse ? "pulse 1.6s ease-in-out infinite" : "none",
             }}
           />
-          <span className="mono" style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)", fontSize: 10 }}>▾</span>
+          <Text mono size={10} style={{ color: menuOpen ? "var(--accent-text)" : "var(--fg-dim)" }}>▾</Text>
         </button>
 
         {/* Agent name — double-click to rename */}
         {editingName ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline rename input needs a real DOM ref (select-on-edit) + header-scoped styling
           <input
             ref={nameInputRef}
             value={draftName}
@@ -233,61 +241,63 @@ export function PaneShell({
             }}
           />
         ) : (
-          <span
+          <Text
+            mono
+            size={12.5}
+            weight={600}
             onDoubleClick={() => { setDraftName(agent); setEditingName(true); }}
             title={`${agent} · double-click to rename`}
-            className="mono"
             style={{
-              fontSize: 12.5, fontWeight: 600, color: "var(--fg)",
+              color: "var(--fg)",
               // Shrink + ellipsis (like the repo) so a long name truncates instead of pushing the
               // role badge off the right edge — the worker/director tag stays visible (#header-overflow).
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto", minWidth: 0,
             }}
-          >{agent}</span>
+          >{agent}</Text>
         )}
 
         {/* Repo */}
         {repo && (
-          <span className="mono" style={{
-            fontSize: 11, color: "var(--fg-dim)",
+          <Text mono size={11} tone="dim" style={{
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto", minWidth: 0,
-          }}>· {repo}</span>
+          }}>· {repo}</Text>
         )}
 
         {/* Change / warn badges */}
         {changes > 0 && (
-          <span className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--fg-muted)", fontSize: 10, flex: "0 0 auto" }}>
+          <Box as="span" className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--fg-muted)", fontSize: 10, flex: "0 0 auto" }}>
             ±{chip(String(changes), "var(--bg-elev2)", "var(--fg-muted)")}
-          </span>
+          </Box>
         )}
         {warns > 0 && (
-          <span className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--state-wait)", fontSize: 10, flex: "0 0 auto" }}>
+          <Box as="span" className="mono" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--state-wait)", fontSize: 10, flex: "0 0 auto" }}>
             ⚠{chip(String(warns), "color-mix(in oklch, var(--danger), transparent 82%)", "var(--danger)")}
-          </span>
+          </Box>
         )}
 
         {/* Spacer pushes the role badge to the right edge */}
-        <div style={{ flex: 1, minWidth: 0 }} />
+        <Box style={{ flex: 1, minWidth: 0 }} />
 
         {/* Role badge */}
         {role && (
-          <span className="mono" style={{
-            height: 21, padding: "0 7px", display: "flex", alignItems: "center", borderRadius: 6,
-            background: role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)",
+          <Box as="span" className="mono" pad={[0, 7]} bg={role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)"} radius={6} style={{
+            height: 21, display: "flex", alignItems: "center",
             color: role === "director" ? "var(--accent-text)" : "var(--fg-muted)",
             fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
             flex: "0 0 auto", whiteSpace: "nowrap",
-          }}>{role.toUpperCase()}</span>
+          }}>{role.toUpperCase()}</Box>
         )}
-      </div>
+      </Row>
 
       {banner}
 
+      {/* eslint-disable-next-line no-restricted-syntax -- host wrapper for the PTY terminal / view children (measured region) */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {children}
       </div>
 
       {menuOpen && createPortal(
+        // eslint-disable-next-line no-restricted-syntax -- portal menu needs a real DOM ref for measured placement (Box isn't forwardRef)
         <div ref={menuRef} style={{
           position: "fixed",
           // Hidden for the first (measure) pass, then placed; off-screen meanwhile so the
@@ -312,6 +322,7 @@ export function PaneShell({
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
             onViewChange={onViewChange}
             onModel={onModel}
+            onPersona={onPersona}
           />
         </div>,
         document.body

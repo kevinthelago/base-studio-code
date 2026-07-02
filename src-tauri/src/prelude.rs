@@ -6,14 +6,18 @@
 //! via the glob.
 
 pub(crate) use crate::platform::paths::{
-    bsc_base_dir, discovery_dir_for, home_dir, is_published, legacy_draft_dir, nearest_existing_ancestor,
-    plan_dir_for, project_dir, repo_dir, worktrees_dir,
+    bsc_base_dir, data_db_path, discovery_dir_for, home_dir, is_published, legacy_draft_dir,
+    nearest_existing_ancestor, parse_worktree_dir_name, perf_db, plan_db_path, plan_dir_for,
+    project_dir, projects_root, repo_dir, skills_db, worktree_dir_name, worktrees_dir,
 };
 pub(crate) use crate::platform::git::{git_exclude, git_lines, git_ok, git_output, git_run};
-pub(crate) use crate::platform::process::no_window;
+pub(crate) use crate::platform::process::{
+    no_window, run_capture, run_capture_stdin, run_ok, run_output, run_status,
+};
+pub(crate) use crate::platform::errs::StrErr;
 pub(crate) use crate::platform::fsx::{
-    ingest_section_files, is_safe_relpath, read_files_dir, read_text_files, sanitize_project_key,
-    worktree_slug,
+    append_block_once, ingest_stage_files, is_safe_relpath, read_files_dir, read_text_files,
+    sanitize_project_key, worktree_slug,
 };
 pub(crate) use crate::platform::shell::{
     bash_ansi_c_quote, split_utf8_at_boundary, to_bash_path, to_native_path,
@@ -22,7 +26,7 @@ pub(crate) use crate::app::state::UncleanShutdown;
 pub(crate) use crate::app::recovery::{claim_session_lock, session_lock_path};
 pub(crate) use crate::project::hub::migrate_draft_hubs_into_projects;
 pub(crate) use crate::session::launch::{
-    bsc_agent_session_path, claude_launch, claude_model_flag, claude_project_dir_name,
+    bsc_agent_session_path, claude_launch, claude_model_flag, claude_project_transcripts_dir,
     has_bsc_agent_history, has_claude_history,
 };
 pub(crate) use crate::observability::perf::PerfSpan;

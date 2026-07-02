@@ -1,0 +1,40 @@
+[
+  {
+    "name": "Compliance",
+    "by": "base-studio-code",
+    "icon": "✓",
+    "desc": "The live source of truth for compliance standards — regulation (GDPR, CCPA/CPRA), accessibility (WCAG 2.2 AA), security (SOC 2), and user-protection rules — so the planner bakes the right, citable requirements into every plan, scoped by the project's regions and data types. User-updatable without an app release (#1005). Built in — no download, build, or Docker.",
+    "builtIn": true
+  },
+  {
+    "name": "Complexity Analyzer",
+    "by": "kevinthelago",
+    "icon": "∿",
+    "desc": "Analyze code complexity (cyclomatic, cognitive, hotspots) across a codebase to target refactors.",
+    "link": "https://github.com/kevinthelago/complexity-analyzer-mcp",
+    "install": "Downloads to ~/.base-studio-code/mcp/complexity-analyzer-mcp. Run `pnpm install && pnpm build` there, then Add."
+  },
+  {
+    "name": "Dependency Graph",
+    "by": "kevinthelago",
+    "icon": "⌥",
+    "desc": "Explore a project's dependency graph — query nodes, neighbors, cycles, and stats.",
+    "link": "https://github.com/kevinthelago/dependency-graph-mcp-server",
+    "install": "Downloads to ~/.base-studio-code/mcp/dependency-graph-mcp-server. Run `pnpm install && pnpm build` there, then Add."
+  },
+  {
+    "name": "Plan Grader",
+    "by": "kevinthelago",
+    "icon": "◎",
+    "desc": "Grade a generated plan's agent-readiness — score its issues, milestones, and repos against the readiness rubric and surface prioritized fixes (the planner's grading as a tool, #897).",
+    "link": "https://github.com/kevinthelago/plan-grader-mcp-server",
+    "install": "Downloads to ~/.base-studio-code/mcp/plan-grader-mcp-server, then builds with `python -m uv sync`."
+  },
+  {
+    "name": "Research",
+    "by": "base-studio-code",
+    "icon": "⌕",
+    "desc": "Search and retrieve scientific literature — arXiv, Semantic Scholar, PubMed/PMC, Crossref — with native PDF full-text extraction and citation-grounded semantic search, so the planner can ground plans and skills in real sources (#1056). Built in — no download, build, or Docker (#1196).",
+    "builtIn": true
+  }
+]

@@ -57,6 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.err) return this.props.children;
     return (
+      // eslint-disable-next-line no-restricted-syntax -- crash boundary must render without depending on the UI kit
       <div
         role="alert"
         className="mono"
@@ -66,7 +67,9 @@ export class ErrorBoundary extends Component<Props, State> {
           color: "var(--fg)",
         }}
       >
+        {/* eslint-disable-next-line no-restricted-syntax -- crash boundary must render without depending on the UI kit */}
         <div style={{ fontSize: 14, fontWeight: 600 }}>Something went wrong{this.props.label ? ` in ${this.props.label}` : ""}.</div>
+        {/* eslint-disable-next-line no-restricted-syntax -- crash boundary must render without depending on the UI kit */}
         <div style={{ fontSize: 11.5, color: "var(--fg-muted)", maxWidth: 520, lineHeight: 1.5 }}>
           The view hit an unexpected error and was stopped to keep the rest of the app running.
         </div>
@@ -78,6 +81,7 @@ export class ErrorBoundary extends Component<Props, State> {
             padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word",
           }}
         >{this.state.err.message || String(this.state.err)}</pre>
+        {/* eslint-disable-next-line no-restricted-syntax -- crash boundary must render without depending on the UI kit */}
         <button className="btn primary" onClick={this.reset} style={{ height: 28 }}>try again</button>
       </div>
     );

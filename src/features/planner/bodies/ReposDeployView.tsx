@@ -14,6 +14,11 @@
 import { useState } from "react";
 import { type DeployConfig, type DeployService } from "../lib/deployConfig";
 import { RepoDeployCard } from "./DeployView";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import type { Repo } from "../pane/projectPane.types";
 
 const MONO = "var(--mono)";
@@ -24,11 +29,11 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
   let hue = 0;
   for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
   return (
-    <span style={{
-      width: sz, height: sz, borderRadius: 99, background: `oklch(0.7 0.13 ${hue})`, color: "#0b0d10",
+    <Box as="span" bg={`oklch(0.7 0.13 ${hue})`} radius={99} style={{
+      width: sz, height: sz, color: "#0b0d10",
       fontFamily: MONO, fontSize: sz * 0.5, fontWeight: 700, display: "inline-flex", alignItems: "center",
       justifyContent: "center", border: "1.5px solid var(--bg-canvas)",
-    }}>{(id[0] ?? "?").toUpperCase()}</span>
+    }}>{(id[0] ?? "?").toUpperCase()}</Box>
   );
 }
 
@@ -58,21 +63,25 @@ export function DeploymentBody({
   const submitLink = () => { const v = linkInput.trim(); if (v.includes("/")) { onLinkRepo?.(v); setLinkInput(""); setLinking(false); } };
   const linkAffordance = onLinkRepo && (
     linking ? (
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <Row gap={6}>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex link row; TextField's .field wrapper would change layout */}
         <input
           autoFocus aria-label="Link a repository" value={linkInput} placeholder="owner/repo"
           onChange={(e) => setLinkInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submitLink(); else if (e.key === "Escape") { setLinking(false); setLinkInput(""); } }}
           style={{ flex: 1, height: 26, padding: "0 8px", borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", color: "var(--fg)", fontFamily: MONO, fontSize: 10, outline: "none" }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom accent/height); Button/.btn would change rendering */}
         <button disabled={!linkInput.includes("/")} onClick={submitLink} style={{
           height: 26, padding: "0 11px", borderRadius: 6, border: "1px solid var(--accent-dim)",
           background: linkInput.includes("/") ? "var(--accent)" : "var(--bg-elev)", color: linkInput.includes("/") ? "#0b0d10" : "var(--fg-dim)",
           fontFamily: MONO, fontSize: 9.5, cursor: "pointer",
         }}>link</button>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom mono/height); Button/.btn would change rendering */}
         <button onClick={() => { setLinking(false); setLinkInput(""); }} style={{ height: 26, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border-soft)", background: "transparent", color: "var(--fg-muted)", fontFamily: MONO, fontSize: 9.5, cursor: "pointer" }}>cancel</button>
-      </div>
+      </Row>
     ) : (
+      // eslint-disable-next-line no-restricted-syntax -- bespoke full-width dashed "add" affordance (not a `.btn`); Button would change rendering
       <button type="button" onClick={() => setLinking(true)} style={{
         width: "100%", border: "1px dashed var(--border)", borderRadius: 8, padding: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         background: "transparent", color: "var(--fg-dim)", fontFamily: MONO, fontSize: 10.5, cursor: "pointer",
@@ -84,16 +93,16 @@ export function DeploymentBody({
   const repoMeta = (r: Repo) => (
     <>
       {(r.ahead > 0 || r.behind > 0) && (
-        <span style={{ fontFamily: MONO, fontSize: 8.5 }}>
-          {r.ahead > 0 && <span style={{ color: "var(--success)" }}>↑{r.ahead} </span>}
-          {r.behind > 0 && <span style={{ color: "var(--info)" }}>↓{r.behind}</span>}
-        </span>
+        <Text as="span" mono size={8.5}>
+          {r.ahead > 0 && <Text as="span" tone="success">↑{r.ahead} </Text>}
+          {r.behind > 0 && <Text as="span" style={{ color: "var(--info)" }}>↓{r.behind}</Text>}
+        </Text>
       )}
-      {r.lang && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</span>}
+      {r.lang && <Box as="span" pad={[1, 7]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-muted)"}}>{r.lang}</Box>}
       {r.agents.length > 0 && (
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
-          {r.agents.map((id, i) => <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></span>)}
-        </span>
+        <Box as="span" style={{ display: "inline-flex", alignItems: "center" }}>
+          {r.agents.map((id, i) => <Box as="span" key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></Box>)}
+        </Box>
       )}
     </>
   );
@@ -108,31 +117,31 @@ export function DeploymentBody({
   if (total === 0) {
     body = (
       <>
-        <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center", background: "var(--bg-canvas)" }}>
-          <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
-          <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
-        </div>
+        <Stack align="center" gap={12} style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", textAlign: "center", background: "var(--bg-canvas)" }}>
+          <Text as="span" size={26} style={{ opacity: 0.5 }}>⎇</Text>
+          <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>No repositories linked</Text>
+          <Text as="span" mono size={10.5} tone="muted" style={{ maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</Text>
+        </Stack>
         {linkAffordance}
       </>
     );
   } else {
     body = (
       <>
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <Stack gap={9}>
           {list.map((r) => {
             const svc = serviceForRepo(r.id);
             if (!svc) {
               // A linked repo whose deploy service isn't seeded yet (config out of sync) — show its
               // identity so it's not dropped; the service seeds when the plan is next saved.
               return (
-                <div key={r.id} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
-                  <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
+                <Row key={r.id} gap={9} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px" }}>
+                  <Box as="span" bg={r.cloned ? "var(--success)" : "var(--fg-dim)"} radius={99} style={{ width: 7, height: 7, flex: "0 0 7px"}} />
+                  <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{r.id}</Text>
                   {repoMeta(r)}
-                  <span style={{ flex: 1 }} />
-                  <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>deploy seeds on save</span>
-                </div>
+                  <Spacer />
+                  <Text as="span" mono size={8.5} tone="dim">deploy seeds on save</Text>
+                </Row>
               );
             }
             return (
@@ -147,14 +156,14 @@ export function DeploymentBody({
             );
           })}
           {linkAffordance}
-        </div>
+        </Stack>
       </>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Stack gap={12}>
       {body}
-    </div>
+    </Stack>
   );
 }

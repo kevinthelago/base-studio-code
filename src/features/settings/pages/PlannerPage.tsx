@@ -11,15 +11,9 @@ import { SandboxedConsolesCard } from "../cards/SandboxedConsolesCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
-
-/** A settings page sub-section header — the group label within a page (scaled-down page h2). */
-function Sub({ children }: { children: string }) {
-  return (
-    <h3 className="mono" style={{ fontSize: 12.5, margin: "10px 0 -6px", fontWeight: 600, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>
-      {children}
-    </h3>
-  );
-}
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
+import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
 
 export function PlannerPage() {
   const [selectedStream, setSelectedStream] = useState<string | null>(null);
@@ -38,11 +32,11 @@ export function PlannerPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Planner</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
-        LLM planning providers, autopilot, the session shell, mobile tunnel, performance, and storage.
-      </p>
+    <Stack gap={18} style={{ maxWidth: 820 }}>
+      <SettingsPageHeader
+        title="Planner"
+        description="LLM planning providers, autopilot, the session shell, mobile tunnel, performance, and storage."
+      />
 
       <Sub>Providers &amp; automation</Sub>
       <LlmProviderCard />
@@ -70,9 +64,9 @@ export function PlannerPage() {
       />
 
       {notice && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: -8, wordBreak: "break-all" }}>
+        <Text as="div" mono size={11} tone="accent" style={{ marginTop: -8, wordBreak: "break-all" }}>
           {notice}
-        </div>
+        </Text>
       )}
 
       {selectedStream && (
@@ -87,6 +81,6 @@ export function PlannerPage() {
         onEnforced={() => setRefreshTrigger(prev => prev + 1)}
         flash={flash}
       />
-    </div>
+    </Stack>
   );
 }

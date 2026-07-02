@@ -14,7 +14,7 @@ pub(crate) fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCf
         let slug = skill_slug(&s.name);
         if slug.is_empty() { continue; }
         let dir = skills_root.join(&slug);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).str_err()?;
         let mut doc = String::from("---\n");
         doc.push_str(&format!("name: {}\n", yaml_quote(&s.name)));
         doc.push_str(&format!("description: {}\n", yaml_quote(&s.description)));
@@ -23,7 +23,7 @@ pub(crate) fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCf
         }
         doc.push_str("---\n\n");
         doc.push_str(&s.prompt);
-        std::fs::write(dir.join("SKILL.md"), doc).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("SKILL.md"), doc).str_err()?;
     }
     Ok(())
 }
@@ -40,7 +40,7 @@ pub(crate) fn record_skill_uses(skills: &[SkillCfg]) {
     if ids.is_empty() {
         return;
     }
-    let path = crate::bsc_base_dir().join("skills.db");
+    let path = crate::skills_db();
     if !path.exists() {
         return; // no global store yet — nothing to count against
     }
@@ -81,11 +81,7 @@ pub(crate) fn skill_slug(name: &str) -> String {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn write_session_skills_writes_skill_files() {

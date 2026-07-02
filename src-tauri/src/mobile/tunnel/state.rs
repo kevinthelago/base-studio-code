@@ -7,6 +7,7 @@
 // drains it lives in `transport`. Fields/methods reached from those siblings (and the test
 // module) are `pub(super)` — visible within the `tunnel` module tree, private outside it.
 
+use crate::StrErr;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -240,14 +241,21 @@ impl TunnelState {
         }
     }
 
+    /// Enqueue a `PushJob` for the paired device(s). Non-blocking — the actual HTTP send happens
+    /// on the push worker. No-op when there are no stored tokens (no phone has paired / shared a
+    /// token this session). The shared guard + send behind the `enqueue_*_push` helpers.
+    fn enqueue(&self, job: PushJob) {
+        if self.fcm_tokens.lock().unwrap().is_empty() {
+            return;
+        }
+        let _ = self.push_tx.send(job);
+    }
+
     /// Queue an FCM `user_request` push for the paired device(s). Non-blocking — the actual
     /// HTTP send happens on the push worker. No-op when there are no stored tokens (no phone
     /// has paired / shared a token this session).
     pub(super) fn enqueue_user_request_push(&self, pane_id: &str, prompt: &str, session_name: &str) {
-        if self.fcm_tokens.lock().unwrap().is_empty() {
-            return;
-        }
-        let _ = self.push_tx.send(PushJob::UserRequest {
+        self.enqueue(PushJob::UserRequest {
             pane_id: pane_id.to_string(),
             prompt: prompt.to_string(),
             session_name: session_name.to_string(),
@@ -256,10 +264,7 @@ impl TunnelState {
 
     /// Queue an FCM `coord_wait` push (F4). Non-blocking. No-op without stored tokens.
     pub(super) fn enqueue_coord_wait_push(&self, session: &str, reason: &str) {
-        if self.fcm_tokens.lock().unwrap().is_empty() {
-            return;
-        }
-        let _ = self.push_tx.send(PushJob::CoordWait {
+        self.enqueue(PushJob::CoordWait {
             session: session.to_string(),
             reason: reason.to_string(),
         });
@@ -267,10 +272,7 @@ impl TunnelState {
 
     /// Queue an FCM `autom_failed` push (A4). Non-blocking. No-op without stored tokens.
     pub(super) fn enqueue_autom_failed_push(&self, name: &str, error: &str) {
-        if self.fcm_tokens.lock().unwrap().is_empty() {
-            return;
-        }
-        let _ = self.push_tx.send(PushJob::AutomFailed {
+        self.enqueue(PushJob::AutomFailed {
             name: name.to_string(),
             error: error.to_string(),
         });
@@ -278,10 +280,7 @@ impl TunnelState {
 
     /// Queue an FCM `warden_quarantine` push (#1102). Non-blocking. No-op without stored tokens.
     pub(super) fn enqueue_warden_push(&self, session: &str, detail: &str) {
-        if self.fcm_tokens.lock().unwrap().is_empty() {
-            return;
-        }
-        let _ = self.push_tx.send(PushJob::Warden {
+        self.enqueue(PushJob::Warden {
             session: session.to_string(),
             detail: detail.to_string(),
         });
@@ -430,6 +429,19 @@ impl TunnelState {
             input_granted: inner.input_granted,
         }
     }
+
+    /// Store a pushed snapshot under the lock, then broadcast `msg` to connected clients.
+    /// Shared by the metadata-push setters (`tunnel_set_panes` / `tunnel_set_fleet_state` /
+    /// `tunnel_set_automations` / `tunnel_set_mcp_state`), which all follow the same
+    /// store-then-broadcast shape (only the field written, the log line, and the broadcast
+    /// variant differ — those stay at the call site).
+    pub(super) fn set_and_broadcast(&self, msg: ServerMsg, set: impl FnOnce(&mut Inner)) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            set(&mut inner);
+        }
+        let _ = self.event_tx.send(msg);
+    }
 }
 
 impl Default for TunnelState {
@@ -465,7 +477,7 @@ pub(super) fn fnv1a32_hex(s: &str) -> String {
 /// scope (not in `transport`) so the tests can exercise it against the protocol types.
 pub(super) fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<ClientMsg, String> {
     let mut out = vec![0u8; frame.len()];
-    let n = tx.read_message(frame, &mut out).map_err(|e| e.to_string())?;
+    let n = tx.read_message(frame, &mut out).str_err()?;
     out.truncate(n);
-    serde_json::from_slice(&out).map_err(|e| e.to_string())
+    serde_json::from_slice(&out).str_err()
 }

@@ -10,6 +10,7 @@
 
 import { useRef } from "react";
 import { safeInvoke } from "../core/safeInvoke";
+import { bscJson } from "../core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
@@ -38,7 +39,7 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   if (!cwd) return null;
 
   const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
-  const auditLines = await safeInvoke<string[]>("read_audit_log", { limit: 500 }, []);
+  const auditLines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "500", "--json"], []);
   return {
     paneId,
     anchor: {
@@ -115,7 +116,7 @@ export function useWarden(): void {
     const projectKeys = [...new Set(panes.map((p) => p.split(":")[0]).filter(Boolean))];
     const doneByProject = new Map<string, Set<string>>();
     await Promise.all(projectKeys.map(async (key) => {
-      const issues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: key }, []);
+      const issues = await bscJson<PlanIssue[]>(key, ["plan", "list", "--full", "--json"], []);
       doneByProject.set(key, doneIssueRefs(issues ?? []));
     }));
     if (isCancelled()) return;

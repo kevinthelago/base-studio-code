@@ -175,6 +175,76 @@ pub fn query(
     out
 }
 
+/// The newest `limit` raw (unparsed) lines of a stream's log file — the `bsc logs tail` shape the
+/// desktop's per-stream `read_*_log` / `read_log_tail` readers returned (#2144). `name` is any stream
+/// alias (`audit`/`skills`/`hooks`/`mcp`/`coord`, resolved via [`canonical_stream`]); `oldest` selects
+/// the order — `false` (the default) returns newest-first (the audit/skill/hook/mcp convention),
+/// `true` keeps the file's chronological oldest-first order (the coord log). Blank lines are dropped;
+/// an unknown alias or a missing/unreadable file yields an empty list. Pure (reads one file).
+pub fn tail_raw(dir: &Path, name: &str, limit: usize, oldest: bool) -> Vec<String> {
+    let Some(canon) = canonical_stream(name) else { return vec![] };
+    let Some((_, file)) = streams().into_iter().find(|(s, _)| *s == canon) else { return vec![] };
+    let text = std::fs::read_to_string(dir.join(file)).unwrap_or_default();
+    let mut lines: Vec<String> =
+        text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect();
+    if !oldest {
+        lines.reverse();
+        lines.truncate(limit);
+    } else if lines.len() > limit {
+        lines = lines.split_off(lines.len() - limit);
+    }
+    lines
+}
+
+/// One pane's latest turn-boundary state (#1184) — the `bsc logs pane-activity` shape the desktop's
+/// `read_pane_activity` command returned. `state` is `"run"` (a turn is open) or `"idle"`; `at` is the
+/// event's epoch-ms timestamp.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneActivity {
+    pub pane: String,
+    pub state: String,
+    pub at: u64,
+}
+
+/// The latest turn-boundary state per pane from `activity.log`, newest pane first (#1184 / #2144). A
+/// later line for a pane supersedes earlier ones; only `run`/`idle` states are kept (malformed/short
+/// lines and unknown states are already dropped by the stream parser or filtered here). Missing log ⇒
+/// empty, so the frontend cleanly falls back to its silence-timer behavior.
+pub fn pane_activity(dir: &Path) -> Vec<PaneActivity> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<String, (usize, String, u64)> = HashMap::new();
+    for (i, e) in read_stream(dir, "activity").into_iter().enumerate() {
+        let state = e.summary.trim().to_string();
+        if e.session.is_empty() || (state != "run" && state != "idle") {
+            continue;
+        }
+        latest.insert(e.session.clone(), (i, state, e.ts_ms.max(0) as u64));
+    }
+    let mut rows: Vec<(usize, PaneActivity)> = latest
+        .into_iter()
+        .map(|(pane, (i, state, at))| (i, PaneActivity { pane, state, at }))
+        .collect();
+    rows.sort_by_key(|(i, _)| std::cmp::Reverse(*i)); // newest line first
+    rows.into_iter().map(|(_, r)| r).collect()
+}
+
+/// The deduped set of panes that self-reported `done` via `bsc-done` (#1379) — the `bsc logs
+/// done-panes` shape the desktop's `read_done_panes` command returned — newest line first. Missing
+/// log ⇒ empty.
+pub fn done_panes(dir: &Path) -> Vec<String> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<String, usize> = HashMap::new();
+    for (i, e) in read_stream(dir, "done").into_iter().enumerate() {
+        if e.session.is_empty() {
+            continue;
+        }
+        latest.insert(e.session, i);
+    }
+    let mut rows: Vec<(usize, String)> = latest.into_iter().map(|(p, i)| (i, p)).collect();
+    rows.sort_by_key(|(i, _)| std::cmp::Reverse(*i)); // newest line first
+    rows.into_iter().map(|(_, p)| p).collect()
+}
+
 /// The role implied by a pane-id (the `paneIdentity.ts` grammar).
 pub fn role_of(session: &str) -> &'static str {
     if session.starts_with("planning_") {
@@ -379,6 +449,62 @@ mod tests {
         let lim = query(&d, &["tool"], None, None, Some(1));
         assert_eq!(lim.len(), 1);
         assert_eq!(lim[0].session, "k:a"); // the 10:00:10 Bash line
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn tail_raw_returns_newest_or_oldest_raw_lines() {
+        // `bsc logs tail` (#2144): the newest `limit` raw lines. Default newest-first (audit/skill/
+        // hook/mcp); `oldest=true` keeps chronological order (coord). Blank lines dropped; an unknown
+        // alias or missing file ⇒ empty.
+        let d = tmp();
+        std::fs::write(d.join("audit.log"), "2026-06-26T10:00:00Z\tk\tRead\ta\n\n2026-06-26T10:00:01Z\tk\tRead\tb\n2026-06-26T10:00:02Z\tk\tRead\tc\n").unwrap();
+        // newest-first, limit 2 (the blank line is dropped).
+        let newest = tail_raw(&d, "audit", 2, false);
+        assert_eq!(newest.len(), 2);
+        assert!(newest[0].ends_with("Read\tc") && newest[1].ends_with("Read\tb"));
+        // oldest-first (coord convention): newest 2 in chronological order.
+        std::fs::write(d.join("coord.log"), "2026-06-26T10:00:00Z\tk\tlanded\t\t\n2026-06-26T10:00:01Z\tk\tmerged\t\t\n2026-06-26T10:00:02Z\tk\tclosed\t\t\n").unwrap();
+        let oldest = tail_raw(&d, "coord", 2, true);
+        assert_eq!(oldest.len(), 2);
+        assert!(oldest[0].contains("merged") && oldest[1].contains("closed"));
+        // Unknown alias / missing file ⇒ empty, never a panic.
+        assert!(tail_raw(&d, "nope", 5, false).is_empty());
+        assert!(tail_raw(&d, "hooks", 5, false).is_empty()); // hooks.log absent
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn pane_activity_keeps_newest_run_idle_state_per_pane() {
+        let d = tmp();
+        std::fs::write(d.join("activity.log"), concat!(
+            "100\tp1\trun\n",
+            "150\tp2\trun\n",
+            "bad line with no tabs\n", // dropped by the stream parser
+            "200\tp1\tidle\n",         // supersedes p1's run
+            "250\tp3\tbogus\n",        // dropped: unknown state
+            "260\t\trun\n",            // dropped: empty pane
+            "300\tp1\trun\n",          // newest line for p1
+        )).unwrap();
+        let rows = pane_activity(&d);
+        let got: Vec<(&str, &str, u64)> = rows.iter().map(|r| (r.pane.as_str(), r.state.as_str(), r.at)).collect();
+        assert_eq!(got, vec![("p1", "run", 300), ("p2", "run", 150)], "newest line first; bad lines dropped");
+        assert!(pane_activity(&tmp()).is_empty(), "missing log ⇒ empty");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn done_panes_dedupes_newest_first() {
+        let d = tmp();
+        std::fs::write(d.join("done.log"), concat!(
+            "100\tproj:api\n",
+            "150\tproj:web\n",
+            "noTabHere\n",     // dropped
+            "200\tproj:api\n", // proj:api seen again — newest line wins for ordering
+            "250\t\n",         // dropped: empty pane
+        )).unwrap();
+        assert_eq!(done_panes(&d), vec!["proj:api".to_string(), "proj:web".to_string()]);
+        assert!(done_panes(&tmp()).is_empty(), "missing log ⇒ empty");
         let _ = std::fs::remove_dir_all(&d);
     }
 

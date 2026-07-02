@@ -5,8 +5,8 @@ import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet"
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet";
-  setProjectsPageMode: (v: "projects" | "fleet") => void;
+  projectsPageMode: "projects" | "fleet" | "personas";
+  setProjectsPageMode: (v: "projects" | "fleet" | "personas") => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";

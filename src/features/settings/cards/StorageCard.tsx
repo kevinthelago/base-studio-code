@@ -3,6 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
+import { Card } from "@/shared/ui/data/Card";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -110,81 +116,79 @@ export function StorageCard() {
   const grandTotal = rows.reduce((s, r) => s + r.sizeBytes, 0);
 
   return (
-    <div style={{ maxWidth: 760, display: "flex", flexDirection: "column", gap: 0 }}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 16, color: "var(--fg)", marginBottom: 6 }}>Storage</div>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 11.5, lineHeight: 1.5, color: "var(--fg-muted)" }}>
+    <Stack gap={0} style={{ maxWidth: 760 }}>
+      <Box style={{ marginBottom: 20 }}>
+        <Text as="div" size={16} style={{ fontFamily: "var(--sans)", color: "var(--fg)", marginBottom: 6 }}>Storage</Text>
+        <Text as="div" size={11.5} tone="muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.5 }}>
           Each fleet agent builds in its own git worktree, and every worktree accumulates its own{" "}
           <code className="mono">target/</code> (build artifacts) — which Cargo never garbage-collects.
           Worktrees are removed automatically when a project is deleted; reclaim them here at any time to free disk space.
           Reclaiming removes a worktree's checkout and its build artifacts (the agent's committed work is on its branch and is preserved).
-        </div>
-      </div>
+        </Text>
+      </Box>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>
+      <Row gap={10} style={{ marginBottom: 12 }}>
+        <Text mono size={11} style={{ color: "var(--fg)" }}>
           {rows.length} worktree{rows.length === 1 ? "" : "s"} · {fmtBytes(grandTotal)} total
-        </span>
-        <span style={{ flex: 1 }} />
+        </Text>
+        <Box as="span" style={{ flex: 1 }} />
         {scanning ? (
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>scanning…</span>
+          <Text mono size={10} tone="dim">scanning…</Text>
         ) : takenAt ? (
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>checked {new Date(takenAt).toLocaleTimeString()}</span>
+          <Text mono size={10} tone="dim">checked {new Date(takenAt).toLocaleTimeString()}</Text>
         ) : null}
         <Button size="sm" disabled={busy || scanning} onClick={() => void refresh()}>Refresh</Button>
-      </div>
+      </Row>
 
       {projects.length === 0 ? (
-        <div className="mono" style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontSize: 11.5, color: "var(--fg-dim)" }}>
-          {scanning ? "Scanning…" : "No fleet worktrees on disk."}
-        </div>
+        <EmptyState iconVariant="dashed" title={scanning ? "Scanning…" : "No fleet worktrees on disk."} />
       ) : (
         projects.map((p) => (
-          <div key={p.key} style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{p.key}</div>
-                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+          <Card key={p.key} style={{ marginBottom: 12 }}>
+            <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.key}</Text>
+                <Text as="div" mono size={10.5} tone="dim" style={{ marginTop: 2 }}>
                   {p.list.length} worktree{p.list.length === 1 ? "" : "s"} · {fmtBytes(p.total)} ({fmtBytes(p.targetTotal)} in target/)
-                </div>
-              </div>
+                </Text>
+              </Box>
               <ConfirmButton size="sm" label="Reclaim" armedLabel="Confirm" disabled={busy} onConfirm={() => reclaim(p.key)} />
-            </div>
+            </Row>
             {p.list.map((w) => (
-              <div key={w.path} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{w.name}</div>
-                </div>
-                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
+              <Row key={w.path} gap={12} style={{ padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>
+                <Box style={{ flex: 1, minWidth: 0 }}>
+                  <Text as="div" mono size={11.5} tone="muted">{w.name}</Text>
+                </Box>
+                <Text as="div" mono size={10.5} tone="dim" style={{ whiteSpace: "nowrap" }}>
                   {fmtBytes(w.sizeBytes)}{w.targetBytes > 0 ? ` · ${fmtBytes(w.targetBytes)} target/` : ""}
-                </div>
-              </div>
+                </Text>
+              </Row>
             ))}
-          </div>
+          </Card>
         ))
       )}
 
       {sandbox && (sandbox.installed || sandbox.tarballBytes > 0) && (
-        <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>Agent sandbox (WSL2)</div>
-              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+        <Card style={{ marginBottom: 12 }}>
+          <Row gap={12} style={{ padding: "10px 0" }}>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>Agent sandbox (WSL2)</Text>
+              <Text as="div" mono size={10.5} tone="dim" style={{ marginTop: 2 }}>
                 {fmtBytes(sandbox.distroBytes)} distro image{sandbox.tarballBytes > 0 ? ` · ${fmtBytes(sandbox.tarballBytes)} cached image` : ""} · the sealed WSL2 isolation cage
-              </div>
-            </div>
+              </Text>
+            </Box>
             <ConfirmButton size="sm" label="Remove" armedLabel="Confirm" disabled={busy} onConfirm={removeSandbox} />
-          </div>
-        </div>
+          </Row>
+        </Card>
       )}
 
       {notice && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, wordBreak: "break-all" }}>{notice}</div>
+        <Text as="div" mono size={11} tone="accent" style={{ marginTop: 4, wordBreak: "break-all" }}>{notice}</Text>
       )}
 
-      <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-dim)", marginTop: 12 }}>
+      <Text as="div" size={10.5} tone="dim" style={{ fontFamily: "var(--sans)", lineHeight: 1.5, marginTop: 12 }}>
         Worktrees live under <code className="mono">~/.base-studio-code/worktrees/</code>; the agent sandbox under <code className="mono">~/.base-studio-code/wsl/</code>. Removing the sandbox is reversible — reinstall it from <strong>Settings → Security</strong>.
-      </div>
-    </div>
+      </Text>
+    </Stack>
   );
 }

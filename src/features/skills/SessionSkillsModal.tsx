@@ -10,6 +10,11 @@ import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Box } from "@/shared/ui/layout/Box";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Text } from "@/shared/ui/typography/Text";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import { pill, sourcePill } from "./skillStyles";
 import {
@@ -77,95 +82,99 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   // remove override; one that's off flips to an add.)
   const flip = (st: { skill: SkillDef; on: boolean }) => setSessionSkill(sessionKey, st.skill.id, st.on ? "off" : "on");
 
-  function Row({ st }: { st: ReturnType<typeof sessionSkillState> }) {
+  function SkillRow({ st }: { st: ReturnType<typeof sessionSkillState> }) {
     const m = REASON_META[st.reason];
     return (
-      <div className="sess-skill-row" data-skill-id={st.skill.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", alignItems: "center", gap: 12, padding: "9px 20px", borderBottom: "1px solid var(--border-soft)",
+      <Grid className="sess-skill-row" data-skill-id={st.skill.id} cols="24px 1fr auto" align="center" gap={12} style={{ padding: "9px 20px", borderBottom: "1px solid var(--border-soft)",
         background: st.overridden ? "color-mix(in oklch, var(--accent), transparent 93%)" : "transparent",
         boxShadow: st.overridden ? (st.reason === "removed" ? "inset 2px 0 0 var(--danger)" : "inset 2px 0 0 var(--accent)") : "none" }}>
-        <span style={glyphTile(st.skill.kind)}>{KIND[st.skill.kind].glyph}</span>
-        <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span className="mono" style={{ fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.skill.name}</span>
-            <span style={sourcePill(st.skill.source)}>{SOURCE_TAG[st.skill.source].label}</span>
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={pill(m.hue, m.hue === "var(--fg-dim)")}>{m.label}</span>
-            {m.hint && <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>{m.hint}</span>}
-          </span>
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {st.overridden && <span onClick={() => setSessionSkill(sessionKey, st.skill.id, "inherit")} style={{ fontSize: 10.5, color: "var(--fg-dim)", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>reset</span>}
+        <Box as="span" style={glyphTile(st.skill.kind)}>{KIND[st.skill.kind].glyph}</Box>
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Row gap={7}>
+            <Text as="span" mono size={12} style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.skill.name}</Text>
+            <Box as="span" style={sourcePill(st.skill.source)}>{SOURCE_TAG[st.skill.source].label}</Box>
+          </Row>
+          <Row gap={6}>
+            <Box as="span" style={pill(m.hue, m.hue === "var(--fg-dim)")}>{m.label}</Box>
+            {m.hint && <Text as="span" size={10.5} tone="dim">{m.hint}</Text>}
+          </Row>
+        </Stack>
+        <Row gap={10}>
+          {st.overridden && <Text as="span" size={10.5} tone="dim" onClick={() => setSessionSkill(sessionKey, st.skill.id, "inherit")} style={{ cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>reset</Text>}
           <Toggle size="sm" className="sess-toggle" on={st.on} onClick={() => flip(st)} />
-        </span>
-      </div>
+        </Row>
+      </Grid>
     );
   }
 
   return (
-    <div className="modal-scrim start" onClick={onClose} style={{ padding: "34px 20px", overflow: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
+    <Box className="modal-scrim start" onClick={onClose} pad={[34, 20]} style={{ overflow: "auto" }}>
+      <Stack onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
         {/* header */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>Skills for this session</div>
-            <span style={{ flex: 1 }} />
+        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
+          <Row gap={11}>
+            <Text as="div" size={15} weight={600} style={{ color: "var(--fg)" }}>Skills for this session</Text>
+            <Box as="span" style={{ flex: 1 }} />
             <IconButton aria-label="close" onClick={onClose} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{sessionLabel || sessionKey}</span>
-            <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}><b className="mono" style={{ color: "var(--fg)" }}>{availCount}</b> available · <b className="mono" style={{ color: "var(--accent)" }}>{overrides.length}</b> overrides</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13 }}>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-              <span style={{ color: "var(--fg-dim)", fontSize: 13 }}>⌕</span>
+          </Row>
+          <Row gap={8} wrap style={{ marginTop: 9 }}>
+            <Text as="span" mono size={11.5} tone="muted">{sessionLabel || sessionKey}</Text>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" size={11.5} tone="muted"><b className="mono" style={{ color: "var(--fg)" }}>{availCount}</b> available · <b className="mono" style={{ color: "var(--accent)" }}>{overrides.length}</b> overrides</Text>
+          </Row>
+          <Row gap={10} style={{ marginTop: 13 }}>
+            <Row gap={8} style={{ flex: 1, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+              <Text as="span" tone="dim" size={13}>⌕</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </div>
-            <div style={{ display: "flex", height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+            </Row>
+            <Row align="stretch" style={{ height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
               {([["assigned", `Assigned (${availCount})`], ["all", `All (${skills.length})`]] as const).map(([t, lbl], i) => (
-                <div key={t} onClick={() => setTab(t)} style={{ display: "flex", alignItems: "center", padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</div>
+                <Row key={t} onClick={() => setTab(t)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
-            </div>
+            </Row>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke 30px toolbar button with custom inline styling, not a .btn control */}
             <button onClick={() => resetSessionSkills(sessionKey)} style={{ height: 30, padding: "0 11px", borderRadius: "var(--r-md)", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>↺ Reset all</button>
-          </div>
+          </Row>
           {/* quick-add a task group */}
           {skillGroups.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
-              <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Quick-add a task group</span>
+            <Row gap={8} wrap style={{ marginTop: 11 }}>
+              <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>⬡ Quick-add a task group</Text>
               {skillGroups.map((g) => { const on = groupIds.includes(g.id); return (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke per-group pill toggle with hue-tinted inline styling, not a .btn control
                 <button key={g.id} onClick={() => setSessionSkillGroup(sessionKey, g.id, !on)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 99, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", border: "1px solid " + (on ? g.hue : "var(--border)"), background: on ? `color-mix(in oklch, ${g.hue}, transparent 85%)` : "transparent", color: on ? g.hue : "var(--fg-muted)" }}>
-                  <span style={{ opacity: 0.75 }}>⬡</span>{g.name}<span className="mono" style={{ fontSize: 9.5, opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</span>
+                  <Box as="span" style={{ opacity: 0.75 }}>⬡</Box>{g.name}<Text as="span" mono size={9.5} style={{ opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</Text>
                 </button>
               ); })}
-            </div>
+            </Row>
           )}
-        </div>
+        </Box>
 
         {/* list */}
-        <div style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
+        <Box style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
           {overrideRows.length > 0 && (
             <>
-              <div className="mono" style={{ padding: "9px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--accent)" }}>Overrides · {overrideRows.length}</div>
-              {overrideRows.map((st) => <Row key={st.skill.id} st={st} />)}
+              <Text as="div" mono size={9.5} tone="accent" style={{ padding: "9px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>Overrides · {overrideRows.length}</Text>
+              {overrideRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
             </>
           )}
-          <div className="mono" style={{ padding: "13px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>
+          <Text as="div" mono size={9.5} tone="dim" style={{ padding: "13px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>
             {tab === "assigned" ? `Assigned to this session · ${restRows.length}` : `All skills · ${restRows.length}`}
-          </div>
-          {restRows.map((st) => <Row key={st.skill.id} st={st} />)}
+          </Text>
+          {restRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
           {restRows.length === 0 && overrideRows.length === 0 && (
-            <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--fg-dim)", fontSize: 12 }}>No skills match.</div>
+            <Text as="div" tone="dim" size={12} style={{ padding: "40px 20px", textAlign: "center" }}>No skills match.</Text>
           )}
-        </div>
+        </Box>
 
         {/* footer */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
-          <span style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.4 }}>Written as <span className="mono" style={{ color: "var(--fg-muted)" }}>.claude/skills/&lt;slug&gt;/SKILL.md</span> on next relaunch.</span>
-          <span style={{ flex: 1 }} />
+        <Row gap={12} style={{ padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
+          <Text as="span" size={11} tone="dim" style={{ lineHeight: 1.4 }}>Written as <Text as="span" mono tone="muted">.claude/skills/&lt;slug&gt;/SKILL.md</Text> on next relaunch.</Text>
+          <Box as="span" style={{ flex: 1 }} />
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke accent-filled footer CTA with custom inline styling, not a .btn control */}
           <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
-        </div>
-      </div>
-    </div>
+        </Row>
+      </Stack>
+    </Box>
   );
 }

@@ -1,19 +1,22 @@
 import type { ReactNode } from "react";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <Row gap={12}>
       <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
-      <div>
-        <div className="mono" style={{ fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+      <Box>
+        <Text as="div" mono size={11.5} style={{ color: "var(--fg)", marginBottom: 2 }}>
           {title}
-        </div>
-        <div className="hint">{children}</div>
-      </div>
-    </div>
+        </Text>
+        <Box className="hint">{children}</Box>
+      </Box>
+    </Row>
   );
 }
 
@@ -21,13 +24,13 @@ export function ToggleRow({ on, onToggle, title, children }: {
 /** A settings row: label (+ optional hint) stacked on the left, a control on the right, divider beneath. */
 export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{label}</div>
-        {hint && <div style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{hint}</div>}
-      </div>
+    <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{label}</Text>
+        {hint && <Text as="div" size={11} tone="dim" style={{ fontFamily: "var(--sans)", marginTop: 2 }}>{hint}</Text>}
+      </Box>
       {children}
-    </div>
+    </Row>
   );
 }
 
@@ -38,6 +41,7 @@ export function SettingsSelect({ value, options, onChange }: {
   onChange: (v: number | string) => void;
 }) {
   return (
+    // eslint-disable-next-line no-restricted-syntax -- helper intentionally renders a bespoke compact mono <select> (type-preserving onChange) for settings rows; not a .field stack
     <select
       value={value}
       onChange={(e) => { const raw = e.target.value; onChange(typeof value === "number" ? Number(raw) : raw); }}

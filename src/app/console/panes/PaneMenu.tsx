@@ -3,6 +3,11 @@ import { Maximize2, Minimize2, Power, PowerOff, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { type ViewKey, VIEW_DEFS } from "./viewDefs";
 import { type ModelId, MODELS } from "@/app/console/lib/models";
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
+import { useAppStore } from "@/store";
 
 // Re-exported so existing `import { type ModelId } from "./PaneMenu"` call sites keep working
 // now that the catalog lives in the shared module (#…).
@@ -51,19 +56,24 @@ interface PaneMenuProps {
   onViewChange?: (view: ViewKey) => void;
   /** Set this pane's model. Applies to `claude --model` on the pane's next launch. */
   onModel?: (model: ModelId) => void;
+  /** Adopt a persona onto this pane (#2094): stamps role/model/start-prompt for the next launch. */
+  onPersona?: (personaId: string) => void;
 }
 
 export function PaneMenu({
   agent, provider, running, model, runningModel, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel,
+  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel, onPersona,
 }: PaneMenuProps) {
+  // The persona library (#2094) — read here so the picker doesn't need prop-drilling; onPersona
+  // (bound to this pane's id upstream) does the actual stamp.
+  const personas = useAppStore((s) => s.personas);
   const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
   const harness = harnessOf(provider);
   // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
   // configured model. Selecting a different row still sets the model for the next launch.
   const selected = runningModel ?? model;
   return (
-    <div className="mono" style={{
+    <Box className="mono" style={{
       width: 268,
       maxHeight,
       background: "var(--bg-panel)",
@@ -76,29 +86,27 @@ export function PaneMenu({
       fontSize: 11,
     }}>
       {/* Header */}
-      <div style={{
-        padding: "10px 12px", borderBottom: "1px solid var(--border-soft)",
-        background: "var(--bg-elev)",
+      <Box pad={[10, 12]} bg="var(--bg-elev)" style={{ borderBottom: "1px solid var(--border-soft)",
       }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--fg)", fontWeight: 600 }}>{agent}</span>
-          <span style={{ flex: 1 }} />
-          <span
-            style={{ color: "var(--fg-dim)", fontSize: 10, cursor: "pointer" }}
+        <Row align="baseline" gap={8}>
+          <Text size={12} weight={600} style={{ color: "var(--fg)" }}>{agent}</Text>
+          <Box as="span" style={{ flex: 1 }} />
+          <Text
+            tone="dim" size={10} style={{ cursor: "pointer" }}
             onClick={onRename}
-          >rename</span>
-        </div>
+          >rename</Text>
+        </Row>
         {/* Harness + provider (#1319) — moved here from the header pill. The provider-hue dot + the
             harness label that once sat in the header now identify the runtime inside the menu. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: provColor }} />
-          <span style={{ fontSize: 10, color: "var(--fg-muted)" }}>{harness}</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 9.5, color: running ? "var(--accent)" : "var(--fg-dim)" }}>
+        <Row gap={6} style={{ marginTop: 6 }}>
+          <Box as="span" bg={provColor} style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0}} />
+          <Text size={10} tone="muted">{harness}</Text>
+          <Box as="span" style={{ flex: 1 }} />
+          <Text size={9.5} style={{ color: running ? "var(--accent)" : "var(--fg-dim)" }}>
             {running ? "running" : "idle"}
-          </span>
-        </div>
-      </div>
+          </Text>
+        </Row>
+      </Box>
 
       {/* Model */}
       <MenuSection label="model">
@@ -107,21 +115,38 @@ export function PaneMenu({
           const isRunning = runningModel != null && m.id === runningModel;
           return (
             <MenuRow key={m.id} on={on} onClick={onModel ? () => { onModel(m.id); onClose?.(); } : undefined}>
-              <span style={{
+              <Box as="span" bg={on ? "var(--accent)" : "var(--border)"} style={{
                 width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                background: on ? "var(--accent)" : "var(--border)",
               }} />
-              <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{m.id}</span>
-              {isRunning && <span style={{ color: "var(--accent)", fontSize: 9, marginRight: 6 }}>running</span>}
-              <span style={{ color: "var(--fg-dim)", fontSize: 9.5, marginRight: 6 }}>{m.tone}</span>
-              <span style={{ color: "var(--fg-dim)", fontSize: 9.5, fontFamily: "var(--sans)" }}>{m.price}</span>
+              <Text style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{m.id}</Text>
+              {isRunning && <Text tone="accent" size={9} style={{ marginRight: 6 }}>running</Text>}
+              <Text tone="dim" size={9.5} style={{ marginRight: 6 }}>{m.tone}</Text>
+              <Text tone="dim" size={9.5} style={{ fontFamily: "var(--sans)" }}>{m.price}</Text>
             </MenuRow>
           );
         })}
-        <div style={{ padding: "4px 8px 0", fontSize: 9, color: "var(--fg-dim)" }}>
+        <Text as="div" tone="dim" size={9} style={{ padding: "4px 8px 0" }}>
           applies on the pane's next launch (disable → enable to apply now)
-        </div>
+        </Text>
       </MenuSection>
+
+      {/* Persona (#2094) — stamp a role + start prompt + model onto this pane, applied on its next
+          launch. Most natural on a manual console (the role is the user's to pick); a fleet pane
+          starts as worker/director but the user may re-stamp it here. */}
+      {onPersona && (
+        <MenuSection label="persona">
+          {personas.map((p) => (
+            <MenuRow key={p.id} onClick={() => { onPersona(p.id); onClose?.(); }}>
+              <Box as="span" bg="var(--border)" style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0 }} />
+              <Text style={{ color: "var(--fg)", flex: 1 }}>{p.name}</Text>
+              <Text tone="dim" size={9.5} style={{ marginRight: 6 }}>{p.role}</Text>
+            </MenuRow>
+          ))}
+          <Text as="div" tone="dim" size={9} style={{ padding: "4px 8px 0" }}>
+            sets role · model · start prompt · relaunch to apply
+          </Text>
+        </MenuSection>
+      )}
 
       {/* Views */}
       <MenuSection label="view">
@@ -131,9 +156,9 @@ export function PaneMenu({
           return (
             <MenuRow key={k} on={on} onClick={() => { onViewChange?.(k); onClose?.(); }}>
               <Icon size={12} style={{ flexShrink: 0, color: on ? "var(--accent)" : "var(--fg-muted)" }} />
-              <span style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{label}</span>
-              {on && <span style={{ color: "var(--accent)", fontSize: 9.5, marginRight: 6 }}>current</span>}
-              <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{hotkey}</span>
+              <Text style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{label}</Text>
+              {on && <Text tone="accent" size={9.5} style={{ marginRight: 6 }}>current</Text>}
+              <Text tone="dim" size={9.5}>{hotkey}</Text>
             </MenuRow>
           );
         })}
@@ -161,19 +186,19 @@ export function PaneMenu({
           onClick={() => { onToggleDisable?.(); onClose?.(); }}
         />
       </MenuSection>
-    </div>
+    </Box>
   );
 }
 
 function MenuSection({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <div style={{ padding: "6px 6px", borderBottom: last ? "0" : "1px solid var(--border-soft)" }}>
-      <div style={{
-        padding: "4px 8px 6px", fontSize: 9.5, color: "var(--fg-dim)",
+    <Box pad={[6, 6]} style={{ borderBottom: last ? "0" : "1px solid var(--border-soft)" }}>
+      <Text as="div" tone="dim" size={9.5} style={{
+        padding: "4px 8px 6px",
         textTransform: "uppercase", letterSpacing: ".08em",
-      }}>{label}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>{children}</div>
-    </div>
+      }}>{label}</Text>
+      <Stack gap={1}>{children}</Stack>
+    </Box>
   );
 }
 
@@ -183,16 +208,17 @@ function MenuRow({ on, onClick, children }: { on?: boolean; onClick?: () => void
     ? "color-mix(in oklch, var(--accent), transparent 90%)"
     : hovered ? "var(--bg-elev2)" : "transparent";
   return (
-    <div
+    <Row
+      gap={6}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
+        padding: "6px 8px",
         borderRadius: 5, background: bg, cursor: "pointer",
         transition: "background 0.08s",
       }}
-    >{children}</div>
+    >{children}</Row>
   );
 }
 
@@ -201,12 +227,13 @@ function ActionRow({ Icon, label, sub, danger, onClick }: {
 }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <div
+    <Row
+      gap={8}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
+        padding: "6px 8px",
         borderRadius: 5, cursor: "pointer",
         background: hovered
           ? danger ? "color-mix(in oklch, var(--danger), transparent 88%)" : "var(--bg-elev2)"
@@ -215,9 +242,9 @@ function ActionRow({ Icon, label, sub, danger, onClick }: {
       }}
     >
       <Icon size={12} style={{ flexShrink: 0, color: danger ? "var(--danger)" : "var(--fg-muted)" }} />
-      <span style={{ color: danger ? "var(--danger)" : "var(--fg)" }}>{label}</span>
-      <span style={{ flex: 1 }} />
-      {sub && <span style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{sub}</span>}
-    </div>
+      <Text style={{ color: danger ? "var(--danger)" : "var(--fg)" }}>{label}</Text>
+      <Box as="span" style={{ flex: 1 }} />
+      {sub && <Text size={9.5} tone="dim">{sub}</Text>}
+    </Row>
   );
 }

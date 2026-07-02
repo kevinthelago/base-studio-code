@@ -62,6 +62,9 @@ export function toHookPayload(e: Hook): HookPayload | null {
 const HOOK_CATALOG_TEMPLATES: Record<string, Partial<Hook>> = {
   "Block PII":   { event: "PreToolUse",  matcher: "Write|Edit", command: "" },
   "Auto-format": { event: "PostToolUse", matcher: "Write|Edit", command: "" },
+  // A `Stop` hook fires when the agent finishes its turn — no tool matcher applies (it's not a
+  // tool event), so it's left unset. The command is the user's to fill in (notify / snapshot / …).
+  "Session end": { event: "Stop", command: "" },
 };
 
 /** A ready-to-add hook (minus id) for a catalog entry — disabled + global by default. */
@@ -81,3 +84,28 @@ export function hookFromCatalog(name: string): Omit<Hook, "id"> {
 export function blankHook(): Omit<Hook, "id"> {
   return { name: "", enabled: false, projects: [], event: "PostToolUse", matcher: "", command: "" };
 }
+
+// ── System hooks (the always-on floor) ──────────────────────────────────────────
+
+/** A read-only descriptor for an always-on system hook the app injects. VIEW-only — not editable. */
+export interface SystemHook {
+  name: string;
+  event: string;
+  /** One-line description of what this hook enforces. */
+  purpose: string;
+}
+
+/**
+ * The always-on PreToolUse security floor (#1916/#2050) the app injects into EVERY session
+ * backend-side (`console/shell_rc`). Unlike user hooks these are never wrapped by `bsc-hook`, are
+ * not toggleable or removable, and fire AND block under BOTH permission postures — the default
+ * allow-list AND bypass, where `permissions.deny` is ignored but PreToolUse hooks still block. They
+ * are the real running floor beneath any user hook, so the Hooks view lists them (VIEW-only —
+ * these describe what runs; the user can't change them here). Kept in sync with the `bsc-*` rc
+ * helpers' contract (`bsc-deny`/`bsc-confine`/`bsc-scope` in `src-tauri/src/console/shell_rc`).
+ */
+export const SYSTEM_HOOKS: SystemHook[] = [
+  { name: "bsc-deny",    event: "PreToolUse", purpose: "Dangerous-command floor + role/user command denies — blocks the mutating git/gh and destructive commands a session's role can't run." },
+  { name: "bsc-confine", event: "PreToolUse", purpose: "Filesystem confinement — blocks file-tool reads/writes that leave the session's repo root or touch its own .claude config." },
+  { name: "bsc-scope",   event: "PreToolUse", purpose: "Write-scope — blocks file writes outside a worker's owned globs (and denies all writes for code:none roles)." },
+];

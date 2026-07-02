@@ -1,6 +1,12 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
 /** Agent permission posture (#1916): the deny-list (bypass — auto-run, hooks gate) vs the allow-list
@@ -29,32 +35,25 @@ export function PermissionPostureCard() {
       </ToggleRow>
 
       {bypassPermissions && sandbox && (
-        <div
+        <Row
+          align="start"
+          gap={8}
           style={{
             marginTop: 12,
-            display: "flex",
-            gap: 8,
-            alignItems: "flex-start",
             fontSize: 12,
             lineHeight: 1.5,
           }}
         >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              marginTop: 4,
-              flexShrink: 0,
-              background: sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)",
-            }}
-            aria-hidden
+          <StatusDot
+            color={sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)"}
+            size={8}
+            style={{ marginTop: 4 }}
           />
-          <div>
+          <Box>
             <b>
               OS sandbox (Bash){sandbox.ready ? " — active" : sandbox.needsWsl ? " — needs WSL2" : ""}:
             </b>{" "}
-            <span style={{ color: "var(--fg-muted)" }}>{sandbox.detail}</span>
+            <Text tone="muted">{sandbox.detail}</Text>
             {sandbox.needsWsl && !sandbox.ready && (
               <>
                 {" "}
@@ -70,8 +69,9 @@ export function PermissionPostureCard() {
               </>
             )}
             {!sandbox.ready && sandbox.autoInstallable && (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Stack gap={6} style={{ marginTop: 8 }}>
+                <Row gap={8} wrap>
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke compact accent install button with custom inline styling; not the .btn family */}
                   <button
                     onClick={install}
                     disabled={installing}
@@ -84,30 +84,23 @@ export function PermissionPostureCard() {
                     {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
                   </button>
                   {installMsg && !installing && (
-                    <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>
+                    <Text tone="muted" size={11}>{installMsg}</Text>
                   )}
-                </div>
+                </Row>
                 {installing && (
-                  <div aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
-                  </div>
+                  <Box aria-hidden bg="var(--bg-elev2)" radius={2} style={{ height: 3, overflow: "hidden" }}>
+                    <Box bg="var(--accent)" style={{ height: "100%", width: "30%", animation: "scan 1.1s linear infinite" }} />
+                  </Box>
                 )}
                 {installLog.length > 0 && (
-                  <pre
-                    className="mono"
-                    style={{
-                      margin: 0, maxHeight: 120, overflow: "auto", padding: "6px 8px", borderRadius: 4,
-                      background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-                      fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap",
-                    }}
-                  >
+                  <Code maxHeight={120} style={{ padding: "6px 8px", borderRadius: 4, fontSize: 10.5 }}>
                     {installLog.join("\n")}
-                  </pre>
+                  </Code>
                 )}
-              </div>
+              </Stack>
             )}
-          </div>
-        </div>
+          </Box>
+        </Row>
       )}
     </Card>
   );

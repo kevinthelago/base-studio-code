@@ -11,6 +11,7 @@
 //! interactive browser round-trip is not exercised offline; the unit tests cover the pure parts
 //! (PKCE S256, the authorize URL, provider lookup).
 
+use crate::StrErr;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -231,8 +232,8 @@ pub fn source_oauth_begin(
     let client_id = resolved.client_id.clone();
     let client_secret = resolved.client_secret.clone();
 
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let listener = TcpListener::bind("127.0.0.1:0").str_err()?;
+    let port = listener.local_addr().str_err()?.port();
     let redirect = format!("http://127.0.0.1:{port}/callback");
     let (verifier, challenge) = pkce();
     let state = random_state();
@@ -298,14 +299,13 @@ fn capture_and_exchange(
     if !client_secret.is_empty() {
         form.push(("client_secret", client_secret));
     }
-    let resp: Value = reqwest::blocking::Client::new()
-        .post(token_url)
-        .form(&form)
-        .header("Accept", "application/json")
-        .send()
-        .and_then(|r| r.error_for_status())
-        .and_then(|r| r.json())
-        .map_err(|e| format!("token exchange failed: {e}"))?;
+    let resp: Value = crate::platform::http::blocking_send_json(
+        crate::platform::http::blocking_client()
+            .post(token_url)
+            .form(&form)
+            .header("Accept", "application/json"),
+        |e| format!("token exchange failed: {e}"),
+    )?;
 
     let access = resp["access_token"].as_str().ok_or("token response missing access_token")?.to_string();
     let refresh = resp["refresh_token"].as_str().map(str::to_string);
@@ -316,13 +316,13 @@ fn capture_and_exchange(
 /// Accept one loopback connection (until `timeout`), parse the callback query, and reply with a
 /// small "you can close this tab" page.
 fn wait_for_redirect(listener: &TcpListener, timeout: Duration) -> Result<HashMap<String, String>, String> {
-    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    listener.set_nonblocking(true).str_err()?;
     let deadline = Instant::now() + timeout;
     loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let mut buf = [0u8; 4096];
-                let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
+                let n = stream.read(&mut buf).str_err()?;
                 let req = String::from_utf8_lossy(&buf[..n]);
                 let query = req
                     .lines()

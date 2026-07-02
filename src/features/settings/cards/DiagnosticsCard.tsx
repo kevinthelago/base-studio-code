@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -28,21 +35,21 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
   const url = verdict.ok ? null : firstUrl(verdict.hint);
   const dotColor = verdict.ok ? SEVERITY_COLOR.ok : SEVERITY_COLOR[verdict.severity];
   return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px",
+    <Row align="start" gap={12} style={{
+      padding: "12px 14px",
       background: alt ? "var(--bg-panel)" : "var(--bg-elev)",
     }}>
-      <div style={{ paddingTop: 3 }}>
+      <Box style={{ paddingTop: 3 }}>
         <StatusDot
           color={dotColor}
           size={9}
           title={verdict.ok ? "found" : verdict.severity}
           style={{ boxShadow: `0 0 0 3px color-mix(in oklch, ${dotColor}, transparent 82%)` }}
         />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
+      </Box>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Row gap={8} wrap>
+          <Text mono size={12.5} style={{ color: "var(--fg)" }}>{verdict.name}</Text>
           {verdict.ok ? (
             <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</Chip>
           ) : (
@@ -53,17 +60,17 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
             </Chip>
           )}
           {verdict.version && (
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>{verdict.version}</span>
+            <Text mono size={10.5} tone="muted">{verdict.version}</Text>
           )}
-        </div>
+        </Row>
         {verdict.ok ? (
           verdict.path && (
-            <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 3, wordBreak: "break-all" }}>
+            <Text as="div" mono size={10} tone="dim" style={{ marginTop: 3, wordBreak: "break-all" }}>
               {verdict.path}
-            </div>
+            </Text>
           )
         ) : (
-          <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginTop: 4, lineHeight: 1.55 }}>
+          <Text as="div" size={11.5} tone="muted" style={{ marginTop: 4, lineHeight: 1.55 }}>
             {verdict.consequence}
             {url && (
               <>
@@ -78,10 +85,10 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
                 </a>
               </>
             )}
-          </div>
+          </Text>
         )}
-      </div>
-    </div>
+      </Box>
+    </Row>
   );
 }
 
@@ -118,8 +125,8 @@ export function DiagnosticsCard() {
 
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+      <Row gap={12} style={{
+        padding: "12px 14px",
         borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
       }}>
         {banner && (
@@ -129,36 +136,31 @@ export function DiagnosticsCard() {
             style={{ boxShadow: `0 0 0 3px color-mix(in oklch, ${banner.color}, transparent 82%)` }}
           />
         )}
-        <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)" }}>
+        <Text mono size={12} style={{ flex: 1, color: "var(--fg)" }}>
           {banner ? banner.text : running ? "Checking…" : "Not checked yet."}
-        </span>
+        </Text>
         {takenAt && (
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+          <Text mono size={10} tone="dim">
             checked {new Date(takenAt).toLocaleTimeString()}
-          </span>
+          </Text>
         )}
-        <button className="btn ghost" style={{ height: 28, fontSize: 11 }} disabled={running} onClick={() => void runProbe()}>
+        <Button variant="ghost" style={{ height: 28, fontSize: 11 }} disabled={running} onClick={() => void runProbe()}>
           {running ? "checking…" : "↺ re-check"}
-        </button>
-      </div>
+        </Button>
+      </Row>
 
       {error && (
-        <div className="mono" style={{
-          padding: "10px 14px", color: "var(--danger)", fontSize: 11,
-          borderBottom: "1px solid var(--border-soft)",
-        }}>
+        <InlineError radius={0} borderFade={100} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           Probe failed: {error}
-        </div>
+        </InlineError>
       )}
 
       {report && report.prereqs.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <Stack gap={1}>
           {report.prereqs.map((v, i) => <PrereqRow key={v.name} verdict={v} alt={i % 2 === 1} />)}
-        </div>
+        </Stack>
       ) : !running && !error ? (
-        <div className="mono" style={{ padding: "20px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
-          No prerequisite data yet.
-        </div>
+        <EmptyState iconVariant="dashed" title="No prerequisite data yet." />
       ) : null}
     </Card>
   );

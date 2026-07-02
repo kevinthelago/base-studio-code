@@ -29,12 +29,10 @@ pub fn tunnel_status(state: State<'_, TunnelState>) -> TunnelStatus {
 /// clients and broadcast to connected ones.
 #[tauri::command]
 pub fn tunnel_set_panes(panes: Vec<PaneDescriptor>, state: State<'_, TunnelState>) {
-    {
-        let mut inner = state.inner.lock().unwrap();
-        inner.panes = panes.clone();
-    }
     log::debug!("tunnel: pane list updated ({} pane(s))", panes.len());
-    let _ = state.event_tx.send(ServerMsg::PaneList { panes });
+    state.set_and_broadcast(ServerMsg::PaneList { panes: panes.clone() }, |inner| {
+        inner.panes = panes;
+    });
 }
 
 /// Push session-state snapshots from the frontend store. Broadcasts a `session_state`
@@ -195,12 +193,10 @@ pub fn tunnel_emit_plan_status(
 /// clients and broadcast to connected ones.
 #[tauri::command]
 pub fn tunnel_set_fleet_state(sessions: Vec<FleetSession>, state: State<'_, TunnelState>) {
-    {
-        let mut inner = state.inner.lock().unwrap();
-        inner.fleet_sessions = sessions.clone();
-    }
     log::debug!("tunnel: fleet state updated ({} session(s))", sessions.len());
-    let _ = state.event_tx.send(ServerMsg::FleetRoster { sessions });
+    state.set_and_broadcast(ServerMsg::FleetRoster { sessions: sessions.clone() }, |inner| {
+        inner.fleet_sessions = sessions;
+    });
 }
 
 /// Push one coordination event to connected mobile clients. When the event kind is
@@ -238,12 +234,10 @@ pub fn tunnel_emit_coord_event(
 /// clients and broadcast to connected ones.
 #[tauri::command]
 pub fn tunnel_set_automations(automations: Vec<AutomationFrame>, state: State<'_, TunnelState>) {
-    {
-        let mut inner = state.inner.lock().unwrap();
-        inner.automations = automations.clone();
-    }
     log::debug!("tunnel: automation list updated ({} automation(s))", automations.len());
-    let _ = state.event_tx.send(ServerMsg::AutomationList { automations });
+    state.set_and_broadcast(ServerMsg::AutomationList { automations: automations.clone() }, |inner| {
+        inner.automations = automations;
+    });
 }
 
 /// Push a non-critical automation-ran notification. No FCM push — skipped/ok runs are
@@ -281,12 +275,10 @@ pub fn tunnel_automation_failed(
 /// clients and broadcast to connected ones. Read-only on mobile.
 #[tauri::command]
 pub fn tunnel_set_mcp_state(extensions: Vec<McpExtFrame>, state: State<'_, TunnelState>) {
-    {
-        let mut inner = state.inner.lock().unwrap();
-        inner.mcp_extensions = extensions.clone();
-    }
     log::debug!("tunnel: MCP list updated ({} extension(s))", extensions.len());
-    let _ = state.event_tx.send(ServerMsg::McpList { extensions });
+    state.set_and_broadcast(ServerMsg::McpList { extensions: extensions.clone() }, |inner| {
+        inner.mcp_extensions = extensions;
+    });
 }
 
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
@@ -338,11 +330,9 @@ pub async fn tunnel_check_relay(
     let health_url = format!("{base}/health");
 
     let t0 = std::time::Instant::now();
-    let result = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default()
+    let result = crate::platform::http::client()
         .get(&health_url)
+        .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
     let latency_ms = t0.elapsed().as_millis() as u64;
@@ -416,6 +406,29 @@ pub fn tunnel_start(
     if relay_url.is_empty() {
         return Err("a relay URL is required".into());
     }
+    let status = rotate_and_dial(app, &state, relay_url)?;
+    log::info!(
+        "tunnel: dialing relay {} (room {})",
+        status.relay_url.as_deref().unwrap_or_default(),
+        status.room.as_deref().unwrap_or_default()
+    );
+    Ok(status)
+}
+
+/// Mint a fresh room id + pairing secret and (re)dial the relay. Shared by `tunnel_start`
+/// (initial dial) and `tunnel_unpair` (rotate-in-place): both generate a new room + psk, reset
+/// the pairing to view-only with zero connected clients, install a fresh shutdown channel, and
+/// spawn the relay dial-out thread — then return the resulting status.
+///
+/// The field writes are a superset that stays a no-op for whichever caller didn't already set a
+/// given field: `tunnel_start` reaches here only when the tunnel is stopped (so `running` flips
+/// false→true and `client_count` is already `0`), and `tunnel_unpair` only when it is running
+/// (so `running` stays `true` and `relay_url` is re-set to its own current value).
+fn rotate_and_dial(
+    app: AppHandle,
+    state: &TunnelState,
+    relay_url: String,
+) -> Result<TunnelStatus, String> {
     let room = transport::generate_room_id();
     let psk = transport::generate_psk();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -425,6 +438,7 @@ pub fn tunnel_start(
         inner.relay_url = Some(relay_url.clone());
         inner.room = Some(room.clone());
         inner.psk = psk;
+        inner.client_count = 0;
         // Every fresh pairing starts view-only (#B-wan-viewonly): the desktop must
         // explicitly grant input before the phone can drive a pane.
         inner.input_granted = false;
@@ -432,9 +446,8 @@ pub fn tunnel_start(
         inner.shutdown_tx = Some(shutdown_tx);
     }
 
-    spawn_relay_thread(app, relay_url.clone(), room.clone(), state.static_priv.clone(), shutdown_rx)?;
+    spawn_relay_thread(app, relay_url, room, state.static_priv.clone(), shutdown_rx)?;
 
-    log::info!("tunnel: dialing relay {relay_url} (room {room})");
     let inner = state.inner.lock().unwrap();
     Ok(state.status_locked(&inner))
 }
@@ -524,21 +537,10 @@ pub fn tunnel_unpair(app: AppHandle, state: State<'_, TunnelState>) -> Result<Tu
     };
 
     // Rotate the pairing material so the old QR is dead, then re-dial on the new room.
-    let room = transport::generate_room_id();
-    let psk = transport::generate_psk();
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    {
-        let mut inner = state.inner.lock().unwrap();
-        inner.room = Some(room.clone());
-        inner.psk = psk;
-        inner.client_count = 0;
-        inner.input_granted = false;
-        inner.input_requested = false;
-        inner.shutdown_tx = Some(shutdown_tx);
-    }
-    spawn_relay_thread(app, relay_url, room.clone(), state.static_priv.clone(), shutdown_rx)?;
-
-    log::info!("tunnel: unpaired — rotated to room {room}, pairing secret reset, view-only");
-    let inner = state.inner.lock().unwrap();
-    Ok(state.status_locked(&inner))
+    let status = rotate_and_dial(app, &state, relay_url)?;
+    log::info!(
+        "tunnel: unpaired — rotated to room {}, pairing secret reset, view-only",
+        status.room.as_deref().unwrap_or_default()
+    );
+    Ok(status)
 }

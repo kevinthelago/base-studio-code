@@ -1,3 +1,4 @@
+use crate::StrErr;
 use super::prompts::*;
 use super::directives::*;
 use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
@@ -13,8 +14,26 @@ pub(crate) struct AutomationData {
 pub(crate) struct WorkspacePaths {
     planning_dir: String,
 }
+/// The inputs to [`setup_workspaces`], grouped so the planner-hub setup is driven by one named
+/// value instead of a dozen positional arguments — and so the core [`setup_workspaces_inner`] is
+/// testable without a Tauri runtime. Owns its fields (built once from the command's owned args).
+pub(crate) struct SetupWorkspacesArgs {
+    pub repo_full_names: Vec<String>,
+    pub automations: Vec<AutomationData>,
+    pub is_existing: bool,
+    pub project_name: String,
+    pub project_number: u32,
+    pub pitch: String,
+    pub project_key: String,
+    pub github_login: String,
+    pub github_name: String,
+    pub enabled_stages: Vec<String>,
+    /// The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro
+    /// and omit the software-planning process block.
+    pub authoring: bool,
+}
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // wire contract: the frontend passes these as named invoke args.
 pub(crate) fn setup_workspaces(
     repo_full_names: Vec<String>,
     automations: Vec<AutomationData>,
@@ -26,10 +45,40 @@ pub(crate) fn setup_workspaces(
     github_login: String,
     github_name: String,
     enabled_stages: Vec<String>,
-    // The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro and
-    // omit the software-planning process block. Optional so older call sites default to false.
+    // Optional so older call sites default to false.
     authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
+    setup_workspaces_inner(SetupWorkspacesArgs {
+        repo_full_names,
+        automations,
+        is_existing,
+        project_name,
+        project_number,
+        pitch,
+        project_key,
+        github_login,
+        github_name,
+        enabled_stages,
+        authoring: authoring.unwrap_or(false),
+    })
+}
+/// Synchronous core of [`setup_workspaces`] (testable without a Tauri runtime): creates the planner
+/// hub (`projects/<key>`), migrates a legacy `context/` dir, and writes the planner `CLAUDE.md` +
+/// `automations.md` + `github_context.md` + `context_signature.txt`.
+pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<WorkspacePaths, String> {
+    let SetupWorkspacesArgs {
+        repo_full_names,
+        automations,
+        is_existing,
+        project_name,
+        project_number,
+        pitch,
+        project_key,
+        github_login,
+        github_name,
+        enabled_stages,
+        authoring,
+    } = args;
     let _perf = PerfSpan::new("setup_workspaces");
     crate::session::claude_config::sanitize_claude_config();
     // Planner session CWD = the project hub (`projects/<key>`), holding plan
@@ -49,148 +98,163 @@ pub(crate) fn setup_workspaces(
         // the director owns + tests them, workers read them as the source of truth.
         planning_dir.join("contracts"),
     ] {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(dir).str_err()?;
     }
     // Discovery-stage sections get their own subdir (#807) — created ONLY when the blueprint
     // actually carries a discovery stage. The planner writes `discovery/<topic>.md` there;
-    // read_plan_sections ingests it alongside the hub root.
+    // read_plan_stages ingests it alongside the hub root.
     // Migration (#1578: Context stage → Discovery): an in-flight project may have a `context/`
     // dir from before the rename — move it in place so its prose carries forward.
     let (legacy, current) = (planning_dir.join("context"), planning_dir.join("discovery"));
     if legacy.is_dir() && !current.exists() {
-        std::fs::rename(&legacy, &current).map_err(|e| e.to_string())?;
+        std::fs::rename(&legacy, &current).str_err()?;
     }
     if enabled_stages.iter().any(|s| s == "discovery") {
-        std::fs::create_dir_all(&current).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&current).str_err()?;
     }
 
-    // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the
-    // `planner` role gate (sessionRoles.ts) and written by `ensure_session_settings` at
-    // launch (Planning.tsx), so there is a SINGLE source for the planner's permissions
-    // instead of a hardcoded literal that drifts from the role. The `.claude` dir is
-    // created above; the role-launch call populates the file before the PTY starts.
+    // Planner `.claude/settings.json` is NOT written here — it's derived from the `planner` role
+    // gate (sessionRoles.ts) and written by `ensure_session_settings` at launch. extensions.md is
+    // written by the frontend (#1054, shared/mcpContext.ts) so it reflects the actually-downloaded
+    // servers, not a static catalogue. The three files below are the ones this setup authors.
+    std::fs::write(
+        planning_dir.join("CLAUDE.md"),
+        build_planning_claude_md(
+            authoring, is_existing, &project_name, project_number, &pitch,
+            &enabled_stages, &repo_full_names, &project_key,
+        ),
+    ).str_err()?;
+    std::fs::write(planning_dir.join("automations.md"), build_automations_md(&automations)).str_err()?;
+    std::fs::write(
+        planning_dir.join("github_context.md"),
+        build_github_context_md(&github_login, &github_name, &repo_full_names, &project_key),
+    ).str_err()?;
 
-    // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
-    // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
-    // <blueprint> tag spec, and the software-planning process block is omitted entirely.
-    let mut planning_md = if authoring.unwrap_or(false) {
+    // A deterministic context signature so Planning.tsx can surface a "context updated · refresh"
+    // badge when inputs diverge from this baseline (#175).
+    std::fs::write(
+        planning_dir.join("context_signature.txt"),
+        context_signature(&repo_full_names, &enabled_stages),
+    ).str_err()?;
+
+    Ok(WorkspacePaths {
+        planning_dir: planning_dir.to_string_lossy().into_owned(),
+    })
+}
+
+/// One markdown bullet per linked repo: `template` (`linked_repo_item()` / `github_repo_item()`) with
+/// `{full_name}`/`{local_path}` substituted, each `.trim_end()` + a trailing newline, concatenated.
+/// Empty repos ⇒ `""`. The one copy of the loop the planner `CLAUDE.md` and `github_context.md` share.
+fn render_repo_items(repos: &[String], project_key: &str, template: &str) -> String {
+    let mut out = String::new();
+    for full_name in repos {
+        let local_path = repo_dir(project_key, full_name);
+        out.push_str(&format!(
+            "{}\n",
+            template
+                .replace("{full_name}", full_name)
+                .replace("{local_path}", &local_path.display().to_string())
+                .trim_end(),
+        ));
+    }
+    out
+}
+
+/// Assemble the planner `CLAUDE.md`: the orientation-specific INTRO + shared PROCESS block (the
+/// blueprint-authoring lifecycle #923 is self-contained — its intro carries the whole task and omits
+/// the software-planning process), the anti-injection framing (#1107, every spec), the enabled-stages
+/// scope (#512/#542), and — for existing projects — the linked-repositories section.
+#[allow(clippy::too_many_arguments)]
+fn build_planning_claude_md(
+    authoring: bool,
+    is_existing: bool,
+    project_name: &str,
+    project_number: u32,
+    pitch: &str,
+    enabled_stages: &[String],
+    repo_full_names: &[String],
+    project_key: &str,
+) -> String {
+    let mut md = if authoring {
         planning_blueprint_intro()
     } else if is_existing {
         format!(
             "{}{}",
             planning_existing_intro()
-                .replace("{PROJECT_NAME}", &project_name)
+                .replace("{PROJECT_NAME}", project_name)
                 .replace("{PROJECT_NUMBER}", &project_number.to_string()),
             planning_process_md(),
         )
     } else {
-        format!("{}{}", planning_new_intro().replace("{PITCH}", &pitch), planning_process_md())
+        format!("{}{}", planning_new_intro().replace("{PITCH}", pitch), planning_process_md())
     };
 
-    // Anti prompt-injection framing (#1107) — applied to EVERY planner spec (new / existing /
-    // authoring). The planner reads untrusted repo + web content and emits trusted fleet
-    // instruction, so it must treat all reviewed content as data and never transcribe an embedded
-    // directive into a kickoff/section/profile/issue.
-    planning_md.push_str(&planner_injection_resistance_md());
+    // Anti prompt-injection framing (#1107) — the planner reads untrusted repo + web content and
+    // emits trusted fleet instruction, so it must treat all reviewed content as data.
+    md.push_str(&planner_injection_resistance_md());
 
-    // Modular planning stages (#512/#542): prepend the project's enabled stages (from
-    // its blueprint) as the authoritative scope — disabled stages are declared out of
-    // scope so the planner doesn't produce them. Empty ⇒ no change (all-stages default).
-    let stages_md = build_active_stages_md(&enabled_stages);
+    // Modular planning stages (#512/#542): the enabled stages as the authoritative scope (disabled
+    // stages declared out of scope). Empty ⇒ no change (all-stages default).
+    let stages_md = build_active_stages_md(enabled_stages);
     if !stages_md.is_empty() {
-        planning_md.push_str(&stages_md);
+        md.push_str(&stages_md);
     }
 
-    // Append linked repos section for existing projects (always, even when
-    // empty, so Claude knows the current state and acts accordingly).
+    // Linked repos section for existing projects (always, even when empty, so Claude knows the state).
     if is_existing {
-        planning_md.push_str("\n## Linked repositories\n\n");
+        md.push_str("\n## Linked repositories\n\n");
         if repo_full_names.is_empty() {
-            planning_md.push_str("No repositories are currently linked to this project.\n");
+            md.push_str("No repositories are currently linked to this project.\n");
         } else {
-            for full_name in &repo_full_names {
-                let local_path = repo_dir(&project_key, full_name);
-                planning_md.push_str(&format!(
-                    "- **{full_name}**\n  - local path: `{local_path}` — the app clones it here for you to read; don't clone it yourself.\n",
-                    full_name  = full_name,
-                    local_path = local_path.display(),
-                ));
-            }
+            md.push_str(&render_repo_items(repo_full_names, project_key, &linked_repo_item()));
         }
     }
+    md
+}
 
-    std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
-        .map_err(|e| e.to_string())?;
-
-    // Write automations catalogue so Claude can reference and assign them. The header prose lives in
-    // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
-    let mut auto_md = format!("{}\n\n", automations_catalogue_header().trim_end());
+/// Assemble `automations.md`: the catalogue header (`@data/planner/automations-catalogue.md`, #2027
+/// P1) + either the empty-state note or one bullet per saved automation.
+fn build_automations_md(automations: &[AutomationData]) -> String {
+    let mut md = format!("{}\n\n", automations_catalogue_header().trim_end());
     if automations.is_empty() {
-        auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
+        md.push_str(&format!("{}\n", automations_empty_note().trim_end()));
     } else {
-        auto_md.push_str("## Saved automations\n\n");
-        for a in &automations {
-            auto_md.push_str(&format!("- **{}** (`{}`)", a.name, a.id));
+        md.push_str("## Saved automations\n\n");
+        for a in automations {
+            md.push_str(&format!("- **{}** (`{}`)", a.name, a.id));
             if let Some(sched) = &a.schedule {
-                auto_md.push_str(&format!(" · cron: `{}`", sched));
+                md.push_str(&format!(" · cron: `{}`", sched));
             }
-            auto_md.push_str(&format!("\n  command: `{}`\n", a.command));
+            md.push_str(&format!("\n  command: `{}`\n", a.command));
         }
     }
-    std::fs::write(planning_dir.join("automations.md"), auto_md)
-        .map_err(|e| e.to_string())?;
+    md
+}
 
-    // extensions.md (the planner's live list of installed MCP servers + the per-worker assignment
-    // directive) is written by the frontend now (#1054, shared/mcpContext.ts) so it reflects the
-    // ACTUAL downloaded servers the planner is exposed to, not a static catalogue. The frontend is
-    // the sole writer to avoid a stale-overwrite race; the planner reads it during the
-    // "Automations & extensions" stage, well after this setup runs.
-
-    // Write a github_context.md so Claude knows the authenticated user and
-    // what repos are available without needing to run `gh api user` first.
-    let mut gh_ctx = String::from("# GitHub Context\n\n");
+/// Assemble `github_context.md`: the authenticated-user block (when a login is known), the linked
+/// repositories, and the useful read-only `gh` commands — so the planner needn't run `gh api user`.
+fn build_github_context_md(
+    github_login: &str,
+    github_name: &str,
+    repo_full_names: &[String],
+    project_key: &str,
+) -> String {
+    let mut md = String::from("# GitHub Context\n\n");
     if !github_login.is_empty() {
-        gh_ctx.push_str("## Authenticated user\n\n");
-        gh_ctx.push_str(&format!("- **Login**: `{}`\n", github_login));
+        md.push_str("## Authenticated user\n\n");
+        md.push_str(&format!("- **Login**: `{}`\n", github_login));
         if !github_name.is_empty() {
-            gh_ctx.push_str(&format!("- **Name**: {}\n", github_name));
+            md.push_str(&format!("- **Name**: {}\n", github_name));
         }
-        gh_ctx.push_str(&format!("- **Profile**: https://github.com/{}\n\n", github_login));
+        md.push_str(&format!("- **Profile**: https://github.com/{}\n\n", github_login));
     }
     if !repo_full_names.is_empty() {
-        gh_ctx.push_str("## Linked repositories\n\n");
-        for full_name in &repo_full_names {
-            let local_path = repo_dir(&project_key, full_name);
-            gh_ctx.push_str(&format!(
-                "- `{}` — local path: `{}`\n",
-                full_name, local_path.display(),
-            ));
-        }
-        gh_ctx.push('\n');
+        md.push_str("## Linked repositories\n\n");
+        md.push_str(&render_repo_items(repo_full_names, project_key, &github_repo_item()));
+        md.push('\n');
     }
-    gh_ctx.push_str(
-        "## Useful gh commands (read-only — you inspect GitHub; you never mutate it)\n\n\
-         ```\n\
-         gh api user                                    # confirm auth\n\
-         gh repo list --limit 100 --json nameWithOwner  # all repos\n\
-         gh issue list --repo {owner}/{repo}            # open issues\n\
-         gh pr list   --repo {owner}/{repo}             # open PRs\n\
-         ```\n"
-    );
-    std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
-        .map_err(|e| e.to_string())?;
-
-    // Write a deterministic context signature so Planning.tsx can surface a
-    // "context updated · refresh" badge when inputs diverge from this baseline (#175).
-    {
-        let sig = context_signature(&repo_full_names, &enabled_stages);
-        std::fs::write(planning_dir.join("context_signature.txt"), sig)
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(WorkspacePaths {
-        planning_dir: planning_dir.to_string_lossy().into_owned(),
-    })
+    md.push_str(&format!("{}\n", github_useful_commands().trim_end()));
+    md
 }
 /// The single source of truth for the planning context signature (#175/#756): the template
 /// version + the sorted inputs (repos, enabled stages). Used by BOTH `setup_workspaces` (to
@@ -214,4 +278,138 @@ pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, enabled_st
 pub(crate) fn get_context_signature(project_key: String) -> String {
     let path = project_dir(&project_key).join("context_signature.txt");
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::platform::config::embedded_str;
+
+    // The straggler prose these tests guard was moved out of inline Rust literals into
+    // `data/planner/*.md` (#2075, finishing epic #2027). Each test reconstructs the EXACT prior
+    // literal and asserts the externalized block (read from the shipped seed, `.trim_end()` + one
+    // `\n`, exactly as `setup_workspaces` renders it) is byte-identical — so the generated hub files
+    // never drift. The data files are pinned to LF (.gitattributes) so this holds on every platform.
+
+    /// The `automations.md` empty-state note (`setup_workspaces`).
+    #[test]
+    fn automations_empty_note_is_byte_identical() {
+        let rendered = format!("{}\n", embedded_str("planner/automations-empty.md").trim_end());
+        assert_eq!(
+            rendered,
+            "_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n",
+        );
+    }
+
+    /// The struct-driven core writes every hub file and preserves the empty-`project_key` guard —
+    /// proving `setup_workspaces_inner` is drivable from a `SetupWorkspacesArgs` without a Tauri
+    /// runtime (isolated under a temp home so config + hub writes stay sandboxed).
+    #[test]
+    fn setup_workspaces_inner_builds_hub_and_guards_empty_key() {
+        use crate::testutil::prelude::*;
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = temp_home("setup-ws");
+        let base = || super::SetupWorkspacesArgs {
+            repo_full_names: vec![],
+            automations: vec![],
+            is_existing: false,
+            project_name: "Demo".into(),
+            project_number: 0,
+            pitch: "a demo".into(),
+            project_key: "p-demo".into(),
+            github_login: String::new(),
+            github_name: String::new(),
+            enabled_stages: vec![],
+            authoring: false,
+        };
+        // Happy path: every hub file is written.
+        let paths = super::setup_workspaces_inner(base()).unwrap();
+        let hub = std::path::Path::new(&paths.planning_dir);
+        for f in ["CLAUDE.md", "automations.md", "github_context.md", "context_signature.txt"] {
+            assert!(hub.join(f).exists(), "expected {f} in the hub");
+        }
+        // A blank project_key is still refused (would scatter the hub across `projects/`).
+        let empty = super::SetupWorkspacesArgs { project_key: String::new(), ..base() };
+        match super::setup_workspaces_inner(empty) {
+            Err(e) => assert_eq!(e, "setup_workspaces: empty project_key"),
+            Ok(_) => panic!("expected the empty-project_key rejection"),
+        }
+    }
+
+    #[test]
+    fn render_repo_items_substitutes_and_concatenates() {
+        // 0 repos ⇒ empty; each repo becomes one trimmed + newline-terminated bullet from the template.
+        assert_eq!(super::render_repo_items(&[], "k", "- {full_name} @ {local_path}"), "");
+        let got = super::render_repo_items(&["octo/a".into(), "octo/b".into()], "proj", "- {full_name}");
+        assert_eq!(got, "- octo/a\n- octo/b\n");
+    }
+
+    #[test]
+    fn build_automations_md_empty_note_vs_rows() {
+        use super::{build_automations_md, AutomationData};
+        // Empty ⇒ header + the empty-state note, no "Saved automations" heading.
+        let empty = build_automations_md(&[]);
+        assert!(empty.contains("_No saved automations yet"));
+        assert!(!empty.contains("## Saved automations"));
+        // Rows ⇒ one bullet each; the optional cron marker appears only when a schedule is set.
+        let md = build_automations_md(&[
+            AutomationData {
+                id: "a1".into(), name: "Nightly".into(),
+                command: "bsc plan".into(), schedule: Some("0 0 * * *".into()),
+            },
+            AutomationData {
+                id: "a2".into(), name: "OnDemand".into(),
+                command: "echo hi".into(), schedule: None,
+            },
+        ]);
+        assert!(md.contains("## Saved automations"));
+        assert!(md.contains("- **Nightly** (`a1`) · cron: `0 0 * * *`"));
+        assert!(md.contains("- **OnDemand** (`a2`)"));
+        assert!(md.contains("command: `echo hi`"));
+        assert!(!md.contains("**OnDemand** (`a2`) · cron"), "no cron marker without a schedule");
+    }
+
+    /// The `## Useful gh commands` block appended to `github_context.md`.
+    #[test]
+    fn github_useful_commands_is_byte_identical() {
+        let rendered = format!("{}\n", embedded_str("planner/github-commands.md").trim_end());
+        assert_eq!(
+            rendered,
+            "## Useful gh commands (read-only — you inspect GitHub; you never mutate it)\n\n\
+             ```\n\
+             gh api user                                    # confirm auth\n\
+             gh repo list --limit 100 --json nameWithOwner  # all repos\n\
+             gh issue list --repo {owner}/{repo}            # open issues\n\
+             gh pr list   --repo {owner}/{repo}             # open PRs\n\
+             ```\n",
+        );
+    }
+
+    /// A CLAUDE.md `## Linked repositories` bullet, after per-repo placeholder substitution.
+    #[test]
+    fn linked_repo_item_is_byte_identical() {
+        let rendered = format!(
+            "{}\n",
+            embedded_str("planner/linked-repo-item.md")
+                .replace("{full_name}", "octo/app")
+                .replace("{local_path}", "/home/x/octo-app")
+                .trim_end(),
+        );
+        assert_eq!(
+            rendered,
+            "- **octo/app**\n  - local path: `/home/x/octo-app` — the app clones it here for you to read; don't clone it yourself.\n",
+        );
+    }
+
+    /// A `github_context.md` `## Linked repositories` bullet, after per-repo placeholder substitution.
+    #[test]
+    fn github_repo_item_is_byte_identical() {
+        let rendered = format!(
+            "{}\n",
+            embedded_str("planner/github-repo-item.md")
+                .replace("{full_name}", "octo/app")
+                .replace("{local_path}", "/home/x/octo-app")
+                .trim_end(),
+        );
+        assert_eq!(rendered, "- `octo/app` — local path: `/home/x/octo-app`\n");
+    }
 }

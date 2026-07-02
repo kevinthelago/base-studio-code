@@ -23,14 +23,13 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
         return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
     }
     let slug  = worktree_slug(&agent_id);
-    let short = repo.rsplit('/').next().unwrap_or(&repo);
-    let wt    = worktrees_dir(&project_key).join(format!("{short}--{slug}"));
+    let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));
     let wt_str = wt.to_string_lossy().into_owned();
     // A worktree's `.git` is a FILE pointing into the main repo; create it only if
     // it isn't there yet (reuse across re-runs).
     if !wt.join(".git").exists() {
         if let Some(parent) = wt.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(parent).str_err()?;
         }
         let clone_str = clone.to_string_lossy().into_owned();
         add_worktree_healing(&clone_str, &wt_str, &slug)
@@ -87,15 +86,15 @@ fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(),
         } else {
             c.args(["-b", slug, wt_str]); // create the branch at HEAD
         }
-        crate::platform::process::run_output(&mut c)
+        run_output(&mut c)
     };
 
-    let mut out = run_add(branch_exists()).map_err(|e| e.to_string())?;
+    let mut out = run_add(branch_exists()).str_err()?;
     if !out.status.success() {
         let _ = git_ok(clone_str, &["worktree", "prune"]);
         // Re-probe: the first attempt may itself have created the branch, so the correct form can
         // have flipped from create to reuse.
-        out = run_add(branch_exists()).map_err(|e| e.to_string())?;
+        out = run_add(branch_exists()).str_err()?;
     }
     if !out.status.success() {
         return Err(format!(
@@ -130,10 +129,6 @@ pub(crate) fn seed_union_merge_gitattributes(dir: &std::path::Path) {
         return; // not a repo — nothing to seed
     }
     let path = dir.join(".gitattributes");
-    let cur = std::fs::read_to_string(&path).unwrap_or_default();
-    if cur.contains(GITATTR_MARKER_START) {
-        return; // already seeded
-    }
     let mut block = String::new();
     block.push_str(GITATTR_MARKER_START);
     block.push('\n');
@@ -142,14 +137,9 @@ pub(crate) fn seed_union_merge_gitattributes(dir: &std::path::Path) {
     }
     block.push_str(GITATTR_MARKER_END);
     block.push('\n');
-    let out = if cur.is_empty() {
-        block
-    } else if cur.ends_with('\n') {
-        format!("{cur}{block}")
-    } else {
-        format!("{cur}\n{block}")
-    };
-    let _ = std::fs::write(&path, out);
+    // Idempotent additive append via the shared helper: any hand-authored attributes are kept, the
+    // block is joined after a single newline (existing content is normalized to one trailing newline).
+    let _ = append_block_once(&path, |cur| cur.contains(GITATTR_MARKER_START), "\n", &block);
 }
 
 /// Assemble a fleet worker's `CLAUDE.local.md` in its worktree (`wt`): its own `scope_md`
@@ -234,11 +224,9 @@ pub(crate) fn inject_design_context(hub: &std::path::Path, wt_local: &std::path:
         .map(|(rel, _)| rel)
         .collect();
     let Some(block) = design_context_block(&screens) else { return };
-    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
-    if cur.contains(DESIGN_CONTEXT_MARKER) {
-        return; // already injected
-    }
-    let _ = std::fs::write(wt_local, format!("{}\n{}", cur.trim_end(), block));
+    // `block` already opens with its own leading newline; the shared helper trims the existing
+    // content and joins with a single "\n", reproducing the prior `format!("{}\n{}", trim_end, block)`.
+    let _ = append_block_once(wt_local, |cur| cur.contains(DESIGN_CONTEXT_MARKER), "\n", &block);
 }
 /// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
 /// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
@@ -249,25 +237,21 @@ pub(crate) fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
     if trimmed.is_empty() {
         return;
     }
-    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
-    if cur.contains("# Attached skills & knowledge") {
-        return; // already injected
-    }
-    let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
+    // Blank line between the plan and the inlined skills; the block carries its own trailing newline.
+    // Reproduces the prior `format!("{}\n\n{}\n", cur.trim_end(), trimmed)`.
+    let _ = append_block_once(
+        wt_local,
+        |cur| cur.contains("# Attached skills & knowledge"),
+        "\n\n",
+        &format!("{trimmed}\n"),
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::unique_dir;
     use std::fs;
-
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("bsc-wt-{tag}-{}-{nanos}", std::process::id()))
-    }
 
     /// Stand up a real git repo so `seed_union_merge_gitattributes` (which gates on `.git`) runs.
     fn init_repo(dir: &std::path::Path) {
@@ -300,7 +284,7 @@ mod tests {
     /// recovers instead of erroring.
     #[test]
     fn add_worktree_heals_a_dangling_record() {
-        let base = unique_dir("heal");
+        let base = unique_dir("bsc-wt", "heal");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         // Create branch `feat` + a worktree on it, then delete the dir without telling git.
@@ -323,7 +307,7 @@ mod tests {
     /// re-probes after pruning and switches to the reuse form. Reproduces the STEM `ui-modes` launch.
     #[test]
     fn add_worktree_reprobes_after_a_failed_create() {
-        let base = unique_dir("reprobe");
+        let base = unique_dir("bsc-wt", "reprobe");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         // Occupy the TARGET path with a dangling record (a worktree on a different branch, dir
@@ -349,7 +333,7 @@ mod tests {
     #[test]
     fn concurrent_worktree_adds_and_removes_are_reliable() {
         use std::sync::{Arc, Barrier};
-        let base = unique_dir("stress");
+        let base = unique_dir("bsc-wt", "stress");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         let clone_str = clone.to_string_lossy().into_owned();
@@ -389,7 +373,7 @@ mod tests {
     /// failure is debuggable from the message alone.
     #[test]
     fn add_worktree_surfaces_git_stderr() {
-        let base = unique_dir("stderr");
+        let base = unique_dir("bsc-wt", "stderr");
         // A clone path that is not a git repo → every git call errors; the message must reach the
         // caller (and the prune+retry can't paper over it).
         let bogus = base.join("not-a-repo");
@@ -404,7 +388,7 @@ mod tests {
     /// #851: seeds `.gitignore`/`.env.example` with merge=union so concurrent appends auto-resolve.
     #[test]
     fn seeds_union_merge_for_the_additive_commons() {
-        let dir = unique_dir("seed");
+        let dir = unique_dir("bsc-wt", "seed");
         init_repo(&dir);
         seed_union_merge_gitattributes(&dir);
         let attrs = fs::read_to_string(dir.join(".gitattributes")).unwrap();
@@ -429,7 +413,7 @@ mod tests {
     /// #1373: inject reads the hub's .ui-skeleton/ for screen names and appends the block once.
     #[test]
     fn inject_design_context_appends_once_from_the_skeleton() {
-        let dir = unique_dir("design-ctx");
+        let dir = unique_dir("bsc-wt", "design-ctx");
         let hub = dir.join("hub");
         fs::create_dir_all(hub.join(".ui-skeleton")).unwrap();
         fs::write(hub.join(".ui-skeleton").join("Login.jsx"), "export default () => null").unwrap();
@@ -448,7 +432,7 @@ mod tests {
     /// #1373: no dropped design (empty/absent .ui-skeleton/) ⇒ no block, no churn.
     #[test]
     fn inject_design_context_is_a_noop_without_dropped_design() {
-        let dir = unique_dir("no-design");
+        let dir = unique_dir("bsc-wt", "no-design");
         let hub = dir.join("hub");
         fs::create_dir_all(&hub).unwrap();
         let wt_local = dir.join("CLAUDE.local.md");
@@ -461,7 +445,7 @@ mod tests {
     /// Idempotent + additive: re-running writes nothing new and preserves hand-authored attributes.
     #[test]
     fn seed_is_idempotent_and_preserves_existing_content() {
-        let dir = unique_dir("idem");
+        let dir = unique_dir("bsc-wt", "idem");
         init_repo(&dir);
         fs::write(dir.join(".gitattributes"), "*.png binary\n").unwrap();
         seed_union_merge_gitattributes(&dir);
@@ -479,7 +463,7 @@ mod tests {
     /// A non-repo directory is skipped (best-effort; nothing to seed without a `.git`).
     #[test]
     fn seed_skips_a_non_repo_dir() {
-        let dir = unique_dir("norepo");
+        let dir = unique_dir("bsc-wt", "norepo");
         fs::create_dir_all(&dir).unwrap();
         seed_union_merge_gitattributes(&dir);
         assert!(!dir.join(".gitattributes").exists());
@@ -491,11 +475,7 @@ mod tests {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
     /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's

@@ -39,6 +39,18 @@ pub fn recover_tool_calls(text: &str) -> Vec<ToolCall> {
     Vec::new()
 }
 
+/// The "empty structured `tool_calls` → recover a call emitted as TEXT" fallback, as one step: if `text`
+/// carries tool syntax ([`recover_tool_calls`]), return the cleaned text ([`strip_tool_syntax`]) plus the
+/// recovered calls; `None` when it's a normal final answer. Collapses the block the Ollama
+/// `turn`/`turn_streaming` paths and bsc-agent's loop each repeated.
+pub fn recover_text_calls(text: &str) -> Option<(String, Vec<ToolCall>)> {
+    let recovered = recover_tool_calls(text);
+    if recovered.is_empty() {
+        return None;
+    }
+    Some((strip_tool_syntax(text), recovered))
+}
+
 /// `<tool_call>{json}</tool_call>` — the Hermes/Qwen structured form.
 fn extract_tool_call_tags(text: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();

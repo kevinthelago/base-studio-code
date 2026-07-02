@@ -10,6 +10,8 @@
 // set is data, edited without touching this module. Pure — free of React/Tauri imports so the
 // resolution logic is unit-testable.
 
+import { overlayGlob } from "@/shared/lib/core/configOverrides";
+
 /** Tri-state permission: deny < ask < allow. */
 export type Tier = "deny" | "ask" | "allow";
 
@@ -47,9 +49,9 @@ export interface AgentProfile {
 // (category "application") are the always-present singletons; every other entry is an assignable
 // permission profile (the built-in set seeded into the store). Sorted by filename for a stable order.
 const roleModules = import.meta.glob<{ default: AgentProfile }>("@data/roles/*.json", { eager: true });
-const ALL_ROLES: AgentProfile[] = Object.entries(roleModules)
+const ALL_ROLES: AgentProfile[] = overlayGlob("roles", roleModules)
   .sort(([a], [b]) => a.localeCompare(b))
-  .map(([, m]) => m.default);
+  .map(([, p]) => p);
 
 /** Always-present, app-managed singleton sessions — not assignable to a pane. */
 export const APP_ROLES: AgentProfile[] = ALL_ROLES.filter((r) => r.category === "application");
@@ -73,9 +75,6 @@ export function reconcileBuiltInProfiles(stored: AgentProfile[]): AgentProfile[]
   );
   return [...PROFILES, ...customs];
 }
-
-/** The app role the planning autopilot's simulated user runs under (#682). */
-export const PLANNING_AUTOPILOT_ROLE_ID = "sys_planning_autopilot";
 
 /** Tools rendered in the tri-state table: [key, description]. */
 export const TOOL_DEFS: [ToolKey, string][] = [

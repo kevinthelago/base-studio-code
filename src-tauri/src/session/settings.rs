@@ -54,8 +54,58 @@ fn baseline_build() -> &'static [String] { &base_profile().command_tiers.build }
 // (loops, `&&`/`|`) runs without a prompt; these guard the most catastrophic *direct* invocations
 // (deny > allow in Claude Code; prefix matching can't catch a danger nested in a loop/pipe — an
 // accident bar, not a sandbox). Users extend it via the per-session `denied_commands`.
+/// The inputs to [`write_session_settings`], grouped so its callers (the Tauri adapter plus the
+/// settings tests) read by field name instead of by position. Borrows every list field — the
+/// caller owns the backing storage. Built from the [`ensure_session_settings`] command's owned
+/// `Option<…>` inputs, or by a test (see [`SessionSettingsSpec::for_dir`]).
+pub(crate) struct SessionSettingsSpec<'a> {
+    /// The session's launch cwd (git-bash `/c/…` or native form; normalized inside).
+    pub cwd: &'a str,
+    /// Per-stream commands the planner granted; always allowed on top of the posture baselines.
+    pub allowed_commands: &'a [String],
+    /// User/project commands to deny, folded into the dangerous-command floor.
+    pub denied_commands: &'a [String],
+    pub mcp_servers: &'a [McpServerCfg],
+    pub hooks: &'a [HookCfg],
+    /// Verbatim (non-`Bash`-wrapped) allow tool-rules — e.g. the role write-path `Edit(<glob>)` scope.
+    pub allow_tool_rules: &'a [String],
+    pub deny_tool_rules: &'a [String],
+    /// Verbatim ask tool-rules that PROMPT before running (e.g. the flow's push-confirm gate).
+    pub ask_tool_rules: &'a [String],
+    pub skills: &'a [SkillCfg],
+    /// Replace (vs merge) the existing allow/deny/ask lists so the computed set is authoritative (#799).
+    pub replace_permissions: bool,
+    /// Shell posture tier (`allow`/`ask`/`deny`) scaling the command baselines.
+    pub bash_posture: &'a str,
+    /// `bypassPermissions` mode (hooks-only gating) vs the allow-list `default` mode.
+    pub bypass: bool,
+}
+
+#[cfg(test)]
+impl<'a> SessionSettingsSpec<'a> {
+    /// A spec for `cwd` with every list empty, the `allow` posture, and `bypass` on — the common
+    /// test shape. Tests override the fields they exercise via struct-update syntax
+    /// (`SessionSettingsSpec { allowed_commands: &[…], ..SessionSettingsSpec::for_dir(&cwd) }`).
+    pub(crate) fn for_dir(cwd: &'a str) -> Self {
+        SessionSettingsSpec {
+            cwd,
+            allowed_commands: &[],
+            denied_commands: &[],
+            mcp_servers: &[],
+            hooks: &[],
+            allow_tool_rules: &[],
+            deny_tool_rules: &[],
+            ask_tool_rules: &[],
+            skills: &[],
+            replace_permissions: false,
+            bash_posture: "allow",
+            bypass: true,
+        }
+    }
+}
+
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // wire contract: the frontend passes these as named invoke args.
 pub(crate) fn ensure_session_settings(
     cwd: String,
     allowed_commands: Vec<String>,
@@ -70,18 +120,31 @@ pub(crate) fn ensure_session_settings(
     bash_posture: Option<String>,
     bypass: Option<bool>,
 ) -> Result<(), String> {
-    write_session_settings(
-        &cwd, &allowed_commands, &denied_commands,
-        &mcp_servers.unwrap_or_default(), &hooks.unwrap_or_default(),
-        &allow_tool_rules.unwrap_or_default(), &deny_tool_rules.unwrap_or_default(),
-        &ask_tool_rules.unwrap_or_default(),
-        &skills.unwrap_or_default(),
-        replace_permissions.unwrap_or(false),
-        bash_posture.as_deref().unwrap_or("allow"),
-        bypass.unwrap_or(false),
-    )
+    // Bind the unwrapped Options to locals so the borrowed spec can reference them.
+    let mcp_servers = mcp_servers.unwrap_or_default();
+    let hooks = hooks.unwrap_or_default();
+    let allow_tool_rules = allow_tool_rules.unwrap_or_default();
+    let deny_tool_rules = deny_tool_rules.unwrap_or_default();
+    let ask_tool_rules = ask_tool_rules.unwrap_or_default();
+    let skills = skills.unwrap_or_default();
+    let bash_posture = bash_posture.unwrap_or_else(|| "allow".to_string());
+    write_session_settings(&SessionSettingsSpec {
+        cwd: &cwd,
+        allowed_commands: &allowed_commands,
+        denied_commands: &denied_commands,
+        mcp_servers: &mcp_servers,
+        hooks: &hooks,
+        allow_tool_rules: &allow_tool_rules,
+        deny_tool_rules: &deny_tool_rules,
+        ask_tool_rules: &ask_tool_rules,
+        skills: &skills,
+        replace_permissions: replace_permissions.unwrap_or(false),
+        bash_posture: &bash_posture,
+        bypass: bypass.unwrap_or(false),
+    })
 }
-/// Synchronous core of [`ensure_session_settings`] (testable without a runtime).
+/// Synchronous core of [`ensure_session_settings`] (testable without a runtime), taking a
+/// [`SessionSettingsSpec`].
 ///
 /// Security model: Claude Code does NOT honor a bare `Bash` allow as allow-all, so the set
 /// of auto-runnable commands is enumerated as explicit `Bash(<cmd> *)` rules, scaled by the
@@ -92,21 +155,22 @@ pub(crate) fn ensure_session_settings(
 /// curated default deny-list (`bsc_util::dangerous::claude_deny_rules`) plus any user/project `denied_commands`
 /// block the most dangerous direct invocations (deny wins over allow). Merges into existing
 /// settings rather than clobbering; `.claude/` stays out of the repo's `git status`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn write_session_settings(
-    cwd: &str,
-    allowed_commands: &[String],
-    denied_commands: &[String],
-    mcp_servers: &[McpServerCfg],
-    hooks: &[HookCfg],
-    allow_tool_rules: &[String],
-    deny_tool_rules: &[String],
-    ask_tool_rules: &[String],
-    skills: &[SkillCfg],
-    replace_permissions: bool,
-    bash_posture: &str,
-    bypass: bool,
-) -> Result<(), String> {
+pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), String> {
+    // Destructure into the field names the body already uses (every field is Copy).
+    let SessionSettingsSpec {
+        cwd,
+        allowed_commands,
+        denied_commands,
+        mcp_servers,
+        hooks,
+        allow_tool_rules,
+        deny_tool_rules,
+        ask_tool_rules,
+        skills,
+        replace_permissions,
+        bash_posture,
+        bypass,
+    } = *spec;
     if cwd.is_empty() { return Ok(()); }
     // Normalize a git-bash drive path (`/c/Users/...`, the OSC-7 form the app persists and the frontend
     // passes here) back to native (`C:/Users/...`) so settings.json lands at the SAME directory
@@ -119,15 +183,69 @@ pub(crate) fn write_session_settings(
 
     let mut config = crate::platform::fsx::read_json_object_or_default(&settings_path);
 
-    // Allow. Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved
-    // command must be an explicit `Bash(<cmd> *)` rule — so the session's shell posture
-    // (`bash_posture`, from the agent profile's bash tier) decides how generous the set is:
-    //   - "allow" (doers — worker/tester): the bare `Bash` (forward-compat / intent) + the
-    //     read-only AND build baselines.
-    //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
-    //     unlisted commands fall through to a prompt.
-    //   - "deny"  (sandboxed): neither baseline.
-    // ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
+    // Allow + deny rule assembly (posture-scaled): each list is built by a pure helper below,
+    // then the verbatim tool-permission rules are folded in (they're shared between the two).
+    let mut allow_rules = build_allow_rules(bash_posture, allowed_commands);
+    let mut deny_rules = build_deny_rules(denied_commands);
+
+    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
+    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
+    for r in allow_tool_rules { push_unique_trimmed(&mut allow_rules, r); }
+    for r in deny_tool_rules { push_unique_trimmed(&mut deny_rules, r); }
+
+    // Ask: rules that PROMPT the user before the command (Claude Code precedence
+    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
+    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
+    // create *)` here so pushes/PRs require approval instead of auto-running.
+    let mut ask_rules: Vec<String> = Vec::new();
+    for r in ask_tool_rules { push_unique_trimmed(&mut ask_rules, r); }
+
+    // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
+    // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
+    // permission the user removed from a profile would linger across relaunches. Used when
+    // re-applying after a profile/permission edit.
+    if replace_permissions {
+        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
+            for k in ["allow", "deny", "ask"] { perms.remove(k); }
+        }
+    }
+    merge_permission_list(&mut config, "allow", &allow_rules);
+    merge_permission_list(&mut config, "deny", &deny_rules);
+    merge_permission_list(&mut config, "ask", &ask_rules);
+    apply_permission_posture(&mut config, bypass, cwd);
+
+    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
+    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
+    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
+    // resolved set — servers not listed aren't trusted, which is how removal lands).
+    write_session_hooks(&mut config, hooks);
+    apply_enabled_mcp_servers(&mut config, mcp_servers);
+
+    std::fs::create_dir_all(root.join(".claude")).str_err()?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
+    write_mcp_json(&root, mcp_servers)?;
+    write_session_skills(&root, skills)?;
+    // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
+    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
+    // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
+    crate::extensions::skills::record_skill_uses(skills);
+    git_exclude(&root, ".claude/");
+    git_exclude(&root, ".mcp.json");
+    Ok(())
+}
+/// Assemble the posture-scaled ALLOW rules (before the verbatim tool rules are folded in).
+///
+/// Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved command must be an
+/// explicit `Bash(<cmd> *)` rule — so the session's shell posture (`bash_posture`, from the agent
+/// profile's bash tier) decides how generous the set is:
+///   - "allow" (doers — worker/tester): the bare `Bash` (forward-compat / intent) + the
+///     read-only AND build baselines.
+///   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
+///     unlisted commands fall through to a prompt.
+///   - "deny"  (sandboxed): neither baseline.
+///
+/// ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
+fn build_allow_rules(bash_posture: &str, allowed_commands: &[String]) -> Vec<String> {
     let mut allow_rules: Vec<String> = Vec::new();
     let mut baseline: Vec<String> = Vec::new();
     match bash_posture {
@@ -152,63 +270,32 @@ pub(crate) fn write_session_settings(
         .chain(mandatory_bash().iter().cloned())
         .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
     {
-        if !c.is_empty() {
-            let r = format!("Bash({} *)", c);
-            if !allow_rules.contains(&r) { allow_rules.push(r); }
-        }
+        if !c.is_empty() { push_unique_trimmed(&mut allow_rules, &bash_rule(&c)); }
     }
+    allow_rules
+}
 
-    // Deny: curated dangerous defaults + user/project denies (deny > allow).
+/// Assemble the DENY rules (before the verbatim tool rules are folded in): the curated dangerous
+/// defaults + the user/project `denied_commands` (deny > allow).
+fn build_deny_rules(denied_commands: &[String]) -> Vec<String> {
     let mut deny_rules: Vec<String> = bsc_util::dangerous::claude_deny_rules().map(|s| s.to_string()).collect();
     for c in denied_commands {
         let c = c.trim();
-        if !c.is_empty() {
-            let r = format!("Bash({} *)", c);
-            if !deny_rules.contains(&r) { deny_rules.push(r); }
-        }
+        if !c.is_empty() { push_unique_trimmed(&mut deny_rules, &bash_rule(c)); }
     }
+    deny_rules
+}
 
-    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
-    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
-    for r in allow_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !allow_rules.contains(&r) { allow_rules.push(r); }
-    }
-    for r in deny_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
-    }
-
-    // Ask: rules that PROMPT the user before the command (Claude Code precedence
-    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
-    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
-    // create *)` here so pushes/PRs require approval instead of auto-running.
-    let mut ask_rules: Vec<String> = Vec::new();
-    for r in ask_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
-    }
-
-    // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
-    // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
-    // permission the user removed from a profile would linger across relaunches. Used when
-    // re-applying after a profile/permission edit.
-    if replace_permissions {
-        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
-            for k in ["allow", "deny", "ask"] { perms.remove(k); }
-        }
-    }
-    merge_permission_list(&mut config, "allow", &allow_rules);
-    merge_permission_list(&mut config, "deny", &deny_rules);
-    merge_permission_list(&mut config, "ask", &ask_rules);
-    // Permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions auto-run,
-    // the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the enumerated
-    // allow/deny lists require approval). Default is the ALLOW-LIST (#2050 — the broad base.json tiers
-    // keep it low-friction; bypass is the opt-in power posture in Settings → Security). Either way the hooks (dangerous floor +
-    // role/user denies via bsc-deny, FS confinement + .claude via bsc-confine, code:none/write-scope via
-    // bsc-scope) still fire+block — they survive bypass, where `permissions.deny` is ignored — and `ask`
-    // (push-confirm) still prompts natively. The allow-list machinery (base.json tiers, posture scaling)
-    // STAYS: it's the engine for allow-list mode. Applies to EVERY pane (workers, director, triage, manual).
+/// Apply the permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions
+/// auto-run, the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the
+/// enumerated allow/deny lists require approval). Default is the ALLOW-LIST (#2050 — the broad
+/// base.json tiers keep it low-friction; bypass is the opt-in power posture in Settings → Security).
+/// Either way the hooks (dangerous floor + role/user denies via bsc-deny, FS confinement + .claude via
+/// bsc-confine, code:none/write-scope via bsc-scope) still fire+block — they survive bypass, where
+/// `permissions.deny` is ignored — and `ask` (push-confirm) still prompts natively. The allow-list
+/// machinery (base.json tiers, posture scaling) STAYS: it's the engine for allow-list mode. Applies to
+/// EVERY pane (workers, director, triage, manual).
+fn apply_permission_posture(config: &mut serde_json::Value, bypass: bool, cwd: &str) {
     if bypass {
         {
             let obj = config.as_object_mut().unwrap();
@@ -219,27 +306,7 @@ pub(crate) fn write_session_settings(
                 serde_json::Value::String("bypassPermissions".into()),
             );
         }
-        // Layer 4 — the OS sandbox (#1916): under bypass, OS-confine the Bash subprocess tree, the one
-        // tool a PreToolUse hook can't fully contain (macOS Seatbelt / Linux + WSL2 bubblewrap). On NATIVE
-        // Windows it warns + falls back to unsandboxed (`failIfUnavailable: false`) — a safe no-op until a
-        // session runs in WSL2. The sandbox's default write boundary is cwd + $TMPDIR; WIDEN it or it
-        // breaks real work: the bsc state dir (`~/.base-studio-code` — coord/audit logs, plan.db) and the
-        // cwd's MAIN git repo (a linked worktree's git data lives in `<main>/.git/worktrees/<id>`, outside
-        // the cwd). Reads stay open (builds need system libs); credential + read confinement is a follow-on.
-        let mut allow_write = vec![serde_json::Value::String(
-            crate::platform::paths::bsc_base_dir().to_string_lossy().into_owned(),
-        )];
-        if let Some(main) = crate::session::claude_config::git_main_worktree(cwd) {
-            allow_write.push(serde_json::Value::String(main));
-        }
-        config.as_object_mut().unwrap().insert(
-            "sandbox".into(),
-            serde_json::json!({
-                "enabled": true,
-                "failIfUnavailable": false,
-                "filesystem": { "allowWrite": allow_write },
-            }),
-        );
+        config.as_object_mut().unwrap().insert("sandbox".into(), build_sandbox_block(cwd));
     } else {
         if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
             // Allow-list posture: drop any stale bypass left by a prior bypass launch so the toggle takes.
@@ -248,38 +315,24 @@ pub(crate) fn write_session_settings(
         // Allow-list posture: prompts are the gate, so the OS sandbox isn't required — drop a stale block.
         config.as_object_mut().unwrap().remove("sandbox");
     }
-
-    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
-    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
-    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
-    // resolved set — servers not listed aren't trusted, which is how removal lands).
-    write_session_hooks(&mut config, hooks);
-    {
-        let obj = config.as_object_mut().unwrap();
-        if mcp_servers.is_empty() {
-            obj.remove("enabledMcpjsonServers");
-        } else {
-            obj.insert(
-                "enabledMcpjsonServers".into(),
-                serde_json::Value::Array(
-                    mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
-                ),
-            );
-        }
-    }
-
-    std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
-    crate::platform::fsx::atomic_write_json(&settings_path, &config).map_err(|e| e.to_string())?;
-    write_mcp_json(&root, mcp_servers)?;
-    write_session_skills(&root, skills)?;
-    // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
-    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
-    // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
-    crate::extensions::skills::record_skill_uses(skills);
-    git_exclude(&root, ".claude/");
-    git_exclude(&root, ".mcp.json");
-    Ok(())
 }
+
+/// Gate the resolved MCP servers via `enabledMcpjsonServers` — set to EXACTLY the resolved set
+/// (servers not listed aren't trusted, which is how removal lands); an empty set drops the key.
+fn apply_enabled_mcp_servers(config: &mut serde_json::Value, mcp_servers: &[McpServerCfg]) {
+    let obj = config.as_object_mut().unwrap();
+    if mcp_servers.is_empty() {
+        obj.remove("enabledMcpjsonServers");
+    } else {
+        obj.insert(
+            "enabledMcpjsonServers".into(),
+            serde_json::Value::Array(
+                mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
+            ),
+        );
+    }
+}
+
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
 /// entries and order, deduped. Creates the objects/array as needed.
 pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, rules: &[String]) {
@@ -295,6 +348,46 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
     for r in rules {
         if seen.insert(r.clone()) { arr.push(serde_json::Value::String(r.clone())); }
     }
+}
+
+/// Wrap a bare command in the `Bash(<cmd> *)` prefix-match rule Claude Code auto-approves.
+/// The command is trimmed; callers guard against an empty command before wrapping (an empty
+/// command would otherwise yield the meaningless `Bash( *)`).
+fn bash_rule(cmd: &str) -> String {
+    format!("Bash({} *)", cmd.trim())
+}
+
+/// Append `rule` (trimmed) to `vec` unless it is empty or already present — the trim + dedup
+/// step shared by all five allow/deny/ask rule-assembly sites. Order is preserved (first
+/// occurrence wins), so deny > ask > allow precedence is untouched (each list is assembled
+/// independently and merged separately).
+fn push_unique_trimmed(vec: &mut Vec<String>, rule: &str) {
+    let rule = rule.trim();
+    if !rule.is_empty() && !vec.iter().any(|r| r == rule) {
+        vec.push(rule.to_string());
+    }
+}
+
+/// The bypass OS-sandbox block (#1916, Layer 4): under bypass, OS-confine the Bash subprocess
+/// tree — the one tool a PreToolUse hook can't fully contain (macOS Seatbelt / Linux + WSL2
+/// bubblewrap). On NATIVE Windows it warns + falls back to unsandboxed (`failIfUnavailable:
+/// false`) — a safe no-op until a session runs in WSL2. The sandbox's default write boundary is
+/// cwd + $TMPDIR; this WIDENS it or it breaks real work: the bsc state dir (`~/.base-studio-code`
+/// — coord/audit logs, plan.db) and the cwd's MAIN git repo (a linked worktree's git data lives
+/// in `<main>/.git/worktrees/<id>`, outside the cwd). Reads stay open (builds need system libs);
+/// credential + read confinement is a follow-on.
+fn build_sandbox_block(cwd: &str) -> serde_json::Value {
+    let mut allow_write = vec![serde_json::Value::String(
+        crate::platform::paths::bsc_base_dir().to_string_lossy().into_owned(),
+    )];
+    if let Some(main) = crate::session::claude_config::git_main_worktree(cwd) {
+        allow_write.push(serde_json::Value::String(main));
+    }
+    serde_json::json!({
+        "enabled": true,
+        "failIfUnavailable": false,
+        "filesystem": { "allowWrite": allow_write },
+    })
 }
 
 #[cfg(test)]
@@ -459,20 +552,11 @@ mod tests {
             r#"{"model":"claude-sonnet-4-6","permissions":{"allow":["Read"],"deny":["WebSearch"]}}"#,
         ).unwrap();
 
-        write_session_settings(
-            &dir.to_string_lossy(),
-            &["cargo".into(), "git".into()],
-            &["scp".into()],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            false,
-            "allow",
-            true,
-        ).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            allowed_commands: &["cargo".into(), "git".into()],
+            denied_commands: &["scp".into()],
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
@@ -488,7 +572,10 @@ mod tests {
         assert!(writes.iter().any(|w| w.contains(".base-studio-code")), "sandbox must allowWrite the bsc state dir, got {writes:?}");
         // Allow-list posture (#1916): bypass=false omits defaultMode (and clears a stale one), so Claude's
         // `default` mode enforces the enumerated allow/deny lists — the require-approval option we keep.
-        write_session_settings(&dir.to_string_lossy(), &[], &[], &[], &[], &[], &[], &[], &[], false, "allow", false).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            bypass: false,
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
         let v2: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert!(v2["permissions"]["defaultMode"].is_null(), "allow-list posture must omit defaultMode");
@@ -537,8 +624,11 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(dir.join(".claude")).unwrap();
             // Grant a project-specific command in every posture — it must ALWAYS be present.
-            write_session_settings(&dir.to_string_lossy(), &["terraform".into()], &[],
-                &[], &[], &[], &[], &[], &[], false, posture, true).unwrap();
+            write_session_settings(&SessionSettingsSpec {
+                allowed_commands: &["terraform".into()],
+                bash_posture: posture,
+                ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+            }).unwrap();
             let allow = read_allow(&dir);
             assert_eq!(allow.contains(&"Bash(ls *)".to_string()), want_ro, "{posture}: read-only baseline");
             assert_eq!(allow.contains(&"Bash(cargo *)".to_string()), want_build, "{posture}: build baseline");
@@ -567,7 +657,7 @@ mod tests {
         // The git-bash spelling of the native temp dir: `C:\…\x` → `/c/…/x`.
         let fwd = native.to_string_lossy().replace('\\', "/"); // C:/Users/…/x
         let git_bash = format!("/{}{}", fwd[..1].to_lowercase(), &fwd[2..]); // /c/Users/…/x
-        write_session_settings(&git_bash, &[], &[], &[], &[], &[], &[], &[], &[], false, "allow", true).unwrap();
+        write_session_settings(&SessionSettingsSpec::for_dir(&git_bash)).unwrap();
         // Lands at the NATIVE dir...
         assert!(native.join(".claude").join("settings.json").exists(),
             "settings.json must be written to the native dir, not a bogus C:\\c\\… path");
@@ -586,20 +676,10 @@ mod tests {
 
         // A hard push-confirm flow (#297) asks before push/PR: the rules land in
         // permissions.ask (deny > ask > allow), so they prompt under the broad Bash allow.
-        write_session_settings(
-            &dir.to_string_lossy(),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
-            &[],
-            false,
-            "allow",
-            true,
-        ).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            ask_tool_rules: &["Bash(git push *)".into(), "Bash(gh pr create *)".into()],
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
@@ -623,20 +703,11 @@ mod tests {
 
         // The role write-path guard: deny every write tool (planner/director/triage),
         // and auto-approve a worker's boundary glob.
-        write_session_settings(
-            &dir.to_string_lossy(),
-            &[],
-            &[],
-            &[],
-            &[],
-            &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
-            &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
-            &[],
-            &[],
-            false,
-            "allow",
-            true,
-        ).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            allow_tool_rules: &["Edit(src/auth/**)".into(), "Write(src/auth/**)".into()],
+            deny_tool_rules: &["Edit".into(), "Write".into(), "MultiEdit".into(), "NotebookEdit".into()],
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
@@ -670,11 +741,17 @@ mod tests {
 
         // First pass grants a custom command (merge mode). Use a command NOT in the baselines
         // (`terraform`) so the drop is observable — a baseline command would be re-added anyway.
-        write_session_settings(&cwd, &["terraform".into()], &[], &[], &[], &[], &[], &[], &[], false, "allow", true).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            allowed_commands: &["terraform".into()],
+            ..SessionSettingsSpec::for_dir(&cwd)
+        }).unwrap();
         assert!(read().contains(&"Bash(terraform *)".to_string()));
 
         // Re-apply with the command REMOVED — replace mode must drop it (merge would keep it).
-        write_session_settings(&cwd, &[], &[], &[], &[], &[], &[], &[], &[], true, "allow", true).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            replace_permissions: true,
+            ..SessionSettingsSpec::for_dir(&cwd)
+        }).unwrap();
         let allow = read();
         assert!(!allow.contains(&"Bash(terraform *)".to_string()), "replace must drop the removed command (#799)");
         assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
@@ -702,7 +779,11 @@ mod tests {
         let hooks = vec![HookCfg {
             event: "PostToolUse".into(), matcher: "Write|Edit".into(), command: "format.sh".into(),
         }];
-        write_session_settings(&dir.to_string_lossy(), &[], &[], &mcp, &hooks, &[], &[], &[], &[], false, "allow", true).unwrap();
+        write_session_settings(&SessionSettingsSpec {
+            mcp_servers: &mcp,
+            hooks: &hooks,
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
 
         // .mcp.json carries both servers in the right transport shapes.
         let mcp_json: serde_json::Value =

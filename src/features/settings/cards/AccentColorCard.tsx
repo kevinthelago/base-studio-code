@@ -1,17 +1,20 @@
 import { useAppStore } from "@/store";
 import { ACCENT_PRESETS, accentVars } from "../lib/appearance";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 
 export function AccentColorCard() {
   const { accent, setAccent } = useAppStore();
 
   return (
     <Card title="Accent color" hint="the highlight color used across the app">
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <Row gap={10} align="stretch" wrap>
         {ACCENT_PRESETS.map((p) => {
           const on = p.id === accent;
           const { accent: color } = accentVars(p.id);
           return (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke color-swatch pill (radius 99, per-preset accent bg/box-shadow); not the .btn family, SegmentedControl can't reproduce the swatch
             <button
               key={p.id}
               className="mono"
@@ -28,15 +31,15 @@ export function AccentColorCard() {
                 color: on ? "var(--fg)" : "var(--fg-muted)",
               }}
             >
-              <span style={{
-                width: 16, height: 16, borderRadius: "50%", background: color,
+              <Box as="span" bg={color} style={{
+                width: 16, height: 16, borderRadius: "50%",
                 boxShadow: on ? "0 0 0 2px var(--bg-elev2), 0 0 0 3px " + color : "none",
               }} />
               {p.label}
             </button>
           );
         })}
-      </div>
+      </Row>
     </Card>
   );
 }

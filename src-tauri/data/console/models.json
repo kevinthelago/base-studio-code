@@ -1,0 +1,5 @@
+[
+  { "id": "haiku-4.5",  "tone": "fast",     "price": "$"   },
+  { "id": "sonnet-4.5", "tone": "balanced", "price": "$$"  },
+  { "id": "opus-4.5",   "tone": "deep",     "price": "$$$" }
+]
