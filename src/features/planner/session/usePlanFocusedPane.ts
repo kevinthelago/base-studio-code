@@ -33,6 +33,9 @@ export interface PlanFocusedPaneOpts {
   allowGateOverride: boolean;
   /** The blueprint's stages — resolves the selected stage's injectable prompts by key (#815). */
   planSecs: BlueprintStage[];
+  /** #2121 — the active UI stage's design is missing or stale (not routed / changed since routed),
+   *  so its primary footer action becomes "route design" instead of "approve & continue". */
+  uiNeedsRoute: boolean;
   /** Selection resets when either changes. */
   effectiveProjectId: string;
   effectiveBlueprintId: string;
@@ -41,7 +44,7 @@ export interface PlanFocusedPaneOpts {
 export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   const {
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
-    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId,
+    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
   } = opts;
 
   // The SELECTION — auto-follows the active stage (`focusSel` null) or pins to a user pick; reset on
@@ -53,7 +56,9 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   // The active stage is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
   // offers a "Skip stage" control beside the primary action (#921).
   const activeSkippable = stages[focusActiveIdx]?.optional === true && stages[focusActiveIdx]?.status === "active";
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable);
+  // #2121: on the active UI stage with missing/stale design, the primary action routes the design.
+  const routeDesign = stages[focusActiveIdx]?.key === "ui" && uiNeedsRoute;
+  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable, routeDesign);
   // Let "approve & continue" light up as soon as there are drafted sections to confirm (clicking
   // confirms them, see onPrimary), and — when the user enabled gate override (#1285) — let a blocking
   // gate be force-advanced as a cautionary "override gate & continue".

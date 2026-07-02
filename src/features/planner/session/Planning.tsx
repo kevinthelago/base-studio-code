@@ -45,6 +45,9 @@ import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
 import { usePlanConfirmations } from "./usePlanConfirmations";
 import { usePlanFocusedPane } from "./usePlanFocusedPane";
+import { useDesignRouteState } from "./useDesignRouteState";
+import { invoke } from "@tauri-apps/api/core";
+import { parseIntake, markRouted, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "../lib/fileIntake";
 import { useSetupSignature } from "./useSetupSignature";
 import { usePlannerTerminal } from "./usePlannerTerminal";
 import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
@@ -431,12 +434,40 @@ export function Planning({ visible }: { visible: boolean }) {
     effectiveProjectId, paneId, confirmPlanSection, skipPlanSection,
     autoCompleteGates, autoPlanActive: autoPlanWithClaude && llmHasKey,
   });
+  // #2121 — the UI stage's conditional footer. The staged design "needs routing" when it hasn't
+  // been routed yet (the `ui` section is unconfirmed) OR a staged file changed since the last route
+  // (content-hash diff, polled). While true the footer's primary action ROUTES the design (the
+  // route-design branch of onPrimary, below) instead of advancing; once routed-and-current it
+  // reverts to the normal "approve & continue". Replaces the removed FileIntakePane route button.
+  const designChanged = useDesignRouteState(effectiveProjectId, requiresUi);
+  const uiNeedsRoute = requiresUi && (!confirmedSet.has("ui") || designChanged);
   // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
   // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
   const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
-    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId,
+    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
   });
+
+  // #2121 — the UI stage footer's "route design to project" action (replaces the FileIntakePane
+  // route button). Sync the staged design into the app skeleton, stamp every staged file's
+  // routed-hash so it reads as current (subsequent edits re-surface the route action), and confirm
+  // the `ui` section so the stage gate passes. The change-aware routing of files to each repo still
+  // happens on triage (#2097); this just marks the design routed + advances the stage. Non-fatal.
+  const routeDesignToProject = useCallback(async () => {
+    const projectKey = effectiveProjectId;
+    try {
+      await invoke("sync_design_to_skeleton", { projectKey });
+      const files = await invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR });
+      const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
+      if (manifest) {
+        const entries = parseIntake(manifest);
+        await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(markRouted(entries)) });
+      }
+    } catch (e) {
+      console.error("route design failed:", e);
+    }
+    confirmPlanSection(projectKey, "ui");
+  }, [effectiveProjectId, confirmPlanSection]);
 
   // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
   // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
@@ -721,6 +752,9 @@ export function Planning({ visible }: { visible: boolean }) {
                 onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, stages.length)),
                 onPrimary: () => {
                   if (focusFooter.kind === "publish") { void handlePublish(); return; }
+                  // #2121 — UI stage, design missing/stale: route it (sync skeleton + mark routed +
+                  // confirm the ui section). Stays on the stage so the footer flips to advance.
+                  if (focusFooter.kind === "route-design") { void routeDesignToProject(); return; }
                   if (focusFooter.kind === "approve-continue") {
                     // User gate override (#1285): the gate isn't met but the user chose to advance —
                     // force past the active stage (the skip/advance primitive) and tell the planner.

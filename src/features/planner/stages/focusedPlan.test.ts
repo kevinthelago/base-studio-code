@@ -133,6 +133,18 @@ describe("footerAction (#652)", () => {
     // Browsing away from the active stage never offers skip.
     expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
   });
+
+  it("routes the design on the active UI stage when it's missing/stale (#2121)", () => {
+    // routeDesign=true on the active stage → an always-enabled "route-design" action instead of
+    // "approve & continue"; the skip control still rides along when the stage is optional.
+    expect(footerAction(1, 1, false, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
+    expect(footerAction(1, 1, false, true, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
+    // route-design never overrides navigation or publish.
+    expect(footerAction(2, 1, false, false, false, true).kind).toBe("back-to-current");
+    expect(footerAction(1, 1, true, false, false, true)).toEqual({ kind: "publish", enabled: true });
+    // Once the design is current (routeDesign=false) it reverts to the normal advance action.
+    expect(footerAction(1, 1, false, true, false, false).kind).toBe("approve-continue");
+  });
 });
 
 describe("resolveFooter — gate override (#1285)", () => {
