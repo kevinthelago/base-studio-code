@@ -4,6 +4,7 @@
 // Agent Relationships - Swimlanes · inspector().
 
 import type { ReactNode } from "react";
+import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -16,11 +17,10 @@ import {
 
 const mono = "var(--mono)";
 
+// Folded onto the shared color-mix Chip (#2160) — radius 99, no fontWeight; the knobs reproduce it exactly.
 function Pill({ text, c }: { text: string; c: string }) {
   return (
-    <Box as="span" pad={[1, 7]} bg={`color-mix(in oklch, ${c}, transparent 86%)`} radius={99} style={{
-      fontFamily: mono, fontSize: 8, whiteSpace: "nowrap", color: c, border: `1px solid color-mix(in oklch, ${c}, transparent 62%)`,
-    }}>{text}</Box>
+    <Chip color={c} bgAlpha={86} borderAlpha={62} fontSize={8} padding="1px 7px" style={{ whiteSpace: "nowrap" }}>{text}</Chip>
   );
 }
 

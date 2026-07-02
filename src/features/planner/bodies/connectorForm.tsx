@@ -30,13 +30,11 @@ export const STATUS_DOT: Record<SourceStatus, string> = {
   error: "var(--danger)",
 };
 
-/** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance. */
+/** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance.
+ *  Folded onto the shared color-mix Chip (#2160) — same shape as InfoChip below. */
 function ReadOnlyPill() {
   return (
-    <Box as="span" pad={[2, 7]} bg="color-mix(in oklch, var(--success), transparent 88%)" radius={99} style={{
-      fontFamily: MONO, fontSize: 9, color: "var(--success)", whiteSpace: "nowrap",
-      border: "1px solid color-mix(in oklch, var(--success), transparent 74%)",
-    }}>READ-ONLY</Box>
+    <Chip color="var(--success)" fontSize={9} padding="2px 7px" borderAlpha={74} style={{ whiteSpace: "nowrap" }}>READ-ONLY</Chip>
   );
 }
 
