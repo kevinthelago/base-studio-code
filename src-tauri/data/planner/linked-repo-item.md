@@ -1,0 +1,2 @@
+- **{full_name}**
+  - local path: `{local_path}` — the app clones it here for you to read; don't clone it yourself.
