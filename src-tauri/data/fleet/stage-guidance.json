@@ -1,0 +1,10 @@
+{
+  "implement": "Make the change for this work item within your ownership boundary, then commit. Do not merge.",
+  "fix": "A prior build/test run failed (see below). Fix the cause, then commit. Do not merge.",
+  "build-test": "Run the build and the test suite. Report pass or fail. Do NOT edit code or merge.",
+  "review": "Review the change for correctness and quality. Decide approve or request-changes. Do NOT edit or merge.",
+  "integrate": "Merge the change and update the board. Do NOT write code.",
+  "spike": "Explore the problem and produce a throwaway proof-of-concept + findings. Do not merge.",
+  "research": "Research the problem and write up what you found. Do not edit code.",
+  "plan": "Turn the research into a concrete implementation plan. Do not edit code."
+}
