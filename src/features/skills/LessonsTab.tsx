@@ -44,7 +44,9 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
     <Grid gap={8} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, padding: "10px 12px", background: "var(--bg-elev)" }}>
       {editing ? (
         <>
+          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
           <input className="input" value={mistake} onChange={(e) => setMistake(e.target.value)} placeholder="what went wrong" style={{ fontSize: 12 }} />
+          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
           <input className="input" value={rule} onChange={(e) => setRule(e.target.value)} placeholder="the corrective rule" style={{ fontSize: 12 }} />
         </>
       ) : (
@@ -55,7 +57,7 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
         </Grid>
       )}
       <Row gap={8} style={{ fontSize: 11 }}>
-        {lesson.seen > 1 && <Box as="span" className="pill" style={{ background: "var(--bg-panel)", color: "var(--fg-muted)" }}>seen ×{lesson.seen}</Box>}
+        {lesson.seen > 1 && <Box as="span" className="pill" bg="var(--bg-panel)" style={{ color: "var(--fg-muted)" }}>seen ×{lesson.seen}</Box>}
         {lesson.provenance && <Box as="span" className="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.provenance}</Box>}
         <Box as="span" style={{ flex: 1 }} />
         <Button variant="ghost" disabled={busy} onClick={() => setEditing((e) => !e)}>{editing ? "done editing" : "edit"}</Button>

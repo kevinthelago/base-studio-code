@@ -39,13 +39,13 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   return (
     <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
       <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
-        <Box className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
+        <Box className="modal" bg="var(--bg-panel)" border radius="lg" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <Row gap={11} className="modal-head" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <IconBox size={30} radius={7} fontSize={13} background={iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)"} color={iconColor ?? "var(--accent)"}>{icon}</IconBox>
             <Box><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <Box style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</Box>}</Box>
             <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
           </Row>
-          <Box className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</Box>
+          <Box className="modal-body" pad={20} style={{ overflowY: "auto" }}>{children}</Box>
           {foot && <Row gap={9} className="modal-foot" style={{ padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</Row>}
         </Box>
       </ModalScrim>
@@ -63,7 +63,7 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
           <Stack key={s.uid ?? i} gap={4} style={{ padding: "5px 0" }}>
             <Row gap={9}>
               <Box as="span" className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</Box>
-              <Box as="span" style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></Box>
+              <Box as="span" bg={tint(k.h, 0.16)} radius={5} style={{ width: 22, height: 22, flex: "0 0 22px", color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></Box>
               <Text as="span" size={11.5} className="mono" style={{ color: "var(--fg)" }}>{s.name}</Text>
               <Box as="span" style={{ flex: 1 }} />
               {caps > 0 && <Text as="span" className="hint mono">{caps} attached</Text>}
@@ -118,6 +118,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
       ) : (
         <Box className="field">
           <label className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Gist URL or ID</label>
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke .field block: custom-styled <label> (10px/.06em) + input marginTop + a separate error sibling; TextField's plain-label .field stack wouldn't match */}
           <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
             value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
           <Box className="hint" style={{ marginTop: 6 }}>Paste a full URL or the raw gist ID.</Box>

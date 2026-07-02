@@ -66,10 +66,9 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
           {/* STREAMS — gate pill on the right (#1429 reskin) */}
           <Row className="ulabel" justify="between" gap={8} style={{ paddingBottom: 9 }}>
             <Text as="span">streams</Text>
-            <Box as="span" data-testid="relationship-gate" className="mono" style={{
-              display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
+            <Box as="span" data-testid="relationship-gate" className="mono" pad={[3, 8]} bg={`color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`} radius={20} style={{
+              display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, textTransform: "none",
               color: gatePass ? "var(--success)" : "var(--danger)",
-              background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`,
               border: `1px solid color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 67%)`,
               animation: gatePass ? undefined : "pulse 1.8s ease-in-out infinite",
             }}>
@@ -77,7 +76,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
             </Box>
           </Row>
           {/* graph card + legend */}
-          <Box style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 8px 4px" }}>
+          <Box bg="var(--bg-elev)" border radius={9} style={{ padding: "8px 8px 4px" }}>
             <RelationshipGraphView
               graph={relGraph}
               focus={focus}
@@ -94,18 +93,19 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
                 </Box>
               ))}
               <Box as="span" className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
-                <Box as="span" style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
+                <Box as="span" bg="var(--success)" style={{ width: 7, height: 7, transform: "rotate(45deg)"}} />contract ready
               </Box>
             </Row>
           </Box>
           <Row className="mono" justify="center" gap={9} style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center" }}>
             <Text as="span">{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</Text>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` text button, not a `.btn`-family control */}
             {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
           </Row>
 
           {/* INSPECTOR */}
           <Box className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</Box>
-          <Box style={{ padding: "12px 13px", borderRadius: 9, background: "var(--bg-elev)", border: "1px solid var(--border)" }}>
+          <Box pad={[12, 13]} bg="var(--bg-elev)" border radius={9}>
             <RelationshipInspector
               graph={relGraph}
               focus={focus}

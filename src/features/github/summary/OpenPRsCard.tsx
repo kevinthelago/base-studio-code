@@ -23,10 +23,10 @@ export function OpenPRsAllRepos({ prs, loading }: {
         <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>filter by reviewer</Button>
       </Row>
       {prs.length === 0 && !loading && (
-        <Box className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No open pull requests.</Box>
+        <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No open pull requests.</Box>
       )}
       {prs.length > 0 && (
-        <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+        <Box border="soft" radius={6} style={{ overflow: "hidden" }}>
           {prs.map((p, i) => (
             <Grid key={p.n + p.repo} cols="50px 1fr auto 50px" gap={10} align="baseline" style={{
               padding: "10px 12px",

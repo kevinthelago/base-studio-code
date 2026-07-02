@@ -15,6 +15,7 @@ export function Rail({ active, onNavigate }: RailProps) {
     <Box className="rail">
       <Box className="logo">b.</Box>
       {WORKSPACES.map(({ key, Icon, label }) => (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke rail nav button (styled by the `.rail button` CSS selector, not the .btn kit)
         <button
           key={key}
           className={key === active ? "active" : ""}

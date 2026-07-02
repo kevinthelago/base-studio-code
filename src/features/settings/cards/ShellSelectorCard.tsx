@@ -42,10 +42,8 @@ export function ShellSelectorCard() {
               key={o.kind}
               className="mono"
               onClick={() => choose(o.kind)}
-              style={{
-                padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+              pad={[6, 12]} bg={on ? "var(--accent)" : "var(--bg-elev)"} radius={6} style={{ cursor: "pointer",
                 fontSize: 11,
-                background: on ? "var(--accent)" : "var(--bg-elev)",
                 color: on ? "#1a120a" : "var(--fg-muted)",
                 border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),
                 fontWeight: on ? 600 : 400,

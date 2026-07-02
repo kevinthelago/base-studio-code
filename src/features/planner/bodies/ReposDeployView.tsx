@@ -29,8 +29,8 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
   let hue = 0;
   for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
   return (
-    <Box as="span" style={{
-      width: sz, height: sz, borderRadius: 99, background: `oklch(0.7 0.13 ${hue})`, color: "#0b0d10",
+    <Box as="span" bg={`oklch(0.7 0.13 ${hue})`} radius={99} style={{
+      width: sz, height: sz, color: "#0b0d10",
       fontFamily: MONO, fontSize: sz * 0.5, fontWeight: 700, display: "inline-flex", alignItems: "center",
       justifyContent: "center", border: "1.5px solid var(--bg-canvas)",
     }}>{(id[0] ?? "?").toUpperCase()}</Box>
@@ -64,20 +64,24 @@ export function DeploymentBody({
   const linkAffordance = onLinkRepo && (
     linking ? (
       <Row gap={6}>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex link row; TextField's .field wrapper would change layout */}
         <input
           autoFocus aria-label="Link a repository" value={linkInput} placeholder="owner/repo"
           onChange={(e) => setLinkInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submitLink(); else if (e.key === "Escape") { setLinking(false); setLinkInput(""); } }}
           style={{ flex: 1, height: 26, padding: "0 8px", borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", color: "var(--fg)", fontFamily: MONO, fontSize: 10, outline: "none" }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom accent/height); Button/.btn would change rendering */}
         <button disabled={!linkInput.includes("/")} onClick={submitLink} style={{
           height: 26, padding: "0 11px", borderRadius: 6, border: "1px solid var(--accent-dim)",
           background: linkInput.includes("/") ? "var(--accent)" : "var(--bg-elev)", color: linkInput.includes("/") ? "#0b0d10" : "var(--fg-dim)",
           fontFamily: MONO, fontSize: 9.5, cursor: "pointer",
         }}>link</button>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom mono/height); Button/.btn would change rendering */}
         <button onClick={() => { setLinking(false); setLinkInput(""); }} style={{ height: 26, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border-soft)", background: "transparent", color: "var(--fg-muted)", fontFamily: MONO, fontSize: 9.5, cursor: "pointer" }}>cancel</button>
       </Row>
     ) : (
+      // eslint-disable-next-line no-restricted-syntax -- bespoke full-width dashed "add" affordance (not a `.btn`); Button would change rendering
       <button type="button" onClick={() => setLinking(true)} style={{
         width: "100%", border: "1px dashed var(--border)", borderRadius: 8, padding: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         background: "transparent", color: "var(--fg-dim)", fontFamily: MONO, fontSize: 10.5, cursor: "pointer",
@@ -94,7 +98,7 @@ export function DeploymentBody({
           {r.behind > 0 && <Text as="span" style={{ color: "var(--info)" }}>↓{r.behind}</Text>}
         </Text>
       )}
-      {r.lang && <Box as="span" style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</Box>}
+      {r.lang && <Box as="span" pad={[1, 7]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-muted)"}}>{r.lang}</Box>}
       {r.agents.length > 0 && (
         <Box as="span" style={{ display: "inline-flex", alignItems: "center" }}>
           {r.agents.map((id, i) => <Box as="span" key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></Box>)}
@@ -132,7 +136,7 @@ export function DeploymentBody({
               // identity so it's not dropped; the service seeds when the plan is next saved.
               return (
                 <Row key={r.id} gap={9} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px" }}>
-                  <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
+                  <Box as="span" bg={r.cloned ? "var(--success)" : "var(--fg-dim)"} radius={99} style={{ width: 7, height: 7, flex: "0 0 7px"}} />
                   <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{r.id}</Text>
                   {repoMeta(r)}
                   <Spacer />

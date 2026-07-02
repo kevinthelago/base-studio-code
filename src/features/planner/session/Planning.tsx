@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { Dialog } from "@/shared/ui/overlay/Dialog";
-import { Chip } from "@/shared/ui/data/Chip";
-import { BlueprintUpdateModal } from "../blueprints/BlueprintUpdateModal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { buildGhStructure } from "../github/ghStructure";
 import type { Section, SectionState } from "../github/ghStructure";
@@ -17,11 +14,9 @@ import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencie
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
 import { parseIssuesFile } from "../issues/planIssues";
 import { ProjectPane } from "../pane/ProjectPane";
-import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
 import { effectiveProjectRepos, localReposFor } from "../list/projectRepos";
 import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
-import { McpDownloadModal } from "../pane/McpDownloadModal";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
 import { normalizeDeployConfig } from "../lib/deployConfig";
@@ -29,13 +24,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkStage, blueprintCategory, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
-import { BackButton } from "@/shared/ui/controls/BackButton";
-import { Stack } from "@/shared/ui/layout/Stack";
-import { Row } from "@/shared/ui/layout/Row";
-import { Spacer } from "@/shared/ui/layout/Spacer";
-import { Box } from "@/shared/ui/layout/Box";
-import { Text } from "@/shared/ui/typography/Text";
+import { mkStage, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
@@ -56,6 +45,9 @@ import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
 import { usePlanConfirmations } from "./usePlanConfirmations";
 import { usePlanFocusedPane } from "./usePlanFocusedPane";
+import { useDesignRouteState } from "./useDesignRouteState";
+import { invoke } from "@tauri-apps/api/core";
+import { parseIntake, markRouted, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "../lib/fileIntake";
 import { useSetupSignature } from "./useSetupSignature";
 import { usePlannerTerminal } from "./usePlannerTerminal";
 import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
@@ -65,7 +57,10 @@ import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
 import { TERM_THEME } from "./planningTerminal";
-import { GitHubStructureCard } from "./GitHubStructureCard";
+import { PlanningHeader } from "./PlanningHeader";
+import { PlanningNotices } from "./PlanningNotices";
+import { PublishProgressView } from "./PublishProgressView";
+import { PlanningDialogs } from "./PlanningDialogs";
 
 export function Planning({ visible }: { visible: boolean }) {
   const {
@@ -439,12 +434,40 @@ export function Planning({ visible }: { visible: boolean }) {
     effectiveProjectId, paneId, confirmPlanSection, skipPlanSection,
     autoCompleteGates, autoPlanActive: autoPlanWithClaude && llmHasKey,
   });
+  // #2121 — the UI stage's conditional footer. The staged design "needs routing" when it hasn't
+  // been routed yet (the `ui` section is unconfirmed) OR a staged file changed since the last route
+  // (content-hash diff, polled). While true the footer's primary action ROUTES the design (the
+  // route-design branch of onPrimary, below) instead of advancing; once routed-and-current it
+  // reverts to the normal "approve & continue". Replaces the removed FileIntakePane route button.
+  const designChanged = useDesignRouteState(effectiveProjectId, requiresUi);
+  const uiNeedsRoute = requiresUi && (!confirmedSet.has("ui") || designChanged);
   // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
   // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
   const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
-    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId,
+    allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
   });
+
+  // #2121 — the UI stage footer's "route design to project" action (replaces the FileIntakePane
+  // route button). Sync the staged design into the app skeleton, stamp every staged file's
+  // routed-hash so it reads as current (subsequent edits re-surface the route action), and confirm
+  // the `ui` section so the stage gate passes. The change-aware routing of files to each repo still
+  // happens on triage (#2097); this just marks the design routed + advances the stage. Non-fatal.
+  const routeDesignToProject = useCallback(async () => {
+    const projectKey = effectiveProjectId;
+    try {
+      await invoke("sync_design_to_skeleton", { projectKey });
+      const files = await invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR });
+      const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
+      if (manifest) {
+        const entries = parseIntake(manifest);
+        await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(markRouted(entries)) });
+      }
+    } catch (e) {
+      console.error("route design failed:", e);
+    }
+    confirmPlanSection(projectKey, "ui");
+  }, [effectiveProjectId, confirmPlanSection]);
 
   // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
   // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
@@ -614,139 +637,47 @@ export function Planning({ visible }: { visible: boolean }) {
 
   return (
     <>
-      {/* Header */}
-      <Box style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
-        <Box style={{ flex: 1 }}>
-          <Row gap={10}>
-            <BackButton variant="icon" onClick={() => setProjectsView("list")} aria-label="Back to Planner" />
-            {isExisting
-              ? (
-                <>
-                  <Text as="span" mono size={10} tone="dim">#{activeProjectNumber}</Text>
-                  {/* Published title is editable (#1226): blur/Enter commits to the GitHub board + local name. */}
-                  <input
-                    value={titleEdit ?? activeProjectName}
-                    onChange={e => { setTitleEdit(e.target.value); if (renameErr) setRenameErr(null); }}
-                    onBlur={commitRename}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      else if (e.key === "Escape") { setTitleEdit(null); setRenameErr(null); }
-                    }}
-                    title={renameErr ?? activeProjectName}
-                    aria-label="Project title"
-                    className="mono"
-                    style={{
-                      background: "none", border: "none", outline: "none", padding: 0,
-                      margin: 0, fontSize: 16, fontWeight: 600,
-                      color: renameErr ? "var(--danger)" : "var(--fg)",
-                      // Size to the text, capped — a long name stops at the cap instead of pushing
-                      // the status pill away; minWidth:0 lets it shrink in a narrow pane.
-                      maxWidth: 282, minWidth: 0,
-                      width: Math.min(282, Math.max(56, ((titleEdit ?? activeProjectName).length || 14) * 9.5 + 16)),
-                    }}
-                  />
-                </>
-              )
-              : (
-                <input
-                  value={planningTitle}
-                  onChange={e => { setPlanningTitle(e.target.value); if (draftTitleErr) setDraftTitleErr(null); }}
-                  onBlur={commitDraftTitle}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    else if (e.key === "Escape") (e.target as HTMLInputElement).blur();
-                  }}
-                  placeholder="project title…"
-                  title={draftTitleErr ?? undefined}
-                  className="mono"
-                  style={{
-                    background: "none", border: "none", outline: "none",
-                    fontSize: 16, fontWeight: 600,
-                    color: draftTitleErr ? "var(--danger)" : planningTitle ? "var(--fg)" : "var(--fg-dim)",
-                    // Size to the text (snug), with a usable floor and a 400px cap so the status
-                    // pill sits right next to the title.
-                    width: Math.min(282, Math.max(56, (planningTitle.length || 14) * 9.5 + 16)),
-                    padding: 0,
-                  }}
-                />
-              )
-            }
-            <Chip tone="accent">● {isExisting ? "expanding" : "drafting"}</Chip>
-          </Row>
-          {autopilot.running && (
-            <Text as="div" size={12} tone="accent" style={{ marginTop: 4 }}>
-              ⚙ auto-planning · {autopilotProgressPct}%
-            </Text>
-          )}
-        </Box>
-        <button className="btn ghost" onClick={handleRestart} disabled={restarting}
-          title="Restart the planner session (re-spawns Claude)">
-          {restarting ? "restarting…" : "↺ restart"}
-        </button>
-        <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
-          clear plan
-        </button>
-        {/* Switch the project to a different blueprint (#923 / #1281 — any → any other). */}
-        {canSwitch && (
-          <button className="btn ghost" onClick={() => setSwitchOpen(true)} title="Switch this project to a different blueprint">
-            switch blueprint
-          </button>
-        )}
-        {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
-            blueprint gist, so there are no repos to triage / no fleet to launch. */}
-        {!isAuthoring && (() => {
-          // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
-          const gate = {
-            published: !!activeProjectId,
-            hasRepos: publishRepos.length > 0,
-            hasFleet: !!planFleet[effectiveProjectId]?.streams.length,
-            busy: triaging,
-            planReady,
-          };
-          return (
-            <button
-              className="btn primary"
-              onClick={launchTriage}
-              disabled={!canLaunchTriage(gate)}
-              title={triageLockReason(gate) ?? "Clone the repos and start a triage session"}
-            >
-              {triaging ? "starting triage…" : "Triage →"}
-            </button>
-          );
-        })()}
-      </Box>
-      {triageError && (
-        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
-          ⚠ {triageError}
-        </Text>
-      )}
-      {triageNote && !triageError && (
-        <Text as="div" mono size={12} tone="muted" style={{ padding: "0 24px 8px" }}>
-          ⏭ {triageNote}
-        </Text>
-      )}
-      {featureCycle.length > 0 && (
-        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
-          ⚠ Feature dependency cycle: {featureCycle.join(" → ")} — break it to complete the Features stage.
-        </Text>
-      )}
-      {recoverable > 0 && (
-        <Row className="mono" gap={10} style={{ padding: "0 24px 8px", fontSize: 12, color: "var(--fg-muted)" }}>
-          <Box as="span">⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</Box>
-          <button
-            className="mono"
-            onClick={() => void handleRecover()}
-            disabled={recovering}
-            style={{
-              padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border-soft)",
-              background: "var(--bg-elev2)", color: "var(--fg)", fontSize: 11,
-              cursor: recovering ? "default" : "pointer", opacity: recovering ? 0.6 : 1,
-            }}
-          >
-            {recovering ? "Recovering…" : "Recover from GitHub"}
-          </button>
-        </Row>
-      )}
+      {/* Header (extracted → PlanningHeader) */}
+      <PlanningHeader
+        isExisting={isExisting}
+        activeProjectNumber={activeProjectNumber}
+        activeProjectName={activeProjectName}
+        onBack={() => setProjectsView("list")}
+        titleEdit={titleEdit}
+        setTitleEdit={setTitleEdit}
+        renameErr={renameErr}
+        setRenameErr={setRenameErr}
+        commitRename={commitRename}
+        planningTitle={planningTitle}
+        setPlanningTitle={setPlanningTitle}
+        draftTitleErr={draftTitleErr}
+        setDraftTitleErr={setDraftTitleErr}
+        commitDraftTitle={commitDraftTitle}
+        autopilotRunning={autopilot.running}
+        autopilotProgressPct={autopilotProgressPct}
+        handleRestart={handleRestart}
+        restarting={restarting}
+        onClearPlan={() => setShowClearConfirm(true)}
+        canSwitch={canSwitch}
+        onSwitchBlueprint={() => setSwitchOpen(true)}
+        isAuthoring={isAuthoring}
+        published={!!activeProjectId}
+        hasRepos={publishRepos.length > 0}
+        hasFleet={!!planFleet[effectiveProjectId]?.streams.length}
+        triaging={triaging}
+        planReady={planReady}
+        launchTriage={launchTriage}
+      />
+      {/* Notices (extracted → PlanningNotices) */}
+      <PlanningNotices
+        triageError={triageError}
+        triageNote={triageNote}
+        featureCycle={featureCycle}
+        recoverable={recoverable}
+        recovering={recovering}
+        onRecover={() => void handleRecover()}
+        publishRepos={publishRepos}
+      />
 
       {/* Split panel */}
       {/* eslint-disable-next-line no-restricted-syntax -- measured split-panel hosting the PTY terminal region */}
@@ -821,6 +752,9 @@ export function Planning({ visible }: { visible: boolean }) {
                 onBack: () => setFocusSel(clampIndex(focusSelectedIdx - 1, stages.length)),
                 onPrimary: () => {
                   if (focusFooter.kind === "publish") { void handlePublish(); return; }
+                  // #2121 — UI stage, design missing/stale: route it (sync skeleton + mark routed +
+                  // confirm the ui section). Stays on the stage so the footer flips to advance.
+                  if (focusFooter.kind === "route-design") { void routeDesignToProject(); return; }
                   if (focusFooter.kind === "approve-continue") {
                     // User gate override (#1285): the gate isn't met but the user chose to advance —
                     // force past the active stage (the skip/advance primitive) and tell the planner.
@@ -846,107 +780,35 @@ export function Planning({ visible }: { visible: boolean }) {
               }}
             />
           ) : (
-            <>
-              {/* Publish progress header */}
-              <Row className="mono" gap={8} style={{
-                padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
-                fontSize: 11,
-              }}>
-                <Text as="span" style={{
-                  color: publishPhase === "done"  ? "var(--success)"
-                       : publishPhase === "error" ? "var(--danger)"
-                       : "var(--accent)",
-                }}>
-                  {publishPhase === "running" ? "⟳ publishing…"
-                   : publishPhase === "done"  ? "✓ published"
-                   : "✗ publish failed"}
-                </Text>
-                <Spacer />
-                {(publishPhase === "done" || publishPhase === "error") && (
-                  <button
-                    className="mono"
-                    onClick={() => setPublishPhase("idle")}
-                    style={{
-                      padding: "2px 8px", borderRadius: 3, cursor: "pointer",
-                      background: "transparent", border: "1px solid var(--border-soft)",
-                      color: "var(--fg-dim)", fontSize: 10,
-                    }}
-                  >← back to plan</button>
-                )}
-              </Row>
-
-              {/* Live GitHub structure — each node updates as it is created */}
-              <Stack gap={10} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px" }}>
-                <GitHubStructureCard structure={ghStructure} status={ghStatus} />
-              </Stack>
-            </>
+            <PublishProgressView
+              publishPhase={publishPhase}
+              onBackToPlan={() => setPublishPhase("idle")}
+              structure={ghStructure}
+              status={ghStatus}
+            />
           )}
         </aside>
       </div>
 
-      {showBlueprintModal && (
-        <BlueprintUpdateModal
-          busy={restarting}
-          onGoBack={() => { setShowBlueprintModal(false); setProjectsView("list"); }}
-          onKeep={() => { void keepPlanFiles(); }}
-          onRestart={() => { setShowBlueprintModal(false); void doClearPlan(); }}
-          onDismiss={() => setShowBlueprintModal(false)}
-        />
-      )}
-
-      {mcpDownloads.length > 0 && (
-        <McpDownloadModal
-          items={mcpDownloads}
-          onConfirm={() => { void confirmMcpDownloads(); }}
-          onCancel={cancelMcpDownloads}
-        />
-      )}
-
-      {showClearConfirm && (
-        <Dialog
-          title="Clear this plan?"
-          danger
-          onDismiss={() => setShowClearConfirm(false)}
-          actions={
-            <>
-              <button className="btn" onClick={() => setShowClearConfirm(false)}>cancel</button>
-              <button
-                className="btn"
-                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                onClick={() => void doClearPlan()}
-              >clear plan</button>
-            </>
-          }
-        >
-          This wipes the entire plan for this project — sections, stage config, the fleet, and the
-          on-disk plan files — then restarts the planner with a blank slate. This can't be undone.
-        </Dialog>
-      )}
-
-      {switchOpen && (
-        <Dialog
-          title="Switch blueprint"
-          onDismiss={() => setSwitchOpen(false)}
-          actions={<button className="btn" onClick={() => setSwitchOpen(false)}>cancel</button>}
-        >
-          <Text as="div" size={12} tone="muted" style={{ marginBottom: 12, lineHeight: 1.6 }}>
-            Switch this project to a different blueprint. This re-seeds the plan for the chosen blueprint and
-            <b> clears the current plan + progress</b> — this can't be undone. Pick a target:
-          </Text>
-          <Stack gap={8}>
-            {switchTargets.map((bp) => (
-              <button key={bp.id} className="btn ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
-                onClick={() => void doSwitchBlueprint(bp.id)}>
-                <Box as="span" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Text as="span" weight={600} style={{ color: "var(--fg)" }}>{bp.name}</Text>
-                  <Chip style={{ fontSize: 9 }}>{blueprintCategory(bp)}</Chip>
-                </Box>
-                {bp.desc && <Text as="span" size={11} tone="dim" style={{ fontFamily: "var(--sans)" }}>{bp.desc}</Text>}
-              </button>
-            ))}
-          </Stack>
-        </Dialog>
-      )}
+      {/* Overlays (extracted → PlanningDialogs) */}
+      <PlanningDialogs
+        showBlueprintModal={showBlueprintModal}
+        restarting={restarting}
+        onBlueprintGoBack={() => { setShowBlueprintModal(false); setProjectsView("list"); }}
+        onBlueprintKeep={() => { void keepPlanFiles(); }}
+        onBlueprintRestart={() => { setShowBlueprintModal(false); void doClearPlan(); }}
+        onBlueprintDismiss={() => setShowBlueprintModal(false)}
+        mcpDownloads={mcpDownloads}
+        onConfirmMcpDownloads={() => { void confirmMcpDownloads(); }}
+        onCancelMcpDownloads={cancelMcpDownloads}
+        showClearConfirm={showClearConfirm}
+        onDismissClear={() => setShowClearConfirm(false)}
+        onClearPlan={() => void doClearPlan()}
+        switchOpen={switchOpen}
+        onDismissSwitch={() => setSwitchOpen(false)}
+        switchTargets={switchTargets}
+        onSwitchBlueprint={(id) => void doSwitchBlueprint(id)}
+      />
 
       {/* Triage: confirm + clear stale warden quarantines so a prior run's denied command can't
           immediately re-pause the relaunched worker. Self-rendering (null when no dialog is open). */}

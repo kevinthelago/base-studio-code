@@ -53,7 +53,7 @@ export function McpAnalyticsTab() {
     return list;
   }, [an, filter]);
 
-  if (!an) return <Box className="hint" style={{ padding: 16 }}>Loading MCP telemetry…</Box>;
+  if (!an) return <Box className="hint" pad={16}>Loading MCP telemetry…</Box>;
 
   const maxServerCalls = Math.max(1, ...an.perServer.map((s) => s.calls));
   const errCount = an.recent.filter((c) => c.outcome === "fail").length;
@@ -111,7 +111,7 @@ export function McpAnalyticsTab() {
       </Grid>
 
       {/* Call results log */}
-      <Box style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
+      <Box pad={[14, 16]} bg="var(--bg-panel)" border="soft" radius={8}>
         <Row align="baseline" gap={10} style={{ marginBottom: 12 }}>
           <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Call results</h3>
           <Text as="span" size={10.5} tone="dim">what servers returned to agents</Text>
@@ -119,6 +119,7 @@ export function McpAnalyticsTab() {
           {errCount > 0 && <Text as="span" mono size={10} tone="danger">{errCount} errors</Text>}
           <Row inline align="stretch" style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {(["all", "ok", "errors"] as const).map((f) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented filter (custom bg/color/border container); Button or SegmentedControl would change the rendering
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -154,7 +155,7 @@ function CallRow({ c }: { c: McpCall }) {
       <Box as="span" style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</Box>
       <Text as="span" tone="muted">{c.ms ? fmtMs(c.ms) : "—"}</Text>
       <Row inline justify="end" gap={5} style={{ color: dot, width: 44 }}>
-        <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />{label}
+        <Box as="span" bg={dot} radius={99} style={{ width: 6, height: 6}} />{label}
       </Row>
     </Row>
   );

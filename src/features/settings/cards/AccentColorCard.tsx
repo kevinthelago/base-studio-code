@@ -14,6 +14,7 @@ export function AccentColorCard() {
           const on = p.id === accent;
           const { accent: color } = accentVars(p.id);
           return (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke color-swatch pill (radius 99, per-preset accent bg/box-shadow); not the .btn family, SegmentedControl can't reproduce the swatch
             <button
               key={p.id}
               className="mono"
@@ -30,8 +31,8 @@ export function AccentColorCard() {
                 color: on ? "var(--fg)" : "var(--fg-muted)",
               }}
             >
-              <Box as="span" style={{
-                width: 16, height: 16, borderRadius: "50%", background: color,
+              <Box as="span" bg={color} style={{
+                width: 16, height: 16, borderRadius: "50%",
                 boxShadow: on ? "0 0 0 2px var(--bg-elev2), 0 0 0 3px " + color : "none",
               }} />
               {p.label}

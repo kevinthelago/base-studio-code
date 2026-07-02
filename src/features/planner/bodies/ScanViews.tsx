@@ -33,7 +33,7 @@ function TypeChip({ f }: { f: ScanViewField }) {
   }
   if (f.type === "enum") return <Box as="span" style={chip("var(--violet)")}>enum</Box>;
   return (
-    <Box as="span" style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>
+    <Box as="span" pad={[1, 6]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)"}}>
       {f.type}
     </Box>
   );
@@ -52,13 +52,13 @@ function Toggle({ view, onView, small }: { view: View; onView: (v: View) => void
   const fs = small ? 11.5 : 12;
   const items: [View, string][] = [["graph", "⬡ Graph"], ["list", "≣ List"], ["process", "⤳ Process"]];
   return (
-    <Box style={{ display: "inline-flex", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: 3, gap: 2, flex: "none" }}>
+    <Box pad={3} bg="var(--bg-elev)" border="soft" radius="md" style={{ display: "inline-flex", gap: 2, flex: "none" }}>
       {items.map(([v, label]) => {
         const on = v === view;
         return (
-          <Box as="span" key={v} data-testid={`scan-view-${v}`} onClick={() => onView(v)} style={{
-            padding: small ? "4px 10px" : "5px 12px", fontSize: fs, cursor: "pointer", borderRadius: "var(--r-sm)",
-            fontWeight: on ? 600 : 400, color: on ? "var(--fg)" : "var(--fg-dim)", background: on ? "var(--bg-elev2)" : "transparent",
+          <Box as="span" key={v} data-testid={`scan-view-${v}`} onClick={() => onView(v)} bg={on ? "var(--bg-elev2)" : "transparent"} radius="sm" style={{
+            padding: small ? "4px 10px" : "5px 12px", fontSize: fs, cursor: "pointer",
+            fontWeight: on ? 600 : 400, color: on ? "var(--fg)" : "var(--fg-dim)",
           }}>{label}</Box>
         );
       })}
@@ -112,14 +112,14 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
   };
 
   return (
-    <Box style={{ position: "relative", overflow: "auto", maxHeight: 560, background: "radial-gradient(circle at 1px 1px, var(--bg-elev) 1px, transparent 0) 0 0 / 22px 22px, var(--bg-canvas)" }}>
+    <Box bg="radial-gradient(circle at 1px 1px, var(--bg-elev) 1px, transparent 0) 0 0 / 22px 22px, var(--bg-canvas)" style={{ position: "relative", overflow: "auto", maxHeight: 560}}>
       <Box style={{ position: "relative", width: layout.width, height: layout.height }}>
         {/* type legend */}
         <Row gap={6} style={{ position: "absolute", top: 10, left: 10, zIndex: 5, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 9px" }}>
           <Text mono size={8.5} tone="dim" style={{ letterSpacing: ".06em" }}>TYPES</Text>
           <Box as="span" style={chip("var(--info)")}>ref</Box>
           <Box as="span" style={chip("var(--violet)")}>enum</Box>
-          <Box as="span" style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>string</Box>
+          <Box as="span" pad={[1, 6]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)"}}>string</Box>
           <Text mono size={8.5} tone="success">🔑 identity</Text>
         </Row>
 
@@ -139,7 +139,7 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
           const p = edgePath(e.from, e.to);
           return (
             <Box key={i} style={{ position: "absolute", left: p.lx - 40, top: p.ly - 8, width: 80, textAlign: "center", fontFamily: MONO, fontSize: 9, color: "var(--info)", pointerEvents: "none" }}>
-              <Box as="span" style={{ background: "var(--bg-canvas)", padding: "1px 5px", borderRadius: "var(--r-sm)" }}>{e.label}</Box>
+              <Box as="span" pad={[1, 5]} bg="var(--bg-canvas)" radius="sm">{e.label}</Box>
             </Box>
           );
         })}
@@ -149,10 +149,8 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
           const box = layout.boxes.get(e.key)!;
           const isHub = e.key === layout.hubKey;
           return (
-            <Box key={e.key} data-testid={`scan-node-${e.key}`} style={{
-              position: "absolute", left: box.x, top: box.y, width: NODE_W,
-              background: "var(--bg-panel)", border: `1px solid ${isHub ? "var(--info)" : "var(--border-soft)"}`,
-              borderRadius: "var(--r-lg)", overflow: "hidden",
+            <Box key={e.key} data-testid={`scan-node-${e.key}`} bg="var(--bg-panel)" radius="lg" style={{
+              position: "absolute", left: box.x, top: box.y, width: NODE_W, border: `1px solid ${isHub ? "var(--info)" : "var(--border-soft)"}`, overflow: "hidden",
               boxShadow: isHub ? "0 0 0 4px color-mix(in oklab, var(--info), transparent 92%)" : undefined,
             }}>
               <Row gap={8} style={{ padding: "9px 11px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)", borderLeft: `3px solid ${e.srcColor}` }}>
@@ -161,7 +159,7 @@ function Graph({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean
               </Row>
               {multi && e.source && (
                 <Row gap={5} style={{ padding: "4px 11px", borderBottom: "1px solid var(--border-soft)" }}>
-                  <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: e.srcColor }} />
+                  <Box as="span" bg={e.srcColor} radius={99} style={{ width: 6, height: 6}} />
                   <Text mono size={8.5} tone="dim">{e.source}</Text>
                 </Row>
               )}
@@ -189,7 +187,7 @@ function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean 
         const expanded = open.has(e.key);
         const oneliner = `${e.fields.length} fields · ` + e.fields.slice(0, 4).map((f) => f.key + (f.identity ? "🔑" : "") + (f.ref ? `→${f.refLabel ?? f.ref}` : "")).join(", ");
         return (
-          <Box key={e.key} data-testid={`scan-list-${e.key}`} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+          <Box key={e.key} data-testid={`scan-list-${e.key}`} bg="var(--bg-panel)" border="soft" radius="lg" style={{ overflow: "hidden" }}>
             <Row onClick={() => toggle(e.key)} gap={9} style={{ padding: "9px 12px", background: "var(--bg-elev)", cursor: "pointer" }}>
               <Text tone="dim" size={10}>{expanded ? "▾" : "▸"}</Text>
               <Text size={13} weight={600}>{e.label}</Text>
@@ -197,8 +195,8 @@ function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean 
               <Spacer />
               <Text mono size={9.5} tone="muted">{e.count.toLocaleString()} rows · {e.fields.length} fields</Text>
               {multi && e.source && (
-                <Box as="span" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "2px 7px" }}>
-                  <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: e.srcColor }} />{e.source}
+                <Box as="span" pad={[2, 7]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9, color: "var(--fg-muted)"}}>
+                  <Box as="span" bg={e.srcColor} radius={99} style={{ width: 6, height: 6}} />{e.source}
                 </Box>
               )}
             </Row>
@@ -209,7 +207,7 @@ function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean 
                     <Box as="span" style={{ width: 14, textAlign: "center" }}>{f.identity && <Text size={9} tone="success">🔑</Text>}</Box>
                     <Text mono size={11} style={{ color: "var(--fg)", minWidth: 128 }}>{f.key}</Text>
                     {f.type === "ref" ? <Box as="span" style={chip("var(--info)")}>ref → {f.refLabel ?? f.ref}</Box> : f.type === "enum" ? <Box as="span" style={chip("var(--violet)")}>enum{f.enumValues && f.enumValues.length ? ` · ${f.enumValues.join(" · ")}` : ""}</Box> : (
-                      <Box as="span" style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: 99, padding: "1px 6px" }}>{f.type}</Box>
+                      <Box as="span" pad={[1, 6]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-muted)"}}>{f.type}</Box>
                     )}
                     <Spacer />
                     {f.required && <Text mono size={8.5} tone="accent">required</Text>}
@@ -217,7 +215,7 @@ function List({ entities, multi }: { entities: ScanViewEntity[]; multi: boolean 
                 ))}
               </Stack>
             ) : (
-              <Box style={{ padding: "7px 12px", borderTop: "1px solid var(--border-soft)", fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{oneliner}</Box>
+              <Box pad={[7, 12]} style={{ borderTop: "1px solid var(--border-soft)", fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{oneliner}</Box>
             )}
           </Box>
         );
@@ -260,7 +258,7 @@ function Process({ cfg, multi }: { cfg: SourceConfig; multi: boolean }) {
               <Row gap={7} wrap>
                 {bp.steps.map((s, j) => (
                   <Box as="span" key={j} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                    <Box as="span" style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 11px" }}>{s}</Box>
+                    <Box as="span" pad={[5, 11]} bg="var(--bg-elev2)" border="soft" radius="md" style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg)"}}>{s}</Box>
                     {j < bp.steps.length - 1 && <Text tone="dim" size={12}>→</Text>}
                   </Box>
                 ))}
@@ -291,7 +289,7 @@ function Process({ cfg, multi }: { cfg: SourceConfig; multi: boolean }) {
                     {a.trigger && <><Text mono size={9} tone="dim">trigger</Text><Tok>{a.trigger}</Tok><Arr /></>}
                     {a.condition && <><Text mono size={9} tone="dim">if</Text><Tok>{a.condition}</Tok><Arr /></>}
                     {a.actions.map((ac, j) => (
-                      <Box as="span" key={j} style={{ fontFamily: MONO, fontSize: 10, color: "var(--accent)", background: "color-mix(in oklab, var(--accent), transparent 90%)", border: "1px solid color-mix(in oklab, var(--accent), transparent 80%)", borderRadius: "var(--r-sm)", padding: "3px 8px" }}>{ac}</Box>
+                      <Box as="span" key={j} pad={[3, 8]} bg="color-mix(in oklab, var(--accent), transparent 90%)" radius="sm" style={{ fontFamily: MONO, fontSize: 10, color: "var(--accent)", border: "1px solid color-mix(in oklab, var(--accent), transparent 80%)"}}>{ac}</Box>
                     ))}
                   </Row>
                 </Stack>
@@ -313,7 +311,7 @@ function Process({ cfg, multi }: { cfg: SourceConfig; multi: boolean }) {
                 <Spacer />
                 {multi && <SrcBadge source={d.source} />}
               </Row>
-              {d.expression && <Box style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg-muted)", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "7px 10px", overflowX: "auto" }}>{d.expression}</Box>}
+              {d.expression && <Box pad={[7, 10]} bg="var(--bg-canvas)" border="soft" radius="sm" style={{ fontFamily: MONO, fontSize: 11, color: "var(--fg-muted)", overflowX: "auto" }}>{d.expression}</Box>}
             </Stack>
           ))}
         </Stack>
@@ -322,14 +320,14 @@ function Process({ cfg, multi }: { cfg: SourceConfig; multi: boolean }) {
   );
 }
 function Tok({ children }: { children: React.ReactNode }) {
-  return <Box as="span" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "3px 8px" }}>{children}</Box>;
+  return <Box as="span" pad={[3, 8]} bg="var(--bg-elev2)" border="soft" radius="sm" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)"}}>{children}</Box>;
 }
 function Arr() { return <Text tone="dim">→</Text>; }
 function SrcBadge({ source }: { source: string }) {
   if (!source) return null;
   return (
     <Box as="span" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9, color: "var(--fg-muted)" }}>
-      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: "var(--fg-dim)" }} />{source}
+      <Box as="span" bg="var(--fg-dim)" radius={99} style={{ width: 6, height: 6}} />{source}
     </Box>
   );
 }
@@ -344,7 +342,7 @@ export function ScanViews({ cfg, dataModelName, version = 1 }: { cfg: SourceConf
   if (entities.length === 0) return null;
 
   return (
-    <Box data-testid="scan-views" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+    <Box data-testid="scan-views" bg="var(--bg-panel)" border="soft" radius="lg" style={{ overflow: "hidden" }}>
       {/* recap header + toggle */}
       <Row justify="between" gap={14} style={{ padding: "12px 14px", borderBottom: "1px solid var(--border-soft)" }}>
         <Stack gap={4} style={{ minWidth: 0 }}>

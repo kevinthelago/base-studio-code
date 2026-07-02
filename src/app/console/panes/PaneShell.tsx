@@ -195,6 +195,7 @@ export function PaneShell({
             glyph = the CURRENT view's icon (console/files/branches/…) tinted by SESSION STATUS
             (accent + pulse when live, the state color when idle) + a ▾. One compact control answers
             "what am I looking at" + "is it live" and signals the menu (model · views · pane) opens. */}
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke menu-trigger needs a real DOM ref (measured placement) + status-tinted inline styling */}
         <button
           ref={menuButtonRef}
           title="Model, screens & pane options"
@@ -218,6 +219,7 @@ export function PaneShell({
 
         {/* Agent name — double-click to rename */}
         {editingName ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline rename input needs a real DOM ref (select-on-edit) + header-scoped styling
           <input
             ref={nameInputRef}
             value={draftName}
@@ -275,9 +277,8 @@ export function PaneShell({
 
         {/* Role badge */}
         {role && (
-          <Box as="span" className="mono" style={{
-            height: 21, padding: "0 7px", display: "flex", alignItems: "center", borderRadius: 6,
-            background: role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)",
+          <Box as="span" className="mono" pad={[0, 7]} bg={role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)"} radius={6} style={{
+            height: 21, display: "flex", alignItems: "center",
             color: role === "director" ? "var(--accent-text)" : "var(--fg-muted)",
             fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
             flex: "0 0 auto", whiteSpace: "nowrap",

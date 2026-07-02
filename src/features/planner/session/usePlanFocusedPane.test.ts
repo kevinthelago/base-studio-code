@@ -19,6 +19,7 @@ const base: PlanFocusedPaneOpts = {
   pendingConfirm: [],
   allowGateOverride: false,
   planSecs: [],
+  uiNeedsRoute: false,
   effectiveProjectId: "proj",
   effectiveBlueprintId: "bp",
 };

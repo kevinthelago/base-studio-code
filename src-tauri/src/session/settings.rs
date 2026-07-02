@@ -119,15 +119,69 @@ pub(crate) fn write_session_settings(
 
     let mut config = crate::platform::fsx::read_json_object_or_default(&settings_path);
 
-    // Allow. Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved
-    // command must be an explicit `Bash(<cmd> *)` rule — so the session's shell posture
-    // (`bash_posture`, from the agent profile's bash tier) decides how generous the set is:
-    //   - "allow" (doers — worker/tester): the bare `Bash` (forward-compat / intent) + the
-    //     read-only AND build baselines.
-    //   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
-    //     unlisted commands fall through to a prompt.
-    //   - "deny"  (sandboxed): neither baseline.
-    // ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
+    // Allow + deny rule assembly (posture-scaled): each list is built by a pure helper below,
+    // then the verbatim tool-permission rules are folded in (they're shared between the two).
+    let mut allow_rules = build_allow_rules(bash_posture, allowed_commands);
+    let mut deny_rules = build_deny_rules(denied_commands);
+
+    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
+    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
+    for r in allow_tool_rules { push_unique_trimmed(&mut allow_rules, r); }
+    for r in deny_tool_rules { push_unique_trimmed(&mut deny_rules, r); }
+
+    // Ask: rules that PROMPT the user before the command (Claude Code precedence
+    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
+    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
+    // create *)` here so pushes/PRs require approval instead of auto-running.
+    let mut ask_rules: Vec<String> = Vec::new();
+    for r in ask_tool_rules { push_unique_trimmed(&mut ask_rules, r); }
+
+    // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
+    // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
+    // permission the user removed from a profile would linger across relaunches. Used when
+    // re-applying after a profile/permission edit.
+    if replace_permissions {
+        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
+            for k in ["allow", "deny", "ask"] { perms.remove(k); }
+        }
+    }
+    merge_permission_list(&mut config, "allow", &allow_rules);
+    merge_permission_list(&mut config, "deny", &deny_rules);
+    merge_permission_list(&mut config, "ask", &ask_rules);
+    apply_permission_posture(&mut config, bypass, cwd);
+
+    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
+    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
+    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
+    // resolved set — servers not listed aren't trusted, which is how removal lands).
+    write_session_hooks(&mut config, hooks);
+    apply_enabled_mcp_servers(&mut config, mcp_servers);
+
+    std::fs::create_dir_all(root.join(".claude")).str_err()?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
+    write_mcp_json(&root, mcp_servers)?;
+    write_session_skills(&root, skills)?;
+    // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
+    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
+    // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
+    crate::extensions::skills::record_skill_uses(skills);
+    git_exclude(&root, ".claude/");
+    git_exclude(&root, ".mcp.json");
+    Ok(())
+}
+/// Assemble the posture-scaled ALLOW rules (before the verbatim tool rules are folded in).
+///
+/// Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved command must be an
+/// explicit `Bash(<cmd> *)` rule — so the session's shell posture (`bash_posture`, from the agent
+/// profile's bash tier) decides how generous the set is:
+///   - "allow" (doers — worker/tester): the bare `Bash` (forward-compat / intent) + the
+///     read-only AND build baselines.
+///   - "ask"   (coordinators — director/reviewer): the read-only baseline only; build and
+///     unlisted commands fall through to a prompt.
+///   - "deny"  (sandboxed): neither baseline.
+///
+/// ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
+fn build_allow_rules(bash_posture: &str, allowed_commands: &[String]) -> Vec<String> {
     let mut allow_rules: Vec<String> = Vec::new();
     let mut baseline: Vec<String> = Vec::new();
     match bash_posture {
@@ -154,46 +208,30 @@ pub(crate) fn write_session_settings(
     {
         if !c.is_empty() { push_unique_trimmed(&mut allow_rules, &bash_rule(&c)); }
     }
+    allow_rules
+}
 
-    // Deny: curated dangerous defaults + user/project denies (deny > allow).
+/// Assemble the DENY rules (before the verbatim tool rules are folded in): the curated dangerous
+/// defaults + the user/project `denied_commands` (deny > allow).
+fn build_deny_rules(denied_commands: &[String]) -> Vec<String> {
     let mut deny_rules: Vec<String> = bsc_util::dangerous::claude_deny_rules().map(|s| s.to_string()).collect();
     for c in denied_commands {
         let c = c.trim();
         if !c.is_empty() { push_unique_trimmed(&mut deny_rules, &bash_rule(c)); }
     }
+    deny_rules
+}
 
-    // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
-    // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
-    for r in allow_tool_rules { push_unique_trimmed(&mut allow_rules, r); }
-    for r in deny_tool_rules { push_unique_trimmed(&mut deny_rules, r); }
-
-    // Ask: rules that PROMPT the user before the command (Claude Code precedence
-    // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
-    // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
-    // create *)` here so pushes/PRs require approval instead of auto-running.
-    let mut ask_rules: Vec<String> = Vec::new();
-    for r in ask_tool_rules { push_unique_trimmed(&mut ask_rules, r); }
-
-    // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
-    // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
-    // permission the user removed from a profile would linger across relaunches. Used when
-    // re-applying after a profile/permission edit.
-    if replace_permissions {
-        if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
-            for k in ["allow", "deny", "ask"] { perms.remove(k); }
-        }
-    }
-    merge_permission_list(&mut config, "allow", &allow_rules);
-    merge_permission_list(&mut config, "deny", &deny_rules);
-    merge_permission_list(&mut config, "ask", &ask_rules);
-    // Permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions auto-run,
-    // the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the enumerated
-    // allow/deny lists require approval). Default is the ALLOW-LIST (#2050 — the broad base.json tiers
-    // keep it low-friction; bypass is the opt-in power posture in Settings → Security). Either way the hooks (dangerous floor +
-    // role/user denies via bsc-deny, FS confinement + .claude via bsc-confine, code:none/write-scope via
-    // bsc-scope) still fire+block — they survive bypass, where `permissions.deny` is ignored — and `ask`
-    // (push-confirm) still prompts natively. The allow-list machinery (base.json tiers, posture scaling)
-    // STAYS: it's the engine for allow-list mode. Applies to EVERY pane (workers, director, triage, manual).
+/// Apply the permission posture (#1916): the user chooses between the DENY-LIST (bypass — sessions
+/// auto-run, the PreToolUse hooks do the gating) and the ALLOW-LIST (Claude's `default` mode — the
+/// enumerated allow/deny lists require approval). Default is the ALLOW-LIST (#2050 — the broad
+/// base.json tiers keep it low-friction; bypass is the opt-in power posture in Settings → Security).
+/// Either way the hooks (dangerous floor + role/user denies via bsc-deny, FS confinement + .claude via
+/// bsc-confine, code:none/write-scope via bsc-scope) still fire+block — they survive bypass, where
+/// `permissions.deny` is ignored — and `ask` (push-confirm) still prompts natively. The allow-list
+/// machinery (base.json tiers, posture scaling) STAYS: it's the engine for allow-list mode. Applies to
+/// EVERY pane (workers, director, triage, manual).
+fn apply_permission_posture(config: &mut serde_json::Value, bypass: bool, cwd: &str) {
     if bypass {
         {
             let obj = config.as_object_mut().unwrap();
@@ -213,38 +251,24 @@ pub(crate) fn write_session_settings(
         // Allow-list posture: prompts are the gate, so the OS sandbox isn't required — drop a stale block.
         config.as_object_mut().unwrap().remove("sandbox");
     }
-
-    // Hooks → settings.json `hooks` (overwritten with the resolved set, so toggling
-    // a hook extension off and relaunching drops it). MCP servers → `.mcp.json`,
-    // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
-    // resolved set — servers not listed aren't trusted, which is how removal lands).
-    write_session_hooks(&mut config, hooks);
-    {
-        let obj = config.as_object_mut().unwrap();
-        if mcp_servers.is_empty() {
-            obj.remove("enabledMcpjsonServers");
-        } else {
-            obj.insert(
-                "enabledMcpjsonServers".into(),
-                serde_json::Value::Array(
-                    mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
-                ),
-            );
-        }
-    }
-
-    std::fs::create_dir_all(root.join(".claude")).str_err()?;
-    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
-    write_mcp_json(&root, mcp_servers)?;
-    write_session_skills(&root, skills)?;
-    // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
-    // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
-    // uniformly across Claude + local-model sessions. Best-effort; never blocks the launch.
-    crate::extensions::skills::record_skill_uses(skills);
-    git_exclude(&root, ".claude/");
-    git_exclude(&root, ".mcp.json");
-    Ok(())
 }
+
+/// Gate the resolved MCP servers via `enabledMcpjsonServers` — set to EXACTLY the resolved set
+/// (servers not listed aren't trusted, which is how removal lands); an empty set drops the key.
+fn apply_enabled_mcp_servers(config: &mut serde_json::Value, mcp_servers: &[McpServerCfg]) {
+    let obj = config.as_object_mut().unwrap();
+    if mcp_servers.is_empty() {
+        obj.remove("enabledMcpjsonServers");
+    } else {
+        obj.insert(
+            "enabledMcpjsonServers".into(),
+            serde_json::Value::Array(
+                mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
+            ),
+        );
+    }
+}
+
 /// Merge `rules` into `config.permissions.<key>` (an array), preserving existing
 /// entries and order, deduped. Creates the objects/array as needed.
 pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, rules: &[String]) {

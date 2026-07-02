@@ -4,6 +4,7 @@
 //! they unit-test without WSL present; the I/O probes feed them.
 
 use super::{decode_wsl, wsl_exec, AGENT_SANDBOX_DISTRO};
+use crate::platform::process::run_output;
 use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -260,7 +261,7 @@ fn probe_deps(distro: &str) -> (bool, bool) {
         "command -v bwrap >/dev/null && echo BWRAP; command -v socat >/dev/null && echo SOCAT",
     ])
     .env("WSL_UTF8", "1");
-    match crate::platform::process::run_output(&mut cmd) {
+    match run_output(&mut cmd) {
         Ok(out) => {
             let s = decode_wsl(&out.stdout);
             (s.contains("BWRAP"), s.contains("SOCAT"))

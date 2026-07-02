@@ -27,7 +27,7 @@ export function ToolsView({ role, small }: { role?: string; small?: boolean }) {
   // An ad-hoc interactive console has no fleet role / least-privilege gate.
   if (!role) {
     return (
-      <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
+      <Box pad={[12, 13]} style={{ flex: 1, minHeight: 0, overflow: "auto", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
         <Text as="div" style={grpLabel}>PERMISSIONS</Text>
         <Text as="div" tone="dim" style={{ marginTop: 8 }}>
           Interactive console — no least-privilege role applied. Launched fleet sessions
@@ -46,7 +46,7 @@ export function ToolsView({ role, small }: { role?: string; small?: boolean }) {
   const globs = cap.writeGlobs.length ? cap.writeGlobs : null;
 
   return (
-    <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+    <Box pad={[12, 13]} style={{ flex: 1, minHeight: 0, overflow: "auto", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6 }}>
       <Text as="div" style={{ ...grpLabel, marginBottom: 7 }}>ROLE · {role.toUpperCase()}</Text>
       {rows.map((r) => (
         <Row key={r.key} gap={9} style={{ padding: "4px 6px", borderRadius: 6 }}>

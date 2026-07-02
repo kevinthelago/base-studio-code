@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { Button } from "@/shared/ui/controls/Button";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
@@ -18,9 +19,8 @@ export function ProjectsEmpty() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
-    <Box as="section" style={{
-      flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-      background: "var(--bg-canvas)", padding: "40px 32px", overflow: "auto",
+    <Box as="section" pad={[40, 32]} bg="var(--bg-canvas)" style={{
+      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto",
     }}>
       <EmptyState
         variant="card"
@@ -28,20 +28,19 @@ export function ProjectsEmpty() {
         title="Projects need GitHub"
         description="Planning with Claude turns a pitch into a complete, executable plan — features, milestones, granular issues, and a parallel agent fleet. Connect GitHub to publish that plan as a real Project board and run the fleet against your repos."
         actions={
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             // Land on the GitHub settings tab, not just the Settings screen.
             onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
             style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
           >
             <Text mono size={15}>⎇</Text>
             Connect with GitHub
-          </button>
+          </Button>
         }
         extra={
-          <Box style={{
-            marginTop: 20, padding: "12px 14px",
-            borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          <Box pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
+            marginTop: 20,
             textAlign: "left",
           }}>
             <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>

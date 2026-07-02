@@ -76,6 +76,7 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
           </Stack>
         ))}
       </Stack>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke failure-panel button with its own dark-theme inline styling (not the .btn kit) */}
       <button
         onClick={onRetry}
         style={{

@@ -47,6 +47,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           {decChip("block", "blocked", block)}
         </Row>
         <Box as="span" className="lbl" style={{ marginLeft: 14 }}>console</Box>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
         <select className="input" style={{ width: 200 }} value={actConsole} onChange={(e) => setActConsole(e.target.value)}>
           <option value="all">all consoles</option>
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -73,7 +74,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
             <Box className="act-row" key={i}>
               <Box as="span" className="when">{fmtAuditTime(r.ts)}</Box>
               <Text as="span" tone="muted">{r.console} <Text as="span" tone="dim">›</Text> {r.pane}</Text>
-              <Box as="span" className="prof">{p && <Box as="span" className="sw" style={{ background: p.color }} />}{p?.name ?? r.profileId}</Box>
+              <Box as="span" className="prof">{p && <Box as="span" className="sw" bg={p.color} />}{p?.name ?? r.profileId}</Box>
               <Box as="span" className="cmd"><Text as="span" tone="dim">{kindGlyph}</Text> {r.target}</Box>
               <Box as="span" className={`dec ${r.decision}`}>{sym} {decLabel}</Box>
             </Box>

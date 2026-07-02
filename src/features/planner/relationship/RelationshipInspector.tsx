@@ -18,9 +18,8 @@ const mono = "var(--mono)";
 
 function Pill({ text, c }: { text: string; c: string }) {
   return (
-    <Box as="span" style={{
-      fontFamily: mono, fontSize: 8, padding: "1px 7px", borderRadius: 99, whiteSpace: "nowrap", color: c,
-      background: `color-mix(in oklch, ${c}, transparent 86%)`, border: `1px solid color-mix(in oklch, ${c}, transparent 62%)`,
+    <Box as="span" pad={[1, 7]} bg={`color-mix(in oklch, ${c}, transparent 86%)`} radius={99} style={{
+      fontFamily: mono, fontSize: 8, whiteSpace: "nowrap", color: c, border: `1px solid color-mix(in oklch, ${c}, transparent 62%)`,
     }}>{text}</Box>
   );
 }
@@ -109,7 +108,7 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
           <Pill text={`via ${e.viaEff}`} c={e.viaEff === "director" ? DIRECTOR_COLOR : "var(--fg-muted)"} />
           {e.artifact && <Pill text={`contract:${e.artifact}`} c="var(--accent)" />}
         </Row>
-        <Box style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-muted)", lineHeight: 1.6, padding: "8px 10px", borderRadius: 6, background: "var(--bg-panel)", border: "1px solid var(--border-soft)" }}>
+        <Box pad={[8, 10]} bg="var(--bg-panel)" border="soft" radius={6} style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-muted)", lineHeight: 1.6}}>
           {runtimeNote(e)}
         </Box>
         {cyc && <Text as="div" size={9} tone="danger" style={{ fontFamily: mono, marginTop: 8 }}>⚠ part of a dependency cycle — this blocks the structure gate.</Text>}
@@ -146,7 +145,7 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
       <Head title={a.id} sub={`${a.role ?? "stream"} · ⎇ ${a.repo ?? ""}`} c={rc} />
       {(a.owns?.length ?? 0) > 0 && (
         <Row gap={5} wrap align="stretch" style={{ marginBottom: 11 }}>
-          {a.owns!.map((o) => <Box as="span" key={o} style={{ fontFamily: mono, fontSize: 8.5, padding: "1px 6px", borderRadius: 3, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>{o}</Box>)}
+          {a.owns!.map((o) => <Box as="span" key={o} pad={[1, 6]} bg="var(--bg-elev)" border="soft" radius={3} style={{ fontFamily: mono, fontSize: 8.5, color: "var(--fg-muted)" }}>{o}</Box>)}
         </Row>
       )}
       <Text as="div" size={9} tone="dim" style={{ fontFamily: mono, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>relationships ({rows.length})</Text>

@@ -37,13 +37,14 @@ export function ProfileSelect({ current, profiles, onPick }: {
   }, [open]);
   return (
     <Box className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
-      <Box as="span" className="sw" style={{ background: current?.color }} />
+      <Box as="span" className="sw" bg={current?.color} />
       <Box as="span" className="nm">{current?.name ?? "—"}</Box>
       {current && <Chip tone={modeTone(current.mode)} size="sm" style={{ marginLeft: 2 }}>{current.mode}</Chip>}
       <Box as="span" className="cv">▾</Box>
       {open && (
         <Box className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
           {profiles.map((p) => (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke listbox option (role=option, .prof-opt styling), not a .btn
             <button
               key={p.id}
               type="button"
@@ -52,7 +53,7 @@ export function ProfileSelect({ current, profiles, onPick }: {
               className={"prof-opt" + (p.id === current?.id ? " on" : "")}
               onClick={() => { onPick(p.id); setOpen(false); }}
             >
-              <Box as="span" className="sw" style={{ background: p.color }} />
+              <Box as="span" className="sw" bg={p.color} />
               <Box as="span" className="nm">{p.name}</Box>
               <Chip tone={modeTone(p.mode)} size="sm">{p.mode}</Chip>
             </button>
@@ -76,7 +77,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
       subtitle={<Box as="span" className="mono">{p.session}</Box>}
       titleAside={
         <Box className="prof-select" onClick={() => onOpen(p.id)}>
-          <Box as="span" className="sw" style={{ background: p.color }} />
+          <Box as="span" className="sw" bg={p.color} />
           <Box as="span" className="nm">{p.name}</Box>
           <Chip tone="info" size="xs" style={{ marginLeft: 2 }}>locked</Chip>
         </Box>
@@ -101,8 +102,8 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
       <SectionHeader title="Application sessions" hint="always present · one per workspace · role is fixed" meta={<>{roles.length} system roles</>} />
       <Box className="asn-grid" style={{ marginBottom: 14 }}>
         <Box className="console-card" style={{ borderColor: "color-mix(in oklch, var(--info), transparent 78%)" }}>
-          <Box className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
-            <Box as="span" className="cdot" style={{ background: "var(--info)" }} />
+          <Box className="ch" bg="color-mix(in oklch, var(--info), transparent 92%)">
+            <Box as="span" className="cdot" bg="var(--info)" />
             <Box as="span" className="cn">system</Box>
             <Box as="span" className="repo">workspace-wide</Box>
             <Box as="span" className="spacer" />

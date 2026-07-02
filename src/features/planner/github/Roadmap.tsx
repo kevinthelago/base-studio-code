@@ -203,7 +203,7 @@ export function Roadmap() {
                           const week = i * tickInterval;
                           if (week > totalWeeks) return null;
                           return (
-                            <Box key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(week / totalWeeks) * 100}%`, width: 1, background: "var(--border-soft)" }} />
+                            <Box key={i} bg="var(--border-soft)" style={{ position: "absolute", top: 0, bottom: 0, left: `${(week / totalWeeks) * 100}%`, width: 1}} />
                           );
                         })}
                         <Row style={{
@@ -224,13 +224,12 @@ export function Roadmap() {
                           ),
                         }}>
                           {m.pct > 0 && (
-                            <Box style={{
+                            <Box bg="color-mix(in oklch, var(--accent), transparent 40%)" style={{
                               position: "absolute", inset: 0, width: `${m.pct * 100}%`,
-                              background: "color-mix(in oklch, var(--accent), transparent 40%)",
                             }} />
                           )}
-                          <Box as="span" className="mono" style={{
-                            position: "relative", padding: "0 10px",
+                          <Box as="span" className="mono" pad={[0, 10]} style={{
+                            position: "relative",
                             fontSize: 10.5,
                             color: m.state === "backlog" ? "var(--fg-muted)" : "var(--fg)",
                             whiteSpace: "nowrap",

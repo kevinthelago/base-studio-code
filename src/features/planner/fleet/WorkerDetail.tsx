@@ -22,6 +22,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";
@@ -38,13 +39,13 @@ function Modal({ title, children, onClose, footer }: {
 }) {
   return (
     <ModalScrim onDismiss={onClose}>
-      <Box style={{ width: 440, maxWidth: "90vw", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+      <Box bg="var(--bg-panel)" border radius="lg" style={{ width: 440, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
         <Row style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)" }}>
           <h3 style={{ margin: 0 }}>{title}</h3>
           <Spacer />
           <IconButton aria-label="close" onClick={onClose} />
         </Row>
-        <Box style={{ padding: 16 }}>{children}</Box>
+        <Box pad={16}>{children}</Box>
         {footer && <Row justify="end" align="stretch" gap={8} style={{ padding: "12px 16px", borderTop: "1px solid var(--border-soft)" }}>{footer}</Row>}
       </Box>
     </ModalScrim>
@@ -131,17 +132,17 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   return (
     <section style={{ flex: 1, overflow: "auto", minWidth: 0, background: "var(--bg-canvas)" }}>
       {/* sticky header + actions */}
-      <Box style={{ position: "sticky", top: 0, zIndex: 50, background: "var(--bg-panel)", borderBottom: "1px solid var(--border-soft)", padding: "12px 24px" }}>
+      <Box pad={[12, 24]} bg="var(--bg-panel)" style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid var(--border-soft)"}}>
         <Box style={{ maxWidth: 1180, margin: "0 auto" }}>
           <Row gap={12} style={{ marginBottom: 12 }}>
             <BackButton variant="icon" onClick={onBack} aria-label="Back to fleet" />
-            <Box style={{ width: 1, height: 18, background: "var(--border-soft)" }} />
+            <Box bg="var(--border-soft)" style={{ width: 1, height: 18}} />
             <Avatar login={worker.name} bot size={26} />
             <Box style={{ minWidth: 0 }}>
               <Row gap={9}>
                 <Text as="span" mono size={15} style={{ color: "var(--fg)" }}>{worker.name}</Text>
                 <Box as="span" className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: paused ? "var(--fg-dim)" : st.color }}>
-                  <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: paused ? "var(--fg-dim)" : st.color }} />{paused ? "paused" : st.label}
+                  <Box as="span" bg={paused ? "var(--fg-dim)" : st.color} radius={99} style={{ width: 7, height: 7}} />{paused ? "paused" : st.label}
                 </Box>
               </Row>
               <Text as="div" mono size={10} tone="dim" style={{ marginTop: 2 }}>
@@ -150,20 +151,20 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             </Box>
           </Row>
           <Row gap={8} wrap>
-            {worker.status === "asking" && <button className="btn primary" onClick={() => setModal("answer")}>answer question →</button>}
-            <button className="btn" onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
+            {worker.status === "asking" && <Button variant="primary" onClick={() => setModal("answer")}>answer question →</Button>}
+            <Button onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
               {paused ? "▶ resume" : "⏸ pause"}
-            </button>
-            <button className="btn ghost" onClick={() => setModal("steer")}>✎ steer</button>
-            <button className="btn ghost" onClick={openSession}>▤ open session</button>
-            <button className="btn ghost" onClick={() => setModal("profile")}>⛉ profile</button>
+            </Button>
+            <Button variant="ghost" onClick={() => setModal("steer")}>✎ steer</Button>
+            <Button variant="ghost" onClick={openSession}>▤ open session</Button>
+            <Button variant="ghost" onClick={() => setModal("profile")}>⛉ profile</Button>
             <Spacer />
-            <button className="btn danger" onClick={() => setModal("stop")}>stop &amp; remove</button>
+            <Button danger onClick={() => setModal("stop")}>stop &amp; remove</Button>
           </Row>
         </Box>
       </Box>
 
-      <Box style={{ maxWidth: 1180, margin: "0 auto", padding: "18px 24px" }}>
+      <Box pad={[18, 24]} style={{ maxWidth: 1180, margin: "0 auto"}}>
         {/* current / parked banner */}
         <Card style={{ padding: "12px 16px", marginBottom: 14,
           borderColor: worker.note ? st.color : "var(--border-soft)",
@@ -217,9 +218,10 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                   {/* branch + PR + transcript */}
                   <Row className="mono" gap={8} wrap style={{ fontSize: 10.5 }}>
                     {doneAudit.branch && (
-                      <Box as="span" style={{ padding: "2px 8px", borderRadius: 99, border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</Box>
+                      <Box as="span" pad={[2, 8]} border="soft" radius={99} style={{ color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</Box>
                     )}
                     {doneAudit.pr ? (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke PR-status pill button (custom inline styles, not a .btn)
                       <button
                         onClick={() => openUrl(doneAudit.pr!.url).catch(() => {})}
                         title="Open the pull request"
@@ -236,9 +238,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                     )}
                     <Spacer />
                     {doneAudit.transcriptPath && (
-                      <button className="btn ghost" style={{ height: 22, fontSize: 10 }}
+                      <Button variant="ghost" size="sm" style={{ height: 22, fontSize: 10 }}
                         onClick={() => revealItemInDir(doneAudit.transcriptPath!).catch(() => {})}
-                        title={doneAudit.transcriptPath}>transcript ↗</button>
+                        title={doneAudit.transcriptPath}>transcript ↗</Button>
                     )}
                   </Row>
                   {/* changed files + commits */}
@@ -286,7 +288,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                   <Grid cols={2} style={{ gap: "5px 18px", marginBottom: 12 }}>
                     {[perms.slice(0, half), perms.slice(half)].flat().map((r) => (
                       <Row key={r.key} gap={8} className="mono" style={{ fontSize: 10.5 }}>
-                        <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: TIER_COLOR[r.tier], flexShrink: 0 }} />
+                        <Box as="span" bg={TIER_COLOR[r.tier]} radius={99} style={{ width: 7, height: 7, flexShrink: 0 }} />
                         <Text as="span" style={{ color: "var(--fg)", width: 42 }}>{r.key}</Text>
                         <Text as="span" style={{ color: TIER_COLOR[r.tier] }}>{r.tier}</Text>
                       </Row>
@@ -326,23 +328,23 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       </Box>
 
       {toast && (
-        <Box className="above-modal mono" style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
-          background: "var(--bg-elev2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px",
+        <Box className="above-modal mono" pad={[9, 16]} bg="var(--bg-elev2)" border radius={8} style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
           fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</Box>
       )}
 
       {(modal === "steer" || modal === "answer") && (
         <Modal title={modal === "answer" ? `Answer ${worker.name}` : `Steer ${worker.name}`} onClose={() => setModal(null)}
           footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</button>
+            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
+            <Button variant="primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</Button>
           </>}>
           {modal === "answer" && worker.note && (
-            <Box className="mono" style={{ padding: "10px 12px", borderRadius: 8, background: `color-mix(in oklch, ${st.color}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
+            <Box className="mono" pad={[10, 12]} bg={`color-mix(in oklch, ${st.color}, transparent 90%)`} radius={8} style={{ border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
               {worker.note}
             </Box>
           )}
           <Box className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</Box>
+          {/* eslint-disable-next-line no-restricted-syntax -- freeform multiline input; textareas stay raw */}
           <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
             className="mono"
@@ -352,8 +354,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       {modal === "stop" && (
         <Modal title="Stop & remove worker" onClose={() => setModal(null)}
           footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn danger" onClick={stop}>stop &amp; remove</button>
+            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
+            <Button danger onClick={stop}>stop &amp; remove</Button>
           </>}>
           <Text as="div" size={12} tone="muted" style={{ lineHeight: 1.6 }}>
             This stops <b style={{ color: "var(--fg)" }}>{worker.name}</b>'s session (disables its pane). Its worktree is
@@ -366,6 +368,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           <Box className="hint" style={{ marginBottom: 10 }}>Switch the least-privilege profile this worker runs under (applies on its next launch).</Box>
           <Stack gap={6} style={{ maxHeight: 360, overflow: "auto" }}>
             {agentProfiles.map((p) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke profile-select row button (custom card layout, not a .btn)
               <button key={p.id} onClick={() => { setPaneProfile(worker.id, p.id); setModal(null); flash(`Profile → ${p.name}`); }} style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", textAlign: "left", cursor: "pointer",
                 background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",

@@ -6,6 +6,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Button } from "@/shared/ui/controls/Button";
+import { SelectField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
@@ -71,14 +72,12 @@ export function LlmProviderCard() {
   return (
     <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
       <Grid cols="1.4fr 1fr" gap={14}>
-        <Box className="field">
-          <label>Provider</label>
-          <select className="input" value={llmProvider} onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}>
-            {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </select>
-        </Box>
+        <SelectField label="Provider" value={llmProvider} onChange={(v) => setLlmProvider(v as LlmProvider)}>
+          {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </SelectField>
         <Box className="field">
           <label>Model</label>
+          {/* eslint-disable-next-line no-restricted-syntax -- field stack wraps a conditional <datalist> child; a TextField swap can't host the datalist without dropping the .field Box */}
           <input
             className="input"
             value={llmModel}
@@ -96,6 +95,7 @@ export function LlmProviderCard() {
           <Box className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Base URL</label>
             <Row gap={8} align="stretch">
+              {/* eslint-disable-next-line no-restricted-syntax -- inline input beside a Button in a Row; a TextField .field wrapper would break the horizontal layout */}
               <input
                 className="input"
                 value={localBaseUrl}
@@ -118,6 +118,7 @@ export function LlmProviderCard() {
           ) : (
             <>
               <Row gap={8} align="stretch">
+                {/* eslint-disable-next-line no-restricted-syntax -- inline input beside show/test Buttons in a Row; a TextField .field wrapper would break the horizontal layout */}
                 <input
                   className="input"
                   type="password"
@@ -136,6 +137,7 @@ export function LlmProviderCard() {
           <label>Run the agent fleet on</label>
           {/* A local/ollama provider can't run on Claude Code, so it forces bsc-agent — the planner,
               workers, and director all run on the selected LLM. Lock the control + say so. */}
+          {/* eslint-disable-next-line no-restricted-syntax -- conditionally `disabled` select in a gridColumn-spanning field; SelectField carries neither disabled nor the wrapper style */}
           <select
             className="input"
             value={providerNeedsBscAgent(llmProvider) ? "bsc-agent" : fleetHarness}
@@ -153,10 +155,12 @@ export function LlmProviderCard() {
         </Box>
         <Box className="field">
           <label>Per-agent context cap</label>
+          {/* eslint-disable-next-line no-restricted-syntax -- uncontrolled defaultValue placeholder input; TextField requires controlled value/onChange */}
           <input className="input" defaultValue="64000" />
         </Box>
         <Box className="field">
           <label>Monthly spend cap</label>
+          {/* eslint-disable-next-line no-restricted-syntax -- uncontrolled defaultValue placeholder input; TextField requires controlled value/onChange */}
           <input className="input" defaultValue="$150" />
         </Box>
         <Box className="field" style={{ gridColumn: "1 / -1" }}>

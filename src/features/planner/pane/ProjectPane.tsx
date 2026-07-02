@@ -104,7 +104,7 @@ export function ProjectPane({
   // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
   const viewerModal = viewing && (
-    <Box className="modal-scrim" onClick={() => setViewing(null)} style={{ padding: 24 }}>
+    <Box className="modal-scrim" onClick={() => setViewing(null)} pad={24}>
       <Stack onClick={(e) => e.stopPropagation()} style={{
         width: "min(720px, 92vw)", maxHeight: "84vh",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
