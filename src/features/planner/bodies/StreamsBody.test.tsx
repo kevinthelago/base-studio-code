@@ -1,6 +1,6 @@
-// The unified Streams pane (#…): the graph overview always shows; when the `fleet` substep is on,
-// the fleet config renders as collapsible cards — Coordination (collapsed by default), the Fleet
-// roster (open), and Shared dependencies (collapsed).
+// The unified Streams pane (#2053): the dependency graph is the centerpiece; when the `fleet` substep
+// is on, selecting a node opens ONE stream inspector card (no roster duplicating the graph), and the
+// fleet-wide Coordination + Shared-dependencies controls render below as secondary collapsible cards.
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { StreamsBody } from "./StreamsBody";
@@ -12,6 +12,7 @@ const agent = (id: string, repo = "acme/web"): Agent =>
   ({
     id, name: id, role: "worker", status: "idle", repo, color: "#7c93ff", initial: id[0]!.toUpperCase(),
     owns: [`${id}/**`], issues: [], preset: "Autonomous", perm: {}, flow, ctx: 0,
+    kickoff: `You are the ${id} work stream…`, scope: `owns ${id}/**`,
   } as unknown as Agent);
 
 const data = {
@@ -19,21 +20,20 @@ const data = {
   relationships: [], relationshipArtifacts: [], dependencies: [], registries: {},
 } as unknown as ProjectPaneData;
 
-describe("StreamsBody — unified fleet cards (#…)", () => {
-  it("renders the three fleet cards; Coordination is collapsed and the Fleet roster is open by default", () => {
+describe("StreamsBody — graph-first unified pane (#2053)", () => {
+  it("shows the fleet-wide cards but NOT a separate Fleet roster (the graph is the roster)", () => {
     render(<StreamsBody data={data} fleet />);
-    // All three card headers are present…
     expect(screen.getByText("Coordination")).toBeInTheDocument();
-    expect(screen.getByText("Fleet")).toBeInTheDocument();
     expect(screen.getByText("Shared dependencies")).toBeInTheDocument();
-    // …Coordination starts collapsed (its topology control is hidden until opened)…
-    expect(screen.queryByTestId("topology-control")).toBeNull();
-    // …but the Fleet roster is open, so its stream count shows.
-    expect(screen.getByText(/2 agents/)).toBeInTheDocument();
+    // The old always-open "Fleet" roster card is gone — the graph is the single stream list.
+    expect(screen.queryByText("Fleet")).toBeNull();
+    // With no node focused, a hint invites selecting one in the graph.
+    expect(screen.getByText(/Select a stream in the graph/)).toBeInTheDocument();
   });
 
   it("expands the Coordination card on header click", () => {
     render(<StreamsBody data={data} fleet />);
+    expect(screen.queryByTestId("topology-control")).toBeNull();
     fireEvent.click(screen.getByText("Coordination"));
     expect(screen.getByTestId("topology-control")).toBeInTheDocument();
   });
@@ -41,8 +41,8 @@ describe("StreamsBody — unified fleet cards (#…)", () => {
   it("shows only the graph (no fleet cards) when the fleet substep is off", () => {
     render(<StreamsBody data={data} />);
     expect(screen.queryByText("Coordination")).toBeNull();
-    expect(screen.queryByText("Fleet")).toBeNull();
     expect(screen.queryByText("Shared dependencies")).toBeNull();
+    expect(screen.queryByText(/Select a stream in the graph/)).toBeNull();
   });
 
   it("shows the empty fleet state when the substep is on but no streams are planned", () => {
