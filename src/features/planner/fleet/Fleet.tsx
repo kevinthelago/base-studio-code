@@ -222,7 +222,7 @@ export function Fleet() {
       <Box className="an-wrap">
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <Box style={{ flex: 1 }}>
-            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Fleet</h2>
+            <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Fleet</Text>
             <Text as="div" size={12} tone="muted" style={{ marginTop: 4 }}>
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </Text>

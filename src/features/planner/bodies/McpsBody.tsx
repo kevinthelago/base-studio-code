@@ -11,6 +11,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 import type { McpHandlers } from "./focusedHandlers";
 
 const MCP_TRANSPORT: Record<string, { c: string; label: string }> = {
@@ -103,10 +104,10 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
               {isOpen && (
                 <Box style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
                   <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 4 }}>command</Text>
-                  <Box className="mono" pad={[6, 9]} bg="var(--bg-elev)" border="soft" radius={6} style={{
-                    fontSize: 10, color: "var(--fg-muted)", marginBottom: 11,
-                    overflowX: "auto", whiteSpace: "nowrap",
-                  }}><Text as="span" tone="accent">$ </Text>{s.cmd || "—"}</Box>
+                  <Code style={{
+                    background: "var(--bg-elev)", borderRadius: 6, padding: "6px 9px",
+                    marginBottom: 11, whiteSpace: "nowrap",
+                  }}><Text as="span" tone="accent">$ </Text>{s.cmd || "—"}</Code>
 
                   <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 6 }}>scope · {s.scope}</Text>
                   {s.agents.length > 0 ? (

@@ -10,6 +10,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { useGithubSummary } from "./useGithubSummary";
 import { ActivityHeatmap } from "./summary/ActivityHeatmap";
@@ -39,10 +40,10 @@ export function GitHubSummary() {
       <Box style={{ maxWidth: 1280, margin: "0 auto" }}>
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <Box style={{ flex: 1 }}>
-            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Across all repositories</h2>
-            <Box style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
+            <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Across all repositories</Text>
+            <Text as="div" tone="muted" size="md" style={{ marginTop: 4 }}>
               {githubRepos.length} repo{githubRepos.length !== 1 ? "s" : ""} · 28-week view
-            </Box>
+            </Text>
           </Box>
           <Button onClick={() => setGithubPageMode("repos")}>browse repositories →</Button>
         </Row>

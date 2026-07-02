@@ -111,7 +111,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
     <Box className="field">
       <label>project assignment</label>
       <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
-        <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
+        <Text weight={600} tone={isGlobal ? "success" : "muted"}>Global (all projects)</Text>
         <Spacer />
         <Box
           className={"toggle" + (isGlobal ? " on" : "")}

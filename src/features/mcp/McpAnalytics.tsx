@@ -112,7 +112,7 @@ export function McpAnalyticsTab() {
       {/* Call results log */}
       <Box pad={[14, 16]} bg="var(--bg-panel)" border="soft" radius={8}>
         <Row align="baseline" gap={10} style={{ marginBottom: 12 }}>
-          <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Call results</h3>
+          <Text as="h3" mono size="sm" weight={600} style={{ margin: 0, color: "var(--fg)" }}>Call results</Text>
           <Text as="span" size={10.5} tone="dim">what servers returned to agents</Text>
           <Spacer />
           {errCount > 0 && <Text as="span" mono size={10} tone="danger">{errCount} errors</Text>}

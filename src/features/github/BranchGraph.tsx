@@ -135,10 +135,10 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
   return (
     <Card style={{ padding: "14px 16px 12px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>Branch graph</h3>
-        <Box as="span" className="hint">
+        <Text as="h3" style={{ margin: 0 }}>Branch graph</Text>
+        <Text as="span" tone="dim" size={10.5}>
           {busy ? "loading…" : layout ? `${layout.laneNames.length} branches · ${layout.points.length} commits` : "—"}
-        </Box>
+        </Text>
       </Row>
 
       {busy && (

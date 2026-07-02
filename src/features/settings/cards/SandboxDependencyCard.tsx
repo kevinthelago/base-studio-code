@@ -3,6 +3,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 import { useAppStore } from "@/store";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
@@ -58,16 +59,9 @@ export function SandboxDependencyCard() {
                 </Box>
               )}
               {installLog.length > 0 && (
-                <pre
-                  className="mono"
-                  style={{
-                    margin: 0, maxHeight: 120, overflow: "auto", padding: "6px 8px", borderRadius: 4,
-                    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
-                    fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap",
-                  }}
-                >
+                <Code maxHeight={120} style={{ padding: "6px 8px", borderRadius: 4, fontSize: 10.5 }}>
                   {installLog.join("\n")}
-                </pre>
+                </Code>
               )}
             </Stack>
           )}

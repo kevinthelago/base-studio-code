@@ -144,9 +144,9 @@ export function ClaudeConfigCard() {
   return (
     <Stack gap={20} style={{ maxWidth: 900 }}>
       <Box>
-        <h2 className="mono" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+        <Text as="h2" mono size={16} weight={600} style={{ margin: 0 }}>
           Claude Configuration
-        </h2>
+        </Text>
         <Text as="div" tone="muted" size={12} style={{ marginTop: 4 }}>
           Edit CLAUDE.md instructions and tool permissions for each agent scope.
         </Text>
