@@ -23,14 +23,23 @@ use crate::prelude::*;
 /// # Errors
 /// - the bundled `bsc` binary can't be resolved (missing sidecar), or
 /// - `bsc` exits non-zero (its stderr is returned).
+/// `stdin` (optional) feeds a body to the child's stdin — required by the `bsc … set`/`add` write
+/// verbs, which read their JSON body from stdin (#2123). Omit it for reads and positional verbs.
 #[tauri::command]
-pub(crate) fn bsc(project_key: Option<String>, args: Vec<String>) -> Result<String, String> {
+pub(crate) fn bsc(
+    project_key: Option<String>,
+    args: Vec<String>,
+    stdin: Option<String>,
+) -> Result<String, String> {
     let bin = crate::console::pty::bsc_bin_path()
         .ok_or("bsc binary not found — the bundled sidecar is missing (BSC_BIN unset)")?;
     let mut cmd = std::process::Command::new(&bin);
     cmd.args(&args);
     wire_bsc_stores(&mut cmd, project_key.as_deref());
-    run_capture(&mut cmd)
+    match stdin {
+        Some(body) => run_capture_stdin(&mut cmd, body.as_bytes()),
+        None => run_capture(&mut cmd),
+    }
 }
 
 /// Wire the per-project + global store env vars a one-shot `bsc` invocation resolves its DB from — the
@@ -96,6 +105,6 @@ mod tests {
         if crate::console::pty::bsc_bin_path().is_none() {
             return; // sidecar not staged in the test target — nothing to exercise
         }
-        let _ = bsc(None, vec!["--help".to_string()]);
+        let _ = bsc(None, vec!["--help".to_string()], None);
     }
 }
