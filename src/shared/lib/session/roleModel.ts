@@ -1,0 +1,92 @@
+// Role-scoped session capabilities (#219) — the TYPES + role→capability data + core accessors.
+// This is the foundation layer of the role gate: the `SessionRole` union, the `RoleCapability`
+// shape, the externalized role→capability TABLE, and the derivations that read that table
+// (`roleCapability`, `hasScopedWriteCarveOut`). Command classification, write-path scoping, and
+// the launch-wiring rules build on top of these (see `commandGate.ts`, `writeScope.ts`,
+// `launchRules.ts`); the public surface is re-exported from `sessionRoles.ts`.
+//
+// The role→capability TABLE + the write-glob / db-owned / dep-manifest lists are externalized to
+// `@data/permissions/role-capabilities.json` (#2027 P1) — the single source (Rust does NOT duplicate
+// it: TS computes each session's permissions here and passes them to `ensure_session_settings`).
+// This module keeps the TYPES + the exported const NAMES over that data.
+
+import roleCapsEmbedded from "@data/permissions/role-capabilities.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+const roleCaps = overlayFile("permissions/role-capabilities.json", roleCapsEmbedded);
+
+export type SessionRole =
+  | "planner" | "worker" | "director" | "triage"
+  // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews,
+  // conductor sequences stages. All are least-privilege (read-only, no code writes).
+  | "tester" | "reviewer" | "conductor"
+  // Issuer (#376): intake-only — shapes user requests into issues and may open GitHub
+  // issues, but never touches code or git; routing is the director's job.
+  | "issuer"
+  // Juror (#394): a scoped reviewer that independently judges a landing against an
+  // anchor (acceptance criteria / lens / subsystem slice). Read-only, like reviewer.
+  | "juror";
+
+/** Access to a capability: none < read < write. */
+export type AccessTier = "none" | "read" | "write";
+
+export interface RoleCapability {
+  role: SessionRole;
+  /** GitHub: `gh` writes / API mutations. */
+  github: AccessTier;
+  /** Local git: commit/push/merge are writes; status/log are reads. */
+  git: AccessTier;
+  /** Editing files on disk (outside any dedicated plan channel). */
+  code: AccessTier;
+  /** Network/web tools (`WebFetch`, `WebSearch`) — a live prompt-injection vector (#1107). `none`
+   *  denies them outright at launch; `read` permits fetching, whose RESULTS the session must treat
+   *  as untrusted data (the planner template frames this). This is the gate the per-agent `net`
+   *  profile (#289) ties into; `write` is unused (there's no "network write" tool to grant). */
+  net: AccessTier;
+  /** Path globs this role/assignment may write. Empty ⇒ no code writes. */
+  writeGlobs: string[];
+}
+
+// The role→capability table + the write-glob / db-owned / dep-manifest lists load from
+// `@data/permissions/role-capabilities.json` (#2027 P1) — see the file's `_comment` for the policy.
+// The exported names below keep the SAME semantics they always had:
+//
+// - ROLE_DEFAULTS — default capability per role. `writeGlobs` are filled per assignment (a worker
+//   owns its stream's globs); the defaults are empty so a session with no assigned boundary can't
+//   write code. The **planner is plan-only** — read-only git/GitHub; its code writes are scoped to
+//   plan-section files ({@link PLANNER_WRITE_GLOBS}) so it never needs a prompt to write goal.md /
+//   phases.json / fleet.json / prompts/*. `net: "read"` across the board preserves today's behavior
+//   (WebFetch allowed via the broad Bash grant); a per-agent `net` profile (#289) or a planner
+//   "no web" toggle (#1107) can set `none` to deny WebFetch/WebSearch at launch.
+// - PLANNER_WRITE_GLOBS (#509) — the section files the planner writes directly (md sections, JSON
+//   manifests, prompts/ + discovery/ #807). Derived from the planner role so the glob list lives once.
+// - DB_OWNED_PLAN_FILES (#1070) — structured plan state that lives in plan.db, written ONLY via the
+//   `bsc plan` CLI. {@link roleWriteRules} denies their FILE forms for the planner (deny > allow) so
+//   its `*.md`/`*.json` glob can't auto-approve them; section files (goal.md, …) stay writable.
+// - DEP_MANIFEST_FILES (#1111) — dependency manifests + lockfiles a WORKER must not hand-edit (a new
+//   dep routes through the director). {@link roleWriteRules} denies the Edit/Write TOOLS on these
+//   even inside the worker's owned globs; `npm install` / `cargo build` via Bash still regenerate them.
+export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleCaps.roleDefaults as Record<SessionRole, RoleCapability>;
+export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner.writeGlobs;
+export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles;
+export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles;
+
+/** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
+export function roleCapability(role: SessionRole, override: Partial<RoleCapability> = {}): RoleCapability {
+  return { ...ROLE_DEFAULTS[role], ...override };
+}
+
+/**
+ * Whether a capability has the director's explicit, scoped write carve-out (#851): the **director**
+ * keeps `code: "none"` (no feature-code writes) yet is allowed to write EXACTLY the commons globs it
+ * owns (`.gitignore`, manifests, CI config, …) when they're assigned to it. This mirrors the #304
+ * precedent of a scoped role-gate carve-out — a narrow, explicit allow layered onto an
+ * otherwise-denied capability. Scoped to the director role on purpose: every OTHER `code: "none"`
+ * role (triage, tester, reviewer, …) stays fully write-denied even if handed globs, so the commons
+ * stewardship can't be accidentally granted to a non-integrator. An empty `writeGlobs` (the default)
+ * ⇒ no carve-out, full deny stands.
+ */
+export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
+  return cap.role === "director" && cap.code === "none" && cap.writeGlobs.length > 0;
+}
