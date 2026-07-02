@@ -162,13 +162,9 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 <Text as="span" mono size={9.5} tone="dim">{(e.size / 1024).toFixed(1)}k</Text>
               </Row>
             ))}
-            {/* No route button here (#2121) — the UI stage's footer shows a "route design to project"
-                action while the staged design is new/changed; clicking it syncs the skeleton and marks
-                the design current. The actual routing of files to repos happens change-aware on
-                triage (#2097). */}
-            <Text as="div" className="hint" tone="dim" style={{ marginTop: 6 }}>
-              Staged. Use the footer&apos;s “route design to project” action to route it — only files that changed re-route on triage.
-            </Text>
+            {/* No route control of any kind lives inside the pane (#2121). Routing is driven entirely
+                by the UI stage's footer action; the actual per-repo routing happens change-aware on
+                triage (#2097). This surface is intake-only. */}
           </Stack>
         )}
       </Stack>
