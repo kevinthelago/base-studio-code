@@ -20,6 +20,7 @@ export function TerminalFontSizeCard() {
           disabled={terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
           onClick={() => setTerminalFontSize(adjustFontSize(terminalFontSize, -1))}
         >−</Button>
+        {/* eslint-disable-next-line no-restricted-syntax -- range slider; no shared primitive for <input type="range"> */}
         <input
           type="range"
           aria-label="Terminal font size"

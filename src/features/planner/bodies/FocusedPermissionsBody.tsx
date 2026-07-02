@@ -42,6 +42,7 @@ export function CoordinationControls({ data, onTopology, onDirectorDrive }: Pick
         {TOPOLOGY_OPTS.map((t, i) => {
           const on = topology === t.id;
           return (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled full-width segmented cell; Button/.btn would change rendering
             <button
               key={t.id}
               onClick={() => onTopology?.(t.id)}
@@ -67,6 +68,7 @@ export function CoordinationControls({ data, onTopology, onDirectorDrive }: Pick
           <Text as="span" mono size={9.5} tone="muted">director drive</Text>
           <Row align="stretch" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {DIRECTOR_DRIVES.map((d) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented cell; Button/.btn would change rendering
               <button
                 key={d}
                 onClick={() => onDirectorDrive?.(d)}

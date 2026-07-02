@@ -37,6 +37,7 @@ export function SandboxDependencyCard() {
           {!sandbox.ready && sandbox.autoInstallable && (
             <Stack gap={6} style={{ marginTop: 8 }}>
               <Row gap={8} wrap>
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke compact accent install button with custom inline styling; not the .btn family */}
                 <button
                   onClick={install}
                   disabled={installing}

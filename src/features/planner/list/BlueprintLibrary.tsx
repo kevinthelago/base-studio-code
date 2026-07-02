@@ -146,15 +146,18 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
           ><MoreHorizontal size={13} /></Button>
           {isOpen && (
             <Box className="menu" style={{ minWidth: 158 }}>
+              {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
                 <Check size={12} /> use for new projects
               </button>
+              {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
                 <Pencil size={12} /> modify in planner
               </button>
               {!b.builtIn && (
                 <>
                   <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+                  {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
                   <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
                     <Trash2 size={12} /> delete blueprint
                   </button>
@@ -332,6 +335,7 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
           </Row>
           {bpNewOpen && (
             <Row gap={6} style={{ marginTop: 10 }}>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline rail input (custom sizing/border, not a Field stack) */}
               <input
                 autoFocus
                 value={bpTitle}

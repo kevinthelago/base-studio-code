@@ -64,20 +64,24 @@ export function DeploymentBody({
   const linkAffordance = onLinkRepo && (
     linking ? (
       <Row gap={6}>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex link row; TextField's .field wrapper would change layout */}
         <input
           autoFocus aria-label="Link a repository" value={linkInput} placeholder="owner/repo"
           onChange={(e) => setLinkInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submitLink(); else if (e.key === "Escape") { setLinking(false); setLinkInput(""); } }}
           style={{ flex: 1, height: 26, padding: "0 8px", borderRadius: 6, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", color: "var(--fg)", fontFamily: MONO, fontSize: 10, outline: "none" }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom accent/height); Button/.btn would change rendering */}
         <button disabled={!linkInput.includes("/")} onClick={submitLink} style={{
           height: 26, padding: "0 11px", borderRadius: 6, border: "1px solid var(--accent-dim)",
           background: linkInput.includes("/") ? "var(--accent)" : "var(--bg-elev)", color: linkInput.includes("/") ? "#0b0d10" : "var(--fg-dim)",
           fontFamily: MONO, fontSize: 9.5, cursor: "pointer",
         }}>link</button>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled button (custom mono/height); Button/.btn would change rendering */}
         <button onClick={() => { setLinking(false); setLinkInput(""); }} style={{ height: 26, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border-soft)", background: "transparent", color: "var(--fg-muted)", fontFamily: MONO, fontSize: 9.5, cursor: "pointer" }}>cancel</button>
       </Row>
     ) : (
+      // eslint-disable-next-line no-restricted-syntax -- bespoke full-width dashed "add" affordance (not a `.btn`); Button would change rendering
       <button type="button" onClick={() => setLinking(true)} style={{
         width: "100%", border: "1px dashed var(--border)", borderRadius: 8, padding: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         background: "transparent", color: "var(--fg-dim)", fontFamily: MONO, fontSize: 10.5, cursor: "pointer",

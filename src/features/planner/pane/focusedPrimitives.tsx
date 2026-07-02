@@ -124,6 +124,7 @@ export function Seg({ options, value, onChange, tiny }: {
       {options.map((o, i) => {
         const on = o === value;
         return (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented cell (local `Seg` primitive); SegmentedControl/.btn would change rendering
           <button key={o} onClick={() => onChange && onChange(o)} style={{
             border: 0, borderRight: i < options.length - 1 ? "1px solid var(--border-soft)" : 0,
             background: on ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",

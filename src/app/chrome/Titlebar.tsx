@@ -41,12 +41,15 @@ export function Titlebar({ workspace = "base-studio-code" }: TitlebarProps) {
     <Box className="titlebar win">
       <Box className="tl-title">{title}</Box>
       <Box className="tl-controls">
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke window control (styled by the `.titlebar .tl-controls button` CSS, not the .btn kit) */}
         <button onClick={() => windowAction("minimize")} title="Minimize">
           <Minus size={11} />
         </button>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke window control (styled by the `.titlebar .tl-controls button` CSS, not the .btn kit) */}
         <button onClick={() => windowAction("toggleMaximize")} title="Maximize">
           <Maximize2 size={11} />
         </button>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke window close control (styled by the `.tl-close` CSS, not the .btn kit) */}
         <button className="tl-close" onClick={() => windowAction("close")} title="Close">
           <X size={11} />
         </button>

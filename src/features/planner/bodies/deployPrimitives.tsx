@@ -70,6 +70,7 @@ export function Seg<T extends string>({ value, options, onChange }: { value: T; 
   return (
     <Box style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
       {options.map((o, i) => (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented cell (Deploy-local primitive); Button/.btn would change rendering
         <button key={o} onClick={() => onChange(o)} style={{
           height: 22, padding: "0 9px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: "pointer",
           fontFamily: MONO, fontSize: 9.5, background: value === o ? "var(--bg-elev2)" : "transparent", color: value === o ? "var(--fg)" : "var(--fg-dim)",
@@ -83,6 +84,7 @@ export function Field({ label, value, onChange }: { label: string; value: string
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
       <Box as="span" style={grpLabel}>{label}</Box>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input (Deploy-local primitive w/ grpLabel layout); TextField's .field wrapper differs */}
       <input value={value} onChange={(e) => onChange(e.target.value)} style={{
         height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
         borderRadius: "var(--r-sm)", outline: "none", fontFamily: MONO, fontSize: 11, color: "var(--fg)",
@@ -107,6 +109,7 @@ export function Select<T extends string>({ label, value, options, onChange }: { 
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
       <Box as="span" style={grpLabel}>{label}</Box>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled select (Deploy-local primitive w/ grpLabel layout); SelectField's .field wrapper differs */}
       <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{
         height: 28, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
         borderRadius: "var(--r-sm)", outline: "none", fontFamily: MONO, fontSize: 11, color: "var(--fg)",

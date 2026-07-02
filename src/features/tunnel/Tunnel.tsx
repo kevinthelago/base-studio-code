@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -223,6 +224,7 @@ export function TunnelSettings() {
         <Box className="field" style={{ marginBottom: running && payload ? 18 : 0 }}>
           <label>Relay URL</label>
           <Row gap={8} align="stretch">
+            {/* eslint-disable-next-line no-restricted-syntax -- input shares a Row with multiple action buttons; TextField's .field wrapper would break the inline layout */}
             <input
               className="input"
               placeholder="https://msc-tunnel-relay.<you>.workers.dev"
@@ -287,19 +289,25 @@ export function TunnelSettings() {
             </Stack>
 
             <Stack gap={14} style={{ minWidth: 0 }}>
-              <Box className="field">
-                <label>Room</label>
-                <input className="input" readOnly value={status?.room ?? ""} style={{ fontSize: 11 }} />
-                <Box className="hint">A fresh, high-entropy room is allocated each time you connect.</Box>
-              </Box>
-              <Box className="field">
-                <label>Host key (Noise)</label>
-                <input className="input" readOnly value={status?.hostPubKey ?? ""} style={{ fontSize: 10.5 }} />
-                <Box className="hint">
+              <TextField
+                label="Room"
+                readOnly
+                value={status?.room ?? ""}
+                onChange={() => {}}
+                style={{ fontSize: 11 }}
+                hint="A fresh, high-entropy room is allocated each time you connect."
+              />
+              <TextField
+                label="Host key (Noise)"
+                readOnly
+                value={status?.hostPubKey ?? ""}
+                onChange={() => {}}
+                style={{ fontSize: 10.5 }}
+                hint={<>
                   The phone pins this from the QR — it's how it knows it's talking to <i>your</i>
                   desktop, not the relay.
-                </Box>
-              </Box>
+                </>}
+              />
               <Box className="field">
                 <label>Input control</label>
                 <Row gap={10}>

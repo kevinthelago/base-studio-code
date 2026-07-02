@@ -43,12 +43,14 @@ export function LogsViewerCard({
         <Text mono size={11} style={{ color: "var(--fg)" }}>{fileLabel}</Text>
         <Text mono size={10} tone="dim">newest {lines.length}{shown.length !== lines.length ? ` · ${shown.length} shown` : ""}</Text>
         <Box as="span" style={{ flex: 1 }} />
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar search input in a Row; a TextField .field wrapper would break the toolbar layout */}
         <input
           value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search…"
           className="mono"
           style={{ fontSize: 11, background: "var(--bg-canvas)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", width: 160 }}
         />
         {isAppLog && (
+          // eslint-disable-next-line no-restricted-syntax -- inline toolbar level-filter select in a Row; a SelectField .field stack would break the toolbar layout
           <select value={level} onChange={(e) => setLevel(e.target.value)} className="mono" style={{ fontSize: 11, background: "var(--bg-elev)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px" }}>
             <option value="all">all levels</option>
             {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}

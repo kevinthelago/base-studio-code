@@ -135,6 +135,7 @@ export function KeyboardCard() {
             </Text>
           )}
           {overrideCount > 0 && !capturingId && (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke transparent-bordered mono button with custom styling; not the .btn family
             <button
               onClick={() => { resetAllKeybindings(); setError(null); }}
               className="mono"
@@ -187,6 +188,7 @@ export function KeyboardCard() {
                     <Text as="span" size="md" style={{ color: "var(--fg)" }}>{s.desc}</Text>
                     <Text as="span" mono size={9.5} tone="dim">{s.scope}</Text>
                     {overridden && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke borderless underlined mono text-link button; not the .btn family
                       <button
                         onClick={() => { resetKeybinding(id!); setError(null); }}
                         title="Reset to default"
@@ -202,6 +204,7 @@ export function KeyboardCard() {
                     )}
                   </Row>
                   {isChord ? (
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke transparent borderless wrapper button around a key-cap chord display; not the .btn family
                     <button
                       onClick={() => startCapture(id as RebindableId)}
                       aria-label={`Rebind ${s.desc}`}
@@ -214,6 +217,7 @@ export function KeyboardCard() {
                     </button>
                   ) : isLeader && id != null ? (
                     <Row gap={6} justify="end">
+                      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline mono select (custom accent border/bg) beside a "+" and KeyCap in a Row; a SelectField .field stack would break the layout */}
                       <select
                         aria-label={`Leader for ${s.desc}`}
                         value={effectiveLeader(keybindings, id as LeaderId)}

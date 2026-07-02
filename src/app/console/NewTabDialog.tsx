@@ -37,6 +37,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
               const [c, r] = l.split("×").map(Number);
               const active = l === layout;
               return (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke layout-swatch button (grid-preview + active-state inline styling, not the .btn kit)
                 <button
                   key={l}
                   className="mono"

@@ -41,6 +41,7 @@ export function SettingsSelect({ value, options, onChange }: {
   onChange: (v: number | string) => void;
 }) {
   return (
+    // eslint-disable-next-line no-restricted-syntax -- helper intentionally renders a bespoke compact mono <select> (type-preserving onChange) for settings rows; not a .field stack
     <select
       value={value}
       onChange={(e) => { const raw = e.target.value; onChange(typeof value === "number" ? Number(raw) : raw); }}

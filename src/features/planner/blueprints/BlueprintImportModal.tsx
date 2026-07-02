@@ -76,6 +76,7 @@ function GistPreview({ entry }: { entry?: PreviewEntry }) {
         {bp?.category ?? "greenfield"}{bp?.mode ? ` · ${bp.mode}` : ""} · {sections.length} stage{sections.length === 1 ? "" : "s"}{caps > 0 ? ` · ${caps} attached` : ""}
       </Box>
       <StageSummary sections={sections} />
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline text-button (view/hide raw JSON toggle; not .btn family) */}
       <button
         onClick={() => setRaw((r) => !r)}
         className="mono"
@@ -202,6 +203,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
         <Row gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
           <Box style={{ position: "relative", flex: 1 }}>
             <Box as="span" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><Search size={13} /></Box>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline search input (absolute-positioned icon overlay; not the .input/.field stack) */}
             <input
               value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="search blueprints by name, description, owner…"
@@ -229,6 +231,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             >
               <AlertTriangle size={14} style={{ flex: "0 0 auto", marginTop: 1 }} />
               <Box as="span" style={{ flex: 1, color: "var(--fg)" }}>{importError}</Box>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline dismiss button (transparent, no .icon-btn hover state) */}
               <button
                 onClick={() => setImportError(null)}
                 aria-label="Dismiss error"
@@ -294,6 +297,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                       {it.description && <Box style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.description.replace(/^blueprint:\s*/i, "")}</Box>}
                     </Box>
                     <Box as="span" style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline preview-toggle button */}
                       <button
                         onClick={() => togglePreview(it)}
                         aria-expanded={expanded}
@@ -302,14 +306,17 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                         style={{ height: 26, padding: "0 10px", borderRadius: "var(--r-md)", background: expanded ? "var(--bg-elev2)" : "transparent", border: "1px solid var(--border-soft)", color: expanded ? "var(--fg)" : "var(--fg-muted)", fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
                       ><Eye size={13} />Preview</button>
                       {busy ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "importing…" status button
                         <button disabled className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.85 }}>
                           <Loader2 size={12} style={spin} />importing…
                         </button>
                       ) : imported && !stale ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Imported" status button
                         <button disabled title="Already in your library — up to date" className="mono" style={{ height: 26, padding: "0 11px", borderRadius: "var(--r-md)", background: "transparent", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)", color: "var(--success)", fontSize: 10.5, cursor: "default", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <Check size={13} />Imported
                         </button>
                       ) : stale ? (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Update" button
                         <button onClick={() => void doImport(it)} title="Upstream has newer changes — pull the update" className="mono" style={{ height: 26, padding: "0 12px", borderRadius: "var(--r-md)", background: "color-mix(in oklch, var(--accent), transparent 88%)", border: "1px solid var(--accent-dim)", color: "var(--accent)", fontWeight: 600, fontSize: 10.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <ArrowUpCircle size={13} />Update
                         </button>
