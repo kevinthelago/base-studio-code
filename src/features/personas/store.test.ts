@@ -39,6 +39,24 @@ describe("personas store slice (#2094)", () => {
     expect(worker.builtin).toBe(true);           // builtin identity preserved (not in the patch type)
   });
 
+  it("applyPersonaToPane stamps role + start prompt + model and marks perms stale", () => {
+    useAppStore.setState({ paneRoles: {}, paneModels: {}, paneStartupPromptText: {}, panePermsStale: {} });
+    // Documentor: role reviewer + a real start prompt, no model override.
+    useAppStore.getState().applyPersonaToPane("t0p0", "persona-documentor");
+    const st = useAppStore.getState();
+    expect(st.paneRoles["t0p0"]).toBe("reviewer");
+    expect(st.paneStartupPromptText["t0p0"]).toMatch(/documentor/i);
+    expect(st.panePermsStale["t0p0"]).toBe(true);
+    expect(st.paneModels["t0p0"]).toBeUndefined();   // documentor has no model override
+  });
+
+  it("applyPersonaToPane is a no-op for an unknown persona id", () => {
+    useAppStore.setState({ paneRoles: {}, panePermsStale: {} });
+    useAppStore.getState().applyPersonaToPane("t0p0", "persona-nope");
+    expect(useAppStore.getState().paneRoles["t0p0"]).toBeUndefined();
+    expect(useAppStore.getState().panePermsStale["t0p0"]).toBeUndefined();
+  });
+
   it("removePersona deletes a user persona but NOT a built-in", () => {
     const id = useAppStore.getState().addPersona();
     useAppStore.getState().removePersona(id);
