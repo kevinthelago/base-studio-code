@@ -93,6 +93,49 @@ export function AgentEditor({ a, onFlow, onModel }: {
   );
 }
 
+/** The focused-stream inspector (#2053). Since a stream and its worker are 1:1, selecting a node in
+ *  the Streams graph shows exactly ONE of these — the stream's identity + scope + kickoff + config —
+ *  instead of a standing roster that duplicates the graph. Reuses AgentEditor for kickoff/model/flow. */
+export function StreamCard({ a, agents, onFlow, onModel }: {
+  a: Agent;
+  agents?: Agent[];
+  onFlow?: (streamId: string, flow: Flow) => void;
+  onModel?: (streamId: string, model: ModelId | undefined) => void;
+}) {
+  return (
+    <Box style={{ marginTop: 14, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)" }}>
+      {/* identity */}
+      <Grid cols="auto 1fr auto" gap={8} align="center" style={{ padding: "9px 10px" }}>
+        <Row gap={7}>
+          <Dot s={a.status} />
+          <Avatar id={a.id} sz={20} agents={agents} />
+        </Row>
+        <Box style={{ minWidth: 0 }}>
+          <Row gap={6}>
+            <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{a.name}</Text>
+            <RoleChip role={a.role} mute />
+          </Row>
+          <Row gap={6} style={{ marginTop: 4 }}><PostureBar perm={a.perm} /></Row>
+        </Box>
+        <Stack align="end" gap={4}>
+          <Text as="span" mono size={9} tone="muted">{a.preset}</Text>
+          <Box as="span" className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</Box>
+        </Stack>
+      </Grid>
+      {/* scope — repo · owns · issues */}
+      <Row className="mono" gap={6} wrap style={{ padding: "7px 10px", borderTop: "1px solid var(--border-soft)", fontSize: 9.5, color: "var(--fg-muted)" }}>
+        <Text as="span" style={{ color: "var(--info)" }}>⎇ {a.repo}</Text>
+        <Text as="span" tone="dim">·</Text>
+        <Box as="span">owns</Box>
+        {a.owns.map((o) => <Box as="span" key={o} className="glob">{o}</Box>)}
+        {a.issues.map((i) => <Text as="span" key={i} tone="accent">{i}</Text>)}
+      </Row>
+      {/* kickoff · model · flow */}
+      <AgentEditor a={a} onFlow={onFlow} onModel={onModel} />
+    </Box>
+  );
+}
+
 export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect }: {
   agents?: Agent[];
   onFlow?: (streamId: string, flow: Flow) => void;
