@@ -24,6 +24,7 @@ import {
   TERM_THEME,
 } from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
 import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
@@ -596,17 +597,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Debounced (#1184): a worker's blocked Stop records `idle` for the gap before its next turn's
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const rows = await safeInvoke<PaneActivity[]>("read_pane_activity", undefined, []);
-      if (cancelled) return;
-      turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
-    };
-    poll();
-    const id = setInterval(poll, 1000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [paneId]);
+  usePoll(async (isCancelled) => {
+    const rows = await safeInvoke<PaneActivity[]>("read_pane_activity", undefined, []);
+    if (isCancelled()) return;
+    turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
+  }, 1000, [paneId]);
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the

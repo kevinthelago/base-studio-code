@@ -7,6 +7,7 @@
 // real GitHub.
 
 import { useEffect, useRef, useState } from "react";
+import { usePoll } from "@/shared/hooks/usePoll";
 import {
   decideAutopilotAction, buildUserSimPrompt, staticReply, type AutopilotResult, type AutopilotStrategy,
 } from "./planAutopilot";
@@ -158,20 +159,19 @@ export function usePlanAutopilot(deps: AutopilotDeps, opts: { enabled: boolean; 
     wasEnabled.current = enabled;
   }, [enabled]);
 
-  useEffect(() => {
-    if (!enabled) return;
-    const id = setInterval(() => {
-      if (ticking.current || stateRef.current.finished) return;
-      ticking.current = true;
-      void autopilotTick(stateRef.current, depsRef.current)
-        .then(setState)
-        .catch((e) => {
-          depsRef.current.log({ tick: stateRef.current.iteration, action: "error", detail: String(e) });
-        })
-        .finally(() => { ticking.current = false; });
-    }, tickMs);
-    return () => clearInterval(id);
-  }, [enabled, tickMs]);
+  // No immediate first tick: the interval-only original waited `tickMs` before the first step, so
+  // `{ immediate: false }`. The reentrancy/finished guard stays inside the callback (no overlapping
+  // ticks); disabling stops the run (the callback no-ops until deps re-subscribe on re-enable).
+  usePoll(() => {
+    if (!enabled || ticking.current || stateRef.current.finished) return;
+    ticking.current = true;
+    void autopilotTick(stateRef.current, depsRef.current)
+      .then(setState)
+      .catch((e) => {
+        depsRef.current.log({ tick: stateRef.current.iteration, action: "error", detail: String(e) });
+      })
+      .finally(() => { ticking.current = false; });
+  }, tickMs, [enabled, tickMs], { immediate: false });
 
   return { running: enabled && !state.finished, state };
 }
