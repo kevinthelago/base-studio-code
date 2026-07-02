@@ -5,6 +5,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { DraftRow } from "./drafts";
 import { STATUS_META, type GhProject, type ProjStatus } from "./published/publishedModel";
 import { ProjectRow } from "./published/ProjectRow";
@@ -118,14 +119,11 @@ export function PublishedProjects({
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
         <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <Box className="mono" pad={[12, 16]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={6} style={{ marginBottom: 16,
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              fontSize: 11, color: "var(--danger)",
-            }}>
+            <InlineError pad={[12, 16]} radius={6} style={{ marginBottom: 16 }}>
               {error.includes("read:project")
                 ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
                 : error}
-            </Box>
+            </InlineError>
           )}
 
           {loading && visibleProjects.length === 0 && (
@@ -135,10 +133,7 @@ export function PublishedProjects({
           )}
 
           {draftError && (
-            <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius="md" style={{ marginBottom: 12, fontSize: 11,
-              color: "var(--danger)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-            }}>{draftError}</Box>
+            <InlineError radius="md" borderFade={60} style={{ marginBottom: 12 }}>{draftError}</InlineError>
           )}
 
           {/* drafts — compact chips (click = resume · ✕ = delete) */}

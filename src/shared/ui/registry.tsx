@@ -27,6 +27,7 @@ import { StatTile } from "./data/StatTile";
 import { FillBar } from "./data/FillBar";
 import { Code } from "./data/Code";
 import { Banner } from "./feedback/Banner";
+import { InlineError } from "./feedback/InlineError";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 
@@ -41,7 +42,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Text,
   Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, SelectField,
   Card, Chip, StatTile, FillBar, Code,
-  Banner, EmptyState, StatusDot,
+  Banner, InlineError, EmptyState, StatusDot,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

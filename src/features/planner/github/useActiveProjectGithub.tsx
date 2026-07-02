@@ -7,7 +7,7 @@ import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { useGithubQuery, type GithubQuery } from "@/features/github/lib/useGithubQuery";
-import { Box } from "@/shared/ui/layout/Box";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 
 /** The active project's identity, assembled from the store — the `project` prop every board
@@ -45,10 +45,6 @@ export function useActiveProjectGithub<T = { node: Record<string, unknown> }>(
 export function QueryBanner({ error, style }: { error: string | null; style?: CSSProperties }) {
   if (!error) return null;
   return (
-    <Box className="mono" pad={[12, 16]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={6} style={{
-      border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-      fontSize: 11, color: "var(--danger)",
-      ...style,
-    }}>{error}</Box>
+    <InlineError pad={[12, 16]} radius={6} style={style}>{error}</InlineError>
   );
 }
