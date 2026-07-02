@@ -10,6 +10,16 @@
 import type { AgentStream } from "./planFleet";
 import { buildWorkerDependencyBlock, type PlanDependency } from "../issues/dependencies";
 import { COMMONS_STREAM_ID } from "./commonsGate";
+import workerScopeEmbedded from "@data/fleet/worker-scope.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The fully-static prose blocks (maintenance-mode notice, the integration-interfaces paragraph, and the
+// issue-lifecycle paragraph) are externalized to `@data/fleet/worker-scope.json` (#2145, epic #2027 tail)
+// — editable without touching code + part of the exportable config bundle; the config-dir copy (#2047)
+// overlays the embedded default via `overlayFile`. Only lines with NO interpolation moved; the heading,
+// the owns/issues/deps bullets, and the repo-root-commons block stay inline (they interpolate runtime
+// values / the `gatedOnCommons` flag), and the builder still assembles the whole markdown.
+const SCOPE_PROSE = overlayFile("fleet/worker-scope.json", workerScopeEmbedded);
 
 /**
  * Render a stream's owned globs / issues / dependencies into the scope block that leads
@@ -38,14 +48,7 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
 
   const lines: string[] = [`# Your scope — ${stream.name}`, ""];
   if (maintenance) {
-    lines.push(
-      "**You are in MAINTENANCE mode (#1957).** Every issue you owned is already complete — do NOT",
-      "rebuild, reopen, or re-land them. Stand by: run `bsc-maintain` (e.g. `echo \"owned issues",
-      "complete — standing by\" | bsc-maintain`) to park alive + ready, then wait. The director will",
-      "dispatch any new or regressed work in your lane (`bsc-assign`) and resume you; pick it up, carry",
-      "it through your normal loop, then return to maintenance the same way.",
-      "",
-    );
+    lines.push(...SCOPE_PROSE.maintenance);
   }
   lines.push(
     "You are one of several Claude sessions building this project in parallel, working in your",
@@ -57,20 +60,13 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
     `- **You build against the contracts of:** ${streamDeps}. Implement to their planned interface IN`,
     "  PARALLEL — do NOT wait for those streams to land; integration is verified at merge.",
     "",
-    "Integration interfaces between streams live in the contracts directory — treat them as the",
-    "source of truth. Build to the contract now; if one is unclear or must change, ask the director",
-    "(`bsc-ask`) rather than guessing or parking. For the high-level project context you don't have",
-    "here, defer to the director.",
-    "",
+    ...SCOPE_PROSE.integrationInterfaces,
     "**Repo-root commons are the director's, not yours** — `.gitignore`, `package.json`/lockfile,",
     "`tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config" + (gatedOnCommons ? " (already scaffolded on develop)" : "") + ". Do NOT",
     "edit them: for a new dependency, ignore entry, CI tweak, or env key, ask the director (`bsc-ask`)",
     "and pause (`bsc-wait`) — it lands the change and wakes you. (The scope hook blocks the write anyway.)",
     "",
-    "Issue lifecycle is the director's job, not yours. When you finish an owned issue, signal it",
-    "the way your kickoff says (open your PR / `bsc-landed`) and let the director close it — do",
-    "not run `gh issue close`/`reopen`/`edit` (you have GitHub read access only; the role gate",
-    "blocks the write, so attempting it just wastes a turn).",
+    ...SCOPE_PROSE.issueLifecycle,
   );
 
   const depBlock = buildWorkerDependencyBlock(deps);
