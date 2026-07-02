@@ -23,8 +23,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
         return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
     }
     let slug  = worktree_slug(&agent_id);
-    let short = repo.rsplit('/').next().unwrap_or(&repo);
-    let wt    = worktrees_dir(&project_key).join(format!("{short}--{slug}"));
+    let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));
     let wt_str = wt.to_string_lossy().into_owned();
     // A worktree's `.git` is a FILE pointing into the main repo; create it only if
     // it isn't there yet (reuse across re-runs).

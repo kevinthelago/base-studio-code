@@ -23,7 +23,7 @@
 use std::path::Path;
 
 use crate::platform::process::no_window;
-use crate::{repo_dir, worktree_slug, worktrees_dir};
+use crate::{parse_worktree_dir_name, repo_dir, worktree_dir_name, worktrees_dir};
 
 /// Directories that a build leaks into a worktree and that must be kept out of the worker's git
 /// status (and are dropped wholesale on teardown). Excluded via the worktree's `info/exclude` so the
@@ -113,8 +113,7 @@ pub(crate) fn remove_worktree_at(clone: &Path, wt: &Path) -> Result<(), String> 
 /// (`remove_worktree_at`). Idempotent: a worker that was never launched (no worktree) is `Ok(())`.
 pub(crate) fn remove_worktree(project_key: &str, repo: &str, agent_id: &str) -> Result<(), String> {
     let clone = repo_dir(project_key, repo);
-    let short = repo.rsplit('/').next().unwrap_or(repo);
-    let wt = worktrees_dir(project_key).join(format!("{short}--{}", worktree_slug(agent_id)));
+    let wt = worktrees_dir(project_key).join(worktree_dir_name(repo, agent_id));
     remove_worktree_at(&clone, &wt)
 }
 
@@ -260,8 +259,8 @@ pub(crate) fn reclaim_project_worktrees(project_key: &str) -> usize {
         // worktree_slug never produces `--`, and a repo short name can't contain `--` (it's the
         // part after the last `/`), so the FIRST `--` is the boundary.
         let name = entry.file_name().to_string_lossy().into_owned();
-        let clone = match name.split_once("--") {
-            Some((repo_short, _)) => repo_dir(project_key, repo_short),
+        let clone = match parse_worktree_dir_name(&name) {
+            Some((short, _)) => repo_dir(project_key, short),
             // No boundary (shouldn't happen) — remove the dir without an owning clone.
             None => std::path::PathBuf::new(),
         };
@@ -347,8 +346,8 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
             }
             let name = w.file_name().to_string_lossy().into_owned();
             // `<repoShort>--<slug>` → the owning clone (first `--` is the boundary).
-            let clone = match name.split_once("--") {
-                Some((repo_short, _)) => base_dir.join("projects").join(&key).join(repo_short),
+            let clone = match parse_worktree_dir_name(&name) {
+                Some((short, _)) => base_dir.join("projects").join(&key).join(short),
                 None => std::path::PathBuf::new(),
             };
             let disposable = hub_gone || worktree_is_disposable(&clone, &wt);

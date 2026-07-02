@@ -7,7 +7,8 @@
 
 pub(crate) use crate::platform::paths::{
     bsc_base_dir, discovery_dir_for, home_dir, is_published, legacy_draft_dir, nearest_existing_ancestor,
-    plan_dir_for, project_dir, repo_dir, worktrees_dir,
+    parse_worktree_dir_name, plan_dir_for, project_dir, repo_dir, worktree_dir_name,
+    worktrees_dir,
 };
 pub(crate) use crate::platform::git::{git_exclude, git_lines, git_ok, git_output, git_run};
 pub(crate) use crate::platform::process::no_window;
