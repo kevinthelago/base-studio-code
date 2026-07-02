@@ -11,7 +11,7 @@ use crate::project::plan_db;
 /// clear is undone within a tick.
 #[tauri::command]
 pub(crate) fn clear_all_plan_files() -> Result<u32, String> {
-    let projects = bsc_base_dir().join("projects");
+    let projects = projects_root();
     if !projects.exists() {
         return Ok(0);
     }

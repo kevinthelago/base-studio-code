@@ -15,7 +15,7 @@ use std::path::PathBuf;
 /// The single global skills DB. Mirrors the `bsc skill` CLI default (`$BSC_SKILL_DB` else this path),
 /// so the desktop app and every session resolve to the same file.
 fn db_path() -> PathBuf {
-    crate::bsc_base_dir().join("skills.db")
+    crate::skills_db()
 }
 
 fn open() -> Result<Store, String> {
