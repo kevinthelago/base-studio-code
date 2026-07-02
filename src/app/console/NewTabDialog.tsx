@@ -3,6 +3,7 @@ import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 
 /** The console grid layouts a new tab can open with. */
 export const LAYOUTS: string[] = ["1×1", "2×1", "1×2", "2×2", "3×2", "3×3"];
@@ -29,7 +30,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
       </>
     }>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div className="field">
+        <Box className="field">
           <label>Layout</label>
           <Row gap={6} align="stretch" wrap>
             {LAYOUTS.map((l) => {
@@ -53,7 +54,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                 >
                   <Grid cols={`repeat(${c}, 10px)`} rows={`repeat(${r}, 7px)`} gap={2}>
                     {Array.from({ length: c * r }).map((_, i) => (
-                      <div key={i} style={{
+                      <Box key={i} style={{
                         borderRadius: 1,
                         background: active ? "var(--accent)" : "var(--border)",
                       }} />
@@ -64,7 +65,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
               );
             })}
           </Row>
-        </div>
+        </Box>
       </form>
     </Dialog>
   );

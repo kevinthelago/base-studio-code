@@ -1,20 +1,21 @@
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
+import { Box } from "@/shared/ui/layout/Box";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
 export function SkillsPage() {
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   return (
-    <div style={{ maxWidth: 820 }}>
+    <Box style={{ maxWidth: 820 }}>
       <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Skills</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12 }}>
         How reusable agent skills are stored, packaged, and injected into sessions.
       </p>
 
       <Card title="Skills library">
-        <div style={prose}>
+        <Box style={prose}>
           <p style={{ margin: "0 0 10px 0" }}>
             A <strong>skill</strong> is a reusable markdown context block (prompt + bundled tools +
             guardrails) injected into an agent session. The library is a global SQLite store at{" "}
@@ -32,8 +33,8 @@ export function SkillsPage() {
             Skills screen.
           </p>
           <Button onClick={() => setWorkspace("skills")}>Open Skills library →</Button>
-        </div>
+        </Box>
       </Card>
-    </div>
+    </Box>
   );
 }

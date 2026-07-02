@@ -4,6 +4,8 @@ import { Titlebar } from "@/app/chrome/Titlebar";
 import { ConsoleWorkspace } from "@/app/console";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, ProjectsWorkspace,
   SkillsWorkspace, AgentsWorkspace, WorkspaceFallback,
@@ -21,9 +23,9 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
     case "projects":    return <ProjectsWorkspace pageOverride={section} />;
     default:
       return (
-        <div className="mono" style={{ padding: 24, color: "var(--fg-dim)" }}>
+        <Text as="div" mono tone="dim" style={{ padding: 24 }}>
           Unknown detached page: {page}
-        </div>
+        </Text>
       );
   }
 }
@@ -47,35 +49,35 @@ export function DetachedWindow() {
   // Detached page-section window: minimal chrome, just that page's section.
   if (detSection) {
     return (
-      <div className="app">
+      <Box className="app">
         <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
-        <div className="shell">
-          <div className="main">
-            <div className="page">
+        <Box className="shell">
+          <Box className="main">
+            <Box className="page">
               {hasHydrated && <Suspense fallback={<WorkspaceFallback />}>{renderDetachedSection(detSection.page, detSection.section)}</Suspense>}
-            </div>
-          </div>
-        </div>
-      </div>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
     );
   }
 
   // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console.
   const detachIdx = detachId !== null ? tabs.findIndex((t) => t.id === detachId) : -1;
   return (
-    <div className="app">
+    <Box className="app">
       <Titlebar workspace={detachIdx >= 0 ? (tabs[detachIdx]?.name ?? "Console") : "Console"} />
-      <div className="shell">
-        <div className="main">
-          <div className="page">
+      <Box className="shell">
+        <Box className="main">
+          <Box className="page">
             {hasHydrated && detachIdx >= 0 && (
               <Stack style={{ flex: 1, minHeight: 0 }}>
                 <ConsoleWorkspace tabIdxOverride={detachIdx} />
               </Stack>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
   );
 }

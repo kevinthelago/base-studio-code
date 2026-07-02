@@ -16,6 +16,8 @@ import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
@@ -759,18 +761,18 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         />
       )}
       {permsStale && (
-        <div className="mono" style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+        <Row className="mono" gap={8} style={{
+          padding: "6px 12px",
           fontSize: 11, color: "var(--accent)",
           background: "color-mix(in oklch, var(--accent), transparent 90%)",
           borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
         }}>
-          <span>⟳</span>
-          <span style={{ flex: 1, color: "var(--fg-muted)" }}>
+          <Text as="span">⟳</Text>
+          <Text tone="muted" style={{ flex: 1 }}>
             Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
-          </span>
+          </Text>
           <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
-        </div>
+        </Row>
       )}
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
           box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view

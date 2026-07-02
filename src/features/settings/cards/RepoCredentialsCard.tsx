@@ -5,6 +5,8 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 
 export function RepoCredentialsCard() {
@@ -38,17 +40,17 @@ export function RepoCredentialsCard() {
         />
         <Button disabled={!repo || !tok.trim()} onClick={assign} style={{ height: 34, whiteSpace: "nowrap" }}>assign</Button>
       </Row>
-      <div className="hint" style={{ marginTop: 8 }}>
+      <Box className="hint" style={{ marginTop: 8 }}>
         Create a fine-grained token limited to one repository at{" "}
-        <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>github.com/settings/tokens?type=beta</span>.
+        <Text as="span" mono size="sm" tone="accent">github.com/settings/tokens?type=beta</Text>.
         Stored locally · never logged.
-      </div>
+      </Box>
 
       {scoped.length > 0 && (
         <Stack gap={1} style={{ marginTop: 14, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-soft)" }}>
           {scoped.map((r, i) => (
             <Row key={r} gap={10} style={{ padding: "10px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", fontSize: 11.5 }}>
-              <span className="mono" style={{ flex: 1 }}>{r}</span>
+              <Text as="span" mono style={{ flex: 1 }}>{r}</Text>
               <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />scoped token</Chip>
               <Button variant="ghost" danger style={{ height: 24, fontSize: 10.5 }} onClick={() => setRepoGithubToken(r, null)}>remove</Button>
             </Row>

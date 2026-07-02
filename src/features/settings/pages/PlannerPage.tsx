@@ -12,6 +12,7 @@ import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
 
 /** A settings page sub-section header — the group label within a page (scaled-down page h2). */
 function Sub({ children }: { children: string }) {
@@ -71,9 +72,9 @@ export function PlannerPage() {
       />
 
       {notice && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--accent)", marginTop: -8, wordBreak: "break-all" }}>
+        <Text as="div" mono size={11} tone="accent" style={{ marginTop: -8, wordBreak: "break-all" }}>
           {notice}
-        </div>
+        </Text>
       )}
 
       {selectedStream && (

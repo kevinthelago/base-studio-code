@@ -2,6 +2,7 @@ import { useAppStore } from "@/store";
 import { ACCENT_PRESETS, accentVars } from "../lib/appearance";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 
 export function AccentColorCard() {
   const { accent, setAccent } = useAppStore();
@@ -29,7 +30,7 @@ export function AccentColorCard() {
                 color: on ? "var(--fg)" : "var(--fg-muted)",
               }}
             >
-              <span style={{
+              <Box as="span" style={{
                 width: 16, height: 16, borderRadius: "50%", background: color,
                 boxShadow: on ? "0 0 0 2px var(--bg-elev2), 0 0 0 3px " + color : "none",
               }} />

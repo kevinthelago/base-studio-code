@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { heatFill } from "../heatFill";
 import { formatHeatDate } from "../lib/githubSummary";
@@ -46,15 +48,15 @@ export function ActivityHeatmap({
     <Card style={{ padding: "14px 16px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Activity · last 28 weeks</h3>
-        <span className="hint">all contributions · GitHub calendar</span>
+        <Box as="span" className="hint">all contributions · GitHub calendar</Box>
         <Spacer />
-        <span className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
+        <Box as="span" className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
           less
           {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
-            <span key={i} style={{ width: 10, height: 10, borderRadius: 2, display: "inline-block", background: heatFill(v) }} />
+            <Box as="span" key={i} style={{ width: 10, height: 10, borderRadius: 2, display: "inline-block", background: heatFill(v) }} />
           ))}
           more
-        </span>
+        </Box>
       </Row>
       <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: "block", width: "100%", overflow: "visible" }}>
         {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
@@ -88,11 +90,11 @@ export function ActivityHeatmap({
         )}
       </svg>
       <Row className="mono" justify="between" align="stretch" style={{ marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
-        <span>28 weeks ago</span><span>today</span>
+        <Text>28 weeks ago</Text><Text>today</Text>
       </Row>
       <Row className="mono" gap={24} align="stretch" style={{ marginTop: 12, fontSize: 10.5, color: "var(--fg-muted)" }}>
-        <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalContribs}</b> contributions</span>
-        <span><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalMerged}</b> PRs merged</span>
+        <Text><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalContribs}</b> contributions</Text>
+        <Text><b style={{ color: "var(--fg)" }}>{loading ? "…" : totalMerged}</b> PRs merged</Text>
       </Row>
     </Card>
   );

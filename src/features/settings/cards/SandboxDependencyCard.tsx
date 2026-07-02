@@ -1,6 +1,8 @@
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { useAppStore } from "@/store";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
@@ -21,16 +23,17 @@ export function SandboxDependencyCard() {
   return (
     <Card title="OS sandbox (Bash isolation)">
       <Row align="start" gap={8} style={{ fontSize: 12, lineHeight: 1.5 }}>
-        <span
+        <Box
+          as="span"
           style={{
             width: 8, height: 8, borderRadius: "50%", marginTop: 4, flexShrink: 0,
             background: sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)",
           }}
           aria-hidden
         />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <Box style={{ flex: 1, minWidth: 0 }}>
           <b>{sandbox.ready ? "Active" : "Not set up"}</b>{" "}
-          <span style={{ color: "var(--fg-muted)" }}>— {sandbox.detail}</span>
+          <Text tone="muted">— {sandbox.detail}</Text>
           {!sandbox.ready && sandbox.autoInstallable && (
             <Stack gap={6} style={{ marginTop: 8 }}>
               <Row gap={8} wrap>
@@ -46,13 +49,13 @@ export function SandboxDependencyCard() {
                   {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
                 </button>
                 {installMsg && !installing && (
-                  <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>
+                  <Text tone="muted" size={11}>{installMsg}</Text>
                 )}
               </Row>
               {installing && (
-                <div aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
-                </div>
+                <Box aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
+                  <Box style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
+                </Box>
               )}
               {installLog.length > 0 && (
                 <pre
@@ -68,7 +71,7 @@ export function SandboxDependencyCard() {
               )}
             </Stack>
           )}
-        </div>
+        </Box>
       </Row>
     </Card>
   );

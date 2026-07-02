@@ -1,3 +1,7 @@
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
+
 export interface FileRow {
   name: string;
   path: string;
@@ -16,22 +20,20 @@ interface FilesViewProps {
 
 export function FilesView({ small = false, cwd, tree, active }: FilesViewProps) {
   return (
-    <div className="mono" style={{
+    <Box className="mono" style={{
       flex: 1, minHeight: 0, overflow: "auto",
       padding: small ? "6px 4px" : "8px 6px",
       fontSize: small ? 10 : 11, color: "var(--fg-muted)",
     }}>
-      <div style={{
+      <Row gap={6} style={{
         padding: "2px 8px 6px", color: "var(--fg-dim)", fontSize: small ? 9.5 : 10,
-        display: "flex", alignItems: "center", gap: 6,
       }}>
-        <span>{cwd}</span>
-        <span style={{ flex: 1 }} />
-        <span style={{ color: "var(--accent)" }}>± 4</span>
-      </div>
+        <Text>{cwd}</Text>
+        <Box as="span" style={{ flex: 1 }} />
+        <Text tone="accent">± 4</Text>
+      </Row>
       {tree.map((row, i) => (
-        <div key={i} style={{
-          display: "flex", alignItems: "center", gap: 4,
+        <Row key={i} gap={4} style={{
           padding: "2px 8px",
           paddingLeft: 8 + (row.depth ?? 0) * 12,
           background: row.path === active ? "var(--bg-elev)" : "transparent",
@@ -39,29 +41,29 @@ export function FilesView({ small = false, cwd, tree, active }: FilesViewProps) 
           color: row.dir ? "var(--fg)" : "var(--fg-muted)",
           cursor: "pointer",
         }}>
-          <span style={{ width: 10, color: "var(--fg-dim)", visibility: row.dir ? "visible" : "hidden" }}>
+          <Text tone="dim" style={{ width: 10, visibility: row.dir ? "visible" : "hidden" }}>
             {row.open ? "▾" : "▸"}
-          </span>
-          <span style={{
+          </Text>
+          <Text style={{
             color: row.dir ? "var(--accent)" : "var(--fg-muted)",
             opacity: row.dir ? 0.9 : 0.7,
           }}>
             {row.dir ? (row.open ? "⌹" : "⌷") : "·"}
-          </span>
-          <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          </Text>
+          <Text style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {row.name}
-          </span>
+          </Text>
           {row.status && (
-            <span style={{
-              fontSize: small ? 9 : 9.5, padding: "0 4px", borderRadius: 3,
+            <Text size={small ? 9 : 9.5} style={{
+              padding: "0 4px", borderRadius: 3,
               color: row.status === "M" ? "var(--accent)"
                 : row.status === "A" ? "var(--success)"
                 : row.status === "??" ? "var(--fg-dim)" : "var(--fg-muted)",
               background: "var(--bg-elev2)",
-            }}>{row.status}</span>
+            }}>{row.status}</Text>
           )}
-        </div>
+        </Row>
       ))}
-    </div>
+    </Box>
   );
 }

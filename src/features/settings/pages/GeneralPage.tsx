@@ -10,6 +10,7 @@ import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
 import { ConfigBundleCard } from "../cards/ConfigBundleCard";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
 
 /** A settings page sub-section header — the group label within a page (scaled-down page h2). */
 function Sub({ children }: { children: string }) {
@@ -38,8 +39,8 @@ export function GeneralPage() {
       <Sub>Required dependencies</Sub>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 -4px", fontSize: 12, lineHeight: 1.55 }}>
         The host tools the app and its agents rely on. <b>Nothing here is installed automatically</b> —
-        each shows its status and how to install it, and you choose. The <span className="mono">claude</span>{" "}
-        row is for the default Claude Code runtime; the bundled <span className="mono">bsc-agent</span> needs no CLI.
+        each shows its status and how to install it, and you choose. The <Text as="span" mono>claude</Text>{" "}
+        row is for the default Claude Code runtime; the bundled <Text as="span" mono>bsc-agent</Text> needs no CLI.
       </p>
       <DiagnosticsCard />
       <SandboxDependencyCard />

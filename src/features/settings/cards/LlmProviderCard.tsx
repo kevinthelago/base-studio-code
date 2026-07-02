@@ -6,6 +6,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Button } from "@/shared/ui/controls/Button";
+import { Box } from "@/shared/ui/layout/Box";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],
@@ -70,13 +71,13 @@ export function LlmProviderCard() {
   return (
     <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
       <Grid cols="1.4fr 1fr" gap={14}>
-        <div className="field">
+        <Box className="field">
           <label>Provider</label>
           <select className="input" value={llmProvider} onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}>
             {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
-        </div>
-        <div className="field">
+        </Box>
+        <Box className="field">
           <label>Model</label>
           <input
             className="input"
@@ -90,9 +91,9 @@ export function LlmProviderCard() {
               {models.map((m) => <option key={m} value={m} />)}
             </datalist>
           )}
-        </div>
+        </Box>
         {isLocal && (
-          <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <Box className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Base URL</label>
             <Row gap={8} align="stretch">
               <input
@@ -105,15 +106,15 @@ export function LlmProviderCard() {
                 {testing ? "testing…" : "test"}
               </Button>
             </Row>
-            <div className="hint">
+            <Box className="hint">
               {testMsg || (llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama).")}
-            </div>
-          </div>
+            </Box>
+          </Box>
         )}
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
+        <Box className="field" style={{ gridColumn: "1 / -1" }}>
           <label>API key</label>
           {(llmProvider === "local" || llmProvider === "ollama") ? (
-            <div className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</div>
+            <Box className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</Box>
           ) : (
             <>
               <Row gap={8} align="stretch">
@@ -127,11 +128,11 @@ export function LlmProviderCard() {
                 <Button>show</Button>
                 <Button>test</Button>
               </Row>
-              <div className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</div>
+              <Box className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</Box>
             </>
           )}
-        </div>
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
+        </Box>
+        <Box className="field" style={{ gridColumn: "1 / -1" }}>
           <label>Run the agent fleet on</label>
           {/* A local/ollama provider can't run on Claude Code, so it forces bsc-agent — the planner,
               workers, and director all run on the selected LLM. Lock the control + say so. */}
@@ -144,21 +145,21 @@ export function LlmProviderCard() {
             <option value="claude">Claude Code (default)</option>
             <option value="bsc-agent">bsc-agent — the provider/model above</option>
           </select>
-          <div className="hint">
+          <Box className="hint">
             {providerNeedsBscAgent(llmProvider)
               ? "Locked to bsc-agent — the selected local provider runs the planner, workers, and director on the LLM above, with the same role permissions, MCP, and context."
               : "Planner, workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context."}
-          </div>
-        </div>
-        <div className="field">
+          </Box>
+        </Box>
+        <Box className="field">
           <label>Per-agent context cap</label>
           <input className="input" defaultValue="64000" />
-        </div>
-        <div className="field">
+        </Box>
+        <Box className="field">
           <label>Monthly spend cap</label>
           <input className="input" defaultValue="$150" />
-        </div>
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
+        </Box>
+        <Box className="field" style={{ gridColumn: "1 / -1" }}>
           <label>Extended thinking</label>
           <Row gap={6} align="stretch">
             {(["off", "auto", "always"] as const).map((v, i) => (
@@ -170,8 +171,8 @@ export function LlmProviderCard() {
               }}>{v}</Button>
             ))}
           </Row>
-          <div className="hint">Off for haiku regardless of this setting.</div>
-        </div>
+          <Box className="hint">Off for haiku regardless of this setting.</Box>
+        </Box>
       </Grid>
     </Card>
   );

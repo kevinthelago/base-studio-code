@@ -6,6 +6,8 @@ import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface LogFileInfo {
   stream: string; label: string; path: string;
@@ -61,16 +63,16 @@ export function LogsInventoryCard({
       <Stack gap={0}>
         {files.map((f) => (
           <Row key={f.stream} gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{f.label}</div>
-              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{f.label}</Text>
+              <Text as="div" mono size={10.5} tone="dim" style={{ marginTop: 2 }}>
                 {f.exists ? `${fmtBytes(f.sizeBytes)} · ${fmtAgo(f.mtimeMs)}` : "not created yet"}
-              </div>
-            </div>
+              </Text>
+            </Box>
             {f.text && <Button size="sm" style={selectedStream === f.stream ? { borderColor: "var(--accent)" } : undefined} onClick={() => onViewStream(f.stream)}>View</Button>}
             {f.exists && <Button size="sm" onClick={() => void exportStream(f.stream)}>Export</Button>}
             {f.stream === "perf"
-              ? <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
+              ? <Text as="span" mono size="xs" tone="dim">retention in Performance →</Text>
               : <ConfirmButton size="sm" label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
           </Row>
         ))}

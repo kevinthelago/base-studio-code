@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
+import { Box } from "@/shared/ui/layout/Box";
 import { ACHIEVEMENTS, type AchievementDef } from "@/shared/lib/core/achievements";
 import achievementSound from "@/assets/achievement-sound.mp3";
 import "./achievement.css";
@@ -52,14 +53,14 @@ function Achievement({ def }: { def: AchievementDef }) {
 
   if (phase === "hidden") return null;
   return (
-    <div className="achv-wrap" aria-hidden>
+    <Box className="achv-wrap" aria-hidden>
       <img
         src={def.icon}
         alt={`${def.title} achievement unlocked`}
         className={"achv " + phase}
         draggable={false}
       />
-    </div>
+    </Box>
   );
 }
 

@@ -5,6 +5,8 @@ import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 
 /**
@@ -20,7 +22,7 @@ export function GitHubEmpty() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
-    <section style={{
+    <Box as="section" style={{
       flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
       background: "var(--bg-canvas)", padding: "40px 32px", overflow: "auto",
     }}>
@@ -42,12 +44,12 @@ export function GitHubEmpty() {
               onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
               style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
             >
-              <span className="mono" style={{ fontSize: 15 }}>⎇</span>
+              <Text as="span" mono size={15}>⎇</Text>
               Connect with GitHub
             </Button>
           }
           extra={
-            <div style={{
+            <Box style={{
               marginTop: 20, padding: "12px 14px",
               borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             }}>
@@ -57,13 +59,13 @@ export function GitHubEmpty() {
                   <Chip key={s}>{s}</Chip>
                 ))}
               </Row>
-              <div style={{ marginTop: 8, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5 }}>
+              <Box style={{ marginTop: 8, fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5 }}>
                 Create a token at{" "}
-                <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
+                <Text as="span" mono size={11} tone="accent">
                   github.com/settings/tokens
-                </span>
-              </div>
-            </div>
+                </Text>
+              </Box>
+            </Box>
           }
         />
 
@@ -81,21 +83,21 @@ export function GitHubEmpty() {
               padding: "12px 14px",
               background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
             }}>
-              <span className="mono" style={{
+              <Box as="span" className="mono" style={{
                 width: 20, height: 20, borderRadius: 5,
                 background: "var(--bg-elev2)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "var(--accent)", fontWeight: 700, fontSize: 11,
                 marginTop: 1,
-              }}>{i + 1}</span>
-              <div>
-                <div className="mono-value">{h}</div>
-                <div style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.55, marginTop: 2 }}>{b}</div>
-              </div>
+              }}>{i + 1}</Box>
+              <Box>
+                <Box className="mono-value">{h}</Box>
+                <Box style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.55, marginTop: 2 }}>{b}</Box>
+              </Box>
             </Grid>
           ))}
         </Stack>
       </Grid>
-    </section>
+    </Box>
   );
 }
