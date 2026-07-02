@@ -9,6 +9,8 @@
 import type { Workflow } from "./workflow";
 import { type WorkflowRun, type ConductResult, type StageLaunch, startRun, conduct } from "./conductor";
 import type { CoordEvent } from "./coordination";
+import stageGuidanceEmbedded from "@data/fleet/stage-guidance.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** The `contract:` ref name a stage reports against. `::` separates item from stage so an
  *  item ref containing `:` (e.g. `#42`) round-trips. */
@@ -78,16 +80,11 @@ export function driveOnEvent(
 // the prior stage's output (seed), and -- critically -- how to report its outcome so the
 // conductor advances the workflow (emit a #199 event against its stage ref).
 
-const STAGE_GUIDANCE: Record<string, string> = {
-  implement: "Make the change for this work item within your ownership boundary, then commit. Do not merge.",
-  fix: "A prior build/test run failed (see below). Fix the cause, then commit. Do not merge.",
-  "build-test": "Run the build and the test suite. Report pass or fail. Do NOT edit code or merge.",
-  review: "Review the change for correctness and quality. Decide approve or request-changes. Do NOT edit or merge.",
-  integrate: "Merge the change and update the board. Do NOT write code.",
-  spike: "Explore the problem and produce a throwaway proof-of-concept + findings. Do not merge.",
-  research: "Research the problem and write up what you found. Do not edit code.",
-  plan: "Turn the research into a concrete implementation plan. Do not edit code.",
-};
+// The stage→guidance MAP is externalized to `@data/fleet/stage-guidance.json` (#2145, epic #2027 tail) —
+// editable without touching code + part of the exportable config bundle; the config-dir copy (#2047)
+// overlays the embedded default via `overlayFile`. Only the literal guidance text moved; the prompt
+// COMPOSITION below (role/task/seed + the bsc-landed/bsc-failed signalling) stays in TS.
+const STAGE_GUIDANCE: Record<string, string> = overlayFile("fleet/stage-guidance.json", stageGuidanceEmbedded);
 
 /** Compose the startup prompt for a stage session: role, task, seed, and the exact
  *  `bsc-landed`/`bsc-failed` commands that signal the outcome to the conductor. */
