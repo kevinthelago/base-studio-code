@@ -11,6 +11,16 @@ use crate::PerfSpan;
 // and the cached GET keeps its ETag/304 machinery — they reuse the header + message helpers but
 // not the full request wrappers.
 
+/// Reject an empty GitHub token before any network call. Every token-bearing command
+/// (`github_graphql`/`post`/`put`/`patch`/`delete`/`request` + `gist_create`/`gist_update`)
+/// short-circuits with this one error string when the frontend passes no token.
+fn require_token(token: &str) -> Result<(), String> {
+    if token.is_empty() {
+        return Err("No GitHub token provided.".to_string());
+    }
+    Ok(())
+}
+
 /// Apply the four standard GitHub REST headers — auth, `Accept`, API version, and `User-Agent` —
 /// shared by every REST request. (GraphQL builds its own header set.)
 fn gh_std_headers(req: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
@@ -85,9 +95,7 @@ pub(crate) async fn github_graphql(
     force: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_graphql");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     let force = force.unwrap_or(false);
     // GraphQL has no ETag, so the cache is purely time-windowed (TTL): within
     // max_age serve the cached `data` with no network call; otherwise re-POST.
@@ -148,9 +156,7 @@ pub(crate) async fn github_post(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_post");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     gh_request(reqwest::Method::POST, &path, &token, &body, &format!("github_post {path}")).await
 }
 
@@ -161,9 +167,7 @@ pub(crate) async fn github_put(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_put");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     gh_request(reqwest::Method::PUT, &path, &token, &body, &format!("github_put {path}")).await
 }
 
@@ -178,9 +182,7 @@ pub(crate) async fn github_patch(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_patch");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     gh_request(reqwest::Method::PATCH, &path, &token, &body, &format!("github_patch {path}")).await
 }
 
@@ -191,9 +193,7 @@ pub(crate) async fn github_patch(
 #[tauri::command]
 pub(crate) async fn github_delete(token: String, path: String) -> Result<(), String> {
     let _perf = PerfSpan::new("github_delete");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     let url = format!("https://api.github.com/{path}");
     let response = gh_std_headers(
         crate::platform::http::client().request(reqwest::Method::DELETE, url),
@@ -288,9 +288,7 @@ pub(crate) async fn github_request(
     force: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("github_request");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     let force = force.unwrap_or(false);
 
     // Within max_age: serve the cached body with no network call. Otherwise grab
@@ -362,9 +360,7 @@ pub(crate) async fn gist_create(
     public: bool,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("gist_create");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     if files.is_empty() {
         return Err("gist_create: no files to publish".to_string());
     }
@@ -396,9 +392,7 @@ pub(crate) async fn gist_update(
     description: String,
 ) -> Result<serde_json::Value, String> {
     let _perf = PerfSpan::new("gist_update");
-    if token.is_empty() {
-        return Err("No GitHub token provided.".to_string());
-    }
+    require_token(&token)?;
     if id.trim().is_empty() {
         return Err("gist_update: no gist id".to_string());
     }
@@ -424,8 +418,15 @@ pub(crate) async fn gist_update(
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_is_fresh, apply_github_response, gh_error_message, CachedGet};
+    use super::{cache_is_fresh, apply_github_response, gh_error_message, require_token, CachedGet};
     use std::collections::HashMap;
+
+    #[test]
+    fn require_token_rejects_only_empty() {
+        // Empty token → the one centralized error string; any non-empty token passes.
+        assert_eq!(require_token(""), Err("No GitHub token provided.".to_string()));
+        assert_eq!(require_token("ghp_x"), Ok(()));
+    }
 
     #[test]
     fn gh_error_message_prefers_message_then_fallback() {
