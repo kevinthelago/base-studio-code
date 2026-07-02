@@ -14,7 +14,7 @@ import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly } from "@/app/console/lib/sessionLaunch";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
@@ -525,6 +525,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
         startupPrompt: sandboxed ? undefined : (bakesPrompt ? startupPrompt : undefined),
+        // #2052: on a crash-restore remount, suppress re-submitting the baked startup prompt /
+        // checkpoint note into the resumed (`--continue`) conversation — otherwise Claude submits
+        // it into the restored session, re-running or (if it was a `/clear`) wiping its history.
+        // Only true on the crash-recovery relaunch (restoreRequested); normal launches deliver.
+        startupPromptFreshOnly: resolveStartupPromptFreshOnly(st, paneId, isClaudeProvider),
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
