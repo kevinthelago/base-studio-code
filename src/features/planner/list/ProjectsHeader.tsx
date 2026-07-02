@@ -97,6 +97,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
         <Text tone="dim">repos</Text>
 
         {multi ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke borderless disclosure toggle (not a .btn-family button)
           <button
             onClick={() => setExpanded(e => !e)}
             className="mono"

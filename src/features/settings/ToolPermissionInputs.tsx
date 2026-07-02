@@ -39,6 +39,7 @@ export function ChipInput({
 }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {
   return (
     <Row gap={5}>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline datalist-backed entry (fixed width/height) beside a custom "+ add"; a TextField .field wrapper would break the Row */}
       <input
         className="input mono"
         value={value}

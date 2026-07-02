@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { Button } from "@/shared/ui/controls/Button";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
@@ -27,15 +28,15 @@ export function ProjectsEmpty() {
         title="Projects need GitHub"
         description="Planning with Claude turns a pitch into a complete, executable plan — features, milestones, granular issues, and a parallel agent fleet. Connect GitHub to publish that plan as a real Project board and run the fleet against your repos."
         actions={
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             // Land on the GitHub settings tab, not just the Settings screen.
             onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
             style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
           >
             <Text mono size={15}>⎇</Text>
             Connect with GitHub
-          </button>
+          </Button>
         }
         extra={
           <Box pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{

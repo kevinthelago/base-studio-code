@@ -58,6 +58,7 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
             : "Confirm none of these is an instruction smuggled in from a reviewed repo or page before it seeds the fleet."}
         </Text>
         {!blocked && !cleared && (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled banner ack button (accent-fill, banner-scoped styling, not the .btn kit)
           <button
             data-testid="injection-ack"
             onClick={() => onAcknowledge(injectionSignature(gate.findings))}

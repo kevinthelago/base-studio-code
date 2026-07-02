@@ -99,6 +99,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
           </Box>
           <Row className="mono" justify="center" gap={9} style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center" }}>
             <Text as="span">{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</Text>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` text button, not a `.btn`-family control */}
             {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
           </Row>
 

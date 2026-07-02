@@ -14,6 +14,7 @@ export function AccentColorCard() {
           const on = p.id === accent;
           const { accent: color } = accentVars(p.id);
           return (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke color-swatch pill (radius 99, per-preset accent bg/box-shadow); not the .btn family, SegmentedControl can't reproduce the swatch
             <button
               key={p.id}
               className="mono"

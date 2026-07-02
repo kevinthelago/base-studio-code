@@ -72,6 +72,7 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
           {chip("fail", "fail", fail)}
         </Box>
         <Box as="span" className="lbl" style={{ marginLeft: 14 }}>automation</Box>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
         <select className="input" style={{ width: 240 }} value={sched} onChange={e => setSched(e.target.value)}>
           <option value="all">all automations</option>
           {automations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}

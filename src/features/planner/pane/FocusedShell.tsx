@@ -22,6 +22,7 @@ export function StagePromptHelp({ prompts, onInject }: {
   if (prompts.length === 0) return null;
   return (
     <>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke floating prompt-helper toggle (absolute-positioned, open-state accent-tinted inline styling, not the .btn/IconButton kit) */}
       <button
         className="mono"
         title="Inject a prompt for this stage"
@@ -49,6 +50,7 @@ export function StagePromptHelp({ prompts, onInject }: {
               textTransform: "uppercase",
             }}>Inject a prompt for this stage</Text>
             {prompts.map((p, i) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke prompt-list menu item (block card-styled, text-left inline styling, not the .btn kit)
               <button
                 key={i}
                 onClick={() => { onInject(p.text); setOpen(false); }}
@@ -221,6 +223,7 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
       <Box as="span" style={{ flex: 1 }} />
       {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
       {action.canSkip && onSkip && (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit)
         <button
           className="nav-btn"
           onClick={onSkip}
@@ -229,6 +232,7 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
           skip stage →
         </button>
       )}
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit) */}
       <button
         className={"nav-btn" + (primary ? " primary" : "")}
         disabled={!action.enabled}

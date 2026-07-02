@@ -11,6 +11,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
@@ -221,11 +222,13 @@ export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onC
       <Box className="kv-list">
         {env.map(([k, v], i) => (
           <Box className="kv-row" key={i}>
+            {/* eslint-disable-next-line no-restricted-syntax -- inline kv-row key input (.input.k, part of a key/value/remove row); TextField's .field wrapper would change layout */}
             <input
               className="input k"
               value={k}
               onChange={ev => onChange(env.map((row, j) => j === i ? [ev.target.value, row[1]] : row))}
             />
+            {/* eslint-disable-next-line no-restricted-syntax -- inline kv-row value input (part of a key/value/remove row); TextField's .field wrapper would change layout */}
             <input
               className="input"
               value={v}
@@ -257,10 +260,7 @@ export function DrawerBody({ item, kindLabel, projects, onName, onSetProjects, o
 }) {
   return (
     <>
-      <Box className="field">
-        <label>name</label>
-        <input className="input" value={item.name} onChange={ev => onName(ev.target.value)} />
-      </Box>
+      <TextField label="name" value={item.name} onChange={onName} />
 
       <Box className="dr-stat">
         <Text as="div" className="k">status</Text><Text as="div" className="v" style={{ color: item.enabled ? "var(--success)" : "var(--fg-dim)" }}>{item.enabled ? "enabled" : "disabled"}</Text>

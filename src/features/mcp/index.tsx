@@ -24,6 +24,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { TextField } from "@/shared/ui/controls/Field";
 import "./mcp.css";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -152,6 +153,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     const items = filterCatalog(browsableCatalog(mcpServers), search);
     return (
       <>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar search box in the SectionHeader right slot; TextField's .field wrapper would change the header layout */}
         <SectionHeader title="Browse" hint="First-party and third-party MCP servers you can add with one click." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <Box className="catalog">
           {items.map(c => (
@@ -220,13 +222,13 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
             </Box>
             {selected.transport === "http"
               ? (
-                <Box className="field"><label>endpoint URL</label>
-                  <input className="input" value={selected.url ?? ""} onChange={ev => updateMcpServer(selected.id, { url: ev.target.value })} />
-                </Box>
+                <TextField label="endpoint URL" value={selected.url ?? ""} onChange={url => updateMcpServer(selected.id, { url })} />
               ) : (
                 <Box className="field"><label>command</label>
                   <Row gap={6} align="stretch">
+                    {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="command" value={selected.command ?? ""} onChange={ev => updateMcpServer(selected.id, { command: ev.target.value })} style={{ flex: "0 0 120px" }} />
+                    {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="args" value={selected.args ?? ""} onChange={ev => updateMcpServer(selected.id, { args: ev.target.value })} style={{ flex: 1 }} />
                   </Row>
                 </Box>
@@ -307,6 +309,7 @@ export function HooksView() {
     const items = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : available;
     return (
       <>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar search box in the SectionHeader right slot; TextField's .field wrapper would change the header layout */}
         <SectionHeader title="Add from catalog" hint="First-party hooks." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
         <Box className="catalog">
           {items.map(c => (
@@ -353,15 +356,9 @@ export function HooksView() {
             onSetProjects={ids => setHookProjects(selected.id, ids)}
             onSetEnv={env => updateHook(selected.id, { env })}
           >
-            <Box className="field"><label>event</label>
-              <input className="input" placeholder="PreToolUse | PostToolUse | Stop …" value={selected.event ?? ""} onChange={ev => updateHook(selected.id, { event: ev.target.value })} style={{ width: 240 }} />
-            </Box>
-            <Box className="field"><label>matcher</label>
-              <input className="input" placeholder="optional tool matcher (regex)" value={selected.matcher ?? ""} onChange={ev => updateHook(selected.id, { matcher: ev.target.value })} />
-            </Box>
-            <Box className="field"><label>command</label>
-              <input className="input" placeholder="command to run" value={selected.command ?? ""} onChange={ev => updateHook(selected.id, { command: ev.target.value })} />
-            </Box>
+            <TextField label="event" placeholder="PreToolUse | PostToolUse | Stop …" value={selected.event ?? ""} onChange={v => updateHook(selected.id, { event: v })} style={{ width: 240 }} />
+            <TextField label="matcher" placeholder="optional tool matcher (regex)" value={selected.matcher ?? ""} onChange={v => updateHook(selected.id, { matcher: v })} />
+            <TextField label="command" placeholder="command to run" value={selected.command ?? ""} onChange={v => updateHook(selected.id, { command: v })} />
           </DrawerBody>
         )}
       />

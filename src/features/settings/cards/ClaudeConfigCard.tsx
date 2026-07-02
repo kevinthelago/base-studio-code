@@ -200,6 +200,7 @@ export function ClaudeConfigCard() {
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
       }}>
         <Box as="span" className="mono-label">profile</Box>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline select in a horizontal profile bar; a SelectField .field stack would break the Row layout */}
         <select
           value={activeProfileId ?? ""}
           onChange={(e) => {
@@ -231,6 +232,7 @@ export function ClaudeConfigCard() {
           >{activeProfileId ? "update profile" : "save as profile…"}</Button>
         ) : (
           <Row gap={6}>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline save-dialog input (fixed width/height) beside Buttons in a Row; a TextField .field wrapper would break the layout */}
             <input
               className="input mono"
               autoFocus
@@ -276,6 +278,7 @@ export function ClaudeConfigCard() {
               <Spacer />
               <Text as="span" tone="dim">{targetLabel}</Text>
             </Row>
+            {/* eslint-disable-next-line no-restricted-syntax -- no shared <textarea> primitive */}
             <textarea
               className="mono"
               value={instructions}

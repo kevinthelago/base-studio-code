@@ -4,6 +4,7 @@
 // files to the right repo is the planner's job (next slice); this is the intake surface.
 
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -149,6 +150,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
           <Box as="span" className="hint">or click to browse a folder — images, SVG, components, markup, anything</Box>
           {/* The drop box IS the browse affordance: clicking it opens the native folder picker
               (webkitdirectory is set on this input via the effect above). Files can also be dragged in. */}
+          {/* eslint-disable-next-line no-restricted-syntax -- native file-picker input (type=file + imperative webkitdirectory); no primitive covers it */}
           <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
 
@@ -165,8 +167,8 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 <Text as="span" mono size={9.5} tone="dim">{(e.size / 1024).toFixed(1)}k</Text>
               </Row>
             ))}
-            <button
-              className="btn primary"
+            <Button
+              variant="primary"
               style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
               disabled={busy}
               onClick={() => {
@@ -179,7 +181,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 confirmPlanSection(projectKey, "ui");
                 setRouted(true);
               }}
-            >Confirm design staged →</button>
+            >Confirm design staged →</Button>
             {routed && (
               <Text as="div" className="hint" tone="success">
                 Design staged. On the next triage, only the files that changed get routed to the owning repo(s).

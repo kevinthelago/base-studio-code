@@ -210,6 +210,7 @@ export function SourceBody({ projectId, onInject }: {
             </Text>
           </Row>
           <Row gap={9}>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled accent CTA (not a `.btn`); Button would change rendering */}
             <button data-testid="proposed-confirm" onClick={confirmProposed} style={{ fontFamily: "var(--sans)", fontSize: 12, fontWeight: 600, color: "oklch(0.20 0.04 70)", background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "7px 13px", cursor: "pointer" }}>
               Confirm {proposedPending.length} source{proposedPending.length !== 1 ? "s" : ""}
             </button>
@@ -225,6 +226,7 @@ export function SourceBody({ projectId, onInject }: {
         style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", padding: "9px 10px", border: "1px dashed var(--border)", borderRadius: "var(--r-md)", background: "var(--bg-elev)" }}
       >
         <Text as="span" size={13} weight={600} tone="accent">+</Text>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex form row; TextField's .field wrapper would change layout */}
         <input
           data-testid="add-source-name"
           value={newName}
@@ -233,6 +235,7 @@ export function SourceBody({ projectId, onInject }: {
           onChange={(e) => setNewName(e.target.value)}
           style={{ flex: "2 1 180px", minWidth: 0, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", outline: "none", fontFamily: "var(--sans)", fontSize: 12.5, color: "var(--fg)" }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex form row; TextField's .field wrapper would change layout */}
         <input
           data-testid="add-source-url"
           value={newUrl}
@@ -241,6 +244,7 @@ export function SourceBody({ projectId, onInject }: {
           onChange={(e) => setNewUrl(e.target.value)}
           style={{ flex: "1 1 160px", minWidth: 0, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", outline: "none", fontFamily: MONO, fontSize: 11.5, color: "var(--fg)" }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled accent submit CTA (not a `.btn`); Button would change rendering */}
         <button
           data-testid="add-source-submit"
           type="submit"
@@ -330,6 +334,7 @@ export function SourceBody({ projectId, onInject }: {
             {mappingConfirmed
               ? <Text as="span" data-testid="mapping-confirmed" mono size={10} tone="success">✓ mapping confirmed</Text>
               : (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled accent CTA (not a `.btn`); Button would change rendering
                 <button data-testid="confirm-mapping" onClick={() => setConfirmedSig(modelSig)} style={{ fontFamily: "var(--sans)", fontSize: 11.5, fontWeight: 600, color: "oklch(0.20 0.04 70)", background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "6px 12px", cursor: "pointer" }}>Confirm mapping</button>
               )}
           </Row>

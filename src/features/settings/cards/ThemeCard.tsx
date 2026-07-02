@@ -25,6 +25,7 @@ export function ThemeCard() {
     <Card title="Theme">
       <Row gap={8} align="stretch">
         {(["dark", "light"] as const).map((t) => (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke accent pill toggle with custom on-state bg/color; not the .btn family, SegmentedControl's .seg CSS would change rendering
           <button
             key={t}
             className="mono"

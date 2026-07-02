@@ -44,7 +44,9 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
     <Grid gap={8} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, padding: "10px 12px", background: "var(--bg-elev)" }}>
       {editing ? (
         <>
+          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
           <input className="input" value={mistake} onChange={(e) => setMistake(e.target.value)} placeholder="what went wrong" style={{ fontSize: 12 }} />
+          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
           <input className="input" value={rule} onChange={(e) => setRule(e.target.value)} placeholder="the corrective rule" style={{ fontSize: 12 }} />
         </>
       ) : (

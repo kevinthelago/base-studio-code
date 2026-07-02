@@ -119,6 +119,7 @@ export function McpAnalyticsTab() {
           {errCount > 0 && <Text as="span" mono size={10} tone="danger">{errCount} errors</Text>}
           <Row inline align="stretch" style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {(["all", "ok", "errors"] as const).map((f) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented filter (custom bg/color/border container); Button or SegmentedControl would change the rendering
               <button
                 key={f}
                 onClick={() => setFilter(f)}

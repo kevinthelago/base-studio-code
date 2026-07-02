@@ -34,6 +34,7 @@ import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -227,6 +228,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {/* KPI digest (collapsible) */}
           <Box bg="var(--bg-canvas)" style={{ borderBottom: "1px solid var(--border-soft)"}}>
             <Row gap={18} style={{ padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless disclosure toggle (chevron + label), not a .btn control */}
               <button onClick={() => setDigestOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
                 <Text as="span" size={9} style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none" }}>▸</Text>
                 <Text as="span" mono size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</Text>
@@ -275,12 +277,14 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
             <Row gap={8} style={{ flex: 1, maxWidth: 440, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
               <Text as="span" tone="dim" size={13}>⌕</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
             </Row>
             <Text as="span" mono size={11} tone="muted">{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
             <Box as="span" style={{ flex: 1 }} />
             <Row gap={6} style={{ position: "relative" }}>
               <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke dropdown trigger with a custom popover menu, not a .btn control */}
               <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></button>
               {sortOpen && (
                 <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
@@ -293,6 +297,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
             </Row>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke toggle button with active-state inline styling, not a .btn control */}
             <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
           </Row>
 
@@ -305,6 +310,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <Row gap={6} style={{ marginBottom: 8 }}>
                   <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>⬡ Groups</Text>
                   <Box as="span" style={{ flex: 1 }} />
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless text link in a facet header, not a .btn control */}
                   <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
                 </Row>
                 {/* "All" / clear row */}
@@ -339,7 +345,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   ); })}
                 </Box>
               ))}
-              {(activeFacetCount > 0 || query || groupFilter) && <button onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</button>}
+              {(activeFacetCount > 0 || query || groupFilter) &&
+                // eslint-disable-next-line no-restricted-syntax -- bespoke borderless underlined text link, not a .btn control
+                <button onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</button>}
             </Box>
 
             {/* Main */}
@@ -364,6 +372,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                     )}
                   </Row>
                   {skillGroups.length > 0 && (
+                    // eslint-disable-next-line no-restricted-syntax -- inline self-resetting action select in a bulk-action toolbar Row; SelectField's labelled .field wrapper doesn't fit
                     <select className="input" style={{ height: 26, fontSize: 11 }} value="" onChange={(e) => { if (e.target.value) bulkAddToGroup(e.target.value); e.target.value = ""; }}>
                       <option value="">⬡ Add to group…</option>
                       {skillGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -440,6 +449,7 @@ function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => voi
       <Box onClick={(e) => e.stopPropagation()} pad={18} bg="var(--bg-panel)" border radius="lg" style={{ width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
         <Text as="div" size={14} weight={600} style={{ marginBottom: 4 }}>New task group</Text>
         <Text as="div" size={11.5} tone="muted" style={{ marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</Text>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke autofocus dialog input with Enter-to-submit and a layout-critical marginBottom that TextField's .field wrapper would displace */}
         <input autoFocus className="input" placeholder="e.g. Release day" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onCreate(name.trim()); }} style={{ width: "100%", marginBottom: 14 }} />
         <Row align="stretch" gap={8} justify="end">
           <Button onClick={onClose}>cancel</Button>
@@ -468,16 +478,18 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
         <Box className="name">{s.name || (isDraft ? "New skill" : "Untitled skill")}</Box>
       </>}
     >
-          <Box className="field"><label>name <Box as="span" className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</Box></label><input className="input" value={s.name} placeholder="Skill name" onChange={(e) => onPatch({ name: e.target.value })} /></Box>
+          <TextField label={<>name <Box as="span" className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</Box></>} value={s.name} placeholder="Skill name" onChange={(v) => onPatch({ name: v })} />
           <Row align="stretch" gap={16}>
             <Row inline gap={8}><Box as="span" className="hint">enabled</Box><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></Row>
             <Row inline gap={8}><Box as="span" className="hint">pinned</Box><Text as="span" size={14} onClick={() => onPatch({ pinned: !s.pinned })} style={{ color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</Text></Row>
           </Row>
           <Box className="field"><label>kind</label><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></Box>
           <Box className="field"><label>source</label><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></Box>
-          <Box className="field"><label>description</label><input className="input" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(e) => onPatch({ desc: e.target.value })} /></Box>
-          <Box className="field"><label>procedure — SKILL.md body</label><textarea className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(e) => onPatch({ prompt: e.target.value })} /></Box>
-          <Box className="field"><label>bundled tools (comma-separated)</label><input className="input" value={s.tools.join(", ")} placeholder="create_pr, git_diff" onChange={(e) => onPatch({ tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })} /></Box>
+          <TextField label="description" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(v) => onPatch({ desc: v })} />
+          <Box className="field"><label>procedure — SKILL.md body</label>
+            {/* eslint-disable-next-line no-restricted-syntax -- multiline procedure body; the UI-kit has no textarea primitive */}
+            <textarea className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(e) => onPatch({ prompt: e.target.value })} /></Box>
+          <TextField label="bundled tools (comma-separated)" value={s.tools.join(", ")} placeholder="create_pr, git_diff" onChange={(v) => onPatch({ tools: v.split(",").map((t) => t.trim()).filter(Boolean) })} />
           <Box className="field"><label>allowed profiles</label><SegmentedControl options={PROFILE_KEYS.map((p) => ({ label: p, on: s.profiles.includes(p), onClick: () => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] }) }))} /></Box>
           {/* Task groups */}
           <Box className="field">

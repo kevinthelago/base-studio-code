@@ -22,6 +22,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
 import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog";
@@ -150,15 +151,15 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             </Box>
           </Row>
           <Row gap={8} wrap>
-            {worker.status === "asking" && <button className="btn primary" onClick={() => setModal("answer")}>answer question →</button>}
-            <button className="btn" onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
+            {worker.status === "asking" && <Button variant="primary" onClick={() => setModal("answer")}>answer question →</Button>}
+            <Button onClick={() => { setPaneDisabled(worker.id, !paused); flash(paused ? "Worker resumed" : "Worker paused"); }}>
               {paused ? "▶ resume" : "⏸ pause"}
-            </button>
-            <button className="btn ghost" onClick={() => setModal("steer")}>✎ steer</button>
-            <button className="btn ghost" onClick={openSession}>▤ open session</button>
-            <button className="btn ghost" onClick={() => setModal("profile")}>⛉ profile</button>
+            </Button>
+            <Button variant="ghost" onClick={() => setModal("steer")}>✎ steer</Button>
+            <Button variant="ghost" onClick={openSession}>▤ open session</Button>
+            <Button variant="ghost" onClick={() => setModal("profile")}>⛉ profile</Button>
             <Spacer />
-            <button className="btn danger" onClick={() => setModal("stop")}>stop &amp; remove</button>
+            <Button danger onClick={() => setModal("stop")}>stop &amp; remove</Button>
           </Row>
         </Box>
       </Box>
@@ -220,6 +221,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                       <Box as="span" pad={[2, 8]} border="soft" radius={99} style={{ color: "var(--fg-muted)" }}>⎇ {doneAudit.branch}</Box>
                     )}
                     {doneAudit.pr ? (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke PR-status pill button (custom inline styles, not a .btn)
                       <button
                         onClick={() => openUrl(doneAudit.pr!.url).catch(() => {})}
                         title="Open the pull request"
@@ -236,9 +238,9 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
                     )}
                     <Spacer />
                     {doneAudit.transcriptPath && (
-                      <button className="btn ghost" style={{ height: 22, fontSize: 10 }}
+                      <Button variant="ghost" size="sm" style={{ height: 22, fontSize: 10 }}
                         onClick={() => revealItemInDir(doneAudit.transcriptPath!).catch(() => {})}
-                        title={doneAudit.transcriptPath}>transcript ↗</button>
+                        title={doneAudit.transcriptPath}>transcript ↗</Button>
                     )}
                   </Row>
                   {/* changed files + commits */}
@@ -333,8 +335,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       {(modal === "steer" || modal === "answer") && (
         <Modal title={modal === "answer" ? `Answer ${worker.name}` : `Steer ${worker.name}`} onClose={() => setModal(null)}
           footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</button>
+            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
+            <Button variant="primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</Button>
           </>}>
           {modal === "answer" && worker.note && (
             <Box className="mono" pad={[10, 12]} bg={`color-mix(in oklch, ${st.color}, transparent 90%)`} radius={8} style={{ border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
@@ -342,6 +344,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
             </Box>
           )}
           <Box className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</Box>
+          {/* eslint-disable-next-line no-restricted-syntax -- freeform multiline input; textareas stay raw */}
           <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
             className="mono"
@@ -351,8 +354,8 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
       {modal === "stop" && (
         <Modal title="Stop & remove worker" onClose={() => setModal(null)}
           footer={<>
-            <button className="btn ghost" onClick={() => setModal(null)}>cancel</button>
-            <button className="btn danger" onClick={stop}>stop &amp; remove</button>
+            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
+            <Button danger onClick={stop}>stop &amp; remove</Button>
           </>}>
           <Text as="div" size={12} tone="muted" style={{ lineHeight: 1.6 }}>
             This stops <b style={{ color: "var(--fg)" }}>{worker.name}</b>'s session (disables its pane). Its worktree is
@@ -365,6 +368,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           <Box className="hint" style={{ marginBottom: 10 }}>Switch the least-privilege profile this worker runs under (applies on its next launch).</Box>
           <Stack gap={6} style={{ maxHeight: 360, overflow: "auto" }}>
             {agentProfiles.map((p) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke profile-select row button (custom card layout, not a .btn)
               <button key={p.id} onClick={() => { setPaneProfile(worker.id, p.id); setModal(null); flash(`Profile → ${p.name}`); }} style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", textAlign: "left", cursor: "pointer",
                 background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
