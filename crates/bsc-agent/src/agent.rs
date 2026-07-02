@@ -3,7 +3,7 @@
 
 use crate::permissions::Permissions;
 use crate::telemetry::Telemetry;
-use llm::{LlmProvider, Msg, ToolDef, Turn, TurnResult};
+use llm::{LlmProvider, Msg, ToolCall, ToolDef, Turn, TurnResult};
 use serde_json::Value;
 use std::path::Path;
 use std::time::Duration;
@@ -62,6 +62,40 @@ fn resolve_tool<'a>(name: &str, tools: &'a [Tool]) -> Option<&'a Tool> {
     // canonical tool name, then look it up in the live set (so an alias for an unavailable tool misses).
     let alias = TOOL_ALIASES.iter().find(|(a, _)| *a == n.as_str()).map(|(_, target)| *target)?;
     tools.iter().find(|t| t.def.name == alias)
+}
+
+/// Execute every tool call the model made this step: resolve its (possibly near-miss) name, gate it
+/// through `perms` (a denial is fed back AS the tool result so the model sees it and adapts rather than
+/// crashing the loop), run the resolved tool, and push each result onto `messages`. Extracted from
+/// `run_agent`'s step body (#2087).
+fn execute_tool_calls(
+    tool_calls: &[ToolCall],
+    tools: &[Tool],
+    perms: &Permissions,
+    telemetry: &Telemetry,
+    messages: &mut Vec<Msg>,
+) {
+    for tc in tool_calls {
+        // Tolerant name resolution (#qwen): map a near-miss name (`file__create`) to the real tool
+        // BEFORE gating/auditing, so perms + audit + the trace all use the canonical name.
+        let resolved = resolve_tool(&tc.name, tools);
+        let name = resolved.map(|t| t.def.name.as_str()).unwrap_or(tc.name.as_str());
+        println!("[tool] {name}");
+        let output = match perms.check(name, &tc.args) {
+            Err(reason) => {
+                println!("[denied] {name}");
+                reason
+            }
+            Ok(()) => {
+                telemetry.audit(name, &tc.args); // one audit line per executed tool
+                match resolved {
+                    Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
+                    None => format!("error: unknown tool '{}'", tc.name),
+                }
+            }
+        };
+        messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
+    }
 }
 
 // --- Runtime bridges -------------------------------------------------------
@@ -264,10 +298,9 @@ pub async fn run_agent<P: LlmProvider>(
             // When the structured field is empty, recover any call from the text so it still runs (and
             // strip the raw syntax from what we display).
             if result.tool_calls.is_empty() {
-                let recovered = llm::recover_tool_calls(&result.text);
-                if !recovered.is_empty() {
-                    result.text = llm::strip_tool_syntax(&result.text);
-                    result.tool_calls = recovered;
+                if let Some((text, calls)) = llm::recover_text_calls(&result.text) {
+                    result.text = text;
+                    result.tool_calls = calls;
                 }
             }
             // Record every assistant turn to the transcript (cost accounting reads its usage).
@@ -291,29 +324,7 @@ pub async fn run_agent<P: LlmProvider>(
                 text: result.text.clone(),
                 tool_calls: result.tool_calls.clone(),
             });
-            for tc in &result.tool_calls {
-                // Tolerant name resolution (#qwen): map a near-miss name (`file__create`) to the real
-                // tool BEFORE gating/auditing, so perms + audit + the trace all use the canonical name.
-                let resolved = resolve_tool(&tc.name, tools);
-                let name = resolved.map(|t| t.def.name.as_str()).unwrap_or(tc.name.as_str());
-                println!("[tool] {name}");
-                // Permission gate: a denial is fed back as the tool result (so the model
-                // sees it and adapts) rather than crashing the loop.
-                let output = match perms.check(name, &tc.args) {
-                    Err(reason) => {
-                        println!("[denied] {name}");
-                        reason
-                    }
-                    Ok(()) => {
-                        telemetry.audit(name, &tc.args); // one audit line per executed tool
-                        match resolved {
-                            Some(tool) => (tool.run)(&tc.args).unwrap_or_else(|e| format!("error: {e}")),
-                            None => format!("error: unknown tool '{}'", tc.name),
-                        }
-                    }
-                };
-                messages.push(Msg::ToolResult { id: tc.id.clone(), content: output });
-            }
+            execute_tool_calls(&result.tool_calls, tools, perms, telemetry, &mut messages);
         }
 
         // The agentic loop for this user turn ended. If it ran out of steps without a final answer,
