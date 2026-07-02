@@ -5,6 +5,7 @@
 // blob never churns state. Side-effect only — owns its guard refs internally and returns nothing.
 
 import { useEffect, useRef } from "react";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { useAppStore, type AutomationSuggestion } from "@/store";
@@ -56,10 +57,11 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // to the store drives the derived `sections`/`skipped` — confirmed sections
   // stay frozen. This file poll is more reliable than the raw <plan_update>
   // stream and is what surfaces brand-new topics as their own cards.
-  useEffect(() => {
-    if (!visible) return;
-    lastBpJsonRef.current = ""; // reset the blueprint.json change-guard on project switch
+  // Reset the blueprint.json change-guard on a project switch, before the first poll below.
+  useEffect(() => { if (visible) lastBpJsonRef.current = ""; }, [visible, effectiveProjectId]);
 
+  usePoll(() => {
+    if (!visible) return;
     const poll = async () => {
       try {
         const store = useAppStore.getState();
@@ -260,10 +262,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
         // plans dir may not exist yet — ignore
       }
     };
-
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, effectiveProjectId]);
+    return poll();
+  }, 2000, [visible, effectiveProjectId]);
 }
