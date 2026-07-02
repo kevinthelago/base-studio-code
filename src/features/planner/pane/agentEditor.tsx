@@ -13,6 +13,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 
 export function AgentEditor({ a, onFlow, onModel }: {
   a: Agent;
@@ -22,12 +23,6 @@ export function AgentEditor({ a, onFlow, onModel }: {
   const [flow, setFlow] = useState<Flow>(a.flow);
   const [model, setModel] = useState<ModelId | undefined>(a.model);
   useEffect(() => { setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Read-only preview block for the kickoff + lane-context text (#2053).
-  const preStyle: React.CSSProperties = {
-    margin: 0, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-    fontFamily: "var(--mono)", fontSize: 10, lineHeight: 1.5, color: "var(--fg-muted)",
-    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 5, padding: "8px 9px",
-  };
   return (
     <>
       {/* Kickoff preview (#2053) — the exact first message this worker gets at launch, plus its lane
@@ -44,12 +39,12 @@ export function AgentEditor({ a, onFlow, onModel }: {
             Launches from an authored kickoff script — <Box as="span" className="glob">{a.authoredPrompt}</Box>. The generated default below is the fallback.
           </Text>
         )}
-        <pre style={preStyle}>{a.kickoff}</pre>
+        <Code>{a.kickoff}</Code>
         <details style={{ marginTop: 8 }}>
           <summary className="mono" style={{ cursor: "pointer", fontSize: 10, color: "var(--fg-dim)", userSelect: "none" }}>
             Lane context — CLAUDE.local.md
           </summary>
-          <pre style={{ ...preStyle, marginTop: 6 }}>{a.scope}</pre>
+          <Code style={{ marginTop: 6 }}>{a.scope}</Code>
         </details>
       </Box>
 
