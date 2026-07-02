@@ -315,8 +315,8 @@ describe("focus queue", () => {
 describe("deleteLocalProject", () => {
   it("prunes per-project and repo-scoped state and resets active meta", () => {
     useAppStore.setState({
-      planSections: { "My App": { goal: "x" }, Other: { goal: "y" } },
-      planConfirmedSections: { "My App": ["goal"] },
+      planStages: { "My App": { goal: "x" }, Other: { goal: "y" } },
+      planConfirmedStages: { "My App": ["goal"] },
       projectStartupPromptDoc: { "My App": "doc", Other: "z" },
       projectLocalRepos: { "My App": ["o/a"] },
       repoStartupPromptDoc: { "My App::o/a": "d", "Other::o/b": "e" },
@@ -328,9 +328,9 @@ describe("deleteLocalProject", () => {
     // Pass both the session key (title) and the GitHub id.
     useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
     const s = useAppStore.getState();
-    expect(s.planSections["My App"]).toBeUndefined();
-    expect(s.planSections.Other).toBeDefined();          // other project untouched
-    expect(s.planConfirmedSections["My App"]).toBeUndefined();
+    expect(s.planStages["My App"]).toBeUndefined();
+    expect(s.planStages.Other).toBeDefined();          // other project untouched
+    expect(s.planConfirmedStages["My App"]).toBeUndefined();
     expect(s.projectStartupPromptDoc["My App"]).toBeUndefined();
     expect(s.projectStartupPromptDoc.Other).toBe("z");
     expect(s.projectLocalRepos["My App"]).toBeUndefined();
@@ -353,7 +353,7 @@ describe("deleteLocalProject", () => {
   it("deleting a PUBLISHED project clears slug-keyed data + the planning session via the alias (#997)", () => {
     useAppStore.setState({
       // Per-project maps are keyed by the sanitized slug (effectiveProjectId), NOT the title/node id.
-      planSections: { "my-app": { goal: "x" }, other: { goal: "y" } },
+      planStages: { "my-app": { goal: "x" }, other: { goal: "y" } },
       projectKeyAlias: { "PVT_id1": "my-app" },
       activeProjectId: "PVT_id1",        // a published project's active id is the GitHub node id
       activeProjectName: "My App",
@@ -363,8 +363,8 @@ describe("deleteLocalProject", () => {
     // ProjectsList passes [title, nodeId] — neither equals the slug, so the alias must resolve it.
     useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
     const s = useAppStore.getState();
-    expect(s.planSections["my-app"]).toBeUndefined();  // slug-keyed data actually dropped (no leak)
-    expect(s.planSections.other).toBeDefined();        // unrelated project untouched
+    expect(s.planStages["my-app"]).toBeUndefined();  // slug-keyed data actually dropped (no leak)
+    expect(s.planStages.other).toBeDefined();        // unrelated project untouched
     expect(s.activeProjectId).toBeNull();
     expect(s.planningSessionKey).toBe("");             // the crash fix — Planning stops resolving to it
     expect(s.projectsView).toBe("list");
@@ -419,8 +419,8 @@ describe("projectKeyAlias", () => {
 describe("resetProjectData", () => {
   it("clears project/plan state but keeps credentials", () => {
     useAppStore.setState({
-      planSections: { P: { goal: "x" } },
-      planConfirmedSections: { P: ["goal"] },
+      planStages: { P: { goal: "x" } },
+      planConfirmedStages: { P: ["goal"] },
       projectLocalRepos: { P: ["o/r"] },
       hiddenProjectIds: ["PVT_x"],
       projectKeyAlias: { PVT_x: "P" },
@@ -430,8 +430,8 @@ describe("resetProjectData", () => {
     });
     useAppStore.getState().resetProjectData();
     const s = useAppStore.getState();
-    expect(s.planSections).toEqual({});
-    expect(s.planConfirmedSections).toEqual({});
+    expect(s.planStages).toEqual({});
+    expect(s.planConfirmedStages).toEqual({});
     expect(s.projectLocalRepos).toEqual({});
     expect(s.hiddenProjectIds).toEqual([]);
     expect(s.projectKeyAlias).toEqual({});
@@ -1970,10 +1970,10 @@ describe("stage pipeline runs (#528/#529)", () => {
 describe("clearPlan (#505)", () => {
   beforeEach(() =>
     useAppStore.setState({
-      planSections: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
-      planConfirmedSections: { myproj: ["goal"], other: [] },
+      planStages: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
+      planConfirmedStages: { myproj: ["goal"], other: [] },
       planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
-      planSkippedSections: { myproj: ["ui"], other: [] },
+      planSkippedStages: { myproj: ["ui"], other: [] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
       uiScreens: { myproj: ["Home"] },
@@ -1991,10 +1991,10 @@ describe("clearPlan (#505)", () => {
   it("clears all plan buckets for the given key without touching other projects", () => {
     useAppStore.getState().clearPlan("myproj");
     const s = useAppStore.getState();
-    expect(s.planSections["myproj"]).toBeUndefined();
-    expect(s.planConfirmedSections["myproj"]).toBeUndefined();
+    expect(s.planStages["myproj"]).toBeUndefined();
+    expect(s.planConfirmedStages["myproj"]).toBeUndefined();
     expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
-    expect(s.planSkippedSections["myproj"]).toBeUndefined();
+    expect(s.planSkippedStages["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
     expect(s.uiApproved["myproj"]).toBeUndefined();
@@ -2006,14 +2006,14 @@ describe("clearPlan (#505)", () => {
     expect(s.pinnedContext["myproj"]).toBeUndefined();
     expect(s.projectLocalRepos["myproj"]).toBeUndefined(); // repos unlinked (#664)
     // other project untouched
-    expect(s.planSections["other"]).toEqual({ scope: "# Scope" });
+    expect(s.planStages["other"]).toEqual({ scope: "# Scope" });
     expect(s.projectLocalRepos["other"]).toEqual(["o/keep"]);
   });
 
   it("is a no-op for a key that has no plan data", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
-    expect(s.planSections["myproj"]).toEqual({ goal: "# Goal" });
+    expect(s.planStages["myproj"]).toEqual({ goal: "# Goal" });
   });
 
   it("setAuthoredBlueprint records the in-progress blueprint per project (#923)", () => {
@@ -2028,21 +2028,21 @@ describe("clearPlan (#505)", () => {
   });
 });
 
-describe("skipPlanSection / unskipPlanSection (#921)", () => {
-  beforeEach(() => useAppStore.setState({ planSkippedSections: {} }));
+describe("skipPlanStage / unskipPlanStage (#921)", () => {
+  beforeEach(() => useAppStore.setState({ planSkippedStages: {} }));
 
   it("records a deliberately skipped optional stage per project, idempotently", () => {
-    const { skipPlanSection } = useAppStore.getState();
-    skipPlanSection("proj", "ui");
-    skipPlanSection("proj", "ui"); // dup is a no-op
-    skipPlanSection("proj", "mcp");
-    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["ui", "mcp"]);
+    const { skipPlanStage } = useAppStore.getState();
+    skipPlanStage("proj", "ui");
+    skipPlanStage("proj", "ui"); // dup is a no-op
+    skipPlanStage("proj", "mcp");
+    expect(useAppStore.getState().planSkippedStages["proj"]).toEqual(["ui", "mcp"]);
   });
 
   it("un-skips a stage (the user goes back to do it) without touching others", () => {
-    useAppStore.setState({ planSkippedSections: { proj: ["ui", "mcp"] } });
-    useAppStore.getState().unskipPlanSection("proj", "ui");
-    expect(useAppStore.getState().planSkippedSections["proj"]).toEqual(["mcp"]);
+    useAppStore.setState({ planSkippedStages: { proj: ["ui", "mcp"] } });
+    useAppStore.getState().unskipPlanStage("proj", "ui");
+    expect(useAppStore.getState().planSkippedStages["proj"]).toEqual(["mcp"]);
   });
 });
 
@@ -2126,32 +2126,32 @@ describe("updateAgentProfile persists filesystem + network scope edits (#1795)",
   });
 });
 
-describe("canonicalizePlanSections collapses stale title-named sections (#803)", () => {
+describe("canonicalizePlanStages collapses stale title-named sections (#803)", () => {
   it("maps 'Tech stack' → 'stack' in sections + confirmed, preserving content", () => {
     useAppStore.setState({
-      planSections: { proj: { goal: "g", "Tech stack": "the stack", scope: "s" } },
-      planConfirmedSections: { proj: ["goal", "Tech stack"] },
+      planStages: { proj: { goal: "g", "Tech stack": "the stack", scope: "s" } },
+      planConfirmedStages: { proj: ["goal", "Tech stack"] },
     });
-    useAppStore.getState().canonicalizePlanSections("proj");
-    const sec = useAppStore.getState().planSections.proj;
+    useAppStore.getState().canonicalizePlanStages("proj");
+    const sec = useAppStore.getState().planStages.proj;
     expect(Object.keys(sec).sort()).toEqual(["goal", "scope", "stack"]);
     expect(sec.stack).toBe("the stack");
-    expect(useAppStore.getState().planConfirmedSections.proj).toEqual(["goal", "stack"]);
+    expect(useAppStore.getState().planConfirmedStages.proj).toEqual(["goal", "stack"]);
   });
 
   it("prefers the canonical key's own content when both exist", () => {
     useAppStore.setState({
-      planSections: { proj: { "Tech stack": "alias", stack: "canonical" } },
-      planConfirmedSections: {},
+      planStages: { proj: { "Tech stack": "alias", stack: "canonical" } },
+      planConfirmedStages: {},
     });
-    useAppStore.getState().canonicalizePlanSections("proj");
-    expect(useAppStore.getState().planSections.proj).toEqual({ stack: "canonical" });
+    useAppStore.getState().canonicalizePlanStages("proj");
+    expect(useAppStore.getState().planStages.proj).toEqual({ stack: "canonical" });
   });
 
   it("is a no-op when all keys are already canonical", () => {
-    useAppStore.setState({ planSections: { proj: { goal: "g", stack: "s" } }, planConfirmedSections: { proj: ["goal"] } });
-    const before = useAppStore.getState().planSections.proj;
-    useAppStore.getState().canonicalizePlanSections("proj");
-    expect(useAppStore.getState().planSections.proj).toBe(before); // same ref → no churn
+    useAppStore.setState({ planStages: { proj: { goal: "g", stack: "s" } }, planConfirmedStages: { proj: ["goal"] } });
+    const before = useAppStore.getState().planStages.proj;
+    useAppStore.getState().canonicalizePlanStages("proj");
+    expect(useAppStore.getState().planStages.proj).toBe(before); // same ref → no churn
   });
 });

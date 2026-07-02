@@ -7,7 +7,7 @@ import { useAppStore } from "@/store";
 describe("FileIntakePane (#604)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
-    useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedSections: {} });
+    useAppStore.setState({ pendingPlannerPrompt: {}, planConfirmedStages: {} });
   });
 
   it("renders the drop zone with click-to-browse-a-folder (#831)", () => {

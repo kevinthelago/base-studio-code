@@ -11,8 +11,8 @@ describe("blueprint-per-project + reset (#647)", () => {
       stagePreview: {},
       stageRuns: {},
       // section state + fleet/automations also drive completion — must reset too (#664)
-      planSections: { p: { goal: "# Goal" } },
-      planConfirmedSections: { p: ["goal"] },
+      planStages: { p: { goal: "# Goal" } },
+      planConfirmedStages: { p: ["goal"] },
       planAutomations: { p: [] },
       projectLocalRepos: { p: ["o/r"] },
     });
@@ -34,21 +34,21 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.uiScreens["p"]).toBeUndefined();
     expect(s.uiApproved["p"]).toBeUndefined();
     // section state + confirmations + automations also cleared so nothing reads complete (#664)
-    expect(s.planSections["p"]).toBeUndefined();
-    expect(s.planConfirmedSections["p"]).toBeUndefined();
+    expect(s.planStages["p"]).toBeUndefined();
+    expect(s.planConfirmedStages["p"]).toBeUndefined();
     expect(s.planAutomations["p"]).toBeUndefined();
     expect(s.projectLocalRepos["p"]).toBeUndefined(); // repos unlinked (#664)
   });
 
-  it("confirmPlanSection / unconfirmPlanSection round-trip (drives the gate, #673)", () => {
-    useAppStore.setState({ planConfirmedSections: {} });
+  it("confirmPlanStage / unconfirmPlanStage round-trip (drives the gate, #673)", () => {
+    useAppStore.setState({ planConfirmedStages: {} });
     const s = useAppStore.getState();
-    s.confirmPlanSection("p", "goal");
-    s.confirmPlanSection("p", "goal"); // idempotent
-    s.confirmPlanSection("p", "scope");
-    expect(useAppStore.getState().planConfirmedSections["p"]).toEqual(["goal", "scope"]);
-    s.unconfirmPlanSection("p", "goal");
-    expect(useAppStore.getState().planConfirmedSections["p"]).toEqual(["scope"]);
+    s.confirmPlanStage("p", "goal");
+    s.confirmPlanStage("p", "goal"); // idempotent
+    s.confirmPlanStage("p", "scope");
+    expect(useAppStore.getState().planConfirmedStages["p"]).toEqual(["goal", "scope"]);
+    s.unconfirmPlanStage("p", "goal");
+    expect(useAppStore.getState().planConfirmedStages["p"]).toEqual(["scope"]);
   });
 
   it("is a no-op for an unknown blueprint", () => {
@@ -66,7 +66,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     // the switch is refused — the authoring blueprint overrides + locks the project
     expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
     expect(s.uiScreens["p"]).toBeTruthy();          // progress NOT wiped
-    expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
+    expect(s.planStages["p"]).toEqual({ goal: "# Goal" });
   });
 
   it("now allows any project blueprint → any other, re-seeding on switch (#1281)", () => {
@@ -87,7 +87,7 @@ describe("blueprint-per-project + reset (#647)", () => {
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBe("default");
     expect(s.uiScreens["p"]).toBeTruthy();                     // progress NOT wiped (refused no-op)
-    expect(s.planSections["p"]).toEqual({ goal: "# Goal" });
+    expect(s.planStages["p"]).toEqual({ goal: "# Goal" });
   });
 
   it("seedDiscoveryOnlyStages seeds Discovery-only for a fresh project, and is a no-op once set (#1395)", () => {

@@ -60,6 +60,6 @@ export async function scanProjectRepos(token: string, projectId: string): Promis
  * @param projectKey - the planning session key (the project title for projects
  *   opened from the list), matching the directory where plan files are stored.
  */
-export async function scanPlanSections(projectKey: string): Promise<Record<string, string>> {
-  return invoke<Record<string, string>>("read_plan_sections", { projectKey });
+export async function scanPlanStages(projectKey: string): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("read_plan_stages", { projectKey });
 }

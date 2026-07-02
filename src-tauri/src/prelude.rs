@@ -16,7 +16,7 @@ pub(crate) use crate::platform::process::{
 };
 pub(crate) use crate::platform::errs::StrErr;
 pub(crate) use crate::platform::fsx::{
-    append_block_once, ingest_section_files, is_safe_relpath, read_files_dir, read_text_files,
+    append_block_once, ingest_stage_files, is_safe_relpath, read_files_dir, read_text_files,
     sanitize_project_key, worktree_slug,
 };
 pub(crate) use crate::platform::shell::{

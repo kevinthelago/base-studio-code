@@ -10,27 +10,27 @@ use crate::{Automation, StartupScript};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// `section` — the project's flat prose files (goal/scope/stack/architecture/users/…). They live
+/// `stage` — the project's flat prose files (goal/scope/stack/architecture/users/…). They live
 /// beside plan.db in the hub dir, so this is the prose side of the same per-project plan `bsc plan`
-/// already owns. Path-safe: a name is a bare section (the `.md` implied), never a traversal.
-pub(crate) fn cmd_section(args: &Args) -> Result<(), String> {
+/// already owns. Path-safe: a name is a bare stage doc (the `.md` implied), never a traversal.
+pub(crate) fn cmd_stage(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let hub = resolve_hub(&args.db)?;
     match sub {
         "list" => {
             let names = list_hub_sections(&hub);
-            emit_json_or_lines(args.json, &names, "(no section files)", |_, n| n.clone());
+            emit_json_or_lines(args.json, &names, "(no stage docs)", |_, n| n.clone());
             Ok(())
         }
         "get" => {
-            let name = args.positional.get(2).ok_or("usage: bsc plan section get <name>")?;
-            get_hub_doc(&hub_md_path(&hub, name)?, &format!("section '{name}'"))
+            let name = args.positional.get(2).ok_or("usage: bsc plan stage get <name>")?;
+            get_hub_doc(&hub_md_path(&hub, name)?, &format!("stage '{name}'"))
         }
         "set" => {
-            let name = args.positional.get(2).ok_or("usage: bsc plan section set <name>  (content on stdin)")?;
+            let name = args.positional.get(2).ok_or("usage: bsc plan stage set <name>  (content on stdin)")?;
             set_hub_doc(&hub_md_path(&hub, name)?, args.json)
         }
-        other => Err(unknown_sub(args, "section", other)),
+        other => Err(unknown_sub(args, "stage", other)),
     }
 }
 
