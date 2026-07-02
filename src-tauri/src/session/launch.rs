@@ -33,6 +33,14 @@ pub(crate) fn claude_project_dir_name(cwd: &str) -> String {
     // keep [A-Za-z0-9] → '-', no cap (delegates to map_slug; semantics frozen).
     crate::platform::fsx::map_slug(cwd, |c| c.is_ascii_alphanumeric(), '-', None)
 }
+/// Claude Code's on-disk *transcripts directory* for a launch cwd:
+/// `~/.claude/projects/<claude_project_dir_name(cwd)>`, where each conversation is stored as a
+/// `<session>.jsonl`. The one construction of this path, shared by [`has_claude_history`] and
+/// [`crate::fleet::inspect::claude_transcript_path`]. Pure path assembly — callers keep their own
+/// empty-cwd guard (both bail before reading when `cwd` is blank).
+pub(crate) fn claude_project_transcripts_dir(cwd: &str) -> std::path::PathBuf {
+    home_dir().join(".claude").join("projects").join(claude_project_dir_name(cwd))
+}
 /// Whether Claude has a prior conversation for `cwd`. `--continue` aborts with
 /// "No conversation found to continue" (and never delivers the baked startup
 /// prompt) when there's no history, so we only pass the flag when this is true.
@@ -42,10 +50,7 @@ pub(crate) fn has_claude_history(cwd: &str) -> bool {
     if cwd.is_empty() {
         return false;
     }
-    let dir = home_dir()
-        .join(".claude")
-        .join("projects")
-        .join(claude_project_dir_name(cwd));
+    let dir = claude_project_transcripts_dir(cwd);
     let Ok(entries) = std::fs::read_dir(&dir) else { return false };
     entries
         .flatten()
@@ -105,11 +110,22 @@ mod relocated_tests {
         );
     }
     #[test]
+    fn transcripts_dir_is_claude_projects_slug() {
+        // The shared path both has_claude_history and claude_transcript_path build: the frozen
+        // per-cwd slug as the final component, under ~/.claude/projects.
+        let dir = claude_project_transcripts_dir(r"C:\Users\x\foo");
+        assert_eq!(dir.file_name().and_then(|n| n.to_str()), Some("C--Users-x-foo"));
+        assert!(dir.ends_with(
+            std::path::Path::new(".claude").join("projects").join("C--Users-x-foo")
+        ));
+    }
+    #[test]
     fn has_claude_history_detects_jsonl_in_project_dir() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("history");
         let cwd = r"C:\Users\Kevin\Projects\demo";
-        let proj = home.join(".claude").join("projects").join(claude_project_dir_name(cwd));
+        let proj = claude_project_transcripts_dir(cwd);
+        assert_eq!(proj, home.join(".claude").join("projects").join(claude_project_dir_name(cwd)));
 
         // No project dir yet → fresh launch.
         assert!(!has_claude_history(cwd));

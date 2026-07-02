@@ -108,10 +108,7 @@ pub(crate) fn claude_transcript_path(cwd: String) -> Option<String> {
     if cwd.trim().is_empty() {
         return None;
     }
-    let dir = home_dir()
-        .join(".claude")
-        .join("projects")
-        .join(claude_project_dir_name(&cwd));
+    let dir = claude_project_transcripts_dir(&cwd);
     let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let p = entry.path();
