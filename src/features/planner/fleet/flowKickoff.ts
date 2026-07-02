@@ -6,6 +6,8 @@
 
 import type { AgentFlow, FlowTrigger } from "./agentFlow";
 import { resolveFlow } from "./agentFlow";
+import flowKickoffEmbedded from "@data/fleet/flow-kickoff.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 export interface FlowKickoffText {
   /** How to handle underspecified / risky decisions. */
@@ -14,12 +16,14 @@ export interface FlowKickoffText {
   push: string;
 }
 
+// The trigger-phrase MAP + the per-autonomy PROSE are externalized to `@data/fleet/flow-kickoff.json`
+// (#2145, epic #2027 tail) — editable without touching code + part of the exportable config bundle; the
+// config-dir copy (#2047) overlays the embedded default via `overlayFile`. Only these fully-static strings
+// moved; the push sentences below stay inline because they interpolate `${when}`/`${branch}` mid-string.
+const KICKOFF_PROSE = overlayFile("fleet/flow-kickoff.json", flowKickoffEmbedded);
+
 /** When a push fires, phrased for the kickoff sentence. */
-const TRIGGER_PHRASE: Record<FlowTrigger, string> = {
-  "per-issue": "each time you finish an owned issue",
-  "per-stage": "at each pipeline stage boundary",
-  "on-green": "as soon as the checks pass",
-};
+const TRIGGER_PHRASE = KICKOFF_PROSE.triggerPhrase as Record<FlowTrigger, string>;
 
 /**
  * Build the autonomy + push sentences for a stream's kickoff. `branch` is the
@@ -31,20 +35,8 @@ export function flowKickoffText(flow: AgentFlow | undefined, branch: string): Fl
   const f = resolveFlow(flow);
   const when = TRIGGER_PHRASE[f.trigger];
 
-  let autonomy: string;
-  switch (f.autonomy) {
-    case "checkpoint":
-      autonomy =
-        "Work autonomously between checkpoints, but pause at each stage or PR boundary: pipe a short status of what you did and the next step into bsc-checkpoint on stdin, then pipe a one-line status into bsc-wait on stdin so you appear in the coordination inbox, and wait to be resumed before continuing. For underspecified details make the choice that best serves the planned solution (prefer a reversible one only when genuinely uncertain — don't stall, and don't default to the minimal thing) and record it via bsc-note. Build against the planned contracts for any cross-stream dependency, in parallel — never park waiting for an upstream stream's work to land.";
-      break;
-    case "confirm":
-      autonomy =
-        "Before any non-trivial or irreversible decision, pause and ask the user to confirm rather than proceeding on your own — pipe your one-line question into bsc-wait on stdin so it surfaces in the coordination inbox and the user can resume you. For trivial, easily reversible choices, proceed and record them by piping a one-line note into bsc-note on stdin. Build against the planned contracts for any cross-stream dependency, in parallel — never park waiting for an upstream stream's work to land.";
-      break;
-    default: // continuous
-      autonomy =
-        "Work autonomously and do not stop to ask the user — not for direction, not for whether your work is done, and not for how to integrate it (follow your push instruction below). Keep working through all your owned issues and do not end your turn while any remain unintegrated. Build the most complete, production-grade version of your work — full quality (tests, error handling), not a minimal cut, and not gold-plating beyond the issue. When something is underspecified, make the choice that best serves the planned solution and is consistent with the plan goal and architecture (prefer a reversible one only when genuinely uncertain) and record it by piping a one-line note into bsc-note on stdin. When you genuinely need a decision you cannot make yourself, defer to the DIRECTOR rather than the user: pipe a one-line question into bsc-ask on stdin — it parks you and the director answers and resumes you automatically. For a dependency on another stream's unlanded work, build against the contract the plan defines for it, in parallel — never park waiting for it to land.";
-  }
+  // The autonomy prose is fully static (no interpolation) → sourced from data, keyed by autonomy mode.
+  const autonomy = KICKOFF_PROSE.autonomy[f.autonomy];
 
   let push: string;
   switch (f.push) {
