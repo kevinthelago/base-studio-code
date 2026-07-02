@@ -6,6 +6,7 @@ import type { BurndownResult } from "../github/burndown";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
 function BurnCard({ hint, badge, children }: {
@@ -17,9 +18,9 @@ function BurnCard({ hint, badge, children }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 6 }}>
         <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
-        <span className="hint">{hint}</span>
+        <Box as="span" className="hint">{hint}</Box>
         <Spacer />
-        {badge && <span className="mono" style={{ fontSize: 10.5, color: badge.tone }}>● {badge.text}</span>}
+        {badge && <Text as="span" mono size={10.5} style={{ color: badge.tone }}>● {badge.text}</Text>}
       </Row>
       {children}
     </Card>

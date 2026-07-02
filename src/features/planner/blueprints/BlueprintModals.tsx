@@ -13,6 +13,8 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -35,19 +37,19 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
   onClose: () => void; children: ReactNode; foot?: ReactNode; lg?: boolean;
 }) {
   return (
-    <div className="bp-page" style={{ position: "fixed", inset: 0 }}>
+    <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
       <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
-        <div className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
-          <div className="modal-head" style={{ display: "flex", alignItems: "center", gap: 11, padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box className="modal" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
+          <Row gap={11} className="modal-head" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <IconBox size={30} radius={7} fontSize={13} background={iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)"} color={iconColor ?? "var(--accent)"}>{icon}</IconBox>
-            <div><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</div>}</div>
+            <Box><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <Box style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</Box>}</Box>
             <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
-          </div>
-          <div className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</div>
-          {foot && <div className="modal-foot" style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</div>}
-        </div>
+          </Row>
+          <Box className="modal-body" style={{ padding: 20, overflowY: "auto" }}>{children}</Box>
+          {foot && <Row gap={9} className="modal-foot" style={{ padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</Row>}
+        </Box>
       </ModalScrim>
-    </div>
+    </Box>
   );
 }
 
@@ -60,19 +62,19 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
         return (
           <Stack key={s.uid ?? i} gap={4} style={{ padding: "5px 0" }}>
             <Row gap={9}>
-              <span className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</span>
-              <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></span>
-              <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
-              <span style={{ flex: 1 }} />
-              {caps > 0 && <span className="hint mono">{caps} attached</span>}
+              <Box as="span" className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</Box>
+              <Box as="span" style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></Box>
+              <Text as="span" size={11.5} className="mono" style={{ color: "var(--fg)" }}>{s.name}</Text>
+              <Box as="span" style={{ flex: 1 }} />
+              {caps > 0 && <Text as="span" className="hint mono">{caps} attached</Text>}
               {s.gateRule && <Chip tone="accent">gate</Chip>}
             </Row>
             {/* The prompt is the substance of the stage (#1268) — dense text under the row, the
                 icon as its index. pre-wrap keeps the prompt's own line breaks. */}
             {s.prompt?.trim() && (
-              <div className="mono" style={{ marginLeft: 25, fontSize: 10, lineHeight: 1.5, color: "var(--fg-dim)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <Box className="mono" style={{ marginLeft: 25, fontSize: 10, lineHeight: 1.5, color: "var(--fg-dim)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {s.prompt.trim()}
-              </div>
+              </Box>
             )}
           </Stack>
         );
@@ -102,25 +104,25 @@ export function ImportModal({ onClose, onResolve, onImport }: {
   return (
     <Modal icon={<Ic n="cloud_download" size={15} />} title="Import from gist" sub="Pull a blueprint someone shared with you" onClose={onClose}
       foot={phase === "preview" && preview
-        ? <><span className="hint">Imports as a linked copy — you can sync upstream later</span><span style={{ flex: 1 }} /><Button variant="ghost" onClick={() => setPhase("input")}>Back</Button><Button variant="primary" onClick={() => onImport(preview)}>Import to library</Button></>
-        : <><span style={{ flex: 1 }} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</Button></>}>
+        ? <><Text as="span" className="hint">Imports as a linked copy — you can sync upstream later</Text><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={() => setPhase("input")}>Back</Button><Button variant="primary" onClick={() => onImport(preview)}>Import to library</Button></>
+        : <><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</Button></>}>
       {phase === "preview" && preview ? (
         <>
           <Row gap={10} style={{ marginBottom: 12 }}>
             <IconBox size={30} radius={8} fontSize={14} background={tint(preview.h, 0.16)} color={hue(preview.h)}>{preview.icon}</IconBox>
-            <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{preview.name}</div><div className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</div></div>
-            <span style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
+            <Box><Text as="div" size={13} weight={600} className="mono">{preview.name}</Text><Text as="div" className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</Text></Box>
+            <Box as="span" style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
           </Row>
           <Card style={{ padding: 13 }}><StageSummary sections={preview.sections} /></Card>
         </>
       ) : (
-        <div className="field">
+        <Box className="field">
           <label className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Gist URL or ID</label>
           <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
             value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
-          <div className="hint" style={{ marginTop: 6 }}>Paste a full URL or the raw gist ID.</div>
-          {phase === "error" && <div className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</div>}
-        </div>
+          <Box className="hint" style={{ marginTop: 6 }}>Paste a full URL or the raw gist ID.</Box>
+          {phase === "error" && <Box className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</Box>}
+        </Box>
       )}
     </Modal>
   );

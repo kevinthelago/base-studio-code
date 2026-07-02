@@ -12,6 +12,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { DEFAULT_BLUEPRINT_ID } from "../stages/blueprints";
 import type { DraftRow } from "./drafts";
@@ -31,16 +32,16 @@ export function projStatus(p: { closed: boolean }): ProjStatus {
 function FleetPill({ running, paused }: { running: number; paused: number }) {
   if (running === 0 && paused === 0) return null;
   return (
-    <span className="mono" style={{
+    <Box as="span" className="mono" style={{
       display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
       fontSize: 9.5, color: "var(--success)",
       background: "color-mix(in oklch, var(--success), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
-      <span>{running} agent{running !== 1 ? "s" : ""} running</span>
-      {paused > 0 && <span style={{ color: "var(--fg-dim)" }}>· {paused} paused</span>}
-    </span>
+      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <Box as="span">{running} agent{running !== 1 ? "s" : ""} running</Box>
+      {paused > 0 && <Text as="span" tone="dim">· {paused} paused</Text>}
+    </Box>
   );
 }
 
@@ -48,9 +49,9 @@ function FleetPill({ running, paused }: { running: number; paused: number }) {
 function GroupHeader({ label, count, dot }: { label: string; count: number; dot: string }) {
   return (
     <Row gap={8} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
+      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
       <Text mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</Text>
-      <span className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
+      <Box as="span" className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</Box>
     </Row>
   );
 }
@@ -58,12 +59,12 @@ function GroupHeader({ label, count, dot }: { label: string; count: number; dot:
 /** Milestone-progress bar: fraction of the project's items that are closed. */
 function ProgressBar({ pct }: { pct: number }) {
   return (
-    <span title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
-        <span style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
-      </span>
-      <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
-    </span>
+    <Box as="span" title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <Box as="span" style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
+        <Box as="span" style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
+      </Box>
+      <Text as="span" mono size={9.5} tone="dim">{Math.round(pct * 100)}%</Text>
+    </Box>
   );
 }
 
@@ -148,9 +149,9 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
         cursor: "pointer", borderLeft: "2px solid " + (hover ? "var(--accent)" : "transparent"),
         background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
       }}>
-      <div style={{ minWidth: 0 }}>
+      <Box style={{ minWidth: 0 }}>
         <Row gap={9} wrap style={{ marginBottom: 5 }}>
-          <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
+          <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
           <Text mono size={10} tone="dim">#{p.number}</Text>
           <Text as="h3" size={14} weight={600} style={{ margin: 0, fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.title}</Text>
           <Chip tone={tagTone(STATUS_META[status].cls)} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</Chip>
@@ -161,19 +162,19 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
           {p.shortDescription ?? "No description."}
         </Text>
         <Row className="mono" gap={16} wrap style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
-          {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
-          {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
+          {p.items.totalCount > 0 && <Box as="span"><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</Box>}
+          {open > 0 && <Box as="span"><b style={{ color: "var(--fg)" }}>{open}</b> open</Box>}
           {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
           <Text tone="dim">updated {timeAgo(p.updatedAt)}</Text>
         </Row>
-      </div>
+      </Box>
 
       <Row gap={10} style={{ flexShrink: 0 }}>
         <FleetPill running={running} paused={paused} />
-        <span className="mono" style={{
+        <Box as="span" className="mono" style={{
           fontSize: 10.5, whiteSpace: "nowrap",
           color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
-        }}>open planning →</span>
+        }}>open planning →</Box>
 
         {/* ⋯ menu — stops row-click propagation */}
         <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
@@ -187,15 +188,15 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
           </Button>
 
           {isOpen && (
-            <div className="menu" style={{ minWidth: 178 }}>
+            <Box className="menu" style={{ minWidth: 178 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> open board on GitHub
               </button>
-              <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+              <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
               <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
                 <Trash2 size={12} /> delete project
               </button>
-            </div>
+            </Box>
           )}
         </div>
       </Row>
@@ -451,17 +452,17 @@ export function PublishedProjects({
           collapsing to nothing and the fixed-width rail overflowing the clipped section. */}
       <Stack style={{ flex: "1 1 0", minWidth: 320 }}>
         {/* fixed header: title · summary · sync/new · new-project form · search+sort */}
-        <div style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
+        <Box style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
           <Row align="start" gap={14}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <Box style={{ flex: 1, minWidth: 0 }}>
               <Row gap={10}>
                 <Text as="h2" mono size={19} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Projects</Text>
-                <span className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</span>
+                <Box as="span" className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</Box>
               </Row>
               <Row className="mono" gap={8} wrap style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7 }}>
                 <Text tone="success">● github connected</Text>
                 <Text tone="dim">·</Text>
-                <span>{totalSummary}</span>
+                <Box as="span">{totalSummary}</Box>
                 {lastSync && (
                   <>
                     <Text tone="dim">·</Text>
@@ -469,7 +470,7 @@ export function PublishedProjects({
                   </>
                 )}
               </Row>
-            </div>
+            </Box>
             <Button variant="ghost" onClick={fetchProjects} disabled={loading}>
               {loading ? "syncing…" : "↻ sync"}
             </Button>
@@ -523,18 +524,18 @@ export function PublishedProjects({
               <Text mono size={10} tone="dim">sort</Text>
               <Row align="stretch" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
                 <button className="mono" onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
-                <span style={{ width: 1, background: "var(--border-soft)" }} />
+                <Box as="span" style={{ width: 1, background: "var(--border-soft)" }} />
                 <button className="mono" onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
               </Row>
             </Row>
             {q && <Text mono size={10} tone="dim" style={{ marginLeft: "auto" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</Text>}
           </Row>
-        </div>
+        </Box>
 
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
+        <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <div className="mono" style={{
+            <Box className="mono" style={{
               padding: "12px 16px", borderRadius: 6, marginBottom: 16,
               background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
@@ -543,7 +544,7 @@ export function PublishedProjects({
               {error.includes("read:project")
                 ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
                 : error}
-            </div>
+            </Box>
           )}
 
           {loading && visibleProjects.length === 0 && (
@@ -553,11 +554,11 @@ export function PublishedProjects({
           )}
 
           {draftError && (
-            <div className="mono" style={{
+            <Box className="mono" style={{
               padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontSize: 11,
               color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-            }}>{draftError}</div>
+            }}>{draftError}</Box>
           )}
 
           {/* drafts — compact chips (click = resume · ✕ = delete) */}
@@ -567,22 +568,22 @@ export function PublishedProjects({
                 {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
               </Text>
               {fDrafts.map(d => (
-                <span
+                <Box as="span"
                   key={d.key}
                   onClick={() => reopenDraft(d)}
                   title={d.pitch || undefined}
                   className="mono"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
                 >
-                  <span style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
+                  <Box as="span" style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
                   {d.title}
-                  <span style={{ color: "var(--fg-dim)" }}>{timeAgoMs(d.sort)}</span>
-                  <span
+                  <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+                  <Box as="span"
                     onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
                     title="delete draft"
                     style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
-                  >✕</span>
-                </span>
+                  >✕</Box>
+                </Box>
               ))}
             </Row>
           )}
@@ -592,11 +593,11 @@ export function PublishedProjects({
             const items = grouped[status];
             if (items.length === 0) return null;
             return (
-              <div key={status} style={{ marginBottom: 22 }}>
+              <Box key={status} style={{ marginBottom: 22 }}>
                 <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
-                <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
+                <Box style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
                   {items.map((p, i) => (
-                    <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                    <Box key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
                       <ProjectRow
                         p={p}
                         running={fleetByProject[p.id]?.running ?? 0}
@@ -607,10 +608,10 @@ export function PublishedProjects({
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                       />
-                    </div>
+                    </Box>
                   ))}
-                </div>
-              </div>
+                </Box>
+              </Box>
             );
           })}
 
@@ -626,7 +627,7 @@ export function PublishedProjects({
               </Text>
             )
           )}
-        </div>
+        </Box>
       </Stack>
 
       {/* Published-project delete — Keep vs Delete (#1216). A published project is a real shipped app
@@ -635,8 +636,8 @@ export function PublishedProjects({
           everything (deliberate, secondary) layers the GitHub project DELETE_MUTATION on top, behind
           an explicit second confirm. */}
       {deleteTarget && (
-        <div className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
-          <div style={{
+        <Box className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
+          <Box style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
           }}>
@@ -659,18 +660,18 @@ export function PublishedProjects({
                     </Text>
                     {repoNames.length > 0 && (
                       <Text as="div" mono size={11} tone="muted" style={{ marginBottom: 16, lineHeight: 1.7 }}>
-                        {repoNames.map((r) => <div key={r}>· {r}</div>)}
+                        {repoNames.map((r) => <Box key={r}>· {r}</Box>)}
                       </Text>
                     )}
                     {deleteError && (
-                      <div className="mono" style={{
+                      <Box className="mono" style={{
                         padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                         background: "color-mix(in oklch, var(--danger), transparent 88%)",
                         border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                         fontSize: 11, color: "var(--danger)",
                       }}>
                         {deleteError}
-                      </div>
+                      </Box>
                     )}
                     <Row gap={8} align="stretch" justify="end">
                       <Button variant="ghost" onClick={() => { setConfirmDeleteRepos(false); setDeleteError(null); }} disabled={deleting}>back</Button>
@@ -692,14 +693,14 @@ export function PublishedProjects({
                   or delete everything.
                 </Text>
                 {deleteError && (
-                  <div className="mono" style={{
+                  <Box className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
-                  </div>
+                  </Box>
                 )}
                 {/* Keep — the default / safe primary action. */}
                 <Button
@@ -709,10 +710,10 @@ export function PublishedProjects({
                   autoFocus
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", marginBottom: 10 }}
                 >
-                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  <Box as="span" style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy only. Your GitHub project board, milestones, issues, and repos stay intact.
-                  </span>
+                  </Box>
                 </Button>
                 {/* Delete everything — secondary; arms the explicit destructive confirm (NOT the default). */}
                 <Button
@@ -721,12 +722,12 @@ export function PublishedProjects({
                   disabled={deleting}
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                  <Box as="span" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
                     <Trash2 size={12} /> Delete everything
-                  </span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  </Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy AND deletes the GitHub project board. (Your repos and their code are not deleted.)
-                  </span>
+                  </Box>
                 </Button>
                 {/* Delete everything + repositories — the MOST destructive; arms its own confirm. */}
                 <Button
@@ -735,12 +736,12 @@ export function PublishedProjects({
                   disabled={deleting}
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                  <Box as="span" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
                     <Trash2 size={12} /> Delete everything + repositories
-                  </span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  </Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy, the GitHub project board, AND permanently deletes the linked GitHub repositories and all their code. This cannot be undone.
-                  </span>
+                  </Box>
                 </Button>
                 <Row gap={8} align="stretch" justify="end">
                   <Button variant="ghost" onClick={closeDeleteModal} disabled={deleting}>cancel</Button>
@@ -758,14 +759,14 @@ export function PublishedProjects({
                   only the project board is.
                 </Text>
                 {deleteError && (
-                  <div className="mono" style={{
+                  <Box className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
-                  </div>
+                  </Box>
                 )}
                 <Row gap={8} align="stretch" justify="end">
                   <Button
@@ -785,8 +786,8 @@ export function PublishedProjects({
                 </Row>
               </>
             )}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
     </>
   );

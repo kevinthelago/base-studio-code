@@ -11,6 +11,8 @@ import type { ReactNode } from "react";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function StageScreenFrame({
   label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,
@@ -46,10 +48,10 @@ export function StageScreenFrame({
           padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
           fontSize: 11, color: "var(--fg-muted)",
         }}>
-          <span style={{ color: "var(--accent)" }}>▸ {label}</span>
+          <Text as="span" tone="accent">▸ {label}</Text>
           {badge}
-          <span style={{ flex: 1 }} />
-          {statusLabel && <span style={{ fontSize: 10, color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</span>}
+          <Box as="span" style={{ flex: 1 }} />
+          {statusLabel && <Text as="span" size={10} style={{ color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</Text>}
           {actions}
           {onClose && <IconButton aria-label="Close" onClick={onClose} />}
         </Row>

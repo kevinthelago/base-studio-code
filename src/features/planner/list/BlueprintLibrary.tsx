@@ -17,6 +17,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { DraftRow } from "./drafts";
 
@@ -117,7 +118,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
   const Icon = CAT_ICON[b.category] ?? Layers;
 
   return (
-    <div
+    <Box
       className="bp-rail-card"
       onClick={() => onUse(b.id)}
       title={isActive ? "Selected — new projects use this blueprint" : "Select this blueprint for new projects"}
@@ -129,11 +130,11 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
       <Row className="bp-rail-card-head" gap={9}>
         <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Icon size={15} /></IconBox>
         <Row className="bp-rail-card-titlewrap" gap={7} style={{ flex: 1, minWidth: 0 }}>
-          <span className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
-          <span className="bp-rail-card-cat mono" style={{
+          <Box as="span" className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</Box>
+          <Box as="span" className="bp-rail-card-cat mono" style={{
             flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontSize: 9, color: hue,
             background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
-          }}>{b.category}</span>
+          }}>{b.category}</Box>
         </Row>
         <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <Button
@@ -143,7 +144,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
             title="More options"
           ><MoreHorizontal size={13} /></Button>
           {isOpen && (
-            <div className="menu" style={{ minWidth: 158 }}>
+            <Box className="menu" style={{ minWidth: 158 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
                 <Check size={12} /> use for new projects
               </button>
@@ -152,27 +153,27 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
               </button>
               {!b.builtIn && (
                 <>
-                  <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+                  <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
                   <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
                     <Trash2 size={12} /> delete blueprint
                   </button>
                 </>
               )}
-            </div>
+            </Box>
           )}
         </div>
       </Row>
       {/* Gated-stage progression (#blueprints): one segment per enabled, applicable section,
           colored by gate status — a preview of the lifecycle this blueprint walks through. */}
-      <div className="bp-rail-card-gates" style={{ marginTop: 9 }}>
+      <Box className="bp-rail-card-gates" style={{ marginTop: 9 }}>
         <PlanGateRow sections={b.sections} signals={{}} />
-      </div>
+      </Box>
       {b.gistLabel && (
         <Row className="bp-rail-card-gist mono" gap={5} style={{ marginTop: 7, fontSize: 9, color: "var(--info)" }}>
           <Link2 size={10} />{b.gistLabel}
         </Row>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -305,15 +306,15 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
           Shrinkable (`0 1`, not `0 0`) with a min floor so a narrow / half window reclaims width from
           the rail instead of it overflowing the clipped section and getting cut off. `overflow:hidden`
           keeps its cards from forcing it back wide. */}
-      <div className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
+      <Box className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
       <Stack style={{ flex: `0 1 ${blueprintsRail.size}px`, minWidth: 240, overflow: "hidden", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
-        <div style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={9}>
-            <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
+            <Box as="span" style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
               <Layers size={13} />
-            </span>
+            </Box>
             <Text as="h3" mono size={13} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Blueprints</Text>
-            <span className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
+            <Box as="span" className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</Box>
             <Spacer />
             <Button
               variant="ghost"
@@ -348,7 +349,7 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
             </Row>
           )}
           <Text as="div" mono size={9.5} tone="dim" style={{ marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</Text>
-        </div>
+        </Box>
         <Stack gap={9} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px" }}>
           {fBlueprints.length === 0 ? (
             <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>

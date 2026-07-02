@@ -3,6 +3,7 @@ import { useAppStore } from "@/store";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
@@ -79,23 +80,23 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
           mode switch. A torn-off projects section shows just the list (a live planning PTY can't
           follow into a second window, #430/#463). */}
       {(!pageOverride || pageOverride === "projects") && (
-        <div style={{ display: mode === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+        <Box style={{ display: mode === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
           {pageOverride ? (
             <ProjectsList />
           ) : (
             <>
               {/* Planning — mounted once on first visit, then CSS-hidden */}
               {planningEverShown.current && (
-                <div style={{ display: projectsView === "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+                <Box style={{ display: projectsView === "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
                   <Planning key={planningKey} visible={projectsView === "planning"} />
-                </div>
+                </Box>
               )}
-              <div style={{ display: projectsView !== "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+              <Box style={{ display: projectsView !== "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
                 <ProjectsList />
-              </div>
+              </Box>
             </>
           )}
-        </div>
+        </Box>
       )}
     </Screen>
   );

@@ -8,7 +8,7 @@
 // div; e.g. section/aside/ul/span). Any extra prop (className, onClick, data-*, ref-free DOM attrs)
 // passes straight through.
 
-import type { CSSProperties, ReactNode, ElementType } from "react";
+import type { CSSProperties, ReactNode, ElementType, ComponentPropsWithoutRef } from "react";
 import { pad as padValue, type Space } from "./space";
 
 /** Corner radius — a token rung (--r-*) or raw px. */
@@ -32,7 +32,7 @@ function borderValue(b: BorderProp | undefined): string | undefined {
   return `1px solid ${b}`;
 }
 
-export interface BoxProps {
+export interface BoxProps extends Omit<ComponentPropsWithoutRef<"div">, "children"> {
   children?: ReactNode;
   /** The rendered element (default "div"; e.g. section/aside/ul/span). */
   as?: ElementType;
@@ -46,10 +46,7 @@ export interface BoxProps {
   radius?: Radius;
   /** Drop shadow — a --shadow-* rung (sm/md/lg/xl). */
   shadow?: Shadow;
-  className?: string;
   style?: CSSProperties;
-  /** Any other prop passes through to the rendered element. */
-  [key: string]: unknown;
 }
 
 export function Box({ children, as: As = "div", pad, bg, border, radius, shadow, style, ...rest }: BoxProps) {

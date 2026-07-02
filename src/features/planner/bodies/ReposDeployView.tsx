@@ -17,6 +17,8 @@ import { RepoDeployCard } from "./DeployView";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import type { Repo } from "../pane/projectPane.types";
 
 const MONO = "var(--mono)";
@@ -27,11 +29,11 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
   let hue = 0;
   for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
   return (
-    <span style={{
+    <Box as="span" style={{
       width: sz, height: sz, borderRadius: 99, background: `oklch(0.7 0.13 ${hue})`, color: "#0b0d10",
       fontFamily: MONO, fontSize: sz * 0.5, fontWeight: 700, display: "inline-flex", alignItems: "center",
       justifyContent: "center", border: "1.5px solid var(--bg-canvas)",
-    }}>{(id[0] ?? "?").toUpperCase()}</span>
+    }}>{(id[0] ?? "?").toUpperCase()}</Box>
   );
 }
 
@@ -87,16 +89,16 @@ export function DeploymentBody({
   const repoMeta = (r: Repo) => (
     <>
       {(r.ahead > 0 || r.behind > 0) && (
-        <span style={{ fontFamily: MONO, fontSize: 8.5 }}>
-          {r.ahead > 0 && <span style={{ color: "var(--success)" }}>↑{r.ahead} </span>}
-          {r.behind > 0 && <span style={{ color: "var(--info)" }}>↓{r.behind}</span>}
-        </span>
+        <Text as="span" mono size={8.5}>
+          {r.ahead > 0 && <Text as="span" tone="success">↑{r.ahead} </Text>}
+          {r.behind > 0 && <Text as="span" style={{ color: "var(--info)" }}>↓{r.behind}</Text>}
+        </Text>
       )}
-      {r.lang && <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</span>}
+      {r.lang && <Box as="span" style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</Box>}
       {r.agents.length > 0 && (
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
-          {r.agents.map((id, i) => <span key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></span>)}
-        </span>
+        <Box as="span" style={{ display: "inline-flex", alignItems: "center" }}>
+          {r.agents.map((id, i) => <Box as="span" key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></Box>)}
+        </Box>
       )}
     </>
   );
@@ -112,9 +114,9 @@ export function DeploymentBody({
     body = (
       <>
         <Stack align="center" gap={12} style={{ border: "1px dashed var(--border)", borderRadius: "var(--r-lg)", padding: "40px 24px", textAlign: "center", background: "var(--bg-canvas)" }}>
-          <span style={{ fontSize: 26, opacity: 0.5 }}>⎇</span>
-          <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>No repositories linked</span>
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--fg-muted)", maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</span>
+          <Text as="span" size={26} style={{ opacity: 0.5 }}>⎇</Text>
+          <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>No repositories linked</Text>
+          <Text as="span" mono size={10.5} tone="muted" style={{ maxWidth: 380, lineHeight: 1.6 }}>Deployment is configured per repository — each repo carries its own pipeline, environments and secrets. Link one to define how it ships.</Text>
         </Stack>
         {linkAffordance}
       </>
@@ -130,11 +132,11 @@ export function DeploymentBody({
               // identity so it's not dropped; the service seeds when the plan is next saved.
               return (
                 <Row key={r.id} gap={9} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px" }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
-                  <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{r.id}</span>
+                  <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
+                  <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{r.id}</Text>
                   {repoMeta(r)}
                   <Spacer />
-                  <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>deploy seeds on save</span>
+                  <Text as="span" mono size={8.5} tone="dim">deploy seeds on save</Text>
                 </Row>
               );
             }

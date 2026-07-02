@@ -4,6 +4,8 @@
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
 import { useState } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { connectorKind, type Stage, type GatePill, type FooterKind } from "../stages/focusedPlan";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
@@ -37,16 +39,16 @@ export function StagePromptHelp({ prompts, onInject }: {
       {open && (
         <>
           {/* click-away catcher */}
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
-          <div role="menu" style={{
+          <Box onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
+          <Box role="menu" style={{
             position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
             background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
             boxShadow: "0 16px 48px rgba(0,0,0,.5)", padding: 6,
           }}>
-            <div className="mono" style={{
-              padding: "6px 8px 8px", fontSize: 9.5, letterSpacing: ".06em",
-              textTransform: "uppercase", color: "var(--fg-dim)",
-            }}>Inject a prompt for this stage</div>
+            <Text as="div" mono size={9.5} tone="dim" style={{
+              padding: "6px 8px 8px", letterSpacing: ".06em",
+              textTransform: "uppercase",
+            }}>Inject a prompt for this stage</Text>
             {prompts.map((p, i) => (
               <button
                 key={i}
@@ -58,14 +60,14 @@ export function StagePromptHelp({ prompts, onInject }: {
                   padding: "8px 10px", marginBottom: 5, color: "var(--fg)",
                 }}
               >
-                <div className="mono" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 3 }}>{p.label}</div>
-                <div style={{
-                  fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)",
+                <Text as="div" mono size={11.5} weight={600} style={{ marginBottom: 3 }}>{p.label}</Text>
+                <Text as="div" size={10.5} tone="muted" style={{
+                  lineHeight: 1.5,
                   display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
-                }}>{p.text}</div>
+                }}>{p.text}</Text>
               </button>
             ))}
-          </div>
+          </Box>
         </>
       )}
     </>
@@ -124,57 +126,57 @@ export function StageHeader({ stage, pill, promptHelp }: {
   const hasReasons = pill !== "pass" && unmet.length > 0;
   const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
   return (
-    <div className="ph-head" style={{ position: "relative" }}>
+    <Box className="ph-head" style={{ position: "relative" }}>
       {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
-      <div className="ph-title">
+      <Box className="ph-title">
         <h2>{stage.name}</h2>
-        <span
+        <Box as="span"
           className={"ph-gate " + pill}
           title={tip}
           onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
           style={{ cursor: hasReasons ? "pointer" : undefined }}
         >
-          <span className="gd" />
+          <Box as="span" className="gd" />
           gate
-          {hasReasons && <span style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</span>}
-        </span>
-      </div>
+          {hasReasons && <Box as="span" style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</Box>}
+        </Box>
+      </Box>
       <p className="ph-blurb">{stage.blurb}</p>
       {hasReasons && showReasons && (
-        <div role="status" className="mono" style={{
+        <Box role="status" className="mono" style={{
           marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
           background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
           fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
         }}>
-          <div style={{ color: "var(--fg-dim)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
+          <Text as="div" tone="dim" size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
             Still needed to pass this gate
-          </div>
+          </Text>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
             {unmet.map((u, i) => (
-              <li key={i}>{u.label}{u.detail && <span style={{ color: "var(--fg-dim)" }}> — {u.detail}</span>}</li>
+              <li key={i}>{u.label}{u.detail && <Text as="span" tone="dim"> — {u.detail}</Text>}</li>
             ))}
           </ul>
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 
 /** Shown when browsing a not-yet-reachable stage. */
 export function LockBanner({ activeName }: { activeName: string }) {
   return (
-    <div className="lock-banner">
-      🔒 <span><b>Locked.</b> Complete <b>{activeName}</b> to unlock this stage. Previewing only.</span>
-    </div>
+    <Box className="lock-banner">
+      🔒 <Box as="span"><b>Locked.</b> Complete <b>{activeName}</b> to unlock this stage. Previewing only.</Box>
+    </Box>
   );
 }
 
 /** Shown when reviewing a completed stage. */
 export function DoneBanner() {
   return (
-    <div className="lock-banner" style={{ background: "color-mix(in oklch,var(--success),transparent 91%)", borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
-      ✓ <span style={{ color: "var(--fg-muted)" }}><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the stage for review.</span>
-    </div>
+    <Box className="lock-banner" style={{ background: "color-mix(in oklch,var(--success),transparent 91%)", borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
+      ✓ <Text as="span" tone="muted"><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the stage for review.</Text>
+    </Box>
   );
 }
 
@@ -215,10 +217,10 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
     : action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded
     : undefined;
   return (
-    <div className="ph-foot">
+    <Box className="ph-foot">
       <BackButton variant="text" label="back" className="nav-btn" disabled={stage.index === 0} onClick={onBack} aria-label="Back" />
-      <span className="prog">stage {stage.index + 1} of {stage.total}</span>
-      <span style={{ flex: 1 }} />
+      <Box as="span" className="prog">stage {stage.index + 1} of {stage.total}</Box>
+      <Box as="span" style={{ flex: 1 }} />
       {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
       {action.canSkip && onSkip && (
         <button
@@ -238,6 +240,6 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
       >
         {primaryLabel}
       </button>
-    </div>
+    </Box>
   );
 }

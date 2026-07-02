@@ -10,6 +10,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
@@ -114,18 +115,18 @@ function AISummary() {
       border: "1px solid var(--accent-dim)",
     }}>
       <Row gap={12} align="stretch">
-        <div className="mono" style={{
+        <Box className="mono" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
           color: "#1a120a", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
-        }}>C</div>
-        <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
+        }}>C</Box>
+        <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
           <Row gap={8} align="baseline" style={{ marginBottom: 4 }}>
             <Text mono size={11} tone="accent" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>
               weekly digest · claude
             </Text>
-            <span className="hint">generated 02:00 today · run #14</span>
+            <Box as="span" className="hint">generated 02:00 today · run #14</Box>
             <Spacer />
             <Button variant="ghost" style={{ height: 22, fontSize: 10 }}>regenerate</Button>
           </Row>
@@ -134,7 +135,7 @@ function AISummary() {
             Cross-project activity shows consistent momentum. Check upcoming milestones
             and velocity trends below for details.
           </p>
-        </div>
+        </Box>
       </Row>
     </Card>
   );
@@ -158,18 +159,18 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Where the team is</h3>
-        <span className="hint">share of in-progress work by project items</span>
+        <Box as="span" className="hint">share of in-progress work by project items</Box>
       </Row>
       <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
         {items.map(it => (
-          <div key={it.n} title={`${it.n} · ${it.pct}%`} style={{ width: `${it.pct}%`, background: it.c }} />
+          <Box key={it.n} title={`${it.n} · ${it.pct}%`} style={{ width: `${it.pct}%`, background: it.c }} />
         ))}
       </Row>
       <Stack gap={5} className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
         {items.map(it => (
           <Grid key={it.n} cols="12px 1fr 40px" gap={8} align="center">
             <ColorSwatch color={it.c} />
-            <span style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.n}</span>
+            <Box as="span" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.n}</Box>
             <Text tone="dim" style={{ textAlign: "right" }}>{it.pct}%</Text>
           </Grid>
         ))}
@@ -193,7 +194,7 @@ function VelocityCard({ repoIssues, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Velocity</h3>
-        <span className="hint">{loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}</span>
+        <Box as="span" className="hint">{loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}</Box>
       </Row>
       {!hasData && !loading && (
         <Text as="div" mono size={11} tone="dim" style={{ padding: "4px 0" }}>No issue data available.</Text>
@@ -222,10 +223,10 @@ function VelocityCard({ repoIssues, loading }: {
             })}
           </svg>
           <Row align="stretch" gap={14} className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-muted)" }}>
-            <span><ColorSwatch color="color-mix(in oklch, var(--info), transparent 50%)" /> opened</span>
-            <span><ColorSwatch color="var(--accent)" /> closed</span>
+            <Box as="span"><ColorSwatch color="color-mix(in oklch, var(--info), transparent 50%)" /> opened</Box>
+            <Box as="span"><ColorSwatch color="var(--accent)" /> closed</Box>
             <Spacer />
-            <span>avg <b style={{ color: "var(--fg)" }}>{loading ? "…" : `${avgClosed} closed/wk`}</b></span>
+            <Box as="span">avg <b style={{ color: "var(--fg)" }}>{loading ? "…" : `${avgClosed} closed/wk`}</b></Box>
           </Row>
         </>
       )}
@@ -248,7 +249,7 @@ function UpcomingMilestones({ repoMilestones, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
         <h3 style={{ margin: 0 }}>Upcoming milestones</h3>
-        <span className="hint">{loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}</span>
+        <Box as="span" className="hint">{loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}</Box>
         <Spacer />
         {upcoming.length > 0 && (
           <Text mono size={10.5} tone="accent">
@@ -264,22 +265,22 @@ function UpcomingMilestones({ repoMilestones, loading }: {
       {(hasData || loading) && (
         <>
           <Grid cols="220px 1fr" gap={14} style={{ marginBottom: 8 }}>
-            <div />
+            <Box />
             <Grid cols={8} style={{ position: "relative", height: 18 }}>
               {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} className="mono" style={{
+                <Box key={i} className="mono" style={{
                   fontSize: 9.5, color: "var(--fg-dim)",
                   borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
                   paddingLeft: 6, paddingTop: 2,
-                }}>w{i + 1}</div>
+                }}>w{i + 1}</Box>
               ))}
-              <div style={{
+              <Box style={{
                 position: "absolute", top: 0, bottom: -(numLines * 30 + 10),
                 left: 0, width: 0,
                 borderLeft: "1.5px dashed var(--accent)", zIndex: 2,
               }}>
-                <span className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</span>
-              </div>
+                <Box as="span" className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</Box>
+              </Box>
             </Grid>
           </Grid>
           <Stack gap={6}>
@@ -290,15 +291,15 @@ function UpcomingMilestones({ repoMilestones, loading }: {
               const bgC = m.overdue ? "oklch(0.65 0.15 10)" : "oklch(0.78 0.14 70)";
               return (
                 <Grid key={idx} cols="220px 1fr" gap={14} align="center">
-                  <div>
-                    <div className="mono" style={{ fontSize: 10.5, color: m.overdue ? "var(--danger)" : "var(--accent)" }}>{m.title}</div>
+                  <Box>
+                    <Box className="mono" style={{ fontSize: 10.5, color: m.overdue ? "var(--danger)" : "var(--accent)" }}>{m.title}</Box>
                     <Text as="div" mono size={9.5} tone="dim">{m.repo}</Text>
-                  </div>
-                  <div style={{ position: "relative", height: 24 }}>
+                  </Box>
+                  <Box style={{ position: "relative", height: 24 }}>
                     {Array.from({ length: 8 }, (_, i) => (
-                      <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${i / 8 * 100}%`, width: 1, background: "var(--border-soft)" }} />
+                      <Box key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${i / 8 * 100}%`, width: 1, background: "var(--border-soft)" }} />
                     ))}
-                    <div style={{
+                    <Box style={{
                       position: "absolute", top: 3, bottom: 3,
                       left: `${barStart / 8 * 100}%`, width: `${(barEnd - barStart) / 8 * 100}%`,
                       minWidth: 12, borderRadius: 4,
@@ -307,10 +308,10 @@ function UpcomingMilestones({ repoMilestones, loading }: {
                       overflow: "hidden",
                     }}>
                       {m.pct > 0 && (
-                        <div style={{ position: "absolute", inset: 0, width: `${m.pct * 100}%`, background: `color-mix(in oklch, ${bgC}, transparent 30%)` }} />
+                        <Box style={{ position: "absolute", inset: 0, width: `${m.pct * 100}%`, background: `color-mix(in oklch, ${bgC}, transparent 30%)` }} />
                       )}
-                    </div>
-                  </div>
+                    </Box>
+                  </Box>
                 </Grid>
               );
             })}
@@ -335,7 +336,7 @@ function RiskRegister() {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Risk register</h3>
-        <span className="hint">{risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}</span>
+        <Box as="span" className="hint">{risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}</Box>
         <Spacer />
         {risks.length > 0 && <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>view all</Button>}
       </Row>
@@ -344,14 +345,14 @@ function RiskRegister() {
           No risks logged yet.
         </Text>
       ) : (
-        <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+        <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
           <Grid className="mono" cols="50px 110px 1fr 60px" gap={8} style={{
             padding: "7px 12px",
             background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
             fontSize: 10, color: "var(--fg-dim)",
             textTransform: "uppercase", letterSpacing: ".06em",
           }}>
-            <span>sev</span><span>project</span><span>risk</span><span>owner</span>
+            <Text as="span">sev</Text><Text as="span">project</Text><Text as="span">risk</Text><Text as="span">owner</Text>
           </Grid>
           {risks.map((r, i) => (
             <Grid key={i} cols="50px 110px 1fr 60px" gap={8} align="center" style={{
@@ -360,15 +361,15 @@ function RiskRegister() {
               borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
               fontSize: 11.5,
             }}>
-              <span className="mono" style={{ fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
+              <Box as="span" className="mono" style={{ fontSize: 10, color: r.sev === "high" ? "var(--danger)" : r.sev === "med" ? "var(--accent)" : "var(--fg-dim)" }}>
                 ● {r.sev}
-              </span>
-              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
-              <span style={{ color: "var(--fg)" }}>{r.r}</span>
+              </Box>
+              <Box as="span" className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</Box>
+              <Text as="span" style={{ color: "var(--fg)" }}>{r.r}</Text>
               <Avatar login={r.own} />
             </Grid>
           ))}
-        </div>
+        </Box>
       )}
     </Card>
   );
@@ -401,7 +402,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Projects</h3>
-        <span className="hint">{loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}</span>
+        <Box as="span" className="hint">{loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}</Box>
         <Spacer />
         <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}
           onClick={openProjects}>view list →</Button>
@@ -411,26 +412,26 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
       )}
       <Grid cols="repeat(2, minmax(0, 1fr))" gap={8}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
-          <div key={p.id} onClick={() => openBoard(p)} style={{
+          <Box key={p.id} onClick={() => openBoard(p)} style={{
             padding: "12px 14px", borderRadius: 6,
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             cursor: "pointer", minWidth: 0, overflow: "hidden",
           }}>
             <Row gap={8} align="baseline" style={{ marginBottom: 4 }}>
               <ColorSwatch color={c} size={8} />
-              <span className="mono" style={{ fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
+              <Box as="span" className="mono" style={{ fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</Box>
               <Chip tone={status === "active" ? "success" : status === "shipped" ? "neutral" : "accent"} style={{ fontSize: 9 }}>{status}</Chip>
             </Row>
             <Text as="div" mono size={10} tone="dim" style={{ marginBottom: 8 }}>
               {repo}
             </Text>
             <Row gap={12} className="mono" style={{ fontSize: 10, color: "var(--fg-muted)" }}>
-              <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>
+              <Box as="span"><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</Box>
               <Text mono size={9.5} tone="dim">{timeAgo(p.updatedAt)}</Text>
               <Spacer />
               {spark.some(v => v > 0) && <Spark data={spark} color={c} w={80} h={18} fill={false} dot={false} />}
             </Row>
-          </div>
+          </Box>
         ))}
       </Grid>
     </Card>
@@ -455,21 +456,21 @@ export function ProjectsSummary() {
   const avgVelocity = useMemo(() => avgWeeklyClosed(repoIssues), [repoIssues]);
 
   return (
-    <section style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+    <Box as="section" style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
+      <Box style={{ maxWidth: 1280, margin: "0 auto" }}>
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
+          <Box style={{ flex: 1 }}>
             <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Portfolio</Text>
             <Text as="div" tone="muted" size={12} style={{ marginTop: 4 }}>
               {loading ? "loading…" : `${activeCount} active · ${draftingCount} drafting · ${shippedCount} shipped`}
             </Text>
-          </div>
+          </Box>
           <Button onClick={openProjects}>browse projects →</Button>
         </Row>
 
-        <div style={{ marginBottom: 14 }}>
+        <Box style={{ marginBottom: 14 }}>
           <AISummary />
-        </div>
+        </Box>
 
         <Grid cols={6} gap={8} style={{ marginBottom: 14 }}>
           {([
@@ -481,11 +482,11 @@ export function ProjectsSummary() {
             ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
           ] as const).map(([k, v, sub, tone]) => (
             <Card key={k} style={{ padding: "10px 12px" }}>
-              <div className="mono-label">{k}</div>
-              <div className="mono" style={{
+              <Box className="mono-label">{k}</Box>
+              <Box className="mono" style={{
                 fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : "var(--fg)",
-              }}>{v}</div>
+              }}>{v}</Box>
               <Text as="div" size={10} tone="muted" style={{ marginTop: 1 }}>{sub}</Text>
             </Card>
           ))}
@@ -504,7 +505,7 @@ export function ProjectsSummary() {
             <RiskRegister />
           </Stack>
         </Grid>
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

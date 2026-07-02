@@ -6,6 +6,8 @@
 import type { GhNode, GhRepoNode, GhStructure } from "../github/ghStructure";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export type GhItemStatus = "planned" | "running" | "created" | "exists" | "skipped" | "error";
 export interface GhItemState { status: GhItemStatus; detail?: string; url?: string; }
@@ -27,11 +29,11 @@ function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
       fontSize: 10.5,
       opacity: state.status === "planned" ? 0.6 : 1,
     }}>
-      <span style={{ width: 11, textAlign: "center", flexShrink: 0, color: g.color }}>{g.icon}</span>
-      <span style={{
+      <Box as="span" style={{ width: 11, textAlign: "center", flexShrink: 0, color: g.color }}>{g.icon}</Box>
+      <Box as="span" style={{
         color: state.status === "error" ? "var(--danger)" : "var(--fg)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}>{node.label}</span>
+      }}>{node.label}</Box>
       {state.url ? (
         <a href={state.url} target="_blank" rel="noreferrer"
           style={{ color: "var(--fg-dim)", fontSize: 9.5, textDecoration: "none" }}
@@ -39,7 +41,7 @@ function GhItemRow({ node, state }: { node: GhNode; state: GhItemState }) {
           {state.detail ?? "open"} ↗
         </a>
       ) : state.detail ? (
-        <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>· {state.detail}</span>
+        <Text as="span" tone="dim" size={9.5}>· {state.detail}</Text>
       ) : null}
     </Row>
   );
@@ -54,11 +56,11 @@ function GhGroup({ title, count, nodes, status, empty }: {
         fontSize: 9.5, textTransform: "uppercase",
         letterSpacing: ".06em", color: "var(--fg-muted)",
       }}>
-        <span>{title}</span>
-        {count !== undefined && <span style={{ color: "var(--fg-dim)" }}>{count}</span>}
+        <Box as="span">{title}</Box>
+        {count !== undefined && <Text as="span" tone="dim">{count}</Text>}
       </Row>
       {nodes.length === 0
-        ? <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>{empty}</div>
+        ? <Text as="div" mono size={10} tone="dim" style={{ opacity: 0.6, paddingLeft: 19 }}>{empty}</Text>
         : (
           <Stack gap={3} style={{ paddingLeft: 8 }}>
             {nodes.map(n => (
@@ -80,13 +82,13 @@ function GhReposGroup({ repos, status }: { repos: GhRepoNode[]; status: GhStatus
         fontSize: 9.5, textTransform: "uppercase",
         letterSpacing: ".06em", color: "var(--fg-muted)",
       }}>
-        <span>Repositories</span>
-        <span style={{ color: "var(--fg-dim)" }}>{repos.length}</span>
+        <Box as="span">Repositories</Box>
+        <Text as="span" tone="dim">{repos.length}</Text>
       </Row>
       {repos.length === 0
-        ? <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", opacity: 0.6, paddingLeft: 19 }}>
+        ? <Text as="div" mono size={10} tone="dim" style={{ opacity: 0.6, paddingLeft: 19 }}>
             none linked — ask Claude to create or link repositories
-          </div>
+          </Text>
         : (
           <Stack gap={8} style={{ paddingLeft: 8 }}>
             {repos.map(r => (
@@ -119,12 +121,11 @@ export function GitHubStructureCard({ structure, status }: { structure: GhStruct
       border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
       flexShrink: 0,
     }}>
-      <div className="mono" style={{
+      <Text as="div" mono size={10} style={{
         color: "var(--info)", textTransform: "uppercase", letterSpacing: ".06em",
-        fontSize: 10,
       }}>
         github structure
-      </div>
+      </Text>
       <GhGroup title="Project board" nodes={[structure.project]} status={status} />
       <GhReposGroup repos={structure.repos} status={status} />
       {structure.streams.length > 0 && (

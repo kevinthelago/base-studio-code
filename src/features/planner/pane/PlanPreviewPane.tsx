@@ -8,6 +8,8 @@ import { useState, useCallback } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -88,9 +90,9 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         </>
       }
       footer={declared.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
+        <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
           <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
-            <span>screens</span>
+            <Box as="span">screens</Box>
             <button
               className="btn ghost sm"
               title="Copy a Claude Design prompt for these screens — paste it into Claude Design, then drop the exports into the Drop-files stage"
@@ -100,10 +102,10 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
                 setTimeout(() => setBriefCopied(false), 1600);
               }}
             >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</button>
-            <span style={{ flex: 1 }} />
-            <span style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
               {approvedCount}/{declared.length} approved
-            </span>
+            </Text>
           </Row>
           <Stack gap={2}>
             {declared.map((s) => {
@@ -116,30 +118,30 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
                   title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
                   style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontSize: 11 }}
                 >
-                  <span style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</span>
-                  <span style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</span>
+                  <Text as="span" style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</Text>
+                  <Text as="span" style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</Text>
                 </button>
               );
             })}
           </Stack>
-        </div>
+        </Box>
       )}
     >
       <Stack style={{ flex: 1, minHeight: 0 }}>
         {status === "fail" ? (
-          <div className="mono" style={{ padding: 16, fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", overflow: "auto" }}>
+          <Text as="div" mono size={11} tone="danger" style={{ padding: 16, whiteSpace: "pre-wrap", overflow: "auto" }}>
             {run?.message || "Preview failed to build."}
-          </div>
+          </Text>
         ) : preview?.srcDoc ? (
           <PreviewFrame srcDoc={preview.srcDoc} onStatus={onStatus} />
         ) : (
           <Stack align="center" justify="center" gap={12} style={{ flex: 1, padding: 24, textAlign: "center" }}>
-            <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>
+            <Text as="div" mono size={11.5} tone="muted">
               {status === "running" ? "Bundling…" : "No preview yet"}
-            </div>
-            <div className="hint" style={{ maxWidth: 280 }}>
+            </Text>
+            <Box className="hint" style={{ maxWidth: 280 }}>
               The UI stage renders generated screens here via the render-preview pipeline.
-            </div>
+            </Box>
             <Row gap={8} align="stretch">
               <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
               <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>

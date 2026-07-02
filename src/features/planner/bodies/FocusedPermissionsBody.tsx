@@ -6,6 +6,8 @@
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type Topology } from "@/features/planner/relationship/relationshipGraph";
 import { DIRECTOR_DRIVES, type DirectorDrive } from "@/features/planner/fleet/directorDrive";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Row } from "@/shared/ui/layout/Row";
 import type { FleetHandlers } from "./focusedHandlers";
 
@@ -34,7 +36,7 @@ export function CoordinationControls({ data, onTopology, onDirectorDrive }: Pick
   const hub = topology !== "peer";
   const drive = data?.director?.drive ?? "event";
   return (
-    <div>
+    <Box>
       {/* full-width topology segmented */}
       <Row data-testid="topology-control" align="stretch" style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden", marginBottom: 6 }}>
         {TOPOLOGY_OPTS.map((t, i) => {
@@ -56,13 +58,13 @@ export function CoordinationControls({ data, onTopology, onDirectorDrive }: Pick
           );
         })}
       </Row>
-      <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+      <Text as="div" mono size={9.5} tone="dim" style={{ lineHeight: 1.5 }}>
         {TOPOLOGY_OPTS.find((t) => t.id === topology)?.hint} · configure individual relationships on the graph above.
-      </div>
+      </Text>
       {/* Director drive — only when the topology routes through a director. */}
       {hub && (
         <Row data-testid="director-drive-control" gap={8} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
-          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-muted)" }}>director drive</span>
+          <Text as="span" mono size={9.5} tone="muted">director drive</Text>
           <Row align="stretch" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {DIRECTOR_DRIVES.map((d) => (
               <button
@@ -82,6 +84,6 @@ export function CoordinationControls({ data, onTopology, onDirectorDrive }: Pick
           </Row>
         </Row>
       )}
-    </div>
+    </Box>
   );
 }

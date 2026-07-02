@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
@@ -87,7 +88,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
   const failedRepos    = project.repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
 
   return (
-    <div className="mono" style={{
+    <Box className="mono" style={{
       padding: "5px 24px 0",
       fontSize: 10.5,
     }}>
@@ -105,12 +106,12 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
               fontSize: 10.5, color: "var(--fg-muted)",
             }}
           >
-            <span style={{
+            <Box as="span" style={{
               display: "inline-block", fontSize: 8, color: "var(--fg-dim)",
               transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
               transition: "transform 0.15s",
-            }}>▼</span>
-            <span>
+            }}>▼</Box>
+            <Box as="span">
               {project.repos.length} repositories
               {resolvedCount > 0 && (
                 <Text tone="success"> · {resolvedCount} cloned</Text>
@@ -118,7 +119,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
               {cloning.size > 0 && (
                 <Text tone="accent"> · cloning…</Text>
               )}
-            </span>
+            </Box>
           </button>
         ) : (
           (() => {
@@ -137,7 +138,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                 ) : isCloning ? (
                   <Text tone="accent">cloning…</Text>
                 ) : (
-                  <span
+                  <Box as="span"
                     onClick={() => handleClone(fullName)}
                     style={{
                       padding: "1px 6px", borderRadius: 3,
@@ -145,7 +146,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
-                  >{err ? "retry clone" : "clone →"}</span>
+                  >{err ? "retry clone" : "clone →"}</Box>
                 )}
               </Row>
             );
@@ -153,7 +154,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
         )}
 
         {failedRepos.length > 0 && (
-          <span
+          <Box as="span"
             onClick={() => failedRepos.forEach(r => handleClone(r))}
             className="mono"
             style={{
@@ -161,7 +162,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
               background: "var(--bg-elev)", border: "1px solid var(--border)",
               color: "var(--danger)", cursor: "pointer", fontSize: 10,
             }}
-          >retry failed →</span>
+          >retry failed →</Box>
         )}
       </Row>
 
@@ -186,7 +187,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                 ) : isCloning ? (
                   <Text tone="accent">cloning…</Text>
                 ) : (
-                  <span
+                  <Box as="span"
                     onClick={() => handleClone(fullName)}
                     style={{
                       padding: "1px 6px", borderRadius: 3,
@@ -194,14 +195,14 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
-                  >{err ? "retry clone" : "clone →"}</span>
+                  >{err ? "retry clone" : "clone →"}</Box>
                 )}
               </Row>
             );
           })}
         </Stack>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -232,25 +233,25 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   return (
     <>
       <Row align="start" gap={14} style={{ padding: "14px 24px 0 12px" }}>
-        <div style={{ flex: 1 }}>
+        <Box style={{ flex: 1 }}>
           <Row gap={10}>
             <BackButton variant="icon" onClick={closeGithubBoard} aria-label="Back to portfolio" />
             <Text mono size={10} tone="dim">#{project.number}</Text>
             <Text as="h2" mono size={18} weight={600} style={{ margin: 0 }}>{project.name}</Text>
             {project.repo && <Chip>{project.repo}</Chip>}
             {project.number > 0 && (
-              <span className="mono" style={{
+              <Box as="span" className="mono" style={{
                 padding: "1px 6px", borderRadius: 3,
                 fontSize: 9.5, color: "var(--info)",
                 background: "color-mix(in oklch, var(--info), transparent 88%)",
                 border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              }}>⎇ synced w/ {project.repo}/projects/{project.number}</span>
+              }}>⎇ synced w/ {project.repo}/projects/{project.number}</Box>
             )}
           </Row>
           {project.description && (
             <Text as="div" tone="muted" size={12} style={{ marginTop: 4 }}>{project.description}</Text>
           )}
-        </div>
+        </Box>
         <Row gap={8}>
           <Button
             variant="primary"
@@ -263,7 +264,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
 
       <RepoResolverStrip project={project} />
 
-      <div style={{ marginTop: 8 }}>
+      <Box style={{ marginTop: 8 }}>
         <TabBar
           tabs={boardTabs}
           activeId={boardActive}
@@ -271,7 +272,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
           onReorder={boardReorder}
           onTearOff={boardTearOff}
         />
-      </div>
+      </Box>
     </>
   );
 }

@@ -1,16 +1,17 @@
 // Skills stage body (#1056, split from FocusedBodies.tsx #1757).
 import type { PaneSkill } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
+import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 
 export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
   const list = skills ?? [];
   if (list.length === 0) {
     return (
-      <div className="empty-state">
-        <span className="empty-icon">◈</span>
-        <span>No skills attached</span>
-      </div>
+      <Box className="empty-state">
+        <Box as="span" className="empty-icon">◈</Box>
+        <Box as="span">No skills attached</Box>
+      </Box>
     );
   }
   // Skills authored by this planning session (#1056) render FIRST and highlighted, so freshly
@@ -25,10 +26,10 @@ export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
           meta={s.desc || undefined}
           highlight={s.isNew}
           badge={s.isNew && (
-            <span className="mono" style={{
+            <Box as="span" className="mono" radius={4} bg="var(--accent)" style={{
               fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
-              color: "var(--accent-text)", background: "var(--accent)", borderRadius: 4, padding: "1px 5px",
-            }}>NEW</span>
+              color: "var(--accent-text)", padding: "1px 5px",
+            }}>NEW</Box>
           )}
         />
       ))}
