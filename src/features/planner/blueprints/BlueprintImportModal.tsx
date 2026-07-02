@@ -129,8 +129,8 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
         <Row gap={12} style={{ padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
           <IconBox size={32} radius={8} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)"><Download size={16} /></IconBox>
           <Box style={{ minWidth: 0 }}>
-            <h2 className="mono" style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
-            <Box style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>your published blueprint gists</Box>
+            <Text as="h2" mono size={14.5} weight={600} style={{ margin: 0, letterSpacing: ".01em" }}>Import blueprint</Text>
+            <Text as="div" size={10.5} tone="dim" style={{ marginTop: 2 }}>your published blueprint gists</Text>
           </Box>
           <Box as="span" style={{ flex: 1 }} />
           <Box as="span" className="mono" pad={[0, 10]} bg="var(--bg-elev)" border="soft" radius={99} style={{

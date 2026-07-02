@@ -67,7 +67,7 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
           <Row className="modal-head" gap={11} style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <IconBox size={30} radius={7} fontSize={15} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)">↓</IconBox>
             <Box>
-              <h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Download MCP servers</h2>
+              <Text as="h2" mono size="lg" weight={600} style={{ margin: 0 }}>Download MCP servers</Text>
               <Text as="div" size={10.5} tone="dim" style={{ marginTop: 1 }}>Your plan uses these MCP servers — review the source, then install.</Text>
             </Box>
             <IconButton aria-label="cancel" style={{ marginLeft: "auto" }} onClick={onCancel} disabled={busy} />

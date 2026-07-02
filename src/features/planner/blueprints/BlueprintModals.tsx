@@ -42,7 +42,7 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
         <Box className="modal" bg="var(--bg-panel)" border radius="lg" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
           <Row gap={11} className="modal-head" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <IconBox size={30} radius={7} fontSize={13} background={iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)"} color={iconColor ?? "var(--accent)"}>{icon}</IconBox>
-            <Box><h2 className="mono" style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h2>{sub && <Box style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 1 }}>{sub}</Box>}</Box>
+            <Box><Text as="h2" mono size="lg" weight={600} style={{ margin: 0 }}>{title}</Text>{sub && <Text as="div" size={10.5} tone="dim" style={{ marginTop: 1 }}>{sub}</Text>}</Box>
             <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
           </Row>
           <Box className="modal-body" pad={20} style={{ overflowY: "auto" }}>{children}</Box>

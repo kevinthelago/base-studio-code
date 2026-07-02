@@ -6,6 +6,7 @@ import { useState, type CSSProperties } from "react";
 import { AlertTriangle, Loader2, FileJson } from "lucide-react";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
+import { Code } from "@/shared/ui/data/Code";
 import { StageSummary } from "./BlueprintModals";
 import { spin, type PreviewEntry } from "./blueprintImport.helpers";
 
@@ -39,9 +40,9 @@ export function GistPreview({ entry }: { entry?: PreviewEntry }) {
         style={{ marginTop: 9, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--fg-dim)", fontSize: 10, display: "inline-flex", alignItems: "center", gap: 5 }}
       ><FileJson size={11} />{raw ? "hide" : "view"} raw JSON</button>
       {raw && (
-        <pre style={{ marginTop: 7, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)", fontSize: 10, lineHeight: 1.5, whiteSpace: "pre" }}>
+        <Code wrap={false} maxHeight={220} style={{ marginTop: 7, padding: 10, borderRadius: "var(--r-md)", background: "var(--bg-elev)" }}>
           {JSON.stringify(bp ?? { name: p.name, sections }, null, 2)}
-        </pre>
+        </Code>
       )}
     </Box>
   );

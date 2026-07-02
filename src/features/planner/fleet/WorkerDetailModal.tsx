@@ -4,6 +4,7 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 
 export function Modal({ title, children, onClose, footer }: {
@@ -13,7 +14,7 @@ export function Modal({ title, children, onClose, footer }: {
     <ModalScrim onDismiss={onClose}>
       <Box bg="var(--bg-panel)" border radius="lg" style={{ width: 440, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
         <Row style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)" }}>
-          <h3 style={{ margin: 0 }}>{title}</h3>
+          <Text as="h3" style={{ margin: 0 }}>{title}</Text>
           <Spacer />
           <IconButton aria-label="close" onClick={onClose} />
         </Row>
