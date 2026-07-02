@@ -13,6 +13,8 @@
 //! - [`provision`] — the mutating lifecycle: import/remove the sealed distro, disk usage, in-distro exec.
 //! - [`bridge`] — host↔distro file I/O + the in-distro clone/worktree relocation kernel.
 
+use crate::StrErr;
+
 mod bridge;
 mod provision;
 mod readiness;
@@ -64,7 +66,7 @@ pub(crate) fn decode_wsl(bytes: &[u8]) -> String {
 fn wsl_exec(args: &[&str]) -> Result<String, String> {
     let mut cmd = std::process::Command::new("wsl.exe");
     cmd.args(args).env("WSL_UTF8", "1");
-    let out = crate::platform::process::run_output(&mut cmd).map_err(|e| e.to_string())?;
+    let out = crate::platform::process::run_output(&mut cmd).str_err()?;
     if out.status.success() {
         Ok(decode_wsl(&out.stdout))
     } else {
@@ -89,7 +91,7 @@ fn wsl_exec_stdin(args: &[&str], content: &[u8]) -> Result<(), String> {
         let mut si = child.stdin.take().ok_or("no stdin handle")?;
         si.write_all(content).map_err(|e| format!("write stdin: {e}"))?;
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let out = child.wait_with_output().str_err()?;
     if out.status.success() {
         Ok(())
     } else {

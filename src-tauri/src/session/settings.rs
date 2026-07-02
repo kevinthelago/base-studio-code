@@ -233,8 +233,8 @@ pub(crate) fn write_session_settings(
         }
     }
 
-    std::fs::create_dir_all(root.join(".claude")).map_err(|e| e.to_string())?;
-    crate::platform::fsx::atomic_write_json(&settings_path, &config).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join(".claude")).str_err()?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
     write_mcp_json(&root, mcp_servers)?;
     write_session_skills(&root, skills)?;
     // Attach-time usage counting (#A): bump each attached skill's global usage counter so the

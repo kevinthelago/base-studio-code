@@ -8,6 +8,8 @@
 //! Runtime connectors are app-wide — there is no project arg. Read-only; the view is metadata only
 //! (id/label/category/auth) — never the secret, which lives in the OS keychain (#1194).
 
+use crate::StrErr;
+
 /// One agent-authored runtime connector, surfaced to the Source pane (#1980). Metadata only — the
 /// resources + base URL drive the scan backend (`data_platform_scan`); the pane just needs the
 /// label/auth/category to render a declared source's real connector identity.
@@ -26,7 +28,7 @@ pub struct RuntimeConnectorView {
 #[tauri::command]
 pub fn data_runtime_connectors() -> Result<Vec<RuntimeConnectorView>, String> {
     let presets = bsc_data::runtime::load_runtime_presets(&bsc_data::runtime::runtime_store_path())
-        .map_err(|e| e.to_string())?;
+        .str_err()?;
     Ok(presets
         .into_iter()
         .map(|p| RuntimeConnectorView {
