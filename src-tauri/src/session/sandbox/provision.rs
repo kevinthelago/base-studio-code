@@ -4,6 +4,7 @@
 
 use super::readiness::{detect_linux_pm, host_has, linux_install_command, parse_wsl_distros, run_wsl};
 use super::{decode_wsl, require_windows, AGENT_SANDBOX_DISTRO};
+use crate::platform::process::run_output;
 use serde::Serialize;
 use tauri::Emitter;
 
@@ -104,7 +105,7 @@ fn provision_windows_rootfs(app: &tauri::AppHandle) -> Result<String, String> {
     );
     let mut cmd = std::process::Command::new("wsl.exe");
     cmd.args(&args).env("WSL_UTF8", "1");
-    let out = crate::platform::process::run_output(&mut cmd)
+    let out = run_output(&mut cmd)
         .map_err(|e| format!("wsl --import failed to start: {e}"))?;
     if out.status.success() {
         Ok(format!("Imported {AGENT_SANDBOX_DISTRO} — the sandbox is ready."))
@@ -152,7 +153,7 @@ pub(crate) fn sandbox_run(cwd: String, command: String) -> Result<String, String
     let (program, args) = crate::platform::shell::wsl_invocation(AGENT_SANDBOX_DISTRO, &cwd, &command);
     let mut cmd = std::process::Command::new(program);
     cmd.args(&args).env("WSL_UTF8", "1");
-    let out = crate::platform::process::run_output(&mut cmd)
+    let out = run_output(&mut cmd)
         .map_err(|e| format!("wsl exec failed to start: {e}"))?;
     let stdout = decode_wsl(&out.stdout);
     if out.status.success() {
@@ -208,7 +209,7 @@ pub(crate) fn remove_sandbox() -> Result<u64, String> {
     for args in [["--terminate", AGENT_SANDBOX_DISTRO], ["--unregister", AGENT_SANDBOX_DISTRO]] {
         let mut cmd = std::process::Command::new("wsl.exe");
         cmd.args(args);
-        let _ = crate::platform::process::run_output(&mut cmd);
+        let _ = run_output(&mut cmd);
     }
     let _ = std::fs::remove_dir_all(&install_dir);
     let _ = std::fs::remove_file(&tarball);
