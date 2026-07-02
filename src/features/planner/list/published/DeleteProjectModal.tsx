@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
-import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -135,7 +135,7 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
   }
 
   return (
-    <Box className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
+    <ModalScrim onDismiss={deleting ? undefined : closeDeleteModal}>
       <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 460, maxWidth: "90vw",
       }}>
         {confirmDeleteRepos ? (
@@ -269,6 +269,6 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
           </>
         )}
       </Box>
-    </Box>
+    </ModalScrim>
   );
 }
