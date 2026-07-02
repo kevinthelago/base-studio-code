@@ -86,7 +86,7 @@ fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(),
         } else {
             c.args(["-b", slug, wt_str]); // create the branch at HEAD
         }
-        crate::platform::process::run_output(&mut c)
+        run_output(&mut c)
     };
 
     let mut out = run_add(branch_exists()).str_err()?;
