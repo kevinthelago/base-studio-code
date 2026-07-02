@@ -187,15 +187,6 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
-/// Epoch-seconds now (for recency ranking). 0 on the impossible pre-1970 clock — harmless, just makes
-/// every skill maximally "stale" that run.
-fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// Recency bucket for an `updated_at` (epoch s) vs `now`: more recent = higher. Bounded so usage stays
 /// the dominant ranking term while a freshly-updated skill still lifts above an ancient one. Pure.
 fn recency_bucket(updated_at: i64, now: i64) -> i64 {
@@ -280,7 +271,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // (type/source/project/group/pinned), ranked by usage × recency, in cheap pages (#A).
         "list" => {
             let s = store()?;
-            let now = now_secs();
+            let now = bsc_util::now_secs();
             let mut skills = s.list().map_err(|e| e.to_string())?;
             if let Some(k) = &args.kind {
                 skills.retain(|sk| &sk.kind == k);
