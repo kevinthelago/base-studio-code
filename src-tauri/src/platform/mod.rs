@@ -11,6 +11,7 @@ pub mod http;
 pub mod shell;
 pub mod process;
 pub mod fsx;
+pub mod errs;
 pub mod docstore;
 pub mod pkgcache;
 pub mod config;

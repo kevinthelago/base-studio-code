@@ -3,6 +3,7 @@
 ///
 /// Sampling is cheap — only the tracked shell PIDs (one per live agent) plus the app
 /// process itself are refreshed per tick. No full system process walk at 20+ agents.
+use crate::StrErr;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -403,7 +404,7 @@ pub fn perf_clear_history(state: tauri::State<PerfState>) -> Result<(), String> 
     let mut g = state.lock();
     g.ring.clear();
     if let Some(conn) = g.db_conn() {
-        conn.execute("DELETE FROM perf_samples", []).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM perf_samples", []).str_err()?;
     }
     Ok(())
 }

@@ -5,6 +5,7 @@
 // Pure of Tauri beyond the command attrs. The KB-page listing/write surface was
 // removed with the page itself (#1460 / #1504); only the read side remains.
 
+use crate::StrErr;
 use crate::bsc_base_dir;
 
 /// Absolute path of the base-studio-code data dir, so the frontend can build
@@ -38,7 +39,7 @@ fn resolve_store_path(relpath: &str) -> Result<std::path::PathBuf, String> {
 #[tauri::command]
 pub(crate) fn read_document(relpath: String) -> Result<String, String> {
     let path = resolve_store_path(&relpath)?;
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    std::fs::read_to_string(&path).str_err()
 }
 
 #[cfg(test)]

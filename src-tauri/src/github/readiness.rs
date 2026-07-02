@@ -237,8 +237,8 @@ pub(crate) fn get_preferred_shell() -> String {
 pub(crate) fn set_preferred_shell(kind: String) -> Result<(), String> {
     let pref = crate::platform::shell::ShellPref::parse(&kind);
     let base = bsc_base_dir();
-    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    std::fs::write(crate::platform::shell::shell_pref_path(), pref.as_str()).map_err(|e| e.to_string())
+    std::fs::create_dir_all(&base).str_err()?;
+    std::fs::write(crate::platform::shell::shell_pref_path(), pref.as_str()).str_err()
 }
 
 #[cfg(test)]
