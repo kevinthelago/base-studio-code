@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Row } from "@/shared/ui/layout/Row";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
@@ -45,11 +44,11 @@ export function ActivityHeatmap({
   })() : null;
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Activity · last 28 weeks</h3>
-        <Box as="span" className="hint">all contributions · GitHub calendar</Box>
-        <Spacer />
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Activity · last 28 weeks"
+      hint="all contributions · GitHub calendar"
+      right={
         <Box as="span" className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
           less
           {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
@@ -57,7 +56,9 @@ export function ActivityHeatmap({
           ))}
           more
         </Box>
-      </Row>
+      }
+      headMb={10}
+    >
       <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: "block", width: "100%", overflow: "visible" }}>
         {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
           <text key={i} x={0} y={4 + i * (cell + gap) + cell / 2}

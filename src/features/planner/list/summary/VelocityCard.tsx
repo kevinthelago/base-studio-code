@@ -20,11 +20,12 @@ export function VelocityCard({ repoIssues, loading }: {
   const maxV = Math.max(...opened, ...closed, 1);
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Velocity</h3>
-        <Box as="span" className="hint">{loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}</Box>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Velocity"
+      hint={loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}
+      headMb={10}
+    >
       {!hasData && !loading && (
         <Text as="div" mono size={11} tone="dim" style={{ padding: "4px 0" }}>No issue data available.</Text>
       )}

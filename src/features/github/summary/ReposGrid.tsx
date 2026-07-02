@@ -18,13 +18,13 @@ export function ReposGrid({ repos, loading }: {
 }) {
   const { setGithubPageMode } = useAppStore();
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Repositories</h3>
-        <Box as="span" className="hint">{repos.length} connected · click to drill in</Box>
-        <Spacer />
-        <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Repositories"
+      hint={`${repos.length} connected · click to drill in`}
+      right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>}
+      headMb={10}
+    >
       {repos.length === 0 && !loading && (
         <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No repositories connected.</Box>
       )}

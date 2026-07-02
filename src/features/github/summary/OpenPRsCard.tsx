@@ -2,8 +2,6 @@
 
 import type { OpenPR } from "../lib/githubSummary";
 import { Chip } from "@/shared/ui/data/Chip";
-import { Row } from "@/shared/ui/layout/Row";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
@@ -15,13 +13,13 @@ export function OpenPRsAllRepos({ prs, loading }: {
   loading: boolean;
 }) {
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Open pull requests</h3>
-        <Box as="span" className="hint">{loading ? "loading…" : `${prs.length} across all repos`}</Box>
-        <Spacer />
-        <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>filter by reviewer</Button>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Open pull requests"
+      hint={loading ? "loading…" : `${prs.length} across all repos`}
+      right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>filter by reviewer</Button>}
+      headMb={10}
+    >
       {prs.length === 0 && !loading && (
         <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No open pull requests.</Box>
       )}

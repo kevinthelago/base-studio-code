@@ -1,7 +1,6 @@
 // Top-contributors card — commit counts across the sampled repos (#1644).
 
 import { Avatar } from "@/shared/ui/data/Avatar";
-import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
@@ -15,11 +14,12 @@ export function ContributorsCard({ contributors, loading }: {
 }) {
   const maxC = Math.max(...contributors.map(p => p.commits), 1);
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Top contributors</h3>
-        <Box as="span" className="hint">{loading ? "loading…" : contributors.length > 0 ? `${contributors.length} contributors · all repos` : "no data"}</Box>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Top contributors"
+      hint={loading ? "loading…" : contributors.length > 0 ? `${contributors.length} contributors · all repos` : "no data"}
+      headMb={10}
+    >
       {contributors.length === 0 && !loading && (
         <Text mono size={11} tone="dim" as="div" style={{ padding: "4px 0" }}>
           No contributor data yet — GitHub is computing stats.
