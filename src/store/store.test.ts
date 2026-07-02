@@ -1092,27 +1092,33 @@ describe("agent fleet store", () => {
   it("in-app fleet edits write back to plan.db; the poll read path does not (#1317)", () => {
     useAppStore.getState().setPlanFleet("p", fleet);
 
+    // Fleet writes now route through the `bsc` bridge (#2114): `bsc plan fleet set` with the whole
+    // fleet on the child's stdin — `invoke("bsc", { projectKey, args, stdin })`.
+    const fleetSet = (call: unknown[]): boolean =>
+      call[0] === "bsc"
+      && JSON.stringify((call[1] as { args?: string[] } | undefined)?.args) === JSON.stringify(["plan", "fleet", "set"]);
+
     // setPlanFleet is the poll's READ path (plan.db → store) — it must NOT persist, or
     // every poll tick would write back and we'd loop.
     vi.mocked(invoke).mockClear();
     useAppStore.getState().setPlanFleet("p", fleet);
-    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "plan_set_fleet")).toBe(false);
+    expect(vi.mocked(invoke).mock.calls.some(fleetSet)).toBe(false);
 
     // A stream edit persists the whole updated fleet to plan.db.
     vi.mocked(invoke).mockClear();
     useAppStore.getState().setPlanAgentStreamModel("p", "auth-ui", "opus-4.5");
-    const edit = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    const edit = vi.mocked(invoke).mock.calls.find(fleetSet);
     expect(edit).toBeTruthy();
     expect((edit![1] as { projectKey: string }).projectKey).toBe("p");
-    expect((edit![1] as { fleet: FleetPlan }).fleet.streams.find(x => x.id === "auth-ui")!.model)
+    expect((JSON.parse((edit![1] as { stdin: string }).stdin) as FleetPlan).streams.find(x => x.id === "auth-ui")!.model)
       .toBe("opus-4.5");
 
-    // Removal persists the post-removal fleet (plan_set_fleet is a full replace).
+    // Removal persists the post-removal fleet (`bsc plan fleet set` is a full replace).
     vi.mocked(invoke).mockClear();
     useAppStore.getState().removePlanAgentStream("p", "api");
-    const rm = vi.mocked(invoke).mock.calls.find(([c]) => c === "plan_set_fleet");
+    const rm = vi.mocked(invoke).mock.calls.find(fleetSet);
     expect(rm).toBeTruthy();
-    expect((rm![1] as { fleet: FleetPlan }).fleet.streams.some(x => x.id === "api")).toBe(false);
+    expect((JSON.parse((rm![1] as { stdin: string }).stdin) as FleetPlan).streams.some(x => x.id === "api")).toBe(false);
   });
 
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
