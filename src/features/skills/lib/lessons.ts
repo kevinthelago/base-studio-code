@@ -1,12 +1,13 @@
 // Self-correction lessons — the frontend side of #1362. A lesson is a mistake an agent caught
 // mid-session (captured by the `bsc-learned` helper into the project's plan.db); the user reviews the
-// pending queue here and confirms it into a project skill or discards it. The Tauri commands
-// (`plan_lesson_*`, in src-tauri/src/project/plan_db.rs) are thin wrappers over the plandb crate.
+// pending queue here and confirms it into a project skill or discards it. These drive the SAME
+// `bsc plan lesson …` verbs the planner/agents use, through the generic `bsc` bridge (#2114/#2115) —
+// UI↔planner parity over one store surface (they replaced the per-verb `plan_lesson_*` Tauri commands).
 //
 // Kept Tauri-light + React-free so the mapping helpers are unit-testable; the LessonsTab component
 // does the rendering. Mirrors how skillBridge.ts isolates the skilldb bridge.
 
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson, bscRun } from "@/shared/lib/core/bsc";
 import { blankSkill, skillSlug, type SkillDef } from "./skills";
 
 /** A captured lesson candidate — mirrors the Rust `plandb::Lesson` (camelCase). */
@@ -32,26 +33,24 @@ export interface Lesson {
  *  (no Tauri host / no plan.db) so the UI degrades to an empty queue rather than throwing. */
 export async function loadPendingLessons(projectKey: string): Promise<Lesson[]> {
   if (!projectKey) return [];
-  try {
-    return (await invoke<Lesson[]>("plan_lesson_list", { projectKey, status: "pending" })) ?? [];
-  } catch {
-    return [];
-  }
+  // `bsc plan lesson list --status pending` emits the JSON array (the same `Vec<Lesson>` serde shape
+  // the old `plan_lesson_list` command returned); bscJson degrades to [] when plan.db doesn't exist yet.
+  return bscJson<Lesson[]>(projectKey, ["plan", "lesson", "list", "--status", "pending"], []);
 }
 
 /** Mark a candidate confirmed (the user accepted it). The caller also materializes it as a skill. */
 export async function confirmLesson(projectKey: string, id: string): Promise<void> {
-  try { await invoke("plan_lesson_confirm", { projectKey, id }); } catch { /* bridge absent */ }
+  await bscRun(projectKey, ["plan", "lesson", "confirm", id]);
 }
 
 /** Mark a candidate discarded (kept as a record; its seen count still grows if it recurs). */
 export async function discardLesson(projectKey: string, id: string): Promise<void> {
-  try { await invoke("plan_lesson_discard", { projectKey, id }); } catch { /* bridge absent */ }
+  await bscRun(projectKey, ["plan", "lesson", "discard", id]);
 }
 
 /** Permanently delete a candidate. */
 export async function removeLesson(projectKey: string, id: string): Promise<void> {
-  try { await invoke("plan_lesson_remove", { projectKey, id }); } catch { /* bridge absent */ }
+  await bscRun(projectKey, ["plan", "lesson", "remove", id]);
 }
 
 /** A confirmed lesson's display title — the corrective rule (the actionable part), else the mistake,

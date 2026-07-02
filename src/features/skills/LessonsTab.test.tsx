@@ -24,10 +24,16 @@ describe("LessonsTab (#1362)", () => {
   });
 
   it("renders the pending queue and confirms a lesson into a project-scoped skill", async () => {
-    const calls: string[] = [];
-    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      calls.push(cmd);
-      return cmd === "plan_lesson_list" ? [LESSON] : undefined;
+    // Lessons now flow through the generic `bsc` bridge (#2114): `bsc plan lesson list` returns the
+    // JSON array as stdout; other verbs (confirm) return empty stdout.
+    const calls: Array<{ cmd: string; args: unknown }> = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      calls.push({ cmd, args });
+      if (cmd === "bsc") {
+        const a = (args as { args?: string[] }).args ?? [];
+        return a.includes("list") ? JSON.stringify([LESSON]) : "";
+      }
+      return undefined;
     });
 
     render(<LessonsTab projectKey="proj-key" projectName="Proj" />);
@@ -38,8 +44,14 @@ describe("LessonsTab (#1362)", () => {
 
     fireEvent.click(screen.getByText("confirm"));
 
-    // The verdict is recorded AND a project-scoped skill is created in the store.
-    await waitFor(() => expect(calls).toContain("plan_lesson_confirm"));
+    // The verdict is recorded (`bsc plan lesson confirm L1`) AND a project-scoped skill is created.
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.cmd === "bsc" && ((c.args as { args?: string[] }).args ?? []).join(" ") === "plan lesson confirm L1",
+        ),
+      ).toBe(true),
+    );
     const skills = useAppStore.getState().skills;
     const made = skills.find((s) => s.id === "lesson-skill-L1");
     expect(made).toBeTruthy();
