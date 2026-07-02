@@ -41,6 +41,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
           {/* platform dropdown */}
           <Text as="div" style={{ ...grpLabel, marginBottom: 8 }}>platform</Text>
           <Box style={{ position: "relative" }}>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled dropdown trigger button; Button/.btn would change rendering */}
             <button onClick={() => setOpen((v) => !v)} style={{
               width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", cursor: "pointer",
               borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"),
@@ -58,6 +59,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                 {PLATFORMS.map((p) => {
                   const on = svc.platform === p.id;
                   return (
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled dropdown option button; Button/.btn would change rendering
                     <button key={p.id} onClick={() => pickPlatform(p.id)} style={{
                       width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 9px", cursor: "pointer",
                       borderRadius: "var(--r-sm)", border: "1px solid " + (on ? "color-mix(in oklch, var(--accent), transparent 62%)" : "transparent"),
@@ -82,6 +84,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                 {platform(svc.platform).kinds.map((k) => {
                   const on = svc.workload === k;
                   return (
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill toggle button; Button/.btn would change rendering
                     <button key={k} onClick={() => setSvc({ workload: k })} style={{
                       padding: "2px 9px", borderRadius: 99, cursor: "pointer", fontFamily: MONO, fontSize: 9.5,
                       border: "1px solid " + (on ? WORKLOAD[k].c : "var(--border-soft)"), color: on ? WORKLOAD[k].c : "var(--fg-dim)", background: "transparent",
@@ -137,6 +140,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                       Not containerized — this <b style={{ color: "var(--fg-muted)" }}>{WORKLOAD[svc.workload].label}</b> service deploys without a container image or orchestrator.
                     </Text>
                     {canContainerize && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill CTA button; Button/.btn would change rendering
                       <button onClick={() => setSvc({ workload: "container" })} style={{
                         fontFamily: MONO, fontSize: 8.5, color: "var(--violet)", padding: "4px 10px", borderRadius: 99, cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto",
                         background: "color-mix(in oklch, var(--violet), transparent 88%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 72%)",

@@ -8,6 +8,7 @@
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Chip } from "@/shared/ui/data/Chip";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -94,13 +95,13 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
             <Box as="span" className="hint">Downloads from GitHub into <Text as="span" mono>~/.base-studio-code/mcp/</Text>. Skip to install later from the MCP screen.</Box>
             <Box as="span" style={{ flex: 1 }} />
             {allDone ? (
-              <button className="btn primary" onClick={onCancel}>Done</button>
+              <Button variant="primary" onClick={onCancel}>Done</Button>
             ) : (
               <>
-                <button className="btn ghost" onClick={onCancel} disabled={busy}>Cancel</button>
-                <button className="btn primary" onClick={onConfirm} disabled={busy || !anyActionable}>
+                <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+                <Button variant="primary" onClick={onConfirm} disabled={busy || !anyActionable}>
                   {busy ? "Downloading…" : "Download all"}
-                </button>
+                </Button>
               </>
             )}
           </Row>

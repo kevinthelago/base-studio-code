@@ -63,6 +63,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
 }) {
   return (
     <>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke context-menu item with hover-swap inline styling (not the .btn kit) */}
       <button
         onClick={onRename}
         style={{
@@ -85,6 +86,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
             const [c, r] = l.split("×").map(Number);
             const current = layout === l;
             return (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke layout-swatch button (grid-preview + active-state inline styling, not the .btn kit)
               <button
                 key={l}
                 className="mono"

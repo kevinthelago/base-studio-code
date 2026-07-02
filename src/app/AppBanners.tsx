@@ -8,6 +8,7 @@ import {
 } from "@/app/console/lib/sessionRecovery";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Button } from "@/shared/ui/controls/Button";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -47,13 +48,13 @@ function CrashRecoveryBanner() {
       tone="accent"
       onDismiss={() => setHidden(true)}
       right={
-        <button
-          className="btn primary"
+        <Button
+          variant="primary"
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => { restoreSessionsFromCrash(); setHidden(true); }}
         >
           <RotateCcw size={13} /> Restore {count}
-        </button>
+        </Button>
       }
     >
       Your last session ended unexpectedly —{" "}
@@ -141,7 +142,7 @@ export function SessionRecoveryBanner() {
         variant="bar"
         tone="info"
         lead={<LifeBuoy size={14} style={{ color: "var(--info)", flexShrink: 0 }} />}
-        right={<button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>}
+        right={<Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>}
         onDismiss={() => setDismissed(true)}
       >
         <Box as="span" style={{ flex: 1, minWidth: 0 }}>
@@ -161,10 +162,10 @@ export function SessionRecoveryBanner() {
                   <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</Box>
                   <Text className="hint" size={10.5}>{sessions.length}</Text>
                   {restorable.length > 0 && (
-                    <button className="btn primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
+                    <Button variant="primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
                       onClick={() => restoreProject(key, restorable)}>
                       <RotateCcw size={12} /> Restore {restorable.length}
-                    </button>
+                    </Button>
                   )}
                 </Row>
                 {sessions.map((s) => (
@@ -174,11 +175,11 @@ export function SessionRecoveryBanner() {
                       <Text className="hint" size={10}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</Text>
                     </Box>
                     {s.reapOnly ? <Text className="hint" size={10}>reap-only</Text> : <Box as="span" />}
-                    <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => drop(new Set([s.paneId]))} title="Ignore for now">Ignore</button>
-                    <button className="btn ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 8px", color: "var(--danger)" }}
+                    <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => drop(new Set([s.paneId]))} title="Ignore for now">Ignore</Button>
+                    <Button variant="ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 8px", color: "var(--danger)" }}
                       onClick={() => discard(s)} title={s.livePid ? `Kill pid ${s.livePid} + forget` : "Forget"}>
                       <Trash2 size={12} /> Discard
-                    </button>
+                    </Button>
                   </Grid>
                 ))}
               </Box>
@@ -219,11 +220,11 @@ function QuarantineBanner() {
         lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
         right={
           <Box as="span" style={{ display: "inline-flex", gap: 6 }}>
-            <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>
+            <Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>
             {n > 1 && (
-              <button className="btn ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
+              <Button variant="ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
                 Ack all
-              </button>
+              </Button>
             )}
           </Box>
         }
@@ -244,9 +245,9 @@ function QuarantineBanner() {
                 </Box>
                 <Text className="hint" size={10.5}>{info.summary}</Text>
               </Box>
-              <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
+              <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
                 Acknowledge
-              </button>
+              </Button>
             </Grid>
           ))}
         </Box>
@@ -289,9 +290,9 @@ export function SandboxSetupBanner() {
       lead={<ShieldAlert size={14} style={{ color: "var(--warn)", flexShrink: 0 }} />}
       right={
         sandbox.autoInstallable ? (
-          <button className="btn primary" onClick={install} disabled={installing}>
+          <Button variant="primary" onClick={install} disabled={installing}>
             {installing ? "Installing…" : label}
-          </button>
+          </Button>
         ) : undefined
       }
       onDismiss={dismiss}

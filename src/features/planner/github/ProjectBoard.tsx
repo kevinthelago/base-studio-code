@@ -255,6 +255,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 
         {/* Composer */}
         <Stack gap={8} style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
+          {/* eslint-disable-next-line no-restricted-syntax -- multiline comment composer; the UI-kit has no textarea primitive */}
           <textarea
             className="input mono"
             placeholder="leave a comment, or /assign, /label, /close, /ai breakdown…"

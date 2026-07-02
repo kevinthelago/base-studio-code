@@ -95,6 +95,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
                 <Row gap={7} style={{ padding: "0 12px 10px" }}>
                   <Text as="span" mono size={9.5} tone="danger">⚠ {s.err}</Text>
                   <Spacer />
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
                 </Row>
               )}
@@ -120,11 +121,13 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
 
                   <Row gap={7} align="stretch">
                     {s.downloadable && s.status !== "ready" && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control
                       <button className="mini accent" disabled={busy(s)} onClick={() => onBuild?.(s)}>
                         {s.status === "downloading" ? "downloading…" : s.status === "building" ? "building…" : s.status === "available" ? "download + build" : "build"}
                       </button>
                     )}
                     <Spacer />
+                    {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                     <button className="mini" onClick={() => onRemove?.(s.id)}>remove</button>
                   </Row>
                 </Box>
@@ -135,6 +138,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
       </Stack>
 
       <Row gap={7} align="stretch">
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline add-row input (flex Row + Enter handler); TextField's .field wrapper would change layout */}
         <input
           className="input"
           placeholder="＋ add an MCP server — catalog name, command, or remote URL"
@@ -143,6 +147,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}
           style={{ flex: 1, height: 28, fontSize: 10.5 }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control */}
         <button className="mini accent" disabled={!draft.trim()} onClick={() => { if (draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}>add</button>
       </Row>
     </Stack>

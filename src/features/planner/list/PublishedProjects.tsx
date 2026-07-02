@@ -189,10 +189,12 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
 
           {isOpen && (
             <Box className="menu" style={{ minWidth: 178 }}>
+              {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> open board on GitHub
               </button>
               <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+              {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
                 <Trash2 size={12} /> delete project
               </button>
@@ -474,6 +476,7 @@ export function PublishedProjects({
             <Button variant="ghost" onClick={fetchProjects} disabled={loading}>
               {loading ? "syncing…" : "↻ sync"}
             </Button>
+            {/* eslint-disable-next-line no-restricted-syntax -- needs a real DOM ref for click-outside excludeRef (Button isn't forwardRef) */}
             <button ref={newBtnRef} className="btn primary" onClick={() => setNewOpen(o => !o)}>+ New project</button>
           </Row>
 
@@ -485,6 +488,7 @@ export function PublishedProjects({
               background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
             }}>
               <Text mono size={10} tone="dim" style={{ whiteSpace: "nowrap" }}>+ plan</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless inline title input (not a Field stack) */}
               <input
                 autoFocus
                 value={title}
@@ -513,6 +517,7 @@ export function PublishedProjects({
           <Row gap={12} wrap style={{ marginTop: 16, paddingBottom: 16 }}>
             <Row gap={8} style={{ height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 1 300px", minWidth: 0 }}>
               <Search size={13} style={{ color: "var(--fg-dim)" }} />
+              {/* eslint-disable-next-line no-restricted-syntax -- search-in-toolbar inline input (borderless, not a Field stack) */}
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
@@ -524,8 +529,10 @@ export function PublishedProjects({
             <Row gap={7}>
               <Text mono size={10} tone="dim">sort</Text>
               <Row align="stretch" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline sort-segment button (styled via sortBtn helper, not a .btn) */}
                 <button className="mono" onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
                 <Box as="span" bg="var(--border-soft)" style={{ width: 1}} />
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline sort-segment button (styled via sortBtn helper, not a .btn) */}
                 <button className="mono" onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
               </Row>
             </Row>

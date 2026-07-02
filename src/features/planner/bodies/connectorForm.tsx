@@ -56,6 +56,7 @@ function Field({ field, value, onChange }: { field: SpecField; value: string; on
       <Text as="span" mono size={10} tone="muted">
         {field.label}{field.optional && <Text as="span" tone="dim"> · optional{field.hint ? `, ${field.hint}` : ""}</Text>}
       </Text>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled field input (local Field component; not the shared .input/.field) */}
       <input
         value={value}
         placeholder={field.placeholder}
@@ -79,6 +80,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
         {field.label} <Text as="span" tone="accent">●</Text> <Text as="span" tone="dim">secret</Text>
       </Text>
       <Row gap={8}>
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled secret input (masked, keychain-bound; not the shared .input) */}
         <input
           type={revealed ? "text" : "password"}
           value={value}
@@ -91,6 +93,7 @@ function SecretField({ field, value, revealed, onChange, onReveal, testid }: {
             fontFamily: MONO, fontSize: 13, letterSpacing: revealed ? 0 : ".06em", color: "var(--fg)",
           }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled reveal toggle (custom dimensions, no .icon-btn hover state) */}
         <button
           onClick={onReveal} title={revealed ? "Hide" : "Reveal"} aria-label={`${revealed ? "Hide" : "Reveal"} ${field.label}`}
           style={{
@@ -198,6 +201,7 @@ export function SourceCard({
               <InfoChip>🛡 Credentials stay on this device — the planning agent never sees them</InfoChip>
               {spec.auth === "oauth" ? (
                 <>
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled OAuth connect button */}
                   <button data-testid={`connect-${src.uid}`} onClick={onConnect} style={{
                     alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 9, fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600,
                     color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 91%)", border: "1px solid var(--accent-dim)", borderRadius: "var(--r-md)", padding: "10px 16px", cursor: "pointer",
@@ -209,6 +213,7 @@ export function SourceCard({
                         {(["production", "sandbox"] as const).map((env) => {
                           const on = (src.env ?? "production") === env;
                           return (
+                            // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled environment toggle
                             <button key={env} onClick={() => onEnv(env)} style={{
                               fontFamily: MONO, fontSize: 11, cursor: "pointer", borderRadius: "var(--r-sm)", padding: "5px 11px",
                               color: on ? "var(--fg)" : "var(--fg-dim)", background: on ? "var(--bg-elev2)" : "var(--bg-elev)", border: "1px solid " + (on ? "var(--border)" : "var(--border-soft)"),
@@ -220,6 +225,7 @@ export function SourceCard({
                   )}
                 </>
               ) : spec.auth === "upload" ? (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled upload connect button
                 <button data-testid={`connect-${src.uid}`} onClick={onConnect} style={{
                   alignSelf: "flex-start", fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--accent)",
                   background: "color-mix(in oklch, var(--accent), transparent 91%)", border: "1px solid var(--accent-dim)", borderRadius: "var(--r-md)", padding: "9px 15px", cursor: "pointer",
@@ -231,6 +237,7 @@ export function SourceCard({
                   ) : (
                     <Field key={f.key} field={f} value={src.fields[f.key] ?? ""} onChange={(v) => onField(f.key, v)} />
                   ))}
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled save-and-connect button */}
                   <button data-testid={`connect-${src.uid}`} onClick={onConnect} disabled={!canConnect} style={{
                     alignSelf: "flex-start", fontFamily: "var(--sans)", fontSize: 12.5, fontWeight: 600, color: "oklch(0.20 0.04 70)",
                     background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "8px 15px", cursor: canConnect ? "pointer" : "not-allowed", opacity: canConnect ? 1 : 0.45,
@@ -281,7 +288,9 @@ export function SourceCard({
                 <Text as="span" mono size={9} tone="dim">check the connection details and try again</Text>
               </Stack>
               <Row gap={8} align="stretch">
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled retry button */}
                 <button data-testid={`retry-${src.uid}`} onClick={onRetry} style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>↻ retry</button>
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled remove-source button */}
                 <button onClick={onRemove} style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>remove source</button>
               </Row>
               <Text as="span" mono size={9} tone="dim">⚠ gate held until resolved</Text>
@@ -290,6 +299,7 @@ export function SourceCard({
 
           {/* a connected source can always be removed (collapsed footer affordance) */}
           {connected && (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled remove-source affordance
             <button onClick={onRemove} style={{ alignSelf: "flex-start", fontFamily: MONO, fontSize: 9.5, color: "var(--fg-dim)", background: "transparent", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", padding: "3px 10px", cursor: "pointer" }}>remove source</button>
           )}
         </Stack>

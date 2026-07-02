@@ -31,6 +31,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
@@ -624,6 +625,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 <>
                   <Text as="span" mono size={10} tone="dim">#{activeProjectNumber}</Text>
                   {/* Published title is editable (#1226): blur/Enter commits to the GitHub board + local name. */}
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline editable title (borderless, width-to-text, no .field wrapper); TextField would change layout */}
                   <input
                     value={titleEdit ?? activeProjectName}
                     onChange={e => { setTitleEdit(e.target.value); if (renameErr) setRenameErr(null); }}
@@ -648,6 +650,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 </>
               )
               : (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke inline editable title (borderless, width-to-text, no .field wrapper); TextField would change layout
                 <input
                   value={planningTitle}
                   onChange={e => { setPlanningTitle(e.target.value); if (draftTitleErr) setDraftTitleErr(null); }}
@@ -679,18 +682,18 @@ export function Planning({ visible }: { visible: boolean }) {
             </Text>
           )}
         </Box>
-        <button className="btn ghost" onClick={handleRestart} disabled={restarting}
+        <Button variant="ghost" onClick={handleRestart} disabled={restarting}
           title="Restart the planner session (re-spawns Claude)">
           {restarting ? "restarting…" : "↺ restart"}
-        </button>
-        <button className="btn ghost danger" onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
+        </Button>
+        <Button variant="ghost" danger onClick={() => setShowClearConfirm(true)} title="Wipe this project's plan and restart the planner (#664)">
           clear plan
-        </button>
+        </Button>
         {/* Switch the project to a different blueprint (#923 / #1281 — any → any other). */}
         {canSwitch && (
-          <button className="btn ghost" onClick={() => setSwitchOpen(true)} title="Switch this project to a different blueprint">
+          <Button variant="ghost" onClick={() => setSwitchOpen(true)} title="Switch this project to a different blueprint">
             switch blueprint
-          </button>
+          </Button>
         )}
         {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
             blueprint gist, so there are no repos to triage / no fleet to launch. */}
@@ -704,14 +707,14 @@ export function Planning({ visible }: { visible: boolean }) {
             planReady,
           };
           return (
-            <button
-              className="btn primary"
+            <Button
+              variant="primary"
               onClick={launchTriage}
               disabled={!canLaunchTriage(gate)}
               title={triageLockReason(gate) ?? "Clone the repos and start a triage session"}
             >
               {triaging ? "starting triage…" : "Triage →"}
-            </button>
+            </Button>
           );
         })()}
       </Box>
@@ -733,6 +736,7 @@ export function Planning({ visible }: { visible: boolean }) {
       {recoverable > 0 && (
         <Row className="mono" gap={10} style={{ padding: "0 24px 8px", fontSize: 12, color: "var(--fg-muted)" }}>
           <Box as="span">⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</Box>
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled recover button (mono, custom inline styling, not the .btn kit) */}
           <button
             className="mono"
             onClick={() => void handleRecover()}
@@ -863,6 +867,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 </Text>
                 <Spacer />
                 {(publishPhase === "done" || publishPhase === "error") && (
+                  // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled 'back to plan' button (mono, custom inline styling, not the .btn kit)
                   <button
                     className="mono"
                     onClick={() => setPublishPhase("idle")}
@@ -909,12 +914,11 @@ export function Planning({ visible }: { visible: boolean }) {
           onDismiss={() => setShowClearConfirm(false)}
           actions={
             <>
-              <button className="btn" onClick={() => setShowClearConfirm(false)}>cancel</button>
-              <button
-                className="btn"
+              <Button onClick={() => setShowClearConfirm(false)}>cancel</Button>
+              <Button
                 style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
                 onClick={() => void doClearPlan()}
-              >clear plan</button>
+              >clear plan</Button>
             </>
           }
         >
@@ -927,7 +931,7 @@ export function Planning({ visible }: { visible: boolean }) {
         <Dialog
           title="Switch blueprint"
           onDismiss={() => setSwitchOpen(false)}
-          actions={<button className="btn" onClick={() => setSwitchOpen(false)}>cancel</button>}
+          actions={<Button onClick={() => setSwitchOpen(false)}>cancel</Button>}
         >
           <Text as="div" size={12} tone="muted" style={{ marginBottom: 12, lineHeight: 1.6 }}>
             Switch this project to a different blueprint. This re-seeds the plan for the chosen blueprint and
@@ -935,14 +939,14 @@ export function Planning({ visible }: { visible: boolean }) {
           </Text>
           <Stack gap={8}>
             {switchTargets.map((bp) => (
-              <button key={bp.id} className="btn ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
+              <Button key={bp.id} variant="ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
                 onClick={() => void doSwitchBlueprint(bp.id)}>
                 <Box as="span" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Text as="span" weight={600} style={{ color: "var(--fg)" }}>{bp.name}</Text>
                   <Chip style={{ fontSize: 9 }}>{blueprintCategory(bp)}</Chip>
                 </Box>
                 {bp.desc && <Text as="span" size={11} tone="dim" style={{ fontFamily: "var(--sans)" }}>{bp.desc}</Text>}
-              </button>
+              </Button>
             ))}
           </Stack>
         </Dialog>
