@@ -111,7 +111,7 @@ export function Roadmap() {
           {/* Gantt */}
           <Card style={{ padding: "16px 20px" }}>
             <Row gap={10} wrap style={{ marginBottom: 14 }}>
-              <h3 style={{ margin: 0 }}>Milestones · weeks</h3>
+              <Text as="h3" style={{ margin: 0 }}>Milestones · weeks</Text>
               <Box as="span" className="hint">
                 {loading ? "loading…"
                   : `${rows.length} shown${milestones.length !== rows.length ? ` of ${milestones.length}` : ""}`}
@@ -248,7 +248,7 @@ export function Roadmap() {
           {/* Burn-down */}
           <Card style={{ padding: "16px 20px", marginTop: 14 }}>
             <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-              <h3 style={{ margin: 0 }}>Issue progress</h3>
+              <Text as="h3" style={{ margin: 0 }}>Issue progress</Text>
               <Box as="span" className="hint">{totalIssues} total · {totalClosed} closed · {totalOpen} remaining</Box>
             </Row>
             <BurnDown open={totalOpen} closed={totalClosed} />

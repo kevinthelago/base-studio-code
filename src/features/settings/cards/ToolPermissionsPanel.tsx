@@ -8,6 +8,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 
 export function ToolPermissionsPanel({
   allow, setAllow, deny, setDeny,
@@ -96,12 +97,9 @@ export function ToolPermissionsPanel({
 
         {/* Settings.json preview */}
         {(allow.length > 0 || deny.length > 0) && (
-          <Box className="mono" pad={[10, 12]} bg="var(--bg-canvas)" border="soft" radius={6} style={{
-            fontSize: 9.5, color: "var(--fg-dim)",
-            whiteSpace: "pre",
-          }}>
+          <Code wrap={false} tone="dim" style={{ fontSize: 9.5, padding: "10px 12px", borderRadius: 6 }}>
             {JSON.stringify({ permissions: { allow, deny } }, null, 2)}
-          </Box>
+          </Code>
         )}
       </Stack>
     </Box>

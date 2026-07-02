@@ -22,7 +22,7 @@ export function RunsTab({ merged, stats, onOpen }: {
 
   return (
     <Box as="section" className="an-page"><Box className="an-wrap">
-      <h2 className="mono" style={{ margin: "0 0 4px", fontSize: 18 }}>Runs</h2>
+      <Text as="h2" mono size="xl" style={{ margin: "0 0 4px" }}>Runs</Text>
       <Text as="div" tone="muted" size={12} style={{ marginBottom: 14 }}>Live skill invocations from the usage log · last 7 days</Text>
       {runRows.length === 0 ? (
         <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />

@@ -27,7 +27,7 @@ export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () 
         <Box style={{ flex: 1 }}>
           <Row gap={8} align="baseline">
             <Text mono size={11} tone="dim">#{issue.number}</Text>
-            <h3 style={{ margin: 0, fontSize: 14, color: "var(--fg)" }}>{issue.title}</h3>
+            <Text as="h3" size="lg" style={{ margin: 0, color: "var(--fg)" }}>{issue.title}</Text>
           </Row>
           <Row gap={6} wrap style={{ marginTop: 8 }}>
             <Chip tone={issue.state === "OPEN" ? "accent" : "neutral"} style={{ fontSize: 9.5 }}>

@@ -53,13 +53,13 @@ function PulseDigest({ kpis, churnAreas, ci, partialDiffs }: { kpis: PulseKpis; 
             <Text as="span" mono size={11} tone="accent" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>repo pulse · last 14 days</Text>
             <Box as="span" className="hint">live from the GitHub API</Box>
           </Row>
-          <p style={{ margin: 0 }}>
-            <b style={{ color: "var(--fg)" }}>{kpis.commitsWeek} commits</b> and <b style={{ color: "var(--fg)" }}>{kpis.prsMerged} merged PRs</b> in the last 7 days
-            {kpis.contributors > 0 && <> across <b style={{ color: "var(--fg)" }}>{kpis.contributors} contributors</b> ({kpis.botShare}% bot)</>}.
-            CI pass rate is <b style={{ color: ci.passRate >= 90 ? "var(--success)" : "var(--danger)" }}>{ci.passRate}%</b>.
-            {hottest && <> Hottest area: <b style={{ color: "oklch(0.7 0.12 290)" }}>{hottest.area}</b>.</>}
+          <Text as="p" style={{ margin: 0 }}>
+            <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.commitsWeek} commits</Text> and <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.prsMerged} merged PRs</Text> in the last 7 days
+            {kpis.contributors > 0 && <> across <Text weight={700} style={{ color: "var(--fg)" }}>{kpis.contributors} contributors</Text> ({kpis.botShare}% bot)</>}.
+            CI pass rate is <Text weight={700} tone={ci.passRate >= 90 ? "success" : "danger"}>{ci.passRate}%</Text>.
+            {hottest && <> Hottest area: <Text weight={700} style={{ color: "oklch(0.7 0.12 290)" }}>{hottest.area}</Text>.</>}
             {partialDiffs && <Box as="span" className="hint"> · line/churn panels reflect the most recent commits</Box>}
-          </p>
+          </Text>
         </Box>
       </Row>
     </Card>
@@ -340,12 +340,12 @@ function PulseBody({ data, repo }: { data: RepoPulseLive; repo: GithubRepo }) {
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <Box style={{ flex: 1 }}>
             <Row align="baseline" gap={10} wrap>
-              <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Pulse</h2>
+              <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Pulse</Text>
               <Text as="span" mono size={13} tone="muted">{r.name}</Text>
               <Chip tone="accent">● {r.pushedMin}m ago</Chip>
               <Chip>{r.lang}</Chip>
             </Row>
-            {r.desc && <Box style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{r.desc}</Box>}
+            {r.desc && <Text as="div" tone="muted" size="md" style={{ marginTop: 4 }}>{r.desc}</Text>}
           </Box>
           <Button variant="ghost" onClick={() => openUrl(`https://github.com/${r.name}`)}>open on github →</Button>
         </Row>

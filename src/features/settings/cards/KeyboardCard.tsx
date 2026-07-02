@@ -116,12 +116,12 @@ export function KeyboardCard() {
 
   return (
     <Box style={{ maxWidth: 820 }}>
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Keyboard</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 18px", fontSize: 12 }}>
+      <Text as="h2" mono size="xl" weight={600} style={{ margin: "0 0 4px" }}>Keyboard</Text>
+      <Text as="p" tone="muted" size="md" style={{ margin: "0 0 18px" }}>
         Every keyboard shortcut, grouped by what it affects. Click a shortcut and press a new
         combination to rebind it; for number-range shortcuts, pick the modifier leader from the
         dropdown.
-      </p>
+      </Text>
 
       {(overrideCount > 0 || capturingId) && (
         <Row gap={10} style={{ marginBottom: 14 }}>

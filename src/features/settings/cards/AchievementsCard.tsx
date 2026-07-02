@@ -15,14 +15,14 @@ export function AchievementsCard() {
   return (
     <Box style={{ maxWidth: 640 }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 4 }}>
-        <h2 className="mono" style={{ fontSize: 16, margin: 0, color: "var(--fg)" }}>Achievements</h2>
+        <Text as="h2" mono size={16} style={{ margin: 0, color: "var(--fg)" }}>Achievements</Text>
         <Text mono size={11} tone="dim">
           {unlockedCount}/{ACHIEVEMENTS.length} unlocked
         </Text>
       </Row>
-      <p className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", margin: "0 0 18px" }}>
+      <Text as="p" mono size="sm" tone="muted" style={{ margin: "0 0 18px" }}>
         Milestones you have earned. Each unlocks once and is kept across restarts.
-      </p>
+      </Text>
 
       <Stack gap={10}>
         {ACHIEVEMENTS.map((a) => {

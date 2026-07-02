@@ -2,6 +2,7 @@ import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Box } from "@/shared/ui/layout/Box";
+import { SettingsPageHeader } from "./SettingsPageHeader";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
@@ -9,10 +10,11 @@ export function AutomationsPage() {
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   return (
     <Box style={{ maxWidth: 820 }}>
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Automations</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12 }}>
-        How scheduled automations run against your console sessions.
-      </p>
+      <SettingsPageHeader
+        title="Automations"
+        description="How scheduled automations run against your console sessions."
+        descMb={22}
+      />
 
       <Card title="Automations">
         <Box style={prose}>
