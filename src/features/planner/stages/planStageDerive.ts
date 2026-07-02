@@ -25,7 +25,7 @@ export const DISCOVERY_BASELINE: string[] = Object.values(discoveryModules)[0]?.
 // Data-model gate signals (#1446: the model itself now lives in the project's DuckDB store, not a
 // datamodel.json file). These boolean SIGNALS are derived from the live frontend SourceConfig
 // (see datamodelSignals in shared/sourceConfig.ts), NOT read from any artifact — the canonical
-// model/scan are persisted separately to DuckDB via data_persist_model / bsc-data.
+// model/scan are persisted separately to DuckDB via `bsc data model set` / bsc-data.
 // Reader:  planner-plumbing (this file) — missing fields read as false
 // Shape (all fields optional at the top level; absent ⇒ false):
 // {
