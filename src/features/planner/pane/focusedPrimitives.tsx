@@ -1,7 +1,7 @@
 // Small, self-contained UI atoms for the focused ProjectPane bodies (#1560, split verbatim out of
 // FocusedBodies.tsx). Pure presentational components + the role / capability / context-kind palettes
 // they read. No state, no effects.
-import type { Posture, Perm, Flow, Agent } from "./projectPaneData";
+import type { Posture, Perm, Agent } from "./projectPaneData";
 import "./projectPane.css";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Box } from "@/shared/ui/layout/Box";
@@ -80,18 +80,6 @@ export function Tri({ value, onChange }: { value: Posture; onChange?: (v: Postur
         tone: v,
       }))}
     />
-  );
-}
-
-export function FlowBadges({ flow }: { flow: Flow }) {
-  return (
-    <Box as="span" style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-      <Box as="span" className="fbadge" title="autonomy">{flow.autonomy}</Box>
-      <Box as="span" className="fbadge" title="push policy">{flow.push}</Box>
-      <Box as="span" className={"fbadge" + (flow.gate === "hard" ? " hard" : "")} title="enforcement gate">
-        {flow.gate} gate
-      </Box>
-    </Box>
   );
 }
 

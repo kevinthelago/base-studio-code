@@ -14,19 +14,19 @@ export function ProjectAllocation({ projects }: { projects: GhProject[] }) {
 
   if (items.length === 0) {
     return (
-      <Card style={{ padding: "14px 16px" }}>
-        <h3 style={{ margin: 0, marginBottom: 10 }}>Where the team is</h3>
+      <Card style={{ padding: "14px 16px" }} title="Where the team is" headMb={10}>
         <Text as="div" mono size={11} tone="dim">No active projects with items.</Text>
       </Card>
     );
   }
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Where the team is</h3>
-        <Box as="span" className="hint">share of in-progress work by project items</Box>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Where the team is"
+      hint="share of in-progress work by project items"
+      headMb={10}
+    >
       <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
         {items.map(it => (
           <Box key={it.n} title={`${it.n} · ${it.pct}%`} bg={it.c} style={{ width: `${it.pct}%`}} />

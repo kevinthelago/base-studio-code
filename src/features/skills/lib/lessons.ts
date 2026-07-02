@@ -48,11 +48,6 @@ export async function discardLesson(projectKey: string, id: string): Promise<voi
   await bscRun(projectKey, ["plan", "lesson", "discard", id]);
 }
 
-/** Permanently delete a candidate. */
-export async function removeLesson(projectKey: string, id: string): Promise<void> {
-  await bscRun(projectKey, ["plan", "lesson", "remove", id]);
-}
-
 /** A confirmed lesson's display title — the corrective rule (the actionable part), else the mistake,
  *  capped so it slugs to a sane skill directory name. */
 export function lessonTitle(lesson: Pick<Lesson, "mistake" | "rule">): string {

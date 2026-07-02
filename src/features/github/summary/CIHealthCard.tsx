@@ -13,11 +13,7 @@ export function CIHealthCard({ matrix, loading }: {
   loading: boolean;
 }) {
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>CI health</h3>
-        <Box as="span" className="hint">last 7 days · all branches</Box>
-      </Row>
+    <Card style={{ padding: "14px 16px" }} title="CI health" hint="last 7 days · all branches" headMb={10}>
       {matrix.length === 0 && !loading && (
         <Text mono size="sm" tone="dim" as="div" style={{ padding: "4px 0" }}>No CI runs found.</Text>
       )}

@@ -40,9 +40,6 @@ const MODULES = new Map<string, StageModule>();
 export function registerStageModule(module: StageModule): void {
   MODULES.set(module.id, module);
 }
-export function getStageModule(id: string): StageModule | undefined {
-  return MODULES.get(id);
-}
 export function hasStageModule(id: string): boolean {
   return MODULES.has(id);
 }

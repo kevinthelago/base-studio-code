@@ -38,14 +38,13 @@ export function ProjectsGrid({ projects, repoIssues, loading }: {
   );
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Projects</h3>
-        <Box as="span" className="hint">{loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}</Box>
-        <Spacer />
-        <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}
-          onClick={openProjects}>view list →</Button>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Projects"
+      hint={loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}
+      right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }} onClick={openProjects}>view list →</Button>}
+      headMb={10}
+    >
       {projects.length === 0 && !loading && (
         <Text as="div" mono size={11} tone="dim" style={{ padding: "8px 0" }}>No projects found. Create one on GitHub.</Text>
       )}

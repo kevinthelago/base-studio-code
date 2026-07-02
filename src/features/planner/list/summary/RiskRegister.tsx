@@ -1,9 +1,7 @@
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
-import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
@@ -18,13 +16,13 @@ export function RiskRegister() {
   const med = risks.filter(r => r.sev === "med").length;
   const low = risks.filter(r => r.sev === "low").length;
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Risk register</h3>
-        <Box as="span" className="hint">{risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}</Box>
-        <Spacer />
-        {risks.length > 0 && <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>view all</Button>}
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Risk register"
+      hint={risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}
+      right={risks.length > 0 ? <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>view all</Button> : undefined}
+      headMb={10}
+    >
       {risks.length === 0 ? (
         <Text as="div" mono size={11} tone="dim" style={{ padding: "18px 12px", textAlign: "center" }}>
           No risks logged yet.

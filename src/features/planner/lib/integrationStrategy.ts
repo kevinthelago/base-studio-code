@@ -25,13 +25,6 @@ export const STRATEGY_SETTINGS: Record<IntegrationStrategy, StrategySettings> = 
   "manual":     { test: "full", integrate: "commit-only", director: "integrator" },
 };
 
-/** Human label for a strategy (UI). */
-export const STRATEGY_LABEL: Record<IntegrationStrategy, string> = {
-  "self-merge": "Self-merge + watchdog",
-  "pr-ci": "PR + CI gate",
-  "manual": "Manual",
-};
-
 /** Coerce arbitrary input to a valid strategy or undefined. */
 export function normalizeStrategy(v: unknown): IntegrationStrategy | undefined {
   if (typeof v !== "string") return undefined;

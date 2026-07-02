@@ -39,11 +39,12 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
     : undefined;
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
-        <h3 style={{ margin: 0 }}>Languages</h3>
-        <Box as="span" className="hint" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</Box>
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Languages"
+      hint={<Box as="span" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</Box>}
+      headMb={10}
+    >
       {entries.length === 0 && !loading && (
         <Text mono size={11} tone="dim" as="div" style={{ padding: "4px 0" }}>No language data available.</Text>
       )}
