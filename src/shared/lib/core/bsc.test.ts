@@ -1,7 +1,7 @@
 // The `bsc` bridge helper (#2114) — degrade-gracefully JSON parse + fire-and-forget.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { bsc, bscJson, bscRun } from "./bsc";
+import { bsc, bscJson, bscRun, bscWrite } from "./bsc";
 
 describe("bsc bridge (#2114)", () => {
   beforeEach(() => {
@@ -24,6 +24,26 @@ describe("bsc bridge (#2114)", () => {
 
     vi.mocked(invoke).mockRejectedValue(new Error("no host"));
     expect(await bscJson("k", ["plan", "list"], [{ id: "fallback" }])).toEqual([{ id: "fallback" }]);
+  });
+
+  it("bsc omits `stdin` for reads but includes it when given", async () => {
+    vi.mocked(invoke).mockResolvedValue("");
+    await bsc("k", ["plan", "list"]);
+    expect(invoke).toHaveBeenLastCalledWith("bsc", { projectKey: "k", args: ["plan", "list"] });
+    await bsc("k", ["plan", "deps", "set"], '{"x":1}');
+    expect(invoke).toHaveBeenLastCalledWith("bsc", { projectKey: "k", args: ["plan", "deps", "set"], stdin: '{"x":1}' });
+  });
+
+  it("bscWrite serializes the body onto stdin and swallows a rejection", async () => {
+    vi.mocked(invoke).mockResolvedValue("");
+    await bscWrite("k", ["plan", "deps", "set"], { dependencies: [], registries: {} });
+    expect(invoke).toHaveBeenCalledWith("bsc", {
+      projectKey: "k",
+      args: ["plan", "deps", "set"],
+      stdin: JSON.stringify({ dependencies: [], registries: {} }),
+    });
+    vi.mocked(invoke).mockRejectedValue(new Error("no host"));
+    await expect(bscWrite("k", ["plan", "deps", "set"], {})).resolves.toBeUndefined();
   });
 
   it("bscRun fires the verb and swallows a rejection", async () => {
