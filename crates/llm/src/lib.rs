@@ -21,7 +21,7 @@ pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
 pub use ollama::{detect_ollama_profile, list_models, OllamaProfile, OllamaProvider};
 pub use openai::OpenAiProvider;
-pub use toolparse::{recover_tool_calls, strip_tool_syntax};
+pub use toolparse::{recover_text_calls, recover_tool_calls, strip_tool_syntax};
 pub use turn::{Msg, ToolCall, ToolDef, Turn, TurnResult};
 
 /// A provider-agnostic chat-completion request. `messages` and `tools` are passed
@@ -83,6 +83,39 @@ const CONNECT_TIMEOUT_SECS: u64 = 30;
 /// can be slow on the first inference (model load + long context); it's a backstop, not a target.
 const REQUEST_TIMEOUT_SECS: u64 = 600;
 
+/// Build the canonical 4-key usage shape `tokens.rs` parses from a provider's raw input/output token
+/// counts. None of these providers exposes a prompt-cache split, so `cache_*` = 0. Shared by every
+/// provider's `normalize_usage`/`native_usage` so the shape can't drift from what `tokens.rs` reads.
+pub(crate) fn canonical_usage(input: u64, output: u64) -> serde_json::Value {
+    serde_json::json!({
+        "input_tokens": input,
+        "output_tokens": output,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    })
+}
+
+/// The bare `{name, description, parameters}` tool declaration every provider builds from a [`ToolDef`].
+/// OpenAI and Ollama-native wrap this in `{type:"function", function: …}`; Gemini and the Hermes-style
+/// `<tools>` manifest use the bare object. Shared so the field mapping lives in one place.
+pub(crate) fn tool_decl_inner(d: &ToolDef) -> serde_json::Value {
+    serde_json::json!({ "name": d.name, "description": d.description, "parameters": d.schema })
+}
+
+/// Build the shared reqwest client carrying the connect + overall timeouts (see the consts above), so a
+/// down/stuck endpoint fails fast instead of hanging. Used by [`post_json`]/[`get_json`] and Ollama's
+/// streaming path.
+///
+/// **CRITICAL:** the `"Request failed: …"` error prefix is string-matched by `bsc-agent`'s
+/// `is_transient_error` (see [`post_json`]), so it must not change.
+pub(crate) fn build_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Request failed: {}", e))
+}
+
 /// Issue a JSON POST and return the parsed response body, collapsing the
 /// request/status-check/error-format block every provider repeated. Headers
 /// (auth, API version, …) vary per provider, so the caller passes them in; the
@@ -100,11 +133,7 @@ pub(crate) async fn post_json(
     headers: &[(&str, String)],
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let client = build_client()?;
     let mut builder = client.post(url);
     for (name, value) in headers {
         builder = builder.header(*name, value);
@@ -129,11 +158,7 @@ pub(crate) async fn post_json(
 /// (a down endpoint fails with `"Request failed: …"`). For Ollama's GET endpoints, e.g. `/api/tags`
 /// model discovery (#1830).
 pub(crate) async fn get_json(url: &str) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let client = build_client()?;
     let response = client.get(url).send().await.map_err(|e| format!("Request failed: {}", e))?;
     let status = response.status();
     let json: serde_json::Value = response

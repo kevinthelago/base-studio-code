@@ -20,7 +20,10 @@
 //!   - either way, the response is parsed structured-first, then recovered from text across dialects
 //!     ([`crate::recover_tool_calls`]) — because Ollama's transcription is inconsistent.
 
-use super::{openai, post_json, toolparse, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{
+    build_client, canonical_usage, openai, post_json, tool_decl_inner, toolparse, usage_u64,
+    LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult,
+};
 use serde_json::{json, Value};
 
 /// The default ceiling we clamp a model's `num_ctx` to. A model may advertise a huge context (256k+),
@@ -267,10 +270,7 @@ fn build_native_turn_body(
         let tools: Vec<Value> = t
             .tools
             .iter()
-            .map(|d| json!({
-                "type": "function",
-                "function": { "name": d.name, "description": d.description, "parameters": d.schema }
-            }))
+            .map(|d| json!({ "type": "function", "function": tool_decl_inner(d) }))
             .collect();
         body["tools"] = Value::Array(tools);
     }
@@ -305,7 +305,26 @@ fn build_native_turn_body(
 fn parse_native_turn_response(raw: &Value) -> TurnResult {
     let msg = &raw["message"];
     let text = msg["content"].as_str().unwrap_or("").to_string();
-    let tool_calls = msg["tool_calls"]
+    let tool_calls = parse_native_tool_calls(&msg["tool_calls"]);
+    TurnResult {
+        text,
+        tool_calls,
+        usage: native_usage(raw),
+        stop_reason: raw["done_reason"].as_str().unwrap_or("").to_string(),
+    }
+}
+
+/// Normalize Ollama's native usage (`prompt_eval_count` / `eval_count`) to the canonical 4-key shape
+/// `tokens.rs` parses. Ollama has no prompt-cache split, so cache_* = 0. Pure.
+fn native_usage(raw: &Value) -> Value {
+    canonical_usage(usage_u64(raw, "prompt_eval_count"), usage_u64(raw, "eval_count"))
+}
+
+/// Parse Ollama native `tool_calls` (arguments already a JSON object, but tolerate a string just in
+/// case) into [`ToolCall`]s, synthesizing an `ollama-{i}` id since native issues none. Shared by the
+/// non-streaming ([`parse_native_turn_response`]) and streaming ([`parse_stream_line`]) parse. Pure.
+fn parse_native_tool_calls(calls: &Value) -> Vec<ToolCall> {
+    calls
         .as_array()
         .map(|calls| {
             calls
@@ -321,25 +340,7 @@ fn parse_native_turn_response(raw: &Value) -> TurnResult {
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    TurnResult {
-        text,
-        tool_calls,
-        usage: native_usage(raw),
-        stop_reason: raw["done_reason"].as_str().unwrap_or("").to_string(),
-    }
-}
-
-/// Normalize Ollama's native usage (`prompt_eval_count` / `eval_count`) to the canonical 4-key shape
-/// `tokens.rs` parses. Ollama has no prompt-cache split, so cache_* = 0. Pure.
-fn native_usage(raw: &Value) -> Value {
-    let u = |k: &str| raw.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-    json!({
-        "input_tokens": u("prompt_eval_count"),
-        "output_tokens": u("eval_count"),
-        "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": 0,
-    })
+        .unwrap_or_default()
 }
 
 /// One parsed line of Ollama's streaming `/api/chat` NDJSON response (#1832).
@@ -357,23 +358,7 @@ struct StreamLine {
 fn parse_stream_line(line: &str) -> Option<StreamLine> {
     let v: Value = serde_json::from_str(line).ok()?;
     let content = v["message"]["content"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-    let tool_calls = v["message"]["tool_calls"]
-        .as_array()
-        .map(|calls| {
-            calls
-                .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    let name = c["function"]["name"].as_str().unwrap_or("").to_string();
-                    let args = match &c["function"]["arguments"] {
-                        Value::String(s) => serde_json::from_str(s).unwrap_or(Value::Null),
-                        other => other.clone(),
-                    };
-                    ToolCall { id: format!("ollama-{i}"), name, args }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let tool_calls = parse_native_tool_calls(&v["message"]["tool_calls"]);
     let done = v["done"].as_bool() == Some(true);
     let usage = if done { native_usage(&v) } else { Value::Null };
     let done_reason = v["done_reason"].as_str().unwrap_or("").to_string();
@@ -386,11 +371,7 @@ fn inject_tools_manifest(body: &mut Value, t: &Turn) {
     if t.tools.is_empty() {
         return;
     }
-    let tools: Vec<Value> = t
-        .tools
-        .iter()
-        .map(|d| json!({ "name": d.name, "description": d.description, "parameters": d.schema }))
-        .collect();
+    let tools: Vec<Value> = t.tools.iter().map(tool_decl_inner).collect();
     let manifest = format!(
         "\n\n# Tools\nYou can call tools. Available tools:\n<tools>\n{}\n</tools>\nTo call a tool, reply with EXACTLY one line:\n<tool_call>{{\"name\": \"<tool_name>\", \"arguments\": {{ ... }}}}</tool_call>",
         serde_json::to_string(&tools).unwrap_or_default(),
@@ -434,10 +415,9 @@ impl LlmProvider for OllamaProvider {
         // Even on the native endpoint some models emit the call as TEXT (`<tool_call>…` /
         // `<function=name>…`) instead of the structured field — recover it across dialects when empty.
         if result.tool_calls.is_empty() {
-            let recovered = toolparse::recover_tool_calls(&result.text);
-            if !recovered.is_empty() {
-                result.text = toolparse::strip_tool_syntax(&result.text);
-                result.tool_calls = recovered;
+            if let Some((text, calls)) = toolparse::recover_text_calls(&result.text) {
+                result.text = text;
+                result.tool_calls = calls;
             }
         }
         Ok(result)
@@ -454,11 +434,7 @@ impl LlmProvider for OllamaProvider {
             t, &self.profile, self.num_ctx, self.keep_alive.as_deref(), self.temperature, self.seed,
         );
         body["stream"] = json!(true);
-        let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(super::CONNECT_TIMEOUT_SECS))
-            .timeout(std::time::Duration::from_secs(super::REQUEST_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let client = build_client()?;
         let resp = client
             .post(native_chat_url(&self.base_url))
             .json(&body)
@@ -515,10 +491,9 @@ impl LlmProvider for OllamaProvider {
         }
         // Recover a tool call emitted as text (non-tool models) — mirrors the non-streaming `turn`.
         if tool_calls.is_empty() {
-            let recovered = toolparse::recover_tool_calls(&text);
-            if !recovered.is_empty() {
-                text = toolparse::strip_tool_syntax(&text);
-                tool_calls = recovered;
+            if let Some((clean, calls)) = toolparse::recover_text_calls(&text) {
+                text = clean;
+                tool_calls = calls;
             }
         }
         Ok(TurnResult { text, tool_calls, usage, stop_reason })

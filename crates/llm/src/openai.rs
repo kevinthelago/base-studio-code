@@ -3,7 +3,7 @@
 //! `{role:"system"}` message, and `choices[0].message.content` becomes a single
 //! `{type:"text", text}` block so llm_complete's consumers read it unchanged.
 
-use super::{post_json, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{canonical_usage, post_json, tool_decl_inner, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
 
 pub struct OpenAiProvider;
 
@@ -49,10 +49,7 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
     let tools: Vec<serde_json::Value> = t
         .tools
         .iter()
-        .map(|d| serde_json::json!({
-            "type": "function",
-            "function": { "name": d.name, "description": d.description, "parameters": d.schema }
-        }))
+        .map(|d| serde_json::json!({ "type": "function", "function": tool_decl_inner(d) }))
         .collect();
     let mut body = serde_json::json!({
         "model": t.model,
@@ -69,12 +66,7 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
 /// 4-key shape `tokens.rs` parses; OpenAI has no prompt-cache split, so cache_* = 0.
 /// Shared by the `local` provider (OpenAI-compatible). Pure.
 pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
-    serde_json::json!({
-        "input_tokens": usage_u64(u, "prompt_tokens"),
-        "output_tokens": usage_u64(u, "completion_tokens"),
-        "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": 0,
-    })
+    canonical_usage(usage_u64(u, "prompt_tokens"), usage_u64(u, "completion_tokens"))
 }
 
 /// Parse an OpenAI response into a [`TurnResult`]. `tool_calls[].function.arguments`
