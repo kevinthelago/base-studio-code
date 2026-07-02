@@ -6,7 +6,7 @@ use plandb::{Automation, Lesson, PlanFeature, PlanIssue, StartupScript, Store, S
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
-    crate::project_dir(project_key).join("plan.db")
+    crate::plan_db_path(project_key)
 }
 
 fn open(project_key: &str) -> Result<Store, String> {

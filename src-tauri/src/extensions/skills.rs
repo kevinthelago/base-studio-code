@@ -40,7 +40,7 @@ pub(crate) fn record_skill_uses(skills: &[SkillCfg]) {
     if ids.is_empty() {
         return;
     }
-    let path = crate::bsc_base_dir().join("skills.db");
+    let path = crate::skills_db();
     if !path.exists() {
         return; // no global store yet — nothing to count against
     }

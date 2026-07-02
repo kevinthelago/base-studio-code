@@ -18,8 +18,8 @@ fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
     if cwd.is_empty() {
         return None;
     }
-    let projects_root = bsc_base_dir().join("projects");
-    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
+    let root = crate::projects_root();
+    let rel = std::path::Path::new(cwd).strip_prefix(&root).ok()?;
     Some(rel.components().next()?.as_os_str().to_os_string())
 }
 
@@ -29,15 +29,15 @@ fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
 /// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
 fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     let key = project_key_from_cwd(cwd)?;
-    Some(bsc_base_dir().join("projects").join(key).join("plan.db"))
+    Some(crate::plan_db_path(&key.to_string_lossy()))
 }
 
 /// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
 /// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
 /// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
 fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
-    let key = project_key_from_cwd(cwd)?.to_string_lossy().into_owned();
-    Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
+    let key = project_key_from_cwd(cwd)?;
+    Some(crate::data_db_path(&key.to_string_lossy()))
 }
 
 /// The absolute path of a bundled `bsc-*` binary named `stem` — the binary sitting beside the running

@@ -143,7 +143,7 @@ pub(crate) struct LocalProject {
 pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
     // Single root since #922: every hub lives under projects/<key>; `published` is the in-place
     // `.published` marker, not the directory's location.
-    let root = bsc_base_dir().join("projects");
+    let root = projects_root();
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(&root) else { return Ok(out) };
     for entry in entries.flatten() {
