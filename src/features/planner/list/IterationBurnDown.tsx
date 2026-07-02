@@ -4,9 +4,6 @@
 import { type ReactNode } from "react";
 import type { BurndownResult } from "../github/burndown";
 import { Card } from "@/shared/ui/data/Card";
-import { Row } from "@/shared/ui/layout/Row";
-import { Spacer } from "@/shared/ui/layout/Spacer";
-import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
 function BurnCard({ hint, badge, children }: {
@@ -15,13 +12,13 @@ function BurnCard({ hint, badge, children }: {
   children?: ReactNode;
 }) {
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 6 }}>
-        <h3 style={{ margin: 0 }}>Iteration burn-down</h3>
-        <Box as="span" className="hint">{hint}</Box>
-        <Spacer />
-        {badge && <Text as="span" mono size={10.5} style={{ color: badge.tone }}>● {badge.text}</Text>}
-      </Row>
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Iteration burn-down"
+      hint={hint}
+      right={badge ? <Text as="span" mono size={10.5} style={{ color: badge.tone }}>● {badge.text}</Text> : undefined}
+      headMb={6}
+    >
       {children}
     </Card>
   );

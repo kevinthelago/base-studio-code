@@ -15,6 +15,8 @@ export interface CardProps {
   hint?: ReactNode;
   /** Right-aligned control in the canonical head row. */
   right?: ReactNode;
+  /** Override the canonical head's bottom margin (px). Default 12. */
+  headMb?: number;
   /** A fully-composed header node — for heads that aren't the canonical h3 row. Wins over `title`. */
   header?: ReactNode;
   /** Border accent color — e.g. "var(--accent)" / "var(--success)". Default = the `.card` border. */
@@ -30,9 +32,9 @@ export interface CardProps {
   tooltip?: string;
 }
 
-export function Card({ children, title, hint, right, header, tone, interactive, pad, className, style, onClick, tooltip }: CardProps) {
+export function Card({ children, title, hint, right, headMb, header, tone, interactive, pad, className, style, onClick, tooltip }: CardProps) {
   const head = header ?? (title != null ? (
-    <div style={{ display: "flex", alignItems: "baseline", marginBottom: 12, gap: 10 }}>
+    <div style={{ display: "flex", alignItems: "baseline", marginBottom: headMb ?? 12, gap: 10 }}>
       <h3 style={{ margin: 0 }}>{title}</h3>
       {hint && <span className="hint">{hint}</span>}
       {right && <><span style={{ flex: 1 }} />{right}</>}

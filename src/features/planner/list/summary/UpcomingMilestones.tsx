@@ -1,9 +1,7 @@
 import { useMemo } from "react";
 import { Card } from "@/shared/ui/data/Card";
-import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GhMilestone } from "@/shared/lib/github/types";
@@ -21,18 +19,17 @@ export function UpcomingMilestones({ repoMilestones, loading }: {
   const numLines = upcoming.length;
 
   return (
-    <Card style={{ padding: "14px 16px" }}>
-      <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-        <h3 style={{ margin: 0 }}>Upcoming milestones</h3>
-        <Box as="span" className="hint">{loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}</Box>
-        <Spacer />
-        {upcoming.length > 0 && (
-          <Text mono size={10.5} tone="accent">
-            {upcoming.length} due in next 8w
-          </Text>
-        )}
-      </Row>
-
+    <Card
+      style={{ padding: "14px 16px" }}
+      title="Upcoming milestones"
+      hint={loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}
+      right={upcoming.length > 0 ? (
+        <Text mono size={10.5} tone="accent">
+          {upcoming.length} due in next 8w
+        </Text>
+      ) : undefined}
+      headMb={14}
+    >
       {!hasData && !loading && (
         <Text as="div" mono size={11} tone="dim" style={{ padding: "4px 0" }}>No milestones due in the next 8 weeks.</Text>
       )}
