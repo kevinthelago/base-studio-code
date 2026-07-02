@@ -4,6 +4,8 @@
 // that parks/wakes a session between stages is #199. This module is pure (no PTY/store) so
 // it's exhaustively testable; the conductor wiring lands on top of it in a later slice.
 import { type SessionRole, type RoleCapability, roleCapability } from "../session/sessionRoles";
+import workflowPresetsEmbedded from "@data/fleet/workflow-presets.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** The role a stage runs as. The #220 stage roles (tester/reviewer/conductor) now live
  *  in #219's SessionRole + capability matrix, so a stage maps straight to a capability. */
@@ -90,36 +92,11 @@ export function stageCapability(stage: WorkflowStage): RoleCapability {
 }
 
 // -- Presets (start linear + the test-fail loop) --------------------------------
-
-export const WORKFLOW_PRESETS: Record<string, Workflow> = {
-  "implement-test-review-integrate": {
-    name: "implement -> test -> review -> integrate",
-    start: "implement",
-    stages: {
-      implement:    { name: "implement",  role: "worker",   onSuccess: "build-test", onFailure: ESCALATE,    retryLimit: 3 },
-      "build-test": { name: "build-test", role: "tester",   onSuccess: "review",     onFailure: "fix",       retryLimit: 3 },
-      fix:          { name: "fix",        role: "worker",   onSuccess: "build-test", onFailure: ESCALATE,    retryLimit: 3 },
-      review:       { name: "review",     role: "reviewer", onSuccess: "integrate",  onFailure: "implement", retryLimit: 2 },
-      integrate:    { name: "integrate",  role: "director", onSuccess: DONE,         onFailure: ESCALATE,    retryLimit: 1 },
-    },
-  },
-  "spike-implement-test": {
-    name: "spike -> implement -> test",
-    start: "spike",
-    stages: {
-      spike:        { name: "spike",      role: "worker",   onSuccess: "implement",  onFailure: ESCALATE,    retryLimit: 1 },
-      implement:    { name: "implement",  role: "worker",   onSuccess: "build-test", onFailure: ESCALATE,    retryLimit: 3 },
-      "build-test": { name: "build-test", role: "tester",   onSuccess: DONE,         onFailure: "implement", retryLimit: 3 },
-    },
-  },
-  "research-plan-implement-test": {
-    name: "research -> plan -> implement -> test",
-    start: "research",
-    stages: {
-      research:     { name: "research",   role: "worker",   onSuccess: "plan",       onFailure: ESCALATE,    retryLimit: 1 },
-      plan:         { name: "plan",       role: "planner",  onSuccess: "implement",  onFailure: ESCALATE,    retryLimit: 1 },
-      implement:    { name: "implement",  role: "worker",   onSuccess: "build-test", onFailure: ESCALATE,    retryLimit: 3 },
-      "build-test": { name: "build-test", role: "tester",   onSuccess: DONE,         onFailure: "implement", retryLimit: 3 },
-    },
-  },
-};
+//
+// The preset DATA is externalized to `@data/fleet/workflow-presets.json` (#2146, epic #2027 tail) —
+// editable without touching code + part of the exportable config bundle; the config-dir copy (#2047)
+// overlays the embedded default via `overlayFile`. This module keeps the TYPES + the state machine
+// (`advance`/`startItem`). The JSON uses the DONE/ESCALATE terminal literals ("done"/"escalate")
+// verbatim.
+export const WORKFLOW_PRESETS: Record<string, Workflow> =
+  overlayFile("fleet/workflow-presets.json", workflowPresetsEmbedded as Record<string, Workflow>);
