@@ -6,54 +6,42 @@
 // in-scope (or group-/override-enabled) skill is written into a launched session as
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
 import { useState, useEffect, useMemo } from "react";
-import { Banner } from "@/shared/ui/feedback/Banner";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { Pane } from "@/shared/ui/overlay/Pane";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import {
-  KIND, PROFILE_COLOR, fmtCount,
-  type SkillKind, type SkillSource, type SkillProfile,
-} from "@/shared/data/skills";
-import {
-  blankSkill, deriveSkillKpis, skillSlug,
-  groupSkillCount, type SkillDef, type SkillGroup,
+  blankSkill, deriveSkillKpis, groupSkillCount, type SkillDef,
 } from "./lib/skills";
 import {
   mergeSkillStats, indexGroupsBySkill, buildFacetDefs, filterSkills, buildGroupedSections,
   SORTS, type Density, type SortKey, type FacetSelection,
 } from "./lib/skillsFilter";
 import { parseSkillLog, aggregateSkillTelemetry, type SkillStats } from "./lib/skillTelemetry";
-import { successColor, tintBg, glyphTile, pill } from "./skillStyles";
+import { tintBg } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
-import { Spark, HBars } from "@/shared/ui/charts";
-import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
-import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Button } from "@/shared/ui/controls/Button";
-import { TextField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
-import { Grid } from "@/shared/ui/layout/Grid";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
+import { NewGroupDialog } from "./NewGroupDialog";
+import { SkillDrawer } from "./SkillDrawer";
+import { SkillsDigest } from "./SkillsDigest";
+import { RunsTab } from "./RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
 import "./skills.css";
 
 type Mode = "library" | "lessons" | "runs";
 
-const KIND_KEYS = Object.keys(KIND) as SkillKind[];
-const PROFILE_KEYS = Object.keys(PROFILE_COLOR) as SkillProfile[];
-const SOURCE_KEYS: SkillSource[] = ["first-party", "team", "imported", "community"];
 const GROUP_HUES = ["var(--accent)", "var(--danger)", "var(--info)", "var(--violet)", "var(--success)", "var(--fg-muted)"];
 const DRAFT_ID = "__draft__";
 
@@ -125,13 +113,6 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const groupsBySkill = useMemo(() => indexGroupsBySkill(skillGroups), [skillGroups]);
 
   const kpis = useMemo(() => deriveSkillKpis(merged), [merged]);
-  const invToday = useMemo(() => Object.values(stats).reduce((a, s) => a + s.today, 0), [stats]);
-  // Expanded digest: the "Most invoked" leaderboard (top 5 by invocations, actually run).
-  const leaders = useMemo(
-    () => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations).slice(0, 5),
-    [merged],
-  );
-  const neverRun = useMemo(() => merged.filter((s) => s.invocations === 0).length, [merged]);
 
   // ── facets ──────────────────────────────────────────────────────────────────
   const facetDefs = useMemo(() => buildFacetDefs(merged), [merged]);
@@ -194,10 +175,6 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // section; surface a hint to create groups rather than reading as a broken single bucket.
   const groupedNoGroups = density === "grouped" && skillGroups.length === 0;
 
-
-  // ── runs ──────────────────────────────────────────────────────────────────────
-  const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
-
   return (
     <Screen
       tabs={skillTabs}
@@ -226,52 +203,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       {mode === "library" && (
         <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* KPI digest (collapsible) */}
-          <Box bg="var(--bg-canvas)" style={{ borderBottom: "1px solid var(--border-soft)"}}>
-            <Row gap={18} style={{ padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless disclosure toggle (chevron + label), not a .btn control */}
-              <button onClick={() => setDigestOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
-                <Text as="span" size={9} style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none" }}>▸</Text>
-                <Text as="span" mono size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</Text>
-              </button>
-              <Box as="span"><b className="mono" style={{ color: "var(--fg)" }}>{kpis.total}</b> skills</Box>
-              <Box as="span"><b className="mono" style={{ color: "var(--fg)" }}>{merged.filter((s) => s.enabled).length}</b> enabled</Box>
-              <Text as="span" tone="accent">★ <b className="mono" style={{ color: "var(--fg)" }}>{kpis.pinned}</b></Text>
-              <Box as="span"><b className="mono" style={{ color: "var(--fg)" }}>{invToday}</b> today</Box>
-              <Box as="span"><b className="mono" style={{ color: "var(--success)" }}>{kpis.invWeek ? kpis.avgSuccess + "%" : "—"}</b> avg success</Box>
-            </Row>
-            {digestOpen && (
-              <Row gap={14} align="stretch" className="skills-digest" style={{ padding: "0 18px 14px 18px" }}>
-                {[
-                  { label: "Invoked 7d", value: fmtCount(kpis.invWeek), sub: leaders.length + " active skills" },
-                  { label: "Avg success", value: kpis.invWeek ? kpis.avgSuccess + "%" : "—", sub: "across active" },
-                  { label: "Never run", value: String(neverRun), sub: "candidates to prune" },
-                ].map((t) => (
-                  <Box key={t.label} pad={[11, 13]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: "0 0 auto", width: 150}}>
-                    <Box className="mono-label">{t.label}</Box>
-                    <Text as="div" mono size={20} weight={600} style={{ color: "var(--fg)", marginTop: 5 }}>{t.value}</Text>
-                    <Text as="div" size={10.5} tone="muted" style={{ marginTop: 2 }}>{t.sub}</Text>
-                  </Box>
-                ))}
-                <Box className="skills-leaderboard" pad={[10, 14]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: 1}}>
-                  <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</Text>
-                  {leaders.length === 0 ? (
-                    <Text as="div" size={11} tone="dim">No invocations yet — run the fleet to populate the leaderboard.</Text>
-                  ) : (
-                    <HBars
-                      rows={leaders.map((s, i) => ({
-                        label: `${i + 1}  ${s.name}`,
-                        value: s.invocations,
-                        color: KIND[s.kind].color,
-                        strong: true,
-                        tag: <Text as="span" mono size={10} style={{ color: successColor(s.success) }}>{s.success}%</Text>,
-                      }))}
-                      fmtV={(v) => fmtCount(v) + "×"}
-                    />
-                  )}
-                </Box>
-              </Row>
-            )}
-          </Box>
+          <SkillsDigest merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
 
           {/* Command bar */}
           <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
@@ -414,107 +346,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       )}
 
       {mode === "runs" && (
-        <Box as="section" className="an-page"><Box className="an-wrap">
-          <h2 className="mono" style={{ margin: "0 0 4px", fontSize: 18 }}>Runs</h2>
-          <Text as="div" tone="muted" size={12} style={{ marginBottom: 14 }}>Live skill invocations from the usage log · last 7 days</Text>
-          {runRows.length === 0 ? (
-            <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
-          ) : (
-            <Box border="soft" radius={6} style={{ overflow: "hidden" }}>
-              <Grid className="mono" cols="1.6fr 86px 60px 64px 90px" gap={10} style={{ padding: "8px 12px", background: "var(--bg-panel)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
-                <Box as="span">skill</Box><Box as="span" style={{ textAlign: "right" }}>invocations</Box><Box as="span" style={{ textAlign: "right" }}>today</Box><Box as="span" style={{ textAlign: "right" }}>success</Box><Box as="span" style={{ textAlign: "right" }}>7-day</Box>
-              </Grid>
-              {runRows.map((s, i) => { const sc = successColor(s.success); const today = stats[skillSlug(s.name)]?.today ?? 0; return (
-                <Grid key={s.id} cols="1.6fr 86px 60px 64px 90px" gap={10} align="center" style={{ padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); drawer.select(s.id); }}>
-                  <Row inline gap={8} style={{ minWidth: 0 }}><Text as="span" style={{ color: KIND[s.kind].color }}>{KIND[s.kind].glyph}</Text><Text as="span" mono size={11} style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</Text></Row>
-                  <Text as="span" mono size={11} tone="muted" style={{ textAlign: "right" }}>{fmtCount(s.invocations)}</Text>
-                  <Text as="span" mono size={11} tone="muted" style={{ textAlign: "right" }}>{today}</Text>
-                  <Text as="span" mono size={11} style={{ textAlign: "right", color: sc }}>{s.success}%</Text>
-                  <Row justify="end">{s.trend.length > 1 ? <Spark data={s.trend} color={KIND[s.kind].color} /> : <Box as="span" className="hint">—</Box>}</Row>
-                </Grid>
-              ); })}
-            </Box>
-          )}
-        </Box></Box>
+        <RunsTab merged={merged} stats={stats} onOpen={(id) => { select("library"); drawer.select(id); }} />
       )}
 
     </Screen>
-  );
-}
-
-function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => void; onClose: () => void }) {
-  const [name, setName] = useState("");
-  return (
-    <Box className="modal-scrim" onClick={onClose}>
-      <Box onClick={(e) => e.stopPropagation()} pad={18} bg="var(--bg-panel)" border radius="lg" style={{ width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
-        <Text as="div" size={14} weight={600} style={{ marginBottom: 4 }}>New task group</Text>
-        <Text as="div" size={11.5} tone="muted" style={{ marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</Text>
-        {/* eslint-disable-next-line no-restricted-syntax -- bespoke autofocus dialog input with Enter-to-submit and a layout-critical marginBottom that TextField's .field wrapper would displace */}
-        <input autoFocus className="input" placeholder="e.g. Release day" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onCreate(name.trim()); }} style={{ width: "100%", marginBottom: 14 }} />
-        <Row align="stretch" gap={8} justify="end">
-          <Button onClick={onClose}>cancel</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={() => onCreate(name.trim())}>create</Button>
-        </Row>
-      </Box>
-    </Box>
-  );
-}
-
-function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit, onDelete, onToggleGroup }: {
-  s: SkillDef; isDraft: boolean; projects: GhProject[]; groups: SkillGroup[];
-  onPatch: (p: Partial<SkillDef>) => void; onClose: () => void; onCommit: () => void; onDelete: () => void; onToggleGroup: (groupId: string) => void;
-}) {
-  const isGlobal = s.projects.length === 0;
-  return (
-    <Pane
-      open
-      isDraft={isDraft}
-      onClose={onClose}
-      onCommit={onCommit}
-      onRemove={onDelete}
-      commitDisabled={!s.name.trim()}
-      header={<>
-        <Box as="span" style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</Box>
-        <Box className="name">{s.name || (isDraft ? "New skill" : "Untitled skill")}</Box>
-      </>}
-    >
-          <TextField label={<>name <Box as="span" className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</Box></>} value={s.name} placeholder="Skill name" onChange={(v) => onPatch({ name: v })} />
-          <Row align="stretch" gap={16}>
-            <Row inline gap={8}><Box as="span" className="hint">enabled</Box><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></Row>
-            <Row inline gap={8}><Box as="span" className="hint">pinned</Box><Text as="span" size={14} onClick={() => onPatch({ pinned: !s.pinned })} style={{ color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</Text></Row>
-          </Row>
-          <Box className="field"><label>kind</label><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></Box>
-          <Box className="field"><label>source</label><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></Box>
-          <TextField label="description" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(v) => onPatch({ desc: v })} />
-          <Box className="field"><label>procedure — SKILL.md body</label>
-            {/* eslint-disable-next-line no-restricted-syntax -- multiline procedure body; the UI-kit has no textarea primitive */}
-            <textarea className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(e) => onPatch({ prompt: e.target.value })} /></Box>
-          <TextField label="bundled tools (comma-separated)" value={s.tools.join(", ")} placeholder="create_pr, git_diff" onChange={(v) => onPatch({ tools: v.split(",").map((t) => t.trim()).filter(Boolean) })} />
-          <Box className="field"><label>allowed profiles</label><SegmentedControl options={PROFILE_KEYS.map((p) => ({ label: p, on: s.profiles.includes(p), onClick: () => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] }) }))} /></Box>
-          {/* Task groups */}
-          <Box className="field">
-            <label>task groups</label>
-            <Row align="stretch" gap={6} wrap>
-              {groups.length === 0 && <Box as="span" className="hint">No groups yet — create one from the Task groups bar.</Box>}
-              {groups.map((g) => { const member = g.skillIds.includes(s.id); return (
-                <Box as="span" key={g.id} onClick={() => onToggleGroup(g.id)} style={{ ...pill(g.hue, !member), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, opacity: member ? 1 : 0.6 }}>⬡ {g.name} {member ? "✓" : "＋"}</Box>
-              ); })}
-            </Row>
-          </Box>
-          {/* Project assignment */}
-          <Box className="field">
-            <label>project assignment</label>
-            <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
-              <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><Spacer />
-              <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
-            </Banner>
-            {!isGlobal && (projects.length === 0
-              ? <Box className="hint" style={{ marginTop: 6 }}>No GitHub projects — connect GitHub in Settings to scope per project.</Box>
-              : <Box className="proj-multi" style={{ marginTop: 6 }}>{projects.map((p) => { const sel = s.projects.includes(String(p.number)); return (
-                  <Box key={p.id} className={"pm-row" + (sel ? " on" : "")} onClick={() => onPatch({ projects: sel ? s.projects.filter((x) => x !== String(p.number)) : [...s.projects, String(p.number)] })}><Box className="check">{sel ? "✓" : ""}</Box><Box className="pname">{p.title} <Box as="span" className="hint">#{p.number}</Box></Box></Box>
-                ); })}</Box>)}
-          </Box>
-    </Pane>
   );
 }
 
