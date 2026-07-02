@@ -3,7 +3,7 @@
 // one TSV line per fire: `ts \t pane \t event \t hook \t outcome` (#1743 prepended the pane
 // column). Legacy lines written before #1743 have no pane (`ts \t event \t hook \t outcome`)
 // and are still tolerated — the parser detects the shape by column count. Read newest-first via
-// `read_hook_log`. `outcome` is "allow" | "block" (PreToolUse decisions) or "ok"
+// `bsc logs tail hook`. `outcome` is "allow" | "block" (PreToolUse decisions) or "ok"
 // (PostToolUse / non-gating events). Pure + unit-tested; the hook wrappers that EMIT these
 // lines are wired separately (PR 3).
 

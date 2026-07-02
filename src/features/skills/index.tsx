@@ -7,7 +7,7 @@
 // `.claude/skills/<slug>/SKILL.md`. Edits are live. Telemetry (Runs) is real, from the skill log.
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -103,7 +103,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Real telemetry, merged over the library.
   const [stats, setStats] = useState<Record<string, SkillStats>>({});
   usePoll(async (isCancelled) => {
-    const lines = await safeInvoke<string[]>("read_skill_log", { limit: 4000 }, []);
+    const lines = await bscJson<string[]>(null, ["logs", "tail", "skill", "--limit", "4000", "--json"], []);
     if (!isCancelled()) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
   }, 5000);
 

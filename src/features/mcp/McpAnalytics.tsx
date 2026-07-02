@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
 import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
@@ -12,7 +12,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
-// telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). The over-time chart +
+// telemetry (~/.base-studio-code/mcp.log via `bsc logs tail mcp` + mcpTelemetry.ts). The over-time chart +
 // KPI cards are shared primitives (StackedDayBars / StatCard); the per-server/results charts stay local.
 // Transport per server is joined from the live extensions store; the rest comes from the parsed log.
 // Empty until the bsc-mcp hook pair emits calls (PR 2) — renders a clean zero state.
@@ -40,9 +40,8 @@ export function McpAnalyticsTab() {
   const [filter, setFilter] = useState<"all" | "ok" | "errors">("all");
   useEffect(() => {
     let cancelled = false;
-    invoke<string[]>("read_mcp_log", { limit: 8000 })
-      .then((lines) => { if (!cancelled) setAn(aggregateMcpTelemetry(parseMcpLog((lines ?? []).join("\n")), new Date(), DAYS)); })
-      .catch(() => { if (!cancelled) setAn(aggregateMcpTelemetry([], new Date(), DAYS)); });
+    bscJson<string[]>(null, ["logs", "tail", "mcp", "--limit", "8000", "--json"], [])
+      .then((lines) => { if (!cancelled) setAn(aggregateMcpTelemetry(parseMcpLog((lines ?? []).join("\n")), new Date(), DAYS)); });
     return () => { cancelled = true; };
   }, []);
 

@@ -5,7 +5,7 @@
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -58,13 +58,12 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   // Real per-worker activity from the bsc-audit log (#257): tool attempts tagged
   // with this pane id, polled while the page is open, newest first.
   const [audit, setAudit] = useState<AuditRecord[]>([]);
-  usePoll((isCancelled) => invoke<string[]>("read_audit_log", { limit: 4000 })
+  usePoll((isCancelled) => bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "4000", "--json"], [])
     .then((lines) => {
       if (isCancelled()) return;
       const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
       setAudit(rows.slice(-12).reverse());
-    })
-    .catch(() => {}), 4000, [worker.id]);
+    }), 4000, [worker.id]);
 
   // Done-time audit snapshot (#920): the worker's concrete output — branch, commits, changed
   // files, PR, and the transcript path — read from the worktree at view time. Reloads when the

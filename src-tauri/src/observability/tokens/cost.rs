@@ -1,21 +1,6 @@
-// Per-pane token usage + dollar cost from Claude Code transcripts (#416).
-
-use crate::bsc_base_dir;
-
-/// Per-pane token + cost accounting, one record per pane (#416). Serialized to the
-/// frontend so the Fleet tokens/spend panel renders real numbers instead of a
-/// "not measured yet" note.
-#[derive(serde::Serialize, Debug, PartialEq)]
-pub(crate) struct TokenUsage {
-    pane: String,
-    session_id: String,
-    model: String,
-    input_tokens: u64,
-    output_tokens: u64,
-    cache_creation_tokens: u64,
-    cache_read_tokens: u64,
-    cost_usd: f64,
-}
+// Per-pane transcript-log parsing helpers (#416): the shared `tokens.log` readers still used by the
+// `messages` (transcript→conversation) command and `console/shell_rc`. The per-pane token-usage READ
+// itself moved to the `bsc logs cost --full` CLI over the `bsc` bridge (#2144).
 
 /// Decode a JSON-escaped path stored verbatim in `tokens.log` (`bsc-tokens` writes the
 /// hook's `transcript_path` field without unescaping). Reverses the escapes a JSON string
@@ -67,41 +52,6 @@ pub(super) fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String,
         }
         Some((pane.clone(), (pane, sid, tp)))
     })
-}
-
-/// Read per-pane token + cost accounting (#416). Delegates the whole pricing engine — the price
-/// table, the transcript-usage parser, and the cost math — to the canonical implementation in
-/// `crates/logs` (`bsc_logs::cost::all_costs`, #1686), then maps each [`bsc_logs::cost::Cost`] to the
-/// frontend [`TokenUsage`]. `all_costs` already takes the latest transcript per pane and skips
-/// panes with a missing/unreadable transcript or no usage (newest pane first), so this is a thin
-/// shape adapter bounded to `limit` records.
-///
-/// `bsc_logs::cost::Cost` keys a session by its pane but doesn't carry the `session_id`, so we recover
-/// the `pane → session_id` map from the same `tokens.log` to keep the frontend record complete.
-/// The serde field names below are a frontend contract — keep them byte-identical.
-#[tauri::command]
-pub(crate) fn read_token_usage(limit: usize) -> Vec<TokenUsage> {
-    use std::collections::HashMap;
-    let dir = bsc_base_dir();
-    let log_text = std::fs::read_to_string(dir.join("tokens.log")).unwrap_or_default();
-    let session_ids: HashMap<String, String> = latest_transcript_per_pane(&log_text)
-        .into_iter()
-        .map(|(pane, sid, _)| (pane, sid))
-        .collect();
-    bsc_logs::cost::all_costs(&dir)
-        .into_iter()
-        .take(limit)
-        .map(|c| TokenUsage {
-            session_id: session_ids.get(&c.session).cloned().unwrap_or_default(),
-            pane: c.session,
-            model: c.model,
-            input_tokens: c.input,
-            output_tokens: c.output,
-            cache_creation_tokens: c.cache_creation,
-            cache_read_tokens: c.cache_read,
-            cost_usd: c.cost_usd,
-        })
-        .collect()
 }
 
 #[cfg(test)]
