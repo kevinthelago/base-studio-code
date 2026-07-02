@@ -26,7 +26,7 @@ pub(crate) use crate::app::state::UncleanShutdown;
 pub(crate) use crate::app::recovery::{claim_session_lock, session_lock_path};
 pub(crate) use crate::project::hub::migrate_draft_hubs_into_projects;
 pub(crate) use crate::session::launch::{
-    bsc_agent_session_path, claude_launch, claude_model_flag, claude_project_dir_name,
+    bsc_agent_session_path, claude_launch, claude_model_flag, claude_project_transcripts_dir,
     has_bsc_agent_history, has_claude_history,
 };
 pub(crate) use crate::observability::perf::PerfSpan;
