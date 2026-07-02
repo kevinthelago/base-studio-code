@@ -108,7 +108,7 @@ pub(crate) fn read_files_dir(root: &std::path::Path) -> Vec<(String, String)> {
 /// Ingest every non-empty `.md`/`.json` section file in `dir` (top level only), keyed by
 /// file stem, into `sections` — skipping the workspace control files. Used to read the hub
 /// root + the `context/` subdir; a later call overrides earlier keys (context/ wins, #807).
-pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
+pub(crate) fn ingest_stage_files(dir: &std::path::Path, sections: &mut std::collections::HashMap<String, String>) {
     // Workspace control files plus the DB-owned `fleet.json` (#1805): the fleet lives solely in
     // plan.db now, so a stray legacy `fleet.json` must never be ingested as a plan section (it is
     // migrated into plan.db then deleted on the first fleet read — see `migrate_stray_fleet_json`).
@@ -381,7 +381,7 @@ mod tests {
         fs::write(dir.join("CLAUDE.md"), "spec").unwrap();
 
         let mut sections = std::collections::HashMap::new();
-        ingest_section_files(&dir, &mut sections);
+        ingest_stage_files(&dir, &mut sections);
 
         assert_eq!(sections.get("goal").map(String::as_str), Some("the goal"));
         assert!(!sections.contains_key("fleet"), "stray fleet.json is excluded from the sweep");
@@ -525,8 +525,8 @@ mod relocated_tests {
         std::fs::write(discovery.join("stack.md"), "NEW discovery stack").unwrap();
 
         let mut sections: HashMap<String, String> = HashMap::new();
-        ingest_section_files(&root, &mut sections);
-        ingest_section_files(&discovery, &mut sections);
+        ingest_stage_files(&root, &mut sections);
+        ingest_stage_files(&discovery, &mut sections);
 
         assert_eq!(sections.get("phases").map(String::as_str), Some(r#"{"phases":[]}"#));
         assert_eq!(sections.get("goal").map(String::as_str), Some("ship it"));

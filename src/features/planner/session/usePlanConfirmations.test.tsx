@@ -21,8 +21,8 @@ function baseProps(over: Partial<Props> = {}): Props {
     featureCycle: [],
     effectiveProjectId: "proj",
     paneId: "pane1",
-    confirmPlanSection: vi.fn(),
-    skipPlanSection: vi.fn(),
+    confirmPlanStage: vi.fn(),
+    skipPlanStage: vi.fn(),
     autoCompleteGates: false,
     autoPlanActive: false,
     ...over,
@@ -36,8 +36,8 @@ describe("usePlanConfirmations", () => {
     const props = baseProps();
     const { result } = renderHook(() => usePlanConfirmations(props));
     act(() => { result.current.confirmStageKeys(["goal", "scope"]); });
-    expect(props.confirmPlanSection).toHaveBeenCalledWith("proj", "goal");
-    expect(props.confirmPlanSection).toHaveBeenCalledWith("proj", "scope");
+    expect(props.confirmPlanStage).toHaveBeenCalledWith("proj", "goal");
+    expect(props.confirmPlanStage).toHaveBeenCalledWith("proj", "scope");
     expect(invoke).toHaveBeenCalledWith("pty_write", expect.objectContaining({ paneId: "pane1" }));
   });
 
@@ -45,14 +45,14 @@ describe("usePlanConfirmations", () => {
     const props = baseProps();
     const { result } = renderHook(() => usePlanConfirmations(props));
     act(() => { result.current.confirmStageKeys([]); });
-    expect(props.confirmPlanSection).not.toHaveBeenCalled();
+    expect(props.confirmPlanStage).not.toHaveBeenCalled();
   });
 
   it("onSkipStage skips the active stage and tells the planner", () => {
     const props = baseProps({ stages: stages({ key: "ui", name: "UI", optional: true }) });
     const { result } = renderHook(() => usePlanConfirmations(props));
     act(() => { result.current.onSkipStage(); });
-    expect(props.skipPlanSection).toHaveBeenCalledWith("proj", "ui");
+    expect(props.skipPlanStage).toHaveBeenCalledWith("proj", "ui");
     expect(invoke).toHaveBeenCalledWith("pty_write", expect.objectContaining({ paneId: "pane1" }));
   });
 
@@ -82,7 +82,7 @@ describe("usePlanConfirmations", () => {
       });
       renderHook(() => usePlanConfirmations(props));
       act(() => { vi.advanceTimersByTime(900); });
-      expect(props.confirmPlanSection).toHaveBeenCalledWith("proj", FEATURES_KEY);
+      expect(props.confirmPlanStage).toHaveBeenCalledWith("proj", FEATURES_KEY);
     } finally {
       vi.useRealTimers();
     }

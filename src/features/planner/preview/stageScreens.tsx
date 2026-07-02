@@ -26,9 +26,9 @@ export interface StageScreenProps {
   projectKey: string;
   /** The current (reached) section's key — screens bound to a section use it;
    *  section-agnostic screens (render-preview) ignore it. */
-  sectionKey?: string;
+  stageKey?: string;
   /** The current section's plan markdown, when available. */
-  sectionContent?: string;
+  stageContent?: string;
   onClose?: () => void;
 }
 

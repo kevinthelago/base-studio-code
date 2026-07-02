@@ -83,11 +83,11 @@ pub(crate) fn sandbox_read_file(path: String) -> Result<String, String> {
 }
 
 /// Workspace CONTROL files the plan-section sweep excludes — mirrors the private list in
-/// `ingest_section_files` (platform/fsx.rs), so the sandbox reader can't drift from the host reader.
+/// `ingest_stage_files` (platform/fsx.rs), so the sandbox reader can't drift from the host reader.
 const SECTION_CONTROL_FILES: &[&str] = &["CLAUDE.md", "automations.md", "extensions.md", "github_context.md", "fleet.json"];
 
-/// Parse the NUL-delimited `<path>\n<content>` dump from [`read_sandbox_plan_sections`]' wsl script
-/// into the `{stem: content}` map, applying the SAME rules as `ingest_section_files`: skip control
+/// Parse the NUL-delimited `<path>\n<content>` dump from [`read_sandbox_plan_stages`]' wsl script
+/// into the `{stem: content}` map, applying the SAME rules as `ingest_stage_files`: skip control
 /// files, key by file stem, trim, drop empties. Root records precede `discovery/` ones so a discovery
 /// section overrides a stale root copy (last write wins). Pure — unit-tested against a live dump.
 fn parse_section_dump(dump: &str) -> std::collections::HashMap<String, String> {
@@ -106,15 +106,15 @@ fn parse_section_dump(dump: &str) -> std::collections::HashMap<String, String> {
 }
 
 /// Read a sandboxed project's plan sections from the DISTRO hub (#1988) — the sandbox-side mirror of
-/// `read_plan_sections`, so the planner's right pane reflects the sections a sandboxed planner writes
+/// `read_plan_stages`, so the planner's right pane reflects the sections a sandboxed planner writes
 /// INSIDE the cage. One `wsl` exec dumps every `.md`/`.json` under the hub root + `discovery/`; the
-/// control-file / stem / trim / discovery-wins semantics match `ingest_section_files` (via
+/// control-file / stem / trim / discovery-wins semantics match `ingest_stage_files` (via
 /// [`parse_section_dump`]). Empty map on a not-yet-relocated hub (the glob simply matches nothing).
 #[tauri::command]
-pub(crate) fn read_sandbox_plan_sections(key: String) -> Result<std::collections::HashMap<String, String>, String> {
+pub(crate) fn read_sandbox_plan_stages(key: String) -> Result<std::collections::HashMap<String, String>, String> {
     require_windows()?;
     let hub = sh_squote(&sandbox_project_path(&key));
-    // Root globs first, then discovery/ — later records win (matches read_plan_sections' ingest order).
+    // Root globs first, then discovery/ — later records win (matches read_plan_stages' ingest order).
     let script = format!(
         "for f in {hub}/*.md {hub}/*.json {hub}/discovery/*.md {hub}/discovery/*.json; do [ -f \"$f\" ] || continue; printf '%s\\n' \"$f\"; cat \"$f\"; printf '\\0'; done"
     );

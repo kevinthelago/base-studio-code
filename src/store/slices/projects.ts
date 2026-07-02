@@ -42,7 +42,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // Resolve each passed key (project title OR GitHub node id) to its data key via the alias,
           // so the per-project maps — keyed by the sanitized slug (`effectiveProjectId`) — are
           // actually dropped, not just the raw title/id. Deleting a PUBLISHED project passes its node
-          // id; without this the slug-keyed planSections/planFleet/… leak (#997).
+          // id; without this the slug-keyed planStages/planFleet/… leak (#997).
           const keySet = new Set(
             keys.flatMap((k) => (k ? [k, s.projectKeyAlias[k]] : [])).filter(Boolean) as string[],
           );
@@ -63,11 +63,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             (s.activeProjectId != null && keySet.has(s.activeProjectId)) ||
             (!!s.planningSessionKey && keySet.has(s.planningSessionKey));
           return {
-            planSections:           byKey(s.planSections),
-            planConfirmedSections:  byKey(s.planConfirmedSections),
+            planStages:           byKey(s.planStages),
+            planConfirmedStages:  byKey(s.planConfirmedStages),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planDeployConfig:       byKey(s.planDeployConfig),
-            planSkippedSections:    byKey(s.planSkippedSections),
+            planSkippedStages:    byKey(s.planSkippedStages),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
             projectBlueprintId:     byKey(s.projectBlueprintId),
@@ -96,7 +96,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       resetProjectData: () =>
         set({
-          planSections: {}, planConfirmedSections: {}, planAuthoredBlueprint: {}, planSkippedSections: {}, planDeployConfig: {},
+          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
           projectKeyAlias: {}, issueLinks: {}, projectStartupPromptDoc: {},
@@ -393,7 +393,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // commons-landed sentinel so the director scaffolds + lands them first (Phase 0). The
           // commons globs also become the director's scoped writeGlobs below (its only code writes).
           const commonsGlobs = hasDirector
-            ? commonsGlobsForStack(stackTagsFromSection(s.planSections[projectKey]?.stack ?? ""))
+            ? commonsGlobsForStack(stackTagsFromSection(s.planStages[projectKey]?.stack ?? ""))
             : [];
           const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };

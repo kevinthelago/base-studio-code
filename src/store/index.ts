@@ -123,13 +123,13 @@ export const useAppStore = create<AppStore>()(
         repoStartupPromptDoc:    s.repoStartupPromptDoc,
         repoTriagePromptDoc:     s.repoTriagePromptDoc,
         configProfiles:       s.configProfiles,
-        planSections:          s.planSections,
-        planConfirmedSections: s.planConfirmedSections,
+        planStages:          s.planStages,
+        planConfirmedStages: s.planConfirmedStages,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
-        planSkippedSections:   s.planSkippedSections,
+        planSkippedStages:   s.planSkippedStages,
         planAutomations:       s.planAutomations,
         planStageConfig:       s.planStageConfig,
         projectBlueprintId:    s.projectBlueprintId,

@@ -4,7 +4,7 @@
 //
 // Pure (no React / xterm / Tauri) so it can be unit-tested in isolation and shared
 // between the planner UI, the store, and the fleet helpers. Split out of the former
-// planSections.ts (#1615), which conflated this fleet machinery with the discovery
+// planStages.ts (#1615), which conflated this fleet machinery with the discovery
 // topic-file helpers; those now live in stages/planTopics.ts.
 
 import type { AgentFlow } from "./agentFlow";

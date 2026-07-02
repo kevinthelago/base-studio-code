@@ -1,7 +1,7 @@
-// usePlanSectionPoll (#1474) — the planner's 2-second plan.db + section-file poll, extracted
+// usePlanStagePoll (#1474) — the planner's 2-second plan.db + section-file poll, extracted
 // verbatim from Planning.tsx. While the planning page is visible it reflects every DB-owned
 // artifact (issues / features / repos / fleet / deploy / deps / mcp / blueprint) plus the
-// `read_plan_sections` file poll into the store, with per-artifact change-guards so an unchanged
+// `read_plan_stages` file poll into the store, with per-artifact change-guards so an unchanged
 // blob never churns state. Side-effect only — owns its guard refs internally and returns nothing.
 
 import { useEffect, useRef } from "react";
@@ -26,7 +26,7 @@ import { plannerLaunchConfig } from "./plannerLaunch";
 /** A per-repo startup script row from plan.db (`bsc plan startup`, #2010). */
 interface StartupScriptRow { repo: string; mode: "dev" | "triage"; path: string }
 
-interface SectionPollDeps {
+interface StagePollDeps {
   visible: boolean;
   projectId: string;
   /** Linked repos, passed to the deploy-config coercion. */
@@ -38,7 +38,7 @@ interface SectionPollDeps {
   planningDir: string;
 }
 
-export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir }: SectionPollDeps): void {
+export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir }: StagePollDeps): void {
   // Per-artifact change-guards: skip re-applying an unchanged DB blob each 2s tick. `depsImportedRef`
   // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve;
   // `lastBpJsonRef` the authored-blueprint coercion (reset on project switch).
@@ -52,7 +52,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
 
   // Poll the section files Claude writes every 2 seconds while visible. Each
   // documented topic is its own file ({key}.md / phases.json / _skipped.md);
-  // read_plan_sections returns them all dynamically, keyed by file stem. Writing
+  // read_plan_stages returns them all dynamically, keyed by file stem. Writing
   // to the store drives the derived `sections`/`skipped` — confirmed sections
   // stay frozen. This file poll is more reliable than the raw <plan_update>
   // stream and is what surfaces brand-new topics as their own cards.
@@ -63,8 +63,8 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
     const poll = async () => {
       try {
         const store = useAppStore.getState();
-        const saved = store.planSections[effectiveProjectId] ?? {};
-        const confirmed = new Set(store.planConfirmedSections[effectiveProjectId] ?? []);
+        const saved = store.planStages[effectiveProjectId] ?? {};
+        const confirmed = new Set(store.planConfirmedStages[effectiveProjectId] ?? []);
 
         // Sandbox (#1988): a planner launched INSIDE the WSL2 cage writes plan.db + section files into
         // the distro hub. Mirror the in-distro plan.db back to the host FIRST, so the DB-owned reads
@@ -82,7 +82,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         try {
           const dbIssues = await bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []);
           const json = JSON.stringify(dbIssues ?? []);
-          if (json !== (saved["issues"] ?? "")) store.setPlanSection(effectiveProjectId, "issues", json);
+          if (json !== (saved["issues"] ?? "")) store.setPlanStage(effectiveProjectId, "issues", json);
         } catch { /* plan.db not created until the planner adds its first issue — ignore */ }
 
         // Features are DB-owned too (#plan-db) — titles-first roster in plan.db, not a features.json
@@ -90,7 +90,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         try {
           const dbFeatures = await bscJson<PlanFeature[]>(effectiveProjectId, ["plan", "feature", "list", "--json"], []);
           const json = JSON.stringify(dbFeatures ?? []);
-          if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FEATURES_KEY, json);
+          if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanStage(effectiveProjectId, FEATURES_KEY, json);
         } catch { /* plan.db not created until the planner registers its first feature — ignore */ }
 
         // Linked repos are DB-owned too (#1012) — restore them from the hub's plan.db into the store
@@ -110,7 +110,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           const dbFleet = await bscJson<unknown | null>(effectiveProjectId, ["plan", "fleet", "get", "--full", "--json"], null);
           if (dbFleet) {
             const json = JSON.stringify(dbFleet);
-            if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FLEET_KEY, json);
+            if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanStage(effectiveProjectId, FLEET_KEY, json);
           }
         } catch { /* plan.db not created until the planner sets the fleet — ignore */ }
 
@@ -140,11 +140,11 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
             const raw = JSON.stringify(dbDeps);
             if (raw !== depsAppliedRef.current[effectiveProjectId]) {
               depsAppliedRef.current[effectiveProjectId] = raw;
-              if (raw !== (saved[DEPENDENCIES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, DEPENDENCIES_KEY, raw);
+              if (raw !== (saved[DEPENDENCIES_KEY] ?? "")) store.setPlanStage(effectiveProjectId, DEPENDENCIES_KEY, raw);
             }
           } else if (!depsImportedRef.current.has(effectiveProjectId)) {
             // One-time legacy import: the file content surfaced as the DEPENDENCIES section by an earlier
-            // `read_plan_sections` tick. Re-serialize through the tolerant parser so a bare-array (#1111)
+            // `read_plan_stages` tick. Re-serialize through the tolerant parser so a bare-array (#1111)
             // file is normalized to the full manifest shape before it lands in plan.db.
             const legacy = saved[DEPENDENCIES_KEY] ?? "";
             const manifest = parseDependencyManifest(legacy);
@@ -228,18 +228,18 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
 
         // Section files: a planner launched INSIDE the WSL2 cage (#1988) writes them into the distro
-        // hub, so read from there (via `read_sandbox_plan_sections`) when this session is sandboxed
+        // hub, so read from there (via `read_sandbox_plan_stages`) when this session is sandboxed
         // (`sandboxed`, computed above) — else the host hub. Fall back to the host read if the distro
         // read is empty (e.g. the relocation fell back to host at launch), so sections never vanish.
         let result: Record<string, string>;
         if (sandboxed) {
-          result = await invoke<Record<string, string>>("read_sandbox_plan_sections", { key: effectiveProjectId })
+          result = await invoke<Record<string, string>>("read_sandbox_plan_stages", { key: effectiveProjectId })
             .catch(() => ({} as Record<string, string>));
           if (Object.keys(result).length === 0) {
-            result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+            result = await invoke<Record<string, string>>("read_plan_stages", { projectKey: effectiveProjectId });
           }
         } else {
-          result = await invoke<Record<string, string>>("read_plan_sections", { projectKey: effectiveProjectId });
+          result = await invoke<Record<string, string>>("read_plan_stages", { projectKey: effectiveProjectId });
         }
         const entries = Object.entries(result);
 
@@ -253,7 +253,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
           // one-time legacy import (above) can read it.
           if (key === DEPENDENCIES_KEY && depsAppliedRef.current[effectiveProjectId]) continue;
           if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
-            store.setPlanSection(effectiveProjectId, key, content);
+            store.setPlanStage(effectiveProjectId, key, content);
           }
         }
       } catch {
