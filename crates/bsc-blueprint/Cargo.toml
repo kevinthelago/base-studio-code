@@ -2,21 +2,16 @@
 name = "bsc-blueprint"
 version = "0.1.0"
 edition = "2021"
-description = "User blueprint store (file CRUD over ~/.base-studio-code/blueprints/) for base-studio-code (#1719) — shared by the Tauri app's blueprint commands and the session-facing `bsc-blueprint` CLI, so the user blueprint library is reachable from any live console session."
+description = "User blueprint store (file CRUD over ~/.base-studio-code/blueprints/) for base-studio-code (#1719) — a thin blueprint-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's blueprint commands and the session-facing `bsc blueprint` CLI."
 
-# The core lib (no Tauri, no SQLite — just file CRUD) so the tiny CLI reuses it without dragging the
-# whole desktop app in. The hyphenated package name maps to the `bsc_blueprint` crate name.
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_blueprint` crate name.
 [lib]
 name = "bsc_blueprint"
 
 [dependencies]
-# Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so
-# the CLI and the app agree on which blueprint store they read/write.
-bsc-util = { path = "../bsc-util" }
-# Shared CLI helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read every
-# `bsc-* set`-style command takes) shared with `bsc-plan` / `bsc-skill` / `bsc-logs`.
-bsc-sqlite-util = { path = "../bsc-sqlite-util" }
-# Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper) + `resolve_store_path` (--dir→env→default).
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
+# blueprint-specific nouns + lean `list` fields via a CliSpec.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"

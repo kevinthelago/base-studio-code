@@ -779,10 +779,7 @@ name = "bsc-blueprint"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
- "bsc-sqlite-util",
- "bsc-util",
- "serde",
- "serde_json",
+ "bsc-json-store",
 ]
 
 [[package]]
@@ -817,6 +814,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-json-store"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-llm"
 version = "0.1.0"
 dependencies = [
@@ -833,10 +840,7 @@ name = "bsc-persona"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
- "bsc-sqlite-util",
- "bsc-util",
- "serde",
- "serde_json",
+ "bsc-json-store",
 ]
 
 [[package]]
