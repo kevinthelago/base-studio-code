@@ -123,6 +123,35 @@ pub(crate) fn kill_project_sessions(state: &PtyState, key: &str) -> usize {
     n
 }
 
+/// Best-effort process supervision for a freshly spawned session shell: box it into a Windows Job
+/// Object (so killing the session tree-kills `claude` and any `gh`/`git`/MCP child it spawns), register
+/// the shell PID with the perf sampler, and author the spawn in the crash-recovery ledger (#1049 — the
+/// next boot reconciles the ledger and tree-kills this orphan if the app dies ungracefully, skipping the
+/// Job Object's clean drop). Every step is best-effort: a failure logs and proceeds (single-process kill
+/// still works; we just lose tree-kill until the next launch). Returns the Job Object to hold for the
+/// session's lifetime — `None` if creation/assignment failed. Extracted from `pty_create` (#2086).
+fn attach_job_and_track(
+    child: &(dyn portable_pty::Child + Send + Sync),
+    pane_id: &str,
+    app: &AppHandle,
+) -> Option<PtyJob> {
+    let job = match PtyJob::new() {
+        Ok(j) => match child.process_id() {
+            Some(pid) => match j.assign_pid(pid) {
+                Ok(()) => Some(j),
+                Err(e) => { log::warn!("pty[{pane_id}] assign shell {pid} to job failed: {e}"); None }
+            },
+            None => { log::warn!("pty[{pane_id}] shell pid unavailable; tree-kill disabled"); None }
+        },
+        Err(e) => { log::warn!("pty[{pane_id}] create job object failed: {e}"); None }
+    };
+    if let Some(pid) = child.process_id() {
+        app.state::<perf::PerfState>().register(pane_id, pid);
+        crate::console::ledger::record(pid, pane_id);
+    }
+    job
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -254,31 +283,9 @@ pub(crate) fn pty_create(
         .map_err(|e| { log::error!("pty[{pane_id}] spawn '{shell}' failed: {e}"); e.to_string() })?;
     drop(pair.slave);
 
-    // Box the shell into a Windows Job Object so killing the session also
-    // terminates `claude` (and any `gh`/`git`/MCP child it spawns). Best-effort:
-    // job/assign failures log and proceed with a None job — single-process kill
-    // still works, we just lose tree-kill until the next launch.
-    let job = match PtyJob::new() {
-        Ok(j) => match child.process_id() {
-            Some(pid) => match j.assign_pid(pid) {
-                Ok(()) => Some(j),
-                Err(e) => { log::warn!("pty[{pane_id}] assign shell {pid} to job failed: {e}"); None }
-            },
-            None => { log::warn!("pty[{pane_id}] shell pid unavailable; tree-kill disabled"); None }
-        },
-        Err(e) => { log::warn!("pty[{pane_id}] create job object failed: {e}"); None }
-    };
-
-    // Register the shell PID with the perf sampler so it can track this agent's
-    // resource usage. Best-effort: if the PID is unavailable the sampler just
-    // won't have a row for this pane (it already logged the warning above).
-    if let Some(pid) = child.process_id() {
-        app.state::<perf::PerfState>().register(&pane_id, pid);
-        // Author this spawn in the crash-recovery ledger (#1049): if the app dies ungracefully
-        // (skipping the Job Object's clean drop), the next boot reconciles the ledger and tree-kills
-        // this orphan. Removed on a clean pty_kill / app exit.
-        crate::console::ledger::record(pid, &pane_id);
-    }
+    // Box the shell into a Job Object (tree-kill), register its PID with the perf sampler, and author
+    // the spawn in the crash-recovery ledger — all best-effort (see `attach_job_and_track`).
+    let job = attach_job_and_track(child.as_ref(), &pane_id, &app);
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
