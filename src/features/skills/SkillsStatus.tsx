@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { Box } from "@/shared/ui/layout/Box";
 import { useAppStore } from "@/store";
 import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./lib/skillTelemetry";
 
 /**
  * Live Skills KPIs for the app status bar (Skills page) — replaces the old hardcoded
- * `SKILL_KPIS` mock. Reads the real skill-usage telemetry (`read_skill_log`, the same source
+ * `SKILL_KPIS` mock. Reads the real skill-usage telemetry (`bsc logs tail skill`, the same source
  * the Skills screen uses) plus the live library size.
  */
 export function SkillsStatus() {
@@ -15,11 +15,10 @@ export function SkillsStatus() {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<string[]>("read_skill_log", { limit: 4000 })
+    bscJson<string[]>(null, ["logs", "tail", "skill", "--limit", "4000", "--json"], [])
       .then((lines) => {
         if (!cancelled) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
-      })
-      .catch(() => { if (!cancelled) setStats({}); });
+      });
     return () => { cancelled = true; };
   }, []);
 

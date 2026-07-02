@@ -6,6 +6,7 @@
 // any event whose run has already moved past that stage. Mount once (ConsoleWorkspace stays
 // mounted across screens). Safe to run always — it only ever touches workflow panes.
 import { useRef } from "react";
+import { bscJson } from "../core/bsc";
 import { safeInvoke } from "../core/safeInvoke";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -18,7 +19,7 @@ export function useWorkflowConductor(): void {
   const lastCount = useRef(0);
   usePoll(async (isCancelled) => {
     if (isCancelled()) return;
-    const lines = await safeInvoke<string[] | null>("read_coord_log", { limit: 2000 }, null);
+    const lines = await bscJson<string[] | null>(null, ["logs", "tail", "coord", "--limit", "2000", "--oldest", "--json"], null);
     if (isCancelled() || !lines) return;
     const runs = useAppStore.getState().workflowRuns;
     if (Object.keys(runs).length === 0) { lastCount.current = lines.length; return; }

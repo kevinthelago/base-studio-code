@@ -209,57 +209,11 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
     tail_lines(&path, limit, false)
 }
 
-/// Tail one of the bsc-* TSV streams by registry key (`coord`/`audit`/`skills`/`hooks`/`mcp`/
-/// `tokens`): the newest `limit` non-blank lines. `newest_first` matches each stream's convention —
-/// the audit/skill/hook/mcp readers replay newest-first; the coord log replays oldest-first. Empty
-/// for an unknown key or a missing/unreadable file. The single body behind the per-stream
-/// `read_*_log` command wrappers below.
-pub(crate) fn read_tsv_log(stream: &str, limit: usize, newest_first: bool) -> Vec<String> {
-    let Some((_, file, _)) = TSV_STREAMS.iter().find(|(k, _, _)| *k == stream) else {
-        return Vec::new();
-    };
-    tail_lines(&bsc_base_dir().join(file), limit, newest_first)
-}
+// The per-stream TSV log readers (`read_audit_log`/`read_skill_log`/`read_hook_log`/`read_mcp_log`/
+// `read_coord_log`) moved to the `bsc logs tail <stream>` CLI over the `bsc` bridge (#2144). The
+// underlying `tail_lines` reader stays — it still backs `read_log_tail` (the raw-viewer command,
+// which also serves the Tauri-owned `app` log and so cannot move to `bsc logs`).
 
-// ── Per-stream TSV log readers ────────────────────────────────────────────────────
-//
-// Thin `#[tauri::command]` wrappers over `read_tsv_log`, one per bsc-* stream the Fleet/log UI
-// reads. Each is keyed by stream and selects the stream's replay order.
-
-/// Read the Agents audit log (#257): the newest `limit` TSV lines, newest first. Thin wrapper over
-/// the shared `read_tsv_log` reader, keyed by stream.
-#[tauri::command]
-pub(crate) fn read_audit_log(limit: usize) -> Vec<String> {
-    read_tsv_log("audit", limit, true)
-}
-/// Read the skill usage log (#406): the newest `limit` TSV lines, newest first. Thin wrapper over
-/// the shared `read_tsv_log` reader, keyed by stream.
-#[tauri::command]
-pub(crate) fn read_skill_log(limit: usize) -> Vec<String> {
-    read_tsv_log("skills", limit, true)
-}
-/// Read the hook-fire log (#865 PR 2): the newest `limit` TSV lines, newest first. Each line
-/// is `ts \t event \t hook \t outcome` (written by the hook wrappers; absent until that lands,
-/// in which case this returns an empty list). Thin wrapper over the shared `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_hook_log(limit: usize) -> Vec<String> {
-    read_tsv_log("hooks", limit, true)
-}
-/// Read the MCP-call log (#879): the newest `limit` TSV lines, newest first. Each line is
-/// `ts \t server \t tool \t outcome \t ms [\t detail]` (written by the bsc-mcp hook pair;
-/// absent until that lands, in which case this returns an empty list). Thin wrapper over the
-/// shared `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_mcp_log(limit: usize) -> Vec<String> {
-    read_tsv_log("mcp", limit, true)
-}
-/// Read the coordination log (#199): up to the newest `limit` TSV lines, in chronological
-/// (oldest-first) order so the coordinator can replay them. Thin wrapper over the shared
-/// `read_tsv_log` reader.
-#[tauri::command]
-pub(crate) fn read_coord_log(limit: usize) -> Vec<String> {
-    read_tsv_log("coord", limit, false)
-}
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across
 /// polls + restarts). Same TSV shape + ISO-8601 UTC timestamp as the shell emitters.
@@ -373,15 +327,6 @@ mod tests {
         // Missing file → empty, never a panic.
         assert!(tail_lines(&path, 5, true).is_empty());
         assert!(tail_lines(&path, 5, false).is_empty());
-    }
-
-    #[test]
-    fn read_tsv_log_is_empty_for_unknown_stream() {
-        // An unknown registry key returns empty without touching the filesystem; `perf`/`app`
-        // are not TSV keys either.
-        assert!(read_tsv_log("nope", 10, true).is_empty());
-        assert!(read_tsv_log("perf", 10, true).is_empty());
-        assert!(read_tsv_log("app", 10, false).is_empty());
     }
 
     #[test]

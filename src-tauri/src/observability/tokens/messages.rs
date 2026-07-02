@@ -2,7 +2,7 @@
 //
 // The live planning session is projected to a paired phone as structured `plan_state.messages`.
 // The planner is a PTY running `claude`, so the structured conversation lives ONLY in Claude's
-// transcript JSONL — the same per-pane transcript `read_token_usage` already reads. We extract
+// transcript JSONL — the same per-pane transcript the token-usage reader (`bsc logs cost`) reads. We extract
 // the user/assistant text turns from it (tool-use/tool-result blocks are dropped — the phone
 // renders the conversation, not the tool plumbing).
 

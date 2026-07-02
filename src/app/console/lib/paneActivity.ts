@@ -4,17 +4,17 @@
 // which can't tell "done" from "working but silent" — so a worker that's thinking, running a long
 // silent tool call, or backing off false-idles mid-turn. The fix drives authoritative turn
 // boundaries from Claude Code hooks: `bsc-activity run` on UserPromptSubmit (a turn opens) and
-// `bsc-activity idle` on Stop/SubagentStop (the turn closes), recorded to `activity.log`. The Rust
-// `read_pane_activity` command returns the latest state per pane; TerminalView polls it and uses
-// the pure helpers here to decide whether a pane's turn is still open.
+// `bsc-activity idle` on Stop/SubagentStop (the turn closes), recorded to `activity.log`.
+// `bsc logs pane-activity` (over the `bsc` bridge, #2144) returns the latest state per pane;
+// TerminalView polls it and uses the pure helpers here to decide whether a pane's turn is still open.
 //
 // ADDITIVE / SAFE: the gate only PREVENTS a wrongful idle — a pane whose turn is still open is kept
 // "run" past the silence timeout. It never forces idle on its own; a pane still goes idle on the
 // authoritative Stop (which records `idle`, closing the turn) or, for non-bash / never-launched
 // panes that emit no activity at all, on the silence timer exactly as before (no regression).
 
-/** One pane's latest turn-boundary state, as serialized by the Rust `read_pane_activity` command
- *  (tokens.rs `PaneActivity` — plain snake_case, no serde rename, so the keys match the struct). */
+/** One pane's latest turn-boundary state, as serialized by `bsc logs pane-activity`
+ *  (`logs::PaneActivity` — plain snake_case, no serde rename, so the keys match the struct). */
 export interface PaneActivity {
   pane: string;
   /** `"run"` — a turn is open (the agent is working); `"idle"` — the turn closed at a Stop. */
@@ -35,7 +35,7 @@ export function isTurnOpen(activity: PaneActivity | undefined): boolean {
 }
 
 /**
- * Pick this pane's latest activity record out of the flat per-pane list `read_pane_activity`
+ * Pick this pane's latest activity record out of the flat per-pane list `bsc logs pane-activity`
  * returns. A small helper so the predicate above and the poller in TerminalView agree on the lookup
  * (and so the gating logic is unit-testable end-to-end without a running poll).
  */

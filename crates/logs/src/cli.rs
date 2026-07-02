@@ -59,9 +59,41 @@ The verb is the category name itself — one of: audit, skill, mcp, hook, coord,
         summary: "token + cost rollup",
         usage: "\
 USAGE:
-  bsc logs cost [--session <id>] [--json|--pretty]
+  bsc logs cost [--session <id>] [--full] [--limit N] [--json|--pretty]
 
-Per-session token usage (in/out/cache) and USD cost; filter to one --session.",
+Per-session token usage (in/out/cache) and USD cost; filter to one --session. `--full` emits the
+desktop per-pane token-usage shape (pane/session_id + `*_tokens` field names), newest pane first,
+bounded by --limit — the app's token telemetry read (#2144).",
+    },
+    CmdDoc {
+        name: "tail",
+        summary: "the newest raw lines of one stream",
+        usage: "\
+USAGE:
+  bsc logs tail <stream> [--limit N] [--oldest] [--json]
+
+The newest --limit RAW (unparsed) lines of a stream's log file (audit|skills|hooks|mcp|coord).
+Newest-first by default; --oldest keeps the file's chronological order (the coord convention). The
+desktop's per-stream log readers (#2144).",
+    },
+    CmdDoc {
+        name: "pane-activity",
+        summary: "each pane's latest run/idle turn state",
+        usage: "\
+USAGE:
+  bsc logs pane-activity [--json]
+
+One row per pane: its latest turn-boundary state (run|idle) and epoch-ms timestamp, newest pane
+first (#1184).",
+    },
+    CmdDoc {
+        name: "done-panes",
+        summary: "panes that self-reported done",
+        usage: "\
+USAGE:
+  bsc logs done-panes [--json]
+
+The deduped set of panes that self-reported `done` via bsc-done, newest first (#1379).",
     },
     CmdDoc {
         name: "perf",
@@ -91,6 +123,10 @@ struct Args {
     limit: Option<usize>,
     json: bool,
     pretty: bool,
+    /// `tail`: return the oldest-first (chronological) order instead of newest-first (#2144).
+    oldest: bool,
+    /// `cost`: emit the desktop per-pane token-usage shape (with session_id + `*_tokens`) (#2144).
+    full: bool,
     dir: Option<PathBuf>,
 }
 
@@ -103,6 +139,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         limit: None,
         json: false,
         pretty: false,
+        oldest: false,
+        full: false,
         dir: None,
     };
     let mut it = raw.into_iter();
@@ -110,6 +148,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         match arg.as_str() {
             "--json" => a.json = true,
             "--pretty" => { a.json = true; a.pretty = true; }
+            "--oldest" => a.oldest = true,
+            "--full" => a.full = true,
             "--session" => a.session = Some(it.next().ok_or("--session needs a value")?),
             "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
             "--since" => a.since = Some(it.next().ok_or("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
@@ -191,7 +231,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 lines.join("\n")
             });
         }
-        // Token + cost rollup.
+        // Token + cost rollup. `--full` emits the desktop per-pane token-usage shape (#2144).
+        "cost" if a.full => {
+            let rows = cost::usage(&dir, a.limit.unwrap_or(usize::MAX));
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["pane\tsession\tmodel\tin\tout\tcache\tcost".to_string()];
+                lines.extend(rows.iter().map(|u| {
+                    format!("{}\t{}\t{}\t{}\t{}\t{}\t${:.4}", u.pane, u.session_id, u.model, u.input_tokens, u.output_tokens, u.cache_creation_tokens + u.cache_read_tokens, u.cost_usd)
+                }));
+                lines.join("\n")
+            });
+        }
         "cost" => {
             let all = cost::all_costs(&dir);
             let rows: Vec<cost::Cost> = match &a.session {
@@ -205,6 +255,27 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }));
                 lines.join("\n")
             });
+        }
+        // The newest raw lines of one stream (audit|skills|hooks|mcp|coord) (#2144).
+        "tail" => {
+            let stream = a.positional.get(1).cloned()
+                .ok_or("usage: bsc logs tail <stream> [--limit N] [--oldest]")?;
+            let lines = crate::tail_raw(&dir, &stream, a.limit.unwrap_or(1000), a.oldest);
+            emit(a.pretty, a.json, &lines, || lines.join("\n"));
+        }
+        // Each pane's latest run/idle turn state (#1184).
+        "pane-activity" => {
+            let rows = crate::pane_activity(&dir);
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["pane\tstate\tat".to_string()];
+                lines.extend(rows.iter().map(|r| format!("{}\t{}\t{}", r.pane, r.state, r.at)));
+                lines.join("\n")
+            });
+        }
+        // Panes that self-reported done (#1379).
+        "done-panes" => {
+            let rows = crate::done_panes(&dir);
+            emit(a.pretty, a.json, &rows, || rows.join("\n"));
         }
         // Recent perf.db samples (rss/cpu/threads), the one binary-SQLite stream (#1716). perf.db
         // sits in the same log dir; read-only. Honors --session / --since / --limit like every verb.
@@ -253,7 +324,33 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{COMMANDS, TAGLINE};
+    use super::{run, COMMANDS, TAGLINE};
+
+    #[test]
+    fn new_read_verbs_dispatch_without_error() {
+        // The #2144 verbs wire through `run` against a --dir: tail / pane-activity / done-panes /
+        // cost --full. Missing files degrade to empty (no panic, Ok result). Pure shapes are tested
+        // in lib.rs / cost.rs; this guards the arg parsing + dispatch.
+        let d = std::env::temp_dir().join(format!("bsc-logs-cli-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("audit.log"), "2026-06-26T10:00:00Z\tk\tRead\ta\n").unwrap();
+        std::fs::write(d.join("activity.log"), "100\tk\trun\n").unwrap();
+        std::fs::write(d.join("done.log"), "100\tk\n").unwrap();
+        let dir = d.to_string_lossy().into_owned();
+        let go = |v: Vec<&str>| {
+            let mut args: Vec<String> = v.into_iter().map(String::from).collect();
+            args.extend(["--dir".into(), dir.clone(), "--json".into()]);
+            run(args, "bsc logs")
+        };
+        assert!(go(vec!["tail", "audit", "--limit", "10"]).is_ok());
+        assert!(go(vec!["tail", "coord", "--oldest"]).is_ok()); // missing coord.log ⇒ empty
+        assert!(go(vec!["pane-activity"]).is_ok());
+        assert!(go(vec!["done-panes"]).is_ok());
+        assert!(go(vec!["cost", "--full", "--limit", "5"]).is_ok());
+        // `tail` with no stream positional is a clear usage error, not a panic.
+        assert!(go(vec!["tail"]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {

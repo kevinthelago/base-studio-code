@@ -1,8 +1,9 @@
 // useCoordLog (#1495) — one home for reading + replaying the coordination log. The
-// `invoke("read_coord_log") → ingestCoordLog(lines, emptyCoordState())` pair was hand-rolled in
+// `read coord log → ingestCoordLog(lines, emptyCoordState())` pair was hand-rolled in
 // every fleet hook (the coordinator, the director pump, the worker auto-end, the live fleet view,
 // the tunnel control). This centralizes the read so a change to the log format or the limit lands
-// in one place.
+// in one place. The read is `bsc logs tail coord --oldest` over the `bsc` bridge (#2144) — raw,
+// chronological (oldest-first) lines, the same shape the old `read_coord_log` command returned.
 //
 //  - readCoordState(limit): the imperative read. Returns `null` on a read FAILURE (so the actuator
 //    loops keep their "skip this tick, don't touch ref state" guard) and the full ingest result
@@ -12,7 +13,7 @@
 //    across a transient read failure.
 
 import { useState } from "react";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 
@@ -22,7 +23,7 @@ export type CoordResult = ReturnType<typeof ingestCoordLog> & { lines: string[] 
 
 /** Read + replay the coordination log. `null` on a read failure; the replay + raw lines otherwise. */
 export async function readCoordState(limit = 1000): Promise<CoordResult | null> {
-  const lines = await safeInvoke<string[] | null>("read_coord_log", { limit }, null);
+  const lines = await bscJson<string[] | null>(null, ["logs", "tail", "coord", "--limit", String(limit), "--oldest", "--json"], null);
   if (!lines) return null;
   return { lines, ...ingestCoordLog(lines, emptyCoordState()) };
 }

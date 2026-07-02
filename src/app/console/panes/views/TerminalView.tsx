@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -590,7 +591,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
 
   // Turn-open gating poller (#1184): poll the `bsc-activity` hook log for THIS pane's latest
   // turn-boundary state and keep `turnOpenRef` in sync, so the silence-timer callback above can
-  // tell "working but silent" from "done". `read_pane_activity` returns every pane's latest state;
+  // tell "working but silent" from "done". `bsc logs pane-activity` returns every pane's latest state;
   // we read off our own. Empty/missing (a non-bash session, or a pane that hasn't taken a turn)
   // leaves the ref false — the silence timer stays authoritative, so there's no regression. Polled
   // every 1s (faster than the 4s token poll) so the gate re-arms promptly when a new turn opens.
@@ -598,7 +599,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
   usePoll(async (isCancelled) => {
-    const rows = await safeInvoke<PaneActivity[]>("read_pane_activity", undefined, []);
+    const rows = await bscJson<PaneActivity[]>(null, ["logs", "pane-activity", "--json"], []);
     if (isCancelled()) return;
     turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
   }, 1000, [paneId]);

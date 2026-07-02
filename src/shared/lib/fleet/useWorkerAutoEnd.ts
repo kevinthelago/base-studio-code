@@ -20,7 +20,7 @@ import { classifyWorkerEnd, type OwnedIssue } from "./workerEnd";
 import { decideWorkerAutoEnd, DEFAULT_AUTO_END_THRESHOLDS } from "./workerAutoEnd";
 import { log } from "../core/log";
 
-/** One pane's latest turn-boundary state, as `read_pane_activity` (tokens.rs `PaneActivity`)
+/** One pane's latest turn-boundary state, as `bsc logs pane-activity` (`logs::PaneActivity`)
  *  returns it — typed locally so this shared module doesn't import the app layer. */
 interface ActivityRow { pane: string; state: string; at: number }
 
@@ -101,7 +101,7 @@ export function useWorkerAutoEnd(): void {
   // classify from plan.db (markPaneEnded) AND pty_kill the still-live shell. The endedPanes guard
   // in evaluateExit makes this idempotent across polls (a lingering done.log line won't re-kill).
   usePoll(async (isCancelled) => {
-    const done = await safeInvoke<string[]>("read_done_panes", undefined, []);
+    const done = await bscJson<string[]>(null, ["logs", "done-panes", "--json"], []);
     if (isCancelled() || !Array.isArray(done)) return;
     const s = useAppStore.getState();
     for (const paneId of done) {
@@ -118,7 +118,7 @@ export function useWorkerAutoEnd(): void {
   const nudgedRef = useRef<Set<string>>(new Set());
   const resurfacedRef = useRef<Set<string>>(new Set()); // lost-ask resurfaces, one per stale ask
   usePoll(async (isCancelled) => {
-    const activity = await safeInvoke<ActivityRow[]>("read_pane_activity", undefined, []);
+    const activity = await bscJson<ActivityRow[]>(null, ["logs", "pane-activity", "--json"], []);
     const coordRes = await readCoordState(5000);
     if (isCancelled() || !Array.isArray(activity)) return;
     const coord = coordRes?.state ?? emptyCoordState();
