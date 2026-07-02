@@ -14,6 +14,8 @@ import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
@@ -37,15 +39,15 @@ export interface FlowTabProps {
 /** A compact "session @ profile" chip — the Agents-screen cross-reference. */
 function SessionTag({ session, profile }: { session: string; profile?: AgentProfile }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+    <Box as="span" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
       <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{session}</h3>
       {profile && (
-        <span className="hint mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10 }}>
-          <span className="sw" style={{ background: profile.color, width: 8, height: 8, borderRadius: 2, display: "inline-block" }} />
+        <Box as="span" className="hint mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10 }}>
+          <Box as="span" className="sw" style={{ background: profile.color, width: 8, height: 8, borderRadius: 2, display: "inline-block" }} />
           {profile.name}
-        </span>
+        </Box>
       )}
-    </span>
+    </Box>
   );
 }
 
@@ -82,45 +84,45 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
   const { stalled, deadlocked, runEntries, idle } = flowSummary(views, ready, runs);
 
   return (
-    <div style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
-      <div className="summary">
+    <Box style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+      <Box className="summary">
         <StatTile k="ready" v={ready.length} tone="success" sub="deps landed — wake" />
         <StatTile k="blocked" v={views.length} tone="accent" sub="parked on a dep" />
         <StatTile k="stalled / deadlocked" v={stalled + deadlocked} tone="danger" sub={<>{deadlocked} cyclic · escalate</>} />
         <StatTile k="workflows" v={runEntries.length} sub="work items flowing" />
-      </div>
+      </Box>
 
       {deadlocked > 0 && (
         <Card style={{ margin: "0 0 14px", borderColor: "var(--danger)" }}>
           <Row gap={8} className="mono" style={{ color: "var(--danger)", fontSize: 12 }}>
-            <span>⚠ deadlock</span>
-            <span className="hint" style={{ color: "var(--fg-muted)" }}>
+            <Box as="span">⚠ deadlock</Box>
+            <Text as="span" className="hint" tone="muted">
               {deadlocked} session{deadlocked === 1 ? "" : "s"} sit in a wait-for cycle — no producer can move. Escalate to the director / break the cycle (#199).
-            </span>
+            </Text>
           </Row>
         </Card>
       )}
 
-      {err && <div className="mono" style={{ fontSize: 11, color: "var(--danger)", marginBottom: 10 }}>{err}</div>}
+      {err && <Text as="div" mono size={11} tone="danger" style={{ marginBottom: 10 }}>{err}</Text>}
 
       {idle && !err && (
-        <div className="hint mono" style={{ fontSize: 11.5, padding: "8px 2px" }}>
+        <Text as="div" className="hint" mono size={11.5} style={{ padding: "8px 2px" }}>
           The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>;
           workflow runs appear once a work item is started (Projects → Workflows).
-        </div>
+        </Text>
       )}
 
       {ready.length > 0 && (
         <>
           <SectionHeader title="Ready" hint="dependencies landed — wake the parked pane" />
-          <div style={{ marginBottom: 14 }}>
+          <Box style={{ marginBottom: 14 }}>
             {ready.map((wtr) => (
               <Card key={wtr.session} style={{ marginBottom: 10, borderColor: "var(--success)" }}>
                 <Row gap={10}>
                   <SessionTag session={wtr.session} profile={profileFor(wtr.session)} />
                   <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />ready</Chip>
                   <Spacer />
-                  {wtr.checkpoint && <span className="hint mono" style={{ fontSize: 10 }}>↺ {wtr.checkpoint}</span>}
+                  {wtr.checkpoint && <Text as="span" className="hint" mono size={10}>↺ {wtr.checkpoint}</Text>}
                   <Button
                     variant="primary"
                     style={{ height: 24, padding: "0 12px", fontSize: 11 }}
@@ -132,7 +134,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                 </Row>
               </Card>
             ))}
-          </div>
+          </Box>
         </>
       )}
 
@@ -149,16 +151,16 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                     ? <Chip style={{ color: "var(--danger)", fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />stalled</Chip>
                     : <Chip style={{ fontSize: 9.5 }}>waiting</Chip>}
                 <Spacer />
-                {v.checkpoint && <span className="hint mono" style={{ fontSize: 10 }}>↺ {v.checkpoint}</span>}
+                {v.checkpoint && <Text as="span" className="hint" mono size={10}>↺ {v.checkpoint}</Text>}
               </Row>
               <Row gap={6} wrap align="stretch">
                 {v.deps.map((d) => (
-                  <span key={d.ref} className="mono" style={{
+                  <Box as="span" key={d.ref} className="mono" style={{
                     fontSize: 11, padding: "3px 8px", borderRadius: 5,
                     border: "1px solid var(--border-soft)", color: depColor(d.status),
                   }}>
                     {d.ref} · {d.status}
-                  </span>
+                  </Box>
                 ))}
               </Row>
             </Card>
@@ -175,11 +177,11 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
               <Card key={id} style={{ marginBottom: 10 }}>
                 <Row gap={10} style={{ marginBottom: 10 }}>
                   <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{id}</h3>
-                  <span className="hint" style={{ fontSize: 10.5 }}>{run.workflow.name}</span>
+                  <Text as="span" className="hint" size={10.5}>{run.workflow.name}</Text>
                   <Chip style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</Chip>
                   <Spacer />
                   {run.state.escalation && (
-                    <span className="hint mono" style={{ fontSize: 10, color: "var(--danger)" }}>{run.state.escalation}</span>
+                    <Text as="span" className="hint" mono size={10} tone="danger">{run.state.escalation}</Text>
                   )}
                 </Row>
                 <Row gap={6} wrap>
@@ -187,17 +189,17 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                     const current = run.state.stage === st.name;
                     const attempts = run.state.attempts[st.name] ?? 0;
                     return (
-                      <span key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {i > 0 && <span className="mono" style={{ color: "var(--fg-dim)", fontSize: 10 }}>→</span>}
-                        <span className="mono" style={{
+                      <Box as="span" key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {i > 0 && <Text as="span" mono tone="dim" size={10}>→</Text>}
+                        <Box as="span" className="mono" style={{
                           fontSize: 11, padding: "3px 8px", borderRadius: 5,
                           border: "1px solid " + (current ? "var(--accent)" : "var(--border-soft)"),
                           color: current ? "var(--accent)" : "var(--fg-muted)",
                           background: current ? "var(--bg-elev)" : "transparent",
                         }}>
-                          {st.name} <span style={{ color: "var(--fg-dim)", fontSize: 9.5 }}>{st.role}</span>{attempts > 1 ? ` ×${attempts}` : ""}
-                        </span>
-                      </span>
+                          {st.name} <Text as="span" tone="dim" size={9.5}>{st.role}</Text>{attempts > 1 ? ` ×${attempts}` : ""}
+                        </Box>
+                      </Box>
                     );
                   })}
                 </Row>
@@ -206,6 +208,6 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
           })}
         </>
       )}
-    </div>
+    </Box>
   );
 }

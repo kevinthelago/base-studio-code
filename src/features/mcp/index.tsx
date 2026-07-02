@@ -20,6 +20,8 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Button } from "@/shared/ui/controls/Button";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import "./mcp.css";
@@ -80,9 +82,9 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     const s = mcpStatus[e.name];
     if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
-      return <span className="hint mono" style={{ fontSize: 10 }}>{s === "building" ? "building…" : "updating…"}</span>;
+      return <Text as="span" className="hint" mono size={10}>{s === "building" ? "building…" : "updating…"}</Text>;
     if (s === undefined || s === "checking" || s === "downloading")
-      return <span className="hint mono" style={{ fontSize: 10 }}>checking…</span>;
+      return <Text as="span" className="hint" mono size={10}>checking…</Text>;
     const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
     return (
       <Button variant="ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}
@@ -96,11 +98,11 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const builtInSection = builtInCatalog.length > 0 && (
     <>
       <SectionHeader title="Built-in tools" titleStyle={{ color: "var(--fg-dim)" }} hint="always available — no install" />
-      <div className="catalog">
+      <Box className="catalog">
         {builtInCatalog.map(c => (
-          <CatalogCard key={c.name} item={c} action={<span className="hint">built-in</span>} />
+          <CatalogCard key={c.name} item={c} action={<Text as="span" className="hint">built-in</Text>} />
         ))}
-      </div>
+      </Box>
     </>
   );
 
@@ -120,9 +122,9 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     const onCount = mcpServers.filter(e => e.enabled).length;
     return (
       <>
-        <div>
+        <Box>
           <SectionHeader title="MCP servers" hint="external processes over stdio or HTTP" meta={<>{onCount}/{mcpServers.length} enabled</>} />
-          <div className="row-list">
+          <Box className="row-list">
             {mcpServers.map(e => (
               <InstalledRow
                 key={e.id}
@@ -138,8 +140,8 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
                 onToggle={() => toggleMcpServer(e.id)}
               />
             ))}
-          </div>
-        </div>
+          </Box>
+        </Box>
         {builtInSection}
       </>
     );
@@ -151,7 +153,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     return (
       <>
         <SectionHeader title="Browse" hint="First-party and third-party MCP servers you can add with one click." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
-        <div className="catalog">
+        <Box className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
               c.link ? (
@@ -165,8 +167,8 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
               )
             } />
           ))}
-          {items.length === 0 && <div className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</div>}
-        </div>
+          {items.length === 0 && <Box className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</Box>}
+        </Box>
       </>
     );
   }
@@ -192,8 +194,8 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
         onRemove={() => { if (selected) { removeMcpServer(selected.id); drawer.close(); } }}
         header={selected && (
           <>
-            <div className={"health " + (selected.enabled ? "" : "off")} />
-            <div className="name">{selected.name || "Untitled server"}</div>
+            <Box className={"health " + (selected.enabled ? "" : "off")} />
+            <Text as="div" className="name">{selected.name || "Untitled server"}</Text>
             <Chip tone="info">{mcpLabel(selected)}</Chip>
           </>
         )}
@@ -206,7 +208,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
             onSetProjects={ids => setMcpServerProjects(selected.id, ids)}
             onSetEnv={env => updateMcpServer(selected.id, { env })}
           >
-            <div className="field">
+            <Box className="field">
               <label>transport</label>
               <SegmentedControl
                 options={(["stdio", "http"] as McpTransport[]).map(t => ({
@@ -215,19 +217,19 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
                   onClick: () => updateMcpServer(selected.id, { transport: t }),
                 }))}
               />
-            </div>
+            </Box>
             {selected.transport === "http"
               ? (
-                <div className="field"><label>endpoint URL</label>
+                <Box className="field"><label>endpoint URL</label>
                   <input className="input" value={selected.url ?? ""} onChange={ev => updateMcpServer(selected.id, { url: ev.target.value })} />
-                </div>
+                </Box>
               ) : (
-                <div className="field"><label>command</label>
+                <Box className="field"><label>command</label>
                   <Row gap={6} align="stretch">
                     <input className="input" placeholder="command" value={selected.command ?? ""} onChange={ev => updateMcpServer(selected.id, { command: ev.target.value })} style={{ flex: "0 0 120px" }} />
                     <input className="input" placeholder="args" value={selected.args ?? ""} onChange={ev => updateMcpServer(selected.id, { args: ev.target.value })} style={{ flex: 1 }} />
                   </Row>
-                </div>
+                </Box>
               )}
           </DrawerBody>
         )}
@@ -273,11 +275,11 @@ export function HooksView() {
   function installedView() {
     const onCount = hooks.filter(e => e.enabled).length;
     return (
-      <div>
+      <Box>
         <SectionHeader title="Hooks" hint="Claude Code lifecycle automations" meta={<>{onCount}/{hooks.length} enabled</>} />
-        <div className="row-list">
+        <Box className="row-list">
           {hooks.length === 0 && (
-            <div className="hint" style={{ padding: "8px 2px" }}>No hooks yet — add one from the catalog.</div>
+            <Box className="hint" style={{ padding: "8px 2px" }}>No hooks yet — add one from the catalog.</Box>
           )}
           {hooks.map(e => (
             <InstalledRow
@@ -293,8 +295,8 @@ export function HooksView() {
               onToggle={() => toggleHook(e.id)}
             />
           ))}
-        </div>
-      </div>
+        </Box>
+      </Box>
     );
   }
 
@@ -306,30 +308,30 @@ export function HooksView() {
     return (
       <>
         <SectionHeader title="Add from catalog" hint="First-party hooks." right={<input className="input" placeholder="search catalog…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, height: 24, fontSize: 10.5 }} />} />
-        <div className="catalog">
+        <Box className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
               <Button style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</Button>
             } />
           ))}
-          {items.length === 0 && <div className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</div>}
-        </div>
+          {items.length === 0 && <Box className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</Box>}
+        </Box>
       </>
     );
   }
 
   return (
-    <div className="ext-workspace">
-      <div className="ext-page">
+    <Box className="ext-workspace">
+      <Box className="ext-page">
         <Row justify="end" align="stretch" style={{ padding: "10px 22px 0" }}>
           <Button variant="ghost" onClick={addCustom}>+ Custom hook</Button>
         </Row>
-        <div className="ext-body">
+        <Box className="ext-body">
           {installedView()}
-          <div style={{ height: 20 }} />
+          <Box style={{ height: 20 }} />
           {catalogView()}
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       <Pane
         open={!!selected}
@@ -337,8 +339,8 @@ export function HooksView() {
         onRemove={() => { if (selected) { removeHook(selected.id); drawer.close(); } }}
         header={selected && (
           <>
-            <div className={"health " + (selected.enabled ? "" : "off")} />
-            <div className="name">{selected.name || "Untitled hook"}</div>
+            <Box className={"health " + (selected.enabled ? "" : "off")} />
+            <Text as="div" className="name">{selected.name || "Untitled hook"}</Text>
             <Chip tone="success">{hookLabel(selected)}</Chip>
           </>
         )}
@@ -351,18 +353,18 @@ export function HooksView() {
             onSetProjects={ids => setHookProjects(selected.id, ids)}
             onSetEnv={env => updateHook(selected.id, { env })}
           >
-            <div className="field"><label>event</label>
+            <Box className="field"><label>event</label>
               <input className="input" placeholder="PreToolUse | PostToolUse | Stop …" value={selected.event ?? ""} onChange={ev => updateHook(selected.id, { event: ev.target.value })} style={{ width: 240 }} />
-            </div>
-            <div className="field"><label>matcher</label>
+            </Box>
+            <Box className="field"><label>matcher</label>
               <input className="input" placeholder="optional tool matcher (regex)" value={selected.matcher ?? ""} onChange={ev => updateHook(selected.id, { matcher: ev.target.value })} />
-            </div>
-            <div className="field"><label>command</label>
+            </Box>
+            <Box className="field"><label>command</label>
               <input className="input" placeholder="command to run" value={selected.command ?? ""} onChange={ev => updateHook(selected.id, { command: ev.target.value })} />
-            </div>
+            </Box>
           </DrawerBody>
         )}
       />
-    </div>
+    </Box>
   );
 }
