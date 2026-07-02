@@ -4,13 +4,14 @@
 //   - `bsc-done` (#1379) — a finished worker self-reports via `done.log`; we poll `read_done_panes`
 //     and reap, additionally `pty_kill`-ing the still-live session.
 // Either way the TRIGGER is only the prompt to evaluate; the verdict comes from plan.db
-// (`plan_list_issues`) with coord.log as a tiebreaker (`classifyWorkerEnd`) — NOT the worker's
+// (`bsc plan list`) with coord.log as a tiebreaker (`classifyWorkerEnd`) — NOT the worker's
 // say-so. The ended state is persisted + recovery-gated, so a restart never re-opens a finished
 // worker. Mounted once at the app root.
 
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { safeInvoke } from "../core/safeInvoke";
+import { bscJson } from "../core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { emptyCoordState } from "./coordination";
@@ -52,8 +53,10 @@ async function evaluateExit(paneId: string, opts: { kill?: boolean } = {}): Prom
   const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
   if (!projectKey) return; // can't query the DB without the project
 
-  const issues = await safeInvoke<OwnedIssue[] | null>("plan_list_issues", { projectKey, stream: stream.id }, null,
-    (e) => log.error(`auto-end: plan_list_issues failed for ${paneId}: ${e}`));
+  // `bsc plan list --stream <id> --full --json` emits this stream's full issue rows (the same
+  // `Vec<PlanIssue>` the old `plan_list_issues` command returned); bscJson degrades to `null` when the
+  // project's plan.db isn't there yet, so an absent store bails exactly as the old catch did.
+  const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--stream", stream.id, "--full", "--json"], null);
   if (!issues) return;
 
   const coord = (await readCoordState(5000))?.state ?? emptyCoordState();
@@ -131,7 +134,7 @@ export function useWorkerAutoEnd(): void {
       const stream = s.fleetPaneStreams[paneId];
       const projectKey = s.tabs.find((t) => t.paneIds?.includes(paneId))?.projectKey;
       if (!projectKey || !stream) continue;
-      const issues = await safeInvoke<OwnedIssue[] | null>("plan_list_issues", { projectKey, stream: stream.id }, null);
+      const issues = await bscJson<OwnedIssue[] | null>(projectKey, ["plan", "list", "--stream", stream.id, "--full", "--json"], null);
       if (isCancelled() || !issues) continue;
       const verdict = classifyWorkerEnd(issues.map((i) => ({ ref: i.ref, status: i.status })), coord);
       const action = decideWorkerAutoEnd({

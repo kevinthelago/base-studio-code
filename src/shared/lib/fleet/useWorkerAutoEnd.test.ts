@@ -23,9 +23,10 @@ beforeEach(() => {
     handlers[name] = () => (cb as (e: { payload: unknown }) => void)({ payload: null });
     return Promise.resolve(() => {});
   });
-  // Default invoke: plan_list_issues → all complete; read_coord_log → empty.
+  // Default invoke: the fleet issue read now routes through the `bsc` bridge (#2114) — `plan list
+  // --stream … --full --json` → JSON string on stdout; all complete. read_coord_log → empty.
   vi.mocked(invoke).mockImplementation((cmd: string) => {
-    if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
     if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
     return Promise.resolve(undefined);
   });
@@ -52,12 +53,12 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]).toBeTruthy());
     expect(useAppStore.getState().endedPanes[WORKER]).toMatchObject({ state: "done", streamId: "api" });
     // The project key resolves from the tab's paneIds (the #1176/#1379 regression guard) — not a positional id.
-    expect(invoke).toHaveBeenCalledWith("plan_list_issues", { projectKey: "demo", stream: "api" });
+    expect(invoke).toHaveBeenCalledWith("bsc", { projectKey: "demo", args: ["plan", "list", "--stream", "api", "--full", "--json"] });
   });
 
   it("flags needs-attention when an owned issue is still open", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "in_progress" }]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "in_progress" }]));
       if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
       return Promise.resolve(undefined);
     });
@@ -72,7 +73,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   it("self-closes a worker that reported done via bsc-done — ends it AND kills the PTY (#1379)", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "read_done_panes") return Promise.resolve([WORKER]);
-      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
       return Promise.resolve(undefined);
     });
@@ -94,7 +95,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
-    expect(invoke).not.toHaveBeenCalledWith("plan_list_issues", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("bsc", expect.anything());
   });
 
   it("nudges an idle, complete, question-free worker to self-close (#1379 stage 3)", async () => {
@@ -102,7 +103,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
       // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
       if (cmd === "read_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]);
       if (cmd === "read_coord_log") return Promise.resolve([] as string[]);   // no outstanding ask / wait
-      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       return Promise.resolve(undefined); // read_done_panes ⇒ undefined ⇒ the done poller no-ops
     });
     renderHook(() => useWorkerAutoEnd());
@@ -118,7 +119,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   it("nudges the director to close still-open issues when a worker finishes done (#1379 stage 3)", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "read_done_panes") return Promise.resolve([WORKER]); // worker self-reported done
-      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       if (cmd === "read_coord_log") return Promise.resolve([] as string[]);
       return Promise.resolve(undefined);
     });
@@ -136,7 +137,7 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
       if (cmd === "read_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]); // idle ages ago
       // An outstanding bsc-ask for the worker, never answered.
       if (cmd === "read_coord_log") return Promise.resolve([`2020-01-01T00:00:00Z\t${WORKER}\task\tWhich pagination?\t`]);
-      if (cmd === "plan_list_issues") return Promise.resolve([{ ref: "#1", status: "in_progress" }]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "in_progress" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());

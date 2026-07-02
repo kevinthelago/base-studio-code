@@ -19,7 +19,9 @@ describe("SessionRecoveryBanner (#1266)", () => {
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === "discover_sessions") return DISCOVERED;
-      if (cmd === "plan_get_fleet") return { recommended: 1, reasoning: "t", streams: [], director: { enabled: true } };
+      // The fleet read now routes through the generic `bsc` bridge (#2114): `plan fleet get --full
+      // --json` → JSON on stdout (the same FleetPlan the old `plan_get_fleet` command wrapped).
+      if (cmd === "bsc") return JSON.stringify({ recommended: 1, reasoning: "t", streams: [], director: { enabled: true } });
       return undefined;
     });
     fleetStart = vi.fn();
