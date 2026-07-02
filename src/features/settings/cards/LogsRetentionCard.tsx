@@ -5,6 +5,7 @@ import type { LogConfig } from "@/store";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Button } from "@/shared/ui/controls/Button";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function LogsRetentionCard({
   onEnforced,
@@ -31,7 +32,7 @@ export function LogsRetentionCard({
 
   return (
     <Card title="Log retention">
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Stack gap={0}>
         <Row label="Max lines per log" hint="On enforcement (and at startup), each telemetry log is trimmed to its newest N lines.">
           <Select
             value={logConfig.maxLines}
@@ -60,7 +61,7 @@ export function LogsRetentionCard({
         <Row label="Trim logs now" hint="Apply the caps to every telemetry log immediately, instead of waiting for the next startup.">
           <Button size="sm" disabled={busy} onClick={() => void enforceNow()}>{busy ? "Enforcing…" : "Enforce now"}</Button>
         </Row>
-      </div>
+      </Stack>
     </Card>
   );
 }

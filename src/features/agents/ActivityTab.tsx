@@ -9,6 +9,7 @@ import {
 } from "./lib/auditRows";
 import type { AgentProfile, ConsoleSession } from "./lib/agentProfiles";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { Row } from "@/shared/ui/layout/Row";
 
 export interface ActivityTabProps {
   rows: AuditDisplayRow[];
@@ -37,12 +38,12 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
 
       <div className="act-toolbar">
         <span className="lbl">decision</span>
-        <div style={{ display: "flex", gap: 4 }}>
+        <Row gap={4} align="stretch">
           {decChip("all", "all")}
           {decChip("allow", "allowed", allow)}
           {decChip("ask", "asked", ask)}
           {decChip("block", "blocked", block)}
-        </div>
+        </Row>
         <span className="lbl" style={{ marginLeft: 14 }}>console</span>
         <select className="input" style={{ width: 200 }} value={actConsole} onChange={(e) => setActConsole(e.target.value)}>
           <option value="all">all consoles</option>

@@ -7,6 +7,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Row } from "@/shared/ui/layout/Row";
+import { Button } from "@/shared/ui/controls/Button";
 import { useAppStore } from "@/store";
 import {
   loadPendingLessons, confirmLesson, discardLesson, lessonToSkill, type Lesson,
@@ -36,28 +39,28 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
   }, [lesson.id, projectKey, onResolved]);
 
   return (
-    <div style={{ border: "1px solid var(--border-soft)", borderRadius: 6, padding: "10px 12px", background: "var(--bg-elev)", display: "grid", gap: 8 }}>
+    <Grid gap={8} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, padding: "10px 12px", background: "var(--bg-elev)" }}>
       {editing ? (
         <>
           <input className="input" value={mistake} onChange={(e) => setMistake(e.target.value)} placeholder="what went wrong" style={{ fontSize: 12 }} />
           <input className="input" value={rule} onChange={(e) => setRule(e.target.value)} placeholder="the corrective rule" style={{ fontSize: 12 }} />
         </>
       ) : (
-        <div style={{ display: "grid", gap: 3 }}>
+        <Grid gap={3}>
           <span className="mono-value">{mistake || <span className="hint">(no mistake)</span>}</span>
           <span className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>→ {rule || <span className="hint">(no rule)</span>}</span>
           {lesson.cause.trim() && <span className="hint" style={{ fontSize: 11 }}>{lesson.cause}</span>}
-        </div>
+        </Grid>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+      <Row gap={8} style={{ fontSize: 11 }}>
         {lesson.seen > 1 && <span className="pill" style={{ background: "var(--bg-panel)", color: "var(--fg-muted)" }}>seen ×{lesson.seen}</span>}
         {lesson.provenance && <span className="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.provenance}</span>}
         <span style={{ flex: 1 }} />
-        <button className="btn ghost" disabled={busy} onClick={() => setEditing((e) => !e)}>{editing ? "done editing" : "edit"}</button>
-        <button className="btn ghost" disabled={busy} onClick={discard}>discard</button>
-        <button className="btn" disabled={busy} onClick={confirm}>confirm</button>
-      </div>
-    </div>
+        <Button variant="ghost" disabled={busy} onClick={() => setEditing((e) => !e)}>{editing ? "done editing" : "edit"}</Button>
+        <Button variant="ghost" disabled={busy} onClick={discard}>discard</Button>
+        <Button disabled={busy} onClick={confirm}>confirm</Button>
+      </Row>
+    </Grid>
   );
 }
 
@@ -88,9 +91,9 @@ export function LessonsTab({ projectKey, projectName }: { projectKey: string; pr
       ) : lessons.length === 0 ? (
         <EmptyState title="Nothing to review" description={<>When an agent catches a mistake it runs <code>bsc-learned "&lt;what&gt;" --rule "&lt;fix&gt;"</code> and the candidate lands here for you to confirm. Recurring captures bump a "seen" counter instead of piling up.</>} />
       ) : (
-        <div style={{ display: "grid", gap: 10 }}>
+        <Grid gap={10}>
           {lessons.map((l) => <LessonCard key={l.id} lesson={l} projectKey={projectKey} onResolved={refresh} />)}
-        </div>
+        </Grid>
       )}
     </div></section>
   );

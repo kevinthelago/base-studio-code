@@ -121,30 +121,33 @@ pub(crate) fn kill_project_sessions(state: &PtyState, key: &str) -> usize {
     n
 }
 
-/// The project hub's `plan.db` for a session whose cwd lives under a project hub
-/// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
-/// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
-/// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
-fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+/// The sanitized project key owning `cwd` — the first path component under the projects hub root
+/// (`~/.base-studio-code/projects/<key>/...`), or None when `cwd` is empty or not under a hub.
+/// Shared derivation for [`plan_db_for_cwd`] and [`data_db_for_cwd`] so a session's plan.db and
+/// DuckDB store always resolve to the same key.
+fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
     if cwd.is_empty() {
         return None;
     }
     let projects_root = bsc_base_dir().join("projects");
     let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
-    let key = rel.components().next()?.as_os_str();
-    Some(projects_root.join(key).join("plan.db"))
+    Some(rel.components().next()?.as_os_str().to_os_string())
+}
+
+/// The project hub's `plan.db` for a session whose cwd lives under a project hub
+/// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
+/// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
+/// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
+fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    let key = project_key_from_cwd(cwd)?;
+    Some(bsc_base_dir().join("projects").join(key).join("plan.db"))
 }
 
 /// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
 /// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
 /// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
 fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
-    if cwd.is_empty() {
-        return None;
-    }
-    let projects_root = bsc_base_dir().join("projects");
-    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
-    let key = rel.components().next()?.as_os_str().to_string_lossy().into_owned();
+    let key = project_key_from_cwd(cwd)?.to_string_lossy().into_owned();
     Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
 }
 
@@ -182,6 +185,49 @@ fn sidecar_candidates(cur_exe: &std::path::Path, exe_name: &str) -> Vec<std::pat
         }
     }
     v
+}
+
+/// Build the bash init line written into a freshly opened Git-Bash PTY: `cd` into the session cwd
+/// (a loud red warning + nearest-existing-ancestor fallback when it's `cwd_missing`, nothing when
+/// `cwd` is empty), install the OSC-7 cwd + `__bsc_state` run/idle markers and the `claude()`
+/// wrapper (`claude_fn`), source the bsc-* helpers from `rc_bash` into the interactive shell,
+/// wire `PROMPT_COMMAND`, clear the screen, and append the optional `launch` command. Pure (no
+/// fs/env) so the exact wire string is unit-testable; `to_bash_path` is a no-op off Windows.
+fn build_bash_init_line(
+    cwd: &str,
+    cwd_missing: bool,
+    effective_cwd: &str,
+    launch: Option<&str>,
+    claude_fn: &str,
+    rc_bash: &str,
+) -> String {
+    let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
+    // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
+    // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
+    let cd_prefix = if cwd.is_empty() {
+        String::new()
+    } else if cwd_missing {
+        // Loud, visible warning instead of a silent home fallback, then sit in the
+        // nearest existing ancestor (not $HOME) so the agent is at least near the project.
+        format!(
+            "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
+            disp = to_bash_path(cwd), anc = to_bash_path(effective_cwd),
+        )
+    } else {
+        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(cwd))
+    };
+    // Source the checkpoint helper into the interactive shell too: BASH_ENV only
+    // covers non-interactive subshells (the agent's Bash tool), so a human typing
+    // `bsc-checkpoint` in the console pane would otherwise not have it.
+    let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
+    format!(
+        "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
+         __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
+         {claude_fn}\
+         {helpers_src}\
+         PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
+         __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
+    )
 }
 
 /// The absolute path of the bundled unified `bsc` binary (#1877), or None if absent. Used by
@@ -703,33 +749,7 @@ pub(crate) fn pty_create(
         crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref(), &env_map)
     } else { match resolved_shell.kind {
         crate::platform::shell::ShellKind::Bash => {
-            let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
-            // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
-            // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-            let cd_prefix = if cwd.is_empty() {
-                String::new()
-            } else if cwd_missing {
-                // Loud, visible warning instead of a silent home fallback, then sit in the
-                // nearest existing ancestor (not $HOME) so the agent is at least near the project.
-                format!(
-                    "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
-                    disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
-                )
-            } else {
-                format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
-            };
-            // Source the checkpoint helper into the interactive shell too: BASH_ENV only
-            // covers non-interactive subshells (the agent's Bash tool), so a human typing
-            // `bsc-checkpoint` in the console pane would otherwise not have it.
-            let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
-            format!(
-                "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
-                 __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
-                 {claude_fn}\
-                 {helpers_src}\
-                 PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
-                 __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
-            )
+            build_bash_init_line(&cwd, cwd_missing, &effective_cwd, launch.as_deref(), &claude_fn, &rc_bash)
         }
         // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
@@ -918,8 +938,59 @@ mod tests {
     use super::plan_db_for_cwd;
     use super::{plan_launch, LaunchPlan};
     use super::sidecar_candidates;
+    use super::build_bash_init_line;
 
     const INIT: &str = "claude --continue 2>/dev/null || claude";
+
+    #[test]
+    fn build_bash_init_line_cds_installs_markers_and_appends_launch() {
+        let line = build_bash_init_line(
+            "/home/u/projects/acme", false, "/home/u/projects/acme",
+            Some("claude --continue"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh",
+        );
+        // cd's into the (bash-form) cwd before anything else, sources the helpers, and appends the
+        // launch as a `; <launch>` suffix; the whole line is one trailing-newline-terminated command.
+        assert!(line.starts_with("cd \"/home/u/projects/acme\" 2>/dev/null; "), "cd prefix first: {line}");
+        assert!(line.contains("claude() { :; }; "), "claude() wrapper injected");
+        assert!(line.contains("source \"/home/u/.base-studio-code/bsc-env.sh\" 2>/dev/null; "), "helpers sourced");
+        assert!(line.contains("__bsc_osc7; __bsc_state idle"), "OSC7 + state markers wired");
+        assert!(line.ends_with("printf '\\033[2J\\033[H'; claude --continue\n"), "clear then launch suffix: {line}");
+    }
+
+    #[test]
+    fn build_bash_init_line_empty_cwd_has_no_cd_and_no_launch_suffix() {
+        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh");
+        assert!(!line.contains("cd \""), "no cd when cwd is empty: {line}");
+        // No launch ⇒ the line ends right after the screen clear, no `;` suffix.
+        assert!(line.ends_with("printf '\\033[2J\\033[H'\n"), "no launch suffix: {line}");
+    }
+
+    #[test]
+    fn build_bash_init_line_missing_cwd_warns_and_falls_to_ancestor() {
+        let line = build_bash_init_line(
+            "/home/u/projects/gone", true, "/home/u/projects",
+            None, "claude() { :; }; ", "/rc.sh",
+        );
+        assert!(line.contains("WARNING: configured directory"), "loud warning printed: {line}");
+        assert!(line.contains("cd \"/home/u/projects\" 2>/dev/null; "), "cd's into the nearest ancestor: {line}");
+    }
+
+    #[test]
+    fn build_bash_init_line_reproduces_the_original_inline_string() {
+        // Guards the byte-exact extraction (#2067) — one full render locked against the wire format.
+        let line = build_bash_init_line(
+            "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc",
+        );
+        assert_eq!(
+            line,
+            "cd \"/p\" 2>/dev/null; __bsc_osc7() { printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }; \
+             __bsc_state() { printf $'\\033]100;%s\\a' \"$1\"; }; \
+             CLAUDE_FN;\
+             source \"/rc\" 2>/dev/null; \
+             PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_osc7; __bsc_state idle\"; \
+             __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'; claude\n"
+        );
+    }
 
     #[test]
     fn sidecar_candidates_probe_beside_exe_then_both_profile_dirs() {

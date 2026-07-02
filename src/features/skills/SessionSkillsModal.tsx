@@ -10,6 +10,9 @@ import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
 import { KIND, SOURCE_TAG } from "@/shared/data/skills";
 import { pill, sourcePill } from "./skillStyles";
 import {
@@ -77,10 +80,10 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   // remove override; one that's off flips to an add.)
   const flip = (st: { skill: SkillDef; on: boolean }) => setSessionSkill(sessionKey, st.skill.id, st.on ? "off" : "on");
 
-  function Row({ st }: { st: ReturnType<typeof sessionSkillState> }) {
+  function SkillRow({ st }: { st: ReturnType<typeof sessionSkillState> }) {
     const m = REASON_META[st.reason];
     return (
-      <div className="sess-skill-row" data-skill-id={st.skill.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", alignItems: "center", gap: 12, padding: "9px 20px", borderBottom: "1px solid var(--border-soft)",
+      <Grid className="sess-skill-row" data-skill-id={st.skill.id} cols="24px 1fr auto" align="center" gap={12} style={{ padding: "9px 20px", borderBottom: "1px solid var(--border-soft)",
         background: st.overridden ? "color-mix(in oklch, var(--accent), transparent 93%)" : "transparent",
         boxShadow: st.overridden ? (st.reason === "removed" ? "inset 2px 0 0 var(--danger)" : "inset 2px 0 0 var(--accent)") : "none" }}>
         <span style={glyphTile(st.skill.kind)}>{KIND[st.skill.kind].glyph}</span>
@@ -98,47 +101,47 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
           {st.overridden && <span onClick={() => setSessionSkill(sessionKey, st.skill.id, "inherit")} style={{ fontSize: 10.5, color: "var(--fg-dim)", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>reset</span>}
           <Toggle size="sm" className="sess-toggle" on={st.on} onClick={() => flip(st)} />
         </span>
-      </div>
+      </Grid>
     );
   }
 
   return (
     <div className="modal-scrim start" onClick={onClose} style={{ padding: "34px 20px", overflow: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
+      <Stack onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
         {/* header */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <Row gap={11}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>Skills for this session</div>
             <span style={{ flex: 1 }} />
             <IconButton aria-label="close" onClick={onClose} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+          </Row>
+          <Row gap={8} wrap style={{ marginTop: 9 }}>
             <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{sessionLabel || sessionKey}</span>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 11.5, color: "var(--fg-muted)" }}><b className="mono" style={{ color: "var(--fg)" }}>{availCount}</b> available · <b className="mono" style={{ color: "var(--accent)" }}>{overrides.length}</b> overrides</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13 }}>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+          </Row>
+          <Row gap={10} style={{ marginTop: 13 }}>
+            <Row gap={8} style={{ flex: 1, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
               <span style={{ color: "var(--fg-dim)", fontSize: 13 }}>⌕</span>
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </div>
-            <div style={{ display: "flex", height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+            </Row>
+            <Row align="stretch" style={{ height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
               {([["assigned", `Assigned (${availCount})`], ["all", `All (${skills.length})`]] as const).map(([t, lbl], i) => (
-                <div key={t} onClick={() => setTab(t)} style={{ display: "flex", alignItems: "center", padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</div>
+                <Row key={t} onClick={() => setTab(t)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
-            </div>
+            </Row>
             <button onClick={() => resetSessionSkills(sessionKey)} style={{ height: 30, padding: "0 11px", borderRadius: "var(--r-md)", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>↺ Reset all</button>
-          </div>
+          </Row>
           {/* quick-add a task group */}
           {skillGroups.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
+            <Row gap={8} wrap style={{ marginTop: 11 }}>
               <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Quick-add a task group</span>
               {skillGroups.map((g) => { const on = groupIds.includes(g.id); return (
                 <button key={g.id} onClick={() => setSessionSkillGroup(sessionKey, g.id, !on)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 99, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", border: "1px solid " + (on ? g.hue : "var(--border)"), background: on ? `color-mix(in oklch, ${g.hue}, transparent 85%)` : "transparent", color: on ? g.hue : "var(--fg-muted)" }}>
                   <span style={{ opacity: 0.75 }}>⬡</span>{g.name}<span className="mono" style={{ fontSize: 9.5, opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</span>
                 </button>
               ); })}
-            </div>
+            </Row>
           )}
         </div>
 
@@ -147,25 +150,25 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
           {overrideRows.length > 0 && (
             <>
               <div className="mono" style={{ padding: "9px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--accent)" }}>Overrides · {overrideRows.length}</div>
-              {overrideRows.map((st) => <Row key={st.skill.id} st={st} />)}
+              {overrideRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
             </>
           )}
           <div className="mono" style={{ padding: "13px 20px 5px 20px", fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>
             {tab === "assigned" ? `Assigned to this session · ${restRows.length}` : `All skills · ${restRows.length}`}
           </div>
-          {restRows.map((st) => <Row key={st.skill.id} st={st} />)}
+          {restRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
           {restRows.length === 0 && overrideRows.length === 0 && (
             <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--fg-dim)", fontSize: 12 }}>No skills match.</div>
           )}
         </div>
 
         {/* footer */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
+        <Row gap={12} style={{ padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
           <span style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.4 }}>Written as <span className="mono" style={{ color: "var(--fg-muted)" }}>.claude/skills/&lt;slug&gt;/SKILL.md</span> on next relaunch.</span>
           <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
-        </div>
-      </div>
+        </Row>
+      </Stack>
     </div>
   );
 }

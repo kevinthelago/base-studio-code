@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { Row } from "@/shared/ui/layout/Row";
 import { GeneralPage } from "./pages/GeneralPage";
 import { GithubPage } from "./pages/GithubPage";
 import { SecurityPage } from "./pages/SecurityPage";
@@ -25,7 +26,7 @@ export function SettingsWorkspace() {
   const active = SECTIONS.find((s) => s.k === settingsSection) ?? SECTIONS[0];
 
   return (
-    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+    <Row align="stretch" style={{ flex: 1, minHeight: 0 }}>
       <aside style={{
         width: 200, flex: "0 0 200px", background: "var(--bg-panel)",
         borderRight: "1px solid var(--border-soft)", padding: "16px 8px",
@@ -53,6 +54,6 @@ export function SettingsWorkspace() {
       <section style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
         <active.Page />
       </section>
-    </div>
+    </Row>
   );
 }

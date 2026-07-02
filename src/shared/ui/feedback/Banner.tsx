@@ -39,9 +39,15 @@ export function Banner({
       {dot && <span className="banner-dot" />}
       {lead}
       {children}
-      {(right != null || onDismiss) && <span style={{ flex: 1 }} />}
-      {right}
-      {onDismiss && <button className="banner-x" aria-label="Dismiss" onClick={onDismiss}>✕</button>}
+      {/* Actions grouped into one block pushed right by `margin-left:auto` — NOT a separate `flex:1`
+          spacer, which would compete with a `flex:1` body for space and squeeze the text in a narrow
+          card. As one unit it can also wrap to its own row (see `.app-banner-stack`). */}
+      {(right != null || onDismiss) && (
+        <span className="banner-actions">
+          {right}
+          {onDismiss && <button className="banner-x" aria-label="Dismiss" onClick={onDismiss}>✕</button>}
+        </span>
+      )}
     </div>
   );
 }

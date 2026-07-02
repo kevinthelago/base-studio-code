@@ -221,14 +221,12 @@ fn build_url(base: &str, path: &str) -> String {
 /// JSON. Descriptors are joined onto `base` via [`build_url`] (absolute descriptors pass through).
 #[cfg(feature = "source-stage")]
 fn bearer_fetch(base: String, token: String) -> impl Fn(&str) -> bsc_data::Result<serde_json::Value> + Send + Sync + 'static {
-    let client = reqwest::blocking::Client::new();
     move |path: &str| {
-        let req = client.get(build_url(&base, path)).header("Accept", "application/json");
+        let req = crate::platform::http::blocking_client()
+            .get(build_url(&base, path))
+            .header("Accept", "application/json");
         let req = if token.is_empty() { req } else { req.bearer_auth(&token) };
-        req.send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.json())
-            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+        crate::platform::http::blocking_send_json(req, |e| bsc_data::DataError::Io(e.to_string()))
     }
 }
 
@@ -236,16 +234,14 @@ fn bearer_fetch(base: String, token: String) -> impl Fn(&str) -> bsc_data::Resul
 /// onto `base` via [`build_url`].
 #[cfg(feature = "source-stage")]
 fn basic_fetch(base: String, user: String, pass: String) -> impl Fn(&str) -> bsc_data::Result<serde_json::Value> + Send + Sync + 'static {
-    let client = reqwest::blocking::Client::new();
     move |path: &str| {
-        client
-            .get(build_url(&base, path))
-            .basic_auth(&user, Some(&pass))
-            .header("Accept", "application/json")
-            .send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.json())
-            .map_err(|e| bsc_data::DataError::Io(e.to_string()))
+        crate::platform::http::blocking_send_json(
+            crate::platform::http::blocking_client()
+                .get(build_url(&base, path))
+                .basic_auth(&user, Some(&pass))
+                .header("Accept", "application/json"),
+            |e| bsc_data::DataError::Io(e.to_string()),
+        )
     }
 }
 

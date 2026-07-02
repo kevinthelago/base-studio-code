@@ -5,6 +5,10 @@
 
 import type { ReactNode } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import {
   EDGE_KIND_META, ARTIFACT_COLOR, ROLE_COLOR, DIRECTOR_COLOR, hardLabel, runtimeNote,
   type RelationshipGraph, type RelFocus,
@@ -14,32 +18,32 @@ const mono = "var(--mono)";
 
 function Pill({ text, c }: { text: string; c: string }) {
   return (
-    <span style={{
+    <Box as="span" style={{
       fontFamily: mono, fontSize: 8, padding: "1px 7px", borderRadius: 99, whiteSpace: "nowrap", color: c,
       background: `color-mix(in oklch, ${c}, transparent 86%)`, border: `1px solid color-mix(in oklch, ${c}, transparent 62%)`,
-    }}>{text}</span>
+    }}>{text}</Box>
   );
 }
 
 function RelRow({ glyph, c, head, detail, onClick }: { glyph: string; c: string; head: string; detail?: ReactNode; onClick?: () => void }) {
   return (
-    <div onClick={onClick} style={{ display: "flex", alignItems: "baseline", gap: 9, padding: "6px 9px", borderRadius: 6, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", cursor: onClick ? "pointer" : "default" }}>
-      <span style={{ flex: "0 0 16px", textAlign: "center", fontFamily: mono, fontSize: 11, color: c }}>{glyph}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: mono, fontSize: 10.5, color: "var(--fg)" }}>{head}</div>
-        {detail && <div style={{ fontFamily: mono, fontSize: 8.5, color: "var(--fg-dim)", marginTop: 2, lineHeight: 1.45 }}>{detail}</div>}
-      </div>
-    </div>
+    <Row onClick={onClick} gap={9} align="baseline" style={{ padding: "6px 9px", borderRadius: 6, background: "var(--bg-panel)", border: "1px solid var(--border-soft)", cursor: onClick ? "pointer" : "default" }}>
+      <Box as="span" style={{ flex: "0 0 16px", textAlign: "center", fontFamily: mono, fontSize: 11, color: c }}>{glyph}</Box>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text as="div" size={10.5} style={{ fontFamily: mono, color: "var(--fg)" }}>{head}</Text>
+        {detail && <Text as="div" size={8.5} tone="dim" style={{ fontFamily: mono, marginTop: 2, lineHeight: 1.45 }}>{detail}</Text>}
+      </Box>
+    </Row>
   );
 }
 
 function Head({ title, sub, c }: { title: string; sub?: string; c?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
+    <Row gap={9} style={{ marginBottom: 11 }}>
       <ColorSwatch color={c ?? "var(--accent)"} size={8} />
-      <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
-      {sub && <span style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-dim)" }}>{sub}</span>}
-    </div>
+      <Text as="span" size={12.5} weight={600} style={{ fontFamily: mono, color: "var(--fg)" }}>{title}</Text>
+      {sub && <Text as="span" size={9} tone="dim" style={{ fontFamily: mono }}>{sub}</Text>}
+    </Row>
   );
 }
 
@@ -55,18 +59,18 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
   if (!focus) {
     const hcount = edges.filter((e) => e.kind === "handoff").length;
     return (
-      <div>
-        <div style={{ fontFamily: mono, fontSize: 9, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 9 }}>relationship inspector</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px", borderRadius: 8, background: "var(--bg-panel)", border: "1px dashed var(--border)" }}>
-          <span style={{ fontSize: 18, opacity: 0.4 }}>⤚</span>
-          <div>
-            <div style={{ fontFamily: mono, fontSize: 10.5, color: "var(--fg-muted)" }}>Hover a stream to spotlight its relationships.</div>
-            <div style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-dim)", marginTop: 3 }}>
+      <Box>
+        <Text as="div" size={9} tone="dim" style={{ fontFamily: mono, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 9 }}>relationship inspector</Text>
+        <Row gap={10} style={{ padding: "14px", borderRadius: 8, background: "var(--bg-panel)", border: "1px dashed var(--border)" }}>
+          <Text as="span" size={18} style={{ opacity: 0.4 }}>⤚</Text>
+          <Box>
+            <Text as="div" size={10.5} tone="muted" style={{ fontFamily: mono }}>Hover a stream to spotlight its relationships.</Text>
+            <Text as="div" size={9} tone="dim" style={{ fontFamily: mono, marginTop: 3 }}>
               Click to pin · click an artifact or edge to inspect it. {streams.length} streams · {artifacts.length} contracts · {hcount} handoffs.
-            </div>
-          </div>
-        </div>
-      </div>
+            </Text>
+          </Box>
+        </Row>
+      </Box>
     );
   }
 
@@ -76,19 +80,19 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
     const ac = ARTIFACT_COLOR[a.kind], rdy = a.status === "ready";
     const ce = edges.filter((e) => e.kind === "handoff" && e.artifact === a.id);
     return (
-      <div>
+      <Box>
         <Head title={`contract:${a.id}`} sub={a.kind} c={ac} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <Stack gap={6}>
           <RelRow glyph="▲" c="var(--accent)" head={`produced by ${a.producer}`} detail={`publishes the ${a.kind} · status ${rdy ? "ready" : "pending"}`} onClick={() => onFocusAgent(a.producer)} />
           {a.consumers.map((c) => {
             const e = ce.find((x) => x.to === c);
             return <RelRow key={c} glyph="⤓" c="var(--accent)" head={`${c} consumes it`} detail={`bsc-blocked --on contract:${a.id}${e ? ` · ${hardLabel(e.hardness)} · via ${e.viaEff}` : ""}`} onClick={() => onFocusAgent(c)} />;
           })}
-          <div style={{ fontFamily: mono, fontSize: 8.5, color: "var(--fg-dim)", marginTop: 2 }}>
+          <Text as="div" size={8.5} tone="dim" style={{ fontFamily: mono, marginTop: 2 }}>
             {rdy ? "● ready — parked consumers have been satisfied & woken." : `○ pending — consumers wait until ${a.producer} lands it.`}
-          </div>
-        </div>
-      </div>
+          </Text>
+        </Stack>
+      </Box>
     );
   }
 
@@ -97,19 +101,19 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
     if (!e) return null;
     const km = EDGE_KIND_META[e.kind], cyc = cycleEdgeIds.has(e.id);
     return (
-      <div>
+      <Box>
         <Head title={`${e.from} → ${e.to}`} sub={e.kind} c={cyc ? "var(--danger)" : km.color} />
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <Row gap={6} wrap align="stretch" style={{ marginBottom: 10 }}>
           <Pill text={km.label} c={km.color} />
           <Pill text={hardLabel(e.hardness)} c="var(--info)" />
           <Pill text={`via ${e.viaEff}`} c={e.viaEff === "director" ? DIRECTOR_COLOR : "var(--fg-muted)"} />
           {e.artifact && <Pill text={`contract:${e.artifact}`} c="var(--accent)" />}
-        </div>
-        <div style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-muted)", lineHeight: 1.6, padding: "8px 10px", borderRadius: 6, background: "var(--bg-panel)", border: "1px solid var(--border-soft)" }}>
+        </Row>
+        <Box style={{ fontFamily: mono, fontSize: 9, color: "var(--fg-muted)", lineHeight: 1.6, padding: "8px 10px", borderRadius: 6, background: "var(--bg-panel)", border: "1px solid var(--border-soft)" }}>
           {runtimeNote(e)}
-        </div>
-        {cyc && <div style={{ fontFamily: mono, fontSize: 9, color: "var(--danger)", marginTop: 8 }}>⚠ part of a dependency cycle — this blocks the structure gate.</div>}
-      </div>
+        </Box>
+        {cyc && <Text as="div" size={9} tone="danger" style={{ fontFamily: mono, marginTop: 8 }}>⚠ part of a dependency cycle — this blocks the structure gate.</Text>}
+      </Box>
     );
   }
 
@@ -138,15 +142,15 @@ export function RelationshipInspector({ graph, focus, onFocusAgent, onInspectArt
     rows.push(<RelRow key={`o${e.id}`} glyph={km.glyph} c={cycleEdgeIds.has(e.id) ? "var(--danger)" : km.color} head={phrase} detail={`${km.label} · ${hardLabel(e.hardness)} · via ${e.viaEff}`} onClick={() => onInspectEdge(e.id)} />);
   });
   return (
-    <div>
+    <Box>
       <Head title={a.id} sub={`${a.role ?? "stream"} · ⎇ ${a.repo ?? ""}`} c={rc} />
       {(a.owns?.length ?? 0) > 0 && (
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 11 }}>
-          {a.owns!.map((o) => <span key={o} style={{ fontFamily: mono, fontSize: 8.5, padding: "1px 6px", borderRadius: 3, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>{o}</span>)}
-        </div>
+        <Row gap={5} wrap align="stretch" style={{ marginBottom: 11 }}>
+          {a.owns!.map((o) => <Box as="span" key={o} style={{ fontFamily: mono, fontSize: 8.5, padding: "1px 6px", borderRadius: 3, background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>{o}</Box>)}
+        </Row>
       )}
-      <div style={{ fontFamily: mono, fontSize: 9, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>relationships ({rows.length})</div>
-      {rows.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{rows}</div> : <div style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-dim)" }}>No cross-stream relationships.</div>}
-    </div>
+      <Text as="div" size={9} tone="dim" style={{ fontFamily: mono, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>relationships ({rows.length})</Text>
+      {rows.length ? <Stack gap={6}>{rows}</Stack> : <Text as="div" size={9.5} tone="dim" style={{ fontFamily: mono }}>No cross-stream relationships.</Text>}
+    </Box>
   );
 }

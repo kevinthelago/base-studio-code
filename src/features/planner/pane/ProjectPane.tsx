@@ -4,6 +4,10 @@
 // so the planning workflow is one focused stage at a time.
 import { useState, useEffect } from "react";
 import { Pane } from "@/shared/ui/overlay/Pane";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
@@ -100,28 +104,28 @@ export function ProjectPane({
   // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
   const viewerModal = viewing && (
-    <div className="modal-scrim" onClick={() => setViewing(null)} style={{ padding: 24 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "min(720px, 92vw)", maxHeight: "84vh", display: "flex", flexDirection: "column",
+    <Box className="modal-scrim" onClick={() => setViewing(null)} style={{ padding: 24 }}>
+      <Stack onClick={(e) => e.stopPropagation()} style={{
+        width: "min(720px, 92vw)", maxHeight: "84vh",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
         borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
       }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "12px 14px",
+        <Row gap={8} style={{
+          padding: "12px 14px",
           borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
         }}>
           <KindDot kind={viewing.kind} />
-          <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</span>
-          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{viewing.tok} · {viewing.scope}</span>
-          <span className="mono" onClick={() => setViewing(null)} style={{ cursor: "pointer", fontSize: 13, color: "var(--fg-muted)", padding: "0 2px 0 8px" }}>✕</span>
-        </div>
+          <Text as="span" mono size={12} style={{ flex: 1, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewing.name}</Text>
+          <Text as="span" mono size={9.5} tone="dim">{viewing.tok} · {viewing.scope}</Text>
+          <Text as="span" mono onClick={() => setViewing(null)} size={13} tone="muted" style={{ cursor: "pointer", padding: "0 2px 0 8px" }}>✕</Text>
+        </Row>
         <pre className="mono" style={{
           margin: 0, padding: "14px 16px", overflow: "auto", flex: 1,
           fontSize: 11, lineHeight: 1.55, color: "var(--fg-muted)",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>{viewing.content || "(empty)"}</pre>
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
 
   // Focused mode: sequenced-rail one-stage view (#652)
@@ -134,11 +138,11 @@ export function ProjectPane({
         <FocusedStepper stages={focus.stages} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
         <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
-        <div className="pp-scroll">
+        <Box className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} onInject={onInject} />
-        </div>
+        </Box>
         <FocusedStageFooter stage={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />
         {viewerModal}
       </Pane>

@@ -8,6 +8,11 @@ import "./projectPane.css";
 import type { Flow, Agent } from "./projectPaneData";
 import { type ModelId, modelTier, tierToModelId } from "@/app/console/lib/models";
 import { Dot, Avatar, RoleChip, PostureBar, Seg } from "./focusedPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function AgentEditor({ a, onFlow, onModel }: {
   a: Agent;
@@ -20,41 +25,41 @@ export function AgentEditor({ a, onFlow, onModel }: {
   return (
     <>
       {onModel && (
-        <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
-          <div className="ulabel" style={{ marginBottom: 8 }}>model</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+          <Box className="ulabel" style={{ marginBottom: 8 }}>model</Box>
+          <Row gap={8}>
             <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
               onChange={(v) => { const m = v === "default" ? undefined : tierToModelId(v); setModel(m); onModel(a.id, m); }} />
-            <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
+            <Text as="span" mono size={9} tone="dim">
               {model ? `claude --model ${modelTier(model)}` : "uses the global default"}
-            </span>
-          </div>
-        </div>
+            </Text>
+          </Row>
+        </Box>
       )}
 
-      <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
-        <div className="ulabel" style={{ marginBottom: 8 }}>flow</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>autonomy</span>
+      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+        <Box className="ulabel" style={{ marginBottom: 8 }}>flow</Box>
+        <Stack gap={8}>
+          <Row gap={8}>
+            <Text as="span" mono size={10} tone="muted" style={{ flex: "0 0 64px" }}>autonomy</Text>
             <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}
               onChange={(v) => { const next = { ...flow, autonomy: v }; setFlow(next); onFlow?.(a.id, next); }} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>push</span>
+          </Row>
+          <Row gap={8}>
+            <Text as="span" mono size={10} tone="muted" style={{ flex: "0 0 64px" }}>push</Text>
             <Seg options={["auto-PR", "push-confirm", "commit-only", "none"]} value={flow.push}
               onChange={(v) => { const next = { ...flow, push: v }; setFlow(next); onFlow?.(a.id, next); }} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="mono" style={{ flex: "0 0 64px", fontSize: 10, color: "var(--fg-muted)" }}>gate</span>
+          </Row>
+          <Row gap={8}>
+            <Text as="span" mono size={10} tone="muted" style={{ flex: "0 0 64px" }}>gate</Text>
             <Seg options={["soft", "hard"]} value={flow.gate}
               onChange={(v) => { const next = { ...flow, gate: v }; setFlow(next); onFlow?.(a.id, next); }} />
-            <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
+            <Text as="span" mono size={9} tone="dim">
               {flow.gate === "hard" ? "blocks on violation" : "warns, continues"}
-            </span>
-          </div>
-        </div>
-      </div>
+            </Text>
+          </Row>
+        </Stack>
+      </Box>
     </>
   );
 }
@@ -78,73 +83,63 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
   }
   const running = agents.filter((a) => a.status === "run").length;
   return (
-    <div style={{ padding: "4px 0" }}>
-      <div className="mono" style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "0 2px 8px",
-        fontSize: 9.5, color: "var(--fg-dim)",
-      }}>
-        <span>{agents.length} agents · {running} running</span>
-        <span style={{ flex: 1 }} />
-        <span className="mini">+ agent</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <Box style={{ padding: "4px 0" }}>
+      <Row className="mono" gap={8} style={{ padding: "0 2px 8px", fontSize: 9.5, color: "var(--fg-dim)" }}>
+        <Box as="span">{agents.length} agents · {running} running</Box>
+        <Box as="span" style={{ flex: 1 }} />
+        <Box as="span" className="mini">+ agent</Box>
+      </Row>
+      <Stack gap={4}>
         {agents.map((a) => {
           const on = open === a.id;
           return (
-            <div key={a.id} style={{
+            <Box key={a.id} style={{
               borderRadius: 6, overflow: "hidden",
               background: "var(--bg-canvas)",
               border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
-              <div onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }} style={{
-                display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8,
-                alignItems: "center", padding: "7px 8px", cursor: "pointer",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <Grid onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }}
+                cols="auto 1fr auto" gap={8} align="center" style={{ padding: "7px 8px", cursor: "pointer" }}>
+                <Row gap={7}>
                   <Dot s={a.status} />
                   <Avatar id={a.id} sz={18} agents={agents} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{a.name}</span>
+                </Row>
+                <Box style={{ minWidth: 0 }}>
+                  <Row gap={6}>
+                    <Text as="span" mono size={11} style={{ color: "var(--fg)" }}>{a.name}</Text>
                     <RoleChip role={a.role} mute />
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  </Row>
+                  <Row gap={6} style={{ marginTop: 4 }}>
                     <PostureBar perm={a.perm} />
-                    <span className="mono" style={{
-                      fontSize: 9, color: "var(--fg-dim)",
+                    <Text as="span" mono size={9} tone="dim" style={{
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>
                       {a.owns[0]}{a.owns.length > 1 ? ` +${a.owns.length - 1}` : ""}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                  <span className="mono" style={{ fontSize: 9, color: "var(--fg-muted)" }}>{a.preset}</span>
-                  <span className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</span>
-                </div>
-              </div>
+                    </Text>
+                  </Row>
+                </Box>
+                <Stack align="end" gap={4}>
+                  <Text as="span" mono size={9} tone="muted">{a.preset}</Text>
+                  <Box as="span" className={"fbadge" + (a.flow.gate === "hard" ? " hard" : "")}>{a.flow.gate}</Box>
+                </Stack>
+              </Grid>
 
               {on && (
                 <>
-                  <div className="mono" style={{
-                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-                    padding: "7px 10px", borderTop: "1px solid var(--border-soft)",
-                    fontSize: 9.5, color: "var(--fg-muted)",
-                  }}>
-                    <span style={{ color: "var(--info)" }}>⎇ {a.repo}</span>
-                    <span style={{ color: "var(--fg-dim)" }}>·</span>
-                    <span>owns</span>
-                    {a.owns.map((o) => <span key={o} className="glob">{o}</span>)}
-                    {a.issues.map((i) => <span key={i} style={{ color: "var(--accent)" }}>{i}</span>)}
-                  </div>
+                  <Row className="mono" gap={6} wrap style={{ padding: "7px 10px", borderTop: "1px solid var(--border-soft)", fontSize: 9.5, color: "var(--fg-muted)" }}>
+                    <Text as="span" style={{ color: "var(--info)" }}>⎇ {a.repo}</Text>
+                    <Text as="span" tone="dim">·</Text>
+                    <Box as="span">owns</Box>
+                    {a.owns.map((o) => <Box as="span" key={o} className="glob">{o}</Box>)}
+                    {a.issues.map((i) => <Text as="span" key={i} tone="accent">{i}</Text>)}
+                  </Row>
                   <AgentEditor a={a} onFlow={onFlow} onModel={onModel} />
                 </>
               )}
-            </div>
+            </Box>
           );
         })}
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
 }

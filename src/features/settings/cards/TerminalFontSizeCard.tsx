@@ -4,19 +4,20 @@ import {
   adjustFontSize,
 } from "@/app/console/lib/terminal";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Button } from "@/shared/ui/controls/Button";
 
 export function TerminalFontSizeCard() {
   const { terminalFontSize, setTerminalFontSize } = useAppStore();
 
   return (
     <Card title="Terminal font size" hint="also bound to Ctrl + / Ctrl - / Ctrl 0">
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <button
-          className="btn"
+      <Row gap={14}>
+        <Button
           aria-label="Decrease terminal font size"
           disabled={terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
           onClick={() => setTerminalFontSize(adjustFontSize(terminalFontSize, -1))}
-        >−</button>
+        >−</Button>
         <input
           type="range"
           aria-label="Terminal font size"
@@ -26,22 +27,21 @@ export function TerminalFontSizeCard() {
           onChange={(e) => setTerminalFontSize(Number(e.target.value))}
           style={{ flex: 1, accentColor: "var(--accent)" }}
         />
-        <button
-          className="btn"
+        <Button
           aria-label="Increase terminal font size"
           disabled={terminalFontSize >= MAX_TERMINAL_FONT_SIZE}
           onClick={() => setTerminalFontSize(adjustFontSize(terminalFontSize, +1))}
-        >+</button>
+        >+</Button>
         <span className="mono" style={{
           fontSize: 12, color: "var(--fg)",
           minWidth: 48, textAlign: "right",
         }}>{terminalFontSize}px</span>
-        <button
-          className="btn ghost"
+        <Button
+          variant="ghost"
           onClick={() => setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE)}
           disabled={terminalFontSize === DEFAULT_TERMINAL_FONT_SIZE}
-        >reset</button>
-      </div>
+        >reset</Button>
+      </Row>
       <div
         className="mono"
         style={{
