@@ -429,6 +429,19 @@ impl TunnelState {
             input_granted: inner.input_granted,
         }
     }
+
+    /// Store a pushed snapshot under the lock, then broadcast `msg` to connected clients.
+    /// Shared by the metadata-push setters (`tunnel_set_panes` / `tunnel_set_fleet_state` /
+    /// `tunnel_set_automations` / `tunnel_set_mcp_state`), which all follow the same
+    /// store-then-broadcast shape (only the field written, the log line, and the broadcast
+    /// variant differ — those stay at the call site).
+    pub(super) fn set_and_broadcast(&self, msg: ServerMsg, set: impl FnOnce(&mut Inner)) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            set(&mut inner);
+        }
+        let _ = self.event_tx.send(msg);
+    }
 }
 
 impl Default for TunnelState {
