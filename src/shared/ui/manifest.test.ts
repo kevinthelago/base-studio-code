@@ -1,0 +1,75 @@
+import { describe, it, expect } from "vitest";
+import { UI_KIT, findPrimitive, primitivesByGroup, manifestJson, type PropType } from "./manifest";
+import { UI_COMPONENTS, componentFor } from "./registry";
+
+const PROP_TYPES: PropType[] = [
+  "string", "number", "boolean", "enum", "node", "function", "style", "array", "space", "fontSize", "tracks", "color",
+];
+
+describe("UI kit manifest — integrity", () => {
+  it("has unique names and well-formed entries", () => {
+    const seen = new Set<string>();
+    for (const p of UI_KIT) {
+      expect(p.name, "name").toBeTruthy();
+      expect(seen.has(p.name), `duplicate ${p.name}`).toBe(false);
+      seen.add(p.name);
+      expect(p.importPath).toMatch(/^@\/shared\/ui\//);
+      expect(p.description.length).toBeGreaterThan(0);
+      expect(Array.isArray(p.props)).toBe(true);
+    }
+  });
+
+  it("every prop has a valid type; enum props list their values", () => {
+    for (const p of UI_KIT) {
+      for (const prop of p.props) {
+        expect(prop.name, `${p.name}.<prop>`).toBeTruthy();
+        expect(PROP_TYPES, `${p.name}.${prop.name} type`).toContain(prop.type);
+        expect(prop.description.length, `${p.name}.${prop.name} description`).toBeGreaterThan(0);
+        if (prop.type === "enum") {
+          expect(prop.values && prop.values.length, `${p.name}.${prop.name} values`).toBeTruthy();
+        }
+      }
+    }
+  });
+
+  it("serialises to JSON round-trip (pure data, no component refs)", () => {
+    const parsed = JSON.parse(manifestJson());
+    expect(parsed).toHaveLength(UI_KIT.length);
+    expect(parsed[0].name).toBe(UI_KIT[0].name);
+  });
+
+  it("helpers resolve", () => {
+    expect(findPrimitive("Row")?.group).toBe("layout");
+    expect(primitivesByGroup().layout.map((p) => p.name)).toContain("Grid");
+    const groups = primitivesByGroup();
+    const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
+    expect(total).toBe(UI_KIT.length);
+  });
+});
+
+describe("UI kit manifest — sync with the render-map registry", () => {
+  it("the data manifest and the component registry cover exactly the same names", () => {
+    const manifestNames = [...UI_KIT.map((p) => p.name)].sort();
+    const registryNames = Object.keys(UI_COMPONENTS).sort();
+    expect(manifestNames).toEqual(registryNames);
+  });
+
+  it("every registry entry is a renderable component", () => {
+    for (const [name, comp] of Object.entries(UI_COMPONENTS)) {
+      expect(typeof comp, name).toBe("function");
+    }
+  });
+
+  it("componentFor resolves each manifested name", () => {
+    for (const p of UI_KIT) {
+      expect(componentFor(p.name), p.name).toBe(UI_COMPONENTS[p.name]);
+    }
+  });
+
+  it("every importPath actually exports its named component", async () => {
+    for (const p of UI_KIT) {
+      const mod = await import(/* @vite-ignore */ p.importPath);
+      expect(typeof mod[p.name], `${p.name} @ ${p.importPath}`).toBe("function");
+    }
+  });
+});
