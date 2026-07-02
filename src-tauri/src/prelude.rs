@@ -12,6 +12,7 @@ pub(crate) use crate::platform::paths::{
 };
 pub(crate) use crate::platform::git::{git_exclude, git_lines, git_ok, git_output, git_run};
 pub(crate) use crate::platform::process::no_window;
+pub(crate) use crate::platform::errs::StrErr;
 pub(crate) use crate::platform::fsx::{
     append_block_once, ingest_section_files, is_safe_relpath, read_files_dir, read_text_files,
     sanitize_project_key, worktree_slug,

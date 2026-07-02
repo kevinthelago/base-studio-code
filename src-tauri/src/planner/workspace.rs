@@ -1,3 +1,4 @@
+use crate::StrErr;
 use super::prompts::*;
 use super::directives::*;
 use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
@@ -49,7 +50,7 @@ pub(crate) fn setup_workspaces(
         // the director owns + tests them, workers read them as the source of truth.
         planning_dir.join("contracts"),
     ] {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(dir).str_err()?;
     }
     // Discovery-stage sections get their own subdir (#807) — created ONLY when the blueprint
     // actually carries a discovery stage. The planner writes `discovery/<topic>.md` there;
@@ -58,10 +59,10 @@ pub(crate) fn setup_workspaces(
     // dir from before the rename — move it in place so its prose carries forward.
     let (legacy, current) = (planning_dir.join("context"), planning_dir.join("discovery"));
     if legacy.is_dir() && !current.exists() {
-        std::fs::rename(&legacy, &current).map_err(|e| e.to_string())?;
+        std::fs::rename(&legacy, &current).str_err()?;
     }
     if enabled_stages.iter().any(|s| s == "discovery") {
-        std::fs::create_dir_all(&current).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&current).str_err()?;
     }
 
     // Planner `.claude/settings.json` is NOT written here anymore — it's derived from the
@@ -122,7 +123,7 @@ pub(crate) fn setup_workspaces(
     }
 
     std::fs::write(planning_dir.join("CLAUDE.md"), planning_md)
-        .map_err(|e| e.to_string())?;
+        .str_err()?;
 
     // Write automations catalogue so Claude can reference and assign them. The header prose lives in
     // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
@@ -140,7 +141,7 @@ pub(crate) fn setup_workspaces(
         }
     }
     std::fs::write(planning_dir.join("automations.md"), auto_md)
-        .map_err(|e| e.to_string())?;
+        .str_err()?;
 
     // extensions.md (the planner's live list of installed MCP servers + the per-worker assignment
     // directive) is written by the frontend now (#1054, shared/mcpContext.ts) so it reflects the
@@ -175,14 +176,14 @@ pub(crate) fn setup_workspaces(
     }
     gh_ctx.push_str(&format!("{}\n", github_useful_commands().trim_end()));
     std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
-        .map_err(|e| e.to_string())?;
+        .str_err()?;
 
     // Write a deterministic context signature so Planning.tsx can surface a
     // "context updated · refresh" badge when inputs diverge from this baseline (#175).
     {
         let sig = context_signature(&repo_full_names, &enabled_stages);
         std::fs::write(planning_dir.join("context_signature.txt"), sig)
-            .map_err(|e| e.to_string())?;
+            .str_err()?;
     }
 
     Ok(WorkspacePaths {

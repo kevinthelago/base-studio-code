@@ -8,6 +8,7 @@
 //! directives) now reads through [`load_str`]/[`load_opt`]; the packaged bytes are embedded once here
 //! (the seed `Dir`). This module also owns the export/import config bundle (#2027 P3).
 
+use crate::StrErr;
 use include_dir::{include_dir, Dir};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -171,10 +172,10 @@ fn import_into(root: &Path, bundle: &ConfigBundle, replace: bool) -> std::io::Re
 /// dir first, so a never-edited install still exports the shipped defaults. Returns the file count.
 #[tauri::command]
 pub(crate) fn export_config_bundle(path: String) -> Result<usize, String> {
-    ensure_seeded().map_err(|e| e.to_string())?;
+    ensure_seeded().str_err()?;
     let bundle = export_from(&config_root());
-    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&bundle).str_err()?;
+    std::fs::write(&path, json).str_err()?;
     Ok(bundle.files.len())
 }
 
@@ -183,10 +184,10 @@ pub(crate) fn export_config_bundle(path: String) -> Result<usize, String> {
 /// (the loaders read the config dir at startup).
 #[tauri::command]
 pub(crate) fn import_config_bundle(path: String, replace: bool) -> Result<usize, String> {
-    let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let json = std::fs::read_to_string(&path).str_err()?;
     let bundle: ConfigBundle =
         serde_json::from_str(&json).map_err(|e| format!("not a valid config bundle: {e}"))?;
-    import_into(&config_root(), &bundle, replace).map_err(|e| e.to_string())
+    import_into(&config_root(), &bundle, replace).str_err()
 }
 
 /// Return the entire runtime config dir as `rel-path → contents` (#2047). The frontend primes this at
@@ -195,7 +196,7 @@ pub(crate) fn import_config_bundle(path: String, replace: bool) -> Result<usize,
 /// never-edited install returns the shipped defaults.
 #[tauri::command]
 pub(crate) fn get_config_files() -> Result<BTreeMap<String, String>, String> {
-    ensure_seeded().map_err(|e| e.to_string())?;
+    ensure_seeded().str_err()?;
     Ok(export_from(&config_root()).files)
 }
 

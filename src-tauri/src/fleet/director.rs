@@ -17,10 +17,10 @@ pub(crate) fn ensure_director_protocol(project_key: String) -> Result<(), String
     if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
     // Both sections are appended verbatim only when their marker is absent (idempotent), via the
     // shared helper — no scattered read-modify-write blocks. Errors propagate (this is a command).
-    append_section_once(&local, "## Director protocol", &director_protocol_md()).map_err(|e| e.to_string())?;
+    append_section_once(&local, "## Director protocol", &director_protocol_md()).str_err()?;
     // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
     // so it's a high-value injection target — give it the same untrusted-input rules as workers.
-    append_section_once(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md()).map_err(|e| e.to_string())?;
+    append_section_once(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md()).str_err()?;
     Ok(())
 }
 

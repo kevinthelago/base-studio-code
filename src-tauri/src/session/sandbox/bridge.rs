@@ -5,6 +5,7 @@
 //! the mechanism verified to work. This is the foundation for relocating the planner/triage hub onto
 //! the distro's ext4: a session sees `/home/agent/...`; the host writes/reads it via these helpers.
 
+use crate::StrErr;
 use super::{require_windows, wsl_exec, wsl_exec_stdin, AGENT_SANDBOX_DISTRO};
 
 /// The project hub's distro-native path for `key` (the in-distro analogue of `project_dir`).
@@ -41,10 +42,10 @@ fn sandbox_read(linux_path: &str) -> Result<String, String> {
 fn copy_dir_to_sandbox(host_dir: &std::path::Path, distro_dir: &str) -> Result<(), String> {
     let entries = std::fs::read_dir(host_dir).map_err(|e| format!("read {}: {e}", host_dir.display()))?;
     for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let entry = entry.str_err()?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        let ft = entry.file_type().str_err()?;
         let child_distro = format!("{distro_dir}/{name}");
         if ft.is_dir() {
             if name == ".git" || entry.path().join(".git").exists() {
@@ -154,9 +155,9 @@ pub(crate) fn sync_sandbox_plan_db(key: String) -> Result<bool, String> {
         return Ok(false); // unchanged
     }
     if let Some(parent) = host_db.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).str_err()?;
     }
-    std::fs::write(&host_db, &bytes).map_err(|e| e.to_string())?;
+    std::fs::write(&host_db, &bytes).str_err()?;
     Ok(true)
 }
 

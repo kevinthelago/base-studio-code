@@ -7,6 +7,7 @@
 // drains it lives in `transport`. Fields/methods reached from those siblings (and the test
 // module) are `pub(super)` — visible within the `tunnel` module tree, private outside it.
 
+use crate::StrErr;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -465,7 +466,7 @@ pub(super) fn fnv1a32_hex(s: &str) -> String {
 /// scope (not in `transport`) so the tests can exercise it against the protocol types.
 pub(super) fn decode_room_msg(tx: &mut snow::TransportState, frame: &[u8]) -> Result<ClientMsg, String> {
     let mut out = vec![0u8; frame.len()];
-    let n = tx.read_message(frame, &mut out).map_err(|e| e.to_string())?;
+    let n = tx.read_message(frame, &mut out).str_err()?;
     out.truncate(n);
-    serde_json::from_slice(&out).map_err(|e| e.to_string())
+    serde_json::from_slice(&out).str_err()
 }
