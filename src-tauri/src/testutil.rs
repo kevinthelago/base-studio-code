@@ -37,7 +37,7 @@ pub mod prelude {
     pub(crate) use crate::fleet::{director::*, inspect::*, worktree::*};
     pub(crate) use crate::prelude::*;
     pub(crate) use crate::project::{
-        blueprints::*, dead_code::*, files::*, hub::*, plan_db::*, plan_files::*, ui_skeleton::*,
+        dead_code::*, files::*, hub::*, plan_db::*, plan_files::*, ui_skeleton::*,
     };
     pub(crate) use super::{temp_home, write_file, ENV_LOCK};
 }

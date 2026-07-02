@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
@@ -194,18 +193,20 @@ export const useAppStore = create<AppStore>()(
         if (state?.agentProfiles) {
           state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
         }
-        // Hydrate user blueprints from their on-disk dir (#blueprints): union them in (so one that
-        // survived a store reset or a fresh download appears), and migrate any persisted-but-not-yet-
-        // on-disk user blueprint forward to the dir. The dir is the durable home; the persisted list
-        // is a cache; built-ins stay code-owned. Async — runs after hydration settles.
-        void invoke<string[]>("list_blueprints").then((rows) => {
-          const parse = (s: string): Blueprint | undefined => {
-            try {
-              const b = JSON.parse(s);
-              return b && typeof b.id === "string" && Array.isArray(b.sections) ? (b as Blueprint) : undefined;
-            } catch { return undefined; }
-          };
-          const fromDir = (rows ?? []).map(parse).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
+        // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
+        // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
+        // fresh download appears), and migrate any persisted-but-not-yet-on-disk user blueprint forward
+        // to the dir (`bsc blueprint set`). The dir is the durable home; the persisted list is a cache;
+        // built-ins stay code-owned. Blueprints are GLOBAL (no project key) → `null`. `bscJson` degrades
+        // to `[]` when the bridge is unreachable — safe here: an empty list simply unions nothing (the
+        // `if (fromDir.length)` guard), so it never blanks the seeded/persisted set. Async — runs after
+        // hydration settles.
+        void bscJson<unknown[]>(null, ["blueprint", "list", "--full"], []).then((rows) => {
+          const coerce = (b: unknown): Blueprint | undefined =>
+            b && typeof (b as Blueprint).id === "string" && Array.isArray((b as Blueprint).sections)
+              ? (b as Blueprint)
+              : undefined;
+          const fromDir = rows.map(coerce).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
           const onDiskIds = new Set(fromDir.map((b) => b.id));
           if (fromDir.length) {
             useAppStore.setState((s) => {
@@ -216,10 +217,10 @@ export const useAppStore = create<AppStore>()(
           }
           for (const b of useAppStore.getState().blueprints) {
             if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
-              fireInvoke("write_blueprint", { id: b.id, json: JSON.stringify(b) });
+              void bscWrite(null, ["blueprint", "set"], b);
             }
           }
-        }).catch(() => {});
+        });
         // Same for the packaged skills (#677-style): replace the code-owned set from
         // code and prune any retired packaged skill, so a store seeded with the old
         // dev-workflow skills picks up the compliance/standards library on next load.
