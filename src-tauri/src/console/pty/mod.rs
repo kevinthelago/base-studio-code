@@ -152,6 +152,88 @@ fn attach_job_and_track(
     job
 }
 
+/// The session's resolved working directory (#367/#979/#1819/#1988) — the single place the scattered
+/// `into_sandbox` cwd re-tests collapse into. Normalizes the configured `cwd`, decides whether it is
+/// missing or empty, picks the `effective_cwd` the shell actually starts in, and logs the two loud
+/// failure cases. `sandbox` is `into_sandbox.is_some()`.
+///
+/// - **Normalize (#979):** a git-bash drive path (`/c/Users/...`, as OSC-7 reports and the app persists)
+///   becomes native (`C:/Users/...`) so `is_dir` / `Command::cwd` resolve it on Windows — otherwise an
+///   EXISTING worktree/dir reads as "missing" on restore. No-op off Windows and for already-native paths.
+/// - **Missing (#367):** never silently fall back to `$HOME` — a failed clone/worktree or a stale
+///   persisted cwd is detected (logged loudly) and the shell starts in the nearest existing ancestor
+///   (not `$HOME`), so the agent is at least near the project. Surfaced again in the pane's `cd_prefix`.
+/// - **Empty (#1819):** an empty cwd is as dangerous as a missing one — with no cwd the shell inherits
+///   the APP's working directory, so the per-cwd settings.json (role gate + shell allowlist) was never
+///   written there and a claude launch runs permission-less. Flagged loudly here (and again,
+///   claude-specifically, once the launch plan is resolved).
+/// - **Sandbox (#1988):** a distro session's cwd is a distro-native path (`/home/agent/...`) — don't
+///   normalize it as a Windows path or test it with the host's `is_dir` (it isn't a host path); the init
+///   line cd's it. So a sandbox cwd is never `missing`, and `effective_cwd == cwd`.
+struct ResolvedCwd {
+    /// The host-normalized configured cwd (or the untouched distro-native path under `sandbox`).
+    cwd: String,
+    /// Where the shell actually starts — `cwd`, or its nearest existing ancestor when `missing`.
+    effective_cwd: String,
+    /// The configured cwd does not exist as a host directory (never true under `sandbox`).
+    missing: bool,
+    /// No cwd was configured at all.
+    empty: bool,
+}
+
+fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
+    let cwd = if sandbox { cwd } else { to_native_path(&cwd) };
+    let missing = !sandbox && !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
+    if missing {
+        log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
+    }
+    let empty = cwd.is_empty();
+    if empty {
+        log::warn!("pty[{pane_id}] launched with an EMPTY cwd — no per-session settings.json was written; the shell inherits the app's working directory (#1819)");
+    }
+    let effective_cwd = if missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
+    ResolvedCwd { cwd, effective_cwd, missing, empty }
+}
+
+/// Assemble the init line a freshly opened PTY starts with, dispatched by sandbox mode then shell kind
+/// (#447/#1988). The byte-exact wire strings live in the leaf builders this delegates to —
+/// [`build_bash_init_line`] (Git-Bash: OSC-7 + `__bsc_state` markers + the `claude()` wrapper + bsc-*
+/// helpers + launch), the host's `non_bash_init` (degraded PowerShell/cmd), and `sandbox_init_line`
+/// (the sealed WSL2 distro, which bakes its distro-native env + cd since the host bsc-env rc doesn't
+/// cross the wsl boundary). Extracted from `pty_create` (#2167) so the orchestrator stays readable;
+/// behavior + the emitted bytes are unchanged.
+#[allow(clippy::too_many_arguments)]
+fn build_session_init_line(
+    sandbox: bool,
+    shell_kind: crate::platform::shell::ShellKind,
+    cwd: &str,
+    cwd_missing: bool,
+    effective_cwd: &str,
+    launch: Option<&str>,
+    launch_claude: bool,
+    claude_fn: &str,
+    rc_bash: &str,
+    model_alias: Option<&str>,
+    env_map: &std::collections::HashMap<String, String>,
+) -> String {
+    if sandbox {
+        // A distro session always runs the distro's bash — bake its env + cd into the init line.
+        crate::platform::shell::sandbox_init_line(cwd, launch, env_map)
+    } else {
+        match shell_kind {
+            crate::platform::shell::ShellKind::Bash => {
+                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash)
+            }
+            // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
+            // are bash-only, so run a degraded init that cd's, clears, and prints a visible
+            // notice (no silent breakage, #447).
+            crate::platform::shell::ShellKind::PowerShell | crate::platform::shell::ShellKind::Cmd => {
+                crate::platform::shell::non_bash_init(shell_kind, cwd, cwd_missing, effective_cwd, launch_claude, model_alias)
+            }
+        }
+    }
+}
+
 /// Returns `true` when a new session is created, `false` when reconnecting to
 /// an existing one (e.g. after a tab switch). The caller should send `\n` on
 /// reconnect so the shell re-displays its prompt in the fresh terminal.
@@ -228,30 +310,12 @@ pub(crate) fn pty_create(
     // launches, and a no-op when the config is already valid.
     harness.prepare_config();
 
-    // Hardening (#367): never silently fall back to $HOME when a session's configured
-    // directory is missing — a failed clone/worktree or a stale persisted cwd would
-    // otherwise have the agent quietly working in the wrong place. Detect the missing
-    // dir, start in its nearest existing ancestor instead, and surface it loudly in the
-    // pane (see cd_prefix below) so a misplaced session can't go unnoticed.
-    // Normalize a git-bash drive path (`/c/Users/...`, as a bash shell reports via OSC-7 and the
-    // app persists) back to native (`C:/Users/...`) so `is_dir` / `Command::cwd` resolve it on
-    // Windows — otherwise an EXISTING worktree/dir reads as "missing" on restore (#979). No-op off
-    // Windows and for already-native paths.
-    // #1988: a distro session's cwd is a distro-native path (`/home/agent/...`) — don't normalize it as
-    // a Windows path or test it with the host's `is_dir` (it isn't a host path). The init line cd's it.
-    let cwd = if into_sandbox.is_some() { cwd } else { to_native_path(&cwd) };
-    let cwd_missing = into_sandbox.is_none() && !cwd.is_empty() && !std::path::Path::new(&cwd).is_dir();
-    if cwd_missing {
-        log::error!("pty[{pane_id}] configured cwd does not exist: {cwd} — refusing the silent home fallback");
-    }
-    // #1819: an EMPTY cwd is as dangerous as a missing one — with no cwd set the shell inherits the
-    // APP's working directory, so the session's per-cwd settings.json (role gate + shell allowlist)
-    // was never written there and a claude launch runs permission-less. We can't manufacture a dir,
-    // but flag it loudly here (and again, claude-specifically, once the launch plan is resolved).
-    if cwd.is_empty() {
-        log::warn!("pty[{pane_id}] launched with an EMPTY cwd — no per-session settings.json was written; the shell inherits the app's working directory (#1819)");
-    }
-    let effective_cwd: String = if cwd_missing { nearest_existing_ancestor(&cwd) } else { cwd.clone() };
+    // Resolve the session's working directory (#367/#979/#1819/#1988): normalize a git-bash drive
+    // path back to native, detect a missing/empty cwd (both logged loudly, never a silent home
+    // fallback), and pick the effective start dir. All the `into_sandbox` cwd re-tests live in the
+    // one helper now; see `resolve_session_cwd` for the per-case rationale.
+    let ResolvedCwd { cwd, effective_cwd, missing: cwd_missing, empty: cwd_empty } =
+        resolve_session_cwd(&pane_id, cwd, into_sandbox.is_some());
     // #1988: skip for a distro session — `effective_cwd` is a distro path (not a valid wsl.exe spawn
     // cwd), and folder-trust is a Claude-on-host concern. The distro init line cd's into it instead.
     if into_sandbox.is_none() && !effective_cwd.is_empty() {
@@ -326,7 +390,7 @@ pub(crate) fn pty_create(
     // #1819: the high-severity case — claude is about to launch with NO cwd, so its role gate +
     // shell allowlist (settings.json, written per-cwd by the frontend) were never written and the
     // session will prompt for everything. Surface it loudly so the silent failure can't recur.
-    if launch_claude && cwd.is_empty() {
+    if launch_claude && cwd_empty {
         log::error!("pty[{pane_id}] launching claude with an EMPTY cwd — permission-less session: the role gate + shell allowlist in settings.json were never written (#1819)");
     }
     // The default `--model` alias for this session (per-pane override or global
@@ -337,20 +401,12 @@ pub(crate) fn pty_create(
     // types pick it up. Skip the injection when the call already carries `--model`
     // (whole-word match, so prompt text containing the string can't trip it).
     let claude_fn = harness.shell_fn(model_alias.as_deref());
-    // #1988: a distro session always runs the distro's bash — bake its env + cd into the init line.
-    let init_line = if into_sandbox.is_some() {
-        crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref(), &env_map)
-    } else { match resolved_shell.kind {
-        crate::platform::shell::ShellKind::Bash => {
-            build_bash_init_line(&cwd, cwd_missing, &effective_cwd, launch.as_deref(), &claude_fn, &rc_bash)
-        }
-        // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
-        // are bash-only, so run a degraded init that cd's, clears, and prints a visible
-        // notice (no silent breakage, #447).
-        crate::platform::shell::ShellKind::PowerShell | crate::platform::shell::ShellKind::Cmd => {
-            crate::platform::shell::non_bash_init(resolved_shell.kind, &cwd, cwd_missing, &effective_cwd, launch_claude, model_alias.as_deref())
-        }
-    } };
+    // Assemble the init line the freshly opened PTY starts with — dispatched by sandbox mode / shell
+    // kind to the byte-exact leaf builders (see `build_session_init_line`).
+    let init_line = build_session_init_line(
+        into_sandbox.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
+        launch.as_deref(), launch_claude, &claude_fn, &rc_bash, model_alias.as_deref(), &env_map,
+    );
     writer.write_all(init_line.as_bytes()).ok();
 
     // Stream PTY output to the frontend, COALESCED to ~one event per frame.
@@ -372,7 +428,7 @@ pub(crate) fn pty_create(
         pane_id, cols, rows,
         provider_id.as_deref().unwrap_or("claude"),
         shell,
-        if cwd.is_empty() { "<none>" } else { cwd.as_str() },
+        if cwd_empty { "<none>" } else { cwd.as_str() },
         init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
     );
 
@@ -527,8 +583,82 @@ pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, ro
 
 #[cfg(test)]
 mod tests {
-    // The session env wiring + launch-plan + init-line tests live with their code in the `env` and
-    // `launch` submodules; the PtyJob process-tree-kill tests live in `job.rs`.
+    // The session env wiring + launch-plan + bash init-line byte tests live with their code in the
+    // `env` and `launch` submodules; the PtyJob process-tree-kill tests live in `job.rs`. Here we test
+    // the two `pty_create` orchestration helpers extracted in #2167: `resolve_session_cwd` (cwd
+    // resolution) and `build_session_init_line` (sandbox/shell-kind init-line dispatch).
+    use std::collections::HashMap;
+
+    #[test]
+    fn resolve_session_cwd_empty_flags_empty_and_not_missing() {
+        // #1819: an unset cwd is flagged empty (not missing); effective_cwd is empty so the caller
+        // skips the cmd.cwd/trust step.
+        let r = super::resolve_session_cwd("pane", String::new(), false);
+        assert!(r.empty, "empty cwd flagged");
+        assert!(!r.missing, "empty is not 'missing'");
+        assert_eq!(r.cwd, "");
+        assert_eq!(r.effective_cwd, "");
+    }
+
+    #[test]
+    fn resolve_session_cwd_existing_dir_is_neither_missing_nor_empty() {
+        // A real host directory (the crate root) resolves cleanly; effective == cwd.
+        let dir = env!("CARGO_MANIFEST_DIR").to_string();
+        let r = super::resolve_session_cwd("pane", dir.clone(), false);
+        assert!(!r.missing, "existing dir not missing");
+        assert!(!r.empty, "existing dir not empty");
+        assert_eq!(r.effective_cwd, r.cwd, "effective == cwd when the dir exists");
+        assert!(std::path::Path::new(&r.cwd).is_dir(), "resolved cwd is a real dir");
+    }
+
+    #[test]
+    fn resolve_session_cwd_missing_dir_falls_back_to_existing_ancestor() {
+        // #367: a nonexistent configured cwd is flagged missing and the shell starts in the nearest
+        // existing ancestor instead of a silent $HOME fallback.
+        let missing = format!("{}/__bsc_does_not_exist_2167__/deeper", env!("CARGO_MANIFEST_DIR"));
+        let r = super::resolve_session_cwd("pane", missing.clone(), false);
+        assert!(r.missing, "nonexistent dir flagged missing");
+        assert!(!r.empty);
+        assert_ne!(r.effective_cwd, r.cwd, "effective steps off the missing path");
+        assert!(std::path::Path::new(&r.effective_cwd).is_dir(), "ancestor exists: {}", r.effective_cwd);
+    }
+
+    #[test]
+    fn resolve_session_cwd_sandbox_skips_host_checks() {
+        // #1988: a distro cwd is a distro-native path — never host-normalized, never 'missing' (even
+        // though it isn't a host dir), and effective == cwd (the init line cd's into it).
+        let distro = "/home/agent/proj".to_string();
+        let r = super::resolve_session_cwd("pane", distro.clone(), true);
+        assert_eq!(r.cwd, distro, "sandbox cwd is left untouched");
+        assert!(!r.missing, "sandbox cwd is never host-missing");
+        assert!(!r.empty);
+        assert_eq!(r.effective_cwd, distro, "effective == cwd under sandbox");
+    }
+
+    #[test]
+    fn build_session_init_line_dispatches_to_the_leaf_builders() {
+        let env_map: HashMap<String, String> = HashMap::new();
+        // Non-sandbox Bash ⇒ byte-for-byte the Git-Bash builder's output.
+        let bash = super::build_session_init_line(
+            false, crate::platform::shell::ShellKind::Bash,
+            "/p", false, "/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
+        );
+        assert_eq!(
+            bash,
+            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc"),
+            "Bash kind reproduces build_bash_init_line exactly",
+        );
+        // Sandbox ⇒ byte-for-byte the distro builder's output (env + cd baked in, shell kind ignored).
+        let sandbox = super::build_session_init_line(
+            true, crate::platform::shell::ShellKind::Bash,
+            "/home/agent/p", false, "/home/agent/p", Some("claude"), true, "CLAUDE_FN;", "/rc", None, &env_map,
+        );
+        assert_eq!(
+            sandbox,
+            crate::platform::shell::sandbox_init_line("/home/agent/p", Some("claude"), &env_map),
+            "sandbox routes to sandbox_init_line",
+        );
+    }
 
     #[test]
     fn project_session_ids_matches_only_the_project_panes() {
