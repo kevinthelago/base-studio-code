@@ -29,10 +29,11 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "every user blueprint's {id, name} (JSON)",
         usage: "\
 USAGE:
-  bsc blueprint list [--pretty]
+  bsc blueprint list [--full] [--pretty]
 
 Prints every user blueprint's { id, name } as JSON (compact; --pretty for indented). The full
-blueprint JSON is one `get <id>` away.",
+blueprint JSON is one `get <id>` away. --full emits the COMPLETE blueprint objects (sections +
+origin/…) as a plain array — the full-fidelity read the desktop library hydration needs (#2143).",
     },
     CmdDoc {
         name: "get",
@@ -68,16 +69,21 @@ Deletes the blueprint keyed by <id>. A no-op (not an error) when it does not exi
 struct Args {
     dir: Option<String>,
     pretty: bool,
+    /// `list --full`: emit the COMPLETE blueprint objects (sections + origin/…) as a plain array —
+    /// the full-fidelity read the desktop library hydration needs (#2143). Ignored by other
+    /// subcommands.
+    full: bool,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, positional: Vec::new() };
+    let mut a = Args { dir: None, pretty: false, full: false, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
             "--pretty" => a.pretty = true,
+            "--full" => a.full = true,
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -108,8 +114,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `get` away). Each stored blueprint is parsed leniently so an odd-shaped file never aborts
         // the list; we emit whatever `id`/`name` strings are present.
         "list" => {
-            let metas: Vec<Meta> = store.list().iter().map(|j| Meta::from_json(j)).collect();
-            print_json(&metas, args.pretty);
+            if args.full {
+                // Full-fidelity read (#2143): every user blueprint's COMPLETE JSON object as a plain
+                // array — the desktop library hydration needs the whole shape (sections/origin/…),
+                // not just {id,name}. Each stored file is parsed; an unparseable one is skipped
+                // (matching the lenient `Meta` path, which never aborts the list on a bad file).
+                let full: Vec<Value> = store
+                    .list()
+                    .iter()
+                    .filter_map(|j| serde_json::from_str::<Value>(j).ok())
+                    .collect();
+                print_json(&full, args.pretty);
+            } else {
+                let metas: Vec<Meta> = store.list().iter().map(|j| Meta::from_json(j)).collect();
+                print_json(&metas, args.pretty);
+            }
             Ok(())
         }
         "get" => {
@@ -216,6 +235,14 @@ mod tests {
         assert!(a.pretty);
         assert_eq!(a.positional, vec!["set".to_string()]);
         assert!(parse_args(vec!["--nope".into()]).is_err());
+    }
+
+    #[test]
+    fn full_flag_parses_and_defaults_off() {
+        // `--full` (the #2143 full-fidelity library read) flips the flag; it is off by default so a
+        // bare `list` stays the lean {id,name} summary.
+        assert!(!parse_args(vec!["list".into()]).unwrap().full, "default list is lean {{id,name}}");
+        assert!(parse_args(vec!["list".into(), "--full".into()]).unwrap().full, "--full opts into full objects");
     }
 
     #[test]

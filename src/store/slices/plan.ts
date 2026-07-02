@@ -1,8 +1,7 @@
 // PlanSlice — extracted from the store implementation (store split, stage 2).
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscWrite } from "@/shared/lib/core/bsc";
+import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
@@ -45,14 +44,15 @@ type PlanSlice = Pick<AppStore,
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
 // <id>.json so they survive a store reset and a download has a real home (#blueprints). Best-effort,
-// fire-and-forget — the store stays the in-memory source; the dir is the durable copy.
+// fire-and-forget over the `bsc` bridge (`bsc blueprint set`/`remove`, #2143) — the store stays the
+// in-memory source; the dir is the durable copy. Blueprints are GLOBAL (no project key) → `null`.
 const syncBlueprintFile = (bp?: Blueprint) => {
   if (bp && bp.origin !== "built-in") {
-    fireInvoke("write_blueprint", { id: bp.id, json: JSON.stringify(bp) });
+    void bscWrite(null, ["blueprint", "set"], bp);
   }
 };
 const deleteBlueprintFile = (id: string) => {
-  fireInvoke("delete_blueprint", { id });
+  void bscRun(null, ["blueprint", "remove", id]);
 };
 
 export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, get) => {

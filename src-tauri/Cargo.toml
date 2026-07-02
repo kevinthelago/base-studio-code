@@ -85,11 +85,6 @@ plandb = { path = "../crates/plandb" }
 # Mobile-tunnel wire contract + Noise crypto (#1919) — desktop tunnel glue (state/transport/commands) depends on it.
 bsc-tunnel = { path = "../crates/bsc-tunnel" }
 
-# User blueprint store (#1719) — shared with the `bsc-blueprint` session CLI. The blueprint
-# Tauri commands (`list/write/delete_blueprint`) are a thin wrapper over this crate's `Store`,
-# so the path-traversal slug guard lives in ONE place (#1761).
-bsc-blueprint = { path = "../crates/bsc-blueprint" }
-
 # Cross-project hub lifecycle (#1720) — shared with the `bsc-project` session CLI. The
 # published-marker helpers (`mark_published`/`is_published`/`published_marker`) delegate here so
 # the `.published` marker logic lives in ONE place (#1761).
