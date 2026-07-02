@@ -617,11 +617,7 @@ mod tests {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn osc7_path_strip_removes_scheme_and_host() {

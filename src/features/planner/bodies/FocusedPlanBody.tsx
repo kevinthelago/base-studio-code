@@ -9,6 +9,10 @@ import {
   buildRelationshipGraph, EDGE_KIND_META,
   type Topology, type RelFocus,
 } from "@/features/planner/relationship/relationshipGraph";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function PlanBody({ data, focus: focusProp, onFocus }: {
   data?: ProjectPaneData;
@@ -43,10 +47,10 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
 
   if (!hasRel) {
     return (
-      <div className="empty-state">
-        <span className="empty-icon">◫</span>
-        <span>No plan yet — define the features, then Claude drafts the dependency seams</span>
-      </div>
+      <Box className="empty-state">
+        <Box as="span" className="empty-icon">◫</Box>
+        <Text as="span">No plan yet — define the features, then Claude drafts the dependency seams</Text>
+      </Box>
     );
   }
 
@@ -56,13 +60,13 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
   const focusName = focus ? (focus.type === "agent" ? focus.id : `contract:${focus.id}`) : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Stack gap={12}>
       {relGraph && (
-        <div>
+        <Box>
           {/* STREAMS — gate pill on the right (#1429 reskin) */}
-          <div className="ulabel" style={{ paddingBottom: 9, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <span>streams</span>
-            <span data-testid="relationship-gate" className="mono" style={{
+          <Row className="ulabel" justify="between" gap={8} style={{ paddingBottom: 9 }}>
+            <Text as="span">streams</Text>
+            <Box as="span" data-testid="relationship-gate" className="mono" style={{
               display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
               color: gatePass ? "var(--success)" : "var(--danger)",
               background: `color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`,
@@ -70,10 +74,10 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
               animation: gatePass ? undefined : "pulse 1.8s ease-in-out infinite",
             }}>
               {gatePass ? "✓ no dependency cycles" : `⨯ gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
-            </span>
-          </div>
+            </Box>
+          </Row>
           {/* graph card + legend */}
-          <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 8px 4px" }}>
+          <Box style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 8px 4px" }}>
             <RelationshipGraphView
               graph={relGraph}
               focus={focus}
@@ -83,25 +87,25 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
               onInspectEdge={(id) => setFocus({ type: "edge", id })}
               onInspectArtifact={(id) => setFocus({ type: "art", id })}
             />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
+            <Row wrap gap={10} align="stretch" style={{ padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
               {kindsUsed.map((k) => (
-                <span key={k} className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
-                  <span style={{ width: 11, height: 0, borderTop: `1.6px solid ${EDGE_KIND_META[k].color}` }} />{EDGE_KIND_META[k].label}
-                </span>
+                <Box as="span" key={k} className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+                  <Box as="span" style={{ width: 11, height: 0, borderTop: `1.6px solid ${EDGE_KIND_META[k].color}` }} />{EDGE_KIND_META[k].label}
+                </Box>
               ))}
-              <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
-                <span style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
-              </span>
-            </div>
-          </div>
-          <div className="mono" style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
-            <span>{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</span>
+              <Box as="span" className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
+                <Box as="span" style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
+              </Box>
+            </Row>
+          </Box>
+          <Row className="mono" justify="center" gap={9} style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center" }}>
+            <Text as="span">{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</Text>
             {focus && <button className="mini" onClick={() => { setFocus(null); setHover(null); }} style={{ fontSize: 9 }}>clear ✕</button>}
-          </div>
+          </Row>
 
           {/* INSPECTOR */}
-          <div className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</div>
-          <div style={{ padding: "12px 13px", borderRadius: 9, background: "var(--bg-elev)", border: "1px solid var(--border)" }}>
+          <Box className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</Box>
+          <Box style={{ padding: "12px 13px", borderRadius: 9, background: "var(--bg-elev)", border: "1px solid var(--border)" }}>
             <RelationshipInspector
               graph={relGraph}
               focus={focus}
@@ -109,9 +113,9 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
               onInspectArtifact={(id) => setFocus({ type: "art", id })}
               onInspectEdge={(id) => setFocus({ type: "edge", id })}
             />
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
-    </div>
+    </Stack>
   );
 }

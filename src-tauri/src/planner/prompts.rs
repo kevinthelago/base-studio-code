@@ -33,6 +33,16 @@ pub(crate) fn planner_injection_resistance_md() -> String { md("planner/injectio
 pub(crate) fn planning_active_stages_preamble() -> String { md("planner/active-stages-preamble.md") }
 /// The `automations.md` catalogue header (`setup_workspaces`, workspace.rs) — the saved list appends after.
 pub(crate) fn automations_catalogue_header() -> String { md("planner/automations-catalogue.md") }
+/// The `automations.md` empty-state note when no automations are saved (`setup_workspaces`).
+pub(crate) fn automations_empty_note() -> String { md("planner/automations-empty.md") }
+/// The `## Useful gh commands` read-only cheat-sheet appended to `github_context.md` (`setup_workspaces`).
+pub(crate) fn github_useful_commands() -> String { md("planner/github-commands.md") }
+/// A `## Linked repositories` bullet in the planner CLAUDE.md (`setup_workspaces`).
+/// `{full_name}`/`{local_path}` are replaced per repo.
+pub(crate) fn linked_repo_item() -> String { md("planner/linked-repo-item.md") }
+/// A `## Linked repositories` bullet in `github_context.md` (`setup_workspaces`).
+/// `{full_name}`/`{local_path}` are replaced per repo.
+pub(crate) fn github_repo_item() -> String { md("planner/github-repo-item.md") }
 
 pub(crate) fn planning_greeting_new() -> String { md("planner/greeting.new.md") }
 pub(crate) fn planning_greeting_existing() -> String { md("planner/greeting.existing.md") }

@@ -24,6 +24,50 @@
    readable sans body the app banners use (not the inline callout's compact mono). */
 .banner.bar { width: 100%; border-radius: 0; border: none; border-bottom: 1px solid var(--border-soft); padding: 7px 14px; gap: 12px; flex-wrap: nowrap; font-family: var(--sans); font-size: 12px; line-height: 1.5; color: var(--fg); }
 
+/* Actions block (right slot + dismiss ✕) — pushed to the far right by margin-left:auto instead of a
+   flex spacer, so the body keeps the full remaining width (no space fight). */
+.banner-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
 /* The trailing dismiss ✕. */
 .banner-x { background: transparent; border: none; cursor: pointer; color: var(--fg-muted); padding: 4px; display: inline-flex; align-items: center; font-size: 12px; line-height: 1; }
 .banner-x:hover { color: var(--fg); }
+
+/* App banner stack — the app-shell alerts (crash recovery, session recovery, quarantine, sandbox
+   nudge) float in a FIXED top-right overlay instead of stacking in normal flow, so they never push
+   the shell down or cram the UI (they used to be full-width in-flow bars). The container ignores
+   pointer events; only its cards capture clicks. Each `.bar` becomes a rounded, shadowed card. */
+.app-banner-stack {
+  position: fixed; top: 40px; right: 10px; z-index: 55;
+  width: min(440px, calc(100vw - 20px));
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.app-banner-stack > * { pointer-events: auto; }
+.app-banner-stack .banner.bar {
+  position: relative;            /* anchor the corner dismiss ✕ */
+  padding-right: 30px;           /* clear the corner ✕ so the first text line doesn't run under it */
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-soft);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  flex-wrap: wrap;               /* let the actions block drop to its own row in the narrow card */
+  align-items: start;
+}
+/* In the narrow floating card the body takes the whole first row (text wraps naturally) and the
+   action buttons sit on their own right-aligned row below — a clean toast, not text crammed beside
+   buttons. The dismiss ✕ is pulled out to the top-right corner (below). */
+.app-banner-stack .banner.bar > .banner-actions {
+  flex-basis: 100%; margin-left: 0;
+  justify-content: flex-end;
+}
+.app-banner-stack .banner.bar .banner-x {
+  position: absolute; top: 5px; right: 7px; padding: 3px;
+}
+
+/* The expandable "view all" panel a grouped banner (quarantine / session recovery) drops below its
+   summary row — a rounded, scrollable card matching the floating stack. */
+.banner-drawer {
+  border: 1px solid var(--border-soft); border-radius: var(--r-md);
+  background: var(--bg-panel); box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  font-family: var(--sans); color: var(--fg);
+  padding: 8px; display: grid; gap: 6px; max-height: 320px; overflow-y: auto;
+}

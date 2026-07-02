@@ -137,16 +137,21 @@ impl PerfState {
         }))
     }
 
+    /// Lock the inner state, recovering from poisoning — the shared `observability::lock_recover`
+    /// idiom (one home for `lock().unwrap_or_else(|e| e.into_inner())`).
+    #[allow(private_interfaces)]
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, PerfInner> {
+        super::lock_recover(&self.0)
+    }
+
     /// Called by `pty_create` after spawning the shell.
     pub fn register(&self, session_id: &str, pid: u32) {
-        let mut g = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        g.tracked.insert(session_id.to_string(), pid);
+        self.lock().tracked.insert(session_id.to_string(), pid);
     }
 
     /// Called by `pty_kill` when the pane is torn down.
     pub fn unregister(&self, session_id: &str) {
-        let mut g = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        g.tracked.remove(session_id);
+        self.lock().tracked.remove(session_id);
     }
 }
 
@@ -176,7 +181,7 @@ fn open_db(path: &Path) -> rusqlite::Result<Connection> {
 
 /// Collect one round of metrics and persist them. Called from the background task.
 pub fn tick(state: &PerfState) {
-    let mut g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = state.lock();
     if !g.config.enabled { return; }
 
     let now = now_ms();
@@ -331,7 +336,7 @@ pub async fn run_sampler(app: tauri::AppHandle) {
         ticker.tick().await;
         let perf = app.state::<PerfState>();
         let (enabled, interval_secs) = {
-            let g = perf.0.lock().unwrap_or_else(|e| e.into_inner());
+            let g = perf.lock();
             (g.config.enabled, g.config.interval_secs)
         };
         if !enabled || interval_secs == 0 { continue; }
@@ -345,7 +350,7 @@ pub async fn run_sampler(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub fn perf_get_config(state: tauri::State<PerfState>) -> PerfConfig {
-    state.0.lock().unwrap_or_else(|e| e.into_inner()).config.clone()
+    state.lock().config.clone()
 }
 
 #[tauri::command]
@@ -358,7 +363,7 @@ pub fn perf_set_config(
     track_frontend: bool,
     state: tauri::State<PerfState>,
 ) {
-    let mut g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = state.lock();
     g.config = PerfConfig { enabled, interval_secs, retention_hours, max_db_mb, track_process, track_frontend };
 }
 
@@ -378,7 +383,7 @@ pub fn perf_record_frontend_sample(
     let _ = jank_total_ms;
     let _ = pty_bytes;
     {
-        let g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let g = state.lock();
         if !g.config.enabled || !g.config.track_frontend { return; }
     }
     let s = PerfSample {
@@ -389,13 +394,13 @@ pub fn perf_record_frontend_sample(
         cpu_pct: Some(jank_count as f32),
         threads: Some(pty_events),
     };
-    let mut g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = state.lock();
     ingest(&mut g, vec![s]);
 }
 
 #[tauri::command]
 pub fn perf_clear_history(state: tauri::State<PerfState>) -> Result<(), String> {
-    let mut g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = state.lock();
     g.ring.clear();
     if let Some(conn) = g.db_conn() {
         conn.execute("DELETE FROM perf_samples", []).map_err(|e| e.to_string())?;
@@ -405,7 +410,7 @@ pub fn perf_clear_history(state: tauri::State<PerfState>) -> Result<(), String> 
 
 #[tauri::command]
 pub fn perf_get_recent_samples(limit: usize, state: tauri::State<PerfState>) -> Vec<PerfSample> {
-    let g = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let g = state.lock();
     let n = g.ring.len().min(limit);
     g.ring[g.ring.len() - n..].to_vec()
 }

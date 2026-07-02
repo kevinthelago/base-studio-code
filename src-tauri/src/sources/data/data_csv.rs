@@ -235,9 +235,9 @@ pub fn data_source_inventory(csv_path: String) -> Result<Vec<SourceObjectView>, 
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_source_sample(csv_path: String, limit: usize) -> Result<CsvPreview, String> {
-    let rs = CsvConnector::new(&csv_path).read("").map_err(|e| e.to_string())?;
-    let total = rs.rows.len();
-    Ok(CsvPreview { columns: rs.columns, rows: rs.rows.into_iter().take(limit).collect(), total })
+    // Same behavior as `data_preview_csv` — one implementation, two command names for the
+    // load-loop vs the source-stage connection UX.
+    data_preview_csv(csv_path, limit)
 }
 
 /// Infer a canonical Data Model from a CSV file.

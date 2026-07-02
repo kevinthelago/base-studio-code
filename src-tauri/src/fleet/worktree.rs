@@ -23,8 +23,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
         return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
     }
     let slug  = worktree_slug(&agent_id);
-    let short = repo.rsplit('/').next().unwrap_or(&repo);
-    let wt    = worktrees_dir(&project_key).join(format!("{short}--{slug}"));
+    let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));
     let wt_str = wt.to_string_lossy().into_owned();
     // A worktree's `.git` is a FILE pointing into the main repo; create it only if
     // it isn't there yet (reuse across re-runs).
@@ -130,10 +129,6 @@ pub(crate) fn seed_union_merge_gitattributes(dir: &std::path::Path) {
         return; // not a repo — nothing to seed
     }
     let path = dir.join(".gitattributes");
-    let cur = std::fs::read_to_string(&path).unwrap_or_default();
-    if cur.contains(GITATTR_MARKER_START) {
-        return; // already seeded
-    }
     let mut block = String::new();
     block.push_str(GITATTR_MARKER_START);
     block.push('\n');
@@ -142,14 +137,9 @@ pub(crate) fn seed_union_merge_gitattributes(dir: &std::path::Path) {
     }
     block.push_str(GITATTR_MARKER_END);
     block.push('\n');
-    let out = if cur.is_empty() {
-        block
-    } else if cur.ends_with('\n') {
-        format!("{cur}{block}")
-    } else {
-        format!("{cur}\n{block}")
-    };
-    let _ = std::fs::write(&path, out);
+    // Idempotent additive append via the shared helper: any hand-authored attributes are kept, the
+    // block is joined after a single newline (existing content is normalized to one trailing newline).
+    let _ = append_block_once(&path, |cur| cur.contains(GITATTR_MARKER_START), "\n", &block);
 }
 
 /// Assemble a fleet worker's `CLAUDE.local.md` in its worktree (`wt`): its own `scope_md`
@@ -234,11 +224,9 @@ pub(crate) fn inject_design_context(hub: &std::path::Path, wt_local: &std::path:
         .map(|(rel, _)| rel)
         .collect();
     let Some(block) = design_context_block(&screens) else { return };
-    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
-    if cur.contains(DESIGN_CONTEXT_MARKER) {
-        return; // already injected
-    }
-    let _ = std::fs::write(wt_local, format!("{}\n{}", cur.trim_end(), block));
+    // `block` already opens with its own leading newline; the shared helper trims the existing
+    // content and joins with a single "\n", reproducing the prior `format!("{}\n{}", trim_end, block)`.
+    let _ = append_block_once(wt_local, |cur| cur.contains(DESIGN_CONTEXT_MARKER), "\n", &block);
 }
 /// Inline the hub's attached skills (`skills.md`, #636) into a worker's CLAUDE.local.md
 /// so the worker auto-loads the same skill context the planner had. Idempotent; a no-op
@@ -249,11 +237,14 @@ pub(crate) fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
     if trimmed.is_empty() {
         return;
     }
-    let cur = std::fs::read_to_string(wt_local).unwrap_or_default();
-    if cur.contains("# Attached skills & knowledge") {
-        return; // already injected
-    }
-    let _ = std::fs::write(wt_local, format!("{}\n\n{}\n", cur.trim_end(), trimmed));
+    // Blank line between the plan and the inlined skills; the block carries its own trailing newline.
+    // Reproduces the prior `format!("{}\n\n{}\n", cur.trim_end(), trimmed)`.
+    let _ = append_block_once(
+        wt_local,
+        |cur| cur.contains("# Attached skills & knowledge"),
+        "\n\n",
+        &format!("{trimmed}\n"),
+    );
 }
 
 #[cfg(test)]
@@ -491,11 +482,7 @@ mod tests {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     /// Regression (#1102): in a linked worktree `.git` is a FILE, so the old
     /// `repo_root/.git/info/exclude` write silently failed and `.mcp.json` leaked into the worker's

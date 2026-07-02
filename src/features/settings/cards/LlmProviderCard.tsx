@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
 import { Card } from "@/shared/ui/data/Card";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Row } from "@/shared/ui/layout/Row";
+import { Button } from "@/shared/ui/controls/Button";
 
 export const LLM_PROVIDERS: [LlmProvider, string][] = [
   ["anthropic", "Anthropic Claude"],
@@ -66,7 +69,7 @@ export function LlmProviderCard() {
 
   return (
     <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14 }}>
+      <Grid cols="1.4fr 1fr" gap={14}>
         <div className="field">
           <label>Provider</label>
           <select className="input" value={llmProvider} onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}>
@@ -91,17 +94,17 @@ export function LlmProviderCard() {
         {isLocal && (
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Base URL</label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <Row gap={8} align="stretch">
               <input
                 className="input"
                 value={localBaseUrl}
                 onChange={(e) => setLocalBaseUrl(e.target.value)}
                 placeholder="http://localhost:11434/v1"
               />
-              <button className="btn" onClick={testConnection} disabled={testing}>
+              <Button onClick={testConnection} disabled={testing}>
                 {testing ? "testing…" : "test"}
-              </button>
-            </div>
+              </Button>
+            </Row>
             <div className="hint">
               {testMsg || (llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama).")}
             </div>
@@ -113,7 +116,7 @@ export function LlmProviderCard() {
             <div className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</div>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 8 }}>
+              <Row gap={8} align="stretch">
                 <input
                   className="input"
                   type="password"
@@ -121,9 +124,9 @@ export function LlmProviderCard() {
                   onChange={(e) => setProviderKey(e.target.value)}
                   placeholder={KEY_PLACEHOLDER[llmProvider]}
                 />
-                <button className="btn">show</button>
-                <button className="btn">test</button>
-              </div>
+                <Button>show</Button>
+                <Button>test</Button>
+              </Row>
               <div className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</div>
             </>
           )}
@@ -157,19 +160,19 @@ export function LlmProviderCard() {
         </div>
         <div className="field" style={{ gridColumn: "1 / -1" }}>
           <label>Extended thinking</label>
-          <div style={{ display: "flex", gap: 6 }}>
+          <Row gap={6} align="stretch">
             {(["off", "auto", "always"] as const).map((v, i) => (
-              <button key={v} className="btn" style={{
+              <Button key={v} style={{
                 flex: 1, justifyContent: "center",
                 background: i === 1 ? "var(--bg-elev2)" : "var(--bg-elev)",
                 borderColor: i === 1 ? "var(--accent-dim)" : "var(--border-soft)",
                 color: i === 1 ? "var(--accent)" : "var(--fg)",
-              }}>{v}</button>
+              }}>{v}</Button>
             ))}
-          </div>
+          </Row>
           <div className="hint">Off for haiku regardless of this setting.</div>
         </div>
-      </div>
+      </Grid>
     </Card>
   );
 }

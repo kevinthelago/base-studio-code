@@ -10,6 +10,7 @@ import { appSessionTag } from "./lib/appSession";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
+import { Button } from "@/shared/ui/controls/Button";
 import { modeTone } from "./lib/badgeTone";
 
 export interface AssignmentsTabProps {
@@ -88,7 +89,7 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
           <span className="rchip" style={{ borderStyle: "dashed" }}>owns {p.surface}</span>
         </div>
       }
-      trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</button>}
+      trailing={<Button variant="ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</Button>}
     />
   );
 }
@@ -144,7 +145,7 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
                         {resolved.length === 0 && <span className="rchip">— prompt for everything —</span>}
                       </div>
                     }
-                    trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</button>}
+                    trailing={<Button variant="ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</Button>}
                   />
                 );
               })}

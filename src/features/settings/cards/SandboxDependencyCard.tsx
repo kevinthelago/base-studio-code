@@ -1,4 +1,6 @@
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { useAppStore } from "@/store";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
@@ -18,7 +20,7 @@ export function SandboxDependencyCard() {
 
   return (
     <Card title="OS sandbox (Bash isolation)">
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, lineHeight: 1.5 }}>
+      <Row align="start" gap={8} style={{ fontSize: 12, lineHeight: 1.5 }}>
         <span
           style={{
             width: 8, height: 8, borderRadius: "50%", marginTop: 4, flexShrink: 0,
@@ -30,8 +32,8 @@ export function SandboxDependencyCard() {
           <b>{sandbox.ready ? "Active" : "Not set up"}</b>{" "}
           <span style={{ color: "var(--fg-muted)" }}>— {sandbox.detail}</span>
           {!sandbox.ready && sandbox.autoInstallable && (
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Stack gap={6} style={{ marginTop: 8 }}>
+              <Row gap={8} wrap>
                 <button
                   onClick={install}
                   disabled={installing}
@@ -46,7 +48,7 @@ export function SandboxDependencyCard() {
                 {installMsg && !installing && (
                   <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>
                 )}
-              </div>
+              </Row>
               {installing && (
                 <div aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
                   <div style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
@@ -64,10 +66,10 @@ export function SandboxDependencyCard() {
                   {installLog.join("\n")}
                 </pre>
               )}
-            </div>
+            </Stack>
           )}
         </div>
-      </div>
+      </Row>
     </Card>
   );
 }

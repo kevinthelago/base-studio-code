@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 // One fleet worktree's disk footprint (mirrors Rust `WorktreeUsage`, #1080).
 interface WorktreeUsage {
@@ -110,7 +112,7 @@ export function StorageCard() {
   const grandTotal = rows.reduce((s, r) => s + r.sizeBytes, 0);
 
   return (
-    <div style={{ maxWidth: 760, display: "flex", flexDirection: "column", gap: 0 }}>
+    <Stack gap={0} style={{ maxWidth: 760 }}>
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontFamily: "var(--sans)", fontSize: 16, color: "var(--fg)", marginBottom: 6 }}>Storage</div>
         <div style={{ fontFamily: "var(--sans)", fontSize: 11.5, lineHeight: 1.5, color: "var(--fg-muted)" }}>
@@ -121,7 +123,7 @@ export function StorageCard() {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <Row gap={10} style={{ marginBottom: 12 }}>
         <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>
           {rows.length} worktree{rows.length === 1 ? "" : "s"} · {fmtBytes(grandTotal)} total
         </span>
@@ -132,7 +134,7 @@ export function StorageCard() {
           <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>checked {new Date(takenAt).toLocaleTimeString()}</span>
         ) : null}
         <Button size="sm" disabled={busy || scanning} onClick={() => void refresh()}>Refresh</Button>
-      </div>
+      </Row>
 
       {projects.length === 0 ? (
         <div className="mono" style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontSize: 11.5, color: "var(--fg-dim)" }}>
@@ -141,7 +143,7 @@ export function StorageCard() {
       ) : (
         projects.map((p) => (
           <div key={p.key} style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
+            <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{p.key}</div>
                 <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
@@ -149,16 +151,16 @@ export function StorageCard() {
                 </div>
               </div>
               <ConfirmButton size="sm" label="Reclaim" armedLabel="Confirm" disabled={busy} onConfirm={() => reclaim(p.key)} />
-            </div>
+            </Row>
             {p.list.map((w) => (
-              <div key={w.path} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>
+              <Row key={w.path} gap={12} style={{ padding: "8px 0 8px 12px", borderBottom: "1px solid var(--border-soft)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-muted)" }}>{w.name}</div>
                 </div>
                 <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>
                   {fmtBytes(w.sizeBytes)}{w.targetBytes > 0 ? ` · ${fmtBytes(w.targetBytes)} target/` : ""}
                 </div>
-              </div>
+              </Row>
             ))}
           </div>
         ))
@@ -166,7 +168,7 @@ export function StorageCard() {
 
       {sandbox && (sandbox.installed || sandbox.tarballBytes > 0) && (
         <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0" }}>
+          <Row gap={12} style={{ padding: "10px 0" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>Agent sandbox (WSL2)</div>
               <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
@@ -174,7 +176,7 @@ export function StorageCard() {
               </div>
             </div>
             <ConfirmButton size="sm" label="Remove" armedLabel="Confirm" disabled={busy} onConfirm={removeSandbox} />
-          </div>
+          </Row>
         </div>
       )}
 
@@ -185,6 +187,6 @@ export function StorageCard() {
       <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-dim)", marginTop: 12 }}>
         Worktrees live under <code className="mono">~/.base-studio-code/worktrees/</code>; the agent sandbox under <code className="mono">~/.base-studio-code/wsl/</code>. Removing the sandbox is reversible — reinstall it from <strong>Settings → Security</strong>.
       </div>
-    </div>
+    </Stack>
   );
 }

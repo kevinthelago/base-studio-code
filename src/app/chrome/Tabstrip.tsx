@@ -6,6 +6,8 @@
 
 import { Pencil } from "lucide-react";
 import { TabBar, type TabItem } from "./TabBar";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
 
 export interface Tab {
   /** Stable identity (#463), minted at creation. Survives reorder/close/detach,
@@ -76,7 +78,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
         <div style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.07em" }}>
           Layout
         </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        <Row gap={5} align="stretch" wrap>
           {LAYOUTS.map((l) => {
             const [c, r] = l.split("×").map(Number);
             const current = layout === l;
@@ -95,16 +97,16 @@ function LayoutMenu({ layout, onRename, onPick }: {
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 }}
               >
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${c}, 8px)`, gridTemplateRows: `repeat(${r}, 5px)`, gap: 1.5 }}>
+                <Grid cols={`repeat(${c}, 8px)`} rows={`repeat(${r}, 5px)`} gap={1.5}>
                   {Array.from({ length: c * r }).map((_, idx) => (
                     <div key={idx} style={{ borderRadius: 1, background: current ? "var(--accent)" : "var(--border)" }} />
                   ))}
-                </div>
+                </Grid>
                 {l}
               </button>
             );
           })}
-        </div>
+        </Row>
       </div>
     </>
   );

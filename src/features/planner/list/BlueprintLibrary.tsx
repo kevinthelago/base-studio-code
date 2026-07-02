@@ -13,6 +13,12 @@ import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/bl
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import type { DraftRow } from "./drafts";
 
 // ── Blueprint display helpers (#…): a hued icon tile keyed by lifecycle category, a visibility
@@ -112,7 +118,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
   const Icon = CAT_ICON[b.category] ?? Layers;
 
   return (
-    <div
+    <Box
       className="bp-rail-card"
       onClick={() => onUse(b.id)}
       title={isActive ? "Selected — new projects use this blueprint" : "Select this blueprint for new projects"}
@@ -121,24 +127,24 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
         border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"),
         borderRadius: 9, cursor: "pointer", position: "relative",
       }}>
-      <div className="bp-rail-card-head" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+      <Row className="bp-rail-card-head" gap={9}>
         <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Icon size={15} /></IconBox>
-        <div className="bp-rail-card-titlewrap" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
-          <span className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
-          <span className="bp-rail-card-cat mono" style={{
+        <Row className="bp-rail-card-titlewrap" gap={7} style={{ flex: 1, minWidth: 0 }}>
+          <Box as="span" className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</Box>
+          <Box as="span" className="bp-rail-card-cat mono" style={{
             flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontSize: 9, color: hue,
             background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
-          }}>{b.category}</span>
-        </div>
+          }}>{b.category}</Box>
+        </Row>
         <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-          <button
-            className="btn ghost"
+          <Button
+            variant="ghost"
             style={{ height: 22, width: 22, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setMenuOpenId(isOpen ? null : menuId)}
             title="More options"
-          ><MoreHorizontal size={13} /></button>
+          ><MoreHorizontal size={13} /></Button>
           {isOpen && (
-            <div className="menu" style={{ minWidth: 158 }}>
+            <Box className="menu" style={{ minWidth: 158 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
                 <Check size={12} /> use for new projects
               </button>
@@ -147,27 +153,27 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
               </button>
               {!b.builtIn && (
                 <>
-                  <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+                  <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
                   <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(b); }}>
                     <Trash2 size={12} /> delete blueprint
                   </button>
                 </>
               )}
-            </div>
+            </Box>
           )}
         </div>
-      </div>
+      </Row>
       {/* Gated-stage progression (#blueprints): one segment per enabled, applicable section,
           colored by gate status — a preview of the lifecycle this blueprint walks through. */}
-      <div className="bp-rail-card-gates" style={{ marginTop: 9 }}>
+      <Box className="bp-rail-card-gates" style={{ marginTop: 9 }}>
         <PlanGateRow sections={b.sections} signals={{}} />
-      </div>
+      </Box>
       {b.gistLabel && (
-        <div className="bp-rail-card-gist mono" style={{ marginTop: 7, fontSize: 9, color: "var(--info)", display: "flex", alignItems: "center", gap: 5 }}>
+        <Row className="bp-rail-card-gist mono" gap={5} style={{ marginTop: 7, fontSize: 9, color: "var(--info)" }}>
           <Link2 size={10} />{b.gistLabel}
-        </div>
+        </Row>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -300,31 +306,31 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
           Shrinkable (`0 1`, not `0 0`) with a min floor so a narrow / half window reclaims width from
           the rail instead of it overflowing the clipped section and getting cut off. `overflow:hidden`
           keeps its cards from forcing it back wide. */}
-      <div className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
-      <div style={{ flex: `0 1 ${blueprintsRail.size}px`, minWidth: 240, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
-        <div style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
+      <Box className="resize-x" {...blueprintsRail.handleProps} title="Drag to resize" />
+      <Stack style={{ flex: `0 1 ${blueprintsRail.size}px`, minWidth: 240, overflow: "hidden", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
+        <Box style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+          <Row gap={9}>
+            <Box as="span" style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
               <Layers size={13} />
-            </span>
-            <h3 className="mono" style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Blueprints</h3>
-            <span className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</span>
-            <span style={{ flex: 1 }} />
-            <button
-              className="btn ghost"
+            </Box>
+            <Text as="h3" mono size={13} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Blueprints</Text>
+            <Box as="span" className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</Box>
+            <Spacer />
+            <Button
+              variant="ghost"
               title="Import a blueprint from a gist"
               onClick={() => setCatalogOpen(true)}
               style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-            ><Download size={12} /></button>
-            <button
-              className="btn ghost"
+            ><Download size={12} /></Button>
+            <Button
+              variant="ghost"
               title="Author a new blueprint"
               onClick={() => { setBpNewOpen(o => !o); setBpTitle(""); }}
               style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}
-            >+</button>
-          </div>
+            >+</Button>
+          </Row>
           {bpNewOpen && (
-            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <Row gap={6} style={{ marginTop: 10 }}>
               <input
                 autoFocus
                 value={bpTitle}
@@ -334,28 +340,28 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
                 className="mono"
                 style={{ flex: 1, minWidth: 0, height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)", borderRadius: 6, outline: "none", fontSize: 11, color: "var(--fg)" }}
               />
-              <button
-                className="btn primary"
+              <Button
+                variant="primary"
                 onClick={startNewBlueprint}
                 disabled={!bpTitle.trim()}
                 style={{ height: 26, fontSize: 10, whiteSpace: "nowrap", opacity: bpTitle.trim() ? 1 : 0.4 }}
-              >author →</button>
-            </div>
+              >author →</Button>
+            </Row>
           )}
-          <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+          <Text as="div" mono size={9.5} tone="dim" style={{ marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</Text>
+        </Box>
+        <Stack gap={9} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px" }}>
           {fBlueprints.length === 0 ? (
-            <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.6, padding: "6px 2px" }}>
+            <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
               {q ? "No blueprints match your search." : <>No blueprints yet. Press <b style={{ color: "var(--fg-muted)" }}>+</b> to author one.</>}
-            </div>
+            </Text>
           ) : (
             fBlueprints.map(b => (
               <BlueprintCard key={b.id} b={b} onUse={setActiveBlueprint} onOpen={openBlueprint} onDelete={deleteBlueprint} activeId={activeBlueprintId} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
             ))
           )}
-        </div>
-      </div>
+        </Stack>
+      </Stack>
 
       {/* Import a blueprint from a gist (moved here from the removed Blueprints tab) */}
       {catalogOpen && (

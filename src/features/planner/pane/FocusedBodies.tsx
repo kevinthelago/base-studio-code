@@ -25,6 +25,7 @@ import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
 import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
+import { Box } from "@/shared/ui/layout/Box";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
 // (ProjectPane imports `AuthoringWiring`).
@@ -103,10 +104,10 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
       return (
-        <div className="empty-state">
-          <span className="empty-icon">⋯</span>
-          <span>The planner documents this stage.</span>
-        </div>
+        <Box className="empty-state">
+          <Box as="span" className="empty-icon">⋯</Box>
+          <Box as="span">The planner documents this stage.</Box>
+        </Box>
       );
   }
 }

@@ -131,6 +131,37 @@ pub(crate) fn ingest_section_files(dir: &std::path::Path, sections: &mut std::co
     }
 }
 
+/// Idempotently append a self-contained `block` to a text file, normalizing the seam so re-runs
+/// converge to identical content. A no-op when `is_present(current)` reports the block is already
+/// there; otherwise trailing whitespace is trimmed off any existing content and `block` is appended
+/// after `separator` (a blank / absent / whitespace-only file is replaced by `block` alone, with no
+/// leading separator). A missing / unreadable file reads as empty. Written with a plain
+/// (non-atomic) `fs::write`, matching the hand-rolled append blocks this consolidates.
+///
+/// The seam-normalizing sibling of [`crate::fleet::protocols::append_section_once`] (which appends
+/// its body verbatim, `format!("{cur}{body}")`, for callers whose block already carries its own
+/// leading separation). `is_present` is a caller-supplied predicate so both a section-heading marker
+/// (`|c| c.contains(MARKER)`) and a whole-line entry (`|c| c.lines().any(|l| l.trim() == entry)`)
+/// keep their exact idempotency semantics. Returns the write's `io::Result` so a caller can either
+/// propagate it or discard it with `let _ =`.
+pub(crate) fn append_block_once(
+    path: &std::path::Path,
+    is_present: impl FnOnce(&str) -> bool,
+    separator: &str,
+    block: &str,
+) -> std::io::Result<()> {
+    let cur = std::fs::read_to_string(path).unwrap_or_default();
+    if is_present(&cur) {
+        return Ok(());
+    }
+    let out = if cur.trim().is_empty() {
+        block.to_string()
+    } else {
+        format!("{}{separator}{block}", cur.trim_end())
+    };
+    std::fs::write(path, out)
+}
+
 /// Atomically write `bytes` to `path`: write a sibling temp file, then rename over the
 /// target (atomic on the same volume). A direct `fs::write` can be observed half-written or
 /// interleaved with another process's write — the failure mode that left trailing bytes after
@@ -229,6 +260,49 @@ mod tests {
             std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
         ))
+    }
+
+    /// #2063: the shared idempotent append normalizes the seam (trim existing + join with the
+    /// separator), reproduces the byte-exact output of the sites it replaced, is a no-op when the
+    /// block is already present, and writes the block alone into a blank/absent file.
+    #[test]
+    fn append_block_once_normalizes_seam_and_is_idempotent() {
+        let path = scratch_path("append_block").with_extension("md");
+        let _ = std::fs::remove_file(&path);
+
+        // Absent file ⇒ block alone, no leading separator.
+        append_block_once(&path, |c| c.contains("# S"), "\n\n", "# S\nbody\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# S\nbody\n");
+
+        // Second call with the marker present ⇒ no-op.
+        append_block_once(&path, |c| c.contains("# S"), "\n\n", "# S\nagain\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# S\nbody\n");
+
+        // Existing content, one trailing newline ⇒ trim + separator + block (mirrors inject_skills'
+        // `format!("{}\n\n{}\n", cur.trim_end(), trimmed)`).
+        std::fs::write(&path, "# plan\n").unwrap();
+        append_block_once(&path, |c| c.contains("# Attached"), "\n\n", "# Attached\nx\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# plan\n\n# Attached\nx\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// #2063: a whole-line predicate keeps `git_exclude`'s line-membership idempotency — an entry
+    /// present as its own trimmed line is a no-op, but a mere substring of another line is NOT.
+    #[test]
+    fn append_block_once_supports_whole_line_predicate() {
+        let path = scratch_path("append_line");
+        let _ = std::fs::remove_file(&path);
+        let add = |entry: &str| {
+            append_block_once(&path, |c| c.lines().any(|l| l.trim() == entry), "\n", &format!("{entry}\n")).unwrap();
+        };
+
+        add("/target/");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "/target/\n");
+        add("/target/"); // exact line already present ⇒ no-op
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "/target/\n");
+        add(".mcp.json"); // distinct entry ⇒ appended after a single newline
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "/target/\n.mcp.json\n");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -395,11 +469,7 @@ mod tests {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn worktree_slug_keeps_only_branch_safe_chars() {

@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Button } from "@/shared/ui/controls/Button";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -28,8 +31,8 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
   const url = verdict.ok ? null : firstUrl(verdict.hint);
   const dotColor = verdict.ok ? SEVERITY_COLOR.ok : SEVERITY_COLOR[verdict.severity];
   return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px",
+    <Row align="start" gap={12} style={{
+      padding: "12px 14px",
       background: alt ? "var(--bg-panel)" : "var(--bg-elev)",
     }}>
       <div style={{ paddingTop: 3 }}>
@@ -41,7 +44,7 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
         />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Row gap={8} wrap>
           <span className="mono" style={{ fontSize: 12.5, color: "var(--fg)" }}>{verdict.name}</span>
           {verdict.ok ? (
             <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />found</Chip>
@@ -55,7 +58,7 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
           {verdict.version && (
             <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>{verdict.version}</span>
           )}
-        </div>
+        </Row>
         {verdict.ok ? (
           verdict.path && (
             <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 3, wordBreak: "break-all" }}>
@@ -81,7 +84,7 @@ function PrereqRow({ verdict, alt }: { verdict: PrereqVerdict; alt: boolean }) {
           </div>
         )}
       </div>
-    </div>
+    </Row>
   );
 }
 
@@ -118,8 +121,8 @@ export function DiagnosticsCard() {
 
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+      <Row gap={12} style={{
+        padding: "12px 14px",
         borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)",
       }}>
         {banner && (
@@ -137,10 +140,10 @@ export function DiagnosticsCard() {
             checked {new Date(takenAt).toLocaleTimeString()}
           </span>
         )}
-        <button className="btn ghost" style={{ height: 28, fontSize: 11 }} disabled={running} onClick={() => void runProbe()}>
+        <Button variant="ghost" style={{ height: 28, fontSize: 11 }} disabled={running} onClick={() => void runProbe()}>
           {running ? "checking…" : "↺ re-check"}
-        </button>
-      </div>
+        </Button>
+      </Row>
 
       {error && (
         <div className="mono" style={{
@@ -152,9 +155,9 @@ export function DiagnosticsCard() {
       )}
 
       {report && report.prereqs.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <Stack gap={1}>
           {report.prereqs.map((v, i) => <PrereqRow key={v.name} verdict={v} alt={i % 2 === 1} />)}
-        </div>
+        </Stack>
       ) : !running && !error ? (
         <div className="mono" style={{ padding: "20px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
           No prerequisite data yet.

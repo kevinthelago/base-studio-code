@@ -2,6 +2,7 @@ import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function IdleReaperCard() {
   const idleReaper = useAppStore((s) => s.idleReaper);
@@ -10,7 +11,7 @@ export function IdleReaperCard() {
 
   return (
     <Card title="Reap idle background sessions">
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Stack gap={0}>
         <Row
           label="Enable idle reaper"
           hint="Kill the PTY of an idle, non-visible project/planner session after the timeout to free memory. It shows a dormant placeholder and resumes (where it left off) on click — never destructive."
@@ -41,7 +42,7 @@ export function IdleReaperCard() {
             onClick={() => setIdleReaperConfig({ workerIdleMs: idleReaper.workerIdleMs === null ? idleReaper.idleMs * 2 : null })}
           />
         </Row>
-      </div>
+      </Stack>
     </Card>
   );
 }

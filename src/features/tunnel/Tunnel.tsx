@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Card } from "@/shared/ui/data/Card";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
@@ -193,17 +198,17 @@ export function TunnelSettings() {
         terminal.
       </p>
 
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 14, gap: 12 }}>
+      <Card>
+        <Row gap={12} style={{ marginBottom: 14 }}>
           <h3 style={{ margin: 0 }}>Relay connection</h3>
           <Chip tone={running ? "success" : "neutral"}>
             {running ? (clients > 0 ? `● paired · ${clients} device${clients === 1 ? "" : "s"}` : "● waiting for a device") : "○ disconnected"}
           </Chip>
           <span style={{ flex: 1 }} />
-          <button className="btn" disabled={busy || (!running && !canConnect)} onClick={onConnect}>
+          <Button disabled={busy || (!running && !canConnect)} onClick={onConnect}>
             {running ? "disconnect" : busy ? "connecting…" : "connect"}
-          </button>
-        </div>
+          </Button>
+        </Row>
 
         {err && (
           <div className="mono" style={{
@@ -215,7 +220,7 @@ export function TunnelSettings() {
 
         <div className="field" style={{ marginBottom: running && payload ? 18 : 0 }}>
           <label>Relay URL</label>
-          <div style={{ display: "flex", gap: 8 }}>
+          <Row gap={8} align="stretch">
             <input
               className="input"
               placeholder="https://msc-tunnel-relay.<you>.workers.dev"
@@ -226,32 +231,31 @@ export function TunnelSettings() {
                 setTest({ state: "idle" }); // a fresh URL invalidates the last probe
               }}
             />
-            <button
-              className="btn"
+            <Button
               disabled={busy || running || test.state === "running" || !canConnect}
               onClick={onTest}
             >
               {test.state === "running" ? "testing…" : "test"}
-            </button>
-            <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
+            </Button>
+            <Button onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
               title="Open this relay's Worker in your Cloudflare dashboard"
               onClick={() => openUrl(cloudflareDashUrl(tunnelRelayUrl))}
             >
               manage in Cloudflare ↗
-            </button>
-          </div>
+            </Button>
+          </Row>
           {test.state === "idle" ? (
             <div className="hint">
               Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints.
             </div>
           ) : (
-            <div
+            <Stack
               className="hint"
-              style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}
+              gap={3}
+              style={{ marginTop: 8 }}
               role="status"
               aria-live="polite"
             >
@@ -259,31 +263,28 @@ export function TunnelSettings() {
                 const leg = test.legs[key];
                 const { glyph, color } = legGlyph(leg.status);
                 return (
-                  <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <Row key={key} align="baseline" gap={8}>
                     <span className="mono" style={{ color, width: 12, textAlign: "center" }}>{glyph}</span>
                     <span style={{ color: leg.status === "fail" ? "var(--danger)" : "var(--fg)", minWidth: 110 }}>{label}</span>
                     {leg.detail && <span style={{ color: "var(--fg-muted)" }}>{leg.detail}</span>}
-                  </div>
+                  </Row>
                 );
               })}
-            </div>
+            </Stack>
           )}
         </div>
 
         {running && payload ? (
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "start" }}>
+          <Grid cols="auto 1fr" gap={20} align="start">
             {/* QR — rendered on white for reliable scanning regardless of theme. */}
-            <div style={{
-              background: "#ffffff", padding: 12, borderRadius: 10,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-            }}>
+            <Stack align="center" gap={8} style={{ background: "#ffffff", padding: 12, borderRadius: 10 }}>
               <QRCodeSVG value={qrValue} size={184} bgColor="#ffffff" fgColor="#000000" level="M" />
               <div className="mono" style={{ fontSize: 9.5, color: "#666", letterSpacing: ".04em" }}>
                 SCAN IN MOBILE-STUDIO-CODE
               </div>
-            </div>
+            </Stack>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+            <Stack gap={14} style={{ minWidth: 0 }}>
               <div className="field">
                 <label>Room</label>
                 <input className="input" readOnly value={status?.room ?? ""} style={{ fontSize: 11 }} />
@@ -299,13 +300,12 @@ export function TunnelSettings() {
               </div>
               <div className="field">
                 <label>Input control</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Row gap={10}>
                   <Chip tone={inputGranted ? "success" : "neutral"}>
                     {inputGranted ? "● input granted" : "○ view-only"}
                   </Chip>
                   <span style={{ flex: 1 }} />
-                  <button
-                    className="btn"
+                  <Button
                     disabled={busy || !paired}
                     onClick={onToggleInput}
                     style={inputRequested && !inputGranted
@@ -313,8 +313,8 @@ export function TunnelSettings() {
                       : undefined}
                   >
                     {inputGranted ? "revoke input" : "grant input"}
-                  </button>
-                </div>
+                  </Button>
+                </Row>
                 <div className="hint">
                   {!paired
                     ? "A paired phone starts view-only — it mirrors these panes but cannot type."
@@ -328,12 +328,12 @@ export function TunnelSettings() {
               {paired && (
                 <div className="field">
                   <label>Paired device</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Row gap={10}>
                     <span style={{ flex: 1 }} />
-                    <button className="btn" disabled={busy} onClick={onUnpair}>
+                    <Button disabled={busy} onClick={onUnpair}>
                       unpair device
-                    </button>
-                  </div>
+                    </Button>
+                  </Row>
                   <div className="hint">
                     Drops the connected phone, rotates the room + pairing secret (the old QR
                     stops working), and shows a fresh QR to pair again.
@@ -343,8 +343,8 @@ export function TunnelSettings() {
               <div className="hint mono" style={{ fontSize: 10.5 }}>
                 The pairing secret is carried inside the QR only — never shown or logged.
               </div>
-            </div>
-          </div>
+            </Stack>
+          </Grid>
         ) : (
           <div className="hint" style={{ padding: "8px 0 0" }}>
             {running
@@ -352,7 +352,7 @@ export function TunnelSettings() {
               : "Connect to allocate a room and generate a pairing QR."}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type { PerfConfig } from "@/store";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function PerfRetentionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -27,7 +28,7 @@ export function PerfRetentionCard() {
 
   return (
     <Card title="Metrics retention">
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Stack gap={0}>
         <Row
           label="History retention"
           hint="Samples older than this are deleted from the database automatically."
@@ -79,7 +80,7 @@ export function PerfRetentionCard() {
             )}
           </div>
         </Row>
-      </div>
+      </Stack>
     </Card>
   );
 }

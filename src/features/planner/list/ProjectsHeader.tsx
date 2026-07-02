@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
@@ -83,13 +88,13 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
   const failedRepos    = project.repos.filter(r => !!cloneErrors[r] && !cloning.has(r));
 
   return (
-    <div className="mono" style={{
+    <Box className="mono" style={{
       padding: "5px 24px 0",
       fontSize: 10.5,
     }}>
       {/* Summary row — always visible */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ color: "var(--fg-dim)" }}>repos</span>
+      <Row gap={10}>
+        <Text tone="dim">repos</Text>
 
         {multi ? (
           <button
@@ -101,20 +106,20 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
               fontSize: 10.5, color: "var(--fg-muted)",
             }}
           >
-            <span style={{
+            <Box as="span" style={{
               display: "inline-block", fontSize: 8, color: "var(--fg-dim)",
               transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
               transition: "transform 0.15s",
-            }}>▼</span>
-            <span>
+            }}>▼</Box>
+            <Box as="span">
               {project.repos.length} repositories
               {resolvedCount > 0 && (
-                <span style={{ color: "var(--success)" }}> · {resolvedCount} cloned</span>
+                <Text tone="success"> · {resolvedCount} cloned</Text>
               )}
               {cloning.size > 0 && (
-                <span style={{ color: "var(--accent)" }}> · cloning…</span>
+                <Text tone="accent"> · cloning…</Text>
               )}
-            </span>
+            </Box>
           </button>
         ) : (
           (() => {
@@ -124,16 +129,16 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
             const err       = cloneErrors[fullName];
             const localPath = projectRepoCwd(bscBaseDir, project.name, fullName, !!project.id);
             return (
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
+              <Row gap={5}>
+                <Text tone="muted">{fullName}</Text>
                 {isCloned ? (
-                  <span title={localPath} style={{ color: "var(--success)", fontSize: 10 }}>
+                  <Text tone="success" size={10} title={localPath}>
                     ● {fullName.split("/")[1]}
-                  </span>
+                  </Text>
                 ) : isCloning ? (
-                  <span style={{ color: "var(--accent)" }}>cloning…</span>
+                  <Text tone="accent">cloning…</Text>
                 ) : (
-                  <span
+                  <Box as="span"
                     onClick={() => handleClone(fullName)}
                     style={{
                       padding: "1px 6px", borderRadius: 3,
@@ -141,15 +146,15 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
-                  >{err ? "retry clone" : "clone →"}</span>
+                  >{err ? "retry clone" : "clone →"}</Box>
                 )}
-              </div>
+              </Row>
             );
           })()
         )}
 
         {failedRepos.length > 0 && (
-          <span
+          <Box as="span"
             onClick={() => failedRepos.forEach(r => handleClone(r))}
             className="mono"
             style={{
@@ -157,15 +162,14 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
               background: "var(--bg-elev)", border: "1px solid var(--border)",
               color: "var(--danger)", cursor: "pointer", fontSize: 10,
             }}
-          >retry failed →</span>
+          >retry failed →</Box>
         )}
-      </div>
+      </Row>
 
       {/* Expanded repo list — multi only */}
       {multi && expanded && (
-        <div style={{
+        <Stack gap={5} style={{
           marginTop: 6, paddingLeft: 16,
-          display: "flex", flexDirection: "column", gap: 5,
           borderLeft: "2px solid var(--border-soft)",
         }}>
           {project.repos.map((fullName) => {
@@ -174,16 +178,16 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
             const err       = cloneErrors[fullName];
             const localPath = projectRepoCwd(bscBaseDir, project.name, fullName, !!project.id);
             return (
-              <div key={fullName} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ color: "var(--fg-muted)" }}>{fullName}</span>
+              <Row key={fullName} gap={8}>
+                <Text tone="muted">{fullName}</Text>
                 {isCloned ? (
-                  <span title={localPath} style={{ color: "var(--success)", fontSize: 10 }}>
+                  <Text tone="success" size={10} title={localPath}>
                     ● {fullName.split("/")[1]}
-                  </span>
+                  </Text>
                 ) : isCloning ? (
-                  <span style={{ color: "var(--accent)" }}>cloning…</span>
+                  <Text tone="accent">cloning…</Text>
                 ) : (
-                  <span
+                  <Box as="span"
                     onClick={() => handleClone(fullName)}
                     style={{
                       padding: "1px 6px", borderRadius: 3,
@@ -191,14 +195,14 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
-                  >{err ? "retry clone" : "clone →"}</span>
+                  >{err ? "retry clone" : "clone →"}</Box>
                 )}
-              </div>
+              </Row>
             );
           })}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -228,38 +232,39 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
 
   return (
     <>
-      <div style={{ padding: "14px 24px 0 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <Row align="start" gap={14} style={{ padding: "14px 24px 0 12px" }}>
+        <Box style={{ flex: 1 }}>
+          <Row gap={10}>
             <BackButton variant="icon" onClick={closeGithubBoard} aria-label="Back to portfolio" />
-            <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{project.number}</span>
-            <h2 className="mono" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{project.name}</h2>
+            <Text mono size={10} tone="dim">#{project.number}</Text>
+            <Text as="h2" mono size={18} weight={600} style={{ margin: 0 }}>{project.name}</Text>
             {project.repo && <Chip>{project.repo}</Chip>}
             {project.number > 0 && (
-              <span className="mono" style={{
+              <Box as="span" className="mono" style={{
                 padding: "1px 6px", borderRadius: 3,
                 fontSize: 9.5, color: "var(--info)",
                 background: "color-mix(in oklch, var(--info), transparent 88%)",
                 border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
-              }}>⎇ synced w/ {project.repo}/projects/{project.number}</span>
+              }}>⎇ synced w/ {project.repo}/projects/{project.number}</Box>
             )}
-          </div>
+          </Row>
           {project.description && (
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>{project.description}</div>
+            <Text as="div" tone="muted" size={12} style={{ marginTop: 4 }}>{project.description}</Text>
           )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            className="btn primary mono"
+        </Box>
+        <Row gap={8}>
+          <Button
+            variant="primary"
+            className="mono"
             onClick={handlePlan}
             style={{ fontSize: 11 }}
-          >⌘ plan →</button>
-        </div>
-      </div>
+          >⌘ plan →</Button>
+        </Row>
+      </Row>
 
       <RepoResolverStrip project={project} />
 
-      <div style={{ marginTop: 8 }}>
+      <Box style={{ marginTop: 8 }}>
         <TabBar
           tabs={boardTabs}
           activeId={boardActive}
@@ -267,7 +272,7 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
           onReorder={boardReorder}
           onTearOff={boardTearOff}
         />
-      </div>
+      </Box>
     </>
   );
 }

@@ -91,7 +91,7 @@ pub fn run() {
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
-        .manage(logs::LogState::new())
+        .manage(logs::LogState::new(logs::LogConfig::default()))
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
@@ -204,7 +204,7 @@ pub fn run() {
             fleet::worktree::ensure_worktree,
             fleet::teardown::teardown_worktree,
             fleet::teardown::reclaim_worktrees,
-            fleet::teardown::worktrees_disk_usage,
+            fleet::disk::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
             session::claude_config::read_claude_config,
@@ -355,11 +355,7 @@ pub fn run() {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn level_color_is_distinct_per_level() {

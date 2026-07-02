@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "@/features/planner/blueprints/BlueprintAuthorViews";
+import { Box } from "@/shared/ui/layout/Box";
 import type { AuthoringWiring } from "./focusedHandlers";
 
 /** The authoring stages' body (#923): the four interactive editor views over the in-progress
@@ -13,10 +14,10 @@ export function AuthoringBody({ bp, stageKey, wiring }: {
   const [selStage, setSelStage] = useState<string | null>(null);
   if (!bp || !wiring) {
     return (
-      <div className="empty-state">
-        <span className="empty-icon">⎙</span>
-        <span>As the planner designs the blueprint, it appears here.</span>
-      </div>
+      <Box className="empty-state">
+        <Box as="span" className="empty-icon">⎙</Box>
+        <Box as="span">As the planner designs the blueprint, it appears here.</Box>
+      </Box>
     );
   }
   const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
@@ -35,5 +36,5 @@ export function AuthoringBody({ bp, stageKey, wiring }: {
   // ancestor, so the views render unstyled without this wrapper. `bpwrap` neutralizes .bp-page's
   // own page-level layout and adds the focused-pane label/spacing tweaks (#923, ported from ba.css).
   // No own padding — `.fp .pp-scroll` already pads the body (14px 16px 18px), matching every pane.
-  return <div className="bp-page bpwrap">{view}</div>;
+  return <Box className="bp-page bpwrap">{view}</Box>;
 }

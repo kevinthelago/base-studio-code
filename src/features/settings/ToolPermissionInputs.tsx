@@ -8,6 +8,7 @@
 // ChipInput is the editor's own multi-value entry (datalist-backed tool-name suggestions + an
 // "+ add" button); it is specific to this surface, so it lives here rather than in shared/ui.
 
+import { Row } from "@/shared/ui/layout/Row";
 import { COMMON_TOOLS } from "./lib/toolPresets";
 
 /** A removable tool badge in the allow/deny lists. */
@@ -35,7 +36,7 @@ export function ChipInput({
   value, onChange, onAdd, placeholder,
 }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {
   return (
-    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+    <Row gap={5}>
       <input
         className="input mono"
         value={value}
@@ -57,6 +58,6 @@ export function ChipInput({
           fontSize: 10.5, color: "var(--fg-muted)",
         }}
       >+ add</span>
-    </div>
+    </Row>
   );
 }

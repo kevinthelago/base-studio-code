@@ -5,6 +5,11 @@ import type { ConfigProfile } from "@/store";
 import { projectRepoCwd, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
 import { TOOL_PRESETS } from "../lib/toolPresets";
 import { ToolChip, ChipInput } from "../ToolPermissionInputs";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Button } from "@/shared/ui/controls/Button";
 
 export function ClaudeConfigCard() {
   const {
@@ -145,7 +150,7 @@ export function ClaudeConfigCard() {
     : allRepos.find((r) => r.local_path === target)?.full_name ?? target;
 
   return (
-    <div style={{ maxWidth: 900, display: "flex", flexDirection: "column", gap: 20 }}>
+    <Stack gap={20} style={{ maxWidth: 900 }}>
       <div>
         <h2 className="mono" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
           Claude Configuration
@@ -156,11 +161,11 @@ export function ClaudeConfigCard() {
       </div>
 
       {/* Target selector */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <Stack gap={6}>
         <div className="mono-label">
           target
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Row gap={6} align="stretch" wrap>
           {(["global", ...allRepos.map((r) => r.local_path)] as string[]).map((t) => {
             const isGlobal = t === "global";
             const label = isGlobal ? "global (~/.claude/)" : (allRepos.find((r) => r.local_path === t)?.full_name ?? t);
@@ -181,17 +186,16 @@ export function ClaudeConfigCard() {
               >{label}</div>
             );
           })}
-        </div>
+        </Row>
         {allRepos.length === 0 && (
           <div className="mono-caption">
             Resolve repositories on the Projects board to unlock per-repo targets.
           </div>
         )}
-      </div>
+      </Stack>
 
       {/* Profile bar */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
+      <Row gap={10} style={{
         padding: "10px 14px",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
       }}>
@@ -217,16 +221,16 @@ export function ClaudeConfigCard() {
         </select>
 
         {!showSaveDialog ? (
-          <button
-            className="btn ghost"
+          <Button
+            variant="ghost"
             style={{ height: 26, fontSize: 10.5 }}
             onClick={() => {
               setNewProfileName(configProfiles.find((p) => p.id === activeProfileId)?.name ?? "");
               setShowSaveDialog(true);
             }}
-          >{activeProfileId ? "update profile" : "save as profile…"}</button>
+          >{activeProfileId ? "update profile" : "save as profile…"}</Button>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Row gap={6}>
             <input
               className="input mono"
               autoFocus
@@ -236,44 +240,43 @@ export function ClaudeConfigCard() {
               placeholder="profile name…"
               style={{ width: 160, height: 26, fontSize: 10.5 }}
             />
-            <button className="btn primary" style={{ height: 26, fontSize: 10.5 }} onClick={handleSaveProfile}>save</button>
-            <button className="btn ghost" style={{ height: 26, fontSize: 10.5 }} onClick={() => setShowSaveDialog(false)}>cancel</button>
-          </div>
+            <Button variant="primary" style={{ height: 26, fontSize: 10.5 }} onClick={handleSaveProfile}>save</Button>
+            <Button variant="ghost" style={{ height: 26, fontSize: 10.5 }} onClick={() => setShowSaveDialog(false)}>cancel</Button>
+          </Row>
         )}
 
         {activeProfileId && (
-          <button
-            className="btn ghost"
+          <Button
+            variant="ghost"
             style={{ height: 26, fontSize: 10.5, color: "var(--danger)", marginLeft: 2 }}
             onClick={() => { removeConfigProfile(activeProfileId); setActiveProfileId(null); }}
-          >delete</button>
+          >delete</Button>
         )}
 
-        <div style={{ flex: 1 }} />
+        <Spacer />
         <span className="mono-caption">
           {targetLabel}
         </span>
-      </div>
+      </Row>
 
       {/* Main editor grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 14, alignItems: "start" }}>
+      <Grid cols="1fr 280px" gap={14} align="start">
         {/* Left: CLAUDE.md */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <Stack gap={10}>
           <div style={{
             background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
             overflow: "hidden",
           }}>
-            <div className="mono" style={{
+            <Row className="mono" gap={8} style={{
               padding: "8px 14px", borderBottom: "1px solid var(--border-soft)",
               background: "var(--bg-elev)",
-              display: "flex", alignItems: "center", gap: 8,
               fontSize: 10,
             }}>
               <span style={{ color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>CLAUDE.md</span>
               {reading && <span style={{ color: "var(--fg-dim)" }}>loading…</span>}
-              <div style={{ flex: 1 }} />
+              <Spacer />
               <span style={{ color: "var(--fg-dim)" }}>{targetLabel}</span>
-            </div>
+            </Row>
             <textarea
               className="mono"
               value={instructions}
@@ -289,7 +292,7 @@ export function ClaudeConfigCard() {
               }}
             />
           </div>
-        </div>
+        </Stack>
 
         {/* Right: tool permissions */}
         <div style={{
@@ -304,11 +307,11 @@ export function ClaudeConfigCard() {
           }}>
             Tool permissions
           </div>
-          <div style={{ padding: "14px 14px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <Stack gap={16} style={{ padding: "14px 14px" }}>
             {/* Presets */}
             <div>
               <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>quick presets</div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              <Row gap={5} align="stretch" wrap>
                 {TOOL_PRESETS.map((p) => (
                   <span
                     key={p.label}
@@ -322,20 +325,20 @@ export function ClaudeConfigCard() {
                     }}
                   >{p.label}</span>
                 ))}
-              </div>
+              </Row>
             </div>
 
             {/* Allow */}
             <div>
               <div className="mono" style={{ fontSize: 9.5, color: "var(--success)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>allow</div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+              <Row gap={5} align="stretch" wrap style={{ marginBottom: 8 }}>
                 {allow.length === 0 && (
                   <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>all tools allowed</span>
                 )}
                 {allow.map((t) => (
                   <ToolChip key={t} label={t} onRemove={() => setAllow((a) => a.filter((x) => x !== t))} />
                 ))}
-              </div>
+              </Row>
               <ChipInput
                 value={allowInput}
                 onChange={setAllowInput}
@@ -347,14 +350,14 @@ export function ClaudeConfigCard() {
             {/* Deny */}
             <div>
               <div className="mono" style={{ fontSize: 9.5, color: "var(--danger)", marginBottom: 7, textTransform: "uppercase", letterSpacing: ".06em" }}>deny</div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+              <Row gap={5} align="stretch" wrap style={{ marginBottom: 8 }}>
                 {deny.length === 0 && (
                   <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", fontStyle: "italic" }}>nothing denied</span>
                 )}
                 {deny.map((t) => (
                   <ToolChip key={t} label={t} onRemove={() => setDeny((d) => d.filter((x) => x !== t))} />
                 ))}
-              </div>
+              </Row>
               <ChipInput
                 value={denyInput}
                 onChange={setDenyInput}
@@ -374,13 +377,12 @@ export function ClaudeConfigCard() {
                 {JSON.stringify({ permissions: { allow, deny } }, null, 2)}
               </div>
             )}
-          </div>
+          </Stack>
         </div>
-      </div>
+      </Grid>
 
       {/* Write bar */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
+      <Row gap={10} style={{
         padding: "10px 14px",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
       }}>
@@ -395,24 +397,24 @@ export function ClaudeConfigCard() {
             CLAUDE.md and .claude/settings.json
           </span>
         )}
-        <div style={{ flex: 1 }} />
-        <button
-          className="btn ghost"
+        <Spacer />
+        <Button
+          variant="ghost"
           style={{ height: 28, fontSize: 11 }}
           disabled={reading}
           onClick={() => setReadTick((n) => n + 1)}
         >
           {reading ? "reading…" : "↺ read from disk"}
-        </button>
-        <button
-          className="btn primary"
+        </Button>
+        <Button
+          variant="primary"
           style={{ height: 28, fontSize: 11 }}
           disabled={writing || reading}
           onClick={handleWrite}
         >
           {writing ? "writing…" : "↓ write to disk"}
-        </button>
-      </div>
-    </div>
+        </Button>
+      </Row>
+    </Stack>
   );
 }

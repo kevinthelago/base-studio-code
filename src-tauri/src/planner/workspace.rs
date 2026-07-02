@@ -111,9 +111,11 @@ pub(crate) fn setup_workspaces(
             for full_name in &repo_full_names {
                 let local_path = repo_dir(&project_key, full_name);
                 planning_md.push_str(&format!(
-                    "- **{full_name}**\n  - local path: `{local_path}` — the app clones it here for you to read; don't clone it yourself.\n",
-                    full_name  = full_name,
-                    local_path = local_path.display(),
+                    "{}\n",
+                    linked_repo_item()
+                        .replace("{full_name}", full_name)
+                        .replace("{local_path}", &local_path.display().to_string())
+                        .trim_end(),
                 ));
             }
         }
@@ -126,7 +128,7 @@ pub(crate) fn setup_workspaces(
     // `@data/planner/automations-catalogue.md` (#2027 P1); the saved-automation rows append below.
     let mut auto_md = format!("{}\n\n", automations_catalogue_header().trim_end());
     if automations.is_empty() {
-        auto_md.push_str("_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n");
+        auto_md.push_str(&format!("{}\n", automations_empty_note().trim_end()));
     } else {
         auto_md.push_str("## Saved automations\n\n");
         for a in &automations {
@@ -162,21 +164,16 @@ pub(crate) fn setup_workspaces(
         for full_name in &repo_full_names {
             let local_path = repo_dir(&project_key, full_name);
             gh_ctx.push_str(&format!(
-                "- `{}` — local path: `{}`\n",
-                full_name, local_path.display(),
+                "{}\n",
+                github_repo_item()
+                    .replace("{full_name}", full_name)
+                    .replace("{local_path}", &local_path.display().to_string())
+                    .trim_end(),
             ));
         }
         gh_ctx.push('\n');
     }
-    gh_ctx.push_str(
-        "## Useful gh commands (read-only — you inspect GitHub; you never mutate it)\n\n\
-         ```\n\
-         gh api user                                    # confirm auth\n\
-         gh repo list --limit 100 --json nameWithOwner  # all repos\n\
-         gh issue list --repo {owner}/{repo}            # open issues\n\
-         gh pr list   --repo {owner}/{repo}             # open PRs\n\
-         ```\n"
-    );
+    gh_ctx.push_str(&format!("{}\n", github_useful_commands().trim_end()));
     std::fs::write(planning_dir.join("github_context.md"), gh_ctx)
         .map_err(|e| e.to_string())?;
 
@@ -214,4 +211,70 @@ pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, enabled_st
 pub(crate) fn get_context_signature(project_key: String) -> String {
     let path = project_dir(&project_key).join("context_signature.txt");
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::platform::config::embedded_str;
+
+    // The straggler prose these tests guard was moved out of inline Rust literals into
+    // `data/planner/*.md` (#2075, finishing epic #2027). Each test reconstructs the EXACT prior
+    // literal and asserts the externalized block (read from the shipped seed, `.trim_end()` + one
+    // `\n`, exactly as `setup_workspaces` renders it) is byte-identical — so the generated hub files
+    // never drift. The data files are pinned to LF (.gitattributes) so this holds on every platform.
+
+    /// The `automations.md` empty-state note (`setup_workspaces`).
+    #[test]
+    fn automations_empty_note_is_byte_identical() {
+        let rendered = format!("{}\n", embedded_str("planner/automations-empty.md").trim_end());
+        assert_eq!(
+            rendered,
+            "_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n",
+        );
+    }
+
+    /// The `## Useful gh commands` block appended to `github_context.md`.
+    #[test]
+    fn github_useful_commands_is_byte_identical() {
+        let rendered = format!("{}\n", embedded_str("planner/github-commands.md").trim_end());
+        assert_eq!(
+            rendered,
+            "## Useful gh commands (read-only — you inspect GitHub; you never mutate it)\n\n\
+             ```\n\
+             gh api user                                    # confirm auth\n\
+             gh repo list --limit 100 --json nameWithOwner  # all repos\n\
+             gh issue list --repo {owner}/{repo}            # open issues\n\
+             gh pr list   --repo {owner}/{repo}             # open PRs\n\
+             ```\n",
+        );
+    }
+
+    /// A CLAUDE.md `## Linked repositories` bullet, after per-repo placeholder substitution.
+    #[test]
+    fn linked_repo_item_is_byte_identical() {
+        let rendered = format!(
+            "{}\n",
+            embedded_str("planner/linked-repo-item.md")
+                .replace("{full_name}", "octo/app")
+                .replace("{local_path}", "/home/x/octo-app")
+                .trim_end(),
+        );
+        assert_eq!(
+            rendered,
+            "- **octo/app**\n  - local path: `/home/x/octo-app` — the app clones it here for you to read; don't clone it yourself.\n",
+        );
+    }
+
+    /// A `github_context.md` `## Linked repositories` bullet, after per-repo placeholder substitution.
+    #[test]
+    fn github_repo_item_is_byte_identical() {
+        let rendered = format!(
+            "{}\n",
+            embedded_str("planner/github-repo-item.md")
+                .replace("{full_name}", "octo/app")
+                .replace("{local_path}", "/home/x/octo-app")
+                .trim_end(),
+        );
+        assert_eq!(rendered, "- `octo/app` — local path: `/home/x/octo-app`\n");
+    }
 }

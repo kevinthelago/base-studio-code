@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { Row } from "@/shared/ui/layout/Row";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <Row gap={12}>
       <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
       <div>
         <div className="mono" style={{ fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
@@ -13,7 +14,7 @@ export function ToggleRow({ on, onToggle, title, children }: {
         </div>
         <div className="hint">{children}</div>
       </div>
-    </div>
+    </Row>
   );
 }
 
@@ -21,13 +22,13 @@ export function ToggleRow({ on, onToggle, title, children }: {
 /** A settings row: label (+ optional hint) stacked on the left, a control on the right, divider beneath. */
 export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
+    <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{label}</div>
         {hint && <div style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{hint}</div>}
       </div>
       {children}
-    </div>
+    </Row>
   );
 }
 

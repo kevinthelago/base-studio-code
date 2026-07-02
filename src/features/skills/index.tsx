@@ -33,6 +33,11 @@ import { Spark, HBars } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { Button } from "@/shared/ui/controls/Button";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -216,10 +221,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
 
       {mode === "library" && (
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* KPI digest (collapsible) */}
           <div style={{ borderBottom: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
+            <Row gap={18} style={{ padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <button onClick={() => setDigestOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
                 <span style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none", fontSize: 9 }}>▸</span>
                 <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</span>
@@ -229,9 +234,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
               <span style={{ color: "var(--accent)" }}>★ <b className="mono" style={{ color: "var(--fg)" }}>{kpis.pinned}</b></span>
               <span><b className="mono" style={{ color: "var(--fg)" }}>{invToday}</b> today</span>
               <span><b className="mono" style={{ color: "var(--success)" }}>{kpis.invWeek ? kpis.avgSuccess + "%" : "—"}</b> avg success</span>
-            </div>
+            </Row>
             {digestOpen && (
-              <div className="skills-digest" style={{ display: "flex", gap: 14, padding: "0 18px 14px 18px", alignItems: "stretch" }}>
+              <Row gap={14} align="stretch" className="skills-digest" style={{ padding: "0 18px 14px 18px" }}>
                 {[
                   { label: "Invoked 7d", value: fmtCount(kpis.invWeek), sub: leaders.length + " active skills" },
                   { label: "Avg success", value: kpis.invWeek ? kpis.avgSuccess + "%" : "—", sub: "across active" },
@@ -260,61 +265,61 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                     />
                   )}
                 </div>
-              </div>
+              </Row>
             )}
           </div>
 
           {/* Command bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ flex: 1, maxWidth: 440, display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
+          <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+            <Row gap={8} style={{ flex: 1, maxWidth: 440, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
               <span style={{ color: "var(--fg-dim)", fontSize: 13 }}>⌕</span>
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </div>
+            </Row>
             <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>{filtered.length} <span style={{ color: "var(--fg-dim)" }}>of {kpis.total}</span></span>
             <span style={{ flex: 1 }} />
-            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
+            <Row gap={6} style={{ position: "relative" }}>
               <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase" }}>Sort</span>
               <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <span style={{ color: "var(--fg-dim)", fontSize: 9 }}>▾</span></button>
               {sortOpen && (
                 <div style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
-                  {SORTS.map((o) => <div key={o} onClick={() => { setSort(o); setSortOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><span style={{ flex: 1 }}>{o}</span><span style={{ color: "var(--accent)" }}>{sort === o ? "✓" : ""}</span></div>)}
+                  {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><span style={{ flex: 1 }}>{o}</span><span style={{ color: "var(--accent)" }}>{sort === o ? "✓" : ""}</span></Row>)}
                 </div>
               )}
-            </div>
-            <div style={{ display: "flex", height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+            </Row>
+            <Row align="stretch" style={{ height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
               {([["list", "☰ List"], ["cards", "▦ Cards"], ["grouped", "⬡ Group"], ["kind", "⊟ Kind"]] as const).map(([d, lbl], i) => (
-                <div key={d} onClick={() => setDensity(d)} style={{ display: "flex", alignItems: "center", padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</div>
+                <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
-            </div>
+            </Row>
             <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
-          </div>
+          </Row>
 
           {/* Body */}
-          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "stretch", overflow: "hidden" }}>
+          <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             {/* Facet column */}
             <div style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "14px 14px 40px 18px" }}>
               {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
               <div style={{ marginBottom: 18 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <Row gap={6} style={{ marginBottom: 8 }}>
                   <span className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)" }}>⬡ Groups</span>
                   <span style={{ flex: 1 }} />
                   <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
-                </div>
+                </Row>
                 {/* "All" / clear row */}
-                <div onClick={() => setGroupFilter(null)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                <Row onClick={() => setGroupFilter(null)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
                   <span style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)", fontSize: 11 }}>≡</span>
                   <span style={{ fontSize: 12, color: !groupFilter ? "var(--fg)" : "var(--fg-muted)", fontWeight: !groupFilter ? 600 : 400 }}>All</span>
                   <span style={{ flex: 1 }} />
                   <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{merged.length}</span>
-                </div>
+                </Row>
                 {skillGroups.map((g) => { const active = groupFilter === g.id; return (
-                  <div key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                  <Row key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
                     <span style={{ width: 13, textAlign: "center", color: g.hue, fontSize: 11 }}>⬡</span>
                     <span style={{ fontSize: 12, color: active ? g.hue : "var(--fg)", fontWeight: active ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
                     {active && <span title="Delete group" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ color: "var(--danger)", fontSize: 11, cursor: "pointer" }}>✕</span>}
                     <span style={{ flex: 1 }} />
                     <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{groupSkillCount(g, skills)}</span>
-                  </div>
+                  </Row>
                 ); })}
                 {skillGroups.length === 0 && <div style={{ fontSize: 10.5, color: "var(--fg-dim)", padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</div>}
               </div>
@@ -322,13 +327,13 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <div key={f.key} style={{ marginBottom: 18 }}>
                   <div className="mono" style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--fg-dim)", marginBottom: 8 }}>{f.title}</div>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
-                    <div key={o.value} onClick={() => toggleFacet(f.key, o.value)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                    <Row key={o.value} onClick={() => toggleFacet(f.key, o.value)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
                       <Checkbox checked={on} />
                       {o.glyph && <span className="mono" style={{ fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</span>}
                       <span style={{ fontSize: 12, color: "var(--fg)", textTransform: "capitalize" }}>{o.label}</span>
                       <span style={{ flex: 1 }} />
                       <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{o.count}</span>
-                    </div>
+                    </Row>
                   ); })}
                 </div>
               ))}
@@ -338,15 +343,15 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             {/* Main */}
             <div style={{ flex: 1, minWidth: 0, overflowY: "auto", paddingBottom: 60 }}>
               {selectMode && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 18px", padding: "9px 13px", background: tintBg("var(--accent)", 90), border: "1px solid var(--accent-dim)", borderRadius: "var(--r-lg)", flexWrap: "wrap" }}>
+                <Row gap={10} wrap style={{ margin: "12px 18px", padding: "9px 13px", background: tintBg("var(--accent)", 90), border: "1px solid var(--accent-dim)", borderRadius: "var(--r-lg)" }}>
                   <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>{selected.size} selected</span>
                   <span onClick={selectAllMatching} style={{ fontSize: 11, color: "var(--fg-muted)", textDecoration: "underline", cursor: "pointer" }}>Select all {filtered.length} matching</span>
                   <span style={{ flex: 1 }} />
-                  <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.enabled) toggleSkill(id); })}>Enable</button>
-                  <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && s.enabled) toggleSkill(id); })}>Disable</button>
-                  <button className="btn" onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.pinned) toggleSkillPin(id); })}>★ Pin</button>
-                  <div style={{ position: "relative", display: "inline-flex" }}>
-                    <button className="btn" disabled={selected.size === 0} onClick={() => setScopePickerOpen((v) => !v)}>Set scope…</button>
+                  <Button onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.enabled) toggleSkill(id); })}>Enable</Button>
+                  <Button onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && s.enabled) toggleSkill(id); })}>Disable</Button>
+                  <Button onClick={() => bulk((id) => { const s = skills.find((x) => x.id === id); if (s && !s.pinned) toggleSkillPin(id); })}>★ Pin</Button>
+                  <Row inline align="stretch" style={{ position: "relative" }}>
+                    <Button disabled={selected.size === 0} onClick={() => setScopePickerOpen((v) => !v)}>Set scope…</Button>
                     {scopePickerOpen && (
                       <div style={{ position: "absolute", top: 32, left: 0, zIndex: 50, minWidth: 200, maxHeight: 240, overflowY: "auto", background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
                         <div onClick={() => bulkSetScope([])} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: "var(--fg)" }}>Global (all projects)</div>
@@ -355,16 +360,16 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                           : projects.map((p) => <div key={p.id} onClick={() => bulkSetScope([String(p.number)])} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: "var(--fg-muted)" }}>{p.title} <span style={{ color: "var(--fg-dim)" }}>#{p.number}</span></div>)}
                       </div>
                     )}
-                  </div>
+                  </Row>
                   {skillGroups.length > 0 && (
                     <select className="input" style={{ height: 26, fontSize: 11 }} value="" onChange={(e) => { if (e.target.value) bulkAddToGroup(e.target.value); e.target.value = ""; }}>
                       <option value="">⬡ Add to group…</option>
                       {skillGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                   )}
-                  <button className="btn" disabled={selected.size === 0} onClick={bulkExport}>Export</button>
-                  <button className="btn" style={{ borderColor: tintBg("var(--danger)", 60), color: "var(--danger)" }} onClick={bulkDelete}>Delete</button>
-                </div>
+                  <Button disabled={selected.size === 0} onClick={bulkExport}>Export</Button>
+                  <Button style={{ borderColor: tintBg("var(--danger)", 60), color: "var(--danger)" }} onClick={bulkDelete}>Delete</Button>
+                </Row>
               )}
 
               {isEmpty ? (
@@ -375,8 +380,8 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   description="Nothing matches the active search + filters. Create a skill, import one, or clear the filters."
                   style={{ padding: "80px 20px" }}
                   actions={<>
-                    <button className="btn" onClick={clearFilters}>Clear filters</button>
-                    <button className="btn primary" onClick={drawer.startDraft}>+ new skill</button>
+                    <Button onClick={clearFilters}>Clear filters</Button>
+                    <Button variant="primary" onClick={drawer.startDraft}>+ new skill</Button>
                   </>}
                 />
               ) : density === "list" ? (
@@ -389,8 +394,8 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   onNewGroup={() => setAddGroupOpen(true)} h={rowHandlers} />
               )}
             </div>
-          </div>
-        </div>
+          </Row>
+        </Stack>
       )}
 
       {mode === "lessons" && (
@@ -405,17 +410,17 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
           ) : (
             <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-              <div className="mono" style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, padding: "8px 12px", background: "var(--bg-panel)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
+              <Grid className="mono" cols="1.6fr 86px 60px 64px 90px" gap={10} style={{ padding: "8px 12px", background: "var(--bg-panel)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
                 <span>skill</span><span style={{ textAlign: "right" }}>invocations</span><span style={{ textAlign: "right" }}>today</span><span style={{ textAlign: "right" }}>success</span><span style={{ textAlign: "right" }}>7-day</span>
-              </div>
+              </Grid>
               {runRows.map((s, i) => { const sc = successColor(s.success); const today = stats[skillSlug(s.name)]?.today ?? 0; return (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 86px 60px 64px 90px", gap: 10, alignItems: "center", padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); drawer.select(s.id); }}>
+                <Grid key={s.id} cols="1.6fr 86px 60px 64px 90px" gap={10} align="center" style={{ padding: "9px 12px", background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)", cursor: "pointer" }} onClick={() => { select("library"); drawer.select(s.id); }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ color: KIND[s.kind].color }}>{KIND[s.kind].glyph}</span><span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span></span>
                   <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg-muted)" }}>{fmtCount(s.invocations)}</span>
                   <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--fg-muted)" }}>{today}</span>
                   <span className="mono" style={{ textAlign: "right", fontSize: 11, color: sc }}>{s.success}%</span>
                   <span style={{ display: "flex", justifyContent: "flex-end" }}>{s.trend.length > 1 ? <Spark data={s.trend} color={KIND[s.kind].color} /> : <span className="hint">—</span>}</span>
-                </div>
+                </Grid>
               ); })}
             </div>
           )}
@@ -434,10 +439,10 @@ function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => voi
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>New task group</div>
         <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</div>
         <input autoFocus className="input" placeholder="e.g. Release day" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onCreate(name.trim()); }} style={{ width: "100%", marginBottom: 14 }} />
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose}>cancel</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={() => onCreate(name.trim())}>create</button>
-        </div>
+        <Row align="stretch" gap={8} justify="end">
+          <Button onClick={onClose}>cancel</Button>
+          <Button variant="primary" disabled={!name.trim()} onClick={() => onCreate(name.trim())}>create</Button>
+        </Row>
       </div>
     </div>
   );
@@ -462,10 +467,10 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
       </>}
     >
           <div className="field"><label>name <span className="hint">— slugs to .claude/skills/{skillSlug(s.name) || "…"}</span></label><input className="input" value={s.name} placeholder="Skill name" onChange={(e) => onPatch({ name: e.target.value })} /></div>
-          <div style={{ display: "flex", gap: 16 }}>
+          <Row align="stretch" gap={16}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">enabled</span><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="hint">pinned</span><span onClick={() => onPatch({ pinned: !s.pinned })} style={{ fontSize: 14, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span></span>
-          </div>
+          </Row>
           <div className="field"><label>kind</label><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></div>
           <div className="field"><label>source</label><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></div>
           <div className="field"><label>description</label><input className="input" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(e) => onPatch({ desc: e.target.value })} /></div>
@@ -475,18 +480,18 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
           {/* Task groups */}
           <div className="field">
             <label>task groups</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <Row align="stretch" gap={6} wrap>
               {groups.length === 0 && <span className="hint">No groups yet — create one from the Task groups bar.</span>}
               {groups.map((g) => { const member = g.skillIds.includes(s.id); return (
                 <span key={g.id} onClick={() => onToggleGroup(g.id)} style={{ ...pill(g.hue, !member), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, opacity: member ? 1 : 0.6 }}>⬡ {g.name} {member ? "✓" : "＋"}</span>
               ); })}
-            </div>
+            </Row>
           </div>
           {/* Project assignment */}
           <div className="field">
             <label>project assignment</label>
             <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
-              <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><div style={{ flex: 1 }} />
+              <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><Spacer />
               <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
             </Banner>
             {!isGlobal && (projects.length === 0

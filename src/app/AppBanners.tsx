@@ -9,6 +9,9 @@ import {
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // App banners — the full-width status strips pinned at the top of the app shell. Each is a small
@@ -145,14 +148,14 @@ export function SessionRecoveryBanner() {
       </Banner>
 
       {open && (
-        <div style={{ background: "color-mix(in oklch, var(--info), transparent 88%)", borderBottom: "1px solid var(--border-soft)", fontFamily: "var(--sans)", color: "var(--fg)", padding: "4px 14px 12px", display: "grid", gap: 12, maxHeight: 320, overflowY: "auto" }}>
+        <div className="banner-drawer" style={{ gap: 12 }}>
           {[...groups.entries()].map(([key, sessions]) => {
             const manual = key === " manual", orphan = key === " orphan";
             const restorable = sessions.filter((s) => !s.reapOnly);
             const label = manual ? "Manual scratch shells" : orphan ? "Orphaned (deleted project)" : key;
             return (
               <div key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg-panel)" }}>
+                <Row gap={8} style={{ padding: "6px 10px", background: "var(--bg-panel)" }}>
                   <span className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                   <span className="hint" style={{ fontSize: 10.5 }}>{sessions.length}</span>
                   {restorable.length > 0 && (
@@ -161,9 +164,9 @@ export function SessionRecoveryBanner() {
                       <RotateCcw size={12} /> Restore {restorable.length}
                     </button>
                   )}
-                </div>
+                </Row>
                 {sessions.map((s) => (
-                  <div key={s.paneId} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 8, alignItems: "center", padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
+                  <Grid key={s.paneId} cols="1fr auto auto auto" gap={8} align="center" style={{ padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
                     <span style={{ minWidth: 0, display: "grid", gap: 1 }}>
                       <span className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</span>
                       <span className="hint" style={{ fontSize: 10 }}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</span>
@@ -174,7 +177,7 @@ export function SessionRecoveryBanner() {
                       onClick={() => discard(s)} title={s.livePid ? `Kill pid ${s.livePid} + forget` : "Forget"}>
                       <Trash2 size={12} /> Discard
                     </button>
-                  </div>
+                  </Grid>
                 ))}
               </div>
             );
@@ -195,28 +198,57 @@ export function SessionRecoveryBanner() {
 function QuarantineBanner() {
   const quarantinedPanes = useAppStore((s) => s.quarantinedPanes);
   const acknowledgeQuarantine = useAppStore((s) => s.acknowledgeQuarantine);
+  const [open, setOpen] = useState(false);
 
   // Hide acknowledged quarantines — dismissing acknowledges (the worker stays paused + the warden
   // keeps skipping it), so a still-present out-of-lane edit can't re-trip and re-show the banner.
   const entries = Object.entries(quarantinedPanes).filter(([, info]) => !info.acknowledged);
   if (entries.length === 0) return null;
+  const n = entries.length;
 
+  // ONE summary banner for the whole set — the per-pane detail (and per-worker Acknowledge) lives in
+  // an expandable drawer, so N quarantined workers read as a single alert instead of N stacked bars.
   return (
     <>
-      {entries.map(([paneId, info]) => (
-        <Banner
-          key={paneId}
-          variant="bar"
-          tone="danger"
-          lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
-          onDismiss={() => acknowledgeQuarantine(paneId)}
-        >
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <b>Worker quarantined</b> — stream <b>{info.streamId}</b> ({paneId}) was paused: {info.summary}.
-            Review before relaunching.
+      <Banner
+        variant="bar"
+        tone="danger"
+        role="alert"
+        lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
+        right={
+          <span style={{ display: "inline-flex", gap: 6 }}>
+            <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>
+            {n > 1 && (
+              <button className="btn ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
+                Ack all
+              </button>
+            )}
           </span>
-        </Banner>
-      ))}
+        }
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <b>{n} worker{n === 1 ? "" : "s"} quarantined</b> — {n === 1 ? "a stream was" : `${n} streams were`} paused off-plan.
+          Review before relaunching.
+        </span>
+      </Banner>
+
+      {open && (
+        <div className="banner-drawer">
+          {entries.map(([paneId, info]) => (
+            <Grid key={paneId} cols="1fr auto" gap={8} align="start" style={{ padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), transparent 90%)" }}>
+              <span style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {info.streamId} · {paneId}
+                </span>
+                <span className="hint" style={{ fontSize: 10.5 }}>{info.summary}</span>
+              </span>
+              <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
+                Acknowledge
+              </button>
+            </Grid>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -262,7 +294,7 @@ export function SandboxSetupBanner() {
       }
       onDismiss={dismiss}
     >
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
         <span>
           <b>Agent sandbox not set up</b> — {installing ? "installing…" : (installMsg ?? sandbox.detail)}
         </span>
@@ -271,19 +303,24 @@ export function SandboxSetupBanner() {
             <div style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
           </div>
         )}
-      </div>
+      </Stack>
     </Banner>
   );
 }
 
-/** The set of full-width banners pinned at the top of the app shell, mounted once by App. */
+/**
+ * The app-shell alerts, floated in a FIXED top-right overlay (`.app-banner-stack`) so they never push
+ * the shell down or cram the UI. Each adapter gates its own visibility (an empty stack is inert —
+ * `pointer-events: none`). Multi-item alerts (quarantine, session recovery) collapse to ONE summary
+ * banner with a "Review" drawer rather than one bar per item. Mounted once by App.
+ */
 export function AppBanners() {
   return (
-    <>
+    <div className="app-banner-stack">
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
-    </>
+    </div>
   );
 }

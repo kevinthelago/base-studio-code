@@ -5,6 +5,10 @@
 
 import { useState } from "react";
 import { Toggle as Switch } from "@/shared/ui/controls/Toggle";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 
 export const prop: React.CSSProperties = { fontFamily: MONO, fontSize: 9, color: "var(--accent)" };
@@ -24,60 +28,61 @@ export function Card({ n, title, hint, right, accent, done, defaultOpen = false,
   const [open, setOpen] = useState(defaultOpen);
   const tileColor = done ? "var(--success)" : accent ?? "var(--fg-dim)";
   return (
-    <div style={{
+    <Box style={{
       borderRadius: "var(--r-lg)", padding: "13px 14px",
       border: "1px solid " + (done ? "color-mix(in oklch, var(--success), transparent 58%)" : accent ? `color-mix(in oklch, ${accent}, transparent 78%)` : "var(--border-soft)"),
       // Confirmed (done) cards read as outline-only — green border, no green background fill (#1498).
       background: "var(--bg-panel)",
     }}>
-      <div
+      <Row
         onClick={() => setOpen((o) => !o)}
-        style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
+        gap={9}
+        style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
-        <span style={{
+        <Box as="span" style={{
           width: 20, height: 20, borderRadius: 6, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: MONO, fontSize: 9, color: tileColor,
           background: done ? "color-mix(in oklch, var(--success), transparent 80%)" : "var(--bg-elev)",
           border: "1px solid " + (done ? "var(--success)" : accent ? `color-mix(in oklch, ${accent}, transparent 65%)` : "var(--border-soft)"),
-        }}>{done ? "✓" : n}</span>
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
-        {hint && <span style={monoSm}>{hint}</span>}
-        <span style={{ flex: 1 }} />
+        }}>{done ? "✓" : n}</Box>
+        <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{title}</Text>
+        {hint && <Box as="span" style={monoSm}>{hint}</Box>}
+        <Spacer />
         {right}
-        <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
-      </div>
+        <Text as="span" mono size={11} tone="dim" style={{ width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</Text>
+      </Row>
       {open && children}
-    </div>
+    </Box>
   );
 }
 
 /** Group divider — "A · HOW IT SHIPS", colored rule. */
 export function Divider({ label, color }: { label: string; color: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
-      <span style={{ fontFamily: MONO, fontSize: 9.5, color, letterSpacing: ".1em", fontWeight: 600 }}>{label}</span>
-      <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-    </div>
+    <Row gap={10} style={{ marginTop: 2 }}>
+      <Text as="span" mono size={9.5} weight={600} style={{ color, letterSpacing: ".1em" }}>{label}</Text>
+      <Box as="span" style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+    </Row>
   );
 }
 
 export function Seg<T extends string>({ value, options, onChange }: { value: T; options: readonly T[]; onChange: (v: T) => void }) {
   return (
-    <div style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+    <Box style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
       {options.map((o, i) => (
         <button key={o} onClick={() => onChange(o)} style={{
           height: 22, padding: "0 9px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: "pointer",
           fontFamily: MONO, fontSize: 9.5, background: value === o ? "var(--bg-elev2)" : "transparent", color: value === o ? "var(--fg)" : "var(--fg-dim)",
         }}>{o}</button>
       ))}
-    </div>
+    </Box>
   );
 }
 
 export function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
-      <span style={grpLabel}>{label}</span>
+      <Box as="span" style={grpLabel}>{label}</Box>
       <input value={value} onChange={(e) => onChange(e.target.value)} style={{
         height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
         borderRadius: "var(--r-sm)", outline: "none", fontFamily: MONO, fontSize: 11, color: "var(--fg)",
@@ -88,12 +93,12 @@ export function Field({ label, value, onChange }: { label: string; value: string
 
 export function Toggle({ on, onClick, label, value }: { on: boolean; onClick: () => void; label: string; value?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+    <Row gap={9}>
       <Switch on={on} onClick={onClick} size="sm" tone="success" />
-      <span style={{ fontFamily: MONO, fontSize: 10, color: on ? "var(--fg)" : "var(--fg-muted)", lineHeight: 1.3 }}>{label}</span>
-      <span style={{ flex: 1 }} />
-      {value && <span style={{ fontFamily: MONO, fontSize: 9.5, color: on ? "var(--fg-muted)" : "var(--fg-dim)" }}>{value}</span>}
-    </div>
+      <Text as="span" mono size={10} style={{ color: on ? "var(--fg)" : "var(--fg-muted)", lineHeight: 1.3 }}>{label}</Text>
+      <Spacer />
+      {value && <Text as="span" mono size={9.5} style={{ color: on ? "var(--fg-muted)" : "var(--fg-dim)" }}>{value}</Text>}
+    </Row>
   );
 }
 
@@ -101,7 +106,7 @@ export function Toggle({ on, onClick, label, value }: { on: boolean; onClick: ()
 export function Select<T extends string>({ label, value, options, onChange }: { label: string; value: T | ""; options: readonly T[]; onChange: (v: T) => void }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
-      <span style={grpLabel}>{label}</span>
+      <Box as="span" style={grpLabel}>{label}</Box>
       <select value={value} onChange={(e) => onChange(e.target.value as T)} style={{
         height: 28, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
         borderRadius: "var(--r-sm)", outline: "none", fontFamily: MONO, fontSize: 11, color: "var(--fg)",
