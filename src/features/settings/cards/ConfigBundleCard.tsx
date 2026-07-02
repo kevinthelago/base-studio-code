@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card } from "@/shared/ui/data/Card";
+import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Row } from "@/shared/ui/layout/Row";
@@ -70,14 +71,9 @@ export function ConfigBundleCard() {
       </Row>
 
       {notice && (
-        <Text
-          as="div"
-          mono
-          size="sm"
-          style={{ lineHeight: 1.5, wordBreak: "break-all", color: notice.tone === "ok" ? "var(--success)" : "var(--danger)" }}
-        >
+        <Banner tone={notice.tone === "ok" ? "success" : "danger"} style={{ wordBreak: "break-all" }}>
           {notice.text}
-        </Text>
+        </Banner>
       )}
     </Card>
   );

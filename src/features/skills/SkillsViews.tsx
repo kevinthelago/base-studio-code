@@ -12,6 +12,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
 import { DataTableRow, DataTableHeader } from "@/shared/ui/data/DataTableRow";
+import { Card } from "@/shared/ui/data/Card";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
 import { glyphTile, hueTile, pill, tintBg, sourcePill, scopePill, successColor } from "./skillStyles";
@@ -134,7 +135,7 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
 export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups: SkillGroup[]; onOpen: () => void; onPin: () => void; onToggle: () => void }) {
   const sc = successColor(s.invocations > 0 ? s.success : null);
   return (
-    <Box className="skill-card" data-skill-id={s.id} onClick={onOpen} pad={[13, 14]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
+    <Card className="skill-card" interactive onClick={onOpen} style={{ opacity: s.enabled ? 1 : 0.6 }}>
       <Row align="start" gap={11}>
         <Box as="span" style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</Box>
         <Box style={{ flex: 1, minWidth: 0 }}>
@@ -161,6 +162,6 @@ export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef;
         {s.invocations > 0 && <Text as="span" mono size={10} style={{ color: sc }}>{s.success}%</Text>}
         {s.trend.length > 1 && <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} />}
       </Row>
-    </Box>
+    </Card>
   );
 }

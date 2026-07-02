@@ -10,6 +10,7 @@ import {
   setOutput, addSkill, removeSkill, addMcpServer, removeMcpServer,
 } from "@/features/planner/blueprints/blueprintEdit";
 import { Card } from "@/shared/ui/data/Card";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -28,9 +29,9 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
   return (
     <Stack gap={12}>
       <Box className="stats" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 4 }}>
-        <Box className="stat"><Text as="div" className="sk">stages</Text><Text as="div" className="sv">{stages.length}</Text></Box>
-        <Box className="stat"><Text as="div" className="sk">skills wired</Text><Text as="div" className="sv">{totalSkills}</Text></Box>
-        <Box className="stat"><Text as="div" className="sk">MCP wired</Text><Text as="div" className="sv">{totalMcp}</Text></Box>
+        <StatTile k="stages" v={stages.length} />
+        <StatTile k="skills wired" v={totalSkills} />
+        <StatTile k="MCP wired" v={totalMcp} />
       </Box>
 
       {stages.map((s) => {

@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
+import { Card } from "@/shared/ui/data/Card";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -139,12 +141,10 @@ export function StorageCard() {
       </Row>
 
       {projects.length === 0 ? (
-        <Box className="mono" pad={[20, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ fontSize: 11.5, color: "var(--fg-dim)" }}>
-          {scanning ? "Scanning…" : "No fleet worktrees on disk."}
-        </Box>
+        <EmptyState iconVariant="dashed" title={scanning ? "Scanning…" : "No fleet worktrees on disk."} />
       ) : (
         projects.map((p) => (
-          <Box key={p.key} pad={[4, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ marginBottom: 12 }}>
+          <Card key={p.key} style={{ marginBottom: 12 }}>
             <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
               <Box style={{ flex: 1, minWidth: 0 }}>
                 <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.key}</Text>
@@ -164,12 +164,12 @@ export function StorageCard() {
                 </Text>
               </Row>
             ))}
-          </Box>
+          </Card>
         ))
       )}
 
       {sandbox && (sandbox.installed || sandbox.tarballBytes > 0) && (
-        <Box pad={[4, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ marginBottom: 12 }}>
+        <Card style={{ marginBottom: 12 }}>
           <Row gap={12} style={{ padding: "10px 0" }}>
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>Agent sandbox (WSL2)</Text>
@@ -179,7 +179,7 @@ export function StorageCard() {
             </Box>
             <ConfirmButton size="sm" label="Remove" armedLabel="Confirm" disabled={busy} onConfirm={removeSandbox} />
           </Row>
-        </Box>
+        </Card>
       )}
 
       {notice && (

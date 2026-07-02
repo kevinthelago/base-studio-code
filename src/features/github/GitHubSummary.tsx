@@ -4,12 +4,11 @@
 // the per-card UI in `summary/*`, and the React-free shaping in `lib/githubSummary.ts`.
 
 import { useAppStore } from "@/store";
-import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
-import { Card } from "@/shared/ui/data/Card";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { useGithubSummary } from "./useGithubSummary";
@@ -57,14 +56,14 @@ export function GitHubSummary() {
             ["contributors", loading ? "…" : String(kpiContribs),      "all repos",                     "muted"  ],
             ["merged PRs",       loading ? "…" : String(totalMerged),   "last ~90 days via events",      "muted"  ],
           ] as const).map(([k, v, sub, tone]) => (
-            <Card key={k} style={{ padding: "10px 12px" }}>
-              <SectionLabel>{k}</SectionLabel>
-              <Box className="mono" style={{
-                fontSize: 18, fontWeight: 600, marginTop: 2,
-                color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : tone === "info" ? "var(--info)" : "var(--fg)",
-              }}>{v}</Box>
-              <Box style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</Box>
-            </Card>
+            <StatTile
+              key={k}
+              k={k}
+              v={v}
+              sub={sub}
+              tone={tone === "accent" ? "accent" : tone === "success" ? "success" : undefined}
+              vStyle={tone === "info" ? { color: "var(--info)" } : undefined}
+            />
           ))}
         </Grid>
 

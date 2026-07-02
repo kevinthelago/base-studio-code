@@ -7,6 +7,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void; onView?: () => void }) {
   return (
@@ -62,12 +63,7 @@ export function DiscoveryBody({ context, onView, requiredContext }: {
   const written = new Set(files.map((f) => f.name.replace(/\.md$/i, "")));
   const missingCount = required.filter((t) => !written.has(t)).length;
   if (files.length === 0 && required.length === 0) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">✦</Box>
-        <Box as="span">No context files yet</Box>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="✦" title="No context files yet" />;
   }
   const totalTok = files.reduce((s, f) => s + parseFloat(f.tok), 0);
   return (

@@ -11,6 +11,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -89,7 +90,7 @@ function Velocity({ velocity }: { velocity: VelocitySlice }) {
   const tip = useTip();
   const d = sliceVelocity(velocity, range);
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Commit & PR velocity" hint="daily commits, PRs opened vs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       <LineArea labels={d.labels} height={160} tip={tip} series={[
@@ -103,7 +104,7 @@ function Velocity({ velocity }: { velocity: VelocitySlice }) {
         { color: "var(--accent)", label: "PRs merged" },
       ]} />
       {tip.node}
-    </Box>
+    </Card>
   );
 }
 
@@ -113,7 +114,7 @@ function NetLines({ velocity, partialDiffs }: { velocity: VelocitySlice; partial
   const tip = useTip();
   const d = sliceVelocity(velocity, range);
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Lines changed" hint={partialDiffs ? "additions vs deletions · recent commits" : "additions vs deletions / day"}
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
       <Bars labels={d.labels} height={140} fmtY={(v) => fmt(v)} tip={tip} groups={[
@@ -125,7 +126,7 @@ function NetLines({ velocity, partialDiffs }: { velocity: VelocitySlice; partial
         { color: "var(--danger)", label: "removed" },
       ]} />
       {tip.node}
-    </Box>
+    </Card>
   );
 }
 
@@ -139,10 +140,10 @@ function ChurnByArea({ areas }: { areas: ChurnArea[] }) {
     </Text>,
   }));
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Churn by area" hint="lines changed · recent commits" />
       <HBars rows={rows} fmtV={(v) => fmt(v)} />
-    </Box>
+    </Card>
   );
 }
 
@@ -151,7 +152,7 @@ function FileChurn({ files }: { files: ChurnFile[] }) {
   if (!files.length) return null;
   const max = Math.max(...files.map(f => f.w));
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Hottest files" hint="±lines · recent commits · darker = hotter" />
       <Grid cols={4} gap={4}>
         {files.map(f => {
@@ -173,7 +174,7 @@ function FileChurn({ files }: { files: ChurnFile[] }) {
           );
         })}
       </Grid>
-    </Box>
+    </Card>
   );
 }
 
@@ -186,7 +187,7 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
   const humanCommits = sorted.filter(c => !c.bot).reduce((s, c) => s + c.commits, 0);
   const botShare = botCommits + humanCommits ? Math.round(botCommits / (botCommits + humanCommits) * 100) : 0;
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Contributors" hint="commits · bots vs humans (per GitHub)"
         right={<Text as="span" mono size={10} tone="dim">
           <Text as="span" tone="accent">◆ {botCommits}</Text> bot · <Text as="span" style={{ color: "var(--fg)" }}>{humanCommits}</Text> human
@@ -209,13 +210,13 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
                   </Text>
                 )}
               </Row>
-              <Box className="meter"><i style={{ width: `${c.commits / max * 100}%`, background: c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)" }} /></Box>
+              <FillBar value={c.commits / max} height={6} color={c.bot ? "var(--accent)" : "oklch(0.68 0.12 250)"} />
             </Box>
             <Text as="div" mono size={11} style={{ textAlign: "right", color: "var(--fg)" }}>{c.commits}</Text>
           </Grid>
         ))}
       </Stack>
-    </Box>
+    </Card>
   );
 }
 
@@ -227,7 +228,7 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
     { name: "cancelled", value: ci.cancelled, color: "var(--fg-dim)" },
   ];
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="CI health" hint={`${ci.runs} runs · 14d`} />
       {ci.runs === 0 ? (
         <Box className="hint" pad={[8, 2]}>No workflow runs in the window.</Box>
@@ -249,14 +250,14 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
             {workflows.map(w => (
               <Grid key={w.name} className="mono" cols="120px 1fr 34px" gap={8} align="center" style={{ fontSize: 10, color: "var(--fg-muted)" }}>
                 <Box as="span" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</Box>
-                <Box className="meter" style={{ height: 5 }}><i style={{ width: `${w.pass}%`, background: w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)" }} /></Box>
+                <FillBar value={w.pass / 100} height={5} color={w.pass >= 90 ? "var(--success)" : w.pass >= 80 ? "var(--accent)" : "var(--danger)"} />
                 <Text as="span" style={{ textAlign: "right", color: w.pass >= 90 ? "var(--success)" : "var(--fg)" }}>{w.pass}%</Text>
               </Grid>
             ))}
           </Stack>
         </>
       )}
-    </Box>
+    </Card>
   );
 }
 
@@ -264,7 +265,7 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
 function Branches({ branches }: { branches: Branch[] }) {
   if (!branches.length) return null;
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Active branches" hint="ahead/behind the default branch"
         right={<Text as="span" mono size={10.5} tone="accent">{branches.length}</Text>} />
       <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
@@ -284,7 +285,7 @@ function Branches({ branches }: { branches: Branch[] }) {
           );
         })}
       </Stack>
-    </Box>
+    </Card>
   );
 }
 
@@ -293,7 +294,7 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
   const tip = useTip();
   const total = buckets.reduce((s, b) => s + b.v, 0);
   return (
-    <Box className="card">
+    <Card>
       <CardHead title="Review latency" hint="PR open → merged · last 14d" />
       {total === 0 ? (
         <Box className="hint" pad={[8, 2]}>No merged PRs in the window.</Box>
@@ -307,7 +308,7 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
         </>
       )}
       {tip.node}
-    </Box>
+    </Card>
   );
 }
 

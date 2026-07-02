@@ -3,8 +3,8 @@
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
-import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
+import { FillBar } from "@/shared/ui/data/FillBar";
 import { Text } from "@/shared/ui/typography/Text";
 import type { Contributor } from "../lib/githubSummary";
 
@@ -30,9 +30,7 @@ export function ContributorsCard({ contributors, loading }: {
           <Grid key={p.login} cols="22px 1fr 1fr 80px" gap={10} align="center">
             <Avatar login={p.login} />
             <Text as="span" mono size={11} style={{ color: "var(--fg)" }}>@{p.login}</Text>
-            <Box bg="var(--bg-elev2)" radius={3} style={{ height: 5, overflow: "hidden" }}>
-              <Box bg="var(--accent)" style={{ width: `${p.commits / maxC * 100}%`, height: "100%"}} />
-            </Box>
+            <FillBar value={p.commits / maxC} height={5} />
             <Text as="span" mono size={10} tone="muted" style={{ textAlign: "right" }}>{p.commits} commits</Text>
           </Grid>
         ))}

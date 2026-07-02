@@ -6,6 +6,7 @@ import { Tile } from "@/features/planner/pane/focusedPrimitives";
 import { featureDefined, type PlanFeature } from "@/features/planner/issues/featureList";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
@@ -14,12 +15,7 @@ export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
   const { open, toggle } = useExpandable(firstDrafting ? [firstDrafting] : []);
 
   if (list.length === 0) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">◇</Box>
-        <Box as="span">No features yet — Claude proposes a starter set you curate</Box>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="◇" title="No features yet — Claude proposes a starter set you curate" />;
   }
 
   const definedCount = list.filter(featureDefined).length;

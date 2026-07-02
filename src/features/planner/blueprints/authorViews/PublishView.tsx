@@ -5,6 +5,7 @@
 import { Ic } from "@/features/planner/blueprints/blueprintIcons";
 import { hue, tint, stageKind } from "@/features/planner/blueprints/blueprintCatalog";
 import { Button } from "@/shared/ui/controls/Button";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -53,10 +54,10 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
       </Box>
 
       <Box className="stats" style={{ gridTemplateColumns: "repeat(4,1fr)", margin: 0 }}>
-        <Box className="stat"><Text as="div" className="sk">stages</Text><Text as="div" className="sv">{stages.length}</Text></Box>
-        <Box className="stat"><Text as="div" className="sk">skills</Text><Text as="div" className="sv">{totalSkills}</Text></Box>
-        <Box className="stat"><Text as="div" className="sk">MCP</Text><Text as="div" className="sv">{totalMcp}</Text></Box>
-        <Box className="stat"><Text as="div" className="sk">checks</Text><Text as="div" className={"sv" + (allPass ? " ok" : "")}>{passed}/{checks.length}</Text></Box>
+        <StatTile k="stages" v={stages.length} />
+        <StatTile k="skills" v={totalSkills} />
+        <StatTile k="MCP" v={totalMcp} />
+        <StatTile k="checks" v={`${passed}/${checks.length}`} tone={allPass ? "success" : undefined} />
       </Box>
 
       <Box>

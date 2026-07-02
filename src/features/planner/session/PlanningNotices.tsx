@@ -5,7 +5,7 @@
 // issues. No hooks/refs/effects — Planning.tsx supplies every value + callback.
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
-import { Text } from "@/shared/ui/typography/Text";
+import { Banner } from "@/shared/ui/feedback/Banner";
 
 export interface PlanningNoticesProps {
   triageError: string | null;
@@ -23,19 +23,19 @@ export function PlanningNotices({
   return (
     <>
       {triageError && (
-        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
+        <Banner variant="inline" tone="danger" loud style={{ margin: "0 24px 8px" }}>
           ⚠ {triageError}
-        </Text>
+        </Banner>
       )}
       {triageNote && !triageError && (
-        <Text as="div" mono size={12} tone="muted" style={{ padding: "0 24px 8px" }}>
+        <Banner variant="inline" tone="neutral" style={{ margin: "0 24px 8px" }}>
           ⏭ {triageNote}
-        </Text>
+        </Banner>
       )}
       {featureCycle.length > 0 && (
-        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
+        <Banner variant="inline" tone="danger" loud style={{ margin: "0 24px 8px" }}>
           ⚠ Feature dependency cycle: {featureCycle.join(" → ")} — break it to complete the Features stage.
-        </Text>
+        </Banner>
       )}
       {recoverable > 0 && (
         <Row className="mono" gap={10} style={{ padding: "0 24px 8px", fontSize: 12, color: "var(--fg-muted)" }}>

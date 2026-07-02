@@ -6,6 +6,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
+import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 
@@ -77,10 +78,7 @@ export function GitHubEmpty() {
             ["Roadmap & issues",  "Milestones laid out across time with PR / commit activity inline; drill into issues and insights over the board."],
             ["Two-way sync",      "Edits here land on github.com immediately. Webhook events update every view live."],
           ].map(([h, b], i) => (
-            <Grid key={h} cols="22px 1fr" gap={10} style={{
-              padding: "12px 14px",
-              background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
-            }}>
+            <Card key={h} style={{ display: "grid", gridTemplateColumns: "22px 1fr", gap: 10 }}>
               <Box as="span" className="mono" bg="var(--bg-elev2)" radius={5} style={{
                 width: 20, height: 20,
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -91,7 +89,7 @@ export function GitHubEmpty() {
                 <Box className="mono-value">{h}</Box>
                 <Box style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.55, marginTop: 2 }}>{b}</Box>
               </Box>
-            </Grid>
+            </Card>
           ))}
         </Stack>
       </Grid>

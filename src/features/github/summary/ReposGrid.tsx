@@ -4,6 +4,7 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
@@ -26,13 +27,11 @@ export function ReposGrid({ repos, loading }: {
       headMb={10}
     >
       {repos.length === 0 && !loading && (
-        <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No repositories connected.</Box>
+        <EmptyState iconVariant="dashed" icon="⎇" title="No repositories connected." />
       )}
       <Grid cols={2} gap="sm">
         {repos.map(r => (
-          <Box key={r.full_name} onClick={() => setGithubPageMode("repos")} pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
-            cursor: "pointer",
-          }}>
+          <Card key={r.full_name} interactive onClick={() => setGithubPageMode("repos")}>
             <Row align="baseline" gap={8} style={{ marginBottom: 4 }}>
               <Box as="span" bg={r.language ? langColor(r.language) : "var(--fg-dim)"} style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" }} />
               <Box as="span" className="mono-value">{r.full_name}</Box>
@@ -48,7 +47,7 @@ export function ReposGrid({ repos, loading }: {
               <Spacer />
               {r.spark.some(v => v > 0) && <Spark data={r.spark} color="var(--accent)" w={90} h={22} fill={false} />}
             </Row>
-          </Box>
+          </Card>
         ))}
       </Grid>
     </Card>
