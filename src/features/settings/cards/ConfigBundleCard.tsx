@@ -53,11 +53,11 @@ export function ConfigBundleCard() {
     <Card style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
       <Box>
         <Text as="div" mono size={12.5} weight={600} style={{ color: "var(--fg)" }}>Configuration bundle</Text>
-        <p style={{ color: "var(--fg-muted)", margin: "4px 0 0", fontSize: 11.5, lineHeight: 1.55 }}>
+        <Text as="p" tone="muted" size={11.5} style={{ margin: "4px 0 0", lineHeight: 1.55 }}>
           Export the entire app configuration — prompts, taxonomies, blueprints, roles, skills, permissions,
           stage directives — as one portable, versioned file, and import one back to restore or share a setup.
           Imported changes take effect on the <b>next launch</b>.
-        </p>
+        </Text>
       </Box>
 
       <Row gap={10} wrap>

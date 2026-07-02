@@ -11,23 +11,15 @@ import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
 import { ConfigBundleCard } from "../cards/ConfigBundleCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-
-/** A settings page sub-section header — the group label within a page (scaled-down page h2). */
-function Sub({ children }: { children: string }) {
-  return (
-    <h3 className="mono" style={{ fontSize: 12.5, margin: "10px 0 -6px", fontWeight: 600, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>
-      {children}
-    </h3>
-  );
-}
+import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
 
 export function GeneralPage() {
   return (
     <Stack gap={18} style={{ maxWidth: 820 }}>
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>General</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
-        App-wide preferences, required dependencies, appearance, and keyboard hotkeys.
-      </p>
+      <SettingsPageHeader
+        title="General"
+        description="App-wide preferences, required dependencies, appearance, and keyboard hotkeys."
+      />
 
       <WorkspaceCard />
       <DefaultModelCard />

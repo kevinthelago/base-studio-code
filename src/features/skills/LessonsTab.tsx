@@ -83,7 +83,7 @@ export function LessonsTab({ projectKey, projectName }: { projectKey: string; pr
 
   return (
     <Box as="section" className="an-page"><Box className="an-wrap">
-      <h2 className="mono" style={{ margin: "0 0 4px", fontSize: 18 }}>Pending lessons</h2>
+      <Text as="h2" mono size="xl" style={{ margin: "0 0 4px" }}>Pending lessons</Text>
       <Text as="div" tone="muted" size={12} style={{ marginBottom: 14 }}>
         Mistakes agents caught with <code>bsc-learned</code>{projectName ? <> in <b>{projectName}</b></> : null} — confirm one into a project skill, or discard it. Only you confirm.
       </Text>

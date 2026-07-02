@@ -63,7 +63,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
       <Card className="sched-list">
         <Box className="head">
           <Box className="head-row">
-            <h3>Schedules</h3>
+            <Text as="h3">Schedules</Text>
             <Box as="span" className="hint">{automations.length} total · {armedCount} armed</Box>
           </Box>
         </Box>

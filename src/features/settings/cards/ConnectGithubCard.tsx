@@ -20,16 +20,16 @@ function ConnectFlowCard() {
 
   return (
     <Card>
-      <h3 className="mono" style={{ margin: "0 0 10px", fontSize: 14 }}>Connect GitHub account</h3>
+      <Text as="h3" mono size="lg" style={{ margin: "0 0 10px" }}>Connect GitHub account</Text>
 
       {clientId ? (
         device ? (
           <Box pad={16} bg="var(--bg-elev)" border="soft" radius={8} style={{
             marginBottom: 18,
           }}>
-            <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+            <Text as="p" tone="muted" size="md" style={{ margin: "0 0 12px", lineHeight: 1.6 }}>
               In the browser tab that just opened, enter this code to authorize:
-            </p>
+            </Text>
             <Box className="mono" pad={[10, 0]} style={{
               fontSize: 26, fontWeight: 700, letterSpacing: ".18em",
               textAlign: "center", color: "var(--accent)",
@@ -55,9 +55,9 @@ function ConnectFlowCard() {
           </Box>
         ) : (
           <Box style={{ marginBottom: 18 }}>
-            <p style={{ margin: "0 0 12px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+            <Text as="p" tone="muted" size="md" style={{ margin: "0 0 12px", lineHeight: 1.6 }}>
               Authorize base-studio-code on GitHub in your browser — no token to copy.
-            </p>
+            </Text>
             <Button
               variant="primary"
               onClick={handleDeviceConnect}
@@ -78,7 +78,7 @@ function ConnectFlowCard() {
         )
       ) : null}
 
-      <p style={{ margin: "0 0 16px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+      <Text as="p" tone="muted" size="md" style={{ margin: "0 0 16px", lineHeight: 1.6 }}>
         Create a <b>Personal Access Token</b> at{" "}
         <Text as="span" mono tone="accent" size="sm">
           github.com/settings/tokens
@@ -87,7 +87,7 @@ function ConnectFlowCard() {
         <Chip style={{ fontSize: 10 }}>read:org</Chip>{" "}
         <Chip style={{ fontSize: 10 }}>read:user</Chip>{" "}
         <Chip style={{ fontSize: 10 }}>project</Chip> scopes, then paste it below.
-      </p>
+      </Text>
 
       <Row gap={8} align="stretch">
         {/* eslint-disable-next-line no-restricted-syntax -- unlabelled inline input beside the Connect Button in a Row; a TextField .field wrapper would break the horizontal layout */}

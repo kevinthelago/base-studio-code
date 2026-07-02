@@ -29,7 +29,7 @@ export function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: ()
         <Box style={{ flex: 1 }}>
           <Row gap={10} align="baseline">
             <Text mono size={11} tone="dim">#{issue.number}</Text>
-            <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, color: "var(--fg)" }}>{issue.title}</h3>
+            <Text as="h3" size={15} style={{ margin: 0, fontFamily: "var(--sans)", color: "var(--fg)" }}>{issue.title}</Text>
           </Row>
           <Row gap={6} wrap style={{ marginTop: 8 }}>
             <Chip tone={issue.state === "OPEN" ? "accent" : "neutral"} style={{ fontSize: 9.5 }}>

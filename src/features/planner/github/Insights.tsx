@@ -221,7 +221,7 @@ export function Insights() {
                 {/* Status distribution */}
                 <Card style={{ padding: "16px 20px" }}>
                   <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Status distribution</h3>
+                    <Text as="h3" style={{ margin: 0 }}>Status distribution</Text>
                     <Box as="span" className="hint">{total} items</Box>
                   </Row>
                   {statusDist.length === 0 ? (
@@ -237,7 +237,7 @@ export function Insights() {
                 {/* Assignee workload */}
                 <Card style={{ padding: "16px 20px" }}>
                   <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Assignee workload</h3>
+                    <Text as="h3" style={{ margin: 0 }}>Assignee workload</Text>
                     <Box as="span" className="hint">open issues</Box>
                   </Row>
                   {assigneeDist.length === 0 ? (
@@ -280,7 +280,7 @@ export function Insights() {
               {/* Weekly activity */}
               <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
                 <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                  <h3 style={{ margin: 0 }}>Weekly activity</h3>
+                  <Text as="h3" style={{ margin: 0 }}>Weekly activity</Text>
                   <Box as="span" className="hint">last 8 weeks</Box>
                   <Spacer />
                   <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
@@ -308,7 +308,7 @@ export function Insights() {
               {labelDist.length > 0 && (
                 <Card style={{ padding: "16px 20px" }}>
                   <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <h3 style={{ margin: 0 }}>Label frequency</h3>
+                    <Text as="h3" style={{ margin: 0 }}>Label frequency</Text>
                     <Box as="span" className="hint">top {labelDist.length}</Box>
                   </Row>
                   <Grid cols={2} gap={32}>

@@ -193,17 +193,17 @@ export function TunnelSettings() {
 
   return (
     <Box style={{ maxWidth: 820 }}>
-      <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Mobile tunnel</h2>
-      <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12, lineHeight: 1.6 }}>
+      <Text as="h2" mono size="xl" weight={600} style={{ margin: "0 0 4px" }}>Mobile tunnel</Text>
+      <Text as="p" tone="muted" size="md" style={{ margin: "0 0 22px", lineHeight: 1.6 }}>
         Pair <code>mobile-studio-code</code> to mirror these consoles from your phone — from
         anywhere. Traffic flows through a <b>zero-knowledge relay</b> you deploy into your own
         Cloudflare account; it's end-to-end encrypted (Noise), so the relay never sees your
         terminal.
-      </p>
+      </Text>
 
       <Card>
         <Row gap={12} style={{ marginBottom: 14 }}>
-          <h3 style={{ margin: 0 }}>Relay connection</h3>
+          <Text as="h3" style={{ margin: 0 }}>Relay connection</Text>
           <Chip tone={running ? "success" : "neutral"}>
             {running ? (clients > 0 ? `● paired · ${clients} device${clients === 1 ? "" : "s"}` : "● waiting for a device") : "○ disconnected"}
           </Chip>
