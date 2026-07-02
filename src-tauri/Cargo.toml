@@ -95,9 +95,9 @@ bsc-blueprint = { path = "../crates/bsc-blueprint" }
 # the `.published` marker logic lives in ONE place (#1761).
 bsc-project = { path = "../crates/bsc-project" }
 
-# Global skills + task-groups store (#1338, instance of #1325) — shared with the `bsc-skill`
-# session CLI. The `skill_store_*` Tauri commands are a thin wrapper over this crate's `Store`,
-# so the desktop Skills library and every live console session read/write ONE global skills.db.
+# Global skills + task-groups store (#1338, instance of #1325) — shared with the `bsc skill`
+# session CLI. The desktop Skills library reaches this store through the generic `bsc` command
+# (`bsc skill …`, #2142), so the UI and every live console session read/write ONE global skills.db.
 skilldb = { path = "../crates/skilldb" }
 
 # Model-agnostic LLM provider layer (#1097) — shared with the future lean `bsc-agent`
