@@ -140,8 +140,9 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   interface. Per-feature slices live in `features/<x>/store.ts`; the core app state + labelled residuals
   (`console`, `core`, `shell`, `plan`, `projects`, `session`) remain under `store/slices/` — a candidate
   for further splitting later.
-- The big `planner` files (`Planning.tsx` ~3k, `ProjectPane.tsx` ~1.5k) moved as-is; **splitting them
-  into focused modules is a remaining quality pass** (not a structural move).
+- The former big `planner` files are **now decomposed**: `Planning.tsx` (~820 lines) is an orchestrator
+  over `PlanningHeader`/`PlanningNotices`/`PlanningDialogs`/`planningTerminal`/`planningSession`, and
+  `ProjectPane.tsx` (~150 lines) split into `projectPane.types.ts`/`projectPaneData.ts`/`projectPane.css`.
 - **Cross-repo contract fixtures** (`tunnelProtocol.fixtures.json`, `plannerCore.fixtures.json`) live in
   their feature's `lib/` but are byte-exact wire contracts ALSO consumed by the Rust tests and
   mobile-studio-code. The Rust tests resolve them **by filename** (`find_fixture` in
