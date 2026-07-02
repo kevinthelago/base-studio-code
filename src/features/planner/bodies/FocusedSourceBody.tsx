@@ -17,8 +17,7 @@
 // discovered object inventory.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscWrite } from "@/shared/lib/core/bsc";
+import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { Banner } from "@/shared/ui/feedback/Banner";
@@ -97,9 +96,13 @@ export function SourceBody({ projectId, onInject }: {
   // the planner skill poll); an absent store ⇒ []. The full declare/build-status picker is Phase 5b.
   const [runtime, setRuntime] = useState<RuntimeConnectorView[]>([]);
   usePoll(async (isCancelled) => {
-    const list = await safeInvoke<RuntimeConnectorView[] | null>("data_runtime_connectors", undefined, []);
+    // `bsc data connector list` emits the FULL RuntimePreset[]; the pane needs only the reduced view
+    // (id/label/category/auth), so project it down here (#2114/#2130). Global store — no project key.
+    const presets = await bscJson<Array<Partial<RuntimeConnectorView>>>(null, ["data", "connector", "list", "--json"], []);
     if (isCancelled()) return;
-    setRuntime(list ?? []);
+    setRuntime(presets.map((p) => ({
+      id: p.id ?? "", label: p.label ?? "", category: p.category ?? "", auth: p.auth ?? "",
+    })));
   }, 2500, []);
 
   // ① Declare — the "+ Add a source" inline input (#1986): name the system (+ optional base URL /
