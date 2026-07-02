@@ -4,9 +4,7 @@
 // (its stream), and live status; per-stream analytics not yet tracked show explicit
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
-import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { BackButton } from "@/shared/ui/controls/BackButton";
-import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -21,7 +19,6 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
-import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
@@ -29,37 +26,9 @@ import { parseAuditLog, type AuditRecord } from "@/features/agents/lib/auditLog"
 import { loadDoneAudit, type DoneAudit } from "@/shared/lib/fleet/workerAudit";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-
-const TIER_COLOR: Record<string, string> = {
-  allow: "var(--success)", ask: "var(--accent)", deny: "var(--danger)",
-};
-
-function Modal({ title, children, onClose, footer }: {
-  title: string; children: React.ReactNode; onClose: () => void; footer?: React.ReactNode;
-}) {
-  return (
-    <ModalScrim onDismiss={onClose}>
-      <Box bg="var(--bg-panel)" border radius="lg" style={{ width: 440, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
-        <Row style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-soft)" }}>
-          <h3 style={{ margin: 0 }}>{title}</h3>
-          <Spacer />
-          <IconButton aria-label="close" onClick={onClose} />
-        </Row>
-        <Box pad={16}>{children}</Box>
-        {footer && <Row justify="end" align="stretch" gap={8} style={{ padding: "12px 16px", borderTop: "1px solid var(--border-soft)" }}>{footer}</Row>}
-      </Box>
-    </ModalScrim>
-  );
-}
-
-function Placeholder({ title, hint, body }: { title: string; hint: string; body: string }) {
-  return (
-    <Card>
-      <CardHead title={title} hint={hint} />
-      <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6 }}>{body}</Text>
-    </Card>
-  );
-}
+import { TIER_COLOR, type WorkerModal } from "./workerDetail.helpers";
+import { Placeholder } from "./WorkerDetailPlaceholder";
+import { WorkerModals } from "./WorkerModals";
 
 export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: () => void }) {
   const stream      = useAppStore((s) => s.fleetPaneStreams[worker.id]);
@@ -81,7 +50,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   const owned = stream?.issues ?? [];
   const st = STATUS[worker.status];
 
-  const [modal, setModal] = useState<null | "steer" | "answer" | "stop" | "profile">(null);
+  const [modal, setModal] = useState<WorkerModal | null>(null);
   const [draft, setDraft] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   function flash(m: string) { setToast(m); setTimeout(() => setToast(null), 2200); }
@@ -332,57 +301,20 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
           fontSize: 11.5, color: "var(--fg)", boxShadow: "0 6px 24px rgba(0,0,0,0.4)" }}>{toast}</Box>
       )}
 
-      {(modal === "steer" || modal === "answer") && (
-        <Modal title={modal === "answer" ? `Answer ${worker.name}` : `Steer ${worker.name}`} onClose={() => setModal(null)}
-          footer={<>
-            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
-            <Button variant="primary" onClick={() => send(modal)}>{modal === "answer" ? "send answer" : "send"}</Button>
-          </>}>
-          {modal === "answer" && worker.note && (
-            <Box className="mono" pad={[10, 12]} bg={`color-mix(in oklch, ${st.color}, transparent 90%)`} radius={8} style={{ border: `1px solid color-mix(in oklch, ${st.color}, transparent 70%)`, marginBottom: 10, fontSize: 11.5, color: "var(--fg)" }}>
-              {worker.note}
-            </Box>
-          )}
-          <Box className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</Box>
-          {/* eslint-disable-next-line no-restricted-syntax -- freeform multiline input; textareas stay raw */}
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
-            placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
-            className="mono"
-            style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontSize: 12, outline: "none" }} />
-        </Modal>
-      )}
-      {modal === "stop" && (
-        <Modal title="Stop & remove worker" onClose={() => setModal(null)}
-          footer={<>
-            <Button variant="ghost" onClick={() => setModal(null)}>cancel</Button>
-            <Button danger onClick={stop}>stop &amp; remove</Button>
-          </>}>
-          <Text as="div" size={12} tone="muted" style={{ lineHeight: 1.6 }}>
-            This stops <b style={{ color: "var(--fg)" }}>{worker.name}</b>'s session (disables its pane). Its worktree is
-            preserved; re-enable the console to resume.
-          </Text>
-        </Modal>
-      )}
-      {modal === "profile" && (
-        <Modal title="Change profile" onClose={() => setModal(null)}>
-          <Box className="hint" style={{ marginBottom: 10 }}>Switch the least-privilege profile this worker runs under (applies on its next launch).</Box>
-          <Stack gap={6} style={{ maxHeight: 360, overflow: "auto" }}>
-            {agentProfiles.map((p) => (
-              // eslint-disable-next-line no-restricted-syntax -- bespoke profile-select row button (custom card layout, not a .btn)
-              <button key={p.id} onClick={() => { setPaneProfile(worker.id, p.id); setModal(null); flash(`Profile → ${p.name}`); }} style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", textAlign: "left", cursor: "pointer",
-                background: p.id === profileId ? "var(--bg-elev2)" : "var(--bg-elev)", color: "var(--fg)",
-                border: "1px solid " + (p.id === profileId ? p.color : "var(--border-soft)"), borderRadius: 8,
-              }}>
-                <ColorSwatch color={p.color} size={8} />
-                <Text as="span" mono size={11.5} style={{ flex: 1 }}>{p.name}</Text>
-                <Text as="span" mono size={9.5} tone="dim">base {p.mode}</Text>
-                {p.id === profileId && <Text as="span" mono size={9.5} style={{ color: p.color }}>current</Text>}
-              </button>
-            ))}
-          </Stack>
-        </Modal>
-      )}
+      <WorkerModals
+        modal={modal}
+        setModal={setModal}
+        worker={worker}
+        st={st}
+        draft={draft}
+        setDraft={setDraft}
+        send={send}
+        stop={stop}
+        agentProfiles={agentProfiles}
+        profileId={profileId}
+        setPaneProfile={setPaneProfile}
+        flash={flash}
+      />
     </section>
   );
 }
