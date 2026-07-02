@@ -42,9 +42,11 @@ pub struct NullCount {
 
 /// Per-Data-Model DuckDB file under `~/.base-studio-code/data/<store_id>.duckdb`.
 pub(super) fn store_path(store_id: &str) -> std::io::Result<PathBuf> {
-    let dir = crate::bsc_base_dir().join("data");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("{}.duckdb", crate::sanitize_project_key(store_id))))
+    let db = crate::platform::paths::data_db_path(store_id);
+    if let Some(dir) = db.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    Ok(db)
 }
 
 /// Core load — factored out of the command so it's testable with explicit paths
