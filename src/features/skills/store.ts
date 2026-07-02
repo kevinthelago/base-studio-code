@@ -3,9 +3,9 @@
 // the single app store by store/index.ts.
 //
 // Source of truth is the GLOBAL skills.db (#1338 ph2): this slice is a write-through cache. On boot
-// `hydrateSkills` loads the library from the `skill_store_*` bridge and reconciles the code-owned
-// packaged set; every library mutation below pushes through to the bridge so the desktop UI, the
-// planner, and every live `bsc-skill` session see ONE shared library. Per-session toggles
+// `hydrateSkills` loads the library through the `bsc skill` bridge (#2142) and reconciles the
+// code-owned packaged set; every library mutation below pushes through to the bridge so the desktop
+// UI, the planner, and every live `bsc skill` session see ONE shared library. Per-session toggles
 // (`sessionSkillOverrides` / `sessionSkillGroups`) are pane-local and stay store-only — they are not
 // part of the global library. The persisted copy is just a fast first-paint cache; hydrate reconciles.
 import type { StateCreator } from "zustand";
