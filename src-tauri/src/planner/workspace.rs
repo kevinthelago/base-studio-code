@@ -14,8 +14,26 @@ pub(crate) struct AutomationData {
 pub(crate) struct WorkspacePaths {
     planning_dir: String,
 }
+/// The inputs to [`setup_workspaces`], grouped so the planner-hub setup is driven by one named
+/// value instead of a dozen positional arguments — and so the core [`setup_workspaces_inner`] is
+/// testable without a Tauri runtime. Owns its fields (built once from the command's owned args).
+pub(crate) struct SetupWorkspacesArgs {
+    pub repo_full_names: Vec<String>,
+    pub automations: Vec<AutomationData>,
+    pub is_existing: bool,
+    pub project_name: String,
+    pub project_number: u32,
+    pub pitch: String,
+    pub project_key: String,
+    pub github_login: String,
+    pub github_name: String,
+    pub enabled_stages: Vec<String>,
+    /// The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro
+    /// and omit the software-planning process block.
+    pub authoring: bool,
+}
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // wire contract: the frontend passes these as named invoke args.
 pub(crate) fn setup_workspaces(
     repo_full_names: Vec<String>,
     automations: Vec<AutomationData>,
@@ -27,10 +45,40 @@ pub(crate) fn setup_workspaces(
     github_login: String,
     github_name: String,
     enabled_stages: Vec<String>,
-    // The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro and
-    // omit the software-planning process block. Optional so older call sites default to false.
+    // Optional so older call sites default to false.
     authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
+    setup_workspaces_inner(SetupWorkspacesArgs {
+        repo_full_names,
+        automations,
+        is_existing,
+        project_name,
+        project_number,
+        pitch,
+        project_key,
+        github_login,
+        github_name,
+        enabled_stages,
+        authoring: authoring.unwrap_or(false),
+    })
+}
+/// Synchronous core of [`setup_workspaces`] (testable without a Tauri runtime): creates the planner
+/// hub (`projects/<key>`), migrates a legacy `context/` dir, and writes the planner `CLAUDE.md` +
+/// `automations.md` + `github_context.md` + `context_signature.txt`.
+pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<WorkspacePaths, String> {
+    let SetupWorkspacesArgs {
+        repo_full_names,
+        automations,
+        is_existing,
+        project_name,
+        project_number,
+        pitch,
+        project_key,
+        github_login,
+        github_name,
+        enabled_stages,
+        authoring,
+    } = args;
     let _perf = PerfSpan::new("setup_workspaces");
     crate::session::claude_config::sanitize_claude_config();
     // Planner session CWD = the project hub (`projects/<key>`), holding plan
@@ -74,7 +122,7 @@ pub(crate) fn setup_workspaces(
     // Assemble the template: orientation-specific INTRO + shared PROCESS block. The blueprint-
     // authoring lifecycle (#923) is self-contained — its intro carries the whole task + the
     // <blueprint> tag spec, and the software-planning process block is omitted entirely.
-    let mut planning_md = if authoring.unwrap_or(false) {
+    let mut planning_md = if authoring {
         planning_blueprint_intro()
     } else if is_existing {
         format!(
@@ -232,6 +280,41 @@ mod tests {
             rendered,
             "_No saved automations yet — suggest new ones with `bsc plan automations add` (above)._\n",
         );
+    }
+
+    /// The struct-driven core writes every hub file and preserves the empty-`project_key` guard —
+    /// proving `setup_workspaces_inner` is drivable from a `SetupWorkspacesArgs` without a Tauri
+    /// runtime (isolated under a temp home so config + hub writes stay sandboxed).
+    #[test]
+    fn setup_workspaces_inner_builds_hub_and_guards_empty_key() {
+        use crate::testutil::prelude::*;
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = temp_home("setup-ws");
+        let base = || super::SetupWorkspacesArgs {
+            repo_full_names: vec![],
+            automations: vec![],
+            is_existing: false,
+            project_name: "Demo".into(),
+            project_number: 0,
+            pitch: "a demo".into(),
+            project_key: "p-demo".into(),
+            github_login: String::new(),
+            github_name: String::new(),
+            enabled_stages: vec![],
+            authoring: false,
+        };
+        // Happy path: every hub file is written.
+        let paths = super::setup_workspaces_inner(base()).unwrap();
+        let hub = std::path::Path::new(&paths.planning_dir);
+        for f in ["CLAUDE.md", "automations.md", "github_context.md", "context_signature.txt"] {
+            assert!(hub.join(f).exists(), "expected {f} in the hub");
+        }
+        // A blank project_key is still refused (would scatter the hub across `projects/`).
+        let empty = super::SetupWorkspacesArgs { project_key: String::new(), ..base() };
+        match super::setup_workspaces_inner(empty) {
+            Err(e) => assert_eq!(e, "setup_workspaces: empty project_key"),
+            Ok(_) => panic!("expected the empty-project_key rejection"),
+        }
     }
 
     /// The `## Useful gh commands` block appended to `github_context.md`.
