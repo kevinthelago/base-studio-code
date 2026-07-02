@@ -18,11 +18,11 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { invoke } from "@tauri-apps/api/core";
 import {
-  ingestCoordLog, coordinationSummary, wakePromptFor, emptyCoordState,
+  coordinationSummary, wakePromptFor, emptyCoordState,
   type BlockedView, type Waiter, type CoordState,
 } from "@/shared/lib/fleet/coordination";
+import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
 import type { WorkflowRun } from "@/shared/lib/fleet/conductor";
 import type { AgentProfile } from "./lib/agentProfiles";
@@ -59,17 +59,16 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
   const [waking, setWaking] = useState<Set<string>>(new Set());
 
   // Polls only while this tab is mounted (the tab is conditionally rendered).
-  usePoll((isCancelled) => {
-    invoke<string[]>("read_coord_log", { limit: 1000 })
-      .then((lines) => {
-        if (isCancelled()) return;
-        const r = ingestCoordLog(lines, emptyCoordState());
-        setViews(coordinationSummary(r.state));
-        setReady(r.ready);
-        setState(r.state);
-        setErr(null);
-      })
-      .catch((e) => { if (!isCancelled()) setErr(String(e)); });
+  // Reads via the shared readCoordState (#1495) — `null` on a read failure, which we
+  // map to the existing `err` banner (last-good views/ready/state are kept).
+  usePoll(async (isCancelled) => {
+    const r = await readCoordState(1000);
+    if (isCancelled()) return;
+    if (!r) { setErr("Failed to read the coordination log"); return; }
+    setViews(coordinationSummary(r.state));
+    setReady(r.ready);
+    setState(r.state);
+    setErr(null);
   }, COORD_POLL_MS);
 
   const handleWake = useCallback(async (wtr: Waiter) => {
