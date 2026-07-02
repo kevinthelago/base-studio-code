@@ -1,5 +1,5 @@
 // #1805: plan.db is the SOLE fleet store — usePlanSectionPoll must never read a fleet.json file.
-// These tests pin that the fleet section is sourced from plan.db (`plan_get_fleet`) and that a
+// These tests pin that the fleet section is sourced from plan.db (`bsc plan fleet get`) and that a
 // `fleet` key leaking out of `read_plan_sections` (a stray on-disk file) is ignored, while ordinary
 // section files still flow through.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -28,9 +28,14 @@ describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {
 
   it("sources the fleet section from plan.db and ignores a stray fleet.json key from the file sweep", async () => {
     const dbFleet = { recommended: 3, streams: [{ id: "db", repo: "o/db" }] };
-    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string, payload?: unknown) => {
+      // Every plan.db read now routes through the generic `bsc` bridge (#2114) — JSON on stdout.
+      if (cmd === "bsc") {
+        const args = (payload as { args?: string[] } | undefined)?.args ?? [];
+        if (args[1] === "fleet") return JSON.stringify(dbFleet); // `plan fleet get --full --json`
+        return ""; // other bsc reads (issues/features/…) → empty → bscJson fallback
+      }
       switch (cmd) {
-        case "plan_get_fleet": return dbFleet;
         // A stray fleet.json that leaked through the sweep — must be ignored — plus a real section.
         case "read_plan_sections": return { fleet: '{"recommended":99,"streams":[]}', goal: "the goal" };
         default: return null;
@@ -45,8 +50,12 @@ describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {
     });
     // An ordinary section file still flows through (the sweep runs; only fleet is excluded).
     expect(useAppStore.getState().planSections[PID]?.goal).toBe("the goal");
-    // plan_get_fleet IS the fleet read path; no fleet.json file is ever read directly.
-    expect(vi.mocked(invoke).mock.calls.some(([c]) => c === "plan_get_fleet")).toBe(true);
+    // `bsc plan fleet get --full --json` IS the fleet read path; no fleet.json file is ever read directly.
+    expect(
+      vi.mocked(invoke).mock.calls.some(
+        ([c, p]) => c === "bsc" && (p as { args?: string[] } | undefined)?.args?.[1] === "fleet",
+      ),
+    ).toBe(true);
 
     unmount();
   });

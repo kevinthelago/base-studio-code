@@ -6,6 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore, type AutomationSuggestion } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
@@ -79,7 +80,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // file. Read them straight from the DB and reflect into the "issues" section so every
         // downstream consumer (publish, structure card, grading, the mobile mirror) is unchanged.
         try {
-          const dbIssues = await invoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId });
+          const dbIssues = await bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []);
           const json = JSON.stringify(dbIssues ?? []);
           if (json !== (saved["issues"] ?? "")) store.setPlanSection(effectiveProjectId, "issues", json);
         } catch { /* plan.db not created until the planner adds its first issue — ignore */ }
@@ -87,7 +88,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // Features are DB-owned too (#plan-db) — titles-first roster in plan.db, not a features.json
         // file. Reflect them into the "features" section so the Features board + gate read unchanged.
         try {
-          const dbFeatures = await invoke<PlanFeature[]>("plan_list_features", { projectKey: effectiveProjectId });
+          const dbFeatures = await bscJson<PlanFeature[]>(effectiveProjectId, ["plan", "feature", "list", "--json"], []);
           const json = JSON.stringify(dbFeatures ?? []);
           if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FEATURES_KEY, json);
         } catch { /* plan.db not created until the planner registers its first feature — ignore */ }
@@ -95,18 +96,18 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // Linked repos are DB-owned too (#1012) — restore them from the hub's plan.db into the store
         // so a zustand/app-state reset can't lose the links (the store-only persistence proved fragile).
         try {
-          const dbRepos = await invoke<string[]>("plan_list_repos", { projectKey: effectiveProjectId });
+          const dbRepos = await bscJson<string[]>(effectiveProjectId, ["plan", "repo", "list", "--json"], []);
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
 
         // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
         // plan.db is the SOLE fleet source (#1805): there is no fleet.json reader anymore. Reflect the
         // fleet from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
-        // setPlanFleet) reads it unchanged. (plan_get_fleet also folds in + deletes any stray legacy
-        // fleet.json before returning, so the file can never be read here.) Guard on a non-null fleet so
-        // an empty DB doesn't churn the section.
+        // setPlanFleet) reads it unchanged. `fleet get --full` returns the whole FleetPlan blob (the
+        // same shape the old `plan_get_fleet` command wrapped). Guard on a non-null fleet so an empty
+        // DB doesn't churn the section.
         try {
-          const dbFleet = await invoke<unknown | null>("plan_get_fleet", { projectKey: effectiveProjectId });
+          const dbFleet = await bscJson<unknown | null>(effectiveProjectId, ["plan", "fleet", "get", "--full", "--json"], null);
           if (dbFleet) {
             const json = JSON.stringify(dbFleet);
             if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanSection(effectiveProjectId, FLEET_KEY, json);
@@ -117,7 +118,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // the old <deploy_config> tag used and push it into planDeployConfig, so the `deploy` gate clears
         // from the plan. Skip an unchanged blob so we don't churn the store every tick.
         try {
-          const dbDeploy = await invoke<unknown | null>("plan_get_deploy", { projectKey: effectiveProjectId });
+          const dbDeploy = await bscJson<unknown | null>(effectiveProjectId, ["plan", "deploy", "get", "--json"], null);
           if (dbDeploy) {
             const raw = JSON.stringify(dbDeploy);
             if (raw !== deployAppliedRef.current[effectiveProjectId]) {
@@ -134,7 +135,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // still empty but a legacy `dependencies.json` exists in the section store, import it ONCE
         // (no data loss) so pre-#1191 projects migrate transparently; after that the DB is authoritative.
         try {
-          const dbDeps = await invoke<unknown | null>("plan_get_deps", { projectKey: effectiveProjectId });
+          const dbDeps = await bscJson<unknown | null>(effectiveProjectId, ["plan", "deps", "get", "--json"], null);
           if (dbDeps) {
             const raw = JSON.stringify(dbDeps);
             if (raw !== depsAppliedRef.current[effectiveProjectId]) {
@@ -159,7 +160,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // (#1055) instead of cloned silently. The applied-set guards against re-applying the same name
         // every 2s tick (and the modal's seen-set guards against re-prompting).
         try {
-          const dbMcp = await invoke<string[]>("plan_list_mcp", { projectKey: effectiveProjectId });
+          const dbMcp = await bscJson<string[]>(effectiveProjectId, ["plan", "mcp", "list", "--json"], []);
           const toDownload: string[] = [];
           for (const name of dbMcp ?? []) {
             const key = `${effectiveProjectId}::${name.toLowerCase()}`;
@@ -176,7 +177,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // (a full replace, which the `automations` gate reads). Guard on the serialized list so an
         // unchanged set doesn't churn the store every tick.
         try {
-          const dbAutos = await invoke<AutomationSuggestion[]>("plan_list_automations", { projectKey: effectiveProjectId });
+          const dbAutos = await bscJson<AutomationSuggestion[]>(effectiveProjectId, ["plan", "automations", "list", "--json"], []);
           const raw = JSON.stringify(dbAutos ?? []);
           if (raw !== autoAppliedRef.current[effectiveProjectId]) {
             autoAppliedRef.current[effectiveProjectId] = raw;
@@ -189,7 +190,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // `path` to a unified-store relpath and auto-assign it as that repo's dev/triage startup doc,
         // so opening the repo's console or triage pane launches with it. Guard on the serialized list.
         try {
-          const dbStartup = await invoke<StartupScriptRow[]>("plan_list_startup", { projectKey: effectiveProjectId });
+          const dbStartup = await bscJson<StartupScriptRow[]>(effectiveProjectId, ["plan", "startup", "list", "--json"], []);
           const raw = JSON.stringify(dbStartup ?? []);
           if (raw !== startupAppliedRef.current[effectiveProjectId]) {
             startupAppliedRef.current[effectiveProjectId] = raw;
@@ -208,7 +209,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
         // changing so a 2s re-read can't clobber a live UI edit, and pin the binding to the authoring
         // lifecycle so it can't revert to default on restart (#923).
         try {
-          const dbBp = await invoke<unknown | null>("plan_get_blueprint", { projectKey: effectiveProjectId });
+          const dbBp = await bscJson<unknown | null>(effectiveProjectId, ["plan", "blueprint", "get", "--json"], null);
           if (dbBp) {
             const raw = JSON.stringify(dbBp);
             if (raw !== lastBpJsonRef.current) {

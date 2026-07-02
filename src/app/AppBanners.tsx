@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { LifeBuoy, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import {
   discoverSessions, reconcileSessions, type RecoverableSession,
@@ -100,7 +101,7 @@ export function SessionRecoveryBanner() {
     const build = sessions.filter((s) => s.kind === "director" || s.kind === "worker");
     const triage = sessions.filter((s) => s.kind === "triage");
     if (build.length) {
-      const fleet = await invoke<FleetPlan | null>("plan_get_fleet", { projectKey }).catch(() => null);
+      const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
       if (fleet) fleetStartProject(projectKey, fleet, projectKey);
     }
     if (triage.length) {
