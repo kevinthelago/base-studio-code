@@ -5,6 +5,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
+import type { ModelId } from "@/app/console/lib/models";
 import { BUILTIN_PERSONAS, blankPersona, personaSlug, type Persona } from "./lib/persona";
 
 export interface PersonasSlice {
@@ -19,6 +20,11 @@ export interface PersonasSlice {
   updatePersona: (id: string, patch: Partial<Omit<Persona, "id" | "builtin">>) => void;
   /** Remove a USER persona (built-ins are not deletable — no-op). */
   removePersona: (id: string) => void;
+  /** Adopt a persona onto a console PANE (#2094 wire-up): stamp its role (the permission floor),
+   *  model, and start prompt onto the pane so the pane's NEXT launch runs as that persona, and mark
+   *  perms stale so the "relaunch to apply" nudge shows. Skills are attached to the persona but not
+   *  applied here yet (the per-session skill-override path is a refinement). No-op for an unknown id. */
+  applyPersonaToPane: (paneId: string, personaId: string) => void;
 }
 
 /** Mint a fresh, collision-free user-persona id from a name (or a generic seed). */
@@ -60,4 +66,19 @@ export const createPersonasSlice: StateCreator<AppStore, [], [], PersonasSlice> 
     set((s) => ({
       personas: s.personas.filter((p) => !(p.id === id && !p.builtin)),
     })),
+
+  applyPersonaToPane: (paneId, personaId) => {
+    const persona = get().personas.find((p) => p.id === personaId);
+    if (!persona) return;
+    set((s) => ({
+      paneRoles: { ...s.paneRoles, [paneId]: persona.role },
+      paneModels: persona.model ? { ...s.paneModels, [paneId]: persona.model as ModelId } : s.paneModels,
+      paneStartupPromptText: persona.startPrompt
+        ? { ...s.paneStartupPromptText, [paneId]: persona.startPrompt }
+        : s.paneStartupPromptText,
+      // Settings.json (the role gate) is read at session start — flag the pane so it shows the
+      // "relaunch to apply" nudge, exactly like a profile edit (#799).
+      panePermsStale: { ...s.panePermsStale, [paneId]: true },
+    }));
+  },
 });

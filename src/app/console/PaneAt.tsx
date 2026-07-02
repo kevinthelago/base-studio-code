@@ -61,6 +61,7 @@ export const PaneAt = memo(function PaneAt({
   const defaultModel = useAppStore((s) => s.defaultModel);
   const paneModel = useAppStore((s) => s.paneModels[pid]);
   const setPaneModel = useAppStore((s) => s.setPaneModel);
+  const applyPersonaToPane = useAppStore((s) => s.applyPersonaToPane);
   // Header/footer chrome data (#1149) — read from the store where known; the header degrades
   // gracefully when a field is absent (e.g. no role/branch assigned to an ad-hoc console).
   const paneRole = useAppStore((s) => s.paneRoles[pid]);
@@ -93,6 +94,7 @@ export const PaneAt = memo(function PaneAt({
       status={disabled ? "idle" : status}
       model={paneModel ?? defaultModel}
       onModel={(m) => setPaneModel(pid, m)}
+      onPersona={(personaId) => applyPersonaToPane(pid, personaId)}
       runningModel={usage?.model}
       repo={repoShort}
       branch={paneBranch}

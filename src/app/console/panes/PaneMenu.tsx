@@ -7,6 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
+import { useAppStore } from "@/store";
 
 // Re-exported so existing `import { type ModelId } from "./PaneMenu"` call sites keep working
 // now that the catalog lives in the shared module (#…).
@@ -55,12 +56,17 @@ interface PaneMenuProps {
   onViewChange?: (view: ViewKey) => void;
   /** Set this pane's model. Applies to `claude --model` on the pane's next launch. */
   onModel?: (model: ModelId) => void;
+  /** Adopt a persona onto this pane (#2094): stamps role/model/start-prompt for the next launch. */
+  onPersona?: (personaId: string) => void;
 }
 
 export function PaneMenu({
   agent, provider, running, model, runningModel, active, available, maxHeight, fullscreen, disabled,
-  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel,
+  onToggleFullscreen, onToggleDisable, onRedraw, onClose, onRename, onViewChange, onModel, onPersona,
 }: PaneMenuProps) {
+  // The persona library (#2094) — read here so the picker doesn't need prop-drilling; onPersona
+  // (bound to this pane's id upstream) does the actual stamp.
+  const personas = useAppStore((s) => s.personas);
   const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
   const harness = harnessOf(provider);
   // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
@@ -123,6 +129,24 @@ export function PaneMenu({
           applies on the pane's next launch (disable → enable to apply now)
         </Text>
       </MenuSection>
+
+      {/* Persona (#2094) — stamp a role + start prompt + model onto this pane, applied on its next
+          launch. Most natural on a manual console (the role is the user's to pick); a fleet pane
+          starts as worker/director but the user may re-stamp it here. */}
+      {onPersona && (
+        <MenuSection label="persona">
+          {personas.map((p) => (
+            <MenuRow key={p.id} onClick={() => { onPersona(p.id); onClose?.(); }}>
+              <Box as="span" bg="var(--border)" style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0 }} />
+              <Text style={{ color: "var(--fg)", flex: 1 }}>{p.name}</Text>
+              <Text tone="dim" size={9.5} style={{ marginRight: 6 }}>{p.role}</Text>
+            </MenuRow>
+          ))}
+          <Text as="div" tone="dim" size={9} style={{ padding: "4px 8px 0" }}>
+            sets role · model · start prompt · relaunch to apply
+          </Text>
+        </MenuSection>
+      )}
 
       {/* Views */}
       <MenuSection label="view">

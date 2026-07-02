@@ -71,6 +71,8 @@ interface PaneShellProps {
   onRename?: (name: string) => void;
   onPickDirectory?: () => void;
   onModel?: (model: ModelId) => void;
+  /** Adopt a persona onto this pane (#2094): stamps its role/model/start-prompt for the next launch. */
+  onPersona?: (personaId: string) => void;
   children: React.ReactNode;
 }
 
@@ -102,6 +104,7 @@ export function PaneShell({
   onRename,
   onPickDirectory,
   onModel,
+  onPersona,
   children,
 }: PaneShellProps) {
   const paneRef = useRef<HTMLDivElement>(null);
@@ -319,6 +322,7 @@ export function PaneShell({
             onRename={() => { setDraftName(agent); setEditingName(true); onMenuToggle?.(); }}
             onViewChange={onViewChange}
             onModel={onModel}
+            onPersona={onPersona}
           />
         </div>,
         document.body
