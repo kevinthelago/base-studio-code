@@ -46,10 +46,9 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const paneProfiles = useAppStore((s) => s.paneProfiles);
   const activeRepoName = useAppStore((s) => s.activeRepoName);
 
-  // Coordination & workflows (the Flow tab): the fleet's live work-flow, cross-referenced
-  // with the profile each session runs under — the Agents screen's angle on #199/#220.
+  // Coordination (the Flow tab): the fleet's live work-flow, cross-referenced with the
+  // profile each session runs under — the Agents screen's angle on #199.
   const wakePane = useAppStore((s) => s.wakePane);
-  const workflowRuns = useAppStore((s) => s.workflowRuns);
 
   // Application roles are app-managed singletons (display-only here).
   const roles = APP_ROLES;
@@ -70,8 +69,8 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     { id: "profiles", label: "Profiles", count: roles.length + profiles.length, hint: "· application + custom roles" },
     { id: "assignments", label: "Assignments", count: consoles.length, hint: "· consoles & panes" },
     { id: "activity", label: "Activity", count: auditRows.length },
-    { id: "flow", label: "Flow", count: Object.keys(workflowRuns).length, hint: "· coordination & workflows" },
-  ], [roles.length, profiles.length, consoles.length, auditRows.length, workflowRuns]);
+    { id: "flow", label: "Flow", hint: "· coordination" },
+  ], [roles.length, profiles.length, consoles.length, auditRows.length]);
   const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
   const tab = pageOverride ?? activeId; // active section
 
@@ -85,9 +84,9 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const find = (id: string) => [...roles, ...profiles].find((p) => p.id === id);
   const selected = find(selectedId) ?? profiles[0];
 
-  // Resolve the profile a coord/workflow session (a pane id like `t0p1`) runs under, so the
-  // Flow tab can show who is parked/flowing and under which permission profile. Falls back
-  // to the safe default when a pane has no explicit assignment.
+  // Resolve the profile a coordination session (a pane id like `t0p1`) runs under, so the
+  // Flow tab can show who is parked and under which permission profile. Falls back to the
+  // safe default when a pane has no explicit assignment.
   const profileFor = useCallback(
     (session: string): AgentProfile | undefined => find(paneProfiles[session] ?? "pf_sandbox"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +232,7 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
         />
       )}
       {tab === "flow" && (
-        <FlowTab runs={workflowRuns} wakePane={wakePane} profileFor={profileFor} />
+        <FlowTab wakePane={wakePane} profileFor={profileFor} />
       )}
     </Screen>
   );

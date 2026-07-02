@@ -137,7 +137,7 @@ describe("shouldFocus (role-aware focus targeting #392)", () => {
   });
 
   it("'everything' queues every role", () => {
-    for (const r of ["director", "worker", "triage", "reviewer", "tester", "conductor"]) {
+    for (const r of ["director", "worker", "triage", "reviewer", "tester"]) {
       expect(shouldFocus(r, "everything")).toBe(true);
     }
   });

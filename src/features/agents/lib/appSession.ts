@@ -26,7 +26,7 @@ export function appSessionOpenLabel(p: AgentProfile): string {
 }
 
 /** How other sessions interact with an app role — role-correct (the one-shot helpers aren't
- *  reached by other agents at all, so they don't get the planner/librarian reach note) (#740). */
+ *  reached by other agents at all, so they don't get the planner reach note) (#740). */
 export function appReachNote(p: AgentProfile): string {
   const first = p.name.split(" ")[0];
   switch (p.id) {

@@ -18,7 +18,6 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   triage: "pf_review",
   tester: "pf_review",
   reviewer: "pf_review",
-  conductor: "pf_review",
   issuer: "pf_review",
   juror: "pf_review",
   planner: "sys_planner",

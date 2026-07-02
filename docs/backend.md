@@ -133,7 +133,7 @@ Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** 
 `dd`, force-push, `curl … | sh`, …) plus any per-session `denied_commands` on top. The mandatory tier
 (`gh`, `git`, `bsc`) from the backend-owned `data/permissions/base.json` is always auto-approved.
 Claude Code precedence is **deny > ask > allow**.
-The role gate (planner / worker / director / triage / tester / reviewer / conductor / issuer / juror) maps to the
+The role gate (planner / worker / director / triage / tester / reviewer / issuer / juror) maps to the
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard
 push-confirm gate.
 

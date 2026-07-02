@@ -185,7 +185,7 @@ describe("roleDeniedTools (sub-agent block, #1036)", () => {
     expect(roleDeniedTools(ROLE_DEFAULTS.worker)).toEqual(["Task"]);
   });
   it("does not deny Task for non-worker roles (director coordinates, etc.)", () => {
-    for (const role of ["director", "triage", "tester", "reviewer", "conductor", "issuer", "juror", "planner"] as const) {
+    for (const role of ["director", "triage", "tester", "reviewer", "issuer", "juror", "planner"] as const) {
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).toEqual([]);
     }
   });

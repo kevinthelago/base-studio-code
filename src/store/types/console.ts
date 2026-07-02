@@ -7,7 +7,6 @@ import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget } from "@/app/console/lib/focusQueue";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
-import type { WorkflowRun } from "@/shared/lib/fleet/conductor";
 import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import type { DirectorMode } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
@@ -82,13 +81,6 @@ export interface ConsoleState {
    *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
    *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
   wakePane: (paneId: string, prompt: string) => boolean;
-  // Session pipelines (#220): in-flight runs keyed by work item. Register-only here;
-  // launching a stage as a role-scoped pane + auto-advance is the live-wiring slice.
-  workflowRuns: Record<string, WorkflowRun>;
-  workflowStart: (presetKey: string, item: string) => void;
-  workflowClear: (item: string) => void;
-  workflowMount: (item: string) => void;
-  workflowSetRuns: (runs: Record<string, WorkflowRun>) => void;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
