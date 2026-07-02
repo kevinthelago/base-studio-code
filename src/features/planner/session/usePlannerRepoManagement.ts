@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscRun } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 
 export function usePlannerRepoManagement(effectiveProjectId: string, effectiveRepos: string[]): void {
@@ -27,7 +27,7 @@ export function usePlannerRepoManagement(effectiveProjectId: string, effectiveRe
           useAppStore.getState().addProjectRepo(effectiveProjectId, fullName);
           // Persist the link in the hub's plan.db (#1012) — durable across a store/app-state reset,
           // which the store-only persistence didn't survive.
-          fireInvoke("plan_add_repo", { projectKey: effectiveProjectId, fullName });
+          void bscRun(effectiveProjectId, ["plan", "repo", "add", fullName]);
         })
         .catch(e => console.error(`clone ${fullName} failed:`, e))
         .finally(() => autoCloneRef.current.delete(fullName));
