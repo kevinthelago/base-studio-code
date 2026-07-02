@@ -11,8 +11,6 @@
 
 export type FieldType = "string" | "number" | "bool" | "date" | "money" | "ref" | "enum";
 
-export const FIELD_TYPES: FieldType[] = ["string", "number", "bool", "date", "money", "ref", "enum"];
-
 /** Entity/field keys become SQL identifiers in the store, which whitelists exactly this
  *  shape (`ddl::quote_ident`). Surfacing it here lets the editor flag a bad key before a
  *  load would be rejected. */

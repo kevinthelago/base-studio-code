@@ -76,9 +76,6 @@ export function reconcileBuiltInProfiles(stored: AgentProfile[]): AgentProfile[]
   return [...PROFILES, ...customs];
 }
 
-/** The app role the planning autopilot's simulated user runs under (#682). */
-export const PLANNING_AUTOPILOT_ROLE_ID = "sys_planning_autopilot";
-
 /** Tools rendered in the tri-state table: [key, description]. */
 export const TOOL_DEFS: [ToolKey, string][] = [
   ["read", "Read files inside the repo"],

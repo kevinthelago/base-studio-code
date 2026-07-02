@@ -34,5 +34,3 @@ export interface StageRunState {
   lastRun: number | null;
   message?: string;
 }
-
-export const IDLE_RUN: StageRunState = { status: "idle", lastRun: null };
