@@ -19,7 +19,7 @@ export type PrimitiveName =
   // controls
   | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "SelectField"
   // data
-  | "Card" | "Chip" | "StatTile" | "FillBar"
+  | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
   // feedback
   | "Banner" | "EmptyState" | "StatusDot";
 
@@ -254,6 +254,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "track", type: "color", default: "var(--bg-elev2)", description: "Track (background) color." },
       { name: "height", type: "number", default: 8, description: "Bar height in px." },
       { name: "rounded", type: "boolean", default: true, description: "Round the ends." },
+    ],
+  },
+  {
+    name: "Code", group: "data", importPath: "@/shared/ui/data/Code",
+    description: "A read-only monospace code/prompt block — a scrollable framed <pre>.",
+    props: [
+      CHILDREN,
+      { name: "maxHeight", type: "number", default: 150, description: "Max scroll height in px." },
+      { name: "wrap", type: "boolean", default: true, description: "Soft-wrap long lines vs a horizontal scroll." },
+      { name: "tone", type: "enum", values: ["dim", "muted", "accent", "danger", "success"], default: "muted", description: "Foreground color tone." },
     ],
   },
   // ---- feedback -------------------------------------------------------------
