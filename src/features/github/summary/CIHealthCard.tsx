@@ -4,6 +4,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import type { CiRow } from "../lib/githubSummary";
 
@@ -15,7 +16,7 @@ export function CIHealthCard({ matrix, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>CI health</h3>
-        <span className="hint">last 7 days · all branches</span>
+        <Box as="span" className="hint">last 7 days · all branches</Box>
       </Row>
       {matrix.length === 0 && !loading && (
         <Text mono size="sm" tone="dim" as="div" style={{ padding: "4px 0" }}>No CI runs found.</Text>
@@ -26,7 +27,7 @@ export function CIHealthCard({ matrix, loading }: {
             <Text mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</Text>
             <Row gap={4} align="stretch">
               {days.map((d, i) => (
-                <div key={i} style={{
+                <Box key={i} style={{
                   flex: 1, height: 14, borderRadius: 3,
                   background: d === null ? "var(--bg-elev2)" : d ? "var(--success)" : "var(--danger)",
                   opacity: d === null ? 0.4 : 0.85,

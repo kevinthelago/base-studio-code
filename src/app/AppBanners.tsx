@@ -12,6 +12,8 @@ import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // App banners — the full-width status strips pinned at the top of the app shell. Each is a small
@@ -142,22 +144,22 @@ export function SessionRecoveryBanner() {
         right={<button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>}
         onDismiss={() => setDismissed(true)}
       >
-        <span style={{ flex: 1, minWidth: 0 }}>
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
           <b>{recoverable.length} session{recoverable.length === 1 ? "" : "s"}</b> found on disk that {recoverable.length === 1 ? "isn't" : "aren't"} open — restore or discard?
-        </span>
+        </Box>
       </Banner>
 
       {open && (
-        <div className="banner-drawer" style={{ gap: 12 }}>
+        <Box className="banner-drawer" style={{ gap: 12 }}>
           {[...groups.entries()].map(([key, sessions]) => {
             const manual = key === " manual", orphan = key === " orphan";
             const restorable = sessions.filter((s) => !s.reapOnly);
             const label = manual ? "Manual scratch shells" : orphan ? "Orphaned (deleted project)" : key;
             return (
-              <div key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
+              <Box key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
                 <Row gap={8} style={{ padding: "6px 10px", background: "var(--bg-panel)" }}>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                  <span className="hint" style={{ fontSize: 10.5 }}>{sessions.length}</span>
+                  <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</Box>
+                  <Text className="hint" size={10.5}>{sessions.length}</Text>
                   {restorable.length > 0 && (
                     <button className="btn primary" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 8px" }}
                       onClick={() => restoreProject(key, restorable)}>
@@ -167,11 +169,11 @@ export function SessionRecoveryBanner() {
                 </Row>
                 {sessions.map((s) => (
                   <Grid key={s.paneId} cols="1fr auto auto auto" gap={8} align="center" style={{ padding: "6px 10px", borderTop: "1px solid var(--border-soft)" }}>
-                    <span style={{ minWidth: 0, display: "grid", gap: 1 }}>
-                      <span className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</span>
-                      <span className="hint" style={{ fontSize: 10 }}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</span>
-                    </span>
-                    {s.reapOnly ? <span className="hint" style={{ fontSize: 10 }}>reap-only</span> : <span />}
+                    <Box as="span" style={{ minWidth: 0, display: "grid", gap: 1 }}>
+                      <Box as="span" className="mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.paneId}</Box>
+                      <Text className="hint" size={10}>{s.kind} · {s.status}{s.sources.length ? ` · ${s.sources.join("+")}` : ""}</Text>
+                    </Box>
+                    {s.reapOnly ? <Text className="hint" size={10}>reap-only</Text> : <Box as="span" />}
                     <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => drop(new Set([s.paneId]))} title="Ignore for now">Ignore</button>
                     <button className="btn ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 8px", color: "var(--danger)" }}
                       onClick={() => discard(s)} title={s.livePid ? `Kill pid ${s.livePid} + forget` : "Forget"}>
@@ -179,10 +181,10 @@ export function SessionRecoveryBanner() {
                     </button>
                   </Grid>
                 ))}
-              </div>
+              </Box>
             );
           })}
-        </div>
+        </Box>
       )}
     </>
   );
@@ -216,38 +218,38 @@ function QuarantineBanner() {
         role="alert"
         lead={<ShieldAlert size={15} style={{ color: "var(--red, #d4554f)", flexShrink: 0 }} />}
         right={
-          <span style={{ display: "inline-flex", gap: 6 }}>
+          <Box as="span" style={{ display: "inline-flex", gap: 6 }}>
             <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</button>
             {n > 1 && (
               <button className="btn ghost" onClick={() => entries.forEach(([p]) => acknowledgeQuarantine(p))} title="Acknowledge all">
                 Ack all
               </button>
             )}
-          </span>
+          </Box>
         }
       >
-        <span style={{ flex: 1, minWidth: 0 }}>
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
           <b>{n} worker{n === 1 ? "" : "s"} quarantined</b> — {n === 1 ? "a stream was" : `${n} streams were`} paused off-plan.
           Review before relaunching.
-        </span>
+        </Box>
       </Banner>
 
       {open && (
-        <div className="banner-drawer">
+        <Box className="banner-drawer">
           {entries.map(([paneId, info]) => (
             <Grid key={paneId} cols="1fr auto" gap={8} align="start" style={{ padding: "7px 9px", borderRadius: 5, background: "color-mix(in oklch, var(--danger), transparent 90%)" }}>
-              <span style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <Box as="span" style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {info.streamId} · {paneId}
-                </span>
-                <span className="hint" style={{ fontSize: 10.5 }}>{info.summary}</span>
-              </span>
+                </Box>
+                <Text className="hint" size={10.5}>{info.summary}</Text>
+              </Box>
               <button className="btn ghost" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }} onClick={() => acknowledgeQuarantine(paneId)}>
                 Acknowledge
               </button>
             </Grid>
           ))}
-        </div>
+        </Box>
       )}
     </>
   );
@@ -295,13 +297,13 @@ export function SandboxSetupBanner() {
       onDismiss={dismiss}
     >
       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-        <span>
+        <Text>
           <b>Agent sandbox not set up</b> — {installing ? "installing…" : (installMsg ?? sandbox.detail)}
-        </span>
+        </Text>
         {installing && (
-          <div aria-hidden style={{ height: 3, borderRadius: 2, background: "color-mix(in oklch, var(--warn), transparent 75%)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
-          </div>
+          <Box aria-hidden style={{ height: 3, borderRadius: 2, background: "color-mix(in oklch, var(--warn), transparent 75%)", overflow: "hidden" }}>
+            <Box style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
+          </Box>
         )}
       </Stack>
     </Banner>
@@ -316,11 +318,11 @@ export function SandboxSetupBanner() {
  */
 export function AppBanners() {
   return (
-    <div className="app-banner-stack">
+    <Box className="app-banner-stack">
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
-    </div>
+    </Box>
   );
 }

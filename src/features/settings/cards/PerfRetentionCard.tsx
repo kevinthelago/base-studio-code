@@ -6,6 +6,8 @@ import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function PerfRetentionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -66,19 +68,19 @@ export function PerfRetentionCard() {
           label="Clear history"
           hint="Delete all stored samples from the database and the in-memory ring buffer."
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Box style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ConfirmButton
               label="Clear history"
               armedLabel="Click again to confirm"
               onConfirm={clearHistory}
             />
             {clearStatus === "ok" && (
-              <span className="mono" style={{ fontSize: 11, color: "var(--accent)" }}>Cleared</span>
+              <Text as="span" mono size="sm" tone="accent">Cleared</Text>
             )}
             {clearStatus === "err" && (
-              <span className="mono" style={{ fontSize: 11, color: "var(--danger)" }}>Failed</span>
+              <Text as="span" mono size="sm" tone="danger">Failed</Text>
             )}
-          </div>
+          </Box>
         </Row>
       </Stack>
     </Card>

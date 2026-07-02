@@ -7,7 +7,9 @@ import { Spark } from "@/shared/ui/charts";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 
 export function ReposGrid({ repos, loading }: {
@@ -19,36 +21,36 @@ export function ReposGrid({ repos, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Repositories</h3>
-        <span className="hint">{repos.length} connected · click to drill in</span>
+        <Box as="span" className="hint">{repos.length} connected · click to drill in</Box>
         <Spacer />
         <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>
       </Row>
       {repos.length === 0 && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</div>
+        <Box className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</Box>
       )}
       <Grid cols={2} gap="sm">
         {repos.map(r => (
-          <div key={r.full_name} onClick={() => setGithubPageMode("repos")} style={{
+          <Box key={r.full_name} onClick={() => setGithubPageMode("repos")} style={{
             padding: "12px 14px", borderRadius: 6,
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             cursor: "pointer",
           }}>
             <Row align="baseline" gap={8} style={{ marginBottom: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.language ? langColor(r.language) : "var(--fg-dim)", flexShrink: 0, display: "inline-block" }} />
-              <span className="mono-value">{r.full_name}</span>
+              <Box as="span" style={{ width: 8, height: 8, borderRadius: "50%", background: r.language ? langColor(r.language) : "var(--fg-dim)", flexShrink: 0, display: "inline-block" }} />
+              <Box as="span" className="mono-value">{r.full_name}</Box>
               <Spacer />
-              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(r.lastPush)}</span>
+              <Text as="span" mono size={9.5} tone="dim">{timeAgo(r.lastPush)}</Text>
             </Row>
-            <div style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 8 }}>{r.description ?? "No description."}</div>
+            <Box style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 8 }}>{r.description ?? "No description."}</Box>
             <Row className="mono" gap={14} style={{ fontSize: 10, color: "var(--fg-muted)" }}>
-              <span>⊕ <b style={{ color: "var(--fg)" }}>{loading ? "…" : r.prCount}</b> PR</span>
-              <span style={{ color: r.ciStatus === "passing" ? "var(--success)" : r.ciStatus === "failing" ? "var(--danger)" : "var(--fg-dim)" }}>
+              <Text>⊕ <b style={{ color: "var(--fg)" }}>{loading ? "…" : r.prCount}</b> PR</Text>
+              <Text as="span" style={{ color: r.ciStatus === "passing" ? "var(--success)" : r.ciStatus === "failing" ? "var(--danger)" : "var(--fg-dim)" }}>
                 ◉ ci {r.ciStatus}
-              </span>
+              </Text>
               <Spacer />
               {r.spark.some(v => v > 0) && <Spark data={r.spark} color="var(--accent)" w={90} h={22} fill={false} />}
             </Row>
-          </div>
+          </Box>
         ))}
       </Grid>
     </Card>

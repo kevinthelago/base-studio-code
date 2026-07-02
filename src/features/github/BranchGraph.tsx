@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
 import { useAppStore, type GithubRepo } from "@/store";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 
@@ -135,9 +136,9 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
     <Card style={{ padding: "14px 16px 12px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Branch graph</h3>
-        <span className="hint">
+        <Box as="span" className="hint">
           {busy ? "loading…" : layout ? `${layout.laneNames.length} branches · ${layout.points.length} commits` : "—"}
-        </span>
+        </Box>
       </Row>
 
       {busy && (
@@ -151,7 +152,7 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
         </Text>
       )}
       {!busy && layout && layout.points.length > 0 && (
-        <div style={{ overflow: "auto" }}>
+        <Box style={{ overflow: "auto" }}>
           <svg width={X_RIGHT + 30} height={layout.height + 10} style={{ display: "block" }}>
             {layout.laneNames.map((name, i) => (
               <g key={`lane-${i}`}>
@@ -186,16 +187,16 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
               );
             })}
           </svg>
-        </div>
+        </Box>
       )}
 
       {layout && layout.laneNames.length > 0 && (
         <Row gap={14} wrap align="stretch" style={{ marginTop: 10 }}>
           {layout.laneNames.map((name, i) => (
-            <span key={name} className="mono" style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
-              <span style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
+            <Box as="span" key={name} className="mono" style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
+              <Box as="span" style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
               {name}
-            </span>
+            </Box>
           ))}
         </Row>
       )}

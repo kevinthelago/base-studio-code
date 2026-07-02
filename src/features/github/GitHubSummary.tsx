@@ -8,6 +8,7 @@ import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { useGithubSummary } from "./useGithubSummary";
@@ -34,15 +35,15 @@ export function GitHubSummary() {
   const { heatmapCells, rawCounts, rawDates, totalContribs } = heatmap;
 
   return (
-    <section style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+    <Box as="section" style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
+      <Box style={{ maxWidth: 1280, margin: "0 auto" }}>
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
+          <Box style={{ flex: 1 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Across all repositories</h2>
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
+            <Box style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
               {githubRepos.length} repo{githubRepos.length !== 1 ? "s" : ""} · 28-week view
-            </div>
-          </div>
+            </Box>
+          </Box>
           <Button onClick={() => setGithubPageMode("repos")}>browse repositories →</Button>
         </Row>
 
@@ -57,11 +58,11 @@ export function GitHubSummary() {
           ] as const).map(([k, v, sub, tone]) => (
             <Card key={k} style={{ padding: "10px 12px" }}>
               <SectionLabel>{k}</SectionLabel>
-              <div className="mono" style={{
+              <Box className="mono" style={{
                 fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : tone === "info" ? "var(--info)" : "var(--fg)",
-              }}>{v}</div>
-              <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
+              }}>{v}</Box>
+              <Box style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</Box>
             </Card>
           ))}
         </Grid>
@@ -79,7 +80,7 @@ export function GitHubSummary() {
             <LanguageMix langTotals={langTotals} repoCount={langRepoCount} totalRepos={githubRepos.length} loading={loading} />
           </Stack>
         </Grid>
-      </div>
-    </section>
+      </Box>
+    </Box>
   );
 }

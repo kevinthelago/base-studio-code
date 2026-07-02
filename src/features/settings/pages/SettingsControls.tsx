@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function ToggleRow({ on, onToggle, title, children }: {
   on: boolean; onToggle: () => void; title: string; children: ReactNode;
@@ -8,12 +10,12 @@ export function ToggleRow({ on, onToggle, title, children }: {
   return (
     <Row gap={12}>
       <Toggle on={on} onClick={onToggle} role="switch" ariaChecked={on} />
-      <div>
-        <div className="mono" style={{ fontSize: 11.5, color: "var(--fg)", marginBottom: 2 }}>
+      <Box>
+        <Text as="div" mono size={11.5} style={{ color: "var(--fg)", marginBottom: 2 }}>
           {title}
-        </div>
-        <div className="hint">{children}</div>
-      </div>
+        </Text>
+        <Box className="hint">{children}</Box>
+      </Box>
     </Row>
   );
 }
@@ -23,10 +25,10 @@ export function ToggleRow({ on, onToggle, title, children }: {
 export function SettingsRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{label}</div>
-        {hint && <div style={{ fontFamily: "var(--sans)", fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>{hint}</div>}
-      </div>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{label}</Text>
+        {hint && <Text as="div" size={11} tone="dim" style={{ fontFamily: "var(--sans)", marginTop: 2 }}>{hint}</Text>}
+      </Box>
       {children}
     </Row>
   );

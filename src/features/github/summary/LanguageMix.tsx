@@ -5,6 +5,7 @@ import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { langColor, SUMMARY_REPO_SAMPLE } from "../lib/githubSummary";
@@ -41,24 +42,24 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
     <Card style={{ padding: "14px 16px" }}>
       <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Languages</h3>
-        <span className="hint" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</span>
+        <Box as="span" className="hint" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</Box>
       </Row>
       {entries.length === 0 && !loading && (
         <Text mono size={11} tone="dim" as="div" style={{ padding: "4px 0" }}>No language data available.</Text>
       )}
       {entries.length > 0 && (
         <>
-          <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 10 }}>
+          <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 10 }}>
             {entries.map(l => (
-              <div key={l.n} title={`${l.n} · ${l.pct}%`} style={{ width: `${l.pct}%`, background: l.c }} />
+              <Box key={l.n} title={`${l.n} · ${l.pct}%`} style={{ width: `${l.pct}%`, background: l.c }} />
             ))}
-          </div>
+          </Row>
           <Stack className="mono" gap={5} style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
             {entries.map(l => (
               <Grid key={l.n} cols="12px 1fr 40px" gap={8} align="center">
                 <ColorSwatch color={l.c} />
-                <span style={{ color: "var(--fg)" }}>{l.n}</span>
-                <span style={{ textAlign: "right", color: "var(--fg-dim)" }}>{l.pct}%</span>
+                <Text as="span" style={{ color: "var(--fg)" }}>{l.n}</Text>
+                <Text as="span" tone="dim" style={{ textAlign: "right" }}>{l.pct}%</Text>
               </Grid>
             ))}
           </Stack>

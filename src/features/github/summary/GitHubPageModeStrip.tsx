@@ -4,6 +4,7 @@
 import { useAppStore } from "@/store";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function GitHubPageModeStrip() {
   const { githubPageMode, setGithubPageMode, githubUser } = useAppStore();
@@ -30,14 +31,14 @@ export function GitHubPageModeStrip() {
             cursor: "pointer",
           }}>
             {m.label}
-            {on && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>· {m.hint}</span>}
+            {on && <Text as="span" size={10} tone="dim">· {m.hint}</Text>}
           </Row>
         );
       })}
       <Spacer />
       <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-dim)" }}>
-        <span style={{ color: "var(--success)" }}>● connected</span>
-        {githubUser && <><span>·</span><span>{githubUser.login}</span></>}
+        <Text as="span" tone="success">● connected</Text>
+        {githubUser && <><Text>·</Text><Text>{githubUser.login}</Text></>}
       </Row>
     </Row>
   );

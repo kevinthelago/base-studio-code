@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { Box } from "@/shared/ui/layout/Box";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { useModalDismiss } from "@/shared/hooks/useModalDismiss";
 import { createPortal } from "react-dom";
@@ -143,7 +144,7 @@ export function TabBar({
         onDrop={(e) => { if (dragIdx === null) return; e.preventDefault(); commitDrop(); }}
       >
         {tabs.map((t, i) => (
-          <div
+          <Box
             key={t.id}
             data-tab
             className={"tab " + (t.id === activeId ? "active" : "")}
@@ -169,7 +170,7 @@ export function TabBar({
             onDragEnd={endDrag}
             style={tabDragStyle(i)}
           >
-            {t.status !== undefined && <span className={"dot " + t.status} />}
+            {t.status !== undefined && <Box as="span" className={"dot " + t.status} />}
             {editingId === t.id ? (
               <input
                 className="mono"
@@ -189,32 +190,33 @@ export function TabBar({
                 }}
               />
             ) : (
-              <span
+              <Box
+                as="span"
                 // Flex-shrinkable so the title (not a trailing element) ellipsizes
                 // when the tab hits its width cap.
                 style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 onDoubleClick={onRename ? (e) => { e.stopPropagation(); setEditingId(t.id); setEditingName(t.label); } : undefined}
               >
                 {t.label}
-              </span>
+              </Box>
             )}
-            {t.count !== undefined && <span className="count">{t.count}</span>}
+            {t.count !== undefined && <Box as="span" className="count">{t.count}</Box>}
             {onClose && (
-              <span className="x" onClick={(e) => { e.stopPropagation(); onClose(t.id); }}>×</span>
+              <Box as="span" className="x" onClick={(e) => { e.stopPropagation(); onClose(t.id); }}>×</Box>
             )}
-          </div>
+          </Box>
         ))}
         {onAdd && <button className="tab-add" onClick={onAdd}>+</button>}
       </div>
 
       {tearOff && dragIdx !== null && createPortal(
-        <div className="tab-tearoff-preview" style={{ position: "fixed", left: tearOff.x + 14, top: tearOff.y + 14, zIndex: 3000, pointerEvents: "none" }}>
-          <div className="ttp-bar">
-            <span className="ttp-light" /><span className="ttp-light" /><span className="ttp-light" />
-            <span className="ttp-title">{tabs[dragIdx]?.label}</span>
-          </div>
-          <div className="ttp-body"><span className="ttp-hint">↗ release to open in a new window</span></div>
-        </div>,
+        <Box className="tab-tearoff-preview" style={{ position: "fixed", left: tearOff.x + 14, top: tearOff.y + 14, zIndex: 3000, pointerEvents: "none" }}>
+          <Box className="ttp-bar">
+            <Box as="span" className="ttp-light" /><Box as="span" className="ttp-light" /><Box as="span" className="ttp-light" />
+            <Box as="span" className="ttp-title">{tabs[dragIdx]?.label}</Box>
+          </Box>
+          <Box className="ttp-body"><Box as="span" className="ttp-hint">↗ release to open in a new window</Box></Box>
+        </Box>,
         document.body,
       )}
 

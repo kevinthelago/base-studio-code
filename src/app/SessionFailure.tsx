@@ -6,6 +6,7 @@
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface SessionFailureProps {
   critical: ReadinessCheck[];
@@ -31,10 +32,10 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 28, lineHeight: 1 }}>⚠</div>
-      <div style={{ fontWeight: 600, fontSize: 14, color: "#d4554f" }}>
+      <Text as="div" size={28} style={{ lineHeight: 1 }}>⚠</Text>
+      <Text as="div" size={14} weight={600} style={{ color: "#d4554f" }}>
         Session prerequisites missing
-      </div>
+      </Text>
       <Stack
         gap={10}
         style={{
@@ -54,7 +55,7 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
               textAlign: "left",
             }}
           >
-            <span style={{ color: "#e06c75", fontSize: 12 }}>{c.message}</span>
+            <Text size={12} style={{ color: "#e06c75" }}>{c.message}</Text>
             {c.installUrl && (
               <a
                 href={c.installUrl}
@@ -91,10 +92,10 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
       >
         Retry
       </button>
-      <div style={{ color: "#44474f", fontSize: 11, maxWidth: 380 }}>
+      <Text as="div" size={11} style={{ color: "#44474f", maxWidth: 380 }}>
         Install the missing tools, then click Retry. The session will probe again
         without a full relaunch.
-      </div>
+      </Text>
     </Stack>
   );
 }

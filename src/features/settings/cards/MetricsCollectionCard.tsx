@@ -4,6 +4,7 @@ import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
 import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
 
 export function MetricsCollectionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -42,7 +43,7 @@ export function MetricsCollectionCard() {
           label="Metric families"
           hint="Which sources to record. Process = per-agent shell RSS/CPU. Frontend = WebView heap, jank, PTY throughput."
         >
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <Box style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <label className="mono" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <Toggle on={perfConfig.trackProcess} onClick={() => update({ trackProcess: !perfConfig.trackProcess })} />
               Process
@@ -51,7 +52,7 @@ export function MetricsCollectionCard() {
               <Toggle on={perfConfig.trackFrontend} onClick={() => update({ trackFrontend: !perfConfig.trackFrontend })} />
               Frontend
             </label>
-          </div>
+          </Box>
         </Row>
       </Stack>
     </Card>

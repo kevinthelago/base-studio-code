@@ -164,7 +164,7 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
       fontSize: 11,
     }}>
-      <span>console disabled · session stopped</span>
+      <Text as="span">console disabled · session stopped</Text>
       <button className="btn" onClick={onEnable}>enable</button>
     </Stack>
   );
@@ -184,8 +184,8 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
       flex: 1, padding: 16, textAlign: "center",
       background: "var(--bg-canvas)", color: "var(--fg-dim)", fontSize: 11,
     }}>
-      <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
-      <span style={{ color: "var(--fg-muted)", maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</span>
+      <Text as="span" weight={600} style={{ color: tone.color }}>{tone.label}</Text>
+      <Text as="span" tone="muted" style={{ maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</Text>
       <Text tone="dim" size={10}>session ended · audit on the worker detail page</Text>
       <button className="btn" onClick={onReopen}>reopen</button>
     </Stack>
@@ -202,7 +202,7 @@ function DormantConsole({ onResume }: { onResume: () => void }) {
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
       fontSize: 11,
     }}>
-      <span>session dormant · reaped after idle to free memory</span>
+      <Text as="span">session dormant · reaped after idle to free memory</Text>
       <button className="btn" onClick={onResume}>resume</button>
     </Stack>
   );
@@ -438,7 +438,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
+    <Stack style={{ flex: 1, minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
         <Row className="mono" gap={8} style={{
           padding: "3px 14px",
@@ -447,7 +447,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
           fontSize: 10, color: "var(--accent)",
           flexShrink: 0,
         }}>
-          <span>⟳ broadcast · input mirrors to all panes</span>
+          <Text as="span">⟳ broadcast · input mirrors to all panes</Text>
           <Text tone="dim">· Ctrl+Shift+C to exit</Text>
         </Row>
       )}
@@ -479,6 +479,6 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
           </div>
         );
       })}
-    </div>
+    </Stack>
   );
 }
