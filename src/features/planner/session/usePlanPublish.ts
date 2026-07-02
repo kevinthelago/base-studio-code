@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import type { Section } from "../github/ghStructure";
@@ -329,8 +329,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         repos, featuresContent: sections.find(s => s.k === "features")?.content ?? "",
         projectId, streams, viewerLogin,
       }, {
-        upsertIssue: (iss) => invoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss })
-          .then(() => {}).catch((e) => { console.warn(`plan_upsert_issue ${iss.ref}: ${e}`); }),
+        upsertIssue: (iss) => bscWrite(effectiveProjectId, ["plan", "add"], iss),
       });
 
       // 4. Stream labels.
@@ -366,7 +365,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
           if (batch.length < 100) break; // last page
         }
         for (const iss of recoverIssues(rows, repo)) {
-          await safeInvoke("plan_upsert_issue", { projectKey: effectiveProjectId, issue: iss }, undefined);
+          await bscWrite(effectiveProjectId, ["plan", "add"], iss);
           total++;
         }
       }
