@@ -14,8 +14,10 @@ import { probeJumble } from "@/app/console/lib/jumbleProbe";
 import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd } from "@/app/console/lib/sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly } from "@/app/console/lib/sessionLaunch";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
@@ -523,6 +525,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         // Only pass startupPrompt for Claude panes — the backend bakes it as
         // `claude --initial-message`, which would be wrong for other providers.
         startupPrompt: sandboxed ? undefined : (bakesPrompt ? startupPrompt : undefined),
+        // #2052: on a crash-restore remount, suppress re-submitting the baked startup prompt /
+        // checkpoint note into the resumed (`--continue`) conversation — otherwise Claude submits
+        // it into the restored session, re-running or (if it was a `/clear`) wiping its history.
+        // Only true on the crash-recovery relaunch (restoreRequested); normal launches deliver.
+        startupPromptFreshOnly: resolveStartupPromptFreshOnly(st, paneId, isClaudeProvider),
         model:   paneModel,
         // Triage panes resume the repo's prior conversation (claude --continue).
         continueSession: useAppStore.getState().paneContinue[paneId] ?? false,
@@ -736,6 +743,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   }, [redrawNonce]);
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- terminal region with conditional display (flex/none)
     <div
       style={{
         flex: 1, minHeight: 0, position: "relative",
@@ -759,27 +767,29 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         />
       )}
       {permsStale && (
-        <div className="mono" style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+        <Row className="mono" gap={8} style={{
+          padding: "6px 12px",
           fontSize: 11, color: "var(--accent)",
           background: "color-mix(in oklch, var(--accent), transparent 90%)",
           borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
         }}>
-          <span>⟳</span>
-          <span style={{ flex: 1, color: "var(--fg-muted)" }}>
+          <Text as="span">⟳</Text>
+          <Text tone="muted" style={{ flex: 1 }}>
             Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
-          </span>
+          </Text>
           <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
-        </div>
+        </Row>
       )}
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
           box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view
           beneath our native overlay) was reverted along with the overlay. */}
+      {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount region (measured) */}
       <div style={{
         flex: 1, minHeight: 0, overflow: "hidden",
         background: TERM_THEME.background as string,
         display: criticalChecks.length > 0 ? "none" : undefined,
       }}>
+        {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount ref */}
         <div
           ref={containerRef}
           style={{ height: "100%", padding: "6px 4px" }}

@@ -189,6 +189,16 @@ pub(crate) fn import_config_bundle(path: String, replace: bool) -> Result<usize,
     import_into(&config_root(), &bundle, replace).map_err(|e| e.to_string())
 }
 
+/// Return the entire runtime config dir as `rel-path → contents` (#2047). The frontend primes this at
+/// boot so its config surfaces (blueprints / roles / skills / stages / taxonomies) read the config-dir
+/// copy over the embedded default — the parity of P2's backend runtime loading. Seeds first, so a
+/// never-edited install returns the shipped defaults.
+#[tauri::command]
+pub(crate) fn get_config_files() -> Result<BTreeMap<String, String>, String> {
+    ensure_seeded().map_err(|e| e.to_string())?;
+    Ok(export_from(&config_root()).files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

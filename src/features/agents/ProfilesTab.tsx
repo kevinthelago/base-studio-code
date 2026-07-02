@@ -9,9 +9,14 @@ import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
@@ -30,6 +35,11 @@ export interface ProfilesTabProps {
   setTool: (t: ToolKey, v: Tier) => void;
   removeCmd: (c: string) => void;
   addCmd: () => void;
+  addPath: (kind: "allow" | "deny") => void;
+  editPath: (kind: "allow" | "deny", index: number, value: string) => void;
+  removePath: (kind: "allow" | "deny", index: number) => void;
+  addHost: () => void;
+  removeHost: (host: string) => void;
   toggleAssign: (consoleId: string, paneId: string) => void;
   find: (id: string) => AgentProfile | undefined;
   editable: boolean;
@@ -40,27 +50,27 @@ export interface ProfilesTabProps {
 export function ProfilesTab(props: ProfilesTabProps) {
   const { roles, profiles, consoles, selected, onSelect, onCreate } = props;
   return (
-    <div className="prof-layout">
-      <div className="card prof-list">
-        <div className="head">
-          <div className="head-row">
+    <Box className="prof-layout">
+      <Box className="card prof-list">
+        <Box className="head">
+          <Box className="head-row">
             <h3>Roles</h3>
-            <span className="hint">{roles.length} application · {profiles.length} custom</span>
-          </div>
+            <Box as="span" className="hint">{roles.length} application · {profiles.length} custom</Box>
+          </Box>
           <input className="input" placeholder="filter…" style={{ marginTop: 8, height: 24, fontSize: 10.5 }} />
-        </div>
-        <div className="scroll">
-          <div className="list-label">Application · always present</div>
+        </Box>
+        <Box className="scroll">
+          <Box className="list-label">Application · always present</Box>
           {roles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
-          <div className="list-label">Custom &amp; generated</div>
+          <Box className="list-label">Custom &amp; generated</Box>
           {profiles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
-          <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</button>
-          </div>
-        </div>
-      </div>
-      <div className="prof-detail"><ProfDetail {...props} p={selected} /></div>
-    </div>
+          <Box style={{ padding: "12px 14px" }}>
+            <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</Button>
+          </Box>
+        </Box>
+      </Box>
+      <Box className="prof-detail"><ProfDetail {...props} p={selected} /></Box>
+    </Box>
   );
 }
 
@@ -78,18 +88,18 @@ function ProfRow({ p, on, consoles, onClick }: { p: AgentProfile; on: boolean; c
       title={p.name}
       titleAside={<Chip tone={originTone(obCls)} size="xs">{origin}</Chip>}
       subtitle={
-        <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <Box as="span" className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", display: "inline-flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {isApp
-            ? <><span>◆ owns {p.session}</span><span>· always on</span></>
-            : <><span>{paneCount(p.id, consoles)} panes</span><span>· {p.commands.length} cmds</span></>}
-        </span>
+            ? <><Text as="span">◆ owns {p.session}</Text><Text as="span">· always on</Text></>
+            : <><Text as="span">{paneCount(p.id, consoles)} panes</Text><Text as="span">· {p.commands.length} cmds</Text></>}
+        </Box>
       }
       trailing={<Chip tone={modeTone(p.mode)} size="xs">{p.mode}</Chip>}
     />
   );
 }
 
-function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAssign, find, editable, onDelete }: ProfilesTabProps & { p: AgentProfile }) {
+function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath, editPath, removePath, addHost, removeHost, toggleAssign, find, editable, onDelete }: ProfilesTabProps & { p: AgentProfile }) {
   const isApp = p.category === "application";
   // Application roles are app-managed: lock their policy editors (visually + clicks).
   const lock: CSSProperties | undefined = editable ? undefined : { opacity: 0.55, pointerEvents: "none" };
@@ -97,47 +107,47 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
   const allowPaths = p.paths.allow.length ? p.paths.allow : ["(none — read-only)"];
   return (
     <>
-      <div className="pd-head">
-        <div className="top">
-          <span className="pswatch" style={{ background: p.color }}>{isApp ? "◆" : initialOf(p.name)}</span>
-          <div className="pt">
-            <div className="nm">
+      <Box className="pd-head">
+        <Box className="top">
+          <Box as="span" className="pswatch" style={{ background: p.color }}>{isApp ? "◆" : initialOf(p.name)}</Box>
+          <Box className="pt">
+            <Box className="nm">
               {p.name}{" "}
               {isApp && <Chip tone="info" size="xs" style={{ verticalAlign: "middle" }}>application role</Chip>}
               {p.category === "generated" && <Chip tone="accent" size="xs" style={{ verticalAlign: "middle" }}>generated</Chip>}
-            </div>
-            <div className="ds">{p.desc}</div>
-          </div>
+            </Box>
+            <Box className="ds">{p.desc}</Box>
+          </Box>
           {isApp
-            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
-            : <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>}
-        </div>
+            ? <><Button variant="ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</Button><Button style={{ height: 26, fontSize: 10.5 }}>save</Button></>
+            : <><Button variant="ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</Button><Button style={{ height: 26, fontSize: 10.5 }}>save</Button></>}
+        </Box>
         {isApp && (
-          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 10 }}>
-            <Banner tone="info" lead={<span style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</span>}>
-              <span><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</span>
+          <Stack gap={10} style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)" }}>
+            <Banner tone="info" lead={<Box as="span" style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</Box>}>
+              <Text as="span"><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</Text>
             </Banner>
-            <div className="owns-card">
-              <span className="surf">{p.surfaceGlyph}</span>
-              <div style={{ flex: 1 }}>
-                <div className="mono-value">Owns {p.owns}</div>
-                <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</div>
-              </div>
+            <Box className="owns-card">
+              <Box as="span" className="surf">{p.surfaceGlyph}</Box>
+              <Box style={{ flex: 1 }}>
+                <Box className="mono-value">Owns {p.owns}</Box>
+                <Text as="div" mono size={10} tone="dim" style={{ marginTop: 2 }}>surface · {p.surface} &nbsp;·&nbsp; session · {p.session}</Text>
+              </Box>
               <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</Chip>
-            </div>
-          </div>
+            </Box>
+          </Stack>
         )}
-        <div className="pd-stat">
-          <div><div className="k">base policy</div><div className="v" style={{ color: modeColor(p.mode) }}>{MODE_LABEL[p.mode]}</div></div>
-          <div><div className="k">{isApp ? "scope" : "assigned"}</div><div className="v">{isApp ? "singleton session" : `${paneCount(p.id, consoles)} panes · ${consoleCount(p.id, consoles)} consoles`}</div></div>
-          <div><div className="k">commands</div><div className="v">{p.commands.length} + {GUARANTEED.length} guaranteed</div></div>
-          <div><div className="k">origin</div><div className="v">{originLabel}</div></div>
-        </div>
-      </div>
+        <Box className="pd-stat">
+          <Box><Box className="k">base policy</Box><Box className="v" style={{ color: modeColor(p.mode) }}>{MODE_LABEL[p.mode]}</Box></Box>
+          <Box><Box className="k">{isApp ? "scope" : "assigned"}</Box><Box className="v">{isApp ? "singleton session" : `${paneCount(p.id, consoles)} panes · ${consoleCount(p.id, consoles)} consoles`}</Box></Box>
+          <Box><Box className="k">commands</Box><Box className="v">{p.commands.length} + {GUARANTEED.length} guaranteed</Box></Box>
+          <Box><Box className="k">origin</Box><Box className="v">{originLabel}</Box></Box>
+        </Box>
+      </Box>
 
       {/* base policy */}
-      <div className="pd-sec" style={lock}>
-        <div className="h"><h4>Base policy</h4><span className="hint">applies to anything not listed below</span></div>
+      <Box className="pd-sec" style={lock}>
+        <Box className="h"><h4>Base policy</h4><Box as="span" className="hint">applies to anything not listed below</Box></Box>
         <SegmentedControl
           size="md"
           options={(["deny", "ask", "allow"] as Tier[]).map((v) => ({
@@ -148,40 +158,40 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             dot: true,
           }))}
         />
-      </div>
+      </Box>
 
       {/* shell commands */}
-      <div className="pd-sec" style={lock}>
-        <div className="h">
+      <Box className="pd-sec" style={lock}>
+        <Box className="h">
           <h4>Shell commands</h4>
-          <span className="hint">allowlist — runs without a prompt</span>
-          <span className="spacer" />
-          <span className="hint">unions with project + repo lists</span>
-        </div>
-        <div className="cmd-chips">
+          <Box as="span" className="hint">allowlist — runs without a prompt</Box>
+          <Box as="span" className="spacer" />
+          <Box as="span" className="hint">unions with project + repo lists</Box>
+        </Box>
+        <Box className="cmd-chips">
           {GUARANTEED.map((c) => (
-            <span key={c} className="cmd-chip locked" title="guaranteed by backend — always available"><span style={{ color: "var(--info)" }}>{c}</span></span>
+            <Box as="span" key={c} className="cmd-chip locked" title="guaranteed by backend — always available"><Box as="span" style={{ color: "var(--info)" }}>{c}</Box></Box>
           ))}
           {p.commands.map((c) => (
-            <span key={c} className="cmd-chip">{c}<span className="x" onClick={() => removeCmd(c)}>×</span></span>
+            <Box as="span" key={c} className="cmd-chip">{c}<Box as="span" className="x" onClick={() => removeCmd(c)}>×</Box></Box>
           ))}
           <button className="cmd-add" onClick={addCmd}>+ add command</button>
-        </div>
-        <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--info)" }}>ℹ</span>}>
-          <span><b style={{ color: "var(--fg-muted)" }}>{GUARANTEED.join(", ")}</b> are always available.</span>
-          <span>Effective list also unions the console's project &amp; repo allowlists at run time.</span>
+        </Box>
+        <Banner tone="neutral" style={{ marginTop: 9 }} lead={<Box as="span" style={{ color: "var(--info)" }}>ℹ</Box>}>
+          <Text as="span"><b style={{ color: "var(--fg-muted)" }}>{GUARANTEED.join(", ")}</b> are always available.</Text>
+          <Text as="span">Effective list also unions the console's project &amp; repo allowlists at run time.</Text>
         </Banner>
-      </div>
+      </Box>
 
       {/* tools */}
-      <div className="pd-sec" style={lock}>
-        <div className="h"><h4>Tools</h4><span className="hint">per-capability — allow runs silently, ask prompts you, deny blocks</span></div>
-        <div className="tool-table">
+      <Box className="pd-sec" style={lock}>
+        <Box className="h"><h4>Tools</h4><Box as="span" className="hint">per-capability — allow runs silently, ask prompts you, deny blocks</Box></Box>
+        <Box className="tool-table">
           {TOOL_DEFS.map(([t, d]) => (
-            <div className="tool-row" key={t}>
-              <span className="tn">{t}</span>
-              <span className="td">{d}</span>
-              <span style={{ justifySelf: "end" }}>
+            <Box className="tool-row" key={t}>
+              <Box as="span" className="tn">{t}</Box>
+              <Box as="span" className="td">{d}</Box>
+              <Box as="span" style={{ justifySelf: "end" }}>
                 <SegmentedControl
                   variant="joined"
                   options={(["deny", "ask", "allow"] as Tier[]).map((v) => ({
@@ -191,95 +201,109 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
                     tone: v,
                   }))}
                 />
-              </span>
-            </div>
+              </Box>
+            </Box>
           ))}
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       {/* filesystem */}
-      <div className="pd-sec" style={lock}>
-        <div className="h"><h4>Filesystem scope</h4><span className="hint">globs the agent may write to / is blocked from</span></div>
-        <div className="scope-list">
+      <Box className="pd-sec" style={lock}>
+        <Box className="h"><h4>Filesystem scope</h4><Box as="span" className="hint">globs the agent may write to / is blocked from</Box></Box>
+        <Box className="scope-list">
           {allowPaths.map((g, i) => {
             const placeholder = g.startsWith("(");
             return (
-              <div className="scope-line" key={`a${i}`}>
-                <span className="gly allow">＋</span>
-                <input className="input" defaultValue={g} disabled={placeholder} style={placeholder ? { opacity: 0.5 } : undefined} />
-                {!placeholder && <button className="x">×</button>}
-              </div>
+              <Box className="scope-line" key={`a${i}`}>
+                <Box as="span" className="gly allow">＋</Box>
+                <input
+                  className="input"
+                  value={g}
+                  disabled={placeholder}
+                  onChange={placeholder ? undefined : (e) => editPath("allow", i, e.target.value)}
+                  style={placeholder ? { opacity: 0.5 } : undefined}
+                />
+                {!placeholder && <button className="x" onClick={() => removePath("allow", i)}>×</button>}
+              </Box>
             );
           })}
           {p.paths.deny.map((g, i) => (
-            <div className="scope-line" key={`d${i}`}>
-              <span className="gly deny">－</span>
-              <input className="input" defaultValue={g} />
-              <button className="x">×</button>
-            </div>
+            <Box className="scope-line" key={`d${i}`}>
+              <Box as="span" className="gly deny">－</Box>
+              <input className="input" value={g} onChange={(e) => editPath("deny", i, e.target.value)} />
+              <button className="x" onClick={() => removePath("deny", i)}>×</button>
+            </Box>
           ))}
-          <button className="cmd-add" style={{ marginTop: 2 }}>+ add path rule</button>
-        </div>
-      </div>
+          <Row gap={6} align="stretch" style={{ marginTop: 2 }}>
+            <button className="cmd-add" onClick={() => addPath("allow")}>+ allow path</button>
+            <button className="cmd-add" onClick={() => addPath("deny")}>+ deny path</button>
+          </Row>
+        </Box>
+      </Box>
 
       {/* network */}
-      <div className="pd-sec" style={lock}>
-        <div className="h"><h4>Network</h4><span className="hint">hosts the agent may reach (web / fetch tools)</span></div>
+      <Box className="pd-sec" style={lock}>
+        <Box className="h"><h4>Network</h4><Box as="span" className="hint">hosts the agent may reach (web / fetch tools)</Box></Box>
         {p.net.allow.length ? (
-          <div className="cmd-chips">
+          <Box className="cmd-chips">
             {p.net.allow.map((h) => (
-              <span key={h} className="cmd-chip">{h === "*" ? <span style={{ color: "var(--accent)" }}>* all hosts</span> : h}<span className="x">×</span></span>
+              <Box as="span" key={h} className="cmd-chip">{h === "*" ? <Text as="span" tone="accent">* all hosts</Text> : h}<Box as="span" className="x" onClick={() => removeHost(h)}>×</Box></Box>
             ))}
-            <button className="cmd-add">+ add host</button>
-          </div>
+            <button className="cmd-add" onClick={addHost}>+ add host</button>
+          </Box>
         ) : (
-          <Banner tone="neutral" style={{ marginTop: 9 }} lead={<span style={{ color: "var(--fg-dim)" }}>⊘</span>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
+          <>
+            <Banner tone="neutral" style={{ marginTop: 9 }} lead={<Text as="span" tone="dim">⊘</Text>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
+            <Box className="cmd-chips" style={{ marginTop: 9 }}>
+              <button className="cmd-add" onClick={addHost}>+ add host</button>
+            </Box>
+          </>
         )}
-      </div>
+      </Box>
 
       {/* assignments / ownership */}
       {isApp ? (
-        <div className="pd-sec">
-          <div className="h"><h4>Session</h4><span className="hint">this role is not assignable — it is its own always-on session</span></div>
-          <div className="assign-mini">
-            <div className="row on" style={{ cursor: "default" }}>
-              <div className="check">◆</div>
-              <div>
-                <span className="cn">{p.session}</span>
-                <div className="pn">{p.surface} · launched at startup · 1 of 1</div>
-              </div>
-              <div className="mono" style={{ fontSize: 10, color: "var(--success)" }}>always present</div>
-            </div>
-          </div>
-          <Banner tone="neutral" style={{ marginTop: 8 }} lead={<span style={{ color: "var(--info)" }}>ℹ</span>}>
-            <span>{appReachNote(p)}</span>
+        <Box className="pd-sec">
+          <Box className="h"><h4>Session</h4><Box as="span" className="hint">this role is not assignable — it is its own always-on session</Box></Box>
+          <Box className="assign-mini">
+            <Box className="row on" style={{ cursor: "default" }}>
+              <Box className="check">◆</Box>
+              <Box>
+                <Box as="span" className="cn">{p.session}</Box>
+                <Box className="pn">{p.surface} · launched at startup · 1 of 1</Box>
+              </Box>
+              <Text as="div" mono size={10} tone="success">always present</Text>
+            </Box>
+          </Box>
+          <Banner tone="neutral" style={{ marginTop: 8 }} lead={<Box as="span" style={{ color: "var(--info)" }}>ℹ</Box>}>
+            <Text as="span">{appReachNote(p)}</Text>
           </Banner>
-        </div>
+        </Box>
       ) : (
-        <div className="pd-sec">
-          <div className="h"><h4>Assigned to</h4><span className="hint">tick the console panes this profile governs</span><span className="spacer" /><span className="hint">a profile can govern many panes</span></div>
-          <div className="assign-mini">
+        <Box className="pd-sec">
+          <Box className="h"><h4>Assigned to</h4><Box as="span" className="hint">tick the console panes this profile governs</Box><Box as="span" className="spacer" /><Box as="span" className="hint">a profile can govern many panes</Box></Box>
+          <Box className="assign-mini">
             {consoles.flatMap((c) => c.panes.map((pane) => {
               const on = pane.profileId === p.id;
               return (
-                <div key={`${c.id}|${pane.id}`} className={`row ${on ? "on" : ""}`} onClick={() => toggleAssign(c.id, pane.id)}>
-                  <div className="check">{on ? "✓" : ""}</div>
-                  <div>
-                    <span className="cn">{c.name} <span style={{ color: "var(--fg-dim)" }}>›</span> {pane.agent}</span>
-                    <div className="pn">{c.repo} · {pane.id}</div>
-                  </div>
-                  <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>{on ? "this profile" : `→ ${find(pane.profileId)?.name ?? pane.profileId}`}</div>
-                </div>
+                <Box key={`${c.id}|${pane.id}`} className={`row ${on ? "on" : ""}`} onClick={() => toggleAssign(c.id, pane.id)}>
+                  <Box className="check">{on ? "✓" : ""}</Box>
+                  <Box>
+                    <Box as="span" className="cn">{c.name} <Text as="span" tone="dim">›</Text> {pane.agent}</Box>
+                    <Box className="pn">{c.repo} · {pane.id}</Box>
+                  </Box>
+                  <Text as="div" mono size={10} tone="dim">{on ? "this profile" : `→ ${find(pane.profileId)?.name ?? pane.profileId}`}</Text>
+                </Box>
               );
             }))}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
 
       {!(isApp || p.builtin) && (
-        <div style={{ padding: "0 2px 6px" }}>
-          <button className="btn ghost danger" style={{ height: 26, fontSize: 10.5 }} onClick={() => onDelete(p.id)}>delete profile</button>
-        </div>
+        <Box style={{ padding: "0 2px 6px" }}>
+          <Button variant="ghost" danger style={{ height: 26, fontSize: 10.5 }} onClick={() => onDelete(p.id)}>delete profile</Button>
+        </Box>
       )}
     </>
   );

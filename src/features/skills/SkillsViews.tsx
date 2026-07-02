@@ -6,6 +6,11 @@ import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/
 import { Spark } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { Button } from "@/shared/ui/controls/Button";
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Text } from "@/shared/ui/typography/Text";
 import { DataTableRow, DataTableHeader } from "@/shared/ui/data/DataTableRow";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
@@ -40,23 +45,23 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
       onClick={() => (selectMode ? onSelect(s.id) : onOpen(s.id))}
     >
       {selectMode && <Checkbox checked={isSel} />}
-      <span style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</span>
-      <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
-        <span className="mono" style={{ fontSize: 12, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</span>
-        {(groups?.length ?? 0) > 0 && <span title={groups!.map((g) => g.name).join(", ")} style={{ color: "var(--fg-dim)", fontSize: 10 }}>⬡{groups!.length > 1 ? groups!.length : ""}</span>}
-      </span>
-      <span><span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span></span>
-      <span style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
-        {s.tools.slice(0, 2).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-        {s.tools.length > 2 && <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>+{s.tools.length - 2}</span>}
-      </span>
-      <span><span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] + (s.projects.length > 1 ? " +" + (s.projects.length - 1) : "") : "global"}</span></span>
-      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7 }}>
-        <span className="mono" style={{ fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)", width: 38, textAlign: "right" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "—"}</span>
-        {s.trend.length > 1 ? <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} /> : <span style={{ width: 46 }} />}
-      </span>
-      <span className="pin-btn" onClick={(e) => { e.stopPropagation(); onTogglePin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
-      <span style={{ display: "flex", justifyContent: "center" }}><Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(s.id); }} /></span>
+      <Box as="span" style={glyphTile(s.kind)}>{KIND[s.kind].glyph}</Box>
+      <Row gap={7} style={{ minWidth: 0 }}>
+        <Text as="span" mono size={12} style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled skill"}</Text>
+        {(groups?.length ?? 0) > 0 && <Text as="span" tone="dim" size={10} title={groups!.map((g) => g.name).join(", ")}>⬡{groups!.length > 1 ? groups!.length : ""}</Text>}
+      </Row>
+      <Box as="span"><Box as="span" style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</Box></Box>
+      <Row gap={4} style={{ overflow: "hidden" }}>
+        {s.tools.slice(0, 2).map((t) => <Text key={t} as="span" className="kbd" size={10}>{t}</Text>)}
+        {s.tools.length > 2 && <Text as="span" mono size={10} tone="dim">+{s.tools.length - 2}</Text>}
+      </Row>
+      <Box as="span"><Box as="span" style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] + (s.projects.length > 1 ? " +" + (s.projects.length - 1) : "") : "global"}</Box></Box>
+      <Row justify="end" gap={7}>
+        <Text as="span" mono size={10.5} style={{ color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)", width: 38, textAlign: "right" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "—"}</Text>
+        {s.trend.length > 1 ? <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} /> : <Box as="span" style={{ width: 46 }} />}
+      </Row>
+      <Box as="span" className="pin-btn" onClick={(e) => { e.stopPropagation(); onTogglePin(s.id); }} style={{ textAlign: "center", fontSize: 12, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</Box>
+      <Row justify="center"><Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(s.id); }} /></Row>
     </DataTableRow>
   );
 }
@@ -64,12 +69,12 @@ export function SkillRow({ s, i, h }: { s: SkillDef; i: number; h: SkillRowHandl
 /** List density: a sticky column header + one {@link SkillRow} per filtered skill. */
 export function SkillsListView({ filtered, h }: { filtered: SkillDef[]; h: SkillRowHandlers }) {
   return (
-    <div>
+    <Box>
       <DataTableHeader template={colTemplate(h.selectMode)}>
-        {h.selectMode && <span />}<span /><span>Skill</span><span>Source</span><span>Tools</span><span>Scope</span><span style={{ textAlign: "right" }}>Usage</span><span style={{ textAlign: "center" }}>Pin</span><span style={{ textAlign: "center" }}>On</span>
+        {h.selectMode && <Box as="span" />}<Box as="span" /><Box as="span">Skill</Box><Box as="span">Source</Box><Box as="span">Tools</Box><Box as="span">Scope</Box><Box as="span" style={{ textAlign: "right" }}>Usage</Box><Box as="span" style={{ textAlign: "center" }}>Pin</Box><Box as="span" style={{ textAlign: "center" }}>On</Box>
       </DataTableHeader>
       {filtered.map((s, i) => <SkillRow key={s.id} s={s} i={i} h={h} />)}
-    </div>
+    </Box>
   );
 }
 
@@ -82,9 +87,9 @@ export function SkillsCardsView({ filtered, groupsBySkill, onOpen, onPin, onTogg
   onToggle: (id: string) => void;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "14px 18px" }}>
+    <Grid cols={2} gap={12} style={{ padding: "14px 18px" }}>
       {filtered.map((s) => <SkillCard key={s.id} s={s} groups={groupsBySkill.get(s.id) ?? []} onOpen={() => onOpen(s.id)} onPin={() => onPin(s.id)} onToggle={() => onToggle(s.id)} />)}
-    </div>
+    </Grid>
   );
 }
 
@@ -96,32 +101,32 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
   h: SkillRowHandlers;
 }) {
   return (
-    <div style={{ padding: "12px 18px 0" }}>
+    <Box style={{ padding: "12px 18px 0" }}>
       {showNoGroupsHint && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-          <span style={{ color: "var(--fg-dim)" }}>⬡</span>
-          <span>No task groups yet — every skill falls under <b style={{ color: "var(--fg)" }}>Ungrouped</b>. Create a group to bundle related skills.</span>
-          <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onNewGroup}>＋ New group</button>
-        </div>
+        <Row gap={10} style={{ margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+          <Text as="span" tone="dim">⬡</Text>
+          <Box as="span">No task groups yet — every skill falls under <b style={{ color: "var(--fg)" }}>Ungrouped</b>. Create a group to bundle related skills.</Box>
+          <Box as="span" style={{ flex: 1 }} />
+          <Button onClick={onNewGroup}>＋ New group</Button>
+        </Row>
       )}
       {sections.map((sec, si) => (
-        <div key={sec.id} className="skill-section" data-section-id={sec.id}
+        <Box key={sec.id} className="skill-section" data-section-id={sec.id}
           style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, borderRadius: "var(--r-lg)", overflow: "hidden", background: "var(--bg-panel)" }}>
           {/* Section header — sticky; its own hue tile + a left accent rail ties the rows below to it.
               Later sections sit above earlier ones as they scroll under (descending z, opaque bg). */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
-            <span style={hueTile(sec.hue)}>{sec.glyph}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</span>
-            <span className="mono" style={{ fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
-          </div>
+          <Row gap={9} style={{ padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
+            <Box as="span" style={hueTile(sec.hue)}>{sec.glyph}</Box>
+            <Text as="span" size={12} weight={600} style={{ color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</Text>
+            <Box as="span" className="mono" style={{ fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</Box>
+          </Row>
           {/* Member rows, indented under the header so they clearly belong to this section. */}
-          <div style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
+          <Box style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
             {sec.items.map((s, i) => <SkillRow key={s.id} s={s} i={i} h={h} />)}
-          </div>
-        </div>
+          </Box>
+        </Box>
       ))}
-    </div>
+    </Box>
   );
 }
 
@@ -129,33 +134,33 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
 export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups: SkillGroup[]; onOpen: () => void; onPin: () => void; onToggle: () => void }) {
   const sc = successColor(s.invocations > 0 ? s.success : null);
   return (
-    <div className="skill-card" data-skill-id={s.id} onClick={onOpen} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "13px 14px", cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
-        <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
-            <span style={{ flex: 1 }} />
-            <span onClick={(e) => { e.stopPropagation(); onPin(); }} style={{ fontSize: 13, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
+    <Box className="skill-card" data-skill-id={s.id} onClick={onOpen} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "13px 14px", cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
+      <Row align="start" gap={11}>
+        <Box as="span" style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</Box>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Row gap={8}>
+            <Text as="span" mono size={13} weight={500} style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</Text>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" size={13} onClick={(e: React.MouseEvent) => { e.stopPropagation(); onPin(); }} style={{ color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</Text>
             <Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginTop: 3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{s.desc || "No description yet."}</div>
-        </div>
-      </div>
-      {groups.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>{groups.map((g) => <span key={g.id} style={{ ...pill(g.hue), display: "inline-flex", alignItems: "center", gap: 4 }}>⬡ {g.name}</span>)}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 11, flexWrap: "wrap" }}>
-        <span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span>
-        <span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] : "global"}</span>
-        <span style={{ flex: 1 }} />
-        {s.tools.slice(0, 3).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", gap: 5 }}>{s.profiles.map((p: SkillProfile) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</div>
-        <span style={{ flex: 1 }} />
-        <span className="mono" style={{ fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</span>
-        {s.invocations > 0 && <span className="mono" style={{ fontSize: 10, color: sc }}>{s.success}%</span>}
+          </Row>
+          <Text as="div" size={11.5} tone="muted" style={{ marginTop: 3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{s.desc || "No description yet."}</Text>
+        </Box>
+      </Row>
+      {groups.length > 0 && <Row align="stretch" gap={6} wrap style={{ marginTop: 9 }}>{groups.map((g) => <Box as="span" key={g.id} style={{ ...pill(g.hue), display: "inline-flex", alignItems: "center", gap: 4 }}>⬡ {g.name}</Box>)}</Row>}
+      <Row gap={6} wrap style={{ marginTop: 11 }}>
+        <Box as="span" style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</Box>
+        <Box as="span" style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] : "global"}</Box>
+        <Box as="span" style={{ flex: 1 }} />
+        {s.tools.slice(0, 3).map((t) => <Text key={t} as="span" className="kbd" size={10}>{t}</Text>)}
+      </Row>
+      <Row gap={10} style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
+        <Row align="stretch" gap={5}>{s.profiles.map((p: SkillProfile) => <Row key={p} inline gap={4}><Box as="span" style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><Text as="span" mono size={9.5} tone="dim">{p}</Text></Row>)}</Row>
+        <Box as="span" style={{ flex: 1 }} />
+        <Text as="span" mono size={10.5} style={{ color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</Text>
+        {s.invocations > 0 && <Text as="span" mono size={10} style={{ color: sc }}>{s.success}%</Text>}
         {s.trend.length > 1 && <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} />}
-      </div>
-    </div>
+      </Row>
+    </Box>
   );
 }

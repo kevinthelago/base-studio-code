@@ -8,6 +8,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Chip } from "@/shared/ui/data/Chip";
+import { Button } from "@/shared/ui/controls/Button";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from '@tauri-apps/api/core';
 import { safeInvoke } from '@/shared/lib/core/safeInvoke';
 import { useAppStore } from '../../../store';
@@ -125,86 +130,90 @@ export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
       actions={
         <>
           {preview && currentScreen && (
-            <button
-              className={currentApproved ? 'btn sm' : 'btn ghost sm'}
+            <Button
+              size="sm"
+              variant={currentApproved ? 'default' : 'ghost'}
               onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
               title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
               style={currentApproved ? { color: 'var(--success)', borderColor: 'var(--success)' } : undefined}
             >
               {currentApproved ? '✓ approved' : 'approve'}
-            </button>
+            </Button>
           )}
-          {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
+          {preview && <Button variant="ghost" size="sm" onClick={renderDemo} title="Rebuild">↻</Button>}
         </>
       }
       footer={declared.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--border-soft)', padding: '8px 12px', maxHeight: 180, overflow: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-muted)', marginBottom: 6 }}>
-            <span>screens</span>
-            <button
-              className="btn ghost sm"
+        <Box style={{ borderTop: '1px solid var(--border-soft)', padding: '8px 12px', maxHeight: 180, overflow: 'auto' }}>
+          <Row gap={8} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-muted)', marginBottom: 6 }}>
+            <Text as="span">screens</Text>
+            <Button
+              variant="ghost"
+              size="sm"
               title="Copy a Claude Design prompt for these screens"
               onClick={() => {
                 void navigator.clipboard?.writeText(buildClaudeDesignBrief(declared));
                 setBriefCopied(true);
                 setTimeout(() => setBriefCopied(false), 1600);
               }}
-            >{briefCopied ? '✓ copied' : '✦ Claude Design brief'}</button>
-            <span style={{ flex: 1 }} />
-            <span style={{ color: approvedCount === declared.length ? 'var(--success)' : 'var(--fg-dim)' }}>
+            >{briefCopied ? '✓ copied' : '✦ Claude Design brief'}</Button>
+            <Box as="span" style={{ flex: 1 }} />
+            <Text as="span" style={{ color: approvedCount === declared.length ? 'var(--success)' : 'var(--fg-dim)' }}>
               {approvedCount}/{declared.length} approved
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            </Text>
+          </Row>
+          <Stack gap={2}>
             {declared.map((s) => {
               const ok = approvedList.includes(s);
               return (
-                <button
+                <Button
                   key={s}
-                  className="btn ghost sm"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setUiScreenApproved(projectKey, s, !ok)}
                   title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-start', textAlign: 'left', fontFamily: 'var(--mono)', fontSize: 11 }}
                 >
-                  <span style={{ color: ok ? 'var(--success)' : 'var(--fg-dim)' }}>{ok ? '✓' : '○'}</span>
-                  <span style={{ color: s === currentScreen ? 'var(--accent)' : 'var(--fg)' }}>{s}</span>
-                </button>
+                  <Text as="span" style={{ color: ok ? 'var(--success)' : 'var(--fg-dim)' }}>{ok ? '✓' : '○'}</Text>
+                  <Text as="span" style={{ color: s === currentScreen ? 'var(--accent)' : 'var(--fg)' }}>{s}</Text>
+                </Button>
               );
             })}
-          </div>
-        </div>
+          </Stack>
+        </Box>
       )}
     >
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {stageStatus === 'fail' ? (
-          <div style={{ padding: 16, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--danger)', whiteSpace: 'pre-wrap', overflow: 'auto' }}>
+          <Box style={{ padding: 16, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--danger)', whiteSpace: 'pre-wrap', overflow: 'auto' }}>
             {run?.message || 'Preview failed to build.'}
-          </div>
+          </Box>
         ) : (
           <>
             {/* Persistent imperative surface — always in the DOM so containerRef is stable.
                 Hidden when no renderer is active; the empty-state overlay covers it. */}
+            {/* eslint-disable-next-line no-restricted-syntax -- preview renderer mount ref + conditional display */}
             <div
               ref={containerRef}
               style={{ flex: 1, display: activeKind ? 'flex' : 'none', minHeight: 0 }}
             />
             {!activeKind && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center' }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg-muted)' }}>
+              <Stack gap={12} align="center" justify="center" style={{ flex: 1, padding: 24, textAlign: 'center' }}>
+                <Text as="div" size={11.5} tone="muted" mono>
                   {stageStatus === 'running' ? 'Bundling…' : 'No preview yet'}
-                </div>
-                <div className="hint" style={{ maxWidth: 280 }}>
+                </Text>
+                <Box className="hint" style={{ maxWidth: 280 }}>
                   The UI stage renders generated screens here via the render-preview pipeline.
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn" onClick={loadSkeleton} disabled={stageStatus === 'running'}>load from skeleton →</button>
-                  <button className="btn ghost" onClick={renderDemo} disabled={stageStatus === 'running'}>demo</button>
-                </div>
-              </div>
+                </Box>
+                <Row gap={8} align="stretch">
+                  <Button onClick={loadSkeleton} disabled={stageStatus === 'running'}>load from skeleton →</Button>
+                  <Button variant="ghost" onClick={renderDemo} disabled={stageStatus === 'running'}>demo</Button>
+                </Row>
+              </Stack>
             )}
           </>
         )}
-      </div>
+      </Stack>
     </StageScreenFrame>
   );
 }

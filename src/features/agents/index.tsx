@@ -117,6 +117,41 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     const p = find(selectedId);
     if (k && p && !p.commands.includes(k)) updateAgentProfile(selectedId, { commands: [...p.commands, k] });
   }
+  // Filesystem write-scope (#1795): add/edit/remove allow & deny globs. Mirrors addCmd/removeCmd
+  // — updateAgentProfile no-ops for application-role ids (not in agentProfiles), so app roles
+  // stay read-only even though find() resolves them.
+  async function addPath(kind: "allow" | "deny") {
+    const v = await prompt({
+      title: kind === "allow" ? "Allow a write path" : "Block a path",
+      label: kind === "allow" ? "Glob the agent may write to (e.g. src/**)" : "Glob the agent is blocked from (e.g. .env)",
+      placeholder: kind === "allow" ? "src/**" : ".env",
+      confirmLabel: kind === "allow" ? "Allow" : "Block",
+    });
+    const g = v?.trim();
+    const p = find(selectedId);
+    if (g && p && !p.paths[kind].includes(g)) updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: [...p.paths[kind], g] } });
+  }
+  function editPath(kind: "allow" | "deny", index: number, value: string) {
+    const p = find(selectedId);
+    if (!p) return;
+    updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: p.paths[kind].map((g, i) => (i === index ? value : g)) } });
+  }
+  function removePath(kind: "allow" | "deny", index: number) {
+    const p = find(selectedId);
+    if (!p) return;
+    updateAgentProfile(selectedId, { paths: { ...p.paths, [kind]: p.paths[kind].filter((_, i) => i !== index) } });
+  }
+  // Network allowlist (#1795): add/remove reachable hosts.
+  async function addHost() {
+    const v = await prompt({ title: "Allow a host", label: "Hostname the agent may reach (e.g. api.github.com, or * for all)", placeholder: "api.github.com", confirmLabel: "Allow" });
+    const h = v?.trim();
+    const p = find(selectedId);
+    if (h && p && !p.net.allow.includes(h)) updateAgentProfile(selectedId, { net: { allow: [...p.net.allow, h] } });
+  }
+  function removeHost(host: string) {
+    const p = find(selectedId);
+    if (p) updateAgentProfile(selectedId, { net: { allow: p.net.allow.filter((h) => h !== host) } });
+  }
   function toggleAssign(_consoleId: string, paneId: string) {
     setPaneProfile(paneId, paneProfiles[paneId] === selectedId ? null : selectedId);
   }
@@ -177,6 +212,8 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           roles={roles} profiles={profiles} consoles={consoles} selected={selected}
           onSelect={setSelectedId} setMode={setMode} setTool={setTool}
           removeCmd={removeCmd} addCmd={addCmd} toggleAssign={toggleAssign} find={find}
+          addPath={addPath} editPath={editPath} removePath={removePath}
+          addHost={addHost} removeHost={removeHost}
           editable={editable} onCreate={createProfile} onDelete={deleteProfile}
         />
       )}

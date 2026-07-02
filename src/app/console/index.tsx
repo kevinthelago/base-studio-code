@@ -22,6 +22,9 @@ import { useWorkflowConductor } from "@/shared/lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "./useDirectorPump";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 
 function resolvePaneName(
   tabIdx: number,
@@ -156,15 +159,14 @@ const PaneAt = memo(function PaneAt({
 
 function DisabledConsole({ onEnable }: { onEnable: () => void }) {
   return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 12,
+    <Stack className="mono" align="center" justify="center" gap={12} style={{
+      flex: 1,
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
       fontSize: 11,
     }}>
-      <span>console disabled · session stopped</span>
+      <Text as="span">console disabled · session stopped</Text>
       <button className="btn" onClick={onEnable}>enable</button>
-    </div>
+    </Stack>
   );
 }
 
@@ -178,16 +180,15 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
     : info.state === "blocked" ? { color: "var(--danger)", label: "■ blocked / failed" }
     : { color: "var(--accent)", label: "▲ stopped early" };
   return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 10, padding: 16, textAlign: "center",
+    <Stack className="mono" align="center" justify="center" gap={10} style={{
+      flex: 1, padding: 16, textAlign: "center",
       background: "var(--bg-canvas)", color: "var(--fg-dim)", fontSize: 11,
     }}>
-      <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
-      <span style={{ color: "var(--fg-muted)", maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</span>
-      <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>session ended · audit on the worker detail page</span>
+      <Text as="span" weight={600} style={{ color: tone.color }}>{tone.label}</Text>
+      <Text as="span" tone="muted" style={{ maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</Text>
+      <Text tone="dim" size={10}>session ended · audit on the worker detail page</Text>
       <button className="btn" onClick={onReopen}>reopen</button>
-    </div>
+    </Stack>
   );
 }
 
@@ -196,15 +197,14 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
  *  conversation), so reaping is non-destructive. */
 function DormantConsole({ onResume }: { onResume: () => void }) {
   return (
-    <div className="mono" style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 12,
+    <Stack className="mono" align="center" justify="center" gap={12} style={{
+      flex: 1,
       background: "var(--bg-canvas)", color: "var(--fg-dim)",
       fontSize: 11,
     }}>
-      <span>session dormant · reaped after idle to free memory</span>
+      <Text as="span">session dormant · reaped after idle to free memory</Text>
       <button className="btn" onClick={onResume}>resume</button>
-    </div>
+    </Stack>
   );
 }
 
@@ -438,18 +438,18 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-canvas)" }}>
+    <Stack style={{ flex: 1, minHeight: 0, background: "var(--bg-canvas)" }}>
       {consoleBroadcast && (
-        <div className="mono" style={{
+        <Row className="mono" gap={8} style={{
           padding: "3px 14px",
           background: "color-mix(in oklch, var(--accent), transparent 82%)",
           borderBottom: "1px solid var(--accent-dim)",
           fontSize: 10, color: "var(--accent)",
-          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          flexShrink: 0,
         }}>
-          <span>⟳ broadcast · input mirrors to all panes</span>
-          <span style={{ color: "var(--fg-dim)" }}>· Ctrl+Shift+C to exit</span>
-        </div>
+          <Text as="span">⟳ broadcast · input mirrors to all panes</Text>
+          <Text tone="dim">· Ctrl+Shift+C to exit</Text>
+        </Row>
       )}
       {/* Render every tab's grid; inactive tabs are display:none so their
           xterm instances stay mounted (PTY listener live, scrollback intact)
@@ -466,6 +466,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
         // moment the user switches back.
         const isFullscreenInTab = isActiveTab && fullscreenPaneIdx >= 0 && fullscreenPaneIdx < tPaneCount;
         return (
+          // eslint-disable-next-line no-restricted-syntax -- conditional-display grid (toggles grid/none per active tab)
           <div
             key={ti}
             className="console-grid"
@@ -479,6 +480,6 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
           </div>
         );
       })}
-    </div>
+    </Stack>
   );
 }

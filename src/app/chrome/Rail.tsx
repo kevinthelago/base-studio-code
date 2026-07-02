@@ -1,4 +1,5 @@
 import { WORKSPACES, type Workspace } from "@/app/registry";
+import { Box } from "@/shared/ui/layout/Box";
 
 // Re-export so existing `import type { Workspace } from ".../components/chrome/Rail"` keeps resolving
 // (the type's home is now the screen registry — the single source of truth for screens).
@@ -11,8 +12,8 @@ interface RailProps {
 
 export function Rail({ active, onNavigate }: RailProps) {
   return (
-    <div className="rail">
-      <div className="logo">b.</div>
+    <Box className="rail">
+      <Box className="logo">b.</Box>
       {WORKSPACES.map(({ key, Icon, label }) => (
         <button
           key={key}
@@ -23,6 +24,6 @@ export function Rail({ active, onNavigate }: RailProps) {
           <Icon size={18} />
         </button>
       ))}
-    </div>
+    </Box>
   );
 }

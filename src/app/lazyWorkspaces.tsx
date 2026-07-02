@@ -1,4 +1,5 @@
 import { lazy } from "react";
+import { Row } from "@/shared/ui/layout/Row";
 
 // Lazy-loaded screens (#perf): only the Console is needed at boot. Each other screen's chunk
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
@@ -15,8 +16,8 @@ export const AgentsWorkspace      = lazy(() => import("@/features/agents").then(
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {
   return (
-    <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
+    <Row className="mono" justify="center" style={{ flex: 1, color: "var(--fg-dim)", fontSize: 12 }}>
       loading…
-    </div>
+    </Row>
   );
 }

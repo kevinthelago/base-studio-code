@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { TabBar, type TabItem } from "./TabBar";
+import { Box } from "@/shared/ui/layout/Box";
 
 export interface ScreenProps {
   /** The persisted-ordered, detached-filtered visible page tabs (from `usePageTabs`). */
@@ -39,8 +40,8 @@ export function Screen({
   tabs, active, onSelect, onReorder, onTearOff, pageOverride, className, bodyClassName, children, overlay,
 }: ScreenProps) {
   return (
-    <div className={className ? `screen ${className}` : "screen"}>
-      <div className="screen-page">
+    <Box className={className ? `screen ${className}` : "screen"}>
+      <Box className="screen-page">
         {!pageOverride && (
           <TabBar
             tabs={tabs}
@@ -50,11 +51,11 @@ export function Screen({
             onTearOff={onTearOff}
           />
         )}
-        <div className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>
+        <Box className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>
           {children}
-        </div>
-      </div>
+        </Box>
+      </Box>
       {overlay}
-    </div>
+    </Box>
   );
 }

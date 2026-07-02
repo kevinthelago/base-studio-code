@@ -105,10 +105,31 @@ pub fn notification_body(prompt: &str) -> String {
     }
 }
 
-/// Build the FCM HTTP v1 `message` object (the value of the request body's `message` key).
-/// Pure so the fixed wire contract is unit-tested without credentials or network. `data`
-/// values are all strings (FCM requires it); the `apns` block makes iOS show the banner
-/// itself when MSC is backgrounded/quit.
+/// Build the FCM HTTP v1 `message` object (the value of the request body's `message` key)
+/// shared by every specialised builder below. Pure so the fixed wire contract is unit-tested
+/// without credentials or network. The `data` block is passed in (each push type carries its
+/// own string keys — FCM requires all `data` values be strings); the `apns` block is defined
+/// once here so iOS shows the banner itself when MSC is backgrounded/quit (priority 10 + a
+/// sound; deliberately NO `content-available`, so this is a visible alert, not a silent push).
+pub fn build_push(
+    device_token: &str,
+    title: &str,
+    body: &str,
+    data: serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "token": device_token,
+        "notification": { "title": title, "body": body },
+        "data": data,
+        "apns": {
+            "headers": { "apns-priority": "10" },
+            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
+        }
+    })
+}
+
+/// Build the FCM push for a pane raising a `user_request` (the agent is waiting on the user).
+/// `data` values are all strings (FCM requires it).
 pub fn build_message(
     device_token: &str,
     pane_id: &str,
@@ -116,20 +137,17 @@ pub fn build_message(
     session_name: &str,
 ) -> serde_json::Value {
     let title = if session_name.trim().is_empty() { "Studio Code" } else { session_name };
-    serde_json::json!({
-        "token": device_token,
-        "notification": { "title": title, "body": notification_body(prompt) },
+    build_push(
+        device_token,
+        title,
+        &notification_body(prompt),
         // Contract — mobile parses these exact keys; values MUST be strings.
-        "data": {
+        serde_json::json!({
             "type": "user_request",
             "paneId": pane_id,
             "prompt": prompt,
-        },
-        "apns": {
-            "headers": { "apns-priority": "10" },
-            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
-        }
-    })
+        }),
+    )
 }
 
 /// Build an FCM push for an agent that entered a manual-wait or asking state (F4).
@@ -145,15 +163,12 @@ pub fn build_coord_wait_message(
     } else {
         notification_body(reason)
     };
-    serde_json::json!({
-        "token": device_token,
-        "notification": { "title": "Studio Code — agent waiting", "body": body },
-        "data": { "type": "coord_wait", "session": session, "reason": reason },
-        "apns": {
-            "headers": { "apns-priority": "10" },
-            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
-        }
-    })
+    build_push(
+        device_token,
+        "Studio Code — agent waiting",
+        &body,
+        serde_json::json!({ "type": "coord_wait", "session": session, "reason": reason }),
+    )
 }
 
 /// Build an FCM push for a non-transient automation failure (A4).
@@ -168,15 +183,12 @@ pub fn build_autom_failed_message(
     } else {
         format!("Automation failed: {automation_name}")
     };
-    serde_json::json!({
-        "token": device_token,
-        "notification": { "title": title, "body": notification_body(error) },
-        "data": { "type": "autom_failed", "name": automation_name, "error": error },
-        "apns": {
-            "headers": { "apns-priority": "10" },
-            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
-        }
-    })
+    build_push(
+        device_token,
+        &title,
+        &notification_body(error),
+        serde_json::json!({ "type": "autom_failed", "name": automation_name, "error": error }),
+    )
 }
 
 /// Build an FCM push for a worker the warden quarantined (#1102) — a possible prompt
@@ -193,15 +205,12 @@ pub fn build_warden_message(
     } else {
         notification_body(detail)
     };
-    serde_json::json!({
-        "token": device_token,
-        "notification": { "title": "Studio Code — worker quarantined", "body": body },
-        "data": { "type": "warden_quarantine", "session": session, "detail": detail },
-        "apns": {
-            "headers": { "apns-priority": "10" },
-            "payload": { "aps": { "sound": "default", "mutable-content": 1 } }
-        }
-    })
+    build_push(
+        device_token,
+        "Studio Code — worker quarantined",
+        &body,
+        serde_json::json!({ "type": "warden_quarantine", "session": session, "detail": detail }),
+    )
 }
 
 #[derive(Serialize)]

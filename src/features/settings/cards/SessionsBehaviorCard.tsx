@@ -1,6 +1,7 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function SessionsBehaviorCard() {
   const {
@@ -10,7 +11,7 @@ export function SessionsBehaviorCard() {
 
   return (
     <Card title="Sessions & console behavior">
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Stack gap={12}>
         <ToggleRow
           on={autoResumeClaude}
           onToggle={() => setAutoResumeClaude(!autoResumeClaude)}
@@ -28,7 +29,7 @@ export function SessionsBehaviorCard() {
           When you send a response to a console, jump focus to the next one waiting in the queue
           (Ctrl+Shift+N cycles manually). Works while maximized.
         </ToggleRow>
-      </div>
+      </Stack>
     </Card>
   );
 }

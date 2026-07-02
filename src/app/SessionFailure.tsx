@@ -5,6 +5,8 @@
 // retry — the session cannot proceed without these.
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface SessionFailureProps {
   critical: ReadinessCheck[];
@@ -15,15 +17,13 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
   if (critical.length === 0) return null;
 
   return (
-    <div
+    <Stack
       role="alert"
+      align="center"
+      justify="center"
+      gap={16}
       style={{
         flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
         padding: "32px 24px",
         background: "#181a1f",
         color: "#eeeae4",
@@ -32,34 +32,30 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 28, lineHeight: 1 }}>⚠</div>
-      <div style={{ fontWeight: 600, fontSize: 14, color: "#d4554f" }}>
+      <Text as="div" size={28} style={{ lineHeight: 1 }}>⚠</Text>
+      <Text as="div" size={14} weight={600} style={{ color: "#d4554f" }}>
         Session prerequisites missing
-      </div>
-      <div
+      </Text>
+      <Stack
+        gap={10}
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
           maxWidth: 480,
           width: "100%",
         }}
       >
         {critical.map((c) => (
-          <div
+          <Stack
             key={c.id}
+            gap={6}
             style={{
               background: "#1e1f24",
               border: "1px solid #3a1a1a",
               borderRadius: 6,
               padding: "10px 14px",
               textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
             }}
           >
-            <span style={{ color: "#e06c75", fontSize: 12 }}>{c.message}</span>
+            <Text size={12} style={{ color: "#e06c75" }}>{c.message}</Text>
             {c.installUrl && (
               <a
                 href={c.installUrl}
@@ -77,9 +73,9 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
                 Download ↗
               </a>
             )}
-          </div>
+          </Stack>
         ))}
-      </div>
+      </Stack>
       <button
         onClick={onRetry}
         style={{
@@ -96,10 +92,10 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
       >
         Retry
       </button>
-      <div style={{ color: "#44474f", fontSize: 11, maxWidth: 380 }}>
+      <Text as="div" size={11} style={{ color: "#44474f", maxWidth: 380 }}>
         Install the missing tools, then click Retry. The session will probe again
         without a full relaunch.
-      </div>
-    </div>
+      </Text>
+    </Stack>
   );
 }

@@ -1,6 +1,10 @@
 import { useAppStore } from "@/store";
 import { ToggleRow } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 
 /** Agent permission posture (#1916): the deny-list (bypass — auto-run, hooks gate) vs the allow-list
@@ -29,17 +33,17 @@ export function PermissionPostureCard() {
       </ToggleRow>
 
       {bypassPermissions && sandbox && (
-        <div
+        <Row
+          align="start"
+          gap={8}
           style={{
             marginTop: 12,
-            display: "flex",
-            gap: 8,
-            alignItems: "flex-start",
             fontSize: 12,
             lineHeight: 1.5,
           }}
         >
-          <span
+          <Box
+            as="span"
             style={{
               width: 8,
               height: 8,
@@ -50,11 +54,11 @@ export function PermissionPostureCard() {
             }}
             aria-hidden
           />
-          <div>
+          <Box>
             <b>
               OS sandbox (Bash){sandbox.ready ? " — active" : sandbox.needsWsl ? " — needs WSL2" : ""}:
             </b>{" "}
-            <span style={{ color: "var(--fg-muted)" }}>{sandbox.detail}</span>
+            <Text tone="muted">{sandbox.detail}</Text>
             {sandbox.needsWsl && !sandbox.ready && (
               <>
                 {" "}
@@ -70,8 +74,8 @@ export function PermissionPostureCard() {
               </>
             )}
             {!sandbox.ready && sandbox.autoInstallable && (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Stack gap={6} style={{ marginTop: 8 }}>
+                <Row gap={8} wrap>
                   <button
                     onClick={install}
                     disabled={installing}
@@ -84,13 +88,13 @@ export function PermissionPostureCard() {
                     {installing ? "Installing…" : sandbox.needsWsl ? "Install sandbox" : "Install bubblewrap"}
                   </button>
                   {installMsg && !installing && (
-                    <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{installMsg}</span>
+                    <Text tone="muted" size={11}>{installMsg}</Text>
                   )}
-                </div>
+                </Row>
                 {installing && (
-                  <div aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
-                  </div>
+                  <Box aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
+                    <Box style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
+                  </Box>
                 )}
                 {installLog.length > 0 && (
                   <pre
@@ -104,10 +108,10 @@ export function PermissionPostureCard() {
                     {installLog.join("\n")}
                   </pre>
                 )}
-              </div>
+              </Stack>
             )}
-          </div>
-        </div>
+          </Box>
+        </Row>
       )}
     </Card>
   );

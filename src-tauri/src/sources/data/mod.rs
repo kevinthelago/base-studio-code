@@ -11,8 +11,10 @@
 
 mod data_csv;
 mod data_runtime;
+#[cfg(feature = "source-stage")]
 mod data_scan;
 
 pub use data_csv::*;
 pub use data_runtime::*;
+#[cfg(feature = "source-stage")]
 pub use data_scan::*;

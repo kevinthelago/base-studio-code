@@ -172,6 +172,7 @@ export function RelationshipGraphView({ graph, focus, hover, onFocusAgent, onIns
   }
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- scroll container wrapping the measured SVG graph
     <div style={{ overflow: "auto", maxHeight: 440, border: "1px solid var(--border-soft)", borderRadius: 8, background: "var(--bg-panel)" }}>
       <svg width={Math.max(W, 640)} height={H} style={{ display: "block" }} data-testid="relationship-graph-svg" onMouseLeave={() => onHover(null)}>
         {els}

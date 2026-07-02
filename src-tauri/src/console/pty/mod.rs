@@ -1,19 +1,29 @@
-// PTY session lifecycle: state registry, the pty_* commands, the session env
-// (`wire_bsc_env` + the bsc-* sidecar resolvers), the reader/emitter IO pump,
-// and the mobile-tunnel bridge (extracted from lib.rs, #758). The process-tree
-// kill primitive (`PtyJob`) lives in the `job` submodule (#1660).
+// PTY session lifecycle: the state registry, the pty_* Tauri commands, and the
+// mobile-tunnel bridge (extracted from lib.rs, #758). The session env wiring
+// (`wire_bsc_env` + the bsc-* sidecar resolvers) lives in [`env`], the launch
+// decision + bash init line in [`launch`], the reader/emitter IO pump in [`pump`],
+// and the process-tree kill primitive (`PtyJob`) in [`job`] (#1660). Split out of a
+// single ~1150-line mod.rs (#1864); `pty_create` stays the readable orchestration.
 
-use crate::{
-    bsc_base_dir, to_bash_path, to_native_path, nearest_existing_ancestor, split_utf8_at_boundary,
-};
-use crate::console::shell_rc::bsc_rc_body;
+use crate::{nearest_existing_ancestor, to_native_path};
 use crate::mobile::tunnel;
 use crate::observability::perf;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
+
+mod env;
+mod launch;
+mod pump;
+
+// Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
+// before the split (`extensions/mcp.rs`, `app/run.rs`, `github/readiness.rs`).
+pub(crate) use env::{bsc_bin_path, session_env, sidecar_status};
+use env::wire_bsc_env;
+use launch::{build_bash_init_line, plan_launch, LaunchPlan};
+use pump::{spawn_emitter, spawn_reader};
 
 // ── PTY state ────────────────────────────────────────────────────────────────
 
@@ -87,14 +97,6 @@ pub(crate) fn project_session_ids(pane_ids: &[String], key: &str) -> Vec<String>
     pane_ids.iter().filter(|id| id.starts_with(&prefix) || id.as_str() == planner).cloned().collect()
 }
 
-/// The per-project session skill group id for a pane, or None for non-planner panes (#1419). Only
-/// the planner pane (`planning_<key>`) authors session skills, so only it gets `BSC_SESSION_SKILL_GROUP`
-/// — workers/director/manual panes don't. The id is deterministic from the (already-sanitized) key so
-/// the Planning pane and the `bsc skill` CLI resolve the same group. Pure for testing.
-pub(crate) fn session_skill_group_for_pane(pane_id: &str) -> Option<String> {
-    pane_id.strip_prefix("planning_").map(|key| format!("grp-session-{key}"))
-}
-
 /// Tear down one project's LIVE PTY sessions before its hub is deleted (#1387): drain the sessions
 /// whose pane id is `<key>:…` and kill each (the shell + its whole tree, via the Job Object /
 /// process group that drops with the session), forgetting their ledger entries. This RELEASES the
@@ -119,376 +121,6 @@ pub(crate) fn kill_project_sessions(state: &PtyState, key: &str) -> usize {
         log::info!("killed {n} live PTY session(s) for project {key:?} before delete");
     }
     n
-}
-
-/// The project hub's `plan.db` for a session whose cwd lives under a project hub
-/// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
-/// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
-/// both resolve to the same hub db, so the whole fleet shares one canonical plan store.
-fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
-    if cwd.is_empty() {
-        return None;
-    }
-    let projects_root = bsc_base_dir().join("projects");
-    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
-    let key = rel.components().next()?.as_os_str();
-    Some(projects_root.join(key).join("plan.db"))
-}
-
-/// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
-/// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
-/// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
-fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
-    if cwd.is_empty() {
-        return None;
-    }
-    let projects_root = bsc_base_dir().join("projects");
-    let rel = std::path::Path::new(cwd).strip_prefix(&projects_root).ok()?;
-    let key = rel.components().next()?.as_os_str().to_string_lossy().into_owned();
-    Some(bsc_base_dir().join("data").join(format!("{key}.duckdb")))
-}
-
-/// The absolute path of a bundled `bsc-*` binary named `stem` — the binary sitting beside the running
-/// app exe (the cargo target dir in dev; a bundled sidecar in a release), or None if it isn't there.
-/// `stem` is the bare name without the platform extension (`.exe` is appended on Windows). The app
-/// ships just two binaries now (#1877): the unified `bsc` umbrella (every state CLI + the two MCP
-/// servers are its subcommands) and the `bsc-agent` runtime. Sessions get `bsc` as `$BSC_BIN` and
-/// `bsc-agent` as `$BSC_AGENT_BIN`; the MCP servers are rewritten into `.mcp.json` as `bsc mcp <sub>`
-/// (which Claude Code spawns directly, no shell-rc) via the `pub(crate)` wrapper below.
-fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
-    let cur = std::env::current_exe().ok()?;
-    sidecar_candidates(&cur, &exe).into_iter().find(|p| p.exists())
-}
-
-/// The ordered candidate paths for a sidecar named `exe_name`, given the running app exe `cur_exe`.
-/// The bundled sidecar sits BESIDE the app exe (a release bundle stages it there; in dev that dir is
-/// `target/<profile>/`). But the sidecars are built by a SEPARATE step (`npm run build:plan`) from the
-/// app, so any build path that skips it — or running the app exe from elsewhere — would leave the
-/// beside-the-exe copy missing and silently unset `$BSC_BIN`, the gap that left sessions unable to find
-/// `bsc`. So we ALSO probe both workspace profile dirs (`target/debug`, `target/release`) relative to
-/// the exe, so a sidecar built at all is found regardless of which profile built it (#1988 resilience).
-/// Pure (no fs/env) so the ordering is unit-testable; `sidecar_bin_path` applies `.exists()`.
-fn sidecar_candidates(cur_exe: &std::path::Path, exe_name: &str) -> Vec<std::path::PathBuf> {
-    let mut v = Vec::new();
-    let Some(exe_dir) = cur_exe.parent() else { return v };
-    v.push(exe_dir.join(exe_name)); // beside the app exe — release bundle + dev target/<profile>
-    if let Some(target_dir) = exe_dir.parent() {
-        for profile in ["debug", "release"] {
-            let cand = target_dir.join(profile).join(exe_name);
-            if !v.contains(&cand) {
-                v.push(cand);
-            }
-        }
-    }
-    v
-}
-
-/// The absolute path of the bundled unified `bsc` binary (#1877), or None if absent. Used by
-/// `extensions/mcp.rs` to rewrite the built-in Research/Compliance MCP servers' `.mcp.json` commands
-/// to `<bsc> mcp <sub>`, since Claude Code spawns `.mcp.json` commands directly (no PATH/shell-rc).
-/// Thin wrapper over [`sidecar_bin_path`].
-pub(crate) fn bsc_bin_path() -> Option<std::path::PathBuf> {
-    sidecar_bin_path("bsc")
-}
-
-/// Startup self-check (#1988): each bundled sidecar and where it resolved (`None` ⇒ missing). Logged
-/// loudly at boot (`app::run`) so a missing `bsc`/`bsc-agent` surfaces immediately, instead of only
-/// when a live session silently can't find `bsc` because `$BSC_BIN` was never set.
-pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2] {
-    [
-        ("bsc", sidecar_bin_path("bsc")),
-        ("bsc-agent", sidecar_bin_path("bsc-agent")),
-    ]
-}
-
-/// Build the environment for a session shell.
-///
-/// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
-/// were previously never set on the spawned shell — so `claude` (and other TUIs)
-/// could fall back to a degraded terminal type, breaking inline features like the
-/// ghost-text autocomplete and truecolor output. We advertise sensible defaults
-/// here; caller-supplied vars (e.g. `GH_TOKEN`, or an explicit `TERM`) win.
-pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = vec![
-        ("TERM".to_string(), "xterm-256color".to_string()),
-        ("COLORTERM".to_string(), "truecolor".to_string()),
-    ];
-    for (k, v) in caller {
-        if let Some(slot) = env.iter_mut().find(|(ek, _)| ek == k) {
-            slot.1 = v.clone(); // caller overrides a default
-        } else {
-            env.push((k.clone(), v.clone()));
-        }
-    }
-    env
-}
-
-/// What a session should auto-launch (#1240). Pure so the fresh-only intro suppression is testable
-/// without a PTY or a harness.
-#[derive(Debug, PartialEq)]
-pub(crate) enum LaunchPlan {
-    /// Bake the startup prompt as claude's initial message (`resume` ⇒ launch with `--continue`).
-    Prompt { resume: bool },
-    /// Run a literal init command (e.g. `claude --continue || claude`).
-    Init(String),
-    /// Nothing to auto-launch — a bare shell.
-    None,
-}
-
-/// Decide what a session launches. A non-empty `startup_prompt` wins and is baked as claude's first
-/// message — UNLESS it is `fresh_only` and a prior conversation exists, in which case a resumed
-/// session must NOT be re-greeted (#1240): fall through to `init_cmd` (e.g. `claude --continue ||
-/// claude`) so the user resumes quietly. `resume` (add `--continue`) holds only when the caller
-/// opted in AND there's actually history to continue.
-pub(crate) fn plan_launch(
-    startup_prompt: Option<&str>,
-    init_cmd: Option<&str>,
-    has_history: bool,
-    continue_session: bool,
-    fresh_only: bool,
-) -> LaunchPlan {
-    let suppress = fresh_only && has_history;
-    match startup_prompt.filter(|s| !s.is_empty() && !suppress) {
-        Some(_) => LaunchPlan::Prompt { resume: continue_session && has_history },
-        None => match init_cmd.filter(|s| !s.is_empty()) {
-            Some(s) => LaunchPlan::Init(s.to_string()),
-            None => LaunchPlan::None,
-        },
-    }
-}
-
-/// Wire the per-session `BSC_*` environment the `bsc-*` shell helpers read into `cmd`, and write the
-/// rc file that defines them. Covers: the triage checkpoint doc, the `BASH_ENV` rc (which installs the
-/// helpers into the agent's non-interactive `bash -c` subshells), the app-wide analytics logs
-/// (audit / skill / hook / mcp / tokens / activity / done / coord), the FS-confinement repo root,
-/// the per-project plan + data stores and their CLIs, the global skills store + CLI, the planner's
-/// per-project session skill group, and the `bsc-agent` sidecar + per-cwd session file. `cwd` is the
-/// already-native session cwd; `pane_id` tags the logs; `provider_id` gates the bsc-agent vars.
-///
-/// Returns the bash-style path of the rc file so the caller can `source` it into the interactive
-/// shell too (BASH_ENV only covers non-interactive subshells).
-fn wire_bsc_env(
-    cmd: &mut CommandBuilder,
-    pane_id: &str,
-    cwd: &str,
-    checkpoint_doc: Option<&str>,
-    provider_id: Option<&str>,
-) -> String {
-    // Install the bsc-* shell helpers via an rc file pointed to by BASH_ENV (so the
-    // agent's non-interactive `bash -c` subshells get them) and sourced into the
-    // interactive shell by the caller. The rc is universal — bsc-checkpoint (triage) and
-    // bsc-note / bsc-blocked (fleet assume-and-log) cost nothing in sessions that
-    // don't use them. Per-session doc paths the helpers read are exposed as env
-    // vars when applicable; bsc-note/bsc-blocked default to a DECISIONS.md in cwd.
-    let base = bsc_base_dir();
-    let _ = std::fs::create_dir_all(&base);
-    // Expose the triage checkpoint doc (resolved to an absolute, bash-style path) so the
-    // `bsc-checkpoint` helper can write "where we left off" to it. The helper itself is installed via
-    // the rc below; it must be reachable from the agent's OWN bash subprocesses (Claude's Bash tool
-    // runs a non-interactive `bash -c`, which sources BASH_ENV at startup), and the hyphenated name
-    // can't be `export -f`'d (bash won't import non-identifier function names).
-    if let Some(rel) = checkpoint_doc.filter(|s| !s.is_empty()) {
-        let abs = base.join(rel);
-        cmd.env("BSC_CHECKPOINT_DOC", to_bash_path(&abs.to_string_lossy()));
-    }
-    let rc = base.join("bsc-env.sh");
-    let _ = std::fs::write(&rc, bsc_rc_body());
-    let rc_bash = to_bash_path(&rc.to_string_lossy());
-    cmd.env("BASH_ENV", &rc_bash);
-    // Shared package-manager caches/stores so the fleet's per-repo worktrees don't each keep a full
-    // copy of node_modules / target/ (#worktree-disk). App-native, every package manager; NATIVE OS
-    // paths (read by cargo/npm/etc., not the bash shell). A no-op for non-worktree sessions.
-    for (k, v) in crate::platform::pkgcache::package_cache_env(&base, cwd) {
-        cmd.env(k, v);
-    }
-    // Observability log streams (#1847): every per-pane TSV a `bsc-*` hook appends to is a row in the
-    // canonical `bsc_util::LOG_STREAMS` registry — the ONE list shared with the unified `bsc logs`
-    // reader (`crates/logs`); each row's doc comment is the stream's spec (which hook writes it + the
-    // line shape). Point each `$BSC_*_LOG` at the app-wide file under `base`; setting them for every
-    // pane is harmless (only a pane whose settings.json installs the hook actually writes). `pane_id`
-    // is the id every line is tagged with (via `$BSC_AUDIT_PANE`).
-    cmd.env("BSC_AUDIT_PANE", pane_id);
-    for s in bsc_util::LOG_STREAMS {
-        cmd.env(s.env_var, to_bash_path(&base.join(s.filename).to_string_lossy()));
-    }
-    // bsc logs (#1716): point every session at the log directory the unified `bsc logs` query CLI
-    // reads (the `logs::log_dir` resolver honors $BSC_LOG_DIR, else `~/.base-studio-code`). It's the
-    // same `base` dir that holds all the *_LOG TSVs above + `perf.db`, so a live agent can drill into
-    // its own audit/coord/tokens/perf streams from its own shell. Set for every pane (read-only).
-    cmd.env("BSC_LOG_DIR", to_bash_path(&base.to_string_lossy()));
-    // FS confinement (#158): the session's repo root (bash-style), against which the
-    // `bsc-confine` hook (installed on gated panes) checks file-tool paths. The cwd is
-    // the repo root. Set for every pane; only gated panes install the hook.
-    if !cwd.is_empty() {
-        cmd.env("BSC_REPO_ROOT", to_bash_path(cwd));
-    }
-    // bsc plan (#plan-db): point this session at its project's canonical plan store. $BSC_PLAN_DB is
-    // the plan.db the `bsc plan` subcommand reads/writes (the unified `bsc` binary is staged once as
-    // $BSC_BIN below — no per-CLI binary). The DB is derived from the cwd — every project session runs
-    // under `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
-    // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
-    // console in some repo) get no BSC_PLAN_DB and never call `bsc plan`.
-    if let Some(db) = plan_db_for_cwd(cwd) {
-        cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
-    }
-    // bsc skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group authored
-    // anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB is the shared
-    // store the `bsc skill` subcommand reads/writes (a no-arg `bsc-skill` fire stays the #406 telemetry
-    // hook). Unlike BSC_PLAN_DB (per-project, cwd-derived), this is global — set for every pane.
-    cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
-    // bsc data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
-    // PlatformScan the planner reads at the UI-kickoff stage via `bsc data`. $BSC_DATA_DB is the
-    // project's .duckdb (cwd-derived, like BSC_PLAN_DB).
-    if let Some(db) = data_db_for_cwd(cwd) {
-        cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
-    }
-    // bsc compliance (#1718): point every session at the GLOBAL compliance standards store.
-    // $BSC_COMPLIANCE_STORE is the store.db the `bsc compliance` subcommand reads/writes (and which the
-    // bundled `bsc mcp compliance` server reads — same `Store::default_path` default). Unlike
-    // BSC_PLAN_DB (per-project, cwd-derived), the corpus is global — set for every pane, so any live
-    // session can inspect/refresh the standards from its own shell.
-    cmd.env(
-        "BSC_COMPLIANCE_STORE",
-        to_bash_path(&base.join("compliance").join("store.db").to_string_lossy()),
-    );
-    // The unified `bsc` binary (#1877): every `bsc <sub>` state CLI a session runs (`bsc plan …`,
-    // `bsc skill …`, `bsc logs …`, …) resolves through ONE staged binary in $BSC_BIN — the absolute,
-    // bash-style path of the bundled umbrella (no PATH changes, no copies; the `bsc` shell helper falls
-    // back to a PATH lookup when $BSC_BIN is unset, e.g. in the test target where the sidecar isn't
-    // present). The per-CLI store/db vars above (BSC_PLAN_DB / BSC_DATA_DB / BSC_SKILL_DB /
-    // BSC_COMPLIANCE_STORE / BSC_LOG_DIR) stay separate — the subcommands still read them — but the
-    // binary path is now ONE var, not eight.
-    if let Some(bin) = bsc_bin_path() {
-        cmd.env("BSC_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // The model-agnostic agent runtime stays its OWN separate binary in $BSC_AGENT_BIN (#1877): a
-    // bsc-agent session relaunches it, and the `bsc-agent` shell helper execs it by this path.
-    if let Some(bin) = sidecar_bin_path("bsc-agent") {
-        cmd.env("BSC_AGENT_BIN", to_bash_path(&bin.to_string_lossy()));
-    }
-    // The planner's per-project session skill group (#1419): only the planner pane (`planning_<key>`)
-    // gets it. Skills the planner authors with `bsc skill add --group "$BSC_SESSION_SKILL_GROUP"` join
-    // this group, which the Planning pane resolves + highlights as "authored this session". The id is
-    // deterministic from the (already-sanitized) key so the pane and the CLI agree; the app names the
-    // group after the project. Persistent — reopening the planner keeps collecting into it.
-    if let Some(group) = session_skill_group_for_pane(pane_id) {
-        cmd.env("BSC_SESSION_SKILL_GROUP", group);
-    }
-    // bsc-agent resume (#1144): hand the sidecar the per-cwd conversation file so it persists the
-    // conversation (and, with --continue, resumes it). The app owns the keying; the sidecar just
-    // reads/writes this native path via std::fs. Only meaningful for bsc-agent panes.
-    if provider_id == Some("bsc-agent") {
-        // Hand the runtime the SAME real bash the session shell uses (Git Bash on Windows), so its
-        // `bash` tool never falls through to `Command::new("bash")` → the WSL launcher
-        // (System32\bash.exe), which fails `execvpe(/bin/bash)` with no WSL distro. `resolve_shell`
-        // already locates Git Bash and avoids that stub.
-        cmd.env("BSC_AGENT_BASH", crate::platform::shell::resolve_shell());
-        if let Some(p) = crate::bsc_agent_session_path(cwd) {
-            cmd.env("BSC_AGENT_SESSION", p.to_string_lossy().into_owned());
-        }
-    }
-    rc_bash
-}
-
-/// Reader thread: decode PTY bytes and forward complete UTF-8 chunks over `tx`. The `leftover` buffer
-/// holds any trailing incomplete multi-byte sequence (e.g. ✓, →, box-drawing) so we never split a
-/// character across reads. Exits on EOF/error or when the emitter is gone; flushes any tail first so
-/// `tx` dropping signals the emitter (Disconnected) to finish.
-fn spawn_reader(
-    pane_id: String,
-    mut reader: Box<dyn Read + Send>,
-    tx: std::sync::mpsc::Sender<String>,
-) {
-    std::thread::spawn(move || {
-        let mut buf = vec![0u8; 8192];
-        let mut leftover: Vec<u8> = Vec::new();
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => { log::info!("pty[{pane_id}] reader EOF"); break; }
-                Err(e) => { log::warn!("pty[{pane_id}] reader error: {e}"); break; }
-                Ok(n) => {
-                    leftover.extend_from_slice(&buf[..n]);
-                    let (text, keep) = split_utf8_at_boundary(&leftover);
-                    leftover = keep;
-                    if !text.is_empty() && tx.send(text).is_err() {
-                        break; // emitter gone
-                    }
-                }
-            }
-        }
-        if !leftover.is_empty() {
-            let _ = tx.send(String::from_utf8_lossy(&leftover).into_owned());
-        }
-        // tx drops here → emitter sees Disconnected and finishes.
-    });
-}
-
-/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
-/// to the mobile tunnel when paired). Coalescing collapses per-read emits — the dominant UI-lag source
-/// when many sessions stream at once — into one event per frame per session. Emits `pty_exit_<pane>`
-/// when the reader's `tx` disconnects.
-fn spawn_emitter(
-    pane_id: String,
-    app: AppHandle,
-    rx: std::sync::mpsc::Receiver<String>,
-) {
-    std::thread::spawn(move || {
-        use std::sync::mpsc::RecvTimeoutError;
-        use std::time::{Duration, Instant};
-        const FLUSH: Duration = Duration::from_millis(16);
-        const MAX_PENDING: usize = 64 * 1024;
-        let evt = format!("pty_data_{}", pane_id);
-        // Tee PTY output to the mobile tunnel (#242) when a client is connected.
-        // Looked up once; `broadcast_output` is a no-op while nobody is paired.
-        let tunnel_state = app.try_state::<tunnel::TunnelState>();
-        let mut pending = String::new();
-        let mut last_emit = Instant::now();
-        let mut total: u64 = 0;
-        // Rolling window to flag sustained output floods.
-        let mut win_start = Instant::now();
-        let mut win_bytes: u64 = 0;
-        let mut win_emits: u64 = 0;
-        let mut done = false;
-        while !done {
-            let mut flush_now = false;
-            match rx.recv_timeout(FLUSH) {
-                Ok(chunk) => {
-                    total += chunk.len() as u64;
-                    win_bytes += chunk.len() as u64;
-                    pending.push_str(&chunk);
-                    if pending.len() >= MAX_PENDING || last_emit.elapsed() >= FLUSH {
-                        flush_now = true;
-                    }
-                }
-                // Idle for a frame — flush trailing output (e.g. the prompt) now.
-                Err(RecvTimeoutError::Timeout) => flush_now = true,
-                Err(RecvTimeoutError::Disconnected) => { flush_now = true; done = true; }
-            }
-            if flush_now && !pending.is_empty() {
-                let data = std::mem::take(&mut pending);
-                if let Some(ts) = &tunnel_state {
-                    ts.broadcast_output(&pane_id, &data);
-                }
-                let _ = app.emit(&evt, data);
-                win_emits += 1;
-                last_emit = Instant::now();
-            }
-            let secs = win_start.elapsed().as_secs_f64();
-            if secs >= 2.0 {
-                let eps = win_emits as f64 / secs;
-                let bps = win_bytes as f64 / secs;
-                if eps > 60.0 || bps > 128_000.0 {
-                    log::warn!("pty[{pane_id}] high output: {eps:.0} emits/s, {bps:.0} B/s");
-                }
-                win_start = Instant::now();
-                win_bytes = 0;
-                win_emits = 0;
-            }
-        }
-        let _ = app.emit(&format!("pty_exit_{}", pane_id), ());
-        log::info!("pty[{pane_id}] session ended ({total} bytes)");
-    });
 }
 
 /// Returns `true` when a new session is created, `false` when reconnecting to
@@ -703,33 +335,7 @@ pub(crate) fn pty_create(
         crate::platform::shell::sandbox_init_line(&cwd, launch.as_deref(), &env_map)
     } else { match resolved_shell.kind {
         crate::platform::shell::ShellKind::Bash => {
-            let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
-            // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
-            // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-            let cd_prefix = if cwd.is_empty() {
-                String::new()
-            } else if cwd_missing {
-                // Loud, visible warning instead of a silent home fallback, then sit in the
-                // nearest existing ancestor (not $HOME) so the agent is at least near the project.
-                format!(
-                    "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
-                    disp = to_bash_path(&cwd), anc = to_bash_path(&effective_cwd),
-                )
-            } else {
-                format!("cd \"{}\" 2>/dev/null; ", to_bash_path(&cwd))
-            };
-            // Source the checkpoint helper into the interactive shell too: BASH_ENV only
-            // covers non-interactive subshells (the agent's Bash tool), so a human typing
-            // `bsc-checkpoint` in the console pane would otherwise not have it.
-            let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
-            format!(
-                "{cd_prefix}__bsc_osc7() {{ printf $'\\033]7;file://localhost%s\\a' \"$(pwd)\"; }}; \
-                 __bsc_state() {{ printf $'\\033]100;%s\\a' \"$1\"; }}; \
-                 {claude_fn}\
-                 {helpers_src}\
-                 PROMPT_COMMAND=\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\"; \
-                 __bsc_osc7; __bsc_state idle; printf '\\033[2J\\033[H'{init_suffix}\n"
-            )
+            build_bash_init_line(&cwd, cwd_missing, &effective_cwd, launch.as_deref(), &claude_fn, &rc_bash)
         }
         // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
         // are bash-only, so run a degraded init that cd's, clears, and prints a visible
@@ -914,31 +520,8 @@ pub(crate) fn tunnel_set_pane_size(app: &AppHandle, pane_id: &str, cols: u16, ro
 
 #[cfg(test)]
 mod tests {
-    use super::session_env;
-    use super::plan_db_for_cwd;
-    use super::{plan_launch, LaunchPlan};
-    use super::sidecar_candidates;
-
-    const INIT: &str = "claude --continue 2>/dev/null || claude";
-
-    #[test]
-    fn sidecar_candidates_probe_beside_exe_then_both_profile_dirs() {
-        use std::path::PathBuf;
-        // A dev exe in target/debug: look beside it (target/debug) first, then the OTHER profile
-        // (target/release). The beside-the-exe dir IS target/debug, so it's not duplicated.
-        let dev = PathBuf::from("/repo/target/debug/base-studio-code.exe");
-        assert_eq!(
-            sidecar_candidates(&dev, "bsc.exe"),
-            vec![
-                PathBuf::from("/repo/target/debug/bsc.exe"),
-                PathBuf::from("/repo/target/release/bsc.exe"),
-            ],
-            "a built sidecar is found whichever profile produced it — not only beside THIS exe"
-        );
-        // An installed/bundled app: the staged sidecar beside the exe is the first candidate.
-        let installed = PathBuf::from("/opt/app/base-studio-code");
-        assert_eq!(sidecar_candidates(&installed, "bsc")[0], PathBuf::from("/opt/app/bsc"));
-    }
+    // The session env wiring + launch-plan + init-line tests live with their code in the `env` and
+    // `launch` submodules; the PtyJob process-tree-kill tests live in `job.rs`.
 
     #[test]
     fn project_session_ids_matches_only_the_project_panes() {
@@ -953,131 +536,6 @@ mod tests {
         for miss in ["other:api", "planning_other", "man:t0:p1", "proj"] {
             assert!(!got.contains(&miss.to_string()), "{miss} must not match");
         }
-    }
-
-    #[test]
-    fn session_skill_group_only_for_the_planner_pane() {
-        // #1419: only the planner pane carries the per-project session skill group; the id is
-        // deterministic from the key so the pane + the bsc skill CLI agree.
-        assert_eq!(
-            super::session_skill_group_for_pane("planning_acme-crm"),
-            Some("grp-session-acme-crm".to_string()),
-        );
-        // Workers/director/triage/manual panes get nothing.
-        for miss in ["acme-crm:director", "acme-crm:auth-ui", "acme-crm:own/web:triage", "man:t0:p1", "acme-crm"] {
-            assert_eq!(super::session_skill_group_for_pane(miss), None, "{miss} must not get a session group");
-        }
-    }
-
-    #[test]
-    fn plan_launch_fresh_only_fires_the_prompt_when_there_is_no_history() {
-        // #1240 planner intro: fresh session (no prior conversation) ⇒ bake the intro, no --continue.
-        assert_eq!(
-            plan_launch(Some("intro"), Some(INIT), false, false, true),
-            LaunchPlan::Prompt { resume: false },
-        );
-    }
-
-    #[test]
-    fn plan_launch_fresh_only_is_suppressed_on_resume_and_falls_to_init() {
-        // History exists ⇒ a returning user must NOT be re-greeted; fall to init_cmd (resume quietly).
-        assert_eq!(
-            plan_launch(Some("intro"), Some(INIT), true, false, true),
-            LaunchPlan::Init(INIT.to_string()),
-        );
-    }
-
-    #[test]
-    fn plan_launch_non_fresh_only_prompt_always_fires() {
-        // Triage/fleet (fresh_only = false): the prompt fires regardless of history, with --continue
-        // when the caller opted into continuation and there's history to continue.
-        assert_eq!(
-            plan_launch(Some("triage"), Some(INIT), true, true, false),
-            LaunchPlan::Prompt { resume: true },
-        );
-        assert_eq!(
-            plan_launch(Some("triage"), Some(INIT), false, true, false),
-            LaunchPlan::Prompt { resume: false },
-        );
-    }
-
-    #[test]
-    fn plan_launch_no_prompt_uses_init_then_bare_shell() {
-        assert_eq!(plan_launch(None, Some(INIT), true, false, false), LaunchPlan::Init(INIT.to_string()));
-        assert_eq!(plan_launch(Some(""), None, false, false, true), LaunchPlan::None);
-    }
-    use crate::bsc_base_dir;
-    use std::collections::HashMap;
-
-    // The PtyJob process-tree-kill tests (`pty_job_drop_kills_assigned_process` /
-    // `pty_job_drop_kills_process_group`) live with the type they exercise, in `job.rs`.
-
-    #[test]
-    fn session_env_sets_xterm_term_by_default() {
-        // TERM/COLORTERM were previously unset on the spawned shell; default them
-        // so claude's TUI (ghost-text autocomplete, truecolor) works.
-        let env = session_env(&HashMap::new());
-        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "xterm-256color"));
-        assert!(env.iter().any(|(k, v)| k == "COLORTERM" && v == "truecolor"));
-    }
-
-    #[test]
-    fn session_env_lets_caller_override_term_and_appends_extras() {
-        let mut caller = HashMap::new();
-        caller.insert("TERM".to_string(), "screen-256color".to_string());
-        caller.insert("GH_TOKEN".to_string(), "secret".to_string());
-        let env = session_env(&caller);
-        // caller TERM wins, with no duplicate entry
-        assert_eq!(env.iter().filter(|(k, _)| k == "TERM").count(), 1);
-        assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
-        // unrelated caller vars still flow through
-        assert!(env.iter().any(|(k, v)| k == "GH_TOKEN" && v == "secret"));
-    }
-
-    #[test]
-    fn plan_db_for_cwd_resolves_the_hub_db_from_a_project_session() {
-        let projects = bsc_base_dir().join("projects");
-        // Director/planner at the hub root → projects/<key>/plan.db.
-        let hub = projects.join("my-app");
-        assert_eq!(plan_db_for_cwd(&hub.to_string_lossy()), Some(hub.join("plan.db")));
-        // A worker in a worktree beneath the hub resolves to the SAME db.
-        let wt = projects.join("my-app").join(".worktrees").join("web--auth");
-        assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(hub.join("plan.db")));
-    }
-
-    #[test]
-    fn wire_bsc_env_exports_the_log_dir_for_bsc_logs() {
-        // #1716/#1877: every session must be able to query its own log streams + perf.db via the
-        // unified `bsc logs` subcommand, which reads $BSC_LOG_DIR. wire_bsc_env stages it for every
-        // pane (the same base dir that holds the *_LOG TSVs). The `bsc` binary isn't present in the
-        // test target, so $BSC_BIN is only set when staged — BSC_LOG_DIR is the unconditional contract.
-        use super::CommandBuilder;
-        let mut cmd = CommandBuilder::new("bash");
-        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
-        assert!(cmd.get_env("BSC_LOG_DIR").is_some(), "BSC_LOG_DIR must be exported for bsc logs");
-    }
-
-    #[test]
-    fn wire_bsc_env_exports_every_registry_log_stream() {
-        // #1847: the pty writer stages every `bsc_util::LOG_STREAMS` row's $BSC_*_LOG — the same
-        // registry the unified `bsc logs` reader resolves filenames from — so the writer + reader
-        // can't drift on the stream set. Plus the pane tag every line carries.
-        use super::CommandBuilder;
-        let mut cmd = CommandBuilder::new("bash");
-        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "", None, None);
-        for s in bsc_util::LOG_STREAMS {
-            assert!(cmd.get_env(s.env_var).is_some(), "{} ({}) must be exported", s.key, s.env_var);
-        }
-        assert!(cmd.get_env("BSC_AUDIT_PANE").is_some(), "the pane tag must be exported");
-    }
-
-    #[test]
-    fn plan_db_for_cwd_is_none_outside_a_project_hub() {
-        assert_eq!(plan_db_for_cwd(""), None);
-        assert_eq!(plan_db_for_cwd(&bsc_base_dir().join("bin").to_string_lossy()), None);
-        // A plain repo somewhere on disk is not a project session.
-        let elsewhere = std::path::Path::new("C:/code/some-repo");
-        assert_eq!(plan_db_for_cwd(&elsewhere.to_string_lossy()), None);
     }
 }
 

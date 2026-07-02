@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Card } from "@/shared/ui/data/Card";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
@@ -184,7 +191,7 @@ export function TunnelSettings() {
   const canConnect = tunnelRelayUrl.trim().length > 0;
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <Box style={{ maxWidth: 820 }}>
       <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Mobile tunnel</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 22px", fontSize: 12, lineHeight: 1.6 }}>
         Pair <code>mobile-studio-code</code> to mirror these consoles from your phone — from
@@ -193,29 +200,29 @@ export function TunnelSettings() {
         terminal.
       </p>
 
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 14, gap: 12 }}>
+      <Card>
+        <Row gap={12} style={{ marginBottom: 14 }}>
           <h3 style={{ margin: 0 }}>Relay connection</h3>
           <Chip tone={running ? "success" : "neutral"}>
             {running ? (clients > 0 ? `● paired · ${clients} device${clients === 1 ? "" : "s"}` : "● waiting for a device") : "○ disconnected"}
           </Chip>
-          <span style={{ flex: 1 }} />
-          <button className="btn" disabled={busy || (!running && !canConnect)} onClick={onConnect}>
+          <Box as="span" style={{ flex: 1 }} />
+          <Button disabled={busy || (!running && !canConnect)} onClick={onConnect}>
             {running ? "disconnect" : busy ? "connecting…" : "connect"}
-          </button>
-        </div>
+          </Button>
+        </Row>
 
         {err && (
-          <div className="mono" style={{
+          <Box className="mono" style={{
             fontSize: 11, color: "var(--danger)",
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: 6, padding: "8px 10px", marginBottom: 14,
-          }}>{err}</div>
+          }}>{err}</Box>
         )}
 
-        <div className="field" style={{ marginBottom: running && payload ? 18 : 0 }}>
+        <Box className="field" style={{ marginBottom: running && payload ? 18 : 0 }}>
           <label>Relay URL</label>
-          <div style={{ display: "flex", gap: 8 }}>
+          <Row gap={8} align="stretch">
             <input
               className="input"
               placeholder="https://msc-tunnel-relay.<you>.workers.dev"
@@ -226,32 +233,31 @@ export function TunnelSettings() {
                 setTest({ state: "idle" }); // a fresh URL invalidates the last probe
               }}
             />
-            <button
-              className="btn"
+            <Button
               disabled={busy || running || test.state === "running" || !canConnect}
               onClick={onTest}
             >
               {test.state === "running" ? "testing…" : "test"}
-            </button>
-            <button className="btn" onClick={() => openUrl(DEPLOY_URL)}>
+            </Button>
+            <Button onClick={() => openUrl(DEPLOY_URL)}>
               deploy a relay →
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
               title="Open this relay's Worker in your Cloudflare dashboard"
               onClick={() => openUrl(cloudflareDashUrl(tunnelRelayUrl))}
             >
               manage in Cloudflare ↗
-            </button>
-          </div>
+            </Button>
+          </Row>
           {test.state === "idle" ? (
-            <div className="hint">
+            <Box className="hint">
               Your own Cloudflare Worker (free tier is enough). Deploy once, paste the URL it prints.
-            </div>
+            </Box>
           ) : (
-            <div
+            <Stack
               className="hint"
-              style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}
+              gap={3}
+              style={{ marginTop: 8 }}
               role="status"
               aria-live="polite"
             >
@@ -259,53 +265,49 @@ export function TunnelSettings() {
                 const leg = test.legs[key];
                 const { glyph, color } = legGlyph(leg.status);
                 return (
-                  <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                    <span className="mono" style={{ color, width: 12, textAlign: "center" }}>{glyph}</span>
-                    <span style={{ color: leg.status === "fail" ? "var(--danger)" : "var(--fg)", minWidth: 110 }}>{label}</span>
-                    {leg.detail && <span style={{ color: "var(--fg-muted)" }}>{leg.detail}</span>}
-                  </div>
+                  <Row key={key} align="baseline" gap={8}>
+                    <Box as="span" className="mono" style={{ color, width: 12, textAlign: "center" }}>{glyph}</Box>
+                    <Box as="span" style={{ color: leg.status === "fail" ? "var(--danger)" : "var(--fg)", minWidth: 110 }}>{label}</Box>
+                    {leg.detail && <Text as="span" tone="muted">{leg.detail}</Text>}
+                  </Row>
                 );
               })}
-            </div>
+            </Stack>
           )}
-        </div>
+        </Box>
 
         {running && payload ? (
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "start" }}>
+          <Grid cols="auto 1fr" gap={20} align="start">
             {/* QR — rendered on white for reliable scanning regardless of theme. */}
-            <div style={{
-              background: "#ffffff", padding: 12, borderRadius: 10,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-            }}>
+            <Stack align="center" gap={8} style={{ background: "#ffffff", padding: 12, borderRadius: 10 }}>
               <QRCodeSVG value={qrValue} size={184} bgColor="#ffffff" fgColor="#000000" level="M" />
-              <div className="mono" style={{ fontSize: 9.5, color: "#666", letterSpacing: ".04em" }}>
+              <Text as="div" mono size={9.5} style={{ color: "#666", letterSpacing: ".04em" }}>
                 SCAN IN MOBILE-STUDIO-CODE
-              </div>
-            </div>
+              </Text>
+            </Stack>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-              <div className="field">
+            <Stack gap={14} style={{ minWidth: 0 }}>
+              <Box className="field">
                 <label>Room</label>
                 <input className="input" readOnly value={status?.room ?? ""} style={{ fontSize: 11 }} />
-                <div className="hint">A fresh, high-entropy room is allocated each time you connect.</div>
-              </div>
-              <div className="field">
+                <Box className="hint">A fresh, high-entropy room is allocated each time you connect.</Box>
+              </Box>
+              <Box className="field">
                 <label>Host key (Noise)</label>
                 <input className="input" readOnly value={status?.hostPubKey ?? ""} style={{ fontSize: 10.5 }} />
-                <div className="hint">
+                <Box className="hint">
                   The phone pins this from the QR — it's how it knows it's talking to <i>your</i>
                   desktop, not the relay.
-                </div>
-              </div>
-              <div className="field">
+                </Box>
+              </Box>
+              <Box className="field">
                 <label>Input control</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Row gap={10}>
                   <Chip tone={inputGranted ? "success" : "neutral"}>
                     {inputGranted ? "● input granted" : "○ view-only"}
                   </Chip>
-                  <span style={{ flex: 1 }} />
-                  <button
-                    className="btn"
+                  <Box as="span" style={{ flex: 1 }} />
+                  <Button
                     disabled={busy || !paired}
                     onClick={onToggleInput}
                     style={inputRequested && !inputGranted
@@ -313,9 +315,9 @@ export function TunnelSettings() {
                       : undefined}
                   >
                     {inputGranted ? "revoke input" : "grant input"}
-                  </button>
-                </div>
-                <div className="hint">
+                  </Button>
+                </Row>
+                <Box className="hint">
                   {!paired
                     ? "A paired phone starts view-only — it mirrors these panes but cannot type."
                     : inputRequested && !inputGranted
@@ -323,36 +325,36 @@ export function TunnelSettings() {
                       : inputGranted
                         ? "The paired phone can drive panes. Revoke to return it to view-only."
                         : "The phone is view-only — keystrokes are dropped until you grant input."}
-                </div>
-              </div>
+                </Box>
+              </Box>
               {paired && (
-                <div className="field">
+                <Box className="field">
                   <label>Paired device</label>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ flex: 1 }} />
-                    <button className="btn" disabled={busy} onClick={onUnpair}>
+                  <Row gap={10}>
+                    <Box as="span" style={{ flex: 1 }} />
+                    <Button disabled={busy} onClick={onUnpair}>
                       unpair device
-                    </button>
-                  </div>
-                  <div className="hint">
+                    </Button>
+                  </Row>
+                  <Box className="hint">
                     Drops the connected phone, rotates the room + pairing secret (the old QR
                     stops working), and shows a fresh QR to pair again.
-                  </div>
-                </div>
+                  </Box>
+                </Box>
               )}
-              <div className="hint mono" style={{ fontSize: 10.5 }}>
+              <Text as="div" className="hint mono" size={10.5}>
                 The pairing secret is carried inside the QR only — never shown or logged.
-              </div>
-            </div>
-          </div>
+              </Text>
+            </Stack>
+          </Grid>
         ) : (
-          <div className="hint" style={{ padding: "8px 0 0" }}>
+          <Box className="hint" style={{ padding: "8px 0 0" }}>
             {running
               ? "Connecting to the relay…"
               : "Connect to allocate a room and generate a pairing QR."}
-          </div>
+          </Box>
         )}
-      </div>
-    </div>
+      </Card>
+    </Box>
   );
 }

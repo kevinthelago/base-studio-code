@@ -2,6 +2,9 @@
 // GitHub screen views (#1644 — extracted from GitHubSummary).
 
 import { useAppStore } from "@/store";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function GitHubPageModeStrip() {
   const { githubPageMode, setGithubPageMode, githubUser } = useAppStore();
@@ -11,34 +14,32 @@ export function GitHubPageModeStrip() {
     { k: "repos",    label: "Repositories", hint: "progress · changes · CI" },
   ] as const;
   return (
-    <div className="mono" style={{
+    <Row className="mono" gap={6} style={{
       padding: "0 24px",
       borderBottom: "1px solid var(--border-soft)",
       background: "var(--bg-panel)",
-      display: "flex", alignItems: "center", gap: 6,
       fontSize: 11.5,
       height: 34, flex: "0 0 34px",
     }}>
       {modes.map(m => {
         const on = m.k === githubPageMode;
         return (
-          <div key={m.k} onClick={() => setGithubPageMode(m.k)} style={{
+          <Row key={m.k} onClick={() => setGithubPageMode(m.k)} gap={8} style={{
             padding: "0 12px", height: 34,
-            display: "flex", alignItems: "center", gap: 8,
             borderBottom: "2px solid " + (on ? "var(--accent)" : "transparent"),
             color: on ? "var(--accent)" : "var(--fg-muted)",
             cursor: "pointer",
           }}>
             {m.label}
-            {on && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>· {m.hint}</span>}
-          </div>
+            {on && <Text as="span" size={10} tone="dim">· {m.hint}</Text>}
+          </Row>
         );
       })}
-      <div style={{ flex: 1 }} />
-      <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--fg-dim)" }}>
-        <span style={{ color: "var(--success)" }}>● connected</span>
-        {githubUser && <><span>·</span><span>{githubUser.login}</span></>}
-      </div>
-    </div>
+      <Spacer />
+      <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+        <Text as="span" tone="success">● connected</Text>
+        {githubUser && <><Text>·</Text><Text>{githubUser.login}</Text></>}
+      </Row>
+    </Row>
   );
 }

@@ -8,6 +8,9 @@
 // ChipInput is the editor's own multi-value entry (datalist-backed tool-name suggestions + an
 // "+ add" button); it is specific to this surface, so it lives here rather than in shared/ui.
 
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { COMMON_TOOLS } from "./lib/toolPresets";
 
 /** A removable tool badge in the allow/deny lists. */
@@ -15,18 +18,20 @@ export function ToolChip({
   label, onRemove,
 }: { label: string; onRemove: () => void }) {
   return (
-    <span className="mono" style={{
+    <Box as="span" className="mono" style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       padding: "2px 8px", borderRadius: 4,
       background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
       fontSize: 10.5, color: "var(--fg-muted)",
     }}>
       {label}
-      <span
+      <Text
+        as="span"
+        tone="dim"
         onClick={onRemove}
-        style={{ color: "var(--fg-dim)", cursor: "pointer", lineHeight: 1 }}
-      >×</span>
-    </span>
+        style={{ cursor: "pointer", lineHeight: 1 }}
+      >×</Text>
+    </Box>
   );
 }
 
@@ -35,7 +40,7 @@ export function ChipInput({
   value, onChange, onAdd, placeholder,
 }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {
   return (
-    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+    <Row gap={5}>
       <input
         className="input mono"
         value={value}
@@ -48,7 +53,8 @@ export function ChipInput({
       <datalist id="tool-suggestions">
         {COMMON_TOOLS.map((t) => <option key={t} value={t} />)}
       </datalist>
-      <span
+      <Box
+        as="span"
         className="mono"
         onClick={onAdd}
         style={{
@@ -56,7 +62,7 @@ export function ChipInput({
           background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
           fontSize: 10.5, color: "var(--fg-muted)",
         }}
-      >+ add</span>
-    </div>
+      >+ add</Box>
+    </Row>
   );
 }

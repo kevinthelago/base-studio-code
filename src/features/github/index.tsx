@@ -1,5 +1,9 @@
 import { useAppStore } from "@/store";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
@@ -43,9 +47,9 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   if (!githubConnected) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         <GitHubEmpty />
-      </div>
+      </Stack>
     );
   }
 
@@ -54,12 +58,12 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // tabbed view. Each board view renders its own project header + sub-tabs.
   if (githubBoardOpen && !pageOverride) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {githubBoardTab === "board"    && <ProjectBoard />}
         {githubBoardTab === "roadmap"  && <Roadmap />}
         {githubBoardTab === "issues"   && <Issues />}
         {githubBoardTab === "insights" && <Insights />}
-      </div>
+      </Stack>
     );
   }
 
@@ -84,42 +88,42 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
       {/* Repositories view — repo picker + the per-repo Pulse dashboard (progress,
           changes, CI, contributors) with the branch graph folded in (#413). */}
-      <div style={{
+      <Box style={{
         display: mode === "repos" ? "flex" : "none",
         flex: 1, minHeight: 0,
       }}>
         {/* Repo sidebar */}
-        <aside style={{
+        <Box as="aside" style={{
           width: sidebar.size, flex: `0 0 ${sidebar.size}px`, background: "var(--bg-panel)",
           borderRight: "1px solid var(--border-soft)", padding: "14px 8px",
           display: "flex", flexDirection: "column", gap: 2, overflow: "auto",
         }}>
-          <div className="mono" style={{
+          <Row className="mono" justify="between" style={{
             fontSize: 10, letterSpacing: ".08em",
             color: "var(--fg-dim)", padding: "2px 12px 8px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
-            <span>REPOS</span>
-            <span
+            <Text>REPOS</Text>
+            <Box
+              as="span"
               style={{ color: "var(--fg-muted)", cursor: "pointer", fontSize: 9.5 }}
               onClick={disconnectGithub}
               title="Disconnect GitHub"
             >
               disconnect
-            </span>
-          </div>
+            </Box>
+          </Row>
           {githubRepos.length === 0 && (
-            <div className="mono" style={{
+            <Box className="mono" style={{
               padding: "12px", fontSize: 11,
               color: "var(--fg-dim)", textAlign: "center",
             }}>
               No repositories found
-            </div>
+            </Box>
           )}
           {githubRepos.map(r => {
             const on = r.full_name === (activeRepo?.full_name ?? "");
             return (
-              <div
+              <Box
                 key={r.full_name}
                 onClick={() => setActiveRepo(r.full_name)}
                 style={{
@@ -129,31 +133,31 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   paddingLeft: on ? 10 : 12, cursor: "pointer",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span className="mono" style={{
+                <Row align="baseline" gap={6}>
+                  <Box as="span" className="mono" style={{
                     fontSize: 11,
                     color: on ? "var(--fg)" : "var(--fg-muted)",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     flex: 1, minWidth: 0,
-                  }}>{r.full_name}</span>
+                  }}>{r.full_name}</Box>
                   <Chip style={{ fontSize: 9.5 }}>{langTag(r.language)}</Chip>
-                </div>
-                <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
-                  <span>⊕ {r.open_issues_count}</span>
+                </Row>
+                <Row className="mono" gap={8} align="stretch" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4 }}>
+                  <Text>⊕ {r.open_issues_count}</Text>
                   {r.private && <Chip style={{ fontSize: 9 }}>private</Chip>}
-                </div>
-              </div>
+                </Row>
+              </Box>
             );
           })}
-        </aside>
+        </Box>
 
-        <div className="resize-x" {...sidebar.handleProps} title="Drag to resize" />
+        <Box className="resize-x" {...sidebar.handleProps} title="Drag to resize" />
 
         {/* The repo's pulse — replaces the old Overview/Actions tabs. */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Stack style={{ flex: 1, minWidth: 0 }}>
           <Pulse repo={activeRepo} />
-        </div>
-      </div>
+        </Stack>
+      </Box>
     </Screen>
   );
 }

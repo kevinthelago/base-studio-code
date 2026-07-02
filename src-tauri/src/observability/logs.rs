@@ -7,11 +7,11 @@
 //! and never raw-viewed. `plan.db` is project STATE and is deliberately NOT managed here.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use super::MutexConfig;
 use crate::bsc_base_dir;
 
 // ── Config ──────────────────────────────────────────────────────────────────────
@@ -36,16 +36,10 @@ impl Default for LogConfig {
     }
 }
 
-pub struct LogState(pub Mutex<LogConfig>);
-
-impl LogState {
-    pub fn new() -> Self {
-        Self(Mutex::new(LogConfig::default()))
-    }
-    pub fn get(&self) -> LogConfig {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-}
+/// The text-log retention config, held in a poison-tolerant `Mutex`. Built on the shared
+/// `MutexConfig<T>` (config-in-mutex + `get`/`set`); `perf`'s `PerfState` shares only the
+/// underlying `lock_recover` idiom since it carries more than a config.
+pub type LogState = MutexConfig<LogConfig>;
 
 // ── Stream registry ─────────────────────────────────────────────────────────────
 
@@ -65,7 +59,7 @@ const TSV_STREAMS: &[(&str, &str, &str)] = &[
 fn stream_path(app: &tauri::AppHandle, stream: &str) -> Option<PathBuf> {
     match stream {
         "app" => app.path().app_log_dir().ok().map(|d| d.join("base-studio-code.log")),
-        "perf" => Some(bsc_base_dir().join("perf.db")),
+        "perf" => Some(crate::perf_db()),
         other => TSV_STREAMS
             .iter()
             .find(|(k, _, _)| *k == other)
@@ -341,7 +335,7 @@ pub fn log_get_config(state: tauri::State<LogState>) -> LogConfig {
 
 #[tauri::command]
 pub fn log_set_config(max_lines: u32, max_size_mb: u32, state: tauri::State<LogState>) {
-    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = LogConfig { max_lines, max_size_mb };
+    state.set(LogConfig { max_lines, max_size_mb });
 }
 
 /// Apply the current cap to every TSV stream now (the "Enforce now" action).

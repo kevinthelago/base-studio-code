@@ -9,6 +9,10 @@
 
 import type { ReactNode } from "react";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 export function StageScreenFrame({
   label, badge, statusLabel, statusColor, actions, onClose, footer, fullWidth, bare, children,
@@ -40,22 +44,22 @@ export function StageScreenFrame({
       display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", background: "var(--bg-panel)",
     }}>
       {!bare && (
-        <div className="mono" style={{
+        <Row className="mono" gap={8} style={{
           padding: "10px 14px", borderBottom: "1px solid var(--border-soft)",
-          display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg-muted)",
+          fontSize: 11, color: "var(--fg-muted)",
         }}>
-          <span style={{ color: "var(--accent)" }}>▸ {label}</span>
+          <Text as="span" tone="accent">▸ {label}</Text>
           {badge}
-          <span style={{ flex: 1 }} />
-          {statusLabel && <span style={{ fontSize: 10, color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</span>}
+          <Box as="span" style={{ flex: 1 }} />
+          {statusLabel && <Text as="span" size={10} style={{ color: statusColor ?? "var(--fg-dim)" }}>{statusLabel}</Text>}
           {actions}
           {onClose && <IconButton aria-label="Close" onClick={onClose} />}
-        </div>
+        </Row>
       )}
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {children}
-      </div>
+      </Stack>
 
       {footer}
     </section>

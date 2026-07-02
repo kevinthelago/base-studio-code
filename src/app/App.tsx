@@ -6,6 +6,7 @@ import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
+import { Box } from "@/shared/ui/layout/Box";
 import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations/useScheduler";
 import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
@@ -86,32 +87,32 @@ export default function App() {
   // Hold the first paint until the async-persisted state has hydrated, so screens
   // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
   // load. Hydration is a fast local read — a brief blank-canvas frame, not a wait.
-  if (!hasHydrated) return <div className="app" />;
+  if (!hasHydrated) return <Box className="app" />;
 
   // Tear-off windows (#430/#463) render minimal chrome — just the one detached surface.
   if (isDetachedWindow()) return <DetachedWindow />;
 
   return (
-    <div className="app">
+    <Box className="app">
       <Achievements />
       <Titlebar workspace={titleWorkspace} />
       <AppBanners />
-      <div className="shell">
+      <Box className="shell">
         <Rail active={activeWorkspace} onNavigate={setWorkspace} />
-        <div className="main">
+        <Box className="main">
           {activeWorkspace === "console" && <Tabstrip {...consoleTabs.tabstripProps} />}
           {/* ConsoleWorkspace stays mounted across all screen navigations so xterm
               instances and PTY sessions are never torn down unnecessarily. CSS
               hides it when another screen is active. */}
-          <div className="page">
+          <Box className="page">
           <ErrorBoundary label="this view" resetKeys={[activeWorkspace]}>
           {tabs.length > 0 && (
-            <div style={{
+            <Box style={{
               display: activeWorkspace === "console" ? "flex" : "none",
               flex: 1, flexDirection: "column", minHeight: 0,
             }}>
               <ConsoleWorkspace />
-            </div>
+            </Box>
           )}
           {activeWorkspace === "console" && tabs.length === 0 && (
             <ConsoleEmptyState onNew={consoleTabs.openNewTab} />
@@ -119,9 +120,9 @@ export default function App() {
           {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
               sessions survive screen switches (CSS hides it when inactive). */}
           {projectsEverShown.current && (
-            <div style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
+            <Box style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
               <Suspense fallback={<WorkspaceFallback />}><ProjectsWorkspace /></Suspense>
-            </div>
+            </Box>
           )}
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
@@ -133,7 +134,7 @@ export default function App() {
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>
-          </div>
+          </Box>
           <StatusBar extra={
             activeWorkspace === "automation"
               ? <AutomationsStatus />
@@ -141,11 +142,11 @@ export default function App() {
               ? <SkillsStatus />
               : undefined
           } />
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
-    </div>
+    </Box>
   );
 }

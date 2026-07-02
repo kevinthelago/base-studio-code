@@ -11,7 +11,7 @@ use crate::project::plan_db;
 /// clear is undone within a tick.
 #[tauri::command]
 pub(crate) fn clear_all_plan_files() -> Result<u32, String> {
-    let projects = bsc_base_dir().join("projects");
+    let projects = projects_root();
     if !projects.exists() {
         return Ok(0);
     }
@@ -123,11 +123,7 @@ pub(crate) fn read_plan_sections(project_key: String) -> Result<std::collections
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn clear_project_plan_files_removes_md_and_json_only() {

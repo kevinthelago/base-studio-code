@@ -2073,6 +2073,53 @@ describe("updateAgentProfile marks assigned consoles stale (#799)", () => {
   });
 });
 
+describe("updateAgentProfile persists filesystem + network scope edits (#1795)", () => {
+  const base = {
+    id: "pf_scope", name: "Scoped", color: "#888", category: "user" as const, desc: "",
+    mode: "ask" as const, commands: [],
+    tools: { read: "ask", grep: "ask", glob: "ask", edit: "ask", write: "ask", bash: "ask", web: "ask", task: "ask" } as const,
+    paths: { allow: ["src/**"], deny: ["secrets/**"] }, net: { allow: ["api.github.com"] },
+  };
+
+  it("patches paths.allow / paths.deny and net.allow", () => {
+    useAppStore.setState({ agentProfiles: [structuredClone(base)], paneProfiles: {}, panePermsStale: {} });
+    const g = () => useAppStore.getState().agentProfiles[0];
+    const cur = () => g().paths;
+
+    // add an allow glob
+    useAppStore.getState().updateAgentProfile("pf_scope", { paths: { ...cur(), allow: [...cur().allow, "docs/**"] } });
+    expect(g().paths.allow).toEqual(["src/**", "docs/**"]);
+
+    // edit the first allow glob
+    useAppStore.getState().updateAgentProfile("pf_scope", { paths: { ...cur(), allow: ["lib/**", "docs/**"] } });
+    expect(g().paths.allow).toEqual(["lib/**", "docs/**"]);
+
+    // remove an allow glob
+    useAppStore.getState().updateAgentProfile("pf_scope", { paths: { ...cur(), allow: cur().allow.filter((_, i) => i !== 0) } });
+    expect(g().paths.allow).toEqual(["docs/**"]);
+
+    // add + remove a deny glob
+    useAppStore.getState().updateAgentProfile("pf_scope", { paths: { ...cur(), deny: [...cur().deny, ".env"] } });
+    expect(g().paths.deny).toEqual(["secrets/**", ".env"]);
+    useAppStore.getState().updateAgentProfile("pf_scope", { paths: { ...cur(), deny: cur().deny.filter((h) => h !== "secrets/**") } });
+    expect(g().paths.deny).toEqual([".env"]);
+
+    // add + remove a network host
+    useAppStore.getState().updateAgentProfile("pf_scope", { net: { allow: [...g().net.allow, "*"] } });
+    expect(g().net.allow).toEqual(["api.github.com", "*"]);
+    useAppStore.getState().updateAgentProfile("pf_scope", { net: { allow: g().net.allow.filter((h) => h !== "api.github.com") } });
+    expect(g().net.allow).toEqual(["*"]);
+  });
+
+  it("is a no-op for an application-role id not in agentProfiles (app roles stay read-only)", () => {
+    useAppStore.setState({ agentProfiles: [structuredClone(base)], paneProfiles: {}, panePermsStale: {} });
+    const before = useAppStore.getState().agentProfiles;
+    useAppStore.getState().updateAgentProfile("sys_planner", { net: { allow: ["evil.example.com"] } });
+    // the app-role id matches nothing in agentProfiles → the list is untouched
+    expect(useAppStore.getState().agentProfiles).toEqual(before);
+  });
+});
+
 describe("canonicalizePlanSections collapses stale title-named sections (#803)", () => {
   it("maps 'Tech stack' → 'stack' in sections + confirmed, preserving content", () => {
     useAppStore.setState({

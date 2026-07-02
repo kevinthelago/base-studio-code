@@ -70,6 +70,16 @@ export interface Agent {
   /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
   strategy?: IntegrationStrategy;
   ctx: number;
+  /** #2053 kickoff preview — the exact first message this worker receives at launch (the generated
+   *  `buildStreamPrompt`), so the user can SEE it before launching. When `authoredPrompt` is set the
+   *  real kickoff is that doc instead; this stays the generated fallback for reference. */
+  kickoff: string;
+  /** #2053 — the worker's lane context (`buildWorkerScope`) written as its CLAUDE.local.md lead:
+   *  owned globs, issues, contract dependencies. Shown collapsed under the kickoff. */
+  scope: string;
+  /** #2053 — the relpath of a planner-AUTHORED kickoff doc (`stream.prompt`), when present. Its
+   *  content wins over `kickoff` at launch; surfaced so the card can tag "authored · <path>". */
+  authoredPrompt?: string;
 }
 
 export interface RepoBranch { n: string; issue: number; state: string; ahead: number; behind: number }

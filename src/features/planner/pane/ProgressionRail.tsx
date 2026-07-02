@@ -11,6 +11,7 @@
 
 import { Fragment, type ReactNode } from "react";
 import { Ic } from "../blueprints/blueprintIcons";
+import { Box } from "@/shared/ui/layout/Box";
 import type { ConnectorKind } from "../stages/focusedPlan";
 import "./progressionRail.css";
 
@@ -69,7 +70,7 @@ export function ProgressionRail({
   if (nodes.length === 0) return null;
   const conn = connectorKind ?? defaultConnector;
   const rail = (
-    <div className={`prail ${variant}`}>
+    <Box className={`prail ${variant}`}>
       {nodes.map((n, i) => {
         const segClass =
           `prail-seg ${n.status}` +
@@ -77,8 +78,8 @@ export function ProgressionRail({
           (highlight?.has(n.key) ? " attn" : "");
         const inner = (
           <>
-            <span className={`prail-node ${n.status}`}>{nodeContent(n)}</span>
-            {variant === "stepper" && <span className="prail-label">{n.label}</span>}
+            <Box as="span" className={`prail-node ${n.status}`}>{nodeContent(n)}</Box>
+            {variant === "stepper" && <Box as="span" className="prail-label">{n.label}</Box>}
           </>
         );
         return (
@@ -88,16 +89,16 @@ export function ProgressionRail({
                 {inner}
               </button>
             ) : (
-              <span className={segClass} title={n.title}>
+              <Box as="span" className={segClass} title={n.title}>
                 {inner}
-              </span>
+              </Box>
             )}
-            {i < nodes.length - 1 && <span className={"prail-conn " + conn(nodes, i)} />}
+            {i < nodes.length - 1 && <Box as="span" className={"prail-conn " + conn(nodes, i)} />}
           </Fragment>
         );
       })}
-    </div>
+    </Box>
   );
   // The stepper sits in a bordered strip below the pane header; the compact card preview is bare.
-  return variant === "stepper" ? <div className="prail-wrap">{rail}</div> : rail;
+  return variant === "stepper" ? <Box className="prail-wrap">{rail}</Box> : rail;
 }

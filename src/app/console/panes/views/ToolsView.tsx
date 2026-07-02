@@ -7,6 +7,9 @@
 // listed here (a follow-up can resolve the pane's effective server set).
 
 import { roleCapability, type SessionRole, type AccessTier } from "@/shared/lib/session/sessionRoles";
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
 
 const MONO = "var(--mono)";
 
@@ -24,13 +27,13 @@ export function ToolsView({ role, small }: { role?: string; small?: boolean }) {
   // An ad-hoc interactive console has no fleet role / least-privilege gate.
   if (!role) {
     return (
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
-        <div style={grpLabel}>PERMISSIONS</div>
-        <div style={{ marginTop: 8, color: "var(--fg-dim)" }}>
+      <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
+        <Text as="div" style={grpLabel}>PERMISSIONS</Text>
+        <Text as="div" tone="dim" style={{ marginTop: 8 }}>
           Interactive console — no least-privilege role applied. Launched fleet sessions
           (worker / director / triage / …) show their capability posture here.
-        </div>
-      </div>
+        </Text>
+      </Box>
     );
   }
 
@@ -43,32 +46,32 @@ export function ToolsView({ role, small }: { role?: string; small?: boolean }) {
   const globs = cap.writeGlobs.length ? cap.writeGlobs : null;
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6 }}>
-      <div style={{ ...grpLabel, marginBottom: 7 }}>ROLE · {role.toUpperCase()}</div>
+    <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+      <Text as="div" style={{ ...grpLabel, marginBottom: 7 }}>ROLE · {role.toUpperCase()}</Text>
       {rows.map((r) => (
-        <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px", borderRadius: 6 }}>
-          <span style={{ color: tierColor(r.tier), width: 12 }}>●</span>
-          <span style={{ color: "var(--fg)", width: 60 }}>{r.key}</span>
-          <span style={{ color: "var(--fg-dim)", fontSize: 10, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.note}</span>
-          <span style={{ color: tierColor(r.tier), fontSize: 10 }}>{r.tier}</span>
-        </div>
+        <Row key={r.key} gap={9} style={{ padding: "4px 6px", borderRadius: 6 }}>
+          <Text style={{ color: tierColor(r.tier), width: 12 }}>●</Text>
+          <Text style={{ color: "var(--fg)", width: 60 }}>{r.key}</Text>
+          <Text tone="dim" size={10} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.note}</Text>
+          <Text size={10} style={{ color: tierColor(r.tier) }}>{r.tier}</Text>
+        </Row>
       ))}
 
-      <div style={{ ...grpLabel, margin: "12px 0 6px" }}>WRITE PATHS</div>
+      <Text as="div" style={{ ...grpLabel, margin: "12px 0 6px" }}>WRITE PATHS</Text>
       {globs ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        <Row gap={5} wrap align="stretch">
           {globs.map((g) => (
-            <span key={g} style={{ padding: "1px 6px", borderRadius: 5, background: "var(--bg-elev2)", color: "var(--fg-muted)", fontSize: 10 }}>{g}</span>
+            <Text key={g} tone="muted" size={10} style={{ padding: "1px 6px", borderRadius: 5, background: "var(--bg-elev2)" }}>{g}</Text>
           ))}
-        </div>
+        </Row>
       ) : (
-        <div style={{ color: "var(--fg-dim)", fontSize: 10.5 }}>
+        <Text as="div" tone="dim" size={10.5}>
           {cap.code === "none" ? "no code writes — read-only role" : "owned globs only (assigned at fleet launch)"}
-        </div>
+        </Text>
       )}
 
-      <div style={{ ...grpLabel, margin: "12px 0 6px" }}>MCP SERVERS</div>
-      <div style={{ color: "var(--fg-dim)", fontSize: 10.5 }}>Attached per project at launch — see the project's MCP pane.</div>
-    </div>
+      <Text as="div" style={{ ...grpLabel, margin: "12px 0 6px" }}>MCP SERVERS</Text>
+      <Text as="div" tone="dim" size={10.5}>Attached per project at launch — see the project's MCP pane.</Text>
+    </Box>
   );
 }
