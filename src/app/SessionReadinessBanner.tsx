@@ -7,6 +7,7 @@
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 interface SessionReadinessBannerProps {
   warnings: ReadinessCheck[];
@@ -31,7 +32,7 @@ export function SessionReadinessBanner({
       onDismiss={onDismiss}
       lead={<span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>⚠ GitHub</span>}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+      <Stack gap={3} style={{ flex: 1 }}>
         {warnings.map((w) => (
           <span key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span>{w.message}</span>
@@ -54,7 +55,7 @@ export function SessionReadinessBanner({
             )}
           </span>
         ))}
-      </div>
+      </Stack>
     </Banner>
   );
 }

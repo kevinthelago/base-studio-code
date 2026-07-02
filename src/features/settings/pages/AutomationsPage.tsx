@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
@@ -23,7 +24,7 @@ export function AutomationsPage() {
             Create schedules, arm or disarm them, choose the target pane and action, and review run
             history on the Automations screen.
           </p>
-          <button className="btn" onClick={() => setWorkspace("automation")}>Open Automations →</button>
+          <Button onClick={() => setWorkspace("automation")}>Open Automations →</Button>
         </div>
       </Card>
     </div>

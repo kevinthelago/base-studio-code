@@ -3,6 +3,7 @@ import { useAppStore } from "@/store";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { ConsoleWorkspace } from "@/app/console";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
+import { Stack } from "@/shared/ui/layout/Stack";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, ProjectsWorkspace,
   SkillsWorkspace, AgentsWorkspace, WorkspaceFallback,
@@ -68,9 +69,9 @@ export function DetachedWindow() {
         <div className="main">
           <div className="page">
             {hasHydrated && detachIdx >= 0 && (
-              <div style={{ display: "flex", flex: 1, flexDirection: "column", minHeight: 0 }}>
+              <Stack style={{ flex: 1, minHeight: 0 }}>
                 <ConsoleWorkspace tabIdxOverride={detachIdx} />
-              </div>
+              </Stack>
             )}
           </div>
         </div>

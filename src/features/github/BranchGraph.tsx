@@ -5,6 +5,9 @@
 import { useState, useEffect } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
 import { useAppStore, type GithubRepo } from "@/store";
+import { Row } from "@/shared/ui/layout/Row";
+import { Card } from "@/shared/ui/data/Card";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface GhCommit {
   sha: string;
@@ -129,23 +132,23 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
   const laneColors = layout?.laneNames.map((_, i) => LANE_COLORS[i]) ?? [];
 
   return (
-    <div className="card" style={{ padding: "14px 16px 12px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+    <Card style={{ padding: "14px 16px 12px" }}>
+      <Row align="baseline" gap={10} style={{ marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Branch graph</h3>
         <span className="hint">
           {busy ? "loading…" : layout ? `${layout.laneNames.length} branches · ${layout.points.length} commits` : "—"}
         </span>
-      </div>
+      </Row>
 
       {busy && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0", textAlign: "center" }}>
+        <Text mono size={11} tone="dim" as="div" style={{ padding: "20px 0", textAlign: "center" }}>
           Fetching branch history…
-        </div>
+        </Text>
       )}
       {!busy && layout && layout.points.length === 0 && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "20px 0" }}>
+        <Text mono size={11} tone="dim" as="div" style={{ padding: "20px 0" }}>
           No commit history found.
-        </div>
+        </Text>
       )}
       {!busy && layout && layout.points.length > 0 && (
         <div style={{ overflow: "auto" }}>
@@ -187,15 +190,15 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
       )}
 
       {layout && layout.laneNames.length > 0 && (
-        <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+        <Row gap={14} wrap align="stretch" style={{ marginTop: 10 }}>
           {layout.laneNames.map((name, i) => (
             <span key={name} className="mono" style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
               <span style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
               {name}
             </span>
           ))}
-        </div>
+        </Row>
       )}
-    </div>
+    </Card>
   );
 }

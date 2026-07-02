@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
 
 const ANSI = /\x1b\[[0-9;]*m/g; // eslint-disable-line no-control-regex
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
@@ -36,7 +37,7 @@ export function LogsViewerCard({
 
   return (
     <div style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: 12, marginTop: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+      <Row gap={8} style={{ marginBottom: 8 }}>
         <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>{fileLabel}</span>
         <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>newest {lines.length}{shown.length !== lines.length ? ` · ${shown.length} shown` : ""}</span>
         <span style={{ flex: 1 }} />
@@ -53,7 +54,7 @@ export function LogsViewerCard({
         )}
         <Button size="sm" onClick={() => void navigator.clipboard?.writeText(shown.join("\n"))}>Copy</Button>
         <Button size="sm" onClick={onClose}>Close</Button>
-      </div>
+      </Row>
       <pre className="mono" style={{ margin: 0, maxHeight: 320, overflow: "auto", fontSize: 10.5, lineHeight: 1.5, color: "var(--fg-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
         {shown.length ? shown.join("\n") : <span style={{ color: "var(--fg-dim)" }}>{lines.length ? "no lines match the filter" : "empty"}</span>}
       </pre>

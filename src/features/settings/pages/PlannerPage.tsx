@@ -11,6 +11,7 @@ import { SandboxedConsolesCard } from "../cards/SandboxedConsolesCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 /** A settings page sub-section header — the group label within a page (scaled-down page h2). */
 function Sub({ children }: { children: string }) {
@@ -38,7 +39,7 @@ export function PlannerPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
+    <Stack gap={18} style={{ maxWidth: 820 }}>
       <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>Planner</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
         LLM planning providers, autopilot, the session shell, mobile tunnel, performance, and storage.
@@ -87,6 +88,6 @@ export function PlannerPage() {
         onEnforced={() => setRefreshTrigger(prev => prev + 1)}
         flash={flash}
       />
-    </div>
+    </Stack>
   );
 }

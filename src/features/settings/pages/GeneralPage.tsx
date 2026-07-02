@@ -9,6 +9,7 @@ import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
 import { ConfigBundleCard } from "../cards/ConfigBundleCard";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 /** A settings page sub-section header — the group label within a page (scaled-down page h2). */
 function Sub({ children }: { children: string }) {
@@ -21,7 +22,7 @@ function Sub({ children }: { children: string }) {
 
 export function GeneralPage() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
+    <Stack gap={18} style={{ maxWidth: 820 }}>
       <h2 className="mono" style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>General</h2>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 4px", fontSize: 12 }}>
         App-wide preferences, required dependencies, appearance, and keyboard hotkeys.
@@ -53,6 +54,6 @@ export function GeneralPage() {
 
       <Sub>Achievements</Sub>
       <AchievementsCard />
-    </div>
+    </Stack>
   );
 }

@@ -9,9 +9,11 @@ import { type CSSProperties } from "react";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { modeTone, originTone } from "./lib/badgeTone";
 import {
   TOOL_DEFS, GUARANTEED, MODE_LABEL, paneCount, consoleCount,
@@ -55,7 +57,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
           <div className="list-label">Custom &amp; generated</div>
           {profiles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
           <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</button>
+            <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</Button>
           </div>
         </div>
       </div>
@@ -109,11 +111,11 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
             <div className="ds">{p.desc}</div>
           </div>
           {isApp
-            ? <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>
-            : <><button className="btn ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</button><button className="btn" style={{ height: 26, fontSize: 10.5 }}>save</button></>}
+            ? <><Button variant="ghost" style={{ height: 26, fontSize: 10.5 }}>open {appSessionOpenLabel(p)} →</Button><Button style={{ height: 26, fontSize: 10.5 }}>save</Button></>
+            : <><Button variant="ghost" style={{ height: 26, fontSize: 10.5 }}>duplicate</Button><Button style={{ height: 26, fontSize: 10.5 }}>save</Button></>}
         </div>
         {isApp && (
-          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: 10 }}>
+          <Stack gap={10} style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)" }}>
             <Banner tone="info" lead={<span style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</span>}>
               <span><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</span>
             </Banner>
@@ -125,7 +127,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
               </div>
               <Chip tone="success" style={{ fontSize: 9.5 }}><StatusDot color="var(--success)" style={{ marginRight: 4 }} />running</Chip>
             </div>
-          </div>
+          </Stack>
         )}
         <div className="pd-stat">
           <div><div className="k">base policy</div><div className="v" style={{ color: modeColor(p.mode) }}>{MODE_LABEL[p.mode]}</div></div>
@@ -278,7 +280,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, toggleAs
 
       {!(isApp || p.builtin) && (
         <div style={{ padding: "0 2px 6px" }}>
-          <button className="btn ghost danger" style={{ height: 26, fontSize: 10.5 }} onClick={() => onDelete(p.id)}>delete profile</button>
+          <Button variant="ghost" danger style={{ height: 26, fontSize: 10.5 }} onClick={() => onDelete(p.id)}>delete profile</Button>
         </div>
       )}
     </>

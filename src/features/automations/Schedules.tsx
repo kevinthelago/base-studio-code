@@ -6,6 +6,11 @@ import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 
@@ -44,7 +49,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
       <EmptyState
         title="No automations yet"
         description="Schedule a command to fire into a console pane on a cadence."
-        actions={<button className="btn primary" onClick={onNew}>+ New automation</button>}
+        actions={<Button variant="primary" onClick={onNew}>+ New automation</Button>}
       />
     );
   }
@@ -52,7 +57,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
   const armedCount = automations.filter(a => a.armed).length;
   return (
     <div className="sched-layout">
-      <div className="card sched-list">
+      <Card className="sched-list">
         <div className="head">
           <div className="head-row">
             <h3>Schedules</h3>
@@ -77,10 +82,10 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
             </div>
           ))}
           <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>+ new automation</button>
+            <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>+ new automation</Button>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -126,7 +131,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
           {/* when */}
           <div className="es"><div className="es-row">
             <div className="es-lbl accent">when</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <Stack gap={8}>
               <SegmentedControl
                 options={[
                   { label: "simple", on: sel.when.kind === "simple", onClick: () => setMode("simple") },
@@ -134,7 +139,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                 ]}
               />
               {sel.when.kind === "simple" ? (
-                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
+                <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
                   <span>every</span>
                   <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
                     {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
@@ -147,16 +152,16 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                         onChange={e => patchSimple({ at: e.target.value })} />
                     </>
                   )}
-                </div>
+                </Row>
               ) : (
-                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
+                <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
                   <span>cron</span>
                   <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
                     onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
                   {isValidCron(sel.when.expr)
                     ? <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>min hour day-of-month month day-of-week</span>
                     : <span style={{ color: "var(--danger)", fontSize: 10 }}>invalid expression</span>}
-                </div>
+                </Row>
               )}
               <div className="cron-strip">
                 <span className="label">next run</span>
@@ -164,7 +169,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                 <span style={{ flex: 1 }} />
                 <span>last · <b>{sel.lastRunAt ? fmtStamp(sel.lastRunAt) : "never"}</b></span>
               </div>
-            </div>
+            </Stack>
           </div></div>
 
           {/* target */}
@@ -173,7 +178,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
             {tabs.length === 0 ? (
               <div className="hint">No console tabs open — open a console (and a pane) to target.</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Grid cols={2} gap={10}>
                 <div className="field"><label>console</label>
                   <select className="input" value={sel.targetTab} onChange={e => updateAutomation(sel.id, { targetTab: e.target.value, targetPaneIdx: 0 })}>
                     {!tabs.some(t => t.name === sel.targetTab) && <option value={sel.targetTab}>{sel.targetTab || "(pick a console)"}</option>}
@@ -189,28 +194,28 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                     })}
                   </select>
                 </div>
-              </div>
+              </Grid>
             )}
           </div></div>
 
           {/* action */}
           <div className="es"><div className="es-row">
             <div className="es-lbl success">action</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Stack gap={10}>
               <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
               <span className="hint">Typed into the target pane's session, then submitted.</span>
-            </div>
+            </Stack>
           </div></div>
 
           {/* history */}
           <div className="es" style={{ background: "var(--bg-canvas)" }}><div className="es-row">
             <div className="es-lbl muted">history</div>
             <div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+              <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
                 <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
                 <span style={{ flex: 1 }} />
-                {sel.runs.length > 0 && <button className="btn ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</button>}
-              </div>
+                {sel.runs.length > 0 && <Button variant="ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</Button>}
+              </Row>
               {runsTable(sel.runs)}
             </div>
           </div></div>

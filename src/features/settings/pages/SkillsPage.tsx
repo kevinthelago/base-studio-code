@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
 
 const prose: React.CSSProperties = { fontFamily: "var(--sans)", fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" };
 
@@ -30,7 +31,7 @@ export function SkillsPage() {
             Browse the library, edit skills, manage task-groups, and assign them per session on the
             Skills screen.
           </p>
-          <button className="btn" onClick={() => setWorkspace("skills")}>Open Skills library →</button>
+          <Button onClick={() => setWorkspace("skills")}>Open Skills library →</Button>
         </div>
       </Card>
     </div>

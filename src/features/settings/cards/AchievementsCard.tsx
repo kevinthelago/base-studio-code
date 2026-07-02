@@ -1,5 +1,7 @@
 import { useAppStore } from "@/store";
 import { ACHIEVEMENTS, isUnlocked } from "@/shared/lib/core/achievements";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 // Settings > Achievements: the persistent trophy case. Each achievement shows its
 // icon (full-color when unlocked, dimmed + grayscale when locked) and, once earned,
@@ -10,23 +12,22 @@ export function AchievementsCard() {
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+      <Row align="baseline" gap={10} style={{ marginBottom: 4 }}>
         <h2 className="mono" style={{ fontSize: 16, margin: 0, color: "var(--fg)" }}>Achievements</h2>
         <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>
           {unlockedCount}/{ACHIEVEMENTS.length} unlocked
         </span>
-      </div>
+      </Row>
       <p className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", margin: "0 0 18px" }}>
         Milestones you have earned. Each unlocks once and is kept across restarts.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <Stack gap={10}>
         {ACHIEVEMENTS.map((a) => {
           const at = achievements[a.id];
           const unlocked = at != null;
           return (
-            <div key={a.id} style={{
-              display: "flex", alignItems: "center", gap: 14,
+            <Row key={a.id} gap={14} style={{
               padding: 12, borderRadius: 10,
               background: "var(--bg-panel)",
               border: "1px solid " + (unlocked ? "var(--accent)" : "var(--border-soft)"),
@@ -56,10 +57,10 @@ export function AchievementsCard() {
                   </div>
                 )}
               </div>
-            </div>
+            </Row>
           );
         })}
-      </div>
+      </Stack>
     </div>
   );
 }

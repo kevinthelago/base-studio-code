@@ -5,6 +5,8 @@ import { useGithubConnect } from "../lib/useGithubConnect";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Button } from "@/shared/ui/controls/Button";
 
 function ConnectFlowCard() {
   const {
@@ -34,7 +36,7 @@ function ConnectFlowCard() {
             }}>
               {device.user_code}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+            <Row gap={10} style={{ marginTop: 12 }}>
               <span className="hint" style={{ flex: 1 }}>
                 Waiting for authorization at{" "}
                 <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
@@ -42,35 +44,35 @@ function ConnectFlowCard() {
                 </span>
                 …
               </span>
-              <button className="btn ghost" style={{ height: 28, fontSize: 11 }} onClick={() => openUrl(device.verification_uri)}>
+              <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={() => openUrl(device.verification_uri)}>
                 reopen
-              </button>
-              <button className="btn ghost danger" style={{ height: 28, fontSize: 11 }} onClick={cancelDevice}>
+              </Button>
+              <Button variant="ghost" danger style={{ height: 28, fontSize: 11 }} onClick={cancelDevice}>
                 cancel
-              </button>
-            </div>
+              </Button>
+            </Row>
           </div>
         ) : (
           <div style={{ marginBottom: 18 }}>
             <p style={{ margin: "0 0 12px", color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
               Authorize base-studio-code on GitHub in your browser — no token to copy.
             </p>
-            <button
-              className="btn primary"
+            <Button
+              variant="primary"
               onClick={handleDeviceConnect}
               disabled={deviceBusy || loading}
               style={{ height: 36, width: "100%" }}
             >
               {deviceBusy ? "Starting…" : "Connect with GitHub"}
-            </button>
-            <div className="mono" style={{
-              display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px",
+            </Button>
+            <Row className="mono" gap={10} style={{
+              margin: "16px 0 4px",
               color: "var(--fg-dim)", fontSize: 10.5,
             }}>
               <div style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
               or use a token
               <div style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-            </div>
+            </Row>
           </div>
         )
       ) : null}
@@ -86,7 +88,7 @@ function ConnectFlowCard() {
         <Chip style={{ fontSize: 10 }}>project</Chip> scopes, then paste it below.
       </p>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <Row gap={8} align="stretch">
         <input
           className="input"
           type="password"
@@ -97,15 +99,15 @@ function ConnectFlowCard() {
           style={{ flex: 1, height: 34, fontSize: 12 }}
           autoComplete="off"
         />
-        <button
-          className="btn primary"
+        <Button
+          variant="primary"
           onClick={handleConnect}
           disabled={loading || !token.trim()}
           style={{ whiteSpace: "nowrap", height: 34 }}
         >
           {loading ? "Connecting…" : "Connect"}
-        </button>
-      </div>
+        </Button>
+      </Row>
 
       {error && (
         <div className="mono" style={{
@@ -146,13 +148,13 @@ export function ConnectGithubCard() {
         {(githubUser.name ?? githubUser.login).charAt(0).toUpperCase()}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Row gap={8} wrap>
           <b className="mono" style={{ fontSize: 13 }}>
             {githubUser.name ? `${githubUser.name} (${githubUser.login})` : githubUser.login}
           </b>
           <Chip tone="success"><StatusDot style={{ marginRight: 4 }} />connected</Chip>
           <Chip>scopes: repo · read:org · read:user · project</Chip>
-        </div>
+        </Row>
         <div className="hint" style={{ marginTop: 3 }}>
           {githubRepos.length} {githubRepos.length === 1 ? "repo" : "repos"} accessible
           {githubToken && (
@@ -162,7 +164,7 @@ export function ConnectGithubCard() {
           )}
         </div>
       </div>
-      <button className="btn danger" onClick={() => { clearGithubCache().catch(() => {}); disconnectGithub(); }}>Disconnect</button>
+      <Button danger onClick={() => { clearGithubCache().catch(() => {}); disconnectGithub(); }}>Disconnect</Button>
     </Card>
   );
 }

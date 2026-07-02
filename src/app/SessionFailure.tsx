@@ -5,6 +5,7 @@
 // retry — the session cannot proceed without these.
 
 import type { ReadinessCheck } from "@/shared/lib/core/diagnostics";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 interface SessionFailureProps {
   critical: ReadinessCheck[];
@@ -15,15 +16,13 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
   if (critical.length === 0) return null;
 
   return (
-    <div
+    <Stack
       role="alert"
+      align="center"
+      justify="center"
+      gap={16}
       style={{
         flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
         padding: "32px 24px",
         background: "#181a1f",
         color: "#eeeae4",
@@ -36,27 +35,23 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
       <div style={{ fontWeight: 600, fontSize: 14, color: "#d4554f" }}>
         Session prerequisites missing
       </div>
-      <div
+      <Stack
+        gap={10}
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
           maxWidth: 480,
           width: "100%",
         }}
       >
         {critical.map((c) => (
-          <div
+          <Stack
             key={c.id}
+            gap={6}
             style={{
               background: "#1e1f24",
               border: "1px solid #3a1a1a",
               borderRadius: 6,
               padding: "10px 14px",
               textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
             }}
           >
             <span style={{ color: "#e06c75", fontSize: 12 }}>{c.message}</span>
@@ -77,9 +72,9 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
                 Download ↗
               </a>
             )}
-          </div>
+          </Stack>
         ))}
-      </div>
+      </Stack>
       <button
         onClick={onRetry}
         style={{
@@ -100,6 +95,6 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
         Install the missing tools, then click Retry. The session will probe again
         without a full relaunch.
       </div>
-    </div>
+    </Stack>
   );
 }

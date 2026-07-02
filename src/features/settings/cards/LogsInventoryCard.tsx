@@ -4,6 +4,8 @@ import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { fmtBytes } from "@/shared/lib/core/format";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 
 interface LogFileInfo {
   stream: string; label: string; path: string;
@@ -56,9 +58,9 @@ export function LogsInventoryCard({
 
   return (
     <Card title="Log streams">
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Stack gap={0}>
         {files.map((f) => (
-          <div key={f.stream} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
+          <Row key={f.stream} gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--fg)" }}>{f.label}</div>
               <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", marginTop: 2 }}>
@@ -70,9 +72,9 @@ export function LogsInventoryCard({
             {f.stream === "perf"
               ? <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>retention in Performance →</span>
               : <ConfirmButton size="sm" label="Clear" armedLabel="Confirm" onConfirm={() => clear(f.stream)} />}
-          </div>
+          </Row>
         ))}
-      </div>
+      </Stack>
     </Card>
   );
 }

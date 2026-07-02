@@ -5,6 +5,11 @@
 
 import { useAppStore } from "@/store";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
 import { useGithubSummary } from "./useGithubSummary";
 import { ActivityHeatmap } from "./summary/ActivityHeatmap";
 import { LanguageMix } from "./summary/LanguageMix";
@@ -31,17 +36,17 @@ export function GitHubSummary() {
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+        <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Across all repositories</h2>
             <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
               {githubRepos.length} repo{githubRepos.length !== 1 ? "s" : ""} · 28-week view
             </div>
           </div>
-          <button className="btn" onClick={() => setGithubPageMode("repos")}>browse repositories →</button>
-        </div>
+          <Button onClick={() => setGithubPageMode("repos")}>browse repositories →</Button>
+        </Row>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 14 }}>
+        <Grid cols={6} gap={8} style={{ marginBottom: 14 }}>
           {([
             ["repositories", String(githubRepos.length),               "all connected",                 "fg"     ],
             ["open PRs",     loading ? "…" : String(kpiOpenPRs),       `${openPRs.filter(p => !p.draft).length} ready to review`, "accent"],
@@ -50,30 +55,30 @@ export function GitHubSummary() {
             ["contributors", loading ? "…" : String(kpiContribs),      "all repos",                     "muted"  ],
             ["merged PRs",       loading ? "…" : String(totalMerged),   "last ~90 days via events",      "muted"  ],
           ] as const).map(([k, v, sub, tone]) => (
-            <div key={k} className="card" style={{ padding: "10px 12px" }}>
+            <Card key={k} style={{ padding: "10px 12px" }}>
               <SectionLabel>{k}</SectionLabel>
               <div className="mono" style={{
                 fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "success" ? "var(--success)" : tone === "info" ? "var(--info)" : "var(--fg)",
               }}>{v}</div>
               <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-            </div>
+            </Card>
           ))}
-        </div>
+        </Grid>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <Grid cols="1.7fr 1fr" gap={14}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <ReposGrid repos={repoGridData} loading={loading} />
             <CrossRepoActivity events={crossRepoEvts} loading={loading} />
             <OpenPRsAllRepos prs={openPRs} loading={loading} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          </Stack>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <ActivityHeatmap cells={heatmapCells} rawCounts={rawCounts} rawDates={rawDates} totalContribs={totalContribs} totalMerged={totalMerged} loading={loading} />
             <CIHealthCard matrix={ciMatrix} loading={loading} />
             <ContributorsCard contributors={contributors} loading={loading} />
             <LanguageMix langTotals={langTotals} repoCount={langRepoCount} totalRepos={githubRepos.length} loading={loading} />
-          </div>
-        </div>
+          </Stack>
+        </Grid>
       </div>
     </section>
   );

@@ -1,9 +1,10 @@
 import { ClaudeConfigCard } from "../cards/ClaudeConfigCard";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function McpPage() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820 }}>
+    <Stack gap={18} style={{ maxWidth: 820 }}>
       <ClaudeConfigCard />
-    </div>
+    </Stack>
   );
 }

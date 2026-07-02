@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { SHORTCUT_GROUPS } from "../lib/shortcuts";
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
 import {
   REBINDABLE_IDS,
   chordToCaps,
@@ -43,14 +46,14 @@ function KeyCap({ children, active }: { children: React.ReactNode; active?: bool
 /** Render a list of key caps with "+" separators. */
 function Chord({ caps, active }: { caps: string[]; active?: boolean }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+    <Row gap={4} wrap justify="end">
       {caps.map((k, ki) => (
         <span key={ki} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           {ki > 0 && <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>+</span>}
           <KeyCap active={active}>{k}</KeyCap>
         </span>
       ))}
-    </div>
+    </Row>
   );
 }
 
@@ -119,7 +122,7 @@ export function KeyboardCard() {
       </p>
 
       {(overrideCount > 0 || capturingId) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <Row gap={10} style={{ marginBottom: 14 }}>
           {capturingId ? (
             <span className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
               Press a key combination… <span style={{ color: "var(--fg-dim)" }}>(Esc to cancel)</span>
@@ -142,7 +145,7 @@ export function KeyboardCard() {
               Reset all to defaults
             </button>
           )}
-        </div>
+        </Row>
       )}
 
       {error && (
@@ -151,7 +154,7 @@ export function KeyboardCard() {
 
       {SHORTCUT_GROUPS.map((group) => (
         <Card key={group.title} title={group.title} style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Stack gap={1}>
             {group.items.map((s, i) => {
               const isChord = s.id != null && REBINDABLE_SET.has(s.id);
               const isLeader = s.id != null && LEADER_SET.has(s.id);
@@ -167,16 +170,18 @@ export function KeyboardCard() {
                 ? [...leaderToCaps(effectiveLeader(keybindings, id as LeaderId)), rangeCap]
                 : overridden && id != null ? chordToCaps(keybindings[id]!) : s.keys;
               return (
-                <div
+                <Grid
                   key={s.desc}
+                  cols="1fr auto"
+                  gap={14}
+                  align="center"
                   style={{
-                    display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "center",
                     padding: "9px 12px", borderRadius: 6,
                     background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
                     outline: isCapturing ? "1px solid var(--accent)" : "none",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                  <Row align="baseline" gap={8} style={{ minWidth: 0 }}>
                     <span style={{ fontSize: 12, color: "var(--fg)" }}>{s.desc}</span>
                     <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{s.scope}</span>
                     {overridden && (
@@ -193,7 +198,7 @@ export function KeyboardCard() {
                         reset
                       </button>
                     )}
-                  </div>
+                  </Row>
                   {isChord ? (
                     <button
                       onClick={() => startCapture(id as RebindableId)}
@@ -206,7 +211,7 @@ export function KeyboardCard() {
                         : <Chord caps={caps} active={overridden} />}
                     </button>
                   ) : isLeader && id != null ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                    <Row gap={6} justify="end">
                       <select
                         aria-label={`Leader for ${s.desc}`}
                         value={effectiveLeader(keybindings, id as LeaderId)}
@@ -226,14 +231,14 @@ export function KeyboardCard() {
                       </select>
                       <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>+</span>
                       <KeyCap>{rangeCap}</KeyCap>
-                    </div>
+                    </Row>
                   ) : (
                     <Chord caps={caps} />
                   )}
-                </div>
+                </Grid>
               );
             })}
-          </div>
+          </Stack>
         </Card>
       ))}
     </div>
