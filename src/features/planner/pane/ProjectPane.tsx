@@ -2,8 +2,9 @@
 // v5: stage-focused one-at-a-time view (#652) with real data (#674).
 // Ported from design/project-pane-v4/recommended; now wraps in a 7-stage stepper
 // so the planning workflow is one focused stage at a time.
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Pane } from "@/shared/ui/overlay/Pane";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -92,20 +93,14 @@ export function ProjectPane({
    *  per-stage "?" prompt helper (`sendPrompt` in Planning.tsx). */
   onInject?: (text: string) => void;
 }) {
-  // Context file viewer modal
+  // Context file viewer modal — its scrim (ModalScrim) owns Escape + backdrop dismiss.
   const [viewing, setViewing] = useState<ContextFile | null>(null);
-  useEffect(() => {
-    if (!viewing) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setViewing(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [viewing]);
 
   // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
   const viewerModal = viewing && (
-    <Box className="modal-scrim" onClick={() => setViewing(null)} pad={24}>
-      <Stack onClick={(e) => e.stopPropagation()} style={{
+    <ModalScrim onDismiss={() => setViewing(null)} style={{ padding: 24 }}>
+      <Stack style={{
         width: "min(720px, 92vw)", maxHeight: "84vh",
         background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
         borderRadius: 10, boxShadow: "0 16px 50px rgba(0,0,0,.45)", overflow: "hidden",
@@ -125,7 +120,7 @@ export function ProjectPane({
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>{viewing.content || "(empty)"}</pre>
       </Stack>
-    </Box>
+    </ModalScrim>
   );
 
   // Focused mode: sequenced-rail one-stage view (#652)

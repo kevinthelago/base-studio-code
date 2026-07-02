@@ -5,7 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
-import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -296,7 +296,7 @@ export function ProjectsList() {
       {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕
           must not delete instantly. Shared by the Drafts chips and the Blueprints rail. */}
       {draftDeleteTarget && (
-        <Box className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
+        <ModalScrim onDismiss={() => setDraftDeleteTarget(null)}>
           <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 420, maxWidth: "90vw",
           }}>
             <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
@@ -318,7 +318,7 @@ export function ProjectsList() {
               </Button>
             </Row>
           </Box>
-        </Box>
+        </ModalScrim>
       )}
     </Box>
   );
