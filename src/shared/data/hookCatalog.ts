@@ -2,8 +2,10 @@
 // The live hook list + fire stats come from the store / backend at runtime — not from this file.
 
 import type { CatalogItem } from "./mcpCatalog";
+import hookCatalogEmbedded from "@data/mcp/hooks.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
-export const HOOK_CATALOG: CatalogItem[] = [
-  { name: "Block PII",   by: "first-party", icon: "⊘", desc: "Hook · PreToolUse — scans outbound tool inputs for PII patterns." },
-  { name: "Auto-format", by: "first-party", icon: "§", desc: "Hook · PostToolUse — runs project formatter on every Write." },
-];
+// The catalog DATA is externalized to `@data/mcp/hooks.json` (#2146, epic #2027 tail) — editable
+// without touching code + part of the exportable config bundle; the config-dir copy (#2047) overlays
+// the embedded default via `overlayFile`.
+export const HOOK_CATALOG: CatalogItem[] = overlayFile("mcp/hooks.json", hookCatalogEmbedded as CatalogItem[]);
