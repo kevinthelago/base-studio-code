@@ -16,8 +16,9 @@ import { invoke } from "@tauri-apps/api/core";
  * `projectKey` `null` (or empty) scopes to global-only subcommands (e.g. `bsc skill …`). Rejects when
  * the bundled binary can't be resolved or `bsc` exits non-zero (its stderr becomes the rejection).
  */
-export async function bsc(projectKey: string | null, args: string[]): Promise<string> {
-  return invoke<string>("bsc", { projectKey, args });
+export async function bsc(projectKey: string | null, args: string[], stdin?: string): Promise<string> {
+  // Only include `stdin` when given, so read/positional calls keep their exact 2-key payload.
+  return invoke<string>("bsc", stdin === undefined ? { projectKey, args } : { projectKey, args, stdin });
 }
 
 /**
@@ -41,5 +42,19 @@ export async function bscRun(projectKey: string | null, args: string[]): Promise
     await bsc(projectKey, args);
   } catch {
     /* bridge/store absent — ignore, matching the old per-command catch sites */
+  }
+}
+
+/**
+ * Drive a `bsc … set`/`add` verb whose JSON body is read from the child's **stdin** (#2123) — the
+ * write analogue of `bscRun` for the CLI verbs that take a manifest/object on stdin (e.g.
+ * `bsc plan deps set`, `bsc plan issue add`). Serializes `body` to JSON and feeds it in; swallows any
+ * error like the other void helpers.
+ */
+export async function bscWrite(projectKey: string | null, args: string[], body: unknown): Promise<void> {
+  try {
+    await bsc(projectKey, args, JSON.stringify(body));
+  } catch {
+    /* bridge/store absent — ignore */
   }
 }
