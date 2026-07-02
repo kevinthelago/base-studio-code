@@ -2,6 +2,7 @@
 //! Noise responder handshake, and pumps the `TunnelState` bus (PTY output + events) to the paired
 //! mobile client, routing inbound client frames back. The transport-FREE core lives in the parent.
 
+use crate::StrErr;
 use super::{
     decode_room_msg, noise, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta, TunnelState,
 };
@@ -72,16 +73,16 @@ fn ct_eq(a: &str, b: &str) -> bool {
 
 /// Encrypt a JSON-serialized message into one Noise transport frame.
 pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Vec<u8>, String> {
-    let json = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
+    let json = serde_json::to_vec(msg).str_err()?;
     let mut buf = vec![0u8; json.len() + 16];
-    let n = tx.write_message(&json, &mut buf).map_err(|e| e.to_string())?;
+    let n = tx.write_message(&json, &mut buf).str_err()?;
     buf.truncate(n);
     Ok(buf)
 }
 
 async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
     let frame = encode(tx, msg)?;
-    sink.send(Message::Binary(frame.into())).await.map_err(|e| e.to_string())
+    sink.send(Message::Binary(frame.into())).await.str_err()
 }
 
 async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutputChunk) -> Result<(), String> {
@@ -171,7 +172,7 @@ async fn session(
     log::info!("tunnel: connected to relay as host; waiting for mobile peer (room {room})");
 
     // Noise IK responder: read the mobile's first handshake message, answer it.
-    let mut hs = noise::responder(static_priv).map_err(|e| e.to_string())?;
+    let mut hs = noise::responder(static_priv).str_err()?;
     let mut scratch = vec![0u8; 65535];
     let msg1 = next_binary(&mut read).await?;
     log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
@@ -180,9 +181,9 @@ async fn session(
     let n = hs
         .write_message(&[], &mut scratch)
         .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
-    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.map_err(|e| e.to_string())?;
+    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.str_err()?;
     log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
-    let mut noise_tx = hs.into_transport_mode().map_err(|e| e.to_string())?;
+    let mut noise_tx = hs.into_transport_mode().str_err()?;
 
     // First app frame must be `auth`; validate the pairing secret.
     let frame = next_binary(&mut read).await?;

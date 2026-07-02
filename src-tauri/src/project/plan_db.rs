@@ -2,6 +2,7 @@
 // the Tauri-free `plandb` crate (shared with the `bsc plan` agent CLI); this module only resolves the
 // project key → `projects/<key>/plan.db` and adapts the `Store` API to Tauri commands for the UI.
 
+use crate::StrErr;
 use plandb::{Automation, Lesson, PlanFeature, PlanIssue, StartupScript, Store, STATUSES};
 use std::path::PathBuf;
 
@@ -10,7 +11,7 @@ fn db_path(project_key: &str) -> PathBuf {
 }
 
 fn open(project_key: &str) -> Result<Store, String> {
-    Store::open(&db_path(project_key)).map_err(|e| e.to_string())
+    Store::open(&db_path(project_key)).str_err()
 }
 
 /// The project's fleet (the FleetPlan JSON: `{…meta(director,…), streams:[…]}`) from plan.db — the
@@ -32,12 +33,12 @@ pub(crate) fn clear(project_key: &str) -> Result<(), String> {
     if !path.exists() {
         return Ok(());
     }
-    Store::open(&path).and_then(|s| s.clear()).map_err(|e| e.to_string())
+    Store::open(&path).and_then(|s| s.clear()).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_upsert_issue(project_key: String, issue: PlanIssue) -> Result<(), String> {
-    open(&project_key)?.upsert(&issue).map_err(|e| e.to_string())
+    open(&project_key)?.upsert(&issue).str_err()
 }
 
 #[tauri::command]
@@ -48,12 +49,12 @@ pub(crate) fn plan_list_issues(
 ) -> Result<Vec<PlanIssue>, String> {
     open(&project_key)?
         .list(status.as_deref(), stream.as_deref())
-        .map_err(|e| e.to_string())
+        .str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_remove_issue(project_key: String, issue_ref: String) -> Result<(), String> {
-    open(&project_key)?.remove(&issue_ref).map_err(|e| e.to_string())
+    open(&project_key)?.remove(&issue_ref).str_err()
 }
 
 /// Set an issue's execution status (workers: in_progress/complete; director: verified/failed).
@@ -63,7 +64,7 @@ pub(crate) fn plan_set_issue_status(project_key: String, issue_ref: String, stat
     if !plandb::is_valid_status(&status) {
         return Err(format!("unknown status '{status}' (expected one of {STATUSES:?})"));
     }
-    let n = open(&project_key)?.set_status(&issue_ref, &status).map_err(|e| e.to_string())?;
+    let n = open(&project_key)?.set_status(&issue_ref, &status).str_err()?;
     if n == 0 {
         Err(format!("no issue with ref '{issue_ref}'"))
     } else {
@@ -76,17 +77,17 @@ pub(crate) fn plan_set_issue_status(project_key: String, issue_ref: String, stat
 /// Merge-upsert a feature (titles-first: register titles, then fill detail by slug). Returns the slug.
 #[tauri::command]
 pub(crate) fn plan_upsert_feature(project_key: String, feature: PlanFeature) -> Result<String, String> {
-    open(&project_key)?.feature_upsert(&feature).map_err(|e| e.to_string())
+    open(&project_key)?.feature_upsert(&feature).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_list_features(project_key: String) -> Result<Vec<PlanFeature>, String> {
-    open(&project_key)?.feature_list().map_err(|e| e.to_string())
+    open(&project_key)?.feature_list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_remove_feature(project_key: String, slug: String) -> Result<(), String> {
-    open(&project_key)?.feature_remove(&slug).map_err(|e| e.to_string())
+    open(&project_key)?.feature_remove(&slug).str_err()
 }
 
 // ── linked repos (#1012) — durable per-project repo links in the hub's plan.db, so a zustand /
@@ -94,17 +95,17 @@ pub(crate) fn plan_remove_feature(project_key: String, slug: String) -> Result<(
 
 #[tauri::command]
 pub(crate) fn plan_add_repo(project_key: String, full_name: String) -> Result<(), String> {
-    open(&project_key)?.repo_add(&full_name).map_err(|e| e.to_string())
+    open(&project_key)?.repo_add(&full_name).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_list_repos(project_key: String) -> Result<Vec<String>, String> {
-    open(&project_key)?.repo_list().map_err(|e| e.to_string())
+    open(&project_key)?.repo_list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_remove_repo(project_key: String, full_name: String) -> Result<(), String> {
-    open(&project_key)?.repo_remove(&full_name).map_err(|e| e.to_string())
+    open(&project_key)?.repo_remove(&full_name).str_err()
 }
 
 // ── fleet + per-stream permissions (#1018) — the whole FleetPlan as meta + per-stream rows. ─────────
@@ -136,7 +137,7 @@ pub(crate) fn migrate_stray_fleet_json(project_key: &str) {
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .filter(serde_json::Value::is_object);
     match parsed {
-        Some(value) => match open(project_key).and_then(|s| s.fleet_set(&value).map_err(|e| e.to_string())) {
+        Some(value) => match open(project_key).and_then(|s| s.fleet_set(&value).str_err()) {
             Ok(()) => {
                 let _ = std::fs::remove_file(&file);
                 log::info!("migrate_stray_fleet_json({project_key}): imported legacy fleet.json into plan.db");
@@ -153,7 +154,7 @@ pub(crate) fn migrate_stray_fleet_json(project_key: &str) {
 
 #[tauri::command]
 pub(crate) fn plan_set_fleet(project_key: String, fleet: serde_json::Value) -> Result<(), String> {
-    open(&project_key)?.fleet_set(&fleet).map_err(|e| e.to_string())
+    open(&project_key)?.fleet_set(&fleet).str_err()
 }
 
 #[tauri::command]
@@ -161,24 +162,24 @@ pub(crate) fn plan_get_fleet(project_key: String) -> Result<Option<serde_json::V
     // plan.db is the sole fleet store (#1805) — fold a stray legacy fleet.json in before reading so
     // it can't be lost, then it's gone for good (idempotent; plan.db wins on conflict).
     migrate_stray_fleet_json(&project_key);
-    open(&project_key)?.fleet_get().map_err(|e| e.to_string())
+    open(&project_key)?.fleet_get().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_remove_stream(project_key: String, id: String) -> Result<(), String> {
-    open(&project_key)?.fleet_stream_remove(&id).map_err(|e| e.to_string())
+    open(&project_key)?.fleet_stream_remove(&id).str_err()
 }
 
 // ── deploy config (#1020) — the Deploy stage's structured config as one blob (the poll coerces it). ──
 
 #[tauri::command]
 pub(crate) fn plan_set_deploy(project_key: String, config: serde_json::Value) -> Result<(), String> {
-    open(&project_key)?.deploy_set(&config).map_err(|e| e.to_string())
+    open(&project_key)?.deploy_set(&config).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::Value>, String> {
-    open(&project_key)?.deploy_get().map_err(|e| e.to_string())
+    open(&project_key)?.deploy_get().str_err()
 }
 
 // ── dependency manifest (#1191) — the locked library manifest as one blob (was `dependencies.json`).
@@ -186,24 +187,24 @@ pub(crate) fn plan_get_deploy(project_key: String) -> Result<Option<serde_json::
 
 #[tauri::command]
 pub(crate) fn plan_set_deps(project_key: String, manifest: serde_json::Value) -> Result<(), String> {
-    open(&project_key)?.deps_set(&manifest).map_err(|e| e.to_string())
+    open(&project_key)?.deps_set(&manifest).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_get_deps(project_key: String) -> Result<Option<serde_json::Value>, String> {
-    open(&project_key)?.deps_get().map_err(|e| e.to_string())
+    open(&project_key)?.deps_get().str_err()
 }
 
 // ── MCP assignments (#1021) — catalog server names scoped to the project; the poll resolves each. ──
 
 #[tauri::command]
 pub(crate) fn plan_add_mcp(project_key: String, name: String) -> Result<(), String> {
-    open(&project_key)?.mcp_add(&name).map_err(|e| e.to_string())
+    open(&project_key)?.mcp_add(&name).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> {
-    open(&project_key)?.mcp_list().map_err(|e| e.to_string())
+    open(&project_key)?.mcp_list().str_err()
 }
 
 // ── automations (#2009) — structured cron/on-demand recipes assigned to the project; the section
@@ -211,7 +212,7 @@ pub(crate) fn plan_list_mcp(project_key: String) -> Result<Vec<String>, String> 
 
 #[tauri::command]
 pub(crate) fn plan_list_automations(project_key: String) -> Result<Vec<Automation>, String> {
-    open(&project_key)?.automation_list().map_err(|e| e.to_string())
+    open(&project_key)?.automation_list().str_err()
 }
 
 // ── startup scripts (#2010) — per-repo kickoff/triage prompt docs; the section poll reflects
@@ -219,24 +220,24 @@ pub(crate) fn plan_list_automations(project_key: String) -> Result<Vec<Automatio
 
 #[tauri::command]
 pub(crate) fn plan_list_startup(project_key: String) -> Result<Vec<StartupScript>, String> {
-    open(&project_key)?.startup_list().map_err(|e| e.to_string())
+    open(&project_key)?.startup_list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_remove_mcp(project_key: String, name: String) -> Result<(), String> {
-    open(&project_key)?.mcp_remove(&name).map_err(|e| e.to_string())
+    open(&project_key)?.mcp_remove(&name).str_err()
 }
 
 // ── authored blueprint (#1022) — the blueprint an authoring project designs, as one blob. ──
 
 #[tauri::command]
 pub(crate) fn plan_set_blueprint(project_key: String, blueprint: serde_json::Value) -> Result<(), String> {
-    open(&project_key)?.blueprint_set(&blueprint).map_err(|e| e.to_string())
+    open(&project_key)?.blueprint_set(&blueprint).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_get_blueprint(project_key: String) -> Result<Option<serde_json::Value>, String> {
-    open(&project_key)?.blueprint_get().map_err(|e| e.to_string())
+    open(&project_key)?.blueprint_get().str_err()
 }
 
 // ── Context required-set (#1019/#1028) — the dynamic set of topics this project requires. The poll
@@ -245,12 +246,12 @@ pub(crate) fn plan_get_blueprint(project_key: String) -> Result<Option<serde_jso
 
 #[tauri::command]
 pub(crate) fn plan_list_discovery(project_key: String) -> Result<Vec<String>, String> {
-    open(&project_key)?.discovery_list().map_err(|e| e.to_string())
+    open(&project_key)?.discovery_list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_require_discovery(project_key: String, topic: String, required: bool) -> Result<(), String> {
-    open(&project_key)?.discovery_require(&topic, required).map_err(|e| e.to_string())
+    open(&project_key)?.discovery_require(&topic, required).str_err()
 }
 
 // ── triage runs (#1004) — per-repo "last triage launch" timestamp + the since-T delta, so a re-run
@@ -258,17 +259,17 @@ pub(crate) fn plan_require_discovery(project_key: String, topic: String, require
 
 #[tauri::command]
 pub(crate) fn plan_triage_record_run(project_key: String, repo: String) -> Result<i64, String> {
-    open(&project_key)?.triage_record_run(&repo).map_err(|e| e.to_string())
+    open(&project_key)?.triage_record_run(&repo).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_triage_last_run(project_key: String, repo: String) -> Result<Option<i64>, String> {
-    open(&project_key)?.triage_last_run(&repo).map_err(|e| e.to_string())
+    open(&project_key)?.triage_last_run(&repo).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn plan_issues_changed_since(project_key: String, repo: String, since: i64) -> Result<Vec<PlanIssue>, String> {
-    open(&project_key)?.issues_changed_since(&repo, since).map_err(|e| e.to_string())
+    open(&project_key)?.issues_changed_since(&repo, since).str_err()
 }
 
 // ── Self-correction lessons (#1362) ──────────────────────────────────────────────
@@ -281,34 +282,34 @@ pub(crate) fn plan_issues_changed_since(project_key: String, repo: String, since
 /// empty returns all.
 #[tauri::command]
 pub(crate) fn plan_lesson_list(project_key: String, status: String) -> Result<Vec<Lesson>, String> {
-    open(&project_key)?.lesson_list(&status).map_err(|e| e.to_string())
+    open(&project_key)?.lesson_list(&status).str_err()
 }
 
 /// The user accepts a candidate — mark it `confirmed`. The caller then materializes it as a
 /// project-scoped skill via the skilldb bridge.
 #[tauri::command]
 pub(crate) fn plan_lesson_confirm(project_key: String, id: String) -> Result<(), String> {
-    open(&project_key)?.lesson_set_status(&id, "confirmed").map(|_| ()).map_err(|e| e.to_string())
+    open(&project_key)?.lesson_set_status(&id, "confirmed").map(|_| ()).str_err()
 }
 
 /// The user rejects a candidate — mark it `discarded` (kept as a record; its `seen` count still grows
 /// if the mistake recurs).
 #[tauri::command]
 pub(crate) fn plan_lesson_discard(project_key: String, id: String) -> Result<(), String> {
-    open(&project_key)?.lesson_set_status(&id, "discarded").map(|_| ()).map_err(|e| e.to_string())
+    open(&project_key)?.lesson_set_status(&id, "discarded").map(|_| ()).str_err()
 }
 
 /// Permanently delete a lesson candidate.
 #[tauri::command]
 pub(crate) fn plan_lesson_remove(project_key: String, id: String) -> Result<(), String> {
-    open(&project_key)?.lesson_remove(&id).map_err(|e| e.to_string())
+    open(&project_key)?.lesson_remove(&id).str_err()
 }
 
 /// Sweep un-confirmed candidates older than `before` (epoch seconds) — the 14-day expiry. Returns the
 /// number removed.
 #[tauri::command]
 pub(crate) fn plan_lesson_expire(project_key: String, before: i64) -> Result<usize, String> {
-    open(&project_key)?.lesson_expire_pending(before).map_err(|e| e.to_string())
+    open(&project_key)?.lesson_expire_pending(before).str_err()
 }
 
 
