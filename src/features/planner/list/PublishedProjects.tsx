@@ -32,13 +32,12 @@ export function projStatus(p: { closed: boolean }): ProjStatus {
 function FleetPill({ running, paused }: { running: number; paused: number }) {
   if (running === 0 && paused === 0) return null;
   return (
-    <Box as="span" className="mono" style={{
-      display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
+    <Box as="span" className="mono" pad={[2, 9]} bg="color-mix(in oklch, var(--success), transparent 88%)" radius={99} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
       fontSize: 9.5, color: "var(--success)",
-      background: "color-mix(in oklch, var(--success), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
     }}>
-      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <Box as="span" bg="var(--success)" radius={99} style={{ width: 6, height: 6, animation: "pulse 1.4s ease-in-out infinite" }} />
       <Box as="span">{running} agent{running !== 1 ? "s" : ""} running</Box>
       {paused > 0 && <Text as="span" tone="dim">· {paused} paused</Text>}
     </Box>
@@ -49,9 +48,9 @@ function FleetPill({ running, paused }: { running: number; paused: number }) {
 function GroupHeader({ label, count, dot }: { label: string; count: number; dot: string }) {
   return (
     <Row gap={8} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
-      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
+      <Box as="span" bg={dot} radius={99} style={{ width: 6, height: 6}} />
       <Text mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</Text>
-      <Box as="span" className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</Box>
+      <Box as="span" className="mono" pad={[0, 5]} bg="var(--bg-elev2)" border="soft" radius={8} style={{ fontSize: 9, color: "var(--fg-muted)"}}>{count}</Box>
     </Row>
   );
 }
@@ -60,8 +59,8 @@ function GroupHeader({ label, count, dot }: { label: string; count: number; dot:
 function ProgressBar({ pct }: { pct: number }) {
   return (
     <Box as="span" title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <Box as="span" style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
-        <Box as="span" style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
+      <Box as="span" bg="var(--bg-elev2)" radius={99} style={{ width: 56, height: 4, overflow: "hidden", display: "inline-block" }}>
+        <Box as="span" bg={pct >= 1 ? "var(--success)" : "var(--accent)"} style={{ display: "block", height: "100%", width: `${pct * 100}%`}} />
       </Box>
       <Text as="span" mono size={9.5} tone="dim">{Math.round(pct * 100)}%</Text>
     </Box>
@@ -151,7 +150,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
       }}>
       <Box style={{ minWidth: 0 }}>
         <Row gap={9} wrap style={{ marginBottom: 5 }}>
-          <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
+          <Box as="span" bg={STATUS_META[status].dot} radius={99} style={{ width: 7, height: 7, flexShrink: 0 }} />
           <Text mono size={10} tone="dim">#{p.number}</Text>
           <Text as="h3" size={14} weight={600} style={{ margin: 0, fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.title}</Text>
           <Chip tone={tagTone(STATUS_META[status].cls)} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</Chip>
@@ -458,7 +457,7 @@ export function PublishedProjects({
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Row gap={10}>
                 <Text as="h2" mono size={19} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Projects</Text>
-                <Box as="span" className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</Box>
+                <Box as="span" className="mono" pad={[1, 7]} bg="var(--bg-elev2)" border="soft" radius={8} style={{ fontSize: 10, color: "var(--fg-muted)"}}>{publishedAndDrafts}</Box>
               </Row>
               <Row className="mono" gap={8} wrap style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7 }}>
                 <Text tone="success">● github connected</Text>
@@ -526,7 +525,7 @@ export function PublishedProjects({
               <Text mono size={10} tone="dim">sort</Text>
               <Row align="stretch" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
                 <button className="mono" onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
-                <Box as="span" style={{ width: 1, background: "var(--border-soft)" }} />
+                <Box as="span" bg="var(--border-soft)" style={{ width: 1}} />
                 <button className="mono" onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
               </Row>
             </Row>
@@ -537,9 +536,7 @@ export function PublishedProjects({
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
         <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <Box className="mono" style={{
-              padding: "12px 16px", borderRadius: 6, marginBottom: 16,
-              background: "color-mix(in oklch, var(--danger), transparent 88%)",
+            <Box className="mono" pad={[12, 16]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={6} style={{ marginBottom: 16,
               border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
               fontSize: 11, color: "var(--danger)",
             }}>
@@ -556,9 +553,8 @@ export function PublishedProjects({
           )}
 
           {draftError && (
-            <Box className="mono" style={{
-              padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontSize: 11,
-              color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
+            <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius="md" style={{ marginBottom: 12, fontSize: 11,
+              color: "var(--danger)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
             }}>{draftError}</Box>
           )}
@@ -575,9 +571,9 @@ export function PublishedProjects({
                   onClick={() => reopenDraft(d)}
                   title={d.pitch || undefined}
                   className="mono"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+                  pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
                 >
-                  <Box as="span" style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
+                  <Box as="span" bg="var(--accent)" radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
                   {d.title}
                   <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
                   <Box as="span"
@@ -597,7 +593,7 @@ export function PublishedProjects({
             return (
               <Box key={status} style={{ marginBottom: 22 }}>
                 <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
-                <Box style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
+                <Box border="soft" radius="lg" style={{ overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
                   {items.map((p, i) => (
                     <Box key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
                       <ProjectRow
@@ -639,9 +635,7 @@ export function PublishedProjects({
           an explicit second confirm. */}
       {deleteTarget && (
         <Box className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
-          <Box style={{
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
+          <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 460, maxWidth: "90vw",
           }}>
             {confirmDeleteRepos ? (
               (() => {
@@ -666,9 +660,7 @@ export function PublishedProjects({
                       </Text>
                     )}
                     {deleteError && (
-                      <Box className="mono" style={{
-                        padding: "8px 12px", borderRadius: 4, marginBottom: 14,
-                        background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                      <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
                         border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                         fontSize: 11, color: "var(--danger)",
                       }}>
@@ -695,9 +687,7 @@ export function PublishedProjects({
                   or delete everything.
                 </Text>
                 {deleteError && (
-                  <Box className="mono" style={{
-                    padding: "8px 12px", borderRadius: 4, marginBottom: 14,
-                    background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                  <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>
@@ -761,9 +751,7 @@ export function PublishedProjects({
                   only the project board is.
                 </Text>
                 {deleteError && (
-                  <Box className="mono" style={{
-                    padding: "8px 12px", borderRadius: 4, marginBottom: 14,
-                    background: "color-mix(in oklch, var(--danger), transparent 88%)",
+                  <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>

@@ -39,10 +39,9 @@ export function Card({ n, title, hint, right, accent, done, defaultOpen = false,
         gap={9}
         style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
-        <Box as="span" style={{
-          width: 20, height: 20, borderRadius: 6, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
+        <Box as="span" bg={done ? "color-mix(in oklch, var(--success), transparent 80%)" : "var(--bg-elev)"} radius={6} style={{
+          width: 20, height: 20, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: MONO, fontSize: 9, color: tileColor,
-          background: done ? "color-mix(in oklch, var(--success), transparent 80%)" : "var(--bg-elev)",
           border: "1px solid " + (done ? "var(--success)" : accent ? `color-mix(in oklch, ${accent}, transparent 65%)` : "var(--border-soft)"),
         }}>{done ? "✓" : n}</Box>
         <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{title}</Text>
@@ -61,14 +60,14 @@ export function Divider({ label, color }: { label: string; color: string }) {
   return (
     <Row gap={10} style={{ marginTop: 2 }}>
       <Text as="span" mono size={9.5} weight={600} style={{ color, letterSpacing: ".1em" }}>{label}</Text>
-      <Box as="span" style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+      <Box as="span" bg="var(--border-soft)" style={{ flex: 1, height: 1}} />
     </Row>
   );
 }
 
 export function Seg<T extends string>({ value, options, onChange }: { value: T; options: readonly T[]; onChange: (v: T) => void }) {
   return (
-    <Box style={{ display: "inline-flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+    <Box border="soft" radius="md" style={{ display: "inline-flex", overflow: "hidden" }}>
       {options.map((o, i) => (
         <button key={o} onClick={() => onChange(o)} style={{
           height: 22, padding: "0 9px", border: 0, borderLeft: i ? "1px solid var(--border-soft)" : "none", cursor: "pointer",

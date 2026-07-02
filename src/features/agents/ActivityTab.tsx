@@ -73,7 +73,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
             <Box className="act-row" key={i}>
               <Box as="span" className="when">{fmtAuditTime(r.ts)}</Box>
               <Text as="span" tone="muted">{r.console} <Text as="span" tone="dim">›</Text> {r.pane}</Text>
-              <Box as="span" className="prof">{p && <Box as="span" className="sw" style={{ background: p.color }} />}{p?.name ?? r.profileId}</Box>
+              <Box as="span" className="prof">{p && <Box as="span" className="sw" bg={p.color} />}{p?.name ?? r.profileId}</Box>
               <Box as="span" className="cmd"><Text as="span" tone="dim">{kindGlyph}</Text> {r.target}</Box>
               <Box as="span" className={`dec ${r.decision}`}>{sym} {decLabel}</Box>
             </Box>

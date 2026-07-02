@@ -93,9 +93,9 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
         flex: 1, minHeight: 0,
       }}>
         {/* Repo sidebar */}
-        <Box as="aside" style={{
-          width: sidebar.size, flex: `0 0 ${sidebar.size}px`, background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border-soft)", padding: "14px 8px",
+        <Box as="aside" pad={[14, 8]} bg="var(--bg-panel)" style={{
+          width: sidebar.size, flex: `0 0 ${sidebar.size}px`,
+          borderRight: "1px solid var(--border-soft)",
           display: "flex", flexDirection: "column", gap: 2, overflow: "auto",
         }}>
           <Row className="mono" justify="between" style={{
@@ -113,8 +113,7 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
             </Box>
           </Row>
           {githubRepos.length === 0 && (
-            <Box className="mono" style={{
-              padding: "12px", fontSize: 11,
+            <Box className="mono" pad={12} style={{ fontSize: 11,
               color: "var(--fg-dim)", textAlign: "center",
             }}>
               No repositories found
@@ -126,9 +125,8 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
               <Box
                 key={r.full_name}
                 onClick={() => setActiveRepo(r.full_name)}
-                style={{
-                  padding: "8px 10px 8px 12px", borderRadius: 5,
-                  background: on ? "var(--bg-elev)" : "transparent",
+                bg={on ? "var(--bg-elev)" : "transparent"} radius={5} style={{
+                  padding: "8px 10px 8px 12px",
                   borderLeft: on ? "2px solid var(--accent)" : "2px solid transparent",
                   paddingLeft: on ? 10 : 12, cursor: "pointer",
                 }}

@@ -213,10 +213,8 @@ export function TunnelSettings() {
         </Row>
 
         {err && (
-          <Box className="mono" style={{
-            fontSize: 11, color: "var(--danger)",
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: 6, padding: "8px 10px", marginBottom: 14,
+          <Box className="mono" pad={[8, 10]} bg="var(--bg-elev)" border="soft" radius={6} style={{
+            fontSize: 11, color: "var(--danger)", marginBottom: 14,
           }}>{err}</Box>
         )}
 

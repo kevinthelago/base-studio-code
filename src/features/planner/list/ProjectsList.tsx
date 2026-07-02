@@ -297,9 +297,7 @@ export function ProjectsList() {
           must not delete instantly. Shared by the Drafts chips and the Blueprints rail. */}
       {draftDeleteTarget && (
         <Box className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
-          <Box style={{
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-            borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
+          <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 420, maxWidth: "90vw",
           }}>
             <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
               Delete draft?

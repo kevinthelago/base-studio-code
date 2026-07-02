@@ -27,9 +27,8 @@ export function CIHealthCard({ matrix, loading }: {
             <Text mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</Text>
             <Row gap={4} align="stretch">
               {days.map((d, i) => (
-                <Box key={i} style={{
-                  flex: 1, height: 14, borderRadius: 3,
-                  background: d === null ? "var(--bg-elev2)" : d ? "var(--success)" : "var(--danger)",
+                <Box key={i} bg={d === null ? "var(--bg-elev2)" : d ? "var(--success)" : "var(--danger)"} radius={3} style={{
+                  flex: 1, height: 14,
                   opacity: d === null ? 0.4 : 0.85,
                 }} />
               ))}

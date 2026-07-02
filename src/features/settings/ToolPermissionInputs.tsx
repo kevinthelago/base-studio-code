@@ -18,10 +18,8 @@ export function ToolChip({
   label, onRemove,
 }: { label: string; onRemove: () => void }) {
   return (
-    <Box as="span" className="mono" style={{
+    <Box as="span" className="mono" pad={[2, 8]} bg="var(--bg-elev)" border="soft" radius={4} style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "2px 8px", borderRadius: 4,
-      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
       fontSize: 10.5, color: "var(--fg-muted)",
     }}>
       {label}
@@ -57,9 +55,7 @@ export function ChipInput({
         as="span"
         className="mono"
         onClick={onAdd}
-        style={{
-          padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+        pad={[2, 8]} bg="var(--bg-elev)" border="soft" radius={4} style={{ cursor: "pointer",
           fontSize: 10.5, color: "var(--fg-muted)",
         }}
       >+ add</Box>

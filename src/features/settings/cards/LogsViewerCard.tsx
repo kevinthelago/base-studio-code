@@ -38,7 +38,7 @@ export function LogsViewerCard({
   );
 
   return (
-    <Box style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: 12, marginTop: 12 }}>
+    <Box pad={12} bg="var(--bg-panel)" border="soft" radius={8} style={{ marginTop: 12 }}>
       <Row gap={8} style={{ marginBottom: 8 }}>
         <Text mono size={11} style={{ color: "var(--fg)" }}>{fileLabel}</Text>
         <Text mono size={10} tone="dim">newest {lines.length}{shown.length !== lines.length ? ` · ${shown.length} shown` : ""}</Text>

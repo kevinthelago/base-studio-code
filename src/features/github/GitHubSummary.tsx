@@ -35,7 +35,7 @@ export function GitHubSummary() {
   const { heatmapCells, rawCounts, rawDates, totalContribs } = heatmap;
 
   return (
-    <Box as="section" style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
+    <Box as="section" pad={[20, 24]} bg="var(--bg-canvas)" style={{ flex: 1, overflow: "auto", minWidth: 0}}>
       <Box style={{ maxWidth: 1280, margin: "0 auto" }}>
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <Box style={{ flex: 1 }}>

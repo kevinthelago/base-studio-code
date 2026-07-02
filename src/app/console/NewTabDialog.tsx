@@ -54,10 +54,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                 >
                   <Grid cols={`repeat(${c}, 10px)`} rows={`repeat(${r}, 7px)`} gap={2}>
                     {Array.from({ length: c * r }).map((_, i) => (
-                      <Box key={i} style={{
-                        borderRadius: 1,
-                        background: active ? "var(--accent)" : "var(--border)",
-                      }} />
+                      <Box key={i} bg={active ? "var(--accent)" : "var(--border)"} radius={1} />
                     ))}
                   </Grid>
                   {l}

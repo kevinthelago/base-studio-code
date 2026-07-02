@@ -111,7 +111,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
 
       <Box style={{ flex: 1, overflow: "auto" }}>
         {/* Body */}
-        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
             <Text as="div" size={12.5} tone="muted" style={{ lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
@@ -144,7 +144,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
         </Stack>
 
         {/* Claude breakdown */}
-        <Box style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
+        <Box pad={[14, 20]} bg="var(--bg-elev)">
           <Row gap={8} style={{ marginBottom: 10 }}>
             <Row className="mono" justify="center" style={{
               width: 20, height: 20, borderRadius: 5,
@@ -314,10 +314,8 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
         }}>{issue.title}</Text>
         <Row gap={4} wrap align="stretch">
           {issue.statusName && (
-            <Box as="span" className="mono" style={{
-              padding: "1px 5px", borderRadius: 3,
+            <Box as="span" className="mono" pad={[1, 5]} bg="var(--bg-elev2)" border="soft" radius={3} style={{
               fontSize: 9, color: "var(--fg-dim)",
-              background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
             }}>{issue.statusName}</Box>
           )}
           {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
@@ -472,7 +470,7 @@ export function Issues() {
           <Box />
         </Grid>
 
-        <Box style={{ flex: 1, overflow: "auto", background: "var(--bg-canvas)", position: "relative" }}>
+        <Box bg="var(--bg-canvas)" style={{ flex: 1, overflow: "auto", position: "relative" }}>
           {loading && rawIssues.length === 0 && (
             <Text as="div" mono size={12} tone="dim" style={{ padding: "40px 0", textAlign: "center" }}>
               Loading issues…

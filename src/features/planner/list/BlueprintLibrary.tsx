@@ -122,18 +122,15 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
       className="bp-rail-card"
       onClick={() => onUse(b.id)}
       title={isActive ? "Selected — new projects use this blueprint" : "Select this blueprint for new projects"}
-      style={{
-        padding: "12px 13px", background: isActive ? "var(--bg-elev2)" : "var(--bg-elev)",
-        border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"),
-        borderRadius: 9, cursor: "pointer", position: "relative",
+      pad={[12, 13]} bg={isActive ? "var(--bg-elev2)" : "var(--bg-elev)"} radius={9} style={{
+        border: "1px solid " + (isActive ? "var(--accent)" : "var(--border-soft)"), cursor: "pointer", position: "relative",
       }}>
       <Row className="bp-rail-card-head" gap={9}>
         <IconBox size={30} radius={8} background={`color-mix(in oklch, ${hue}, transparent 88%)`} border={`1px solid color-mix(in oklch, ${hue}, transparent 70%)`} color={hue}><Icon size={15} /></IconBox>
         <Row className="bp-rail-card-titlewrap" gap={7} style={{ flex: 1, minWidth: 0 }}>
           <Box as="span" className="bp-rail-card-title" style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</Box>
-          <Box as="span" className="bp-rail-card-cat mono" style={{
-            flex: "0 0 auto", padding: "1px 6px", borderRadius: 99, fontSize: 9, color: hue,
-            background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
+          <Box as="span" className="bp-rail-card-cat mono" pad={[1, 6]} bg={`color-mix(in oklch, ${hue}, transparent 90%)`} radius={99} style={{
+            flex: "0 0 auto", fontSize: 9, color: hue, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
           }}>{b.category}</Box>
         </Row>
         {/* eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef) */}
@@ -311,11 +308,11 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       <Stack style={{ flex: `0 1 ${blueprintsRail.size}px`, minWidth: 240, overflow: "hidden", background: "var(--bg-panel)", borderLeft: "1px solid var(--border-soft)" }}>
         <Box style={{ flex: "0 0 auto", padding: "20px 18px 14px", borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={9}>
-            <Box as="span" style={{ width: 23, height: 23, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)", color: "var(--fg-muted)" }}>
+            <Box as="span" bg="var(--bg-elev2)" border="soft" radius={6} style={{ width: 23, height: 23, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-muted)" }}>
               <Layers size={13} />
             </Box>
             <Text as="h3" mono size={13} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Blueprints</Text>
-            <Box as="span" className="mono" style={{ padding: "0 6px", borderRadius: 8, fontSize: 9.5, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{fBlueprints.length}</Box>
+            <Box as="span" className="mono" pad={[0, 6]} bg="var(--bg-elev2)" border="soft" radius={8} style={{ fontSize: 9.5, color: "var(--fg-muted)"}}>{fBlueprints.length}</Box>
             <Spacer />
             <Button
               variant="ghost"

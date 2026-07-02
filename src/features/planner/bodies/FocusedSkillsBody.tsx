@@ -26,9 +26,9 @@ export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
           meta={s.desc || undefined}
           highlight={s.isNew}
           badge={s.isNew && (
-            <Box as="span" className="mono" radius={4} bg="var(--accent)" style={{
+            <Box as="span" className="mono" radius={4} bg="var(--accent)" pad={[1, 5]} style={{
               fontSize: 8.5, fontWeight: 600, letterSpacing: ".04em",
-              color: "var(--accent-text)", padding: "1px 5px",
+              color: "var(--accent-text)",
             }}>NEW</Box>
           )}
         />

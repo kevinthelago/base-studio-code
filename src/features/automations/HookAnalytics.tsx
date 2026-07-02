@@ -33,7 +33,7 @@ export function HookAnalyticsTab() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!an) return <Box className="hint" style={{ padding: 16 }}>Loading hook telemetry…</Box>;
+  if (!an) return <Box className="hint" pad={16}>Loading hook telemetry…</Box>;
 
   const maxHookFires = Math.max(1, ...an.perHook.map(h => h.fires));
 

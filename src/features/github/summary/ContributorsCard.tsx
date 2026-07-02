@@ -30,8 +30,8 @@ export function ContributorsCard({ contributors, loading }: {
           <Grid key={p.login} cols="22px 1fr 1fr 80px" gap={10} align="center">
             <Avatar login={p.login} />
             <Text as="span" mono size={11} style={{ color: "var(--fg)" }}>@{p.login}</Text>
-            <Box style={{ height: 5, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
-              <Box style={{ width: `${p.commits / maxC * 100}%`, height: "100%", background: "var(--accent)" }} />
+            <Box bg="var(--bg-elev2)" radius={3} style={{ height: 5, overflow: "hidden" }}>
+              <Box bg="var(--accent)" style={{ width: `${p.commits / maxC * 100}%`, height: "100%"}} />
             </Box>
             <Text as="span" mono size={10} tone="muted" style={{ textAlign: "right" }}>{p.commits} commits</Text>
           </Grid>

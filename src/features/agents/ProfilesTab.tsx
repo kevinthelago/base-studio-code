@@ -64,7 +64,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
           {roles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
           <Box className="list-label">Custom &amp; generated</Box>
           {profiles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
-          <Box style={{ padding: "12px 14px" }}>
+          <Box pad={[12, 14]}>
             <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</Button>
           </Box>
         </Box>
@@ -109,7 +109,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
     <>
       <Box className="pd-head">
         <Box className="top">
-          <Box as="span" className="pswatch" style={{ background: p.color }}>{isApp ? "◆" : initialOf(p.name)}</Box>
+          <Box as="span" className="pswatch" bg={p.color}>{isApp ? "◆" : initialOf(p.name)}</Box>
           <Box className="pt">
             <Box className="nm">
               {p.name}{" "}
@@ -124,7 +124,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
         </Box>
         {isApp && (
           <Stack gap={10} style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)" }}>
-            <Banner tone="info" lead={<Box as="span" style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</Box>}>
+            <Banner tone="info" lead={<Box as="span" bg={p.color} radius={6} style={{ width: 22, height: 22, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e"}}>◆</Box>}>
               <Text as="span"><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</Text>
             </Banner>
             <Box className="owns-card">

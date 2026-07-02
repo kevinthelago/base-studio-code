@@ -47,7 +47,7 @@ export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
           >
             <Box className="feature-head">
               <Box as="span" className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</Box>
-              <Box as="span" className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
+              <Box as="span" className="sdot" bg={done ? "var(--success)" : "var(--fg-dim)"} />
               <Box as="span" className="feature-name">{f.name}</Box>
               <Spacer />
               <Box as="span" className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</Box>

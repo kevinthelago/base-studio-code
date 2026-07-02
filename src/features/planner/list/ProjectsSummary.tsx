@@ -115,9 +115,8 @@ function AISummary() {
       border: "1px solid var(--accent-dim)",
     }}>
       <Row gap={12} align="stretch">
-        <Box className="mono" style={{
-          flexShrink: 0, width: 28, height: 28, borderRadius: 7,
-          background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
+        <Box className="mono" bg="linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))" radius={7} style={{
+          flexShrink: 0, width: 28, height: 28,
           color: "#1a120a", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>C</Box>
@@ -163,7 +162,7 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
       </Row>
       <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
         {items.map(it => (
-          <Box key={it.n} title={`${it.n} · ${it.pct}%`} style={{ width: `${it.pct}%`, background: it.c }} />
+          <Box key={it.n} title={`${it.n} · ${it.pct}%`} bg={it.c} style={{ width: `${it.pct}%`}} />
         ))}
       </Row>
       <Stack gap={5} className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
@@ -297,18 +296,17 @@ function UpcomingMilestones({ repoMilestones, loading }: {
                   </Box>
                   <Box style={{ position: "relative", height: 24 }}>
                     {Array.from({ length: 8 }, (_, i) => (
-                      <Box key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${i / 8 * 100}%`, width: 1, background: "var(--border-soft)" }} />
+                      <Box key={i} bg="var(--border-soft)" style={{ position: "absolute", top: 0, bottom: 0, left: `${i / 8 * 100}%`, width: 1}} />
                     ))}
-                    <Box style={{
+                    <Box bg={`color-mix(in oklch, ${bgC}, transparent 65%)`} radius={4} style={{
                       position: "absolute", top: 3, bottom: 3,
                       left: `${barStart / 8 * 100}%`, width: `${(barEnd - barStart) / 8 * 100}%`,
-                      minWidth: 12, borderRadius: 4,
-                      background: `color-mix(in oklch, ${bgC}, transparent 65%)`,
+                      minWidth: 12,
                       border: `1px solid ${c}`,
                       overflow: "hidden",
                     }}>
                       {m.pct > 0 && (
-                        <Box style={{ position: "absolute", inset: 0, width: `${m.pct * 100}%`, background: `color-mix(in oklch, ${bgC}, transparent 30%)` }} />
+                        <Box bg={`color-mix(in oklch, ${bgC}, transparent 30%)`} style={{ position: "absolute", inset: 0, width: `${m.pct * 100}%`}} />
                       )}
                     </Box>
                   </Box>
@@ -345,7 +343,7 @@ function RiskRegister() {
           No risks logged yet.
         </Text>
       ) : (
-        <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+        <Box border="soft" radius={6} style={{ overflow: "hidden" }}>
           <Grid className="mono" cols="50px 110px 1fr 60px" gap={8} style={{
             padding: "7px 12px",
             background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
@@ -412,9 +410,7 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
       )}
       <Grid cols="repeat(2, minmax(0, 1fr))" gap={8}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
-          <Box key={p.id} onClick={() => openBoard(p)} style={{
-            padding: "12px 14px", borderRadius: 6,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          <Box key={p.id} onClick={() => openBoard(p)} pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
             cursor: "pointer", minWidth: 0, overflow: "hidden",
           }}>
             <Row gap={8} align="baseline" style={{ marginBottom: 4 }}>
@@ -456,7 +452,7 @@ export function ProjectsSummary() {
   const avgVelocity = useMemo(() => avgWeeklyClosed(repoIssues), [repoIssues]);
 
   return (
-    <Box as="section" style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
+    <Box as="section" pad={[20, 24]} bg="var(--bg-canvas)" style={{ flex: 1, overflow: "auto", minWidth: 0}}>
       <Box style={{ maxWidth: 1280, margin: "0 auto" }}>
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <Box style={{ flex: 1 }}>

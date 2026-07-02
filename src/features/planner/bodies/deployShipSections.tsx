@@ -33,7 +33,7 @@ export function ServiceDeploySections({ svc, setSvc }: {
               <Stack key={st.id} gap={6}>
                 <Stack gap={8} style={{ padding: "11px 12px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (st.gate ? "var(--accent-dim)" : "var(--border-soft)") }}>
                   <Row gap={6}>
-                    <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)" }} />
+                    <Box as="span" bg={st.gate ? "var(--accent)" : i === 0 ? "var(--info)" : "var(--success)"} radius={99} style={{ width: 7, height: 7}} />
                     <Text as="span" mono size={11} style={{ color: "var(--fg)", textTransform: "uppercase", letterSpacing: ".04em" }}>{stageName}</Text>
                     <Spacer />
                     {st.gate && <Box as="span" style={{ ...chip, fontSize: 7.5, color: "var(--accent)", borderColor: "var(--accent-dim)", background: "color-mix(in oklch, var(--accent), transparent 85%)" }}>⛒ gate</Box>}
@@ -57,10 +57,10 @@ export function ServiceDeploySections({ svc, setSvc }: {
           {svc.envs.map((e, i) => (
             <Stack key={e.id} gap={6}>
               <Row gap={9} style={{ padding: "9px 11px", borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>
-                <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: e.id === "prod" ? "var(--success)" : "var(--fg-dim)" }} />
+                <Box as="span" bg={e.id === "prod" ? "var(--success)" : "var(--fg-dim)"} radius={99} style={{ width: 7, height: 7, flex: "0 0 7px"}} />
                 <Text as="span" mono size={11} style={{ color: "var(--fg)", width: 52 }}>{e.name}</Text>
                 <Box as="span" style={{ ...chip, fontSize: 7.5, ...(e.auto ? {} : { color: "var(--accent)", borderColor: "var(--accent-dim)" }) }}>{e.auto ? "auto" : "manual"}</Box>
-                <Box as="span" style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--info)", padding: "1px 6px", borderRadius: 3, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {e.branch}</Box>
+                <Box as="span" pad={[1, 6]} bg="var(--bg-canvas)" border="soft" radius={3} style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--info)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {e.branch}</Box>
                 <Spacer />
                 <Text as="span" mono size={8.5} tone="dim" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "42%" }}>{e.url || "—"}</Text>
               </Row>
@@ -84,13 +84,13 @@ export function ServiceDeploySections({ svc, setSvc }: {
               <tbody>
                 {svc.config.config.map((row) => (
                   <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
-                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><Box as="span" style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--info)", marginRight: 6 }} />{row.key}</td>
+                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><Box as="span" bg="var(--info)" radius={2} style={{ display: "inline-block", width: 6, height: 6, marginRight: 6 }} />{row.key}</td>
                     {svc.envs.map((e) => <td key={e.id} title={row[e.id] || undefined} style={{ padding: "4px 6px", color: "var(--fg-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row[e.id] || "—"}</td>)}
                   </tr>
                 ))}
                 {svc.config.secrets.map((row) => (
                   <tr key={row.key} style={{ borderTop: "1px solid var(--border-soft)" }}>
-                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><Box as="span" style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: "var(--violet)", marginRight: 6 }} />{row.key}</td>
+                    <td style={{ padding: "4px 6px", color: "var(--fg)" }}><Box as="span" bg="var(--violet)" radius={2} style={{ display: "inline-block", width: 6, height: 6, marginRight: 6 }} />{row.key}</td>
                     {svc.envs.map((e) => (
                       <td key={e.id} style={{ padding: "4px 6px" }}>
                         {row[e.id]

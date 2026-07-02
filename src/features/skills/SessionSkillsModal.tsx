@@ -108,10 +108,10 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   }
 
   return (
-    <Box className="modal-scrim start" onClick={onClose} style={{ padding: "34px 20px", overflow: "auto" }}>
+    <Box className="modal-scrim start" onClick={onClose} pad={[34, 20]} style={{ overflow: "auto" }}>
       <Stack onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
         {/* header */}
-        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={11}>
             <Text as="div" size={15} weight={600} style={{ color: "var(--fg)" }}>Skills for this session</Text>
             <Box as="span" style={{ flex: 1 }} />

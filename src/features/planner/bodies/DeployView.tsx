@@ -52,9 +52,9 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, traili
   const p = svc.platform ? platform(svc.platform) : null;
   const dot = ready ? "var(--success)" : targeted ? "var(--accent)" : "var(--warn)";
   return (
-    <Box style={{ background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"), borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+    <Box bg="var(--bg-elev)" radius="lg" style={{ border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"), overflow: "hidden" }}>
       <Row onClick={onToggle} gap={9} style={{ padding: "11px 13px", cursor: "pointer", userSelect: "none" }}>
-        <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: dot, boxShadow: ready ? `0 0 7px color-mix(in oklch, ${dot}, transparent 60%)` : undefined }} />
+        <Box as="span" bg={dot} radius={99} style={{ width: 7, height: 7, flex: "0 0 7px", boxShadow: ready ? `0 0 7px color-mix(in oklch, ${dot}, transparent 60%)` : undefined }} />
         <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{svc.repo || svc.id}</Text>
         {meta}
         <Spacer />
@@ -64,7 +64,7 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, traili
               {local ? `⬢ ${svc.localKind ?? "local"}` : <>{p && <Text as="span" style={{ color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph} </Text>}{p?.name}</>}
             </Box>
             {!local && <Box as="span" style={{ ...chip, fontSize: 8, color: WORKLOAD[svc.workload].c, borderColor: `color-mix(in oklch, ${WORKLOAD[svc.workload].c}, transparent 60%)` }}>{WORKLOAD[svc.workload].label}</Box>}
-            <Box as="span" style={{ width: 18, height: 18, borderRadius: 99, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 10, color: ready ? "var(--success)" : "var(--fg-dim)", background: ready ? "color-mix(in oklch, var(--success), transparent 84%)" : "var(--bg-elev2)" }}>{ready ? "✓" : "·"}</Box>
+            <Box as="span" bg={ready ? "color-mix(in oklch, var(--success), transparent 84%)" : "var(--bg-elev2)"} radius={99} style={{ width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: MONO, fontSize: 10, color: ready ? "var(--success)" : "var(--fg-dim)"}}>{ready ? "✓" : "·"}</Box>
           </>
         ) : (
           <Box as="span" style={{ ...chip, color: "var(--warn)", borderColor: "color-mix(in oklch, var(--warn), transparent 55%)", background: "transparent", borderStyle: "dashed" }}>set target →</Box>

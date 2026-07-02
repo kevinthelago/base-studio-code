@@ -152,7 +152,7 @@ function Column({
         background: "var(--bg-elev)",
         fontSize: 11,
       }}>
-        <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: col.color }} />
+        <Box as="span" bg={col.color} style={{ width: 7, height: 7, borderRadius: "50%"}} />
         <Text as="span" style={{ color: "var(--fg)" }}>{col.name}</Text>
         <Text tone="dim">{issues.length}</Text>
         <Spacer />
@@ -163,9 +163,9 @@ function Column({
         {issues.map(c => (
           <IssueCard key={c.id} issue={c} focused={c.focused} onClick={() => onIssueClick(c.number)} />
         ))}
-        <Box style={{
-          marginTop: 4, padding: "7px 9px",
-          border: "1px dashed var(--border)", borderRadius: 5,
+        <Box pad={[7, 9]} radius={5} style={{
+          marginTop: 4,
+          border: "1px dashed var(--border)",
           textAlign: "center", fontSize: 10, color: "var(--fg-dim)", cursor: "pointer",
         }} className="mono">+ new card</Box>
       </Stack>
@@ -210,7 +210,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 
       <Stack style={{ flex: 1, overflow: "auto" }}>
         {/* Description */}
-        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
             <Text as="div" size={12.5} tone="muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
@@ -223,7 +223,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
 
         {/* Assignees */}
         {issue.assignees.length > 0 && (
-          <Box style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+          <Box pad={[12, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
             <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>assignees</Text>
             <Row gap={8} wrap align="stretch">
               {issue.assignees.map(a => (
@@ -237,7 +237,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
         )}
 
         {/* Claude subtask breakdown (demo) */}
-        <Box style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box pad={[14, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
             <Row className="mono" justify="center" style={{
               width: 20, height: 20, borderRadius: 5,
@@ -248,7 +248,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
             <Spacer />
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ generate</Button>
           </Row>
-          <Box className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic", padding: "8px 10px", background: "var(--bg-canvas)", borderRadius: 5 }}>
+          <Box className="mono" pad={[8, 10]} bg="var(--bg-canvas)" radius={5} style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic"}}>
             Click "generate" to have Claude break this issue into subtasks.
           </Box>
         </Box>

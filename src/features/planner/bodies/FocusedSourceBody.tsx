@@ -259,11 +259,11 @@ export function SourceBody({ projectId, onInject }: {
             const buildLabel = buildStatusLabel(s, runtime);
             const building = s.status === "declared" && !runtime.some((r) => r.id === s.connectorId);
             return (
-              <Box as="span" key={s.uid} onClick={() => { setExpanded((p) => new Set(p).add(s.uid)); }} title={c.name} style={{
-                display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", borderRadius: 99, padding: "4px 11px", background: "var(--bg-elev)",
+              <Box as="span" key={s.uid} onClick={() => { setExpanded((p) => new Set(p).add(s.uid)); }} title={c.name} pad={[4, 11]} bg="var(--bg-elev)" radius={99} style={{
+                display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer",
                 border: `1px solid color-mix(in oklch, ${done ? "var(--success)" : "var(--accent)"}, transparent ${done ? 70 : 64}%)`,
               }}>
-                <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_DOT[s.status], animation: (s.status === "connecting" || s.status === "scanning" || building) ? "pulse 1.2s ease-in-out infinite" : undefined }} />
+                <Box as="span" bg={STATUS_DOT[s.status]} radius={99} style={{ width: 7, height: 7, animation: (s.status === "connecting" || s.status === "scanning" || building) ? "pulse 1.2s ease-in-out infinite" : undefined }} />
                 {c.name}{done && <Text as="span" size={10} tone="success">✓</Text>}
                 {/* ② build status — coarse per-source chip (#1986) */}
                 <Text as="span" data-testid={`build-status-${s.uid}`} mono size={9} style={{ color: building ? "var(--fg-dim)" : done ? "var(--success)" : "var(--accent)" }}>{buildLabel}</Text>

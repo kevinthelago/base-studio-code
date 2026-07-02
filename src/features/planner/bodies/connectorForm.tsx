@@ -33,11 +33,9 @@ export const STATUS_DOT: Record<SourceStatus, string> = {
 /** READ-ONLY badge — every source is read-only; the design repeats this as the core reassurance. */
 function ReadOnlyPill() {
   return (
-    <Box as="span" style={{
+    <Box as="span" pad={[2, 7]} bg="color-mix(in oklch, var(--success), transparent 88%)" radius={99} style={{
       fontFamily: MONO, fontSize: 9, color: "var(--success)", whiteSpace: "nowrap",
-      background: "color-mix(in oklch, var(--success), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--success), transparent 74%)",
-      borderRadius: 99, padding: "2px 7px",
     }}>READ-ONLY</Box>
   );
 }
@@ -45,9 +43,8 @@ function ReadOnlyPill() {
 /** A small mono badge tile, e.g. "QB". */
 function Badge({ text }: { text: string }) {
   return (
-    <Box as="span" style={{
-      fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-canvas)",
-      border: "1px solid var(--border)", borderRadius: "var(--r-sm)", padding: "2px 5px", whiteSpace: "nowrap",
+    <Box as="span" pad={[2, 5]} bg="var(--bg-canvas)" border radius="sm" style={{
+      fontFamily: MONO, fontSize: 10, color: "var(--fg-muted)", whiteSpace: "nowrap",
     }}>{text}</Box>
   );
 }
@@ -116,8 +113,8 @@ function InfoChip({ children, color = "var(--info)" }: { children: React.ReactNo
 /** Indeterminate scan bar (the only place the pane animates — a genuinely live op). */
 function ScanBar() {
   return (
-    <Box style={{ height: 5, borderRadius: 99, background: "var(--bg-elev)", overflow: "hidden", position: "relative" }}>
-      <Box style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "30%", background: "var(--accent)", borderRadius: 99, animation: "scan 1.3s ease-in-out infinite" }} />
+    <Box bg="var(--bg-elev)" radius={99} style={{ height: 5, overflow: "hidden", position: "relative" }}>
+      <Box bg="var(--accent)" radius={99} style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "30%", animation: "scan 1.3s ease-in-out infinite" }} />
     </Box>
   );
 }
@@ -179,16 +176,16 @@ export function SourceCard({
   const canConnect = spec.auth === "oauth" || spec.auth === "upload" || spec.fields.every(filled);
 
   return (
-    <Box data-testid={`source-card-${src.uid}`} style={{ background: "var(--bg-panel)", border: `1px solid ${borderColor}`, borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+    <Box data-testid={`source-card-${src.uid}`} bg="var(--bg-panel)" radius="lg" style={{ border: `1px solid ${borderColor}`, overflow: "hidden" }}>
       {/* header */}
       <Row onClick={onToggle} gap={9} style={{ padding: "11px 13px", background: "var(--bg-elev)", cursor: "pointer" }}>
-        <Box as="span" style={{ width: 8, height: 8, borderRadius: 99, flex: "0 0 8px", background: STATUS_DOT[src.status], animation: (src.status === "connecting" || src.status === "scanning") ? "pulse 1.2s ease-in-out infinite" : undefined }} />
+        <Box as="span" bg={STATUS_DOT[src.status]} radius={99} style={{ width: 8, height: 8, flex: "0 0 8px", animation: (src.status === "connecting" || src.status === "scanning") ? "pulse 1.2s ease-in-out infinite" : undefined }} />
         <Badge text={c.badge} />
         <Box as="span" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {c.name}{src.instance && <Text as="span" mono size={10.5} tone="muted" weight={400}> · {src.instance}</Text>}
         </Box>
         {src.status === "error" ? (
-          <Box as="span" style={{ fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: 99, padding: "2px 7px" }}>FAILED</Box>
+          <Box as="span" pad={[2, 7]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={99} style={{ fontFamily: MONO, fontSize: 9, color: "var(--danger)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)"}}>FAILED</Box>
         ) : <ReadOnlyPill />}
         <Text as="span" tone="dim" size={11}>{expanded ? "▾" : "▸"}</Text>
       </Row>

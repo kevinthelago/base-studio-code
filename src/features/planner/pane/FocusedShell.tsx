@@ -40,10 +40,9 @@ export function StagePromptHelp({ prompts, onInject }: {
         <>
           {/* click-away catcher */}
           <Box onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
-          <Box role="menu" style={{
+          <Box role="menu" pad={6} bg="var(--bg-panel)" border radius="lg" style={{
             position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
-            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
-            boxShadow: "0 16px 48px rgba(0,0,0,.5)", padding: 6,
+            boxShadow: "0 16px 48px rgba(0,0,0,.5)",
           }}>
             <Text as="div" mono size={9.5} tone="dim" style={{
               padding: "6px 8px 8px", letterSpacing: ".06em",
@@ -143,9 +142,8 @@ export function StageHeader({ stage, pill, promptHelp }: {
       </Box>
       <p className="ph-blurb">{stage.blurb}</p>
       {hasReasons && showReasons && (
-        <Box role="status" className="mono" style={{
-          marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
-          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+        <Box role="status" className="mono" pad={[8, 11]} bg="var(--bg-elev)" border="soft" radius={7} style={{
+          marginTop: 8, maxWidth: 420,
           fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
         }}>
           <Text as="div" tone="dim" size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
@@ -174,7 +172,7 @@ export function LockBanner({ activeName }: { activeName: string }) {
 /** Shown when reviewing a completed stage. */
 export function DoneBanner() {
   return (
-    <Box className="lock-banner" style={{ background: "color-mix(in oklch,var(--success),transparent 91%)", borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
+    <Box className="lock-banner" bg="color-mix(in oklch,var(--success),transparent 91%)" style={{ borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
       ✓ <Text as="span" tone="muted"><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the stage for review.</Text>
     </Box>
   );

@@ -30,8 +30,8 @@ export function AccentColorCard() {
                 color: on ? "var(--fg)" : "var(--fg-muted)",
               }}
             >
-              <Box as="span" style={{
-                width: 16, height: 16, borderRadius: "50%", background: color,
+              <Box as="span" bg={color} style={{
+                width: 16, height: 16, borderRadius: "50%",
                 boxShadow: on ? "0 0 0 2px var(--bg-elev2), 0 0 0 3px " + color : "none",
               }} />
               {p.label}

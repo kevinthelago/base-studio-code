@@ -177,10 +177,8 @@ export function ClaudeConfigCard() {
                 key={t}
                 className="mono"
                 onClick={() => setTarget(t)}
-                style={{
-                  padding: "5px 12px", borderRadius: 6, cursor: "pointer",
+                pad={[5, 12]} bg={on ? "var(--accent)" : "var(--bg-elev)"} radius={6} style={{ cursor: "pointer",
                   fontSize: 11,
-                  background: on ? "var(--accent)" : "var(--bg-elev)",
                   color: on ? "#1a120a" : "var(--fg-muted)",
                   border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),
                   fontWeight: on ? 600 : 400,
@@ -265,8 +263,7 @@ export function ClaudeConfigCard() {
       <Grid cols="1fr 280px" gap={14} align="start">
         {/* Left: CLAUDE.md */}
         <Stack gap={10}>
-          <Box style={{
-            background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
+          <Box bg="var(--bg-panel)" border="soft" radius={8} style={{
             overflow: "hidden",
           }}>
             <Row className="mono" gap={8} style={{
@@ -297,13 +294,10 @@ export function ClaudeConfigCard() {
         </Stack>
 
         {/* Right: tool permissions */}
-        <Box style={{
-          background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
+        <Box bg="var(--bg-panel)" border="soft" radius={8} style={{
           overflow: "hidden",
         }}>
-          <Box className="mono" style={{
-            padding: "8px 14px", borderBottom: "1px solid var(--border-soft)",
-            background: "var(--bg-elev)",
+          <Box className="mono" pad={[8, 14]} bg="var(--bg-elev)" style={{ borderBottom: "1px solid var(--border-soft)",
             fontSize: 10,
             color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".06em",
           }}>
@@ -320,10 +314,8 @@ export function ClaudeConfigCard() {
                     key={p.label}
                     className="mono"
                     onClick={() => applyPreset(p)}
-                    style={{
-                      padding: "2px 8px", borderRadius: 4, cursor: "pointer",
+                    pad={[2, 8]} bg="var(--bg-elev)" border="soft" radius={4} style={{ cursor: "pointer",
                       fontSize: 10,
-                      background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
                       color: "var(--fg-muted)",
                     }}
                   >{p.label}</Box>
@@ -371,9 +363,7 @@ export function ClaudeConfigCard() {
 
             {/* Settings.json preview */}
             {(allow.length > 0 || deny.length > 0) && (
-              <Box className="mono" style={{
-                padding: "10px 12px", borderRadius: 6,
-                background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+              <Box className="mono" pad={[10, 12]} bg="var(--bg-canvas)" border="soft" radius={6} style={{
                 fontSize: 9.5, color: "var(--fg-dim)",
                 whiteSpace: "pre",
               }}>

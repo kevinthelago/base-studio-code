@@ -26,17 +26,15 @@ export function ReposGrid({ repos, loading }: {
         <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>
       </Row>
       {repos.length === 0 && !loading && (
-        <Box className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No repositories connected.</Box>
+        <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No repositories connected.</Box>
       )}
       <Grid cols={2} gap="sm">
         {repos.map(r => (
-          <Box key={r.full_name} onClick={() => setGithubPageMode("repos")} style={{
-            padding: "12px 14px", borderRadius: 6,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          <Box key={r.full_name} onClick={() => setGithubPageMode("repos")} pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
             cursor: "pointer",
           }}>
             <Row align="baseline" gap={8} style={{ marginBottom: 4 }}>
-              <Box as="span" style={{ width: 8, height: 8, borderRadius: "50%", background: r.language ? langColor(r.language) : "var(--fg-dim)", flexShrink: 0, display: "inline-block" }} />
+              <Box as="span" bg={r.language ? langColor(r.language) : "var(--fg-dim)"} style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" }} />
               <Box as="span" className="mono-value">{r.full_name}</Box>
               <Spacer />
               <Text as="span" mono size={9.5} tone="dim">{timeAgo(r.lastPush)}</Text>
