@@ -2,7 +2,7 @@
 //! its output: line lists, trimmed stdout, worktree-aware path resolution, and `info/exclude`
 //! maintenance. Extracted verbatim from `lib.rs`.
 
-use crate::platform::process::{run_capture, run_ok, run_output};
+use crate::prelude::{run_capture, run_ok, run_output};
 
 /// Run `git -C <cwd> <args…>` and return its stdout as trimmed, non-empty lines; empty on any
 /// failure (non-zero exit, git missing).

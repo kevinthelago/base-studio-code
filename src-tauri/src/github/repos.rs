@@ -19,7 +19,7 @@ pub(crate) async fn clone_repo(project: String, full_name: String) -> Result<Str
     let url = format!("https://github.com/{}.git", full_name);
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", &url, &dest.to_string_lossy()]);
-    let status = crate::platform::process::run_status(&mut cmd).str_err()?;
+    let status = run_status(&mut cmd).str_err()?;
     if !status.success() {
         log::warn!("clone_repo: git clone failed for {full_name}");
         return Err(format!("git clone failed for {}", full_name));
