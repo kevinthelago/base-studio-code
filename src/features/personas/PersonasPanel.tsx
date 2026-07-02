@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useAppStore } from "@/store";
 import { ROLE_DEFAULTS, roleCapability, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { MODEL_IDS } from "@/app/console/lib/models";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -126,7 +127,19 @@ export function PersonasPanel() {
             />
           </Box>
 
-          <TextField label="Default model" value={selected.model ?? ""} onChange={(v) => updatePersona(selected.id, { model: v || undefined })} placeholder="empty = session default" />
+          <SelectField
+            label="Default model"
+            value={selected.model ?? ""}
+            onChange={(v) => updatePersona(selected.id, { model: v || undefined })}
+          >
+            <option value="">session default</option>
+            {MODEL_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
+            {/* Preserve a custom model id the persona already carries (e.g. a bsc-agent model not in the
+                known-tier list) so the picker never silently drops it. */}
+            {selected.model && !(MODEL_IDS as string[]).includes(selected.model) && (
+              <option value={selected.model}>{selected.model} (custom)</option>
+            )}
+          </SelectField>
 
           <Box>
             <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 6 }}>attached skills · {selected.skills.length}</Text>

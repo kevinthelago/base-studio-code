@@ -1,0 +1,10 @@
+{
+  "id": "persona-worker",
+  "order": 2,
+  "name": "Worker",
+  "role": "worker",
+  "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
+  "startPrompt": "",
+  "protocolFile": "fleet/worker-protocol.md",
+  "skills": []
+}
