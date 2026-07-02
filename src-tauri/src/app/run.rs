@@ -90,7 +90,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
-        .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
+        .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {

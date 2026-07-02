@@ -27,8 +27,40 @@ pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
 /// [`crate::mark_published`]. This replaces the #904 draft/ vs projects/ split, whose publish-time
 /// rename fought the Windows cwd lock (a live process can't have its cwd renamed), orphaned Claude
 /// history, and wedged into a permanent split-brain when the rename half-failed.
+/// The root that holds every project hub: `~/.base-studio-code/projects`. One source of truth for the
+/// path so callers stop hand-rolling `bsc_base_dir().join("projects")` (#2081).
+pub(crate) fn projects_root() -> std::path::PathBuf {
+    bsc_base_dir().join("projects")
+}
+
 pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir().join("projects").join(sanitize_project_key(project_key))
+    projects_root().join(sanitize_project_key(project_key))
+}
+
+/// The project hub's per-project SQLite plan store: `projects/<key>/plan.db` (#plan-db). The sole fleet
+/// store (#1805). One helper so the path stops being spelled two ways — `project_dir(key).join("plan.db")`
+/// vs `bsc_base_dir().join("projects").join(key).join("plan.db")` — which is exactly the drift this
+/// module exists to prevent (#2081). Key sanitize is idempotent, so a cwd-derived (already-sanitized)
+/// key resolves to the same path.
+pub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("plan.db")
+}
+
+/// The project's canonical DuckDB **data store**: `~/.base-studio-code/data/<key>.duckdb` — the Data
+/// Model + PlatformScan the planner reads via `bsc data` (#1446). Pure path construction (no `mkdir`);
+/// callers that write create the parent themselves. Sanitizes the key (idempotent on a cwd-derived key).
+pub(crate) fn data_db_path(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("data").join(format!("{}.duckdb", sanitize_project_key(project_key)))
+}
+
+/// The global skills store: `~/.base-studio-code/skills.db` (the `bsc skill` CLI's db). Not per-project.
+pub(crate) fn skills_db() -> std::path::PathBuf {
+    bsc_base_dir().join("skills.db")
+}
+
+/// The performance/cost metrics store: `~/.base-studio-code/perf.db` (#1607). Not per-project.
+pub(crate) fn perf_db() -> std::path::PathBuf {
+    bsc_base_dir().join("perf.db")
 }
 
 /// The published-marker file inside a project hub (#922): `projects/<key>/.published`. Its presence
@@ -146,6 +178,28 @@ mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
     use crate::testutil::prelude::*;
+
+    #[test]
+    fn well_known_locations_compose_off_the_base_and_project_dirs() {
+        // #2081: the named location helpers replace ~20 ad-hoc `bsc_base_dir().join(...)` joins.
+        assert_eq!(projects_root(), bsc_base_dir().join("projects"));
+        assert_eq!(project_dir("k"), projects_root().join("k"));
+        assert_eq!(skills_db(), bsc_base_dir().join("skills.db"));
+        assert_eq!(perf_db(), bsc_base_dir().join("perf.db"));
+        assert_eq!(data_db_path("k"), bsc_base_dir().join("data").join("k.duckdb"));
+    }
+
+    #[test]
+    fn plan_db_path_collapses_the_two_former_spellings() {
+        // #2081 regression: plan.db was spelled `project_dir(k).join("plan.db")` in one place and
+        // `bsc_base_dir().join("projects").join(k).join("plan.db")` in another. Both must resolve to
+        // the SAME path so the drift can't recur. Key sanitize is idempotent, so an already-sanitized
+        // (cwd-derived) key resolves identically.
+        assert_eq!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
+        assert_eq!(plan_db_path("my-app"), projects_root().join("my-app").join("plan.db"));
+        // sanitize is applied and idempotent.
+        assert_eq!(plan_db_path("a/b"), plan_db_path("a_b"));
+    }
 
     #[test]
     fn project_dir_places_the_sanitized_key_directly_under_projects() {

@@ -149,7 +149,7 @@ pub(crate) fn sync_sandbox_plan_db(key: String) -> Result<bool, String> {
         Ok(b) if !b.is_empty() => b,
         _ => return Ok(false), // the sandboxed planner hasn't written a plan.db yet — nothing to sync
     };
-    let host_db = crate::platform::paths::project_dir(&key).join("plan.db");
+    let host_db = crate::platform::paths::plan_db_path(&key);
     if std::fs::read(&host_db).map(|h| h == bytes).unwrap_or(false) {
         return Ok(false); // unchanged
     }

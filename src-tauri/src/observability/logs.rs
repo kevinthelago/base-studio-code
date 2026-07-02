@@ -59,7 +59,7 @@ const TSV_STREAMS: &[(&str, &str, &str)] = &[
 fn stream_path(app: &tauri::AppHandle, stream: &str) -> Option<PathBuf> {
     match stream {
         "app" => app.path().app_log_dir().ok().map(|d| d.join("base-studio-code.log")),
-        "perf" => Some(bsc_base_dir().join("perf.db")),
+        "perf" => Some(crate::perf_db()),
         other => TSV_STREAMS
             .iter()
             .find(|(k, _, _)| *k == other)
