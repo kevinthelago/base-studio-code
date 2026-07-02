@@ -2,7 +2,7 @@ use crate::prelude::*;
 // Domain modules whose Tauri commands the invoke handler below registers (#1918): explicit per-domain
 // imports replace the old `use crate::*` glob, so each command path names its domain.
 use crate::{app, extensions, fleet, planner, session};
-use crate::console::{discovery, ledger, pty};
+use crate::console::{bsc, discovery, ledger, pty};
 use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
 use crate::observability::{self, logs, perf, tokens};
@@ -164,6 +164,7 @@ pub fn run() {
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_kill,
+            bsc::bsc,
             app::dialog::pick_directory,
             app::dialog::pick_save_file,
             app::dialog::pick_open_file,

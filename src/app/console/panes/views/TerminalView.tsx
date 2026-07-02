@@ -15,54 +15,21 @@ import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity"
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly } from "@/app/console/lib/sessionLaunch";
-import { IconButton } from "@/shared/ui/controls/IconButton";
-import { Row } from "@/shared/ui/layout/Row";
-import { Text } from "@/shared/ui/typography/Text";
+import {
+  PENDING_BYTES_CAP,
+  AUTO_NUDGE_DELAY_MS,
+  JUMBLE_CHROME_ROWS,
+  JUMBLE_STRIKES,
+  JUMBLE_RECHECK_MS,
+  TERM_THEME,
+} from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
-import { SessionReadinessBanner } from "@/app/SessionReadinessBanner";
-import { SessionFailure } from "@/app/SessionFailure";
+import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
 import { tokenForRepo } from "@/shared/lib/github/repoCredentials";
 import { getProvider } from "@/app/console/lib/providers";
 import { type PaneActivity, isTurnOpenDebounced, paneActivityFor } from "@/app/console/lib/paneActivity";
-
-// Background-pane buffer cap. While a pane is hidden we skip xterm.write
-// entirely and accumulate the PTY bytes here; on becoming visible we flush
-// them in one go. 256 KB ≈ a few thousand lines of dense output — generous for
-// realistic switch-away durations and far above what's likely useful before
-// xterm's own scrollback truncates it anyway.
-const PENDING_BYTES_CAP = 256 * 1024;
-
-// Grace before the automatic post-launch redraw nudge (#1221) — long enough for Claude's TUI to
-// finish its first paint, so the nudge repaints a fully-drawn (and possibly jumbled) screen rather
-// than an empty one. The nudge is idempotent + non-destructive, so an imprecise delay is harmless.
-const AUTO_NUDGE_DELAY_MS = 700;
-
-// Mid-session jumble probe (#1250): at each Claude settle, sample the bottom input-box rows and
-// auto-nudge when the box chrome is shattered. Hysteresis — two malformed samples (the settle + one
-// quick re-check) before firing — so a lone mid-draw frame doesn't trigger a needless repaint.
-// (#1239 reverted the input overlay/clip box, so these now guard Claude's own native input box.)
-const JUMBLE_CHROME_ROWS = 10; // bottom viewport rows that hold Claude's input box + hint lines
-const JUMBLE_STRIKES = 2;
-const JUMBLE_RECHECK_MS = 250;
-
-// Hex equivalents of the oklch design tokens so xterm can use them
-const TERM_THEME: import("@xterm/xterm").ITheme = {
-  background:          "#181a1f",
-  foreground:          "#eeeae4",
-  cursor:              "#c4923a",
-  cursorAccent:        "#181a1f",
-  selectionBackground: "#c4923a44",
-  black:               "#181a1f", brightBlack:   "#44474f",
-  red:                 "#d4554f", brightRed:     "#e06c75",
-  green:               "#5fb467", brightGreen:   "#98c379",
-  yellow:              "#c4923a", brightYellow:  "#e5c07b",
-  blue:                "#5694c7", brightBlue:    "#61afef",
-  magenta:             "#9b59b6", brightMagenta: "#c678dd",
-  cyan:                "#4aabb5", brightCyan:    "#64d5e4",
-  white:               "#939aa4", brightWhite:   "#eeeae4",
-};
 
 interface TerminalViewProps {
   paneId: string;
@@ -752,34 +719,15 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         flexDirection: "column",
       }}
     >
-      {criticalChecks.length > 0 && (
-        <SessionFailure critical={criticalChecks} onRetry={retryReadiness} />
-      )}
-      {criticalChecks.length === 0 && !warnDismissed && warningChecks.length > 0 && (
-        <SessionReadinessBanner
-          warnings={warningChecks}
-          onDismiss={() => setWarnDismissed(true)}
-          onSignInGitHub={
-            warningChecks.some((c) => c.id === "gh-auth")
-              ? () => { useAppStore.getState().setWorkspace("settings"); }
-              : undefined
-          }
-        />
-      )}
-      {permsStale && (
-        <Row className="mono" gap={8} style={{
-          padding: "6px 12px",
-          fontSize: 11, color: "var(--accent)",
-          background: "color-mix(in oklch, var(--accent), transparent 90%)",
-          borderBottom: "1px solid color-mix(in oklch, var(--accent), transparent 70%)",
-        }}>
-          <Text as="span">⟳</Text>
-          <Text tone="muted" style={{ flex: 1 }}>
-            Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
-          </Text>
-          <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
-        </Row>
-      )}
+      <TerminalBanners
+        paneId={paneId}
+        criticalChecks={criticalChecks}
+        warningChecks={warningChecks}
+        onRetry={retryReadiness}
+        warnDismissed={warnDismissed}
+        onDismissWarn={() => setWarnDismissed(true)}
+        permsStale={permsStale}
+      />
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
           box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view
           beneath our native overlay) was reverted along with the overlay. */}
