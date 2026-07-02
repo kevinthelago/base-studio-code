@@ -1,5 +1,6 @@
 import { IssueSecurityCard } from "../cards/IssueSecurityCard";
 import { AgentsCard } from "../cards/AgentsCard";
+import { AgentRolesCard } from "../cards/AgentRolesCard";
 import { PermissionPostureCard } from "../cards/PermissionPostureCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 
@@ -14,6 +15,7 @@ export function SecurityPage() {
       </p>
 
       {/* Security Cards */}
+      <AgentRolesCard />
       <AgentsCard />
       <PermissionPostureCard />
       <IssueSecurityCard />

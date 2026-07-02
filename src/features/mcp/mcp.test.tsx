@@ -158,6 +158,19 @@ describe("McpWorkspace + HooksView", () => {
     expect(hasAnalytics).toBe(false);
   });
 
+  it("surfaces the always-on bsc-* system hooks as read-only (no toggle)", () => {
+    render(<HooksView />);
+    // The security floor is listed under its own read-only section.
+    expect(screen.getByText("System hooks")).toBeTruthy();
+    expect(screen.getByText("bsc-deny")).toBeTruthy();
+    expect(screen.getByText("bsc-confine")).toBeTruthy();
+    expect(screen.getByText("bsc-scope")).toBeTruthy();
+    // Marked "system · always on" and NOT toggleable — its rows carry no enable toggle.
+    const systemRow = screen.getByText("bsc-deny").closest(".card-list-row") as HTMLElement;
+    expect(within(systemRow).getByText("system · always on")).toBeTruthy();
+    expect(systemRow.querySelector(".toggle")).toBeNull();
+  });
+
   it("adds a custom hook from the Hooks view and opens its drawer", () => {
     const { container } = render(<HooksView />);
     fireEvent.click(screen.getByText("+ Custom hook"));

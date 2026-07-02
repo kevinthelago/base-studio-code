@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveHooks, toHookPayload, hookFromCatalog, blankHook, type Hook } from "./hooks";
+import { resolveHooks, toHookPayload, hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "./hooks";
 
 const mk = (over: Partial<Hook>): Hook => ({
   id: "h", name: over.id ?? "h", enabled: true, projects: [], event: "PostToolUse", command: "fmt", ...over,
@@ -45,5 +45,21 @@ describe("catalog templates + blank", () => {
 
   it("blankHook produces an empty PostToolUse shape", () => {
     expect(blankHook()).toMatchObject({ event: "PostToolUse", enabled: false, projects: [], command: "" });
+  });
+
+  it("maps the Session end catalog item to a Stop hook (no tool matcher)", () => {
+    expect(hookFromCatalog("Session end")).toMatchObject({ event: "Stop", command: "", enabled: false, projects: [], name: "Session end" });
+    expect(hookFromCatalog("Session end").matcher).toBeUndefined();
+  });
+});
+
+describe("SYSTEM_HOOKS", () => {
+  it("lists the always-on PreToolUse security floor (bsc-deny / bsc-confine / bsc-scope)", () => {
+    expect(SYSTEM_HOOKS.map(h => h.name)).toEqual(["bsc-deny", "bsc-confine", "bsc-scope"]);
+    // Every system hook is a PreToolUse floor hook with a one-line purpose.
+    for (const h of SYSTEM_HOOKS) {
+      expect(h.event).toBe("PreToolUse");
+      expect(h.purpose.length).toBeGreaterThan(0);
+    }
   });
 });
