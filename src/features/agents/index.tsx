@@ -8,7 +8,7 @@
 // composition + light view state only.
 import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -77,7 +77,7 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   usePoll(async (isCancelled) => {
     if (tab !== "activity") return;
-    const lines = await safeInvoke<string[]>("read_audit_log", { limit: 300 }, []);
+    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
     const rows = buildAuditRows(lines, { consoles, profiles, paneProfiles, paneRoles });
     if (!isCancelled()) setAuditRows(rows);
   }, 3000, [tab, paneProfiles, profiles, paneRoles, consoles]);

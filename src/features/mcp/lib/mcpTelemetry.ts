@@ -3,7 +3,7 @@
 // per call: `ts \t pane \t server \t tool \t outcome \t ms \t detail` (#1743 prepended the pane
 // column). Legacy lines written before #1743 have no pane (`ts \t server \t tool \t outcome \t
 // ms [\t detail]`) and are still tolerated — the parser detects the shape by column count.
-// Read newest-first via `read_mcp_log`. `outcome` is "ok" | "warn" | "fail"; `ms` is the round-trip latency of the
+// Read newest-first via `bsc logs tail mcp`. `outcome` is "ok" | "warn" | "fail"; `ms` is the round-trip latency of the
 // call (the agent invoking the MCP tool → the server's response). A "warn" is a successful but
 // slow / rate-limited call, so it counts toward SUCCESS (only "fail" is an error). Pure +
 // unit-tested; the hook pair that EMITS these lines is wired separately (PR 2).

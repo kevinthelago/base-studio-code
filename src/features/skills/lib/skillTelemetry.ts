@@ -4,7 +4,7 @@
 // the skill name. Pure + unit-testable (the `now` clock is injected). (#406)
 //
 // Mirrors the Agents audit-log model (features/agents/lib/auditLog.ts): a flat TSV
-// `ts \t pane \t event \t skill`, read newest-first via `read_skill_log`.
+// `ts \t pane \t event \t skill`, read newest-first via `bsc logs tail skill`.
 
 import { skillSlug } from "./skills";
 
