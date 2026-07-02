@@ -4,6 +4,5 @@ pub mod plan_db;
 pub mod files;
 pub mod hub;
 pub mod plan_files;
-pub mod blueprints;
 pub mod dead_code;
 pub mod ui_skeleton;

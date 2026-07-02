@@ -1121,6 +1121,31 @@ describe("agent fleet store", () => {
     expect((JSON.parse((rm![1] as { stdin: string }).stdin) as FleetPlan).streams.some(x => x.id === "api")).toBe(false);
   });
 
+  it("user blueprint edits write through the `bsc` bridge (blueprint set/remove, #2143)", () => {
+    // Blueprints are GLOBAL (no project key) → `null` projectKey; the former `write_blueprint`/
+    // `delete_blueprint` Tauri commands are now `bsc blueprint set` (JSON on stdin) / `remove <id>`.
+    const argsOf = (call: unknown[]) => (call[1] as { args?: string[] } | undefined)?.args;
+
+    // addBlueprint mints a user blueprint (origin !== "built-in") → persisted verbatim on stdin.
+    vi.mocked(invoke).mockClear();
+    const id = useAppStore.getState().addBlueprint();
+    const set = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "set"]),
+    );
+    expect(set).toBeTruthy();
+    expect((set![1] as { projectKey: string | null }).projectKey).toBeNull();
+    expect((JSON.parse((set![1] as { stdin: string }).stdin) as { id: string }).id).toBe(id);
+
+    // removeBlueprint deletes it by id → `bsc blueprint remove <id>` (positional, no stdin).
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().removeBlueprint(id);
+    const rm = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "remove", id]),
+    );
+    expect(rm).toBeTruthy();
+    expect((rm![1] as { projectKey: string | null }).projectKey).toBeNull();
+  });
+
   it("fleetStartProject opens a build tab with the director and worker panes", () => {
     // A published project (has a board id) → director hub lives under projects/ (#904).
     useAppStore.setState({ bscBaseDir: "/base", activeProjectId: "PVT_pub" });

@@ -1,11 +1,11 @@
 //! `bsc-blueprint` core — file CRUD over the USER blueprint store at
 //! `~/.base-studio-code/blueprints/<id>.json` (#1719, an instance of #1325).
 //!
-//! This is the exact storage the desktop Tauri commands manage
-//! (`src-tauri/src/project/blueprints.rs`: `list_blueprints` / `write_blueprint` / `delete_blueprint`),
-//! lifted into a Tauri-free crate so the session-facing `bsc-blueprint` CLI can reach the same store
-//! from any live console session. Built-in blueprints are code/JSON-owned and out of scope — this is
-//! the user store only.
+//! This is the one store the desktop Skills/Blueprint library and every live console session share:
+//! the desktop UI reaches it through the generic `bsc` command (`bsc blueprint …`, #2143 — it retired
+//! the per-verb `list/write/delete_blueprint` Tauri commands), and a session's own shell reaches the
+//! same store through the [`cli`] module. Built-in blueprints are code/JSON-owned and out of scope —
+//! this is the user store only.
 //!
 //! Each blueprint is written **verbatim** (the frontend owns the JSON shape; the store never imposes
 //! a typed schema). The `id` is slugified into a single safe directory segment so it can never escape
@@ -40,15 +40,14 @@ impl Store {
 
     /// The on-disk path for blueprint `id`. The id is slugified (every char outside
     /// `[A-Za-z0-9_-]` becomes `_`) and rejected when empty / `.` / `..`, so it can never escape the
-    /// `blueprints/` dir — mirrors `project/blueprints.rs::blueprint_file` (via `fsx::safe_dir_segment`).
+    /// `blueprints/` dir — byte-identical to the app's `fsx::safe_dir_segment` slug guard (#1761).
     pub fn file(&self, id: &str) -> Result<PathBuf, String> {
         let safe = safe_id(id)?;
         Ok(self.dir.join(format!("{safe}.json")))
     }
 
     /// The verbatim JSON of every user blueprint on disk (the library hydrates from this + the
-    /// bundled built-ins). Skips unreadable / empty files; a missing dir ⇒ empty. Mirrors
-    /// `project/blueprints.rs::list_blueprints`.
+    /// bundled built-ins). Skips unreadable / empty files; a missing dir ⇒ empty.
     pub fn list(&self) -> Vec<String> {
         let Ok(entries) = std::fs::read_dir(&self.dir) else {
             return Vec::new();
@@ -77,8 +76,7 @@ impl Store {
         }
     }
 
-    /// Persist a blueprint to `blueprints/<id>.json`, written verbatim (the frontend owns the
-    /// shape). Mirrors `project/blueprints.rs::write_blueprint`.
+    /// Persist a blueprint to `blueprints/<id>.json`, written verbatim (the frontend owns the shape).
     pub fn set(&self, id: &str, json: &str) -> Result<(), String> {
         let path = self.file(id)?;
         if let Some(d) = path.parent() {
@@ -87,7 +85,7 @@ impl Store {
         std::fs::write(&path, json).map_err(|e| format!("set: {e}"))
     }
 
-    /// Remove a blueprint's file (no-op if absent). Mirrors `project/blueprints.rs::delete_blueprint`.
+    /// Remove a blueprint's file (no-op if absent).
     pub fn remove(&self, id: &str) -> Result<(), String> {
         let path = self.file(id)?;
         if path.exists() {
