@@ -293,20 +293,6 @@ pub fn data_infer_model(csv_path: String, model_name: String) -> Result<DataMode
     })
 }
 
-/// Persist the canonical Data Model into the project's DuckDB store (#1446) — the metadata table,
-/// colocated with the loaded data. `refined` is false on first inference; true once the user
-/// confirms/refines it in the pane. (Replaced the legacy `datamodel.json` file.)
-#[cfg(feature = "source-stage")]
-#[tauri::command]
-pub fn data_persist_model(project_key: String, model: DataModel, refined: bool) -> Result<(), String> {
-    let db = store_path(&project_key).map_err(|e| format!("data_persist_model: {e}"))?;
-    bsc_data::MetaStore::open(&db)
-        .and_then(|s| s.set_model(&model, refined))
-        .map_err(|e| format!("data_persist_model: {e}"))?;
-    log::info!("data_persist_model({project_key}): wrote Data Model to {db:?} (refined={refined})");
-    Ok(())
-}
-
 /// The persisted canonical Data Model for a project (from its DuckDB store), or null when none.
 /// Shape: `{ "model": <DataModel>, "refined": <bool> }`. The model pane reads this; the planner
 /// reads it via the `bsc data` CLI (#1446). Never CREATES the store on a read.

@@ -10,9 +10,3 @@ import { invoke } from "@tauri-apps/api/core";
 export function writeProjectFile(projectKey: string, relpath: string, contents: string): Promise<void> {
   return invoke("write_project_file", { projectKey, relpath, contents });
 }
-
-/** Read every file under a project-hub subdir as `[relpath, contents]` pairs (empty when
- *  the subdir is missing). Used by a pipeline to rehydrate its saved results. */
-export function readProjectFiles(projectKey: string, subdir: string): Promise<[string, string][]> {
-  return invoke("read_project_files", { projectKey, subdir });
-}
