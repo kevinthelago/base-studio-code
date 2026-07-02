@@ -16,6 +16,11 @@ export interface IntakeEntry {
   size: number;
   /** MIME type if the browser provided one. */
   mime?: string;
+  /** #2097 — content hash of the staged file, so a re-drop of an edited file is detectable. */
+  hash: string;
+  /** #2097 — the `hash` value at the last time this file was ROUTED to the project (on triage).
+   *  Undefined ⇒ never routed. `hash !== routedHash` ⇒ new or changed since the last route. */
+  routedHash?: string;
 }
 
 const EXT_KIND: Record<string, IntakeKind> = {
@@ -50,17 +55,55 @@ export function isBinaryKind(kind: IntakeKind): boolean {
   return kind === "image" || kind === "other";
 }
 
-/** Build one manifest entry from a file's metadata. */
-export function intakeEntry(name: string, size: number, mime?: string): IntakeEntry {
-  return { name, kind: classifyFile(name, mime), size, ...(mime ? { mime } : {}) };
+/** A fast, deterministic content hash (FNV-1a, 32-bit → hex) — enough to detect a file changed
+ *  between drops; not cryptographic. Text files hash their text; binary files hash their base64. */
+export function hashContent(content: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) {
+    h ^= content.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Merge new entries into an existing manifest, de-duping by name (newest wins),
- *  preserving order (existing first, then new names). */
+/** Build one manifest entry from a file's metadata + its content hash. */
+export function intakeEntry(name: string, size: number, hash: string, mime?: string): IntakeEntry {
+  return { name, kind: classifyFile(name, mime), size, hash, ...(mime ? { mime } : {}) };
+}
+
+/** Merge new entries into an existing manifest, de-duping by name (newest content wins), preserving
+ *  order (existing first, then new names). A re-dropped file keeps its prior `routedHash` so the
+ *  change vs the last route is preserved (a new `hash` different from `routedHash` ⇒ needs routing). */
 export function mergeIntake(existing: IntakeEntry[], added: IntakeEntry[]): IntakeEntry[] {
   const byName = new Map(existing.map((e) => [e.name, e]));
-  for (const e of added) byName.set(e.name, e);
+  for (const e of added) {
+    const prev = byName.get(e.name);
+    byName.set(e.name, prev ? { ...e, routedHash: prev.routedHash } : e);
+  }
   return [...byName.values()];
+}
+
+/** The staged files that are new or changed since their last route (`hash !== routedHash`). */
+export function changedDesignFiles(entries: IntakeEntry[]): IntakeEntry[] {
+  return entries.filter((e) => e.hash !== e.routedHash);
+}
+
+/** Stamp every entry as routed at its current content (`routedHash = hash`) — called after a route. */
+export function markRouted(entries: IntakeEntry[]): IntakeEntry[] {
+  return entries.map((e) => ({ ...e, routedHash: e.hash }));
+}
+
+/** #2097 — the design-routing lead prepended to a triage prompt when design files changed, mirroring
+ *  `renderTriageDelta`. Empty when nothing changed (so triage does its normal issue pass untouched).
+ *  `routeInstruction` is the UI stage's `routePrompt` (the classify-and-route directive). */
+export function renderDesignDelta(changed: IntakeEntry[], routeInstruction: string): string {
+  if (changed.length === 0) return "";
+  const names = changed.map((e) => e.name).join(", ");
+  return (
+    `DESIGN ROUTING: ${changed.length} design file(s) changed since the last route — ${names}. ` +
+    `Route ONLY these changed files (the rest are already in place): ${routeInstruction} ` +
+    `Then continue with the issue triage below. `
+  );
 }
 
 /** Serialize the manifest exactly as it's stored (stable, pretty, trailing newline). */
@@ -75,7 +118,11 @@ export function parseIntake(raw: string): IntakeEntry[] {
     const j: unknown = JSON.parse(raw);
     if (!Array.isArray(j)) return [];
     return j.filter((e): e is IntakeEntry => !!e && typeof e === "object" && typeof (e as IntakeEntry).name === "string")
-      .map((e) => ({ name: e.name, kind: e.kind ?? "other", size: typeof e.size === "number" ? e.size : 0, ...(e.mime ? { mime: e.mime } : {}) }));
+      .map((e) => ({
+        name: e.name, kind: e.kind ?? "other", size: typeof e.size === "number" ? e.size : 0,
+        hash: typeof e.hash === "string" ? e.hash : "", ...(e.routedHash ? { routedHash: e.routedHash } : {}),
+        ...(e.mime ? { mime: e.mime } : {}),
+      }));
   } catch {
     return [];
   }

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileIntakePane } from "./FileIntakePane";
-import { STAGE_DEFS } from "../stages/blueprints";
 import { useAppStore } from "@/store";
 
 describe("FileIntakePane (#604)", () => {
@@ -27,17 +26,18 @@ describe("FileIntakePane (#604)", () => {
     expect(screen.getByText("image")).toBeInTheDocument(); // kind chip
   });
 
-  it("the Route button queues the route prompt for the planner (#604 slice 2)", async () => {
+  it("the confirm button stages the design (skeleton + ui-stage confirm) — routing moved to triage (#2097)", async () => {
     vi.mocked(invoke).mockResolvedValue(undefined as never); // un-mocked calls (sync_design_to_skeleton) still return a promise
     vi.mocked(invoke).mockResolvedValueOnce([
-      ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1 }])],
+      ["intake.json", JSON.stringify([{ name: "hero.png", kind: "image", size: 1, hash: "h1" }])],
     ]);
     render(<FileIntakePane projectKey="proj-x" />);
-    fireEvent.click(await screen.findByRole("button", { name: /Route to project/i }));
-    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBe(STAGE_DEFS.ui.routePrompt);
-    // routing also completes the UI stage by confirming the `ui` section (#837)
+    fireEvent.click(await screen.findByRole("button", { name: /Confirm design staged/i }));
+    // Routing is NO LONGER queued here — it happens change-aware on triage (#2097).
+    expect(useAppStore.getState().pendingPlannerPrompt["proj-x"]).toBeUndefined();
+    // Still confirms the `ui` stage (the user's explicit confirm) …
     expect(useAppStore.getState().planConfirmedSections["proj-x"]).toContain("ui");
-    // …and promotes the dropped design into .ui-skeleton/ so the preview shows it (#1373)
+    // …and promotes the dropped design into .ui-skeleton/ so the preview shows it (#1373).
     expect(invoke).toHaveBeenCalledWith("sync_design_to_skeleton", { projectKey: "proj-x" });
   });
 });
