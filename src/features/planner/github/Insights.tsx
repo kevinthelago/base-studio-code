@@ -3,7 +3,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
-import { StatCard } from "@/shared/ui/charts";
+import { Bars, HBars, StatCard } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -68,71 +68,6 @@ query($id: ID!) {
     }
   }
 }`;
-
-// ── Chart primitives ──────────────────────────────────────────────────────────
-
-function HBar({
-  label, count, max, color, pct,
-}: { label: string; count: number; max: number; color: string; pct?: boolean }) {
-  const w = max > 0 ? (count / max) * 100 : 0;
-  return (
-    <Grid cols="130px 1fr 40px" gap={10} align="center">
-      <Text as="div" mono size={10.5} tone="muted" style={{
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      }}>{label}</Text>
-      <Box style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
-        <Box style={{
-          height: "100%", width: `${w}%`,
-          background: color, borderRadius: 3,
-          transition: "width 0.3s ease",
-        }} />
-      </Box>
-      <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>
-        {pct ? `${Math.round(w)}%` : count}
-      </Text>
-    </Grid>
-  );
-}
-
-function SparkBars({ weeks }: { weeks: Array<{ label: string; opened: number; closed: number }> }) {
-  const maxVal = Math.max(...weeks.flatMap(w => [w.opened, w.closed]), 1);
-  const barW = 28;
-  const gap   = 8;
-  const H     = 80;
-  const PAD   = { t: 10, b: 20, l: 0, r: 0 };
-  const innerH = H - PAD.t - PAD.b;
-  const totalW = weeks.length * (barW * 2 + gap + 4);
-
-  return (
-    <svg width={totalW} height={H} style={{ display: "block", width: "100%", maxWidth: totalW }}>
-      {weeks.map((w, i) => {
-        const x = i * (barW * 2 + gap + 4);
-        const hO = Math.round((w.opened / maxVal) * innerH);
-        const hC = Math.round((w.closed / maxVal) * innerH);
-        return (
-          <g key={i}>
-            {/* opened bar */}
-            <rect
-              x={x} y={PAD.t + innerH - hO} width={barW} height={hO}
-              rx="2" fill="color-mix(in oklch, var(--info), transparent 40%)"
-            />
-            {/* closed bar */}
-            <rect
-              x={x + barW + 2} y={PAD.t + innerH - hC} width={barW} height={hC}
-              rx="2" fill="color-mix(in oklch, var(--success), transparent 40%)"
-            />
-            {/* week label */}
-            <text
-              x={x + barW + 1} y={H - 4}
-              textAnchor="middle"
-              fontFamily="var(--mono)" fontSize="9" fill="var(--fg-dim)"
-            >{w.label}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 // ── Insights screen ───────────────────────────────────────────────────────────
 
@@ -292,11 +227,10 @@ export function Insights() {
                   {statusDist.length === 0 ? (
                     <Text as="div" mono size={11} tone="dim">No status field found.</Text>
                   ) : (
-                    <Stack gap={8}>
-                      {statusDist.map(s => (
-                        <HBar key={s.name} label={s.name} count={s.count} max={maxStatusCount} color={s.color} />
-                      ))}
-                    </Stack>
+                    <HBars
+                      max={maxStatusCount}
+                      rows={statusDist.map(s => ({ label: s.name, value: s.count, color: s.color }))}
+                    />
                   )}
                 </Card>
 
@@ -363,7 +297,14 @@ export function Insights() {
                     </Box>
                   </Row>
                 </Row>
-                <SparkBars weeks={weeklyActivity} />
+                <Bars
+                  labels={weeklyActivity.map(w => w.label)}
+                  height={100}
+                  groups={[
+                    { name: "opened", color: "color-mix(in oklch, var(--info), transparent 40%)",    data: weeklyActivity.map(w => w.opened) },
+                    { name: "closed", color: "color-mix(in oklch, var(--success), transparent 40%)", data: weeklyActivity.map(w => w.closed) },
+                  ]}
+                />
               </Card>
 
               {/* Label distribution */}
@@ -373,9 +314,13 @@ export function Insights() {
                     <h3 style={{ margin: 0 }}>Label frequency</h3>
                     <Box as="span" className="hint">top {labelDist.length}</Box>
                   </Row>
-                  <Grid cols={2} style={{ gap: "6px 32px" }}>
-                    {labelDist.map(l => (
-                      <HBar key={l.name} label={l.name} count={l.count} max={maxLabelCount} color={l.color} />
+                  <Grid cols={2} gap={32}>
+                    {[labelDist.slice(0, Math.ceil(labelDist.length / 2)), labelDist.slice(Math.ceil(labelDist.length / 2))].map((half, col) => (
+                      <HBars
+                        key={col}
+                        max={maxLabelCount}
+                        rows={half.map(l => ({ label: l.name, value: l.count, color: l.color }))}
+                      />
                     ))}
                   </Grid>
                 </Card>
