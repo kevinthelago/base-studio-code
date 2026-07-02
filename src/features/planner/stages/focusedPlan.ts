@@ -157,9 +157,10 @@ export function footerAction(
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
   // #2121: the active UI stage whose design is missing or stale → the primary action ROUTES the
-  // design (sync the skeleton + mark it current) instead of advancing. Once current it reverts to
-  // the normal approve-continue (advance to the next stage). Skip stays available either way.
-  if (routeDesign) return { kind: "route-design", enabled: true, canSkip: activeSkippable };
+  // design (sync the skeleton + mark it current) instead of advancing. While route-design is the
+  // primary action, SKIP is hidden — offering both "route the design" and "skip the stage" at once
+  // is contradictory; skip only reappears on the normal approve-continue once the design is routed.
+  if (routeDesign) return { kind: "route-design", enabled: true, canSkip: false };
   return { kind: "approve-continue", enabled: currentGateReady, canSkip: activeSkippable };
 }
 

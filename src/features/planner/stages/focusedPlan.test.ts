@@ -136,9 +136,12 @@ describe("footerAction (#652)", () => {
 
   it("routes the design on the active UI stage when it's missing/stale (#2121)", () => {
     // routeDesign=true on the active stage → an always-enabled "route-design" action instead of
-    // "approve & continue"; the skip control still rides along when the stage is optional.
+    // "approve & continue". SKIP is hidden while route-design is the primary action — even when the
+    // stage is optional — so the user can't both "route the design" and "skip the stage" at once.
     expect(footerAction(1, 1, false, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
-    expect(footerAction(1, 1, false, true, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
+    expect(footerAction(1, 1, false, true, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
+    // Skip DOES return on the normal approve-continue once the design is routed (routeDesign=false).
+    expect(footerAction(1, 1, false, true, true, false)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
     // route-design never overrides navigation or publish.
     expect(footerAction(2, 1, false, false, false, true).kind).toBe("back-to-current");
     expect(footerAction(1, 1, true, false, false, true)).toEqual({ kind: "publish", enabled: true });
