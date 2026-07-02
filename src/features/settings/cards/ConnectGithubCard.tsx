@@ -3,6 +3,7 @@ import { clearGithubCache } from "@/shared/lib/github/github";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubConnect } from "../lib/useGithubConnect";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Card } from "@/shared/ui/data/Card";
 import { Row } from "@/shared/ui/layout/Row";
@@ -111,14 +112,7 @@ function ConnectFlowCard() {
         </Button>
       </Row>
 
-      {error && (
-        <Box className="mono" pad={[8, 12]} bg="var(--bg-elev)" radius={6} style={{
-          marginTop: 10, border: "1px solid var(--danger)",
-          color: "var(--danger)", fontSize: 11,
-        }}>
-          {error}
-        </Box>
-      )}
+      {error && <InlineError style={{ marginTop: 10 }}>{error}</InlineError>}
 
       <Box className="hint" style={{ marginTop: 8 }}>
         Token stored locally · never sent to any server other than github.com

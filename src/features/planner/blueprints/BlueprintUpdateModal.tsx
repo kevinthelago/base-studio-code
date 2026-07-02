@@ -28,11 +28,7 @@ export function BlueprintUpdateModal({ busy, onGoBack, onKeep, onRestart, onDism
         <>
           <BackButton variant="text" label="go back" className="btn ghost" onClick={onGoBack} aria-label="Go back" />
           <Button disabled={busy} onClick={onKeep}>keep previous plan files</Button>
-          <Button
-            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-            disabled={busy}
-            onClick={onRestart}
-          >restart the plan</Button>
+          <Button danger disabled={busy} onClick={onRestart}>restart the plan</Button>
         </>
       }
     >

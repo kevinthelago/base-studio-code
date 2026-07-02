@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { PurposeView, StagesView, CapabilitiesView, PublishView } from "@/features/planner/blueprints/BlueprintAuthorViews";
 import { Box } from "@/shared/ui/layout/Box";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { AuthoringWiring } from "./focusedHandlers";
 
 /** The authoring stages' body (#923): the four interactive editor views over the in-progress
@@ -13,12 +14,7 @@ export function AuthoringBody({ bp, stageKey, wiring }: {
 }) {
   const [selStage, setSelStage] = useState<string | null>(null);
   if (!bp || !wiring) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">⎙</Box>
-        <Box as="span">As the planner designs the blueprint, it appears here.</Box>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="⎙" title="As the planner designs the blueprint, it appears here." />;
   }
   const sel = selStage ?? bp.sections?.[0]?.uid ?? null;
   const common = { bp, onChange: wiring.onChange, skillLibrary: wiring.skillLibrary, mcpLibrary: wiring.mcpLibrary };

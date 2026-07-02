@@ -4,6 +4,7 @@
 import type { Posture, Perm, Agent } from "./projectPaneData";
 import "./projectPane.css";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { Box } from "@/shared/ui/layout/Box";
 
 interface Role { c: string; label: string }
@@ -84,12 +85,7 @@ export function Tri({ value, onChange }: { value: Posture; onChange?: (v: Postur
 }
 
 export function Tile({ v, k }: { v: number | string; k: string }) {
-  return (
-    <Box className="tile">
-      <Box className="v">{v}</Box>
-      <Box className="k">{k}</Box>
-    </Box>
-  );
+  return <StatTile k={k} v={v} />;
 }
 
 export function KindDot({ kind }: { kind: string }) {

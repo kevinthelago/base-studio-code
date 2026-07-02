@@ -16,6 +16,7 @@ import {
 } from "../lib/sourceConfig";
 import { MONO, grpLabel } from "./bodyStyles";
 import { Chip } from "@/shared/ui/data/Chip";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -281,10 +282,12 @@ export function SourceCard({
           {/* error / auth failed */}
           {src.status === "error" && (
             <>
-              <Stack gap={3} style={{ background: "color-mix(in oklch, var(--danger), transparent 92%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 78%)", borderRadius: "var(--r-md)", padding: "8px 10px" }}>
-                <Text as="span" mono size={10.5} tone="danger">✕ {src.error ?? "connection failed"}</Text>
-                <Text as="span" mono size={9} tone="dim">check the connection details and try again</Text>
-              </Stack>
+              <InlineError pad={[8, 10]} radius="md" borderFade={78}>
+                <Stack gap={3}>
+                  <Text as="span" mono size={10.5} tone="danger">✕ {src.error ?? "connection failed"}</Text>
+                  <Text as="span" mono size={9} tone="dim">check the connection details and try again</Text>
+                </Stack>
+              </InlineError>
               <Row gap={8} align="stretch">
                 {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled retry button */}
                 <button data-testid={`retry-${src.uid}`} onClick={onRetry} style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600, color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 72%)", borderRadius: "var(--r-md)", padding: "5px 12px", cursor: "pointer" }}>↻ retry</button>

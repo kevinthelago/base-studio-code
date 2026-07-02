@@ -14,6 +14,8 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { Banner } from "@/shared/ui/feedback/Banner";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -160,27 +162,15 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
         {/* body */}
         <Box pad={[14, 20]} style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto"}}>
           {importError && (
-            <Row
+            <Banner
               role="alert"
-              className="mono"
-              align="start"
-              gap={9}
-              style={{
-                marginBottom: 11, padding: "10px 12px",
-                borderRadius: "var(--r-md)", fontSize: 11, lineHeight: 1.5,
-                color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)",
-                border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
-              }}
+              tone="danger"
+              lead={<AlertTriangle size={14} style={{ flex: "0 0 auto" }} />}
+              onDismiss={() => setImportError(null)}
+              style={{ marginBottom: 11 }}
             >
-              <AlertTriangle size={14} style={{ flex: "0 0 auto", marginTop: 1 }} />
               <Box as="span" style={{ flex: 1, color: "var(--fg)" }}>{importError}</Box>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline dismiss button (transparent, no .icon-btn hover state) */}
-              <button
-                onClick={() => setImportError(null)}
-                aria-label="Dismiss error"
-                style={{ background: "transparent", border: 0, color: "var(--fg-dim)", cursor: "pointer", padding: 0, display: "flex" }}
-              ><X size={13} /></button>
-            </Row>
+            </Banner>
           )}
           {statusLoading && (
             <>
@@ -281,32 +271,28 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           )}
 
           {statusEmpty && (
-            <Stack gap={14} align="center" style={{ textAlign: "center", padding: "38px 24px 30px" }}>
-              <Box bg="var(--bg-elev)" border="soft" radius={12} style={{ width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)" }}><Inbox size={22} /></Box>
-              <Box>
-                <Box className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>No blueprint gists yet</Box>
-                <Box style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 380 }}>
-                  <b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.
-                </Box>
-              </Box>
-              <Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>
-            </Stack>
+            <EmptyState
+              iconVariant="dashed"
+              icon={<Inbox size={22} />}
+              title="No blueprint gists yet"
+              description={<><b style={{ color: "var(--fg)" }}>{source}</b> hasn't published any blueprint gists. Publish one from the editor, or pull a blueprint someone shared with you by URL / ID.</>}
+              actions={<Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>}
+            />
           )}
 
           {statusError && (
-            <Stack gap={14} align="center" style={{ textAlign: "center", padding: "38px 24px 30px" }}>
-              <Box bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={12} style={{ width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)", color: "var(--danger)" }}><AlertTriangle size={22} /></Box>
-              <Box>
-                <Box className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>Couldn't reach GitHub</Box>
-                <Box style={{ fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.65, maxWidth: 400 }}>
-                  The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry.
-                </Box>
-              </Box>
-              <Row gap={8} align="stretch">
-                <Button onClick={load}><RefreshCw size={13} />Retry</Button>
-                <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
-              </Row>
-            </Stack>
+            <EmptyState
+              iconVariant="dashed"
+              icon={<AlertTriangle size={22} />}
+              title="Couldn't reach GitHub"
+              description="The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry."
+              actions={
+                <>
+                  <Button onClick={load}><RefreshCw size={13} />Retry</Button>
+                  <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
+                </>
+              }
+            />
           )}
         </Box>
 
