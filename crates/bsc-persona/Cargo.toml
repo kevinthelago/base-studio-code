@@ -2,21 +2,16 @@
 name = "bsc-persona"
 version = "0.1.0"
 edition = "2021"
-description = "User persona store (file CRUD over ~/.base-studio-code/personas/) for base-studio-code (#2094) — the agent-identity library (start prompt + skills + model, over a referenced role), shared by the Tauri app's persona bridge and the session-facing `bsc persona` CLI, so the persona library is reachable from any live console session and the planner."
+description = "User persona store (file CRUD over ~/.base-studio-code/personas/) for base-studio-code (#2094) — the agent-identity library (start prompt + skills + model, over a referenced role), a thin persona-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's persona bridge and the session-facing `bsc persona` CLI."
 
-# The core lib (no Tauri, no SQLite — just file CRUD) so the tiny CLI reuses it without dragging the
-# whole desktop app in. The hyphenated package name maps to the `bsc_persona` crate name.
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_persona` crate name.
 [lib]
 name = "bsc_persona"
 
 [dependencies]
-# Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so
-# the CLI and the app agree on which persona store they read/write.
-bsc-util = { path = "../bsc-util" }
-# Shared CLI helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read every
-# `bsc-* set`-style command takes) shared with `bsc plan` / `bsc skill` / `bsc blueprint`.
-bsc-sqlite-util = { path = "../bsc-sqlite-util" }
-# Shared CLI scaffold (#1762): `cli_main` + `resolve_store_path` (--dir→env→default) + the help system.
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
+# persona-specific nouns + lean `list` fields (with `role`) via a CliSpec.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
