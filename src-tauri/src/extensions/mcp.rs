@@ -25,7 +25,7 @@ pub(crate) fn mcp_clone(name: String, url: String) -> Result<String, String> {
     }
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", "--depth", "1", &url, &dir_str]);
-    let status = crate::platform::process::run_status(&mut cmd).str_err()?;
+    let status = run_status(&mut cmd).str_err()?;
     if !status.success() {
         log::warn!("mcp_clone: git clone failed for {url}");
         return Err(format!("git clone failed for {url}"));
@@ -83,7 +83,7 @@ pub(crate) fn mcp_build(name: String) -> Result<McpBuildResult, String> {
     let (shell, flag) = ("sh", "-c");
     let mut cmd = std::process::Command::new(shell);
     cmd.current_dir(&dir).args([flag, &command]);
-    let output = crate::platform::process::run_output(&mut cmd)
+    let output = run_output(&mut cmd)
         .map_err(|e| format!("mcp_build: failed to run `{command}`: {e}"))?;
     // Truncate captured output so a noisy build log doesn't bloat the IPC payload.
     let cap = |b: &[u8]| {
