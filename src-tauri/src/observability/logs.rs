@@ -6,6 +6,7 @@
 //! state: it's listed for size/mtime, but cleared from the Performance tab (`perf_clear_history`)
 //! and never raw-viewed. `plan.db` is project STATE and is deliberately NOT managed here.
 
+use crate::StrErr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -279,14 +280,14 @@ pub(crate) fn append_coord_woke(session: String) -> Result<(), String> {
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| e.to_string())?;
-    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
+        .str_err()?;
+    f.write_all(line.as_bytes()).str_err()
 }
 
 /// Truncate a file to empty (the clear primitive). No-ops on a missing file.
 fn clear_file(path: &Path) -> Result<(), String> {
     if path.exists() {
-        std::fs::write(path, b"").map_err(|e| e.to_string())?;
+        std::fs::write(path, b"").str_err()?;
     }
     Ok(())
 }
@@ -297,10 +298,10 @@ fn export_file(src: &Path, exports_dir: &Path, stream: &str, ms: u128) -> Result
     if !src.exists() {
         return Err("nothing to export — the log is empty".into());
     }
-    std::fs::create_dir_all(exports_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(exports_dir).str_err()?;
     let ext = if stream == "perf" { "db" } else { "log" };
     let dest = exports_dir.join(format!("{stream}-{ms}.{ext}"));
-    std::fs::copy(src, &dest).map_err(|e| e.to_string())?;
+    std::fs::copy(src, &dest).str_err()?;
     Ok(dest)
 }
 

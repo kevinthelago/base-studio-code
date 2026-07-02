@@ -14,10 +14,9 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
-  classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake,
+  classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake, hashContent,
   INTAKE_DIR, INTAKE_MANIFEST, type IntakeEntry, type IntakeKind,
 } from "../lib/fileIntake";
-import { STAGE_DEFS } from "../stages/blueprints";
 import type { StageScreenProps } from "../preview/stageScreens";
 import { collectDroppedEntries, type FsEntryLike, type DroppedFile } from "../lib/dropFiles";
 
@@ -36,7 +35,6 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
-  const requestPlannerPrompt = useAppStore((s) => s.requestPlannerPrompt);
   const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -81,12 +79,19 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
       for (const { file, path } of dropped) {
         const kind = classifyFile(file.name, file.type || undefined);
         const relpath = `${INTAKE_DIR}/${path}`;
+        // Hash the exact content we stage, so a later re-drop of an edited file is detected as
+        // changed and re-routed on triage (#2097).
+        let hash: string;
         if (isBinaryKind(kind)) {
-          await invoke("write_project_file_bytes", { projectKey, relpath, b64: await fileToBase64(file) });
+          const b64 = await fileToBase64(file);
+          await invoke("write_project_file_bytes", { projectKey, relpath, b64 });
+          hash = hashContent(b64);
         } else {
-          await invoke("write_project_file", { projectKey, relpath, contents: await file.text() });
+          const text = await file.text();
+          await invoke("write_project_file", { projectKey, relpath, contents: text });
+          hash = hashContent(text);
         }
-        added.push(intakeEntry(path, file.size, file.type || undefined));
+        added.push(intakeEntry(path, file.size, hash, file.type || undefined));
       }
       const merged = mergeIntake(entries, added);
       await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(merged) });
@@ -165,20 +170,19 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
               style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
               disabled={busy}
               onClick={() => {
-                // The route instruction is the UI stage's data (ui.json → routePrompt), not hardcoded.
-                const routePrompt = STAGE_DEFS.ui.routePrompt ?? "";
-                if (routePrompt) requestPlannerPrompt(projectKey, routePrompt);
-                // Promote the dropped components into .ui-skeleton/ so the preview shows the REAL
-                // design, not the demo (#1373) — deterministic, alongside the planner's routing.
+                // Deterministic: promote the dropped components into .ui-skeleton/ so the preview
+                // shows the REAL design, not the demo (#1373).
                 fireInvoke("sync_design_to_skeleton", { projectKey });
-                // Routing the design to the project completes the UI stage (#837).
+                // The user confirms the design is staged — completes the UI stage. The ACTUAL routing
+                // of files to repos now happens change-aware on TRIAGE (#2097), not here: at plan time
+                // the repos may not be published yet, and re-routing unchanged files is wasteful.
                 confirmPlanSection(projectKey, "ui");
                 setRouted(true);
               }}
-            >Route to project →</button>
+            >Confirm design staged →</button>
             {routed && (
               <Text as="div" className="hint" tone="success">
-                Sent to the planner — it will classify each file and route it to the right repo (it may ask you when a destination is ambiguous).
+                Design staged. On the next triage, only the files that changed get routed to the owning repo(s).
               </Text>
             )}
           </Stack>

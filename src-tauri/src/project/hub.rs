@@ -37,8 +37,8 @@ pub(crate) fn set_project_title(project_key: String, title: String) -> Result<()
         let _ = std::fs::remove_file(&path); // clear → fall back to goal-derived / "Untitled project"
         return Ok(());
     }
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(&path, trimmed).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).str_err()?;
+    std::fs::write(&path, trimmed).str_err()?;
     Ok(())
 }
 /// The durable hub title written by [`set_project_title`] (the `.title` sidecar), if present and

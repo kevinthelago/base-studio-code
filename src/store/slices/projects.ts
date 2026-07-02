@@ -18,6 +18,8 @@ import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/pane
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
+import { parseIntake, changedDesignFiles, markRouted, renderDesignDelta, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "@/features/planner/lib/fileIntake";
+import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
 import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
@@ -214,6 +216,25 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             console.error(`triage delta prep ${repo} failed:`, e);
           }
         }));
+        // #2097 — route the design files that CHANGED since the last route as part of triage. Read
+        // the project's design manifest, diff content hashes, and if any changed: sync the skeleton,
+        // prepend the route lead to the first repo's triage prompt (the routePrompt itself sends UI
+        // assets to the owning repo), and stamp the routed hashes. Nothing changed ⇒ no-op (no
+        // reroute, no prompt). Non-fatal.
+        try {
+          const files = await invoke<[string, string][]>("read_project_files", { projectKey, subdir: INTAKE_DIR });
+          const manifest = files.find(([rel]) => rel === "intake.json")?.[1];
+          const entries = manifest ? parseIntake(manifest) : [];
+          const changed = changedDesignFiles(entries);
+          if (changed.length > 0 && repos.length > 0) {
+            const first = repos[0];
+            deltas[first] = renderDesignDelta(changed, STAGE_DEFS.ui.routePrompt ?? "") + (deltas[first] ?? "");
+            await invoke("sync_design_to_skeleton", { projectKey });
+            await invoke("write_project_file", { projectKey, relpath: INTAKE_MANIFEST, contents: serializeIntake(markRouted(entries)) });
+          }
+        } catch (e) {
+          console.error("triage design-route prep failed:", e);
+        }
         return deltas;
       },
       triageStartProject: (projectName, repos, projectId = "", deltas, clonePaths) =>
