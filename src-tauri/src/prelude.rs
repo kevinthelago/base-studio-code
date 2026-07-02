@@ -7,13 +7,14 @@
 
 pub(crate) use crate::platform::paths::{
     bsc_base_dir, discovery_dir_for, home_dir, is_published, legacy_draft_dir, nearest_existing_ancestor,
-    plan_dir_for, project_dir, repo_dir, worktrees_dir,
+    parse_worktree_dir_name, plan_dir_for, project_dir, repo_dir, worktree_dir_name,
+    worktrees_dir,
 };
 pub(crate) use crate::platform::git::{git_exclude, git_lines, git_ok, git_output, git_run};
 pub(crate) use crate::platform::process::no_window;
 pub(crate) use crate::platform::fsx::{
-    ingest_section_files, is_safe_relpath, read_files_dir, read_text_files, sanitize_project_key,
-    worktree_slug,
+    append_block_once, ingest_section_files, is_safe_relpath, read_files_dir, read_text_files,
+    sanitize_project_key, worktree_slug,
 };
 pub(crate) use crate::platform::shell::{
     bash_ansi_c_quote, split_utf8_at_boundary, to_bash_path, to_native_path,

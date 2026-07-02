@@ -207,55 +207,8 @@ async fn session(
     }
     send_msg(&mut sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
 
-    // Replay current pane list + session state to the freshly-paired client.
-    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) = app
-        .try_state::<TunnelState>()
-        .map(|s| s.snapshot())
-        .unwrap_or_default();
-    send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneList { panes }).await?;
-    for s in &sessions {
-        send_msg(&mut sink, &mut noise_tx, &super::session_state_msg(s)).await?;
-    }
-    // Replay each pane's current PTY size so mobile renders at the desktop's width
-    // before any output arrives.
-    let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
-    for (pane_id, cols, rows) in sizes {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
-    }
-
-    // Replay plan manifests so mobile can start reconciling immediately (#588).
-    let plan_manifests = app
-        .try_state::<TunnelState>()
-        .map(|s| s.plan_manifests_snapshot())
-        .unwrap_or_default();
-    for (project_id, files) in plan_manifests {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
-    }
-
-    // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
-    // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
-    let plan_frames = app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
-    for frame in plan_frames {
-        send_msg(&mut sink, &mut noise_tx, &frame).await?;
-    }
-
-    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
-    let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
-    if !fleet.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
-    }
-
-    // Replay automation list (A2).
-    let automations = app.try_state::<TunnelState>().map(|s| s.automations_snapshot()).unwrap_or_default();
-    if !automations.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::AutomationList { automations }).await?;
-    }
-
-    // Replay MCP extension list (M2).
-    let mcp = app.try_state::<TunnelState>().map(|s| s.mcp_snapshot()).unwrap_or_default();
-    if !mcp.is_empty() {
-        send_msg(&mut sink, &mut noise_tx, &ServerMsg::McpList { extensions: mcp }).await?;
-    }
+    // Replay the full initial-state sequence to the freshly-paired client.
+    replay_state(app, &mut sink, &mut noise_tx).await?;
 
     // Subscribe AFTER replay so we don't double-send; then pump until either side closes.
     let (mut out_rx, mut evt_rx) = match app.try_state::<TunnelState>() {
@@ -320,6 +273,67 @@ async fn session(
             },
         }
     }
+}
+
+/// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
+/// wire order the mobile app expects: pane list + per-session state, per-pane PTY sizes,
+/// plan manifests (#588), the last live planner frames (#934), then the fleet roster (F2),
+/// automation list (A2), and MCP extension list (M2). Each `*_snapshot()` reads through
+/// `try_state`, so a missing `TunnelState` replays nothing rather than erroring. Called
+/// once after `auth_ok`, before subscribing to the live bus, so nothing is double-sent.
+async fn replay_state(
+    app: &AppHandle,
+    sink: &mut WsSink,
+    tx: &mut snow::TransportState,
+) -> Result<(), String> {
+    // Replay current pane list + session state to the freshly-paired client.
+    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) =
+        app.try_state::<TunnelState>().map(|s| s.snapshot()).unwrap_or_default();
+    send_msg(sink, tx, &ServerMsg::PaneList { panes }).await?;
+    for s in &sessions {
+        send_msg(sink, tx, &super::session_state_msg(s)).await?;
+    }
+    // Replay each pane's current PTY size so mobile renders at the desktop's width
+    // before any output arrives.
+    let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
+    for (pane_id, cols, rows) in sizes {
+        send_msg(sink, tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
+    }
+
+    // Replay plan manifests so mobile can start reconciling immediately (#588).
+    let plan_manifests =
+        app.try_state::<TunnelState>().map(|s| s.plan_manifests_snapshot()).unwrap_or_default();
+    for (project_id, files) in plan_manifests {
+        send_msg(sink, tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
+    }
+
+    // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
+    // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
+    let plan_frames =
+        app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
+    for frame in plan_frames {
+        send_msg(sink, tx, &frame).await?;
+    }
+
+    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
+    let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
+    if !fleet.is_empty() {
+        send_msg(sink, tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
+    }
+
+    // Replay automation list (A2).
+    let automations =
+        app.try_state::<TunnelState>().map(|s| s.automations_snapshot()).unwrap_or_default();
+    if !automations.is_empty() {
+        send_msg(sink, tx, &ServerMsg::AutomationList { automations }).await?;
+    }
+
+    // Replay MCP extension list (M2).
+    let mcp = app.try_state::<TunnelState>().map(|s| s.mcp_snapshot()).unwrap_or_default();
+    if !mcp.is_empty() {
+        send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
+    }
+    Ok(())
 }
 
 /// Decide whether a decrypted mobile frame may be applied to the desktop PTY given the

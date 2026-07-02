@@ -44,7 +44,7 @@ pub fn source_save_secret(
     field: String,
     value: String,
 ) -> Result<(), String> {
-    entry(&project, &source_uid, &field)?.set_password(&value).map_err(|e| e.to_string())
+    set_secret(&project, &source_uid, &field, &value)
 }
 
 /// Whether a secret is present for a connector field (without returning the value).

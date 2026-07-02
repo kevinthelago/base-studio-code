@@ -1,0 +1,1 @@
+- `{full_name}` — local path: `{local_path}`

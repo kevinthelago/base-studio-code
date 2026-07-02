@@ -10,8 +10,10 @@ mod agent;
 mod mcp;
 mod permissions;
 mod telemetry;
+mod tools;
 
-use agent::{bsc_cli_tool, default_tools, run_agent, Tool};
+use agent::{run_agent, Tool};
+use tools::{bsc_cli_tool, default_tools};
 use llm::{LlmProvider, Msg};
 use permissions::Permissions;
 use std::io::Read;
