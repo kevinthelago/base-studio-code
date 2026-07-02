@@ -203,7 +203,7 @@ pub fn run() {
             fleet::worktree::ensure_worktree,
             fleet::teardown::teardown_worktree,
             fleet::teardown::reclaim_worktrees,
-            fleet::teardown::worktrees_disk_usage,
+            fleet::disk::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
             session::claude_config::read_claude_config,
