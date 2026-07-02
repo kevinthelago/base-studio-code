@@ -20,7 +20,11 @@
 // JSONs are loaded by a `@data/stages/*.json` glob that would otherwise grab the registry.) This
 // module keeps the TYPES + the config logic (defaultStageConfig / enabledOrderedStages / STAGE_BY_ID).
 
-import stageRegistry from "@data/planner/stage-registry.json";
+import stageRegistryEmbedded from "@data/planner/stage-registry.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+const stageRegistry = overlayFile("planner/stage-registry.json", stageRegistryEmbedded);
 
 /** All valid stage identifiers, in pipeline order.
  *  `load` is signal-only — it has no PLAN_STAGES entry and is never shown in the bar,

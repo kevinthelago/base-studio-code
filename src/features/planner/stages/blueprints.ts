@@ -6,7 +6,8 @@
 //
 // Mirrors design/base-studio-code-projects/Blueprints.html.
 
-import blueprintMeta from "@data/planner/blueprint-meta.json";
+import blueprintMetaEmbedded from "@data/planner/blueprint-meta.json";
+import { overlayGlob, overlayFile } from "@/shared/lib/core/configOverrides";
 import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
 import { type ClassificationSignals } from "./classification";
 import {
@@ -126,10 +127,9 @@ export interface SectionDef {
 // (one file per key), the unified packaged-data root (#1462). Loaded + assembled into STAGE_DEFS here.
 const sectionModules = import.meta.glob<{ default: SectionDef }>("@data/stages/*.json", { eager: true });
 
-/** Every section definition, keyed by its filename stem (= the section key). */
-export const STAGE_DEFS: Record<string, SectionDef> = Object.fromEntries(
-  Object.entries(sectionModules).map(([path, mod]) => [path.slice(path.lastIndexOf("/") + 1, -5), mod.default]),
-);
+/** Every section definition, keyed by its filename stem (= the section key). The config-dir copy
+ *  (#2047) overlays the Vite-embedded default per stage file. */
+export const STAGE_DEFS: Record<string, SectionDef> = Object.fromEntries(overlayGlob("stages", sectionModules));
 
 export interface BlueprintStage extends SectionDef {
   uid: string;
@@ -145,8 +145,9 @@ export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
  *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
  *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
 export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
-// The category list + display metadata + stage-key aliases load from @data/planner/blueprint-meta.json
-// (#2027 P1) — editable without a rebuild, part of the exportable config bundle.
+// The category list + display metadata load from @data/planner/blueprint-meta.json — the config-dir
+// copy (#2047) overlays the embedded default, so it's editable without a rebuild + in the config bundle.
+const blueprintMeta = overlayFile("planner/blueprint-meta.json", blueprintMetaEmbedded);
 export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = blueprintMeta.categories as BlueprintCategory[];
 
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
@@ -348,8 +349,8 @@ const blueprintModules = import.meta.glob<{ default: BlueprintDef }>("@data/blue
 /** The built-in blueprint library, assembled from the per-blueprint JSON definitions: ordered by
  *  each def`s `order`, with its section keys resolved into section instances via mkStage. */
 export function makeBlueprints(): Blueprint[] {
-  return Object.values(blueprintModules)
-    .map((m) => m.default)
+  return overlayGlob("blueprints", blueprintModules)
+    .map(([, def]) => def)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, sections, ...meta }) => ({
       ...meta,

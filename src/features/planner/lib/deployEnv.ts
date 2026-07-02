@@ -8,7 +8,11 @@
 // This module keeps only the TYPES + the accessor/const names + the default BUILDERS (which return a
 // fresh deep copy of the JSON default each call, since callers mutate them). Pure (no React/Tauri).
 
-import taxonomy from "@data/deploy/taxonomy.json";
+import taxonomyEmbedded from "@data/deploy/taxonomy.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+const taxonomy = overlayFile("deploy/taxonomy.json", taxonomyEmbedded);
 
 /** How a service ships (#1192). `cloud` = a hosted platform; `local` = a published library or a
  *  build-and-run-here application (CLI / desktop / local server). A monorepo can mix the two. */
