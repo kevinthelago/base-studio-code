@@ -747,6 +747,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-data",
  "bsc-files",
+ "bsc-persona",
  "bsc-project",
  "bsc-util",
  "compliance",
@@ -825,6 +826,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-persona"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
