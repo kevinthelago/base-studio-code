@@ -3,6 +3,7 @@
 // ~/.claude.json trust state (guarded by CLAUDE_JSON_LOCK, written atomically) +
 // CLAUDE.md / settings.json for global and per-repo targets.
 
+use crate::StrErr;
 use crate::home_dir;
 
 /// Serializes the app's read-modify-write of `~/.claude.json` so concurrent
@@ -179,7 +180,7 @@ pub(crate) fn read_claude_config(local_path: String) -> Result<ClaudeConfigData,
     let instructions = std::fs::read_to_string(&md_path).unwrap_or_default();
 
     let (allow, deny) = if settings_path.exists() {
-        let raw = std::fs::read_to_string(&settings_path).map_err(|e| e.to_string())?;
+        let raw = std::fs::read_to_string(&settings_path).str_err()?;
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
         let parse_list = |key: &str| -> Vec<String> {
             v["permissions"][key].as_array()
@@ -204,18 +205,18 @@ pub(crate) fn write_claude_config(
     let (md_path, settings_path) = claude_paths(&local_path);
 
     if let Some(parent) = md_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).str_err()?;
     }
     if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).str_err()?;
     }
 
-    crate::platform::fsx::atomic_write(&md_path, instructions.as_bytes()).map_err(|e| e.to_string())?;
+    crate::platform::fsx::atomic_write(&md_path, instructions.as_bytes()).str_err()?;
 
     let settings = serde_json::json!({
         "permissions": { "allow": allow, "deny": deny }
     });
-    crate::platform::fsx::atomic_write_json(&settings_path, &settings).map_err(|e| e.to_string())?;
+    crate::platform::fsx::atomic_write_json(&settings_path, &settings).str_err()?;
 
     Ok(())
 }

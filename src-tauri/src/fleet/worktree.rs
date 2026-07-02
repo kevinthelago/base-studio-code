@@ -29,7 +29,7 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
     // it isn't there yet (reuse across re-runs).
     if !wt.join(".git").exists() {
         if let Some(parent) = wt.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(parent).str_err()?;
         }
         let clone_str = clone.to_string_lossy().into_owned();
         add_worktree_healing(&clone_str, &wt_str, &slug)
@@ -89,12 +89,12 @@ fn add_worktree_healing(clone_str: &str, wt_str: &str, slug: &str) -> Result<(),
         crate::platform::process::run_output(&mut c)
     };
 
-    let mut out = run_add(branch_exists()).map_err(|e| e.to_string())?;
+    let mut out = run_add(branch_exists()).str_err()?;
     if !out.status.success() {
         let _ = git_ok(clone_str, &["worktree", "prune"]);
         // Re-probe: the first attempt may itself have created the branch, so the correct form can
         // have flipped from create to reuse.
-        out = run_add(branch_exists()).map_err(|e| e.to_string())?;
+        out = run_add(branch_exists()).str_err()?;
     }
     if !out.status.success() {
         return Err(format!(

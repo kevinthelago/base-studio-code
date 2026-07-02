@@ -7,6 +7,7 @@
 //! sees only a redacted handle + the discovered inventory. Secrets are keyed per project + source
 //! + field so each connector field is isolated and can be revoked when a source is removed.
 
+use crate::StrErr;
 use keyring::{Entry, Error as KeyringError};
 
 /// Keychain service namespace for all source-connector secrets.
@@ -19,7 +20,7 @@ fn account(project: &str, source_uid: &str, field: &str) -> String {
 }
 
 fn entry(project: &str, source_uid: &str, field: &str) -> Result<Entry, String> {
-    Entry::new(SERVICE, &account(project, source_uid, field)).map_err(|e| e.to_string())
+    Entry::new(SERVICE, &account(project, source_uid, field)).str_err()
 }
 
 /// Read a stored secret for the scan command to build a connector's auth. Returns `None` when
@@ -34,7 +35,7 @@ pub(crate) fn get_secret(project: &str, source_uid: &str, field: &str) -> Option
 /// the inbound `source_save_secret` command is for user-entered secrets; this is for backend-minted
 /// ones. Either way the value only ever lives in the OS keychain.
 pub(crate) fn set_secret(project: &str, source_uid: &str, field: &str, value: &str) -> Result<(), String> {
-    entry(project, source_uid, field)?.set_password(value).map_err(|e| e.to_string())
+    entry(project, source_uid, field)?.set_password(value).str_err()
 }
 
 /// Save a connector secret to the OS keychain. Overwrites any existing value for the field.
