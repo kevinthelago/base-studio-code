@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import type { Section } from "../github/ghStructure";
@@ -143,7 +144,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // worker whose issues are all complete/verified — it already finished. Prune those streams (their
       // worktrees/branches persist untouched); launch only the streams with outstanding work, plus the
       // director if enabled. On a first launch nothing is done, so every stream stays active.
-      const dbIssues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId }, []);
+      const dbIssues = await bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []);
       // #1957: completed workers no longer skip — they relaunch INTO maintenance (alive + ready for the
       // director to dispatch new lane work), so launch BOTH active and maintenance streams. The
       // maintenance set drives a maintenance scope banner (buildWorkerScope) so they stand by, not rebuild.
@@ -385,7 +386,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     let cancelled = false;
     (async () => {
       if (!visible || !githubToken || publishRepos.length === 0) { setRecoverable(0); return; }
-      const dbIssues = await safeInvoke<PlanIssue[]>("plan_list_issues", { projectKey: effectiveProjectId }, []);
+      const dbIssues = await bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []);
       if (cancelled) return;
       if ((dbIssues?.length ?? 0) > 0) { setRecoverable(0); return; } // db already populated — nothing to recover
       const rows = await safeInvoke<GitHubIssueLike[]>("github_request", {
