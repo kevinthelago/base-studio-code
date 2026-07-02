@@ -95,6 +95,7 @@ export function ServiceDeploySections({ svc, setSvc }: {
                       <td key={e.id} style={{ padding: "4px 6px" }}>
                         {row[e.id]
                           ? <Text as="span" style={{ color: "var(--violet)" }}>••••✓</Text>
+                          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill button in a table cell; Button/.btn would change rendering
                           : <button onClick={() => setSvc({ config: { ...svc.config, secrets: svc.config.secrets.map((s) => s.key === row.key ? { ...s, [e.id]: true } : s) } })}
                               style={{ padding: "1px 7px", borderRadius: 99, cursor: "pointer", fontFamily: MONO, fontSize: 9, color: "var(--danger)", background: "transparent", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)" }}>+ wire</button>}
                       </td>
@@ -122,6 +123,7 @@ export function ServiceDeploySections({ svc, setSvc }: {
               {RELEASE_STRATEGIES.map((s) => {
                 const on = svc.release.strategy === s.id;
                 return (
+                  // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill toggle button; Button/.btn would change rendering
                   <button key={s.id} onClick={() => setSvc({ release: { ...svc.release, strategy: s.id as ReleaseStrategy } })} style={{
                     fontFamily: MONO, fontSize: 9, padding: "3px 8px", borderRadius: 99, cursor: "pointer",
                     background: on ? "color-mix(in oklch, var(--accent), transparent 86%)" : "var(--bg-elev)",

@@ -47,6 +47,7 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           {decChip("block", "blocked", block)}
         </Row>
         <Box as="span" className="lbl" style={{ marginLeft: 14 }}>console</Box>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
         <select className="input" style={{ width: 200 }} value={actConsole} onChange={(e) => setActConsole(e.target.value)}>
           <option value="all">all consoles</option>
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}

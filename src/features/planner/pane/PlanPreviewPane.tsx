@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Button } from "@/shared/ui/controls/Button";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -77,31 +78,33 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         <>
           {/* Approve the screen that's rendered; each approval advances the UI stage (#546). */}
           {preview && currentScreen && (
-            <button
-              className={currentApproved ? "btn sm" : "btn ghost sm"}
+            <Button
+              variant={currentApproved ? "default" : "ghost"}
+              size="sm"
               onClick={() => setUiScreenApproved(projectKey, currentScreen, !currentApproved)}
               title={currentApproved ? `${currentScreen} approved — click to revoke` : `Approve ${currentScreen}`}
               style={currentApproved ? { color: "var(--success)", borderColor: "var(--success)" } : undefined}
             >
               {currentApproved ? "✓ approved" : "approve"}
-            </button>
+            </Button>
           )}
-          {preview && <button className="btn ghost sm" onClick={renderDemo} title="Rebuild">↻</button>}
+          {preview && <Button variant="ghost" size="sm" onClick={renderDemo} title="Rebuild">↻</Button>}
         </>
       }
       footer={declared.length > 0 && (
         <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
           <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <Box as="span">screens</Box>
-            <button
-              className="btn ghost sm"
+            <Button
+              variant="ghost"
+              size="sm"
               title="Copy a Claude Design prompt for these screens — paste it into Claude Design, then drop the exports into the Drop-files stage"
               onClick={() => {
                 void navigator.clipboard?.writeText(buildClaudeDesignBrief(declared));
                 setBriefCopied(true);
                 setTimeout(() => setBriefCopied(false), 1600);
               }}
-            >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</button>
+            >{briefCopied ? "✓ copied" : "✦ Claude Design brief"}</Button>
             <Box as="span" style={{ flex: 1 }} />
             <Text as="span" style={{ color: approvedCount === declared.length ? "var(--success)" : "var(--fg-dim)" }}>
               {approvedCount}/{declared.length} approved
@@ -111,16 +114,18 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
             {declared.map((s) => {
               const ok = approvedList.includes(s);
               return (
-                <button
+                <Button
                   key={s}
-                  className="btn ghost sm mono"
+                  variant="ghost"
+                  size="sm"
+                  className="mono"
                   onClick={() => setUiScreenApproved(projectKey, s, !ok)}
                   title={ok ? `${s} approved — click to revoke` : `Approve ${s}`}
                   style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-start", textAlign: "left", fontSize: 11 }}
                 >
                   <Text as="span" style={{ color: ok ? "var(--success)" : "var(--fg-dim)" }}>{ok ? "✓" : "○"}</Text>
                   <Text as="span" style={{ color: s === currentScreen ? "var(--accent)" : "var(--fg)" }}>{s}</Text>
-                </button>
+                </Button>
               );
             })}
           </Stack>
@@ -143,8 +148,8 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
               The UI stage renders generated screens here via the render-preview pipeline.
             </Box>
             <Row gap={8} align="stretch">
-              <button className="btn" onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</button>
-              <button className="btn ghost" onClick={renderDemo} disabled={status === "running"}>demo</button>
+              <Button onClick={loadSkeleton} disabled={status === "running"}>load from skeleton →</Button>
+              <Button variant="ghost" onClick={renderDemo} disabled={status === "running"}>demo</Button>
             </Row>
           </Stack>
         )}

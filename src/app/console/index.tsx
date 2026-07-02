@@ -25,6 +25,7 @@ import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 
 function resolvePaneName(
   tabIdx: number,
@@ -165,7 +166,7 @@ function DisabledConsole({ onEnable }: { onEnable: () => void }) {
       fontSize: 11,
     }}>
       <Text as="span">console disabled · session stopped</Text>
-      <button className="btn" onClick={onEnable}>enable</button>
+      <Button onClick={onEnable}>enable</Button>
     </Stack>
   );
 }
@@ -187,7 +188,7 @@ function EndedConsole({ info, onReopen }: { info: EndedInfo; onReopen: () => voi
       <Text as="span" weight={600} style={{ color: tone.color }}>{tone.label}</Text>
       <Text as="span" tone="muted" style={{ maxWidth: 320, lineHeight: 1.5 }}>{info.summary}</Text>
       <Text tone="dim" size={10}>session ended · audit on the worker detail page</Text>
-      <button className="btn" onClick={onReopen}>reopen</button>
+      <Button onClick={onReopen}>reopen</Button>
     </Stack>
   );
 }
@@ -203,7 +204,7 @@ function DormantConsole({ onResume }: { onResume: () => void }) {
       fontSize: 11,
     }}>
       <Text as="span">session dormant · reaped after idle to free memory</Text>
-      <button className="btn" onClick={onResume}>resume</button>
+      <Button onClick={onResume}>resume</Button>
     </Stack>
   );
 }

@@ -44,6 +44,7 @@ export function ProfileSelect({ current, profiles, onPick }: {
       {open && (
         <Box className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
           {profiles.map((p) => (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke listbox option (role=option, .prof-opt styling), not a .btn
             <button
               key={p.id}
               type="button"

@@ -27,10 +27,12 @@ export function RepoCredentialsCard() {
     <Card title="Repo credentials" hint="scope a repo-specific token — that repo's sessions use it instead of your global PAT, so they can't reach other repos via the proxy.">
 
       <Row gap={8} align="stretch">
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline select (fixed width) beside an input + assign Button in a Row; a SelectField .field stack would break the layout */}
         <select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} style={{ width: 240, height: 34 }}>
           <option value="">choose a repo…</option>
           {githubRepos.map((r) => <option key={r.full_name} value={r.full_name}>{r.full_name}</option>)}
         </select>
+        {/* eslint-disable-next-line no-restricted-syntax -- inline input beside a select + Button in a Row; a TextField .field wrapper would break the layout */}
         <input
           className="input" type="password" autoComplete="off"
           placeholder="github_pat_•••• (repo-scoped)"

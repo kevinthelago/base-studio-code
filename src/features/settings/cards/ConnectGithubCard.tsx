@@ -91,6 +91,7 @@ function ConnectFlowCard() {
       </p>
 
       <Row gap={8} align="stretch">
+        {/* eslint-disable-next-line no-restricted-syntax -- unlabelled inline input beside the Connect Button in a Row; a TextField .field wrapper would break the horizontal layout */}
         <input
           className="input"
           type="password"

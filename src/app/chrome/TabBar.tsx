@@ -173,6 +173,7 @@ export function TabBar({
           >
             {t.status !== undefined && <Box as="span" className={"dot " + t.status} />}
             {editingId === t.id ? (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline tab-rename input needs a real DOM ref (select-on-edit) + tab-scoped styling
               <input
                 className="mono"
                 ref={editRef}
@@ -207,7 +208,10 @@ export function TabBar({
             )}
           </Box>
         ))}
-        {onAdd && <button className="tab-add" onClick={onAdd}>+</button>}
+        {onAdd && (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke `.tab-add` button (styled by the tabstrip CSS, not the .btn kit)
+          <button className="tab-add" onClick={onAdd}>+</button>
+        )}
       </div>
 
       {tearOff && dragIdx !== null && createPortal(

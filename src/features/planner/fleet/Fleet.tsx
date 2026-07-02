@@ -5,6 +5,7 @@
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Button } from "@/shared/ui/controls/Button";
 import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -226,13 +227,13 @@ export function Fleet() {
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </Text>
           </Box>
-          <button className="btn ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
+          <Button variant="ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
             {gh.loading ? "refreshing…" : "↻ refresh"}
-          </button>
-          <button className="btn" title="Launch the fleet from this project's plan"
+          </Button>
+          <Button title="Launch the fleet from this project's plan"
             onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
             launch worker
-          </button>
+          </Button>
         </Row>
 
         <Box className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>

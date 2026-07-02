@@ -156,6 +156,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ break down</Button>
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>open in pane</Button>
           </Row>
+          {/* eslint-disable-next-line no-restricted-syntax -- multiline comment composer; the UI-kit has no textarea primitive */}
           <textarea
             className="input mono"
             placeholder="ask claude about this issue…"
@@ -208,6 +209,7 @@ function FilterBar({
       padding: "10px 16px", borderBottom: "1px solid var(--border-soft)",
       background: "var(--bg-panel)",
     }}>
+      {/* eslint-disable-next-line no-restricted-syntax -- inline fixed-width filter box in a toolbar Row; TextField's .field wrapper doesn't fit */}
       <input
         className="input"
         placeholder="⌕ filter issues…"
@@ -218,6 +220,7 @@ function FilterBar({
 
       <Row gap={1} align="stretch" style={{ borderRadius: 4, overflow: "hidden", border: "1px solid var(--border-soft)" }}>
         {stateOpts.map(({ k, label }) => (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke segmented state-filter buttons with joined borders and active-state styling, not a .btn control
           <button
             key={k}
             onClick={() => onChange({ state: k })}
@@ -235,6 +238,7 @@ function FilterBar({
       </Row>
 
       {labels.length > 0 && (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke inline mono toolbar dropdown (shared selectStyle, no label); SelectField's labelled .field wrapper doesn't fit
         <select
           style={selectStyle}
           value={filters.label}
@@ -246,6 +250,7 @@ function FilterBar({
       )}
 
       {milestones.length > 0 && (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke inline mono toolbar dropdown (shared selectStyle, no label); SelectField's labelled .field wrapper doesn't fit
         <select
           style={selectStyle}
           value={filters.milestone}
@@ -262,6 +267,7 @@ function FilterBar({
         {shown === total ? `${total} issues` : `${shown} of ${total}`}
       </Text>
 
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline mono toolbar dropdown (shared selectStyle, no label); SelectField's labelled .field wrapper doesn't fit */}
       <select
         style={selectStyle}
         value={filters.sort}

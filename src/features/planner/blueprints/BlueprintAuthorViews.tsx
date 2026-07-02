@@ -88,8 +88,10 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
             </Row>
           </Stack>
           <Stack gap={8} style={{ flex: 1 }}>
+            {/* eslint-disable-next-line no-restricted-syntax -- inline identity input (no per-input label; TextField's .field wrapper would restructure the stack) */}
             <input className="input" value={bp.name} placeholder="Blueprint name" style={{ fontSize: 13 }}
               onChange={(e) => set({ name: e.target.value, icon: (e.target.value[0] || "B").toUpperCase() })} />
+            {/* eslint-disable-next-line no-restricted-syntax -- inline identity input (no per-input label; TextField's .field wrapper would restructure the stack) */}
             <input className="input" value={bp.pitch ?? ""} placeholder="One-line pitch — shown in the catalog"
               onChange={(e) => set({ pitch: e.target.value })} />
           </Stack>
@@ -98,6 +100,7 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
 
       <Box>
         <Lbl hint="what it's for & why">Description</Lbl>
+        {/* eslint-disable-next-line no-restricted-syntax -- <textarea> has no shared primitive */}
         <textarea className="input" value={bp.desc ?? ""} style={{ minHeight: 78 }}
           placeholder="Describe the kind of project this blueprint plans…"
           onChange={(e) => set({ desc: e.target.value })} />
@@ -105,6 +108,7 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
 
       <Box>
         <Lbl>Audience</Lbl>
+        {/* eslint-disable-next-line no-restricted-syntax -- paired with the bespoke <Lbl> (not a real <label>); TextField's plain-label .field stack wouldn't match */}
         <input className="input" value={bp.audience ?? ""} placeholder="Who plans with this"
           onChange={(e) => set({ audience: e.target.value })} />
       </Box>
@@ -113,6 +117,7 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
         <Lbl hint="catalog tags · pick a few">Best for</Lbl>
         <Box className="dep-row">
           {TAGS.map((t) => (
+            // eslint-disable-next-line no-restricted-syntax -- bespoke .dep-chip tag toggle (not .btn family)
             <button key={t} className={"dep-chip" + (tags.includes(t) ? " on" : "")} onClick={() => toggleTag(t)}>
               {t}{tags.includes(t) && <Text as="span" style={{ opacity: 0.7 }}> ✓</Text>}
             </button>
@@ -204,17 +209,19 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
             {sel && (
               <Card style={{ margin: "2px 4px 8px 30px", padding: 13 }}>
                 <Row gap={8} style={{ marginBottom: 11 }}>
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke .d-name inline stage-name input (transparent, no label) */}
                   <input className="d-name" style={{ fontSize: 13, minWidth: 0, flex: 1, marginLeft: 0 }}
                     value={s.name} onChange={(e) => setSections(setStageField(stages, s.uid, { name: e.target.value }))} />
-                  <button className="icon-btn danger" title="Delete stage" aria-label="Delete stage" onClick={() => {
+                  <IconButton danger title="Delete stage" aria-label="Delete stage" onClick={() => {
                     const next = deleteStage(stages, s.uid);
                     setSections(next);
                     if (next[0]) onSelectStage?.(next[0].uid);
-                  }}>🗑</button>
+                  }}>🗑</IconButton>
                 </Row>
                 <Box className="d-kind" style={{ paddingLeft: 0, marginBottom: 11 }}>{k.title} · {k.blurb}</Box>
 
                 <Lbl hint="what Claude is told in this stage">Prompt module</Lbl>
+                {/* eslint-disable-next-line no-restricted-syntax -- <textarea> has no shared primitive */}
                 <textarea className="input" value={s.prompt} style={{ minHeight: 70, marginBottom: 13 }}
                   placeholder="Instructions for the planning agent during this stage…"
                   onChange={(e) => setSections(setStageField(stages, s.uid, { prompt: e.target.value }))} />
@@ -227,6 +234,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                     {depCandidates(stages, s.uid).map((c) => {
                       const ck = stageKind(c.key); const on = s.deps.includes(c.key);
                       return (
+                        // eslint-disable-next-line no-restricted-syntax -- bespoke .dep-chip dependency toggle (not .btn family)
                         <button key={c.uid} className={"dep-chip" + (on ? " on" : "")} onClick={() => setSections(toggleDep(stages, s.uid, c.key))}>
                           <Box as="span" className="dg" style={{ background: tint(ck.h, 0.2), color: hue(ck.h) }}><Ic n={ck.glyph} size={10} /></Box>
                           {c.name}{on && <Text as="span" style={{ opacity: 0.7 }}> ✓</Text>}
@@ -257,6 +265,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
               {STAGE_KIND_KEYS.map((kk) => {
                 const k = stageKind(kk);
                 return (
+                  // eslint-disable-next-line no-restricted-syntax -- bespoke .pal-item stage-palette button (not .btn family)
                   <button className="pal-item" key={kk} title={k.blurb} onClick={() => add(kk)}>
                     <Box as="span" className="pg" style={{ background: tint(k.h, 0.18), color: hue(k.h) }}><Ic n={k.glyph} size={12} /></Box>
                     <Box as="span" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}{used.has(kk) && <Text as="span" className="dim"> ·</Text>}</Box>
@@ -341,7 +350,10 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                 )}
                 {addableSkills.length > 0 && (
                   <Box className="pipe-add">
-                    {addableSkills.map((sk) => <button className="chip-sug" key={sk.id} title={sk.desc} onClick={() => setSections(addSkill(stages, s.uid, sk.id))}>+ {sk.name}</button>)}
+                    {addableSkills.map((sk) => (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke .chip-sug add-skill suggestion (not .btn family)
+                      <button className="chip-sug" key={sk.id} title={sk.desc} onClick={() => setSections(addSkill(stages, s.uid, sk.id))}>+ {sk.name}</button>
+                    ))}
                   </Box>
                 )}
 
@@ -359,7 +371,10 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                 )}
                 {addableMcp.length > 0 && (
                   <Box className="pipe-add">
-                    {addableMcp.map((m) => <button className="chip-sug" key={m.id} title={m.desc} onClick={() => setSections(addMcpServer(stages, s.uid, m.id))}>+ {m.name}</button>)}
+                    {addableMcp.map((m) => (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke .chip-sug add-MCP suggestion (not .btn family)
+                      <button className="chip-sug" key={m.id} title={m.desc} onClick={() => setSections(addMcpServer(stages, s.uid, m.id))}>+ {m.name}</button>
+                    ))}
                   </Box>
                 )}
               </Box>

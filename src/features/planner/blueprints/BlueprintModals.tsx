@@ -118,6 +118,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
       ) : (
         <Box className="field">
           <label className="mono" style={{ fontSize: 10, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Gist URL or ID</label>
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke .field block: custom-styled <label> (10px/.06em) + input marginTop + a separate error sibling; TextField's plain-label .field stack wouldn't match */}
           <input className="input" autoFocus style={{ marginTop: 6 }} placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
             value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
           <Box className="hint" style={{ marginTop: 6 }}>Paste a full URL or the raw gist ID.</Box>

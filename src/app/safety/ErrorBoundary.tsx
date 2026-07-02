@@ -81,6 +81,7 @@ export class ErrorBoundary extends Component<Props, State> {
             padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word",
           }}
         >{this.state.err.message || String(this.state.err)}</pre>
+        {/* eslint-disable-next-line no-restricted-syntax -- crash boundary must render without depending on the UI kit */}
         <button className="btn primary" onClick={this.reset} style={{ height: 28 }}>try again</button>
       </div>
     );
