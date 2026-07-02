@@ -12,7 +12,7 @@
 //! Root resolution is standalone-friendly: `--root <path>` wins, else the current working directory
 //! (which, inside the app, is the session's repo/worktree — bash `cd`s there before launch).
 
-use crate::{build_tree, human_size, render_tree, stat, TreeOpts};
+use crate::{build_tree, human_size, refs, render_refs, render_tree, stat, TreeOpts};
 use bsc_cli_util::CmdDoc;
 use std::path::PathBuf;
 
@@ -49,6 +49,33 @@ USAGE:
 
 Reports a single file or directory's size, language (by extension), last-modified epoch, and — with
 --lines — its line count. <path> is resolved relative to the root.",
+    },
+    CmdDoc {
+        name: "refs",
+        summary: "cross-file impact map (siblings, importers, usages, CSS) for one file",
+        usage: "\
+USAGE:
+  bsc files refs <path> [symbol] [--json|--pretty] [--root <p>]
+
+Cross-file dependency/impact finder: given a source file (and an OPTIONAL symbol/export/method),
+returns a grouped, line-numbered impact map — the \"what dies / breaks if I change this\" set. With no
+symbol it's file-level (the whole module); with a symbol it narrows importers + usages to that
+identifier.
+
+GROUPS (each hit is path:line):
+  Siblings       files sharing the basename (Foo.css, Foo.module.css, Foo.test.tsx) — the
+                 probably-dies-with-it set; test files are called out separately.
+  Importers      every file importing this module (or the named symbol) → the import line.
+  Symbol usages  every occurrence of the symbol across the tree (only when a symbol is given).
+  Style links    the className / CSS-module classes the component uses and where each is defined in
+                 .css/.scss, both directions — the \"find all the respective CSS\" case.
+
+HEURISTIC: matching is textual/regex-free and language-aware for TS/TSX/JS/JSX/CSS/SCSS/Rust; it may
+OVER-report — the safe bias for a deletion-impact tool (a spurious candidate with a line number beats
+a missed dangling reference). Honors .gitignore, skips node_modules/target/.git, never follows
+symlinks.
+
+<path> is resolved relative to the root.",
     },
 ];
 
@@ -111,6 +138,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match cmd.as_str() {
         "tree" => cmd_tree(&args),
         "stat" => cmd_stat(&args),
+        "refs" => cmd_refs(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -157,6 +185,15 @@ fn cmd_stat(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_refs(args: &Args) -> Result<(), String> {
+    let root = resolve_root(&args.root)?;
+    let path = args.positional.get(1).ok_or("usage: bsc files refs <path> [symbol]")?;
+    let symbol = args.positional.get(2).map(String::as_str);
+    let r = refs(&root, path, symbol)?;
+    bsc_cli_util::emit(args.pretty, args.json, &r, || render_refs(&r));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +210,46 @@ mod tests {
         assert!(a.lines);
         assert_eq!(a.root.as_deref(), Some("/repo"));
         assert!(a.json);
+    }
+
+    #[test]
+    fn parse_args_accepts_refs_path_and_optional_symbol() {
+        let a = parse_args(vec!["refs".into(), "Foo.tsx".into(), "handleClick".into(), "--json".into()]).unwrap();
+        assert_eq!(a.positional, vec!["refs", "Foo.tsx", "handleClick"]);
+        assert!(a.json);
+        // The symbol is optional.
+        let b = parse_args(vec!["refs".into(), "Foo.tsx".into()]).unwrap();
+        assert_eq!(b.positional, vec!["refs", "Foo.tsx"]);
+    }
+
+    #[test]
+    fn refs_help_routes_to_per_command_detail() {
+        let one = bsc_cli_util::help_for("bsc files", TAGLINE, COMMANDS, "refs");
+        assert!(one.contains("bsc files refs"));
+        assert!(one.contains("Siblings"));
+        assert!(one.contains("HEURISTIC"));
+    }
+
+    #[test]
+    fn run_refs_json_emits_ok() {
+        // End-to-end CLI path: a tiny fixture, `refs Foo.tsx --json` returns Ok (emits typed JSON).
+        let root = std::env::temp_dir().join(format!("bsc-files-cli-refs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Foo.tsx"), "export default function Foo() { return null; }\n").unwrap();
+        std::fs::write(root.join("Bar.tsx"), "import Foo from './Foo';\n").unwrap();
+        let res = run(
+            vec!["refs".into(), "Foo.tsx".into(), "--json".into(), "--root".into(), root.to_string_lossy().into()],
+            "bsc files",
+        );
+        assert!(res.is_ok());
+        // A missing file surfaces as an Err through the CLI.
+        let miss = run(
+            vec!["refs".into(), "Nope.tsx".into(), "--root".into(), root.to_string_lossy().into()],
+            "bsc files",
+        );
+        assert!(miss.is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

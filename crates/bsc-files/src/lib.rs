@@ -15,6 +15,7 @@
 pub mod cli;
 
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Whether a node is a directory or a file (serialized lowercase as the JSON `"type"`).
@@ -80,6 +81,45 @@ impl FileStat {
         }
         s
     }
+}
+
+/// One `path:line` reference hit (the `refs` command). `text` is the trimmed source line for context
+/// (omitted from JSON when empty — e.g. a file-level entry that carries no single line).
+#[derive(Serialize, Debug, Clone)]
+pub struct Hit {
+    pub path: String,
+    pub line: usize,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub text: String,
+}
+
+/// Files sharing the queried file's basename — the "probably dies with it" set. Test files
+/// (`*.test.*` / `*.spec.*`) are split out as their own sub-group.
+#[derive(Serialize, Debug, Default)]
+pub struct Siblings {
+    pub files: Vec<String>,
+    pub tests: Vec<String>,
+}
+
+/// The grouped cross-file impact/delete map for one file (the `refs` command). All groups are
+/// **heuristic/textual** (regex-free scans over the gitignore-aware tree) and may over-report — the
+/// safe bias for a deletion-impact tool.
+#[derive(Serialize, Debug, Default)]
+pub struct Refs {
+    /// The queried file, relative to the root (forward-slash normalized).
+    pub path: String,
+    /// The narrowing symbol, when one was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Same-basename sibling files (`Foo.css`, `Foo.module.css`, `Foo.test.tsx`, …).
+    pub siblings: Siblings,
+    /// Files importing this module (or, when narrowed, the named symbol) → the import line.
+    pub importers: Vec<Hit>,
+    /// Every occurrence of the symbol across the tree → each line (only when a symbol is given).
+    pub symbol_usages: Vec<Hit>,
+    /// CSS class links, both directions: classes the component references → their `.css`/`.scss`
+    /// definitions, and classes defined in the component's own stylesheet → where they're used.
+    pub style_links: Vec<Hit>,
 }
 
 /// What to include when walking (mirrors the CLI flags).
@@ -299,6 +339,336 @@ pub fn stat(path: &Path, count_lines: bool) -> Result<FileStat, String> {
     })
 }
 
+/// Which import syntax to look for. TS/JS/JSX/TSX share the ES-module family; a `.rs` query uses
+/// Rust's `use`/`mod`. Anything else (e.g. a `.css` module imported from JS) falls back to the
+/// ES-module rules, since that's how a stylesheet is referenced.
+#[derive(Clone, Copy, PartialEq)]
+enum RefLang {
+    Rust,
+    EsModule,
+}
+
+fn ref_lang(path: &str) -> RefLang {
+    match lang_for(path).as_deref() {
+        Some("rust") => RefLang::Rust,
+        _ => RefLang::EsModule,
+    }
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+/// True if `needle` occurs in `hay` bounded by non-identifier chars on both sides (a whole-word
+/// match), so `handleClick` matches `handleClick()` but not `handleClickHandler`.
+fn contains_word(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(needle) {
+        let start = from + rel;
+        let end = start + needle.len();
+        let before_ok = hay[..start].chars().next_back().is_none_or(|c| !is_ident_char(c));
+        let after_ok = hay[end..].chars().next().is_none_or(|c| !is_ident_char(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
+fn is_test_file(name: &str) -> bool {
+    name.contains(".test.") || name.contains(".spec.") || name.contains("_test.")
+}
+
+fn is_style_file(path: &str) -> bool {
+    matches!(lang_for(path).as_deref(), Some("css") | Some("scss"))
+}
+
+fn is_code_file(path: &str) -> bool {
+    matches!(lang_for(path).as_deref(), Some("typescript" | "tsx" | "javascript" | "jsx" | "html"))
+}
+
+/// Does `line` look like it imports `needle` (a module stem or a symbol) in `lang`'s syntax?
+fn is_importer_line(line: &str, lang: RefLang, needle: &str) -> bool {
+    match lang {
+        RefLang::Rust => {
+            let l = line.trim_start();
+            let uses = l.starts_with("use ")
+                || l.starts_with("pub use ")
+                || l.starts_with("mod ")
+                || l.starts_with("pub mod ")
+                || line.contains(" mod ");
+            uses && contains_word(line, needle)
+        }
+        RefLang::EsModule => {
+            let imports = line.contains("import") || line.contains("require(") || line.contains("from ") || line.contains("export");
+            imports && contains_word(line, needle)
+        }
+    }
+}
+
+/// All class names defined by `.class` selectors on one CSS/SCSS line (bounded so `.foo-btn` and
+/// `.foo-btn-lg` are distinct, and numeric fragments like `1.5` are skipped).
+fn classes_in_css_line(line: &str) -> Vec<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' {
+            let before_ok = i == 0 || {
+                let c = chars[i - 1];
+                !(c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            };
+            let mut j = i + 1;
+            let mut name = String::new();
+            while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '-' || chars[j] == '_') {
+                name.push(chars[j]);
+                j += 1;
+            }
+            if before_ok && !name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit()) {
+                out.push(name);
+            }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The class tokens a component references: `className=`/`class=` string literals plus CSS-module
+/// `styles.<ident>` accesses.
+fn class_tokens_used(text: &str) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    for kw in ["className=", "class="] {
+        let mut from = 0;
+        while let Some(rel) = text[from..].find(kw) {
+            let after = from + rel + kw.len();
+            from = after;
+            let rest = text[after..].trim_start_matches(|c: char| c == '{' || c.is_whitespace());
+            let mut chars = rest.chars();
+            if let Some(q) = chars.next() {
+                if q == '"' || q == '\'' || q == '`' {
+                    let body: String = chars.take_while(|&c| c != q).collect();
+                    for tok in body.split_whitespace() {
+                        if !tok.is_empty() && tok.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                            set.insert(tok.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut from = 0;
+    while let Some(rel) = text[from..].find("styles.") {
+        let start = from + rel + "styles.".len();
+        from = start;
+        let ident: String = text[start..].chars().take_while(|&c| is_ident_char(c) || c == '-').collect();
+        if !ident.is_empty() {
+            set.insert(ident);
+        }
+    }
+    set
+}
+
+/// Walk `root` gitignore-aware (skipping hidden/.git, never following symlinks — same filters as
+/// [`build_tree`]'s default), returning each readable text file as `(relative_path, contents)`.
+fn walk_text_files(root: &Path) -> Vec<(String, String)> {
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .parents(true)
+        .require_git(false)
+        .follow_links(false)
+        .build();
+
+    let mut out = Vec::new();
+    for result in walker {
+        let entry = match result {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if entry.depth() == 0 || entry.file_type().is_none_or(|t| t.is_dir()) {
+            continue;
+        }
+        let rel = match entry.path().strip_prefix(root) {
+            Ok(r) => r.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+        if rel.is_empty() {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(entry.path()) {
+            out.push((rel, content));
+        }
+    }
+    out
+}
+
+fn basename(rel: &str) -> &str {
+    &rel[rel.rfind('/').map_or(0, |i| i + 1)..]
+}
+
+fn dirname(rel: &str) -> &str {
+    match rel.rfind('/') {
+        Some(i) => &rel[..i],
+        None => "",
+    }
+}
+
+fn hit(path: &str, idx: usize, line: &str) -> Hit {
+    Hit { path: path.to_string(), line: idx + 1, text: line.trim().to_string() }
+}
+
+/// Cross-file dependency/impact finder (the `refs` command). Given `path` (relative to `root`) and an
+/// optional `symbol`, returns the grouped, line-numbered impact map — siblings, importers, symbol
+/// usages, and CSS style links. Heuristic/textual over the gitignore-aware tree (may over-report).
+///
+/// # Errors
+/// If `root/path` is not an existing file.
+pub fn refs(root: &Path, path: &str, symbol: Option<&str>) -> Result<Refs, String> {
+    let rel_owned = path.replace('\\', "/");
+    let rel = rel_owned.strip_prefix("./").unwrap_or(&rel_owned).to_string();
+    let full = root.join(&rel);
+    if !full.is_file() {
+        return Err(format!("not a file: {}", full.display()));
+    }
+    let self_content = std::fs::read_to_string(&full).unwrap_or_default();
+
+    let file_name = basename(&rel).to_string();
+    let dir = dirname(&rel).to_string();
+    let base = file_name.split('.').next().unwrap_or(&file_name).to_string();
+    let module = Path::new(&file_name).file_stem().and_then(|s| s.to_str()).unwrap_or(&base).to_string();
+    let lang = ref_lang(&rel);
+    let needle = symbol.unwrap_or(&module);
+
+    let files = walk_text_files(root);
+
+    // 1 — Siblings: same directory, same first-dot basename, not the file itself.
+    let mut siblings = Siblings::default();
+    for (p, _) in &files {
+        if p == &rel || dirname(p) != dir {
+            continue;
+        }
+        let pname = basename(p);
+        if pname.split('.').next().unwrap_or(pname) == base {
+            if is_test_file(pname) {
+                siblings.tests.push(p.clone());
+            } else {
+                siblings.files.push(p.clone());
+            }
+        }
+    }
+    siblings.files.sort();
+    siblings.tests.sort();
+
+    // 2 + 3 — Importers (module- or symbol-scoped) and, when a symbol is given, its usages.
+    let mut importers = Vec::new();
+    let mut symbol_usages = Vec::new();
+    for (p, content) in &files {
+        for (idx, line) in content.lines().enumerate() {
+            if p != &rel && is_importer_line(line, lang, needle) {
+                importers.push(hit(p, idx, line));
+            }
+            if let Some(sym) = symbol {
+                if contains_word(line, sym) {
+                    symbol_usages.push(hit(p, idx, line));
+                }
+            }
+        }
+    }
+
+    // 4 — Style links, both directions.
+    let mut style_links = Vec::new();
+    // (a) classes the component references → their `.css`/`.scss` definitions.
+    let used = class_tokens_used(&self_content);
+    if !used.is_empty() {
+        for (p, content) in &files {
+            if !is_style_file(p) {
+                continue;
+            }
+            for (idx, line) in content.lines().enumerate() {
+                if classes_in_css_line(line).iter().any(|c| used.contains(c)) {
+                    style_links.push(hit(p, idx, line));
+                }
+            }
+        }
+    }
+    // (b) classes defined in the component's own stylesheet (a same-basename sibling) → where used.
+    let mut sib_classes: BTreeSet<String> = BTreeSet::new();
+    for (p, content) in &files {
+        if p == &rel || !is_style_file(p) {
+            continue;
+        }
+        let pname = basename(p);
+        if pname.split('.').next().unwrap_or(pname) != base {
+            continue;
+        }
+        for line in content.lines() {
+            sib_classes.extend(classes_in_css_line(line));
+        }
+    }
+    if !sib_classes.is_empty() {
+        for (p, content) in &files {
+            if !is_code_file(p) {
+                continue;
+            }
+            for (idx, line) in content.lines().enumerate() {
+                let attr = line.contains("className") || line.contains("class=") || line.contains("styles.");
+                if attr && sib_classes.iter().any(|c| contains_word(line, c)) {
+                    style_links.push(hit(p, idx, line));
+                }
+            }
+        }
+    }
+    style_links.sort_by(|a, b| a.path.cmp(&b.path).then(a.line.cmp(&b.line)));
+    style_links.dedup_by(|a, b| a.path == b.path && a.line == b.line);
+
+    Ok(Refs { path: rel, symbol: symbol.map(str::to_string), siblings, importers, symbol_usages, style_links })
+}
+
+/// Render a [`Refs`] as grouped human text — a header (with the heuristic caveat) then each group
+/// with its `path:line` hits. Style/importers/usages carry the source line for context.
+pub fn render_refs(r: &Refs) -> String {
+    let mut s = match &r.symbol {
+        Some(sym) => format!("refs: {} [symbol: {sym}]  (heuristic — may over-report)\n", r.path),
+        None => format!("refs: {}  (heuristic — may over-report)\n", r.path),
+    };
+    s.push_str(&format!("\nSiblings ({}):\n", r.siblings.files.len() + r.siblings.tests.len()));
+    for p in &r.siblings.files {
+        s.push_str(&format!("  {p}\n"));
+    }
+    if !r.siblings.tests.is_empty() {
+        s.push_str("  Tests:\n");
+        for p in &r.siblings.tests {
+            s.push_str(&format!("    {p}\n"));
+        }
+    }
+    push_hits(&mut s, "Importers", &r.importers);
+    if r.symbol.is_some() {
+        push_hits(&mut s, "Symbol usages", &r.symbol_usages);
+    }
+    push_hits(&mut s, "Style links", &r.style_links);
+    s
+}
+
+fn push_hits(s: &mut String, label: &str, hits: &[Hit]) {
+    s.push_str(&format!("\n{label} ({}):\n", hits.len()));
+    for h in hits {
+        if h.text.is_empty() {
+            s.push_str(&format!("  {}:{}\n", h.path, h.line));
+        } else {
+            s.push_str(&format!("  {}:{}  {}\n", h.path, h.line, h.text));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +785,150 @@ mod tests {
         // A missing path is a clean Err, not a panic.
         assert!(stat(&root.join("nope"), false).is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A React fixture tree: `Foo.tsx` (defines `handleClick`, uses `.foo-btn`), a `Foo.module.css`
+    /// sibling, a `Foo.test.tsx` test sibling, `Bar.tsx` importing both, and `tokens.css` defining
+    /// `.foo-btn`.
+    fn react_fixture(tag: &str) -> std::path::PathBuf {
+        let root = scratch(tag);
+        fs::write(
+            root.join("Foo.tsx"),
+            "export function handleClick() {}\n\
+             const handleClickHandler = 1;\n\
+             export default function Foo() {\n\
+             \x20 return <button className=\"foo-btn\" onClick={handleClick}>x</button>;\n\
+             }\n",
+        )
+        .unwrap();
+        fs::write(root.join("Foo.module.css"), ".foo-btn { color: red; }\n").unwrap();
+        fs::write(root.join("Foo.test.tsx"), "import Foo from './Foo';\ntest('x', () => Foo());\n").unwrap();
+        fs::write(
+            root.join("Bar.tsx"),
+            "import Foo, { handleClick } from './Foo';\nFoo();\nhandleClick();\n",
+        )
+        .unwrap();
+        fs::write(root.join("tokens.css"), "body { margin: 0; }\n.foo-btn { padding: 4px; }\n").unwrap();
+        root
+    }
+
+    #[test]
+    fn refs_reports_siblings_importers_and_style_links() {
+        let root = react_fixture("refs-file");
+        let r = refs(&root, "Foo.tsx", None).unwrap();
+
+        // Siblings: the CSS module in the plain group, the test file called out separately.
+        assert!(r.siblings.files.contains(&"Foo.module.css".to_string()));
+        assert!(r.siblings.tests.contains(&"Foo.test.tsx".to_string()));
+        assert!(!r.siblings.files.contains(&"Bar.tsx".to_string()), "Bar is not a Foo sibling");
+
+        // Importers: Bar.tsx at its import line.
+        let bar = r.importers.iter().find(|h| h.path == "Bar.tsx").expect("Bar.tsx imports Foo");
+        assert_eq!(bar.line, 1);
+        assert!(bar.text.contains("import Foo"));
+
+        // Style link: `.foo-btn` resolves to its tokens.css definition line (line 2).
+        let tok = r.style_links.iter().find(|h| h.path == "tokens.css").expect(".foo-btn defined in tokens.css");
+        assert_eq!(tok.line, 2);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refs_symbol_narrows_usages_and_excludes_unrelated() {
+        let root = react_fixture("refs-symbol");
+        let r = refs(&root, "Foo.tsx", Some("handleClick")).unwrap();
+
+        assert_eq!(r.symbol.as_deref(), Some("handleClick"));
+        // handleClick is used in Foo.tsx (definition + onClick) and Bar.tsx.
+        assert!(r.symbol_usages.iter().any(|h| h.path == "Bar.tsx"));
+        assert!(r.symbol_usages.iter().any(|h| h.path == "Foo.tsx"));
+        // The unrelated `handleClickHandler` line must NOT be captured (whole-word match).
+        assert!(
+            r.symbol_usages.iter().all(|h| !h.text.contains("handleClickHandler")),
+            "narrowing excludes handleClickHandler"
+        );
+        // Importers narrow to the line that names the symbol.
+        assert!(r.importers.iter().all(|h| h.text.contains("handleClick")));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refs_excludes_references_in_gitignored_dirs() {
+        let root = react_fixture("refs-ignore");
+        fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
+        fs::create_dir_all(root.join("ignored")).unwrap();
+        fs::write(root.join("ignored/Sneaky.tsx"), "import Foo from '../Foo';\n").unwrap();
+
+        let r = refs(&root, "Foo.tsx", None).unwrap();
+        assert!(
+            r.importers.iter().all(|h| !h.path.starts_with("ignored/")),
+            "a reference inside a gitignored dir is excluded by default"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refs_finds_rust_use_and_mod_importers() {
+        let root = scratch("refs-rust");
+        fs::write(root.join("foo.rs"), "pub struct Bar;\n").unwrap();
+        fs::write(
+            root.join("main.rs"),
+            "mod foo;\nuse crate::foo::Bar;\nfn main() { let _ = Bar; }\n",
+        )
+        .unwrap();
+
+        // Module-level: both `mod foo;` and `use crate::foo::Bar;` name the module.
+        let r = refs(&root, "foo.rs", None).unwrap();
+        let importers: Vec<&str> = r.importers.iter().map(|h| h.text.as_str()).collect();
+        assert!(r.importers.iter().all(|h| h.path == "main.rs"));
+        assert!(importers.iter().any(|t| t.contains("mod foo")));
+        assert!(importers.iter().any(|t| t.contains("use crate::foo::Bar")));
+
+        // Symbol-narrowed to `Bar`: only the `use` line (mod foo has no `Bar`).
+        let r = refs(&root, "foo.rs", Some("Bar")).unwrap();
+        assert!(r.importers.iter().all(|h| h.text.contains("Bar")));
+        assert!(r.importers.iter().any(|h| h.text.contains("use crate::foo::Bar")));
+        assert!(r.symbol_usages.iter().any(|h| h.path == "main.rs"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refs_errors_on_a_missing_file() {
+        let root = scratch("refs-missing");
+        assert!(refs(&root, "Nope.tsx", None).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn render_refs_groups_and_flags_heuristic() {
+        let root = react_fixture("refs-render");
+        let r = refs(&root, "Foo.tsx", Some("handleClick")).unwrap();
+        let out = render_refs(&r);
+        assert!(out.contains("heuristic"));
+        assert!(out.contains("Siblings"));
+        assert!(out.contains("Importers"));
+        assert!(out.contains("Symbol usages"));
+        assert!(out.contains("Style links"));
+        assert!(out.contains("Bar.tsx:1"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn contains_word_respects_boundaries() {
+        assert!(contains_word("handleClick()", "handleClick"));
+        assert!(contains_word("foo::Bar;", "Bar"));
+        assert!(!contains_word("handleClickHandler", "handleClick"));
+        assert!(!contains_word("", "x"));
+    }
+
+    #[test]
+    fn classes_in_css_line_extracts_selectors() {
+        assert_eq!(classes_in_css_line(".foo-btn { color: red }"), vec!["foo-btn".to_string()]);
+        assert_eq!(classes_in_css_line(".a, .b {"), vec!["a".to_string(), "b".to_string()]);
+        // A numeric fragment (e.g. from `1.5rem`) is not a class.
+        assert!(classes_in_css_line("margin: 1.5rem;").is_empty());
     }
 }
