@@ -37,7 +37,7 @@ mod fleet;
 mod nouns;
 mod hub;
 
-const TAGLINE: &str = "the project plan store — issues, features, fleet, sections (#plan-db)";
+const TAGLINE: &str = "the project plan store — issues, features, fleet, stages (#plan-db)";
 
 /// The command catalog — drives the shared help system. One detailed `usage` block per top-level
 /// command keeps the overview tiny and the detail one-fetch-away; the multi-verb nouns document their
@@ -233,15 +233,15 @@ A per-repo \"last triage launch\" marker so the next triage resumes from the del
 since T) instead of re-ingesting the whole project. Empty repo on `changed` = the whole project.",
     },
     CmdDoc {
-        name: "section",
+        name: "stage",
         summary: "the project's flat prose files (goal/scope/stack/…)",
         usage: "\
 USAGE:
-  bsc plan section list          # list the present prose .md files
-  bsc plan section get <name>    # print one section (e.g. goal, scope, stack) verbatim
-  bsc plan section set <name>    # write a section from stdin
+  bsc plan stage list          # list the present prose .md files
+  bsc plan stage get <name>    # print one stage doc (e.g. goal, scope, stack) verbatim
+  bsc plan stage set <name>    # write a stage doc from stdin
 
-Sections live beside plan.db in the hub dir. The `.md` is implied; the name is path-safe (a bare
+Stage docs live beside plan.db in the hub dir. The `.md` is implied; the name is path-safe (a bare
 name, no traversal).",
     },
     CmdDoc {
@@ -404,7 +404,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "integration" => nouns::cmd_integration(&args),
         "lesson" => nouns::cmd_lesson(&args),
         "triage" => nouns::cmd_triage(&args),
-        "section" => hub::cmd_section(&args),
+        "stage" => hub::cmd_stage(&args),
         "automations" => hub::cmd_automations(&args),
         "startup" => hub::cmd_startup(&args),
         "github-context" => hub::cmd_github_context(&args),
@@ -516,7 +516,7 @@ mod tests {
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
             "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
-            "lesson", "triage", "section", "automations", "startup", "github-context",
+            "lesson", "triage", "stage", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }

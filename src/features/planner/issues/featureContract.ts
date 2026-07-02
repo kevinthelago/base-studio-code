@@ -9,7 +9,7 @@
 // shape as a GitHub issue body.
 //
 // Free of React / xterm / Tauri imports so the logic is unit-testable in isolation
-// and shared between the planner UI and its tests (matches planSections.ts /
+// and shared between the planner UI and its tests (matches planStages.ts /
 // ghStructure.ts).
 
 /**

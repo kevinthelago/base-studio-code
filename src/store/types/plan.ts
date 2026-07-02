@@ -43,11 +43,11 @@ export interface PlanState {
   removeConfigProfile: (id: string) => void;
 
   // Plan session data — persisted per project so navigation away doesn't lose state.
-  planSections:    Record<string, Record<string, string>>;
-  setPlanSection:  (projectId: string, key: string, content: string) => void;
-  planConfirmedSections: Record<string, string[]>;
-  confirmPlanSection:   (projectId: string, key: string) => void;
-  unconfirmPlanSection: (projectId: string, key: string) => void;
+  planStages:    Record<string, Record<string, string>>;
+  setPlanStage:  (projectId: string, key: string, content: string) => void;
+  planConfirmedStages: Record<string, string[]>;
+  confirmPlanStage:   (projectId: string, key: string) => void;
+  unconfirmPlanStage: (projectId: string, key: string) => void;
   /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
    *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
   planAuthoredBlueprint: Record<string, Blueprint>;
@@ -82,13 +82,13 @@ export interface PlanState {
   acknowledgePlanInjections: (projectId: string, signature: string) => void;
   /** Optional stages the user deliberately SKIPPED (#921). The flow stops on every optional stage;
    *  skipping marks it resolved (frontier advances, never blocks completion) but renders distinctly. */
-  planSkippedSections:  Record<string, string[]>;
-  skipPlanSection:      (projectId: string, key: string) => void;
-  unskipPlanSection:    (projectId: string, key: string) => void;
+  planSkippedStages:  Record<string, string[]>;
+  skipPlanStage:      (projectId: string, key: string) => void;
+  unskipPlanStage:    (projectId: string, key: string) => void;
   /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */
-  canonicalizePlanSections: (projectId: string) => void;
+  canonicalizePlanStages: (projectId: string) => void;
   planAutomations:    Record<string, AutomationSuggestion[]>;
   /** Replace a project's automations with the DB-owned list (reflected by the section poll from
    *  `bsc plan automations`, #2009). */

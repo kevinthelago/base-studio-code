@@ -1,25 +1,25 @@
-// #1805: plan.db is the SOLE fleet store — usePlanSectionPoll must never read a fleet.json file.
+// #1805: plan.db is the SOLE fleet store — usePlanStagePoll must never read a fleet.json file.
 // These tests pin that the fleet section is sourced from plan.db (`bsc plan fleet get`) and that a
-// `fleet` key leaking out of `read_plan_sections` (a stray on-disk file) is ignored, while ordinary
+// `fleet` key leaking out of `read_plan_stages` (a stray on-disk file) is ignored, while ordinary
 // section files still flow through.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { usePlanSectionPoll } from "./usePlanSectionPoll";
+import { usePlanStagePoll } from "./usePlanStagePoll";
 import { FLEET_KEY } from "../fleet/planFleet";
 
 const PID = "p-fleet-poll";
 
 const render = () =>
   renderHook(() =>
-    usePlanSectionPoll({ visible: true, projectId: PID, publishRepos: [], enqueueMcpDownloads: () => {}, planningDir: "" }),
+    usePlanStagePoll({ visible: true, projectId: PID, publishRepos: [], enqueueMcpDownloads: () => {}, planningDir: "" }),
   );
 
-describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {
+describe("usePlanStagePoll — fleet is plan.db-only (#1805)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppStore.setState({ planSections: {}, planConfirmedSections: {} });
+    useAppStore.setState({ planStages: {}, planConfirmedStages: {} });
   });
   afterEach(() => {
     vi.mocked(invoke).mockReset();
@@ -37,7 +37,7 @@ describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {
       }
       switch (cmd) {
         // A stray fleet.json that leaked through the sweep — must be ignored — plus a real section.
-        case "read_plan_sections": return { fleet: '{"recommended":99,"streams":[]}', goal: "the goal" };
+        case "read_plan_stages": return { fleet: '{"recommended":99,"streams":[]}', goal: "the goal" };
         default: return null;
       }
     });
@@ -46,10 +46,10 @@ describe("usePlanSectionPoll — fleet is plan.db-only (#1805)", () => {
 
     // The fleet section reflects plan.db, never the file content.
     await waitFor(() => {
-      expect(useAppStore.getState().planSections[PID]?.[FLEET_KEY]).toBe(JSON.stringify(dbFleet));
+      expect(useAppStore.getState().planStages[PID]?.[FLEET_KEY]).toBe(JSON.stringify(dbFleet));
     });
     // An ordinary section file still flows through (the sweep runs; only fleet is excluded).
-    expect(useAppStore.getState().planSections[PID]?.goal).toBe("the goal");
+    expect(useAppStore.getState().planStages[PID]?.goal).toBe("the goal");
     // `bsc plan fleet get --full --json` IS the fleet read path; no fleet.json file is ever read directly.
     expect(
       vi.mocked(invoke).mock.calls.some(

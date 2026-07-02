@@ -28,15 +28,15 @@ export function usePlanConfirmations(opts: {
   featureCycle: string[];
   effectiveProjectId: string;
   paneId: string;
-  confirmPlanSection: (projectId: string, key: string) => void;
-  skipPlanSection: (projectId: string, key: string) => void;
+  confirmPlanStage: (projectId: string, key: string) => void;
+  skipPlanStage: (projectId: string, key: string) => void;
   autoCompleteGates: boolean;
   /** autoPlanWithClaude && llmHasKey — the autopilot is running (and owns confirmation). */
   autoPlanActive: boolean;
 }) {
   const {
     stages, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
-    effectiveProjectId, paneId, confirmPlanSection, skipPlanSection, autoCompleteGates, autoPlanActive,
+    effectiveProjectId, paneId, confirmPlanStage, skipPlanStage, autoCompleteGates, autoPlanActive,
   } = opts;
 
   // The active stage's drafted sections "approve & continue" confirms in one click (#807-followup)
@@ -58,10 +58,10 @@ export function usePlanConfirmations(opts: {
   // clicks, the autopilot drives, or a gate self-advances.
   const confirmStageKeys = useCallback((keys: string[]) => {
     if (keys.length === 0) return;
-    for (const k of keys) confirmPlanSection(effectiveProjectId, k);
+    for (const k of keys) confirmPlanStage(effectiveProjectId, k);
     const name = keys.map((k) => titleForTopic(k)).join(", ") || "section";
     fireInvoke("pty_write", { paneId, data: buildSectionConfirmMessage(name) + "\r" }, console.error);
-  }, [effectiveProjectId, paneId, confirmPlanSection]);
+  }, [effectiveProjectId, paneId, confirmPlanStage]);
 
   // Auto-advance gates (#1068): when the global flag is on and the ACTIVE stage has drafted sections
   // awaiting confirmation, confirm them automatically after a short beat — the same action the
@@ -83,9 +83,9 @@ export function usePlanConfirmations(opts: {
   const onSkipStage = useCallback(() => {
     const stage = stages[focusActiveIdx];
     if (!stage) return;
-    skipPlanSection(effectiveProjectId, stage.key);
+    skipPlanStage(effectiveProjectId, stage.key);
     fireInvoke("pty_write", { paneId, data: buildSectionSkipMessage(stage.name) + "\r" }, console.error);
-  }, [stages, focusActiveIdx, skipPlanSection, effectiveProjectId, paneId]);
+  }, [stages, focusActiveIdx, skipPlanStage, effectiveProjectId, paneId]);
 
   return { pendingConfirm, confirmStageKeys, onSkipStage };
 }

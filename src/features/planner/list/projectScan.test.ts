@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { reposFromItems, scanProjectRepos, scanPlanSections, type ProjectItemNode } from "./projectScan";
+import { reposFromItems, scanProjectRepos, scanPlanStages, type ProjectItemNode } from "./projectScan";
 
 const item = (nameWithOwner?: string): ProjectItemNode =>
   nameWithOwner === undefined ? { content: null } : { content: { repository: { nameWithOwner } } };
@@ -55,13 +55,13 @@ describe("scanProjectRepos", () => {
   });
 });
 
-describe("scanPlanSections", () => {
+describe("scanPlanStages", () => {
   it("reads plan sections from disk keyed by the project title", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({ goal: "# Goal", phases: "[]" });
 
-    const sections = await scanPlanSections("WoTos");
+    const sections = await scanPlanStages("WoTos");
 
     expect(sections).toEqual({ goal: "# Goal", phases: "[]" });
-    expect(invoke).toHaveBeenCalledWith("read_plan_sections", { projectKey: "WoTos" });
+    expect(invoke).toHaveBeenCalledWith("read_plan_stages", { projectKey: "WoTos" });
   });
 });

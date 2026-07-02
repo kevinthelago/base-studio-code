@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
-import { scanProjectRepos, scanPlanSections } from "./projectScan";
+import { scanProjectRepos, scanPlanStages } from "./projectScan";
 import { canonicalTopicKey } from "../stages/planTopics";
 
 /**
@@ -35,7 +35,7 @@ export function useProjectScan(): void {
     void (async () => {
       // Read the rest from getState so a token/title change doesn't re-trigger
       // the scan — only a tab open or project switch should.
-      const { githubToken, activeProjectName, setActiveProjectRepos, setPlanSection } =
+      const { githubToken, activeProjectName, setActiveProjectRepos, setPlanStage } =
         useAppStore.getState();
 
       // Repos — only overwrite when the scan found some, so a project with no
@@ -51,20 +51,20 @@ export function useProjectScan(): void {
       // by the project title, which is the planner's frozen session key.
       if (activeProjectName) {
         try {
-          const sections = await scanPlanSections(activeProjectName);
+          const sections = await scanPlanStages(activeProjectName);
           if (cancelled) return;
-          const saved = useAppStore.getState().planSections[activeProjectName] ?? {};
+          const saved = useAppStore.getState().planStages[activeProjectName] ?? {};
           for (const [rawKey, content] of Object.entries(sections)) {
             // Canonicalize the file stem (e.g. a leftover "Tech stack.md" → "stack"), mirroring
             // the planner poll (Planning.tsx) — otherwise a title-named file is ingested as a
             // non-canonical section that blocks the Context gate (#803).
             const key = canonicalTopicKey(rawKey);
             if (content && content !== (saved[key] ?? "")) {
-              setPlanSection(activeProjectName, key, content);
+              setPlanStage(activeProjectName, key, content);
             }
           }
           // Collapse any pre-existing stale non-canonical keys already in the store (#803).
-          useAppStore.getState().canonicalizePlanSections(activeProjectName);
+          useAppStore.getState().canonicalizePlanStages(activeProjectName);
         } catch { /* plans dir may not exist yet */ }
       }
     })();
