@@ -22,8 +22,37 @@ export function AgentEditor({ a, onFlow, onModel }: {
   const [flow, setFlow] = useState<Flow>(a.flow);
   const [model, setModel] = useState<ModelId | undefined>(a.model);
   useEffect(() => { setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Read-only preview block for the kickoff + lane-context text (#2053).
+  const preStyle: React.CSSProperties = {
+    margin: 0, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+    fontFamily: "var(--mono)", fontSize: 10, lineHeight: 1.5, color: "var(--fg-muted)",
+    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 5, padding: "8px 9px",
+  };
   return (
     <>
+      {/* Kickoff preview (#2053) — the exact first message this worker gets at launch, plus its lane
+          context (CLAUDE.local.md) collapsed below. Read-only: it mirrors what the launch generates. */}
+      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+        <Row className="ulabel" gap={8} style={{ marginBottom: 8 }}>
+          <Box as="span">kickoff</Box>
+          <Text as="span" mono size={9} tone={a.authoredPrompt ? "accent" : "dim"}>
+            {a.authoredPrompt ? "authored" : "generated"}
+          </Text>
+        </Row>
+        {a.authoredPrompt && (
+          <Text as="div" mono size={10} tone="muted" style={{ lineHeight: 1.5, marginBottom: 8 }}>
+            Launches from an authored kickoff script — <Box as="span" className="glob">{a.authoredPrompt}</Box>. The generated default below is the fallback.
+          </Text>
+        )}
+        <pre style={preStyle}>{a.kickoff}</pre>
+        <details style={{ marginTop: 8 }}>
+          <summary className="mono" style={{ cursor: "pointer", fontSize: 10, color: "var(--fg-dim)", userSelect: "none" }}>
+            Lane context — CLAUDE.local.md
+          </summary>
+          <pre style={{ ...preStyle, marginTop: 6 }}>{a.scope}</pre>
+        </details>
+      </Box>
+
       {onModel && (
         <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
           <Box className="ulabel" style={{ marginBottom: 8 }}>model</Box>
