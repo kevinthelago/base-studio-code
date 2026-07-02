@@ -15,6 +15,8 @@ import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import { timeAgo, hueFor } from "@/shared/lib/core/format";
 import { StageSummary, type PreviewBlueprint } from "./BlueprintModals";
 
@@ -57,10 +59,10 @@ function GistPreview({ entry }: { entry?: PreviewEntry }) {
     fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-muted)",
   };
   if (!entry || entry.loading) {
-    return <div style={{ ...box, display: "flex", alignItems: "center", gap: 8 }}><Loader2 size={12} style={spin} />reading the blueprint…</div>;
+    return <Row gap={8} style={box}><Loader2 size={12} style={spin} />reading the blueprint…</Row>;
   }
   if (entry.error) {
-    return <div style={{ ...box, color: "var(--danger)", display: "flex", alignItems: "flex-start", gap: 8 }}><AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 1 }} />couldn't read this blueprint: {entry.error}</div>;
+    return <Row align="start" gap={8} style={{ ...box, color: "var(--danger)" }}><AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 1 }} />couldn't read this blueprint: {entry.error}</Row>;
   }
   const p = entry.data!;
   const bp = p.blueprint;                          // the fully-coerced blueprint, when present
@@ -178,7 +180,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
         }}
       >
         {/* header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
+        <Row gap={12} style={{ padding: "17px 20px", borderBottom: "1px solid var(--border-soft)", flex: "0 0 auto" }}>
           <IconBox size={32} radius={8} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)"><Download size={16} /></IconBox>
           <div style={{ minWidth: 0 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 14.5, fontWeight: 600, letterSpacing: ".01em" }}>Import blueprint</h2>
@@ -192,10 +194,10 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           <IconButton onClick={load} title="Refresh list" aria-label="Refresh list"><RefreshCw size={14} /></IconButton>
           <Button onClick={onManualImport} title="Import by URL or ID"><Link2 size={13} />URL / ID</Button>
           <IconButton onClick={onClose} title="Close" aria-label="Close"><X size={15} /></IconButton>
-        </div>
+        </Row>
 
         {/* sticky search */}
-        <div style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)", display: "flex", alignItems: "center", gap: 10 }}>
+        <Row gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
           <div style={{ position: "relative", flex: 1 }}>
             <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-dim)", display: "flex" }}><Search size={13} /></span>
             <input
@@ -206,16 +208,18 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
             />
           </div>
           <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>{resultLabel}</span>
-        </div>
+        </Row>
 
         {/* body */}
         <div style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto", padding: "14px 20px" }}>
           {importError && (
-            <div
+            <Row
               role="alert"
               className="mono"
+              align="start"
+              gap={9}
               style={{
-                display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 11, padding: "10px 12px",
+                marginBottom: 11, padding: "10px 12px",
                 borderRadius: "var(--r-md)", fontSize: 11, lineHeight: 1.5,
                 color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 90%)",
                 border: "1px solid color-mix(in oklch, var(--danger), transparent 62%)",
@@ -228,23 +232,23 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 aria-label="Dismiss error"
                 style={{ background: "transparent", border: 0, color: "var(--fg-dim)", cursor: "pointer", padding: 0, display: "flex" }}
               ><X size={13} /></button>
-            </div>
+            </Row>
           )}
           {statusLoading && (
             <>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 15px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", marginBottom: 9 }}>
+                <Row key={i} gap={14} style={{ padding: "13px 15px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", marginBottom: 9 }}>
                   <div style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 7, ...shimmer }} />
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
+                  <Stack gap={7} style={{ flex: 1 }}>
                     <div style={{ width: "42%", height: 11, borderRadius: 4, ...shimmer }} />
                     <div style={{ width: "64%", height: 9, borderRadius: 4, ...shimmer }} />
-                  </div>
+                  </Stack>
                   <div style={{ width: 78, height: 24, borderRadius: "var(--r-md)", background: "var(--bg-elev)" }} />
-                </div>
+                </Row>
               ))}
-              <div className="mono" style={{ textAlign: "center", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Row className="mono" gap={8} justify="center" style={{ textAlign: "center", fontSize: 10.5, color: "var(--fg-dim)", padding: "14px 0 4px" }}>
                 <Loader2 size={13} style={spin} />fetching {source}'s blueprint gists…
-              </div>
+              </Row>
             </>
           )}
 
@@ -324,7 +328,7 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
           )}
 
           {statusEmpty && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
+            <Stack gap={14} align="center" style={{ textAlign: "center", padding: "38px 24px 30px" }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", color: "var(--fg-dim)" }}><Inbox size={22} /></div>
               <div>
                 <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>No blueprint gists yet</div>
@@ -333,11 +337,11 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                 </div>
               </div>
               <Button variant="primary" onClick={onManualImport}><Link2 size={13} />Import by URL / ID</Button>
-            </div>
+            </Stack>
           )}
 
           {statusError && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 14, padding: "38px 24px 30px" }}>
+            <Stack gap={14} align="center" style={{ textAlign: "center", padding: "38px 24px 30px" }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, var(--danger), transparent 88%)", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)", color: "var(--danger)" }}><AlertTriangle size={22} /></div>
               <div>
                 <div className="mono" style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600, marginBottom: 6 }}>Couldn't reach GitHub</div>
@@ -345,34 +349,34 @@ export function BlueprintImportModal({ source, token = "", importedById = {}, on
                   The gist list request failed — you may be offline or not connected. Check your GitHub token in settings, then retry.
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <Row gap={8} align="stretch">
                 <Button onClick={load}><RefreshCw size={13} />Retry</Button>
                 <Button variant="ghost" onClick={onManualImport}>Import by URL / ID</Button>
-              </div>
-            </div>
+              </Row>
+            </Stack>
           )}
         </div>
 
         {/* footer */}
-        <div className="mono" style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontSize: 10, color: "var(--fg-dim)" }}>
+        <Row className="mono" gap={10} style={{ flex: "0 0 auto", padding: "11px 20px", borderTop: "1px solid var(--border-soft)", fontSize: 10, color: "var(--fg-dim)" }}>
           <span>importing pulls the gist into your library &amp; links it upstream</span>
           <span style={{ flex: 1 }} />
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
             press <span style={{ display: "inline-block", padding: "1px 6px", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", background: "var(--bg-elev)" }}>Esc</span> to close
           </span>
-        </div>
+        </Row>
       </div>
 
       {/* toast */}
       {toast && (
-        <div className="above-modal mono" style={{
+        <Row className="above-modal mono" gap={9} style={{
           position: "fixed", left: "50%", bottom: 40, transform: "translateX(-50%)",
-          display: "flex", alignItems: "center", gap: 9, padding: "9px 15px", background: "var(--bg-elev2)",
+          padding: "9px 15px", background: "var(--bg-elev2)",
           border: "1px solid var(--border)", borderRadius: 99, boxShadow: "0 12px 32px rgba(0,0,0,.5)",
           fontSize: 11, color: "var(--fg)", animation: "bim-toast .2s ease both",
         }}>
           <StatusDot size={7} color="var(--success)" />{toast}
-        </div>
+        </Row>
       )}
     </ModalScrim>
   );

@@ -5,6 +5,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
@@ -121,7 +123,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
       fullWidth
       bare
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, gap: 12, overflow: "auto" }}>
+      <Stack gap={12} style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {/* Drop zone */}
         <label
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -147,14 +149,14 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
 
         {/* Staged files */}
         {entries.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <Stack gap={5}>
             <div className="ulabel" style={{ color: "var(--fg-dim)" }}>staged · {entries.length}</div>
             {entries.map((e) => (
-              <div key={e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
+              <Row key={e.name} gap={8} style={{ padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
                 <Chip style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</Chip>
                 <span className="mono" style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
                 <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{(e.size / 1024).toFixed(1)}k</span>
-              </div>
+              </Row>
             ))}
             <button
               className="btn primary"
@@ -177,9 +179,9 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 Sent to the planner — it will classify each file and route it to the right repo (it may ask you when a destination is ambiguous).
               </div>
             )}
-          </div>
+          </Stack>
         )}
-      </div>
+      </Stack>
     </StageScreenFrame>
   );
 }

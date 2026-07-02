@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useAppStore } from "@/store";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
@@ -50,9 +51,9 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   // section window still renders its body (it shares the connected store).
   if (!githubConnected && !pageOverride) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         <ProjectsEmpty />
-      </div>
+      </Stack>
     );
   }
 
@@ -69,9 +70,9 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
     >
       {/* Fleet — live orchestration; the worker board opens a per-agent page (#499). Mounts on demand. */}
       {mode === "fleet" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <Stack style={{ flex: 1, minHeight: 0 }}>
           <Fleet />
-        </div>
+        </Stack>
       )}
 
       {/* Planner — kept MOUNTED (CSS-hidden) in the main window so the live planning PTY survives a

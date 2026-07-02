@@ -21,6 +21,9 @@ import { MONO } from "./bodyStyles";
 import { chip } from "./deployPrimitives";
 import { ServiceTargetEditor } from "./deployTargetSection";
 import { ServiceDeploySections } from "./deployShipSections";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 // Re-exported for API compatibility (#1636) — these moved to focused modules but keep their old
 // import path here so existing consumers (ReposDeployView, tests) and any external imports work.
@@ -48,11 +51,11 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, traili
   const dot = ready ? "var(--success)" : targeted ? "var(--accent)" : "var(--warn)";
   return (
     <div style={{ background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"), borderRadius: "var(--r-lg)", overflow: "hidden" }}>
-      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 13px", cursor: "pointer", userSelect: "none" }}>
+      <Row onClick={onToggle} gap={9} style={{ padding: "11px 13px", cursor: "pointer", userSelect: "none" }}>
         <span style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: dot, boxShadow: ready ? `0 0 7px color-mix(in oklch, ${dot}, transparent 60%)` : undefined }} />
         <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--fg)" }}>{svc.repo || svc.id}</span>
         {meta}
-        <span style={{ flex: 1 }} />
+        <Spacer />
         {targeted ? (
           <>
             <span style={{ ...chip, color: local ? "var(--violet)" : "var(--accent)", borderColor: local ? "color-mix(in oklch, var(--violet), transparent 60%)" : "var(--accent-dim)", background: `color-mix(in oklch, ${local ? "var(--violet)" : "var(--accent)"}, transparent 86%)` }}>
@@ -66,13 +69,13 @@ export function RepoDeployCard({ svc, setSvc, open, onToggle, lead, meta, traili
         )}
         {trailing}
         <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
-      </div>
+      </Row>
       {open && (
-        <div style={{ borderTop: "1px solid var(--border-soft)", padding: "12px 13px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <Stack gap={12} style={{ borderTop: "1px solid var(--border-soft)", padding: "12px 13px" }}>
           {lead}
           <ServiceTargetEditor svc={svc} setSvc={setSvc} />
           {targeted && <ServiceDeploySections svc={svc} setSvc={setSvc} />}
-        </div>
+        </Stack>
       )}
     </div>
   );

@@ -8,7 +8,11 @@ import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Ic } from "./blueprintIcons";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 import { stageKind, tint, hue } from "./blueprintCatalog";
 import { type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { type SkillPayload } from "./blueprintSkills";
@@ -49,20 +53,20 @@ function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, l
 
 export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <Stack gap={4}>
       {sections.map((s, i) => {
         const k = stageKind(s.key);
         const caps = (s.skills?.length ?? 0) + (s.mcp?.length ?? 0);
         return (
-          <div key={s.uid ?? i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "5px 0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <Stack key={s.uid ?? i} gap={4} style={{ padding: "5px 0" }}>
+            <Row gap={9}>
               <span className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</span>
               <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: 5, background: tint(k.h, 0.16), color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></span>
               <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>{s.name}</span>
               <span style={{ flex: 1 }} />
               {caps > 0 && <span className="hint mono">{caps} attached</span>}
               {s.gateRule && <Chip tone="accent">gate</Chip>}
-            </div>
+            </Row>
             {/* The prompt is the substance of the stage (#1268) — dense text under the row, the
                 icon as its index. pre-wrap keeps the prompt's own line breaks. */}
             {s.prompt?.trim() && (
@@ -70,10 +74,10 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
                 {s.prompt.trim()}
               </div>
             )}
-          </div>
+          </Stack>
         );
       })}
-    </div>
+    </Stack>
   );
 }
 
@@ -98,16 +102,16 @@ export function ImportModal({ onClose, onResolve, onImport }: {
   return (
     <Modal icon={<Ic n="cloud_download" size={15} />} title="Import from gist" sub="Pull a blueprint someone shared with you" onClose={onClose}
       foot={phase === "preview" && preview
-        ? <><span className="hint">Imports as a linked copy — you can sync upstream later</span><span style={{ flex: 1 }} /><button className="btn ghost" onClick={() => setPhase("input")}>Back</button><button className="btn primary" onClick={() => onImport(preview)}>Import to library</button></>
-        : <><span style={{ flex: 1 }} /><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</button></>}>
+        ? <><span className="hint">Imports as a linked copy — you can sync upstream later</span><span style={{ flex: 1 }} /><Button variant="ghost" onClick={() => setPhase("input")}>Back</Button><Button variant="primary" onClick={() => onImport(preview)}>Import to library</Button></>
+        : <><span style={{ flex: 1 }} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</Button></>}>
       {phase === "preview" && preview ? (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <Row gap={10} style={{ marginBottom: 12 }}>
             <IconBox size={30} radius={8} fontSize={14} background={tint(preview.h, 0.16)} color={hue(preview.h)}>{preview.icon}</IconBox>
             <div><div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{preview.name}</div><div className="hint mono">{preview.author ? `by ${preview.author} · ` : ""}{preview.rev ? `revision ${preview.rev} · ` : ""}{preview.sections.length} stages</div></div>
             <span style={{ flex: 1 }} /><Chip tone="info">valid blueprint</Chip>
-          </div>
-          <div className="card" style={{ padding: 13 }}><StageSummary sections={preview.sections} /></div>
+          </Row>
+          <Card style={{ padding: 13 }}><StageSummary sections={preview.sections} /></Card>
         </>
       ) : (
         <div className="field">

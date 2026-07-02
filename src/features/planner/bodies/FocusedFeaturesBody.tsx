@@ -4,6 +4,7 @@
 import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Tile } from "@/features/planner/pane/focusedPrimitives";
 import { featureDefined, type PlanFeature } from "@/features/planner/issues/featureList";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
@@ -47,7 +48,7 @@ export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
               <span className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</span>
               <span className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
               <span className="feature-name">{f.name}</span>
-              <span style={{ flex: 1 }} />
+              <Spacer />
               <span className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</span>
             </div>
             {f.behavior && <div className="feature-behavior">{f.behavior}</div>}

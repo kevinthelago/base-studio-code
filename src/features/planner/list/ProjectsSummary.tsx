@@ -3,7 +3,14 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Card } from "@/shared/ui/data/Card";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Text } from "@/shared/ui/typography/Text";
 import { githubRequest, githubGraphql } from "@/shared/lib/github/github";
 import { parseProjectIteration, type BurndownResult, type ProjectIterationNode } from "../github/burndown";
 import type { GHEvent, GhMilestone, GhIssueItem as GhIssue } from "@/shared/lib/github/types";
@@ -101,12 +108,12 @@ function useProjectsSummaryData() {
 
 function AISummary() {
   return (
-    <div className="card" style={{
+    <Card style={{
       padding: "14px 18px",
       background: "linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 88%), var(--bg-panel) 60%)",
       border: "1px solid var(--accent-dim)",
     }}>
-      <div style={{ display: "flex", gap: 12 }}>
+      <Row gap={12} align="stretch">
         <div className="mono" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
@@ -114,22 +121,22 @@ function AISummary() {
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>C</div>
         <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+          <Row gap={8} align="baseline" style={{ marginBottom: 4 }}>
+            <Text mono size={11} tone="accent" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>
               weekly digest · claude
-            </span>
+            </Text>
             <span className="hint">generated 02:00 today · run #14</span>
-            <div style={{ flex: 1 }} />
-            <button className="btn ghost" style={{ height: 22, fontSize: 10 }}>regenerate</button>
-          </div>
+            <Spacer />
+            <Button variant="ghost" style={{ height: 22, fontSize: 10 }}>regenerate</Button>
+          </Row>
           <p style={{ margin: 0 }}>
             Portfolio is on track — active projects are progressing against open milestones.
             Cross-project activity shows consistent momentum. Check upcoming milestones
             and velocity trends below for details.
           </p>
         </div>
-      </div>
-    </div>
+      </Row>
+    </Card>
   );
 }
 
@@ -140,34 +147,34 @@ function ProjectAllocation({ projects }: { projects: GhProject[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="card" style={{ padding: "14px 16px" }}>
+      <Card style={{ padding: "14px 16px" }}>
         <h3 style={{ margin: 0, marginBottom: 10 }}>Where the team is</h3>
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>No active projects with items.</div>
-      </div>
+        <Text as="div" mono size={11} tone="dim">No active projects with items.</Text>
+      </Card>
     );
   }
 
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+    <Card style={{ padding: "14px 16px" }}>
+      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Where the team is</h3>
         <span className="hint">share of in-progress work by project items</span>
-      </div>
-      <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
+      </Row>
+      <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
         {items.map(it => (
           <div key={it.n} title={`${it.n} · ${it.pct}%`} style={{ width: `${it.pct}%`, background: it.c }} />
         ))}
-      </div>
-      <div className="mono" style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 10.5, color: "var(--fg-muted)" }}>
+      </Row>
+      <Stack gap={5} className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
         {items.map(it => (
-          <div key={it.n} style={{ display: "grid", gridTemplateColumns: "12px 1fr 40px", gap: 8, alignItems: "center" }}>
+          <Grid key={it.n} cols="12px 1fr 40px" gap={8} align="center">
             <ColorSwatch color={it.c} />
             <span style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.n}</span>
-            <span style={{ textAlign: "right", color: "var(--fg-dim)" }}>{it.pct}%</span>
-          </div>
+            <Text tone="dim" style={{ textAlign: "right" }}>{it.pct}%</Text>
+          </Grid>
         ))}
-      </div>
-    </div>
+      </Stack>
+    </Card>
   );
 }
 
@@ -183,13 +190,13 @@ function VelocityCard({ repoIssues, loading }: {
   const maxV = Math.max(...opened, ...closed, 1);
 
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+    <Card style={{ padding: "14px 16px" }}>
+      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Velocity</h3>
         <span className="hint">{loading ? "loading…" : hasData ? "issues opened vs closed · last 8 weeks" : "no data"}</span>
-      </div>
+      </Row>
       {!hasData && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No issue data available.</div>
+        <Text as="div" mono size={11} tone="dim" style={{ padding: "4px 0" }}>No issue data available.</Text>
       )}
       {(hasData || loading) && (
         <>
@@ -214,15 +221,15 @@ function VelocityCard({ repoIssues, loading }: {
               );
             })}
           </svg>
-          <div className="mono" style={{ display: "flex", gap: 14, marginTop: 6, fontSize: 10, color: "var(--fg-muted)" }}>
+          <Row align="stretch" gap={14} className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-muted)" }}>
             <span><ColorSwatch color="color-mix(in oklch, var(--info), transparent 50%)" /> opened</span>
             <span><ColorSwatch color="var(--accent)" /> closed</span>
-            <div style={{ flex: 1 }} />
+            <Spacer />
             <span>avg <b style={{ color: "var(--fg)" }}>{loading ? "…" : `${avgClosed} closed/wk`}</b></span>
-          </div>
+          </Row>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -238,27 +245,27 @@ function UpcomingMilestones({ repoMilestones, loading }: {
   const numLines = upcoming.length;
 
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+    <Card style={{ padding: "14px 16px" }}>
+      <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
         <h3 style={{ margin: 0 }}>Upcoming milestones</h3>
         <span className="hint">{loading ? "loading…" : hasData ? `across all project repos · 8-week view` : "no data"}</span>
-        <div style={{ flex: 1 }} />
+        <Spacer />
         {upcoming.length > 0 && (
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>
+          <Text mono size={10.5} tone="accent">
             {upcoming.length} due in next 8w
-          </span>
+          </Text>
         )}
-      </div>
+      </Row>
 
       {!hasData && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "4px 0" }}>No milestones due in the next 8 weeks.</div>
+        <Text as="div" mono size={11} tone="dim" style={{ padding: "4px 0" }}>No milestones due in the next 8 weeks.</Text>
       )}
 
       {(hasData || loading) && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, marginBottom: 8 }}>
+          <Grid cols="220px 1fr" gap={14} style={{ marginBottom: 8 }}>
             <div />
-            <div style={{ position: "relative", height: 18, display: "grid", gridTemplateColumns: "repeat(8, 1fr)" }}>
+            <Grid cols={8} style={{ position: "relative", height: 18 }}>
               {Array.from({ length: 8 }, (_, i) => (
                 <div key={i} className="mono" style={{
                   fontSize: 9.5, color: "var(--fg-dim)",
@@ -273,19 +280,19 @@ function UpcomingMilestones({ repoMilestones, loading }: {
               }}>
                 <span className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</span>
               </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            </Grid>
+          </Grid>
+          <Stack gap={6}>
             {upcoming.map((m, idx) => {
               const barEnd = Math.max(0.01, Math.min(8, m.weeksFromNow));
               const barStart = Math.max(0, barEnd - 0.7);
               const c = m.overdue ? "var(--danger)" : "var(--accent)";
               const bgC = m.overdue ? "oklch(0.65 0.15 10)" : "oklch(0.78 0.14 70)";
               return (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, alignItems: "center" }}>
+                <Grid key={idx} cols="220px 1fr" gap={14} align="center">
                   <div>
                     <div className="mono" style={{ fontSize: 10.5, color: m.overdue ? "var(--danger)" : "var(--accent)" }}>{m.title}</div>
-                    <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{m.repo}</div>
+                    <Text as="div" mono size={9.5} tone="dim">{m.repo}</Text>
                   </div>
                   <div style={{ position: "relative", height: 24 }}>
                     {Array.from({ length: 8 }, (_, i) => (
@@ -304,13 +311,13 @@ function UpcomingMilestones({ repoMilestones, loading }: {
                       )}
                     </div>
                   </div>
-                </div>
+                </Grid>
               );
             })}
-          </div>
+          </Stack>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -325,32 +332,30 @@ function RiskRegister() {
   const med = risks.filter(r => r.sev === "med").length;
   const low = risks.filter(r => r.sev === "low").length;
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+    <Card style={{ padding: "14px 16px" }}>
+      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Risk register</h3>
         <span className="hint">{risks.length ? `${med} medium · ${low} low across active projects` : "logged during planning"}</span>
-        <div style={{ flex: 1 }} />
-        {risks.length > 0 && <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}>view all</button>}
-      </div>
+        <Spacer />
+        {risks.length > 0 && <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>view all</Button>}
+      </Row>
       {risks.length === 0 ? (
-        <div className="mono" style={{ padding: "18px 12px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
+        <Text as="div" mono size={11} tone="dim" style={{ padding: "18px 12px", textAlign: "center" }}>
           No risks logged yet.
-        </div>
+        </Text>
       ) : (
         <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
-          <div className="mono" style={{
-            display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
-            gap: 8, padding: "7px 12px",
+          <Grid className="mono" cols="50px 110px 1fr 60px" gap={8} style={{
+            padding: "7px 12px",
             background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
             fontSize: 10, color: "var(--fg-dim)",
             textTransform: "uppercase", letterSpacing: ".06em",
           }}>
             <span>sev</span><span>project</span><span>risk</span><span>owner</span>
-          </div>
+          </Grid>
           {risks.map((r, i) => (
-            <div key={i} style={{
-              display: "grid", gridTemplateColumns: "50px 110px 1fr 60px",
-              gap: 8, padding: "8px 12px", alignItems: "center",
+            <Grid key={i} cols="50px 110px 1fr 60px" gap={8} align="center" style={{
+              padding: "8px 12px",
               background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)",
               borderTop: i === 0 ? "0" : "1px solid var(--border-soft)",
               fontSize: 11.5,
@@ -361,11 +366,11 @@ function RiskRegister() {
               <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.proj}</span>
               <span style={{ color: "var(--fg)" }}>{r.r}</span>
               <Avatar login={r.own} />
-            </div>
+            </Grid>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -393,42 +398,42 @@ function ProjectsGrid({ projects, repoIssues, loading }: {
   );
 
   return (
-    <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+    <Card style={{ padding: "14px 16px" }}>
+      <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Projects</h3>
         <span className="hint">{loading ? "loading…" : `${projects.length} project${projects.length !== 1 ? "s" : ""} · click to open the board`}</span>
-        <div style={{ flex: 1 }} />
-        <button className="btn ghost" style={{ height: 24, fontSize: 10.5 }}
-          onClick={openProjects}>view list →</button>
-      </div>
+        <Spacer />
+        <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}
+          onClick={openProjects}>view list →</Button>
+      </Row>
       {projects.length === 0 && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No projects found. Create one on GitHub.</div>
+        <Text as="div" mono size={11} tone="dim" style={{ padding: "8px 0" }}>No projects found. Create one on GitHub.</Text>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      <Grid cols="repeat(2, minmax(0, 1fr))" gap={8}>
         {projectsWithStats.map(({ p, c, status, spark, repo }) => (
           <div key={p.id} onClick={() => openBoard(p)} style={{
             padding: "12px 14px", borderRadius: 6,
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             cursor: "pointer", minWidth: 0, overflow: "hidden",
           }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+            <Row gap={8} align="baseline" style={{ marginBottom: 4 }}>
               <ColorSwatch color={c} size={8} />
               <span className="mono" style={{ fontSize: 12, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{p.title}</span>
               <Chip tone={status === "active" ? "success" : status === "shipped" ? "neutral" : "accent"} style={{ fontSize: 9 }}>{status}</Chip>
-            </div>
-            <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 8 }}>
+            </Row>
+            <Text as="div" mono size={10} tone="dim" style={{ marginBottom: 8 }}>
               {repo}
-            </div>
-            <div className="mono" style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 10, color: "var(--fg-muted)" }}>
+            </Text>
+            <Row gap={12} className="mono" style={{ fontSize: 10, color: "var(--fg-muted)" }}>
               <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>
-              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{timeAgo(p.updatedAt)}</span>
-              <div style={{ flex: 1 }} />
+              <Text mono size={9.5} tone="dim">{timeAgo(p.updatedAt)}</Text>
+              <Spacer />
               {spark.some(v => v > 0) && <Spark data={spark} color={c} w={80} h={18} fill={false} dot={false} />}
-            </div>
+            </Row>
           </div>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Card>
   );
 }
 
@@ -452,21 +457,21 @@ export function ProjectsSummary() {
   return (
     <section style={{ flex: 1, overflow: "auto", padding: "20px 24px", minWidth: 0, background: "var(--bg-canvas)" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+        <Row align="start" gap={14} style={{ marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Portfolio</h2>
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
+            <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Portfolio</Text>
+            <Text as="div" tone="muted" size={12} style={{ marginTop: 4 }}>
               {loading ? "loading…" : `${activeCount} active · ${draftingCount} drafting · ${shippedCount} shipped`}
-            </div>
+            </Text>
           </div>
-          <button className="btn" onClick={openProjects}>browse projects →</button>
-        </div>
+          <Button onClick={openProjects}>browse projects →</Button>
+        </Row>
 
         <div style={{ marginBottom: 14 }}>
           <AISummary />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 14 }}>
+        <Grid cols={6} gap={8} style={{ marginBottom: 14 }}>
           {([
             ["projects",    loading ? "…" : String(projects.length),    `${activeCount} active · ${draftingCount} drafting`,  "fg"    ],
             ["open issues", loading ? "…" : String(totalOpenIssues),    "across project repos",              "accent" ],
@@ -475,30 +480,30 @@ export function ProjectsSummary() {
             ["milestones",  loading ? "…" : String(totalMilestones),    "due in next 2 weeks",               "info"   ],
             ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
           ] as const).map(([k, v, sub, tone]) => (
-            <div key={k} className="card" style={{ padding: "10px 12px" }}>
+            <Card key={k} style={{ padding: "10px 12px" }}>
               <div className="mono-label">{k}</div>
               <div className="mono" style={{
                 fontSize: 18, fontWeight: 600, marginTop: 2,
                 color: tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" : "var(--fg)",
               }}>{v}</div>
-              <div style={{ fontSize: 10, color: "var(--fg-muted)", marginTop: 1 }}>{sub}</div>
-            </div>
+              <Text as="div" size={10} tone="muted" style={{ marginTop: 1 }}>{sub}</Text>
+            </Card>
           ))}
-        </div>
+        </Grid>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <Grid cols="1.6fr 1fr" gap={14}>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <ProjectsGrid projects={projects} repoIssues={repoIssues} loading={loading} />
             <IterationBurnDown data={burndown} loading={loading} />
             <UpcomingMilestones repoMilestones={repoMilestones} loading={loading} />
             <CrossProjectActivity events={events} projects={projects} loading={loading} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          </Stack>
+          <Stack gap={14} style={{ minWidth: 0 }}>
             <ProjectAllocation projects={projects} />
             <VelocityCard repoIssues={repoIssues} loading={loading} />
             <RiskRegister />
-          </div>
-        </div>
+          </Stack>
+        </Grid>
       </div>
     </section>
   );

@@ -5,6 +5,8 @@
 // icon + title, so it fits any section (coordination, shared deps, …).
 import { useState } from "react";
 import { MONO } from "./bodyStyles";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = false, children }: {
   title: string;
@@ -24,9 +26,10 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
       borderRadius: "var(--r-lg)", padding: "13px 14px", background: "var(--bg-panel)",
       border: "1px solid " + (tone ? `color-mix(in oklch, ${tone}, transparent 78%)` : "var(--border-soft)"),
     }}>
-      <div
+      <Row
         onClick={() => setOpen((o) => !o)}
-        style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
+        gap={9}
+        style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
         {icon && (
           <span style={{
@@ -37,10 +40,10 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
         )}
         <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
         {hint && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hint}</span>}
-        <span style={{ flex: 1 }} />
+        <Spacer />
         {right}
         <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
-      </div>
+      </Row>
       {open && children}
     </div>
   );

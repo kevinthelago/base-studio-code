@@ -2,11 +2,14 @@
 // the required-context written/missing checklist.
 import type { ContextFile } from "@/features/planner/pane/projectPaneData";
 import { KindDot } from "@/features/planner/pane/focusedPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void; onView?: () => void }) {
   return (
-    <div onClick={onView} style={{
-      display: "flex", alignItems: "center", gap: 7, padding: "5px 7px",
+    <Row onClick={onView} gap={7} style={{
+      padding: "5px 7px",
       borderRadius: 5, background: f.pinned ? "var(--bg-canvas)" : "transparent",
       border: "1px solid " + (f.pinned ? "var(--border-soft)" : "transparent"),
       cursor: onView ? "pointer" : "default",
@@ -23,7 +26,7 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
       }}>
         {f.pinned ? "✦" : "+"}
       </span>
-    </div>
+    </Row>
   );
 }
 
@@ -31,8 +34,8 @@ function CtxRow({ f, onToggle, onView }: { f: ContextFile; onToggle?: () => void
  *  and whether it's been written yet, so the user sees exactly which files the gate still needs. */
 function RequiredCtxRow({ topic, written }: { topic: string; written: boolean }) {
   return (
-    <div className="mono" style={{
-      display: "flex", alignItems: "center", gap: 7, padding: "4px 7px", borderRadius: 5,
+    <Row className="mono" gap={7} style={{
+      padding: "4px 7px", borderRadius: 5,
       fontSize: 10,
     }}>
       <span style={{ width: 12, textAlign: "center", color: written ? "var(--success)" : "var(--fg-dim)" }}>
@@ -44,7 +47,7 @@ function RequiredCtxRow({ topic, written }: { topic: string; written: boolean })
           missing
         </span>
       )}
-    </div>
+    </Row>
   );
 }
 
@@ -69,31 +72,31 @@ export function DiscoveryBody({ context, onView, requiredContext }: {
     <div>
       {required.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "0 2px 6px", gap: 8 }}>
+          <Row gap={8} style={{ padding: "0 2px 6px" }}>
             <span className="ulabel">required files</span>
-            <span style={{ flex: 1 }} />
+            <Spacer />
             <span className="mono" style={{
               fontSize: 9,
               color: missingCount === 0 ? "var(--success)" : "var(--fg-dim)",
             }}>
               {required.length - missingCount}/{required.length} written
             </span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          </Row>
+          <Stack gap={2}>
             {required.map((t) => <RequiredCtxRow key={t} topic={t} written={written.has(t)} />)}
-          </div>
+          </Stack>
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", padding: "0 2px 8px", gap: 8 }}>
+      <Row gap={8} style={{ padding: "0 2px 8px" }}>
         <span className="ulabel">context files</span>
-        <span style={{ flex: 1 }} />
+        <Spacer />
         <span className="mono" style={{ fontSize: 9, color: "var(--accent)" }}>
           {totalTok.toFixed(1)}k / 200k tok
         </span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      </Row>
+      <Stack gap={4}>
         {files.map((f) => <CtxRow key={f.name} f={f} onView={onView ? () => onView(f) : undefined} />)}
-      </div>
+      </Stack>
     </div>
   );
 }

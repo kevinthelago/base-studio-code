@@ -4,6 +4,8 @@
 // and demands the flagged content be removed.
 
 import { type InjectionGate, injectionSignature } from "../lib/planInjection";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 
 const MONO = "var(--mono)";
 const CAT_LABEL: Record<string, string> = {
@@ -27,7 +29,7 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
       border: `1px solid color-mix(in oklch, ${color}, transparent 60%)`,
       background: `color-mix(in oklch, ${color}, transparent 90%)`,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px" }}>
+      <Row gap={8} style={{ padding: "8px 11px" }}>
         <span style={{ fontSize: 13, color }}>{blocked ? "⛔" : cleared ? "✓" : "⚠"}</span>
         <span style={{ fontFamily: MONO, fontSize: 11, color, fontWeight: 600 }}>
           {n} possible prompt-injection marker{n !== 1 ? "s" : ""} in the plan
@@ -36,9 +38,9 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
         <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>
           {blocked ? "hard-block" : cleared ? "reviewed" : "review to publish"}
         </span>
-      </div>
+      </Row>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 11px 9px", maxHeight: 160, overflowY: "auto" }}>
+      <Stack gap={4} style={{ padding: "0 11px 9px", maxHeight: 160, overflowY: "auto" }}>
         {gate.findings.map((f, i) => (
           <div key={`${f.file}-${f.line}-${i}`} style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)", lineHeight: 1.45 }}>
             <span style={{ color: "var(--info)" }}>{f.file}:{f.line}</span>
@@ -46,9 +48,9 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
             <div style={{ color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.context}</div>
           </div>
         ))}
-      </div>
+      </Stack>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderTop: `1px solid color-mix(in oklch, ${color}, transparent 70%)` }}>
+      <Row gap={8} style={{ padding: "8px 11px", borderTop: `1px solid color-mix(in oklch, ${color}, transparent 70%)` }}>
         <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", flex: 1, lineHeight: 1.5 }}>
           {blocked
             ? "These read like instructions injected from reviewed content. Remove them from the plan to publish (hard-block is on in Settings)."
@@ -64,7 +66,7 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
             }}
           >I&apos;ve reviewed these</button>
         )}
-      </div>
+      </Row>
     </div>
   );
 }

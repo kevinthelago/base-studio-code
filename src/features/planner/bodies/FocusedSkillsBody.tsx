@@ -1,6 +1,7 @@
 // Skills stage body (#1056, split from FocusedBodies.tsx #1757).
 import type { PaneSkill } from "@/features/planner/pane/projectPaneData";
 import { ListItemCard } from "./bodyPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
   const list = skills ?? [];
@@ -16,7 +17,7 @@ export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
   // generated skills are obvious. Stable sort keeps each group's original order.
   const ordered = [...list].sort((a, b) => Number(b.isNew ?? false) - Number(a.isNew ?? false));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+    <Stack gap={5}>
       {ordered.map((s) => (
         <ListItemCard
           key={s.name}
@@ -31,6 +32,6 @@ export function SkillsBody({ skills }: { skills?: PaneSkill[] }) {
           )}
         />
       ))}
-    </div>
+    </Stack>
   );
 }

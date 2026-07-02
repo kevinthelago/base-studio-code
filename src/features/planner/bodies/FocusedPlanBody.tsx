@@ -9,6 +9,8 @@ import {
   buildRelationshipGraph, EDGE_KIND_META,
   type Topology, type RelFocus,
 } from "@/features/planner/relationship/relationshipGraph";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
 
 export function PlanBody({ data, focus: focusProp, onFocus }: {
   data?: ProjectPaneData;
@@ -56,11 +58,11 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
   const focusName = focus ? (focus.type === "agent" ? focus.id : `contract:${focus.id}`) : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Stack gap={12}>
       {relGraph && (
         <div>
           {/* STREAMS — gate pill on the right (#1429 reskin) */}
-          <div className="ulabel" style={{ paddingBottom: 9, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <Row className="ulabel" justify="between" gap={8} style={{ paddingBottom: 9 }}>
             <span>streams</span>
             <span data-testid="relationship-gate" className="mono" style={{
               display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, padding: "3px 8px", borderRadius: 20, textTransform: "none",
@@ -71,7 +73,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
             }}>
               {gatePass ? "✓ no dependency cycles" : `⨯ gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
             </span>
-          </div>
+          </Row>
           {/* graph card + legend */}
           <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 8px 4px" }}>
             <RelationshipGraphView
@@ -83,7 +85,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
               onInspectEdge={(id) => setFocus({ type: "edge", id })}
               onInspectArtifact={(id) => setFocus({ type: "art", id })}
             />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
+            <Row wrap gap={10} align="stretch" style={{ padding: "7px 4px 5px", borderTop: "1px solid var(--border-soft)", marginTop: 2 }}>
               {kindsUsed.map((k) => (
                 <span key={k} className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
                   <span style={{ width: 11, height: 0, borderTop: `1.6px solid ${EDGE_KIND_META[k].color}` }} />{EDGE_KIND_META[k].label}
@@ -92,7 +94,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
               <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 500, fontSize: 8.5, color: "var(--fg-dim)" }}>
                 <span style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--success)" }} />contract ready
               </span>
-            </div>
+            </Row>
           </div>
           <div className="mono" style={{ fontWeight: 500, fontSize: 9, color: focus ? "var(--accent)" : "var(--fg-dim)", marginTop: 7, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
             <span>{focus ? `◆ focused: ${focusName} — neighborhood spotlit` : "hover a lane to spotlight its neighborhood · click to focus"}</span>
@@ -112,6 +114,6 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
           </div>
         </div>
       )}
-    </div>
+    </Stack>
   );
 }

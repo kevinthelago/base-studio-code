@@ -6,6 +6,9 @@ import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
 import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
 import { buildDrafts, type DraftRow } from "./drafts";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
@@ -300,21 +303,21 @@ export function ProjectsList() {
             <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
               Delete draft?
             </h3>
-            <p style={{ margin: "0 0 20px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+            <Text as="p" size={12} tone="muted" style={{ margin: "0 0 20px", lineHeight: 1.6 }}>
               <b style={{ color: "var(--fg)" }}>{draftDeleteTarget.title}</b> and its local planning folder
               will be permanently deleted. This draft was never published to GitHub, so there's nothing on
               GitHub to remove.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn ghost" onClick={() => setDraftDeleteTarget(null)}>cancel</button>
-              <button
-                className="btn danger"
+            </Text>
+            <Row gap={8} align="stretch" justify="end">
+              <Button variant="ghost" onClick={() => setDraftDeleteTarget(null)}>cancel</Button>
+              <Button
+                danger
                 onClick={confirmDeleteDraft}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
               >
                 <Trash2 size={12} /> delete draft
-              </button>
-            </div>
+              </Button>
+            </Row>
           </div>
         </div>
       )}

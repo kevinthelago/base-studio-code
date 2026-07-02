@@ -21,6 +21,9 @@ import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import {
   connector, defaultSourceConfig, newDeclaredSource, sourceChecks, allSourcesConnected,
   deriveDataModel, proposeFromPitch,
@@ -187,7 +190,7 @@ export function SourceBody({ projectId, onInject }: {
     );
 
   return (
-    <div data-testid="source-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Stack data-testid="source-body" gap={12}>
       {/* top readiness banner */}
       <Banner tone={ready ? "success" : "accent"} dot loud right={
         <span style={monoSm}>{ready ? `both feed «${dataModelName}»` : "read-only integrations · credentials never leave this device"}</span>
@@ -197,19 +200,19 @@ export function SourceBody({ projectId, onInject }: {
 
       {/* planner-proposed sources */}
       {proposedPending.length > 0 && (
-        <div style={{ background: "color-mix(in oklch, var(--accent), transparent 93%)", border: "1px solid color-mix(in oklch, var(--accent), transparent 78%)", borderRadius: "var(--r-md)", padding: "11px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <Stack gap={9} style={{ background: "color-mix(in oklch, var(--accent), transparent 93%)", border: "1px solid color-mix(in oklch, var(--accent), transparent 78%)", borderRadius: "var(--r-md)", padding: "11px 12px" }}>
+          <Row align="start" gap={8}>
             <span style={{ color: "var(--accent)", fontSize: 13 }}>★</span>
             <div style={{ fontSize: 12.5, color: "var(--fg)", lineHeight: 1.5 }}>
               Detected from your pitch — migrating from {proposedPending.map((id) => connector(id, runtime).name).join(" + ")}. Connect them?
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          </Row>
+          <Row gap={9}>
             <button data-testid="proposed-confirm" onClick={confirmProposed} style={{ fontFamily: "var(--sans)", fontSize: 12, fontWeight: 600, color: "oklch(0.20 0.04 70)", background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "7px 13px", cursor: "pointer" }}>
               Confirm {proposedPending.length} source{proposedPending.length !== 1 ? "s" : ""}
             </button>
-          </div>
-        </div>
+          </Row>
+        </Stack>
       )}
 
       {/* ① declare — "+ Add a source" (#1986): name the system (+ optional base URL / OpenAPI link).
@@ -246,7 +249,7 @@ export function SourceBody({ projectId, onInject }: {
 
       {/* chip bar — declared sources */}
       {total > 0 && (
-        <div data-testid="source-chips" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Row data-testid="source-chips" gap={8} wrap>
           <span style={grpLabel}>sources</span>
           {cfg.sources.map((s) => {
             const c = connector(s.connectorId, runtime);
@@ -265,19 +268,19 @@ export function SourceBody({ projectId, onInject }: {
               </span>
             );
           })}
-        </div>
+        </Row>
       )}
 
       {/* boundary legend — the security payoff, quiet */}
       {total > 0 && (
-        <div style={{ display: "flex", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden", fontFamily: MONO, fontSize: 9.5 }}>
-          <div style={{ flex: 1, padding: "7px 11px", background: "var(--bg-elev)", display: "flex", alignItems: "center", gap: 7 }}>
+        <Row align="stretch" style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden", fontFamily: MONO, fontSize: 9.5 }}>
+          <Row gap={7} style={{ flex: 1, padding: "7px 11px", background: "var(--bg-elev)" }}>
             <span>🔒</span><span style={{ color: "var(--fg-muted)" }}>entered here · device keychain</span>
-          </div>
-          <div style={{ flex: 1, padding: "7px 11px", background: "color-mix(in oklch, var(--info), transparent 93%)", borderLeft: "1px solid var(--border-soft)", display: "flex", alignItems: "center", gap: 7 }}>
+          </Row>
+          <Row gap={7} style={{ flex: 1, padding: "7px 11px", background: "color-mix(in oklch, var(--info), transparent 93%)", borderLeft: "1px solid var(--border-soft)" }}>
             <span style={{ color: "var(--info)" }}>↗</span><span style={{ color: "var(--info)" }}>planner sees: handle + objects only</span>
-          </div>
-        </div>
+          </Row>
+        </Row>
       )}
 
       {/* per-source cards */}
@@ -303,49 +306,49 @@ export function SourceBody({ projectId, onInject }: {
 
       {/* readiness checklist */}
       {total > 0 && (
-        <div style={{ borderRadius: "var(--r-lg)", border: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "11px 13px", display: "flex", flexDirection: "column", gap: 5 }}>
+        <Stack gap={5} style={{ borderRadius: "var(--r-lg)", border: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "11px 13px" }}>
           {checks.map((c) => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)" }}>
+            <Row key={c.id} gap={8} style={{ padding: "6px 9px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)" }}>
               <span style={{ width: 15, textAlign: "center", fontFamily: MONO, fontSize: 11, color: c.ok ? "var(--success)" : "var(--fg-dim)" }}>{c.ok ? "✓" : "○"}</span>
               <span style={{ fontFamily: "var(--sans)", fontSize: 11, color: c.ok ? "var(--fg)" : "var(--fg-muted)" }}>{c.label}</span>
-              <span style={{ flex: 1 }} />
+              <Spacer />
               <span style={{ fontFamily: MONO, fontSize: 9, color: c.ok ? "var(--fg-muted)" : "var(--fg-dim)" }}>{c.detail}</span>
-            </div>
+            </Row>
           ))}
-        </div>
+        </Stack>
       )}
 
       {/* ③ confirm mapping — the human gate (#1986). Once every source is scanned, surface the
           inferred source→canonical mapping; confirming it (and only then) persists the derived model. */}
       {ready && mappingRows.length > 0 && (
-        <div data-testid="mapping-confirm" style={{ borderRadius: "var(--r-lg)", border: `1px solid ${mappingConfirmed ? "color-mix(in oklch, var(--success), transparent 70%)" : "var(--border-soft)"}`, background: "var(--bg-canvas)", padding: "11px 13px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Stack data-testid="mapping-confirm" gap={8} style={{ borderRadius: "var(--r-lg)", border: `1px solid ${mappingConfirmed ? "color-mix(in oklch, var(--success), transparent 70%)" : "var(--border-soft)"}`, background: "var(--bg-canvas)", padding: "11px 13px" }}>
+          <Row gap={8}>
             <span style={grpLabel}>source → canonical entity</span>
-            <span style={{ flex: 1 }} />
+            <Spacer />
             {mappingConfirmed
               ? <span data-testid="mapping-confirmed" style={{ fontFamily: MONO, fontSize: 10, color: "var(--success)" }}>✓ mapping confirmed</span>
               : (
                 <button data-testid="confirm-mapping" onClick={() => setConfirmedSig(modelSig)} style={{ fontFamily: "var(--sans)", fontSize: 11.5, fontWeight: 600, color: "oklch(0.20 0.04 70)", background: "var(--accent)", border: "none", borderRadius: "var(--r-md)", padding: "6px 12px", cursor: "pointer" }}>Confirm mapping</button>
               )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          </Row>
+          <Stack gap={4}>
             {mappingRows.map((m) => (
-              <div key={m.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 9px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)", fontSize: 11.5 }}>
+              <Row key={m.key} gap={8} style={{ padding: "5px 9px", borderRadius: "var(--r-sm)", background: "var(--bg-elev)", fontSize: 11.5 }}>
                 <span style={{ color: "var(--fg-muted)" }}>{m.object}</span>
                 <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)" }}>· {m.source}</span>
-                <span style={{ flex: 1 }} />
+                <Spacer />
                 <span style={{ color: "var(--fg-dim)" }}>→</span>
                 <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--accent)" }}>{m.entity}</span>
-              </div>
+              </Row>
             ))}
-          </div>
-        </div>
+          </Stack>
+        </Stack>
       )}
 
       {/* scanned-result visualizations — the "data dictates structure" payoff (#1205/#1209):
           Graph · List · Process over the derived model + captured behaviors. The header carries
           the downstream-impact recap. */}
       {ready && <ScanViews cfg={cfg} dataModelName={cfg.dataModelName || "Source Data Model"} />}
-    </div>
+    </Stack>
   );
 }

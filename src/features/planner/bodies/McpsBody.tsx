@@ -6,6 +6,9 @@
 import { useState } from "react";
 import { useExpandable } from "@/shared/hooks/useExpandable";
 import type { McpServer } from "@/features/planner/pane/projectPaneData";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import type { McpHandlers } from "./focusedHandlers";
 
 const MCP_TRANSPORT: Record<string, { c: string; label: string }> = {
@@ -40,18 +43,18 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8 }}>
+    <Stack gap={12}>
+      <Row gap={8} align="stretch">
         {tile(<>{ready}<span style={{ fontSize: 11, color: "var(--fg-dim)" }}> / {list.length}</span></>, "ready", "var(--success)")}
         {tile(list.filter((s) => s.enabled).length, "enabled")}
         {tile(errored, errored === 1 ? "needs attention" : "need attention", errored ? "var(--danger)" : undefined)}
-      </div>
+      </Row>
 
       {list.length === 0 && (
         <div className="empty-state"><span className="empty-icon">⊕</span><span>No MCP servers yet — assign one below or have the planner add it</span></div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <Stack gap={8}>
         {list.map((s) => {
           const tr = MCP_TRANSPORT[s.transport] ?? MCP_TRANSPORT.stdio;
           const stat = MCP_STATUS[s.status];
@@ -63,36 +66,36 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
               border: "1px solid " + (isErr ? "color-mix(in oklch, var(--danger), transparent 60%)" : isOpen ? "var(--border)" : "var(--border-soft)"),
               opacity: s.enabled ? 1 : 0.72,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>
+              <Row gap={10} style={{ padding: "10px 12px" }}>
                 <span className="mono" style={{
                   width: 24, height: 24, borderRadius: 6, display: "grid", placeItems: "center", flex: "0 0 24px",
                   fontSize: 12, color: tr.c,
                   border: `1px solid color-mix(in oklch, ${tr.c}, transparent 55%)`,
                 }}>{(s.name[0] ?? "?").toUpperCase()}</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => toggleOpen(s.id)}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <Stack gap={3} onClick={() => toggleOpen(s.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
+                  <Row gap={7}>
                     <span className="mono-value">{s.name}</span>
                     {s.official && <span className="chip" style={{ fontSize: 8 }}>official</span>}
                     {!s.official && s.downloadable && <span className="chip" style={{ fontSize: 8 }}>first-party</span>}
                     <span className="chip" style={{ fontSize: 8, color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</span>
-                  </span>
+                  </Row>
                   {s.desc && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</span>}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                </Stack>
+                <Stack align="end" gap={5}>
+                  <Row gap={5}>
                     <span className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
                     <span className="mono" style={{ fontSize: 9.5, color: stat.c }}>{stat.label}</span>
-                  </span>
+                  </Row>
                   <span className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
-                </div>
-              </div>
+                </Stack>
+              </Row>
 
               {isErr && s.err && (
-                <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 12px 10px" }}>
+                <Row gap={7} style={{ padding: "0 12px 10px" }}>
                   <span className="mono" style={{ fontSize: 9.5, color: "var(--danger)" }}>⚠ {s.err}</span>
-                  <span style={{ flex: 1 }} />
+                  <Spacer />
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
-                </div>
+                </Row>
               )}
 
               {isOpen && (
@@ -106,32 +109,32 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
 
                   <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 6 }}>scope · {s.scope}</div>
                   {s.agents.length > 0 ? (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 11 }}>
+                    <Row gap={6} wrap align="stretch" style={{ marginBottom: 11 }}>
                       {s.agents.map((id) => (
                         <span key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</span>
                       ))}
-                    </div>
+                    </Row>
                   ) : (
                     <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 11 }}>not wired yet — enable to grant the fleet access</div>
                   )}
 
-                  <div style={{ display: "flex", gap: 7 }}>
+                  <Row gap={7} align="stretch">
                     {s.downloadable && s.status !== "ready" && (
                       <button className="mini accent" disabled={busy(s)} onClick={() => onBuild?.(s)}>
                         {s.status === "downloading" ? "downloading…" : s.status === "building" ? "building…" : s.status === "available" ? "download + build" : "build"}
                       </button>
                     )}
-                    <span style={{ flex: 1 }} />
+                    <Spacer />
                     <button className="mini" onClick={() => onRemove?.(s.id)}>remove</button>
-                  </div>
+                  </Row>
                 </div>
               )}
             </div>
           );
         })}
-      </div>
+      </Stack>
 
-      <div style={{ display: "flex", gap: 7 }}>
+      <Row gap={7} align="stretch">
         <input
           className="input"
           placeholder="＋ add an MCP server — catalog name, command, or remote URL"
@@ -141,7 +144,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           style={{ flex: 1, height: 28, fontSize: 10.5 }}
         />
         <button className="mini accent" disabled={!draft.trim()} onClick={() => { if (draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}>add</button>
-      </div>
-    </div>
+      </Row>
+    </Stack>
   );
 }

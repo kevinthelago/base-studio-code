@@ -31,6 +31,9 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, blueprintCategory, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
@@ -612,7 +615,7 @@ export function Planning({ visible }: { visible: boolean }) {
       {/* Header */}
       <div style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Row gap={10}>
             <BackButton variant="icon" onClick={() => setProjectsView("list")} aria-label="Back to Planner" />
             {isExisting
               ? (
@@ -667,7 +670,7 @@ export function Planning({ visible }: { visible: boolean }) {
               )
             }
             <Chip tone="accent">● {isExisting ? "expanding" : "drafting"}</Chip>
-          </div>
+          </Row>
           {autopilot.running && (
             <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
               ⚙ auto-planning · {autopilotProgressPct}%
@@ -726,7 +729,7 @@ export function Planning({ visible }: { visible: boolean }) {
         </div>
       )}
       {recoverable > 0 && (
-        <div className="mono" style={{ padding: "0 24px 8px", display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--fg-muted)" }}>
+        <Row className="mono" gap={10} style={{ padding: "0 24px 8px", fontSize: 12, color: "var(--fg-muted)" }}>
           <span>⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</span>
           <button
             className="mono"
@@ -740,7 +743,7 @@ export function Planning({ visible }: { visible: boolean }) {
           >
             {recovering ? "Recovering…" : "Recover from GitHub"}
           </button>
-        </div>
+        </Row>
       )}
 
       {/* Split panel */}
@@ -840,9 +843,8 @@ export function Planning({ visible }: { visible: boolean }) {
           ) : (
             <>
               {/* Publish progress header */}
-              <div className="mono" style={{
+              <Row className="mono" gap={8} style={{
                 padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
-                display: "flex", alignItems: "center", gap: 8,
                 fontSize: 11,
               }}>
                 <span style={{
@@ -854,7 +856,7 @@ export function Planning({ visible }: { visible: boolean }) {
                    : publishPhase === "done"  ? "✓ published"
                    : "✗ publish failed"}
                 </span>
-                <div style={{ flex: 1 }} />
+                <Spacer />
                 {(publishPhase === "done" || publishPhase === "error") && (
                   <button
                     className="mono"
@@ -866,12 +868,12 @@ export function Planning({ visible }: { visible: boolean }) {
                     }}
                   >← back to plan</button>
                 )}
-              </div>
+              </Row>
 
               {/* Live GitHub structure — each node updates as it is created */}
-              <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <Stack gap={10} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "16px 18px" }}>
                 <GitHubStructureCard structure={ghStructure} status={ghStatus} />
-              </div>
+              </Stack>
             </>
           )}
         </aside>
@@ -926,7 +928,7 @@ export function Planning({ visible }: { visible: boolean }) {
             Switch this project to a different blueprint. This re-seeds the plan for the chosen blueprint and
             <b> clears the current plan + progress</b> — this can't be undone. Pick a target:
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Stack gap={8}>
             {switchTargets.map((bp) => (
               <button key={bp.id} className="btn ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
                 onClick={() => void doSwitchBlueprint(bp.id)}>
@@ -937,7 +939,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 {bp.desc && <span style={{ color: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--sans)" }}>{bp.desc}</span>}
               </button>
             ))}
-          </div>
+          </Stack>
         </Dialog>
       )}
 

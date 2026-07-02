@@ -9,6 +9,7 @@ import { stageStatus, type BlueprintStage } from "../stages/blueprints";
 import type { PlanSignals } from "../stages/stageGate";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode, type RailStatus } from "./ProgressionRail";
+import { Row } from "@/shared/ui/layout/Row";
 
 function fillColor(status: string): string {
   switch (status) {
@@ -34,7 +35,7 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
     .filter((s) => s.status !== "na");
 
   return (
-    <div style={{ height: 6, overflow: "hidden", display: "flex", gap: 6, padding: "0 24px", alignItems: "flex-start", flex: "0 0 auto" }}>
+    <Row align="start" gap={6} style={{ height: 6, overflow: "hidden", padding: "0 24px", flex: "0 0 auto" }}>
       {segments.map(({ section, status, fraction }) => {
         const isBlocked = blocked?.has(section.key) ?? false;
         const isHighlit = highlight?.has(section.key) ?? false;
@@ -53,7 +54,7 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
           </div>
         );
       })}
-    </div>
+    </Row>
   );
 }
 

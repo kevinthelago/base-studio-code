@@ -8,6 +8,9 @@
 import type { ReactNode } from "react";
 import { type CollectMode, type CollectSource, modeHue } from "./dataCollection";
 import { MONO as mono } from "./bodyStyles";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 
 /** scrape / fetch pill. */
 export function ModeChip({ mode }: { mode: CollectMode }) {
@@ -44,12 +47,12 @@ export function Card({ label, hint, badge, accent, children }: {
       border: "1px solid " + (accent ? "color-mix(in oklch, var(--accent), transparent 72%)" : "var(--border-soft)"),
       borderRadius: 8, padding: "10px 12px", background: "var(--bg-panel)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+      <Row gap={8} style={{ marginBottom: 9 }}>
         <span style={{ fontFamily: mono, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--fg-dim)" }}>{label}</span>
         {badge}
-        <span style={{ flex: 1 }} />
+        <Spacer />
         {hint && <span style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-dim)" }}>{hint}</span>}
-      </div>
+      </Row>
       {children}
     </div>
   );
@@ -67,10 +70,10 @@ export function ListItemCard({ title, meta, badge, highlight }: {
       background: highlight ? "var(--accent-soft)" : "var(--bg-canvas)",
       border: highlight ? "1px solid var(--accent)" : "1px solid var(--border-soft)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <Row gap={6}>
         <div style={{ fontFamily: mono, fontSize: 11, color: "var(--fg)" }}>{title}</div>
         {badge}
-      </div>
+      </Row>
       {meta != null && <div style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-dim)", marginTop: 3 }}>{meta}</div>}
     </div>
   );
@@ -79,13 +82,13 @@ export function ListItemCard({ title, meta, badge, highlight }: {
 /** Source row header: mode chip · label · location. */
 export function SourceHead({ s, right }: { s: CollectSource; right?: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <Row gap={8}>
       <ModeChip mode={s.mode} />
       <span style={{ fontFamily: "var(--sans)", fontSize: 12.5, fontWeight: 600, color: "var(--fg)" }}>{s.label}</span>
       {s.loc && <span style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.loc}</span>}
-      <span style={{ flex: 1 }} />
+      <Spacer />
       {right}
-    </div>
+    </Row>
   );
 }
 
@@ -96,19 +99,19 @@ export function Readiness({ checks, tail }: { checks: ReadyCheck[]; tail?: React
   const ok = checks.filter((c) => c.ok).length;
   return (
     <Card label="readiness" accent hint={ok === checks.length ? "gate met" : `${ok}/${checks.length}`}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <Stack gap={5}>
         {checks.map((c) => {
           const color = c.ok ? "var(--success)" : c.block ? "var(--danger)" : "var(--fg-dim)";
           return (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 11 }}>
+            <Row key={c.id} gap={8} style={{ fontFamily: mono, fontSize: 11 }}>
               <span style={{ color, width: 12 }}>{c.ok ? "✓" : c.block ? "✕" : "○"}</span>
               <span style={{ color: "var(--fg-muted)" }}>{c.label}</span>
-              <span style={{ flex: 1 }} />
+              <Spacer />
               {c.detail && <span style={{ fontSize: 9.5, color: c.block ? "var(--danger)" : "var(--fg-dim)" }}>{c.detail}</span>}
-            </div>
+            </Row>
           );
         })}
-      </div>
+      </Stack>
       {tail && <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--border-soft)", fontFamily: mono, fontSize: 10, color: "var(--fg-dim)", lineHeight: 1.5 }}>{tail}</div>}
     </Card>
   );
@@ -117,9 +120,9 @@ export function Readiness({ checks, tail }: { checks: ReadyCheck[]; tail?: React
 /** key→value cell used in the scope grid. */
 export function Kv({ k, v }: { k: string; v?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <Stack gap={2}>
       <span style={{ fontFamily: mono, fontSize: 8.5, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--fg-dim)" }}>{k}</span>
       <span style={{ fontFamily: mono, fontSize: 10.5, color: "var(--fg-muted)" }}>{v || "—"}</span>
-    </div>
+    </Stack>
   );
 }
