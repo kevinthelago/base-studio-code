@@ -37,18 +37,13 @@ async fn gh_request(
     body: &serde_json::Value,
     log_ctx: &str,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{}", path);
-    let response = gh_std_headers(client.request(method, url), token)
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let (status, json) = crate::platform::http::send_json(
+        gh_std_headers(crate::platform::http::client().request(method, url), token).json(body),
+        |e| format!("Request failed: {}", e),
+        |e| format!("Failed to parse response: {}", e),
+    )
+    .await?;
     if !status.is_success() {
         let msg = gh_error_message(&json, "Unknown error").to_string();
         log::warn!("{log_ctx} HTTP {status}: {msg}");
@@ -68,17 +63,12 @@ async fn gist_request(
     token: &str,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
-    let response = gh_std_headers(client.request(method, url), token)
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("{op} request failed: {e}"))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("{op}: failed to parse response: {e}"))?;
+    let (status, json) = crate::platform::http::send_json(
+        gh_std_headers(crate::platform::http::client().request(method, url), token).json(body),
+        |e| format!("{op} request failed: {e}"),
+        |e| format!("{op}: failed to parse response: {e}"),
+    )
+    .await?;
     if !status.is_success() {
         let msg = gh_error_message(&json, "unknown error");
         return Err(format!("{op} HTTP {status}: {msg}"));
@@ -116,25 +106,21 @@ pub(crate) async fn github_graphql(
         }
     }
 
-    let client = reqwest::Client::new();
     let mut body = serde_json::json!({ "query": query });
     if let Some(vars) = variables {
         body["variables"] = vars;
     }
-    let response = client
-        .post("https://api.github.com/graphql")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .header("User-Agent", super::USER_AGENT)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let (status, json) = crate::platform::http::send_json(
+        crate::platform::http::client()
+            .post("https://api.github.com/graphql")
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", super::USER_AGENT)
+            .json(&body),
+        |e| format!("Request failed: {}", e),
+        |e| format!("Failed to parse response: {}", e),
+    )
+    .await?;
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
         log::warn!("github_graphql HTTP {status}: {msg}");
@@ -208,9 +194,11 @@ pub(crate) async fn github_delete(token: String, path: String) -> Result<(), Str
     if token.is_empty() {
         return Err("No GitHub token provided.".to_string());
     }
-    let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{path}");
-    let response = gh_std_headers(client.request(reqwest::Method::DELETE, url), &token)
+    let response = gh_std_headers(
+        crate::platform::http::client().request(reqwest::Method::DELETE, url),
+        &token,
+    )
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
@@ -318,9 +306,8 @@ pub(crate) async fn github_request(
         }
     };
 
-    let client = reqwest::Client::new();
     let url = format!("https://api.github.com/{}", path);
-    let mut req = gh_std_headers(client.get(&url), &token);
+    let mut req = gh_std_headers(crate::platform::http::client().get(&url), &token);
     if let Some(etag) = &cached_etag {
         req = req.header("If-None-Match", etag.clone());
     }
