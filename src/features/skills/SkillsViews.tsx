@@ -6,6 +6,9 @@ import { KIND, PROFILE_COLOR, SOURCE_TAG, fmtCount, type SkillProfile } from "@/
 import { Spark } from "@/shared/ui/charts";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
 import { DataTableRow, DataTableHeader } from "@/shared/ui/data/DataTableRow";
 import type { SkillDef, SkillGroup } from "./lib/skills";
 import type { GroupedSection } from "./lib/skillsFilter";
@@ -82,9 +85,9 @@ export function SkillsCardsView({ filtered, groupsBySkill, onOpen, onPin, onTogg
   onToggle: (id: string) => void;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "14px 18px" }}>
+    <Grid cols={2} gap={12} style={{ padding: "14px 18px" }}>
       {filtered.map((s) => <SkillCard key={s.id} s={s} groups={groupsBySkill.get(s.id) ?? []} onOpen={() => onOpen(s.id)} onPin={() => onPin(s.id)} onToggle={() => onToggle(s.id)} />)}
-    </div>
+    </Grid>
   );
 }
 
@@ -98,23 +101,23 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
   return (
     <div style={{ padding: "12px 18px 0" }}>
       {showNoGroupsHint && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
+        <Row gap={10} style={{ margin: "0 0 12px", padding: "9px 13px", background: tintBg("var(--fg-dim)", 90), border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg-muted)" }}>
           <span style={{ color: "var(--fg-dim)" }}>⬡</span>
           <span>No task groups yet — every skill falls under <b style={{ color: "var(--fg)" }}>Ungrouped</b>. Create a group to bundle related skills.</span>
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onNewGroup}>＋ New group</button>
-        </div>
+          <Button onClick={onNewGroup}>＋ New group</Button>
+        </Row>
       )}
       {sections.map((sec, si) => (
         <div key={sec.id} className="skill-section" data-section-id={sec.id}
           style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, borderRadius: "var(--r-lg)", overflow: "hidden", background: "var(--bg-panel)" }}>
           {/* Section header — sticky; its own hue tile + a left accent rail ties the rows below to it.
               Later sections sit above earlier ones as they scroll under (descending z, opaque bg). */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
+          <Row gap={9} style={{ padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
             <span style={hueTile(sec.hue)}>{sec.glyph}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</span>
             <span className="mono" style={{ fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</span>
-          </div>
+          </Row>
           {/* Member rows, indented under the header so they clearly belong to this section. */}
           <div style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
             {sec.items.map((s, i) => <SkillRow key={s.id} s={s} i={i} h={h} />)}
@@ -130,32 +133,32 @@ export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef;
   const sc = successColor(s.invocations > 0 ? s.success : null);
   return (
     <div className="skill-card" data-skill-id={s.id} onClick={onOpen} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "13px 14px", cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
+      <Row align="start" gap={11}>
         <span style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Row gap={8}>
             <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</span>
             <span style={{ flex: 1 }} />
             <span onClick={(e) => { e.stopPropagation(); onPin(); }} style={{ fontSize: 13, color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</span>
             <Toggle size="sm" on={s.enabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} />
-          </div>
+          </Row>
           <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginTop: 3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{s.desc || "No description yet."}</div>
         </div>
-      </div>
-      {groups.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>{groups.map((g) => <span key={g.id} style={{ ...pill(g.hue), display: "inline-flex", alignItems: "center", gap: 4 }}>⬡ {g.name}</span>)}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 11, flexWrap: "wrap" }}>
+      </Row>
+      {groups.length > 0 && <Row align="stretch" gap={6} wrap style={{ marginTop: 9 }}>{groups.map((g) => <span key={g.id} style={{ ...pill(g.hue), display: "inline-flex", alignItems: "center", gap: 4 }}>⬡ {g.name}</span>)}</Row>}
+      <Row gap={6} wrap style={{ marginTop: 11 }}>
         <span style={sourcePill(s.source)}>{SOURCE_TAG[s.source].label}</span>
         <span style={scopePill(s.projects)}>{s.projects.length ? s.projects[0] : "global"}</span>
         <span style={{ flex: 1 }} />
         {s.tools.slice(0, 3).map((t) => <span key={t} className="kbd" style={{ fontSize: 10 }}>{t}</span>)}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", gap: 5 }}>{s.profiles.map((p: SkillProfile) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</div>
+      </Row>
+      <Row gap={10} style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
+        <Row align="stretch" gap={5}>{s.profiles.map((p: SkillProfile) => <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{p}</span></span>)}</Row>
         <span style={{ flex: 1 }} />
         <span className="mono" style={{ fontSize: 10.5, color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</span>
         {s.invocations > 0 && <span className="mono" style={{ fontSize: 10, color: sc }}>{s.success}%</span>}
         {s.trend.length > 1 && <Spark data={s.trend} color={s.invocations ? KIND[s.kind].color : "var(--fg-dim)"} />}
-      </div>
+      </Row>
     </div>
   );
 }

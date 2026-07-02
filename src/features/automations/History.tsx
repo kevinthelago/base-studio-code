@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { Row } from "@/shared/ui/layout/Row";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -45,9 +46,9 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
 
   if (rows.length === 0) {
     return (
-      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
+      <Row justify="center" className="mono" style={{ flex: 1, color: "var(--fg-dim)", fontSize: 12 }}>
         No runs yet — armed automations record their runs here.
-      </div>
+      </Row>
     );
   }
 

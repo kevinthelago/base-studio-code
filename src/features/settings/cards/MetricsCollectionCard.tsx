@@ -3,6 +3,7 @@ import type { PerfConfig } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
+import { Stack } from "@/shared/ui/layout/Stack";
 
 export function MetricsCollectionCard() {
   const { perfConfig, setPerfConfig } = useAppStore();
@@ -13,7 +14,7 @@ export function MetricsCollectionCard() {
 
   return (
     <Card title="Performance metrics collection">
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <Stack gap={0}>
         <Row
           label="Enable metrics collection"
           hint="Disabling stops sampling and stops writing new rows; existing history is kept."
@@ -52,7 +53,7 @@ export function MetricsCollectionCard() {
             </label>
           </div>
         </Row>
-      </div>
+      </Stack>
     </Card>
   );
 }

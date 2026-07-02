@@ -10,6 +10,9 @@ import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -106,7 +109,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
       <label>project assignment</label>
       <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
         <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
-        <div style={{ flex: 1 }} />
+        <Spacer />
         <div
           className={"toggle" + (isGlobal ? " on" : "")}
           title={isGlobal ? "global" : "scoped to projects"}
@@ -136,12 +139,12 @@ export function ProjectAssignment({ item, projects, onSet }: {
               </div>
             )}
           {projects.length > 0 && (
-            <div style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "center" }}>
+            <Row gap={8} style={{ marginTop: 4 }}>
               <span className="hint">{item.projects.length} of {projects.length} projects</span>
-              <div style={{ flex: 1 }} />
+              <Spacer />
               <span className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet(projects.map(p => p.id))}>select all</span>
               <span className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet([])}>make global</span>
-            </div>
+            </Row>
           )}
         </>
       )}
@@ -229,11 +232,11 @@ export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onC
             <IconButton aria-label="remove" size="xs" onClick={() => onChange(env.filter((_, j) => j !== i))} />
           </div>
         ))}
-        <button
-          className="btn ghost"
+        <Button
+          variant="ghost"
           style={{ height: 24, fontSize: 10.5, width: "fit-content" }}
           onClick={() => onChange([...env, ["", ""]])}
-        >+ env var</button>
+        >+ env var</Button>
       </div>
     </div>
   );

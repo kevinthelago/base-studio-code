@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { Row } from "@/shared/ui/layout/Row";
 
 // Export / import the entire app configuration as one portable bundle (#2027 P3). The bundle is a
 // versioned JSON of every file under the runtime config dir (~/.base-studio-code/config/) — prompts,
@@ -57,14 +58,14 @@ export function ConfigBundleCard() {
         </p>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <Row gap={10} wrap>
         <Button onClick={() => void doExport()} disabled={busy}>Export…</Button>
         <Button onClick={() => void doImport()} disabled={busy}>Import…</Button>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11.5, color: "var(--fg-muted)" }}>
           <Checkbox checked={replace} onChange={() => setReplace((v) => !v)} aria-label="Replace existing config on import" />
           Replace on import <span style={{ color: "var(--fg-dim)" }}>(else merge)</span>
         </label>
-      </div>
+      </Row>
 
       {notice && (
         <div

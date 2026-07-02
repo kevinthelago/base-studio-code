@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
 
 const THEME_KEY = "bsc-theme";
 type Theme = "dark" | "light";
@@ -21,7 +22,7 @@ export function ThemeCard() {
 
   return (
     <Card title="Theme">
-      <div style={{ display: "flex", gap: 8 }}>
+      <Row gap={8} align="stretch">
         {(["dark", "light"] as const).map((t) => (
           <button
             key={t}
@@ -37,7 +38,7 @@ export function ThemeCard() {
             }}
           >{t.charAt(0).toUpperCase() + t.slice(1)}</button>
         ))}
-      </div>
+      </Row>
       <div className="hint" style={{ marginTop: 10 }}>
         Persisted across restarts. Light mode moves all surfaces to the token layer —
         a few hardcoded terminal palette values may still appear dark.

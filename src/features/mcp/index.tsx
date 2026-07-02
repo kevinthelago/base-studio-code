@@ -19,6 +19,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Button } from "@/shared/ui/controls/Button";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
+import { Row } from "@/shared/ui/layout/Row";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import "./mcp.css";
@@ -84,8 +85,8 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
       return <span className="hint mono" style={{ fontSize: 10 }}>checking…</span>;
     const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
     return (
-      <button className="btn ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}
-        onClick={ev => { ev.stopPropagation(); updateInstalled(e); }}>{label}</button>
+      <Button variant="ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}
+        onClick={ev => { ev.stopPropagation(); updateInstalled(e); }}>{label}</Button>
     );
   }
 
@@ -154,13 +155,13 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
               c.link ? (
-                <button className="btn primary" style={{ height: 22, fontSize: 10, padding: "0 10px" }}
+                <Button variant="primary" style={{ height: 22, fontSize: 10, padding: "0 10px" }}
                   disabled={mcpStatus[c.name] === "downloading" || mcpStatus[c.name] === "building"}
                   onClick={() => downloadFromCatalog(c, item => addFromCatalog(item, false))}>
                   {mcpStatus[c.name] === "downloading" ? "downloading…" : mcpStatus[c.name] === "building" ? "building…" : mcpStatus[c.name] === "error" ? "retry ↻" : "download"}
-                </button>
+                </Button>
               ) : (
-                <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
+                <Button style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</Button>
               )
             } />
           ))}
@@ -222,10 +223,10 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
                 </div>
               ) : (
                 <div className="field"><label>command</label>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <Row gap={6} align="stretch">
                     <input className="input" placeholder="command" value={selected.command ?? ""} onChange={ev => updateMcpServer(selected.id, { command: ev.target.value })} style={{ flex: "0 0 120px" }} />
                     <input className="input" placeholder="args" value={selected.args ?? ""} onChange={ev => updateMcpServer(selected.id, { args: ev.target.value })} style={{ flex: 1 }} />
-                  </div>
+                  </Row>
                 </div>
               )}
           </DrawerBody>
@@ -308,7 +309,7 @@ export function HooksView() {
         <div className="catalog">
           {items.map(c => (
             <CatalogCard key={c.name} item={c} action={
-              <button className="btn" style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</button>
+              <Button style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</Button>
             } />
           ))}
           {items.length === 0 && <div className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</div>}
@@ -320,9 +321,9 @@ export function HooksView() {
   return (
     <div className="ext-workspace">
       <div className="ext-page">
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 22px 0" }}>
-          <button className="btn ghost" onClick={addCustom}>+ Custom hook</button>
-        </div>
+        <Row justify="end" align="stretch" style={{ padding: "10px 22px 0" }}>
+          <Button variant="ghost" onClick={addCustom}>+ Custom hook</Button>
+        </Row>
         <div className="ext-body">
           {installedView()}
           <div style={{ height: 20 }} />

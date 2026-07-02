@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
 import {
   loadShellKind,
   saveShellKind,
@@ -31,7 +32,7 @@ export function ShellSelectorCard() {
 
   return (
     <Card title="Console shell" hint="the shell new console sessions launch under · applies to the next launch">
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <Row gap={6} align="stretch" wrap>
         {SHELL_OPTIONS.map((o) => {
           const on = o.kind === kind;
           return (
@@ -50,7 +51,7 @@ export function ShellSelectorCard() {
             >{o.label}</div>
           );
         })}
-      </div>
+      </Row>
       <div className="hint" style={{ marginTop: 10, lineHeight: 1.55 }}>
         {active.note}
         {!active.helpersFull && (

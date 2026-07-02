@@ -1,5 +1,7 @@
 import { useAppStore } from "@/store";
 import { Chip } from "@/shared/ui/data/Chip";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
@@ -43,9 +45,9 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   if (!githubConnected) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         <GitHubEmpty />
-      </div>
+      </Stack>
     );
   }
 
@@ -54,12 +56,12 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // tabbed view. Each board view renders its own project header + sub-tabs.
   if (githubBoardOpen && !pageOverride) {
     return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Stack style={{ flex: 1, minHeight: 0 }}>
         {githubBoardTab === "board"    && <ProjectBoard />}
         {githubBoardTab === "roadmap"  && <Roadmap />}
         {githubBoardTab === "issues"   && <Issues />}
         {githubBoardTab === "insights" && <Insights />}
-      </div>
+      </Stack>
     );
   }
 
@@ -94,10 +96,9 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
           borderRight: "1px solid var(--border-soft)", padding: "14px 8px",
           display: "flex", flexDirection: "column", gap: 2, overflow: "auto",
         }}>
-          <div className="mono" style={{
+          <Row className="mono" justify="between" style={{
             fontSize: 10, letterSpacing: ".08em",
             color: "var(--fg-dim)", padding: "2px 12px 8px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
             <span>REPOS</span>
             <span
@@ -107,7 +108,7 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
             >
               disconnect
             </span>
-          </div>
+          </Row>
           {githubRepos.length === 0 && (
             <div className="mono" style={{
               padding: "12px", fontSize: 11,
@@ -129,7 +130,7 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   paddingLeft: on ? 10 : 12, cursor: "pointer",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <Row align="baseline" gap={6}>
                   <span className="mono" style={{
                     fontSize: 11,
                     color: on ? "var(--fg)" : "var(--fg-muted)",
@@ -137,11 +138,11 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
                     flex: 1, minWidth: 0,
                   }}>{r.full_name}</span>
                   <Chip style={{ fontSize: 9.5 }}>{langTag(r.language)}</Chip>
-                </div>
-                <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, display: "flex", gap: 8 }}>
+                </Row>
+                <Row className="mono" gap={8} align="stretch" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4 }}>
                   <span>⊕ {r.open_issues_count}</span>
                   {r.private && <Chip style={{ fontSize: 9 }}>private</Chip>}
-                </div>
+                </Row>
               </div>
             );
           })}
@@ -150,9 +151,9 @@ export function GitHubWorkspace({ pageOverride }: { pageOverride?: string } = {}
         <div className="resize-x" {...sidebar.handleProps} title="Drag to resize" />
 
         {/* The repo's pulse — replaces the old Overview/Actions tabs. */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Stack style={{ flex: 1, minWidth: 0 }}>
           <Pulse repo={activeRepo} />
-        </div>
+        </Stack>
       </div>
     </Screen>
   );
