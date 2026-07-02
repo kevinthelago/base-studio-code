@@ -91,7 +91,7 @@ pub fn run() {
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
-        .manage(logs::LogState::new())
+        .manage(logs::LogState::new(logs::LogConfig::default()))
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
