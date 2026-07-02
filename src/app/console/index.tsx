@@ -466,6 +466,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
         // moment the user switches back.
         const isFullscreenInTab = isActiveTab && fullscreenPaneIdx >= 0 && fullscreenPaneIdx < tPaneCount;
         return (
+          // eslint-disable-next-line no-restricted-syntax -- conditional-display grid (toggles grid/none per active tab)
           <div
             key={ti}
             className="console-grid"

@@ -192,6 +192,7 @@ export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
           <>
             {/* Persistent imperative surface — always in the DOM so containerRef is stable.
                 Hidden when no renderer is active; the empty-state overlay covers it. */}
+            {/* eslint-disable-next-line no-restricted-syntax -- preview renderer mount ref + conditional display */}
             <div
               ref={containerRef}
               style={{ flex: 1, display: activeKind ? 'flex' : 'none', minHeight: 0 }}

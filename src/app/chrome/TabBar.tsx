@@ -137,6 +137,7 @@ export function TabBar({
 
   return (
     <>
+      {/* eslint-disable-next-line no-restricted-syntax -- measured tabstrip needs a real DOM ref + drag handlers */}
       <div
         ref={stripRef}
         className={"tabstrip" + (dragIdx !== null ? " dragging" : "")}
@@ -221,6 +222,7 @@ export function TabBar({
       )}
 
       {menu && renderMenu && createPortal(
+        // eslint-disable-next-line no-restricted-syntax -- portal menu needs a real DOM ref for measured placement (Box isn't forwardRef)
         <div ref={menuRef} className="mono" style={{
           position: "fixed", top: menu.y, left: menu.x, zIndex: 2000,
           background: "var(--bg-panel)", border: "1px solid var(--border-soft)",
