@@ -39,7 +39,7 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   if (!cwd) return null;
 
   const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
-  const auditLines = await safeInvoke<string[]>("read_audit_log", { limit: 500 }, []);
+  const auditLines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "500", "--json"], []);
   return {
     paneId,
     anchor: {

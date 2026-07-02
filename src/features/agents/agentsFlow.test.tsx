@@ -10,15 +10,17 @@ import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
  * #199/#220 — the Agents-screen "Flow" tab surfaces the fleet's coordination + workflow
  * state (parked/ready/stalled/deadlocked sessions, workflow lanes), cross-referenced with
  * the profile each session runs under. Coord state is rebuilt from $BSC_COORD_LOG via the
- * mocked read_coord_log; workflow runs come from the store.
+ * mocked `bsc logs tail coord` bridge read; workflow runs come from the store.
  */
 const TS = "2026-05-30T18:00:00Z";
 const mockInvoke = vi.mocked(invoke);
 
-/** Drive invoke per-command: read_coord_log returns `coordLines`, everything else null. */
+/** Drive invoke: `bsc logs tail coord` returns `coordLines` (as a JSON string, #2144); else null. */
 function seedCoordLog(coordLines: string[]) {
-  mockInvoke.mockImplementation(async (cmd: string) => {
-    if (cmd === "read_coord_log") return coordLines as unknown as null;
+  mockInvoke.mockImplementation(async (cmd: string, payload?: unknown) => {
+    if (cmd === "bsc" && (payload as { args: string[] }).args?.[2] === "coord") {
+      return JSON.stringify(coordLines) as unknown as null;
+    }
     return null;
   });
 }

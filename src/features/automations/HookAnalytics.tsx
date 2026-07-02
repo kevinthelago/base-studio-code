@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
 import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
@@ -9,7 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
 // Hook Analytics tab (#865 PR 2) — KPI cards + 3 charts over the hook-fire telemetry
-// (~/.base-studio-code/hooks.log via read_hook_log + hookTelemetry.ts). The over-time chart + KPI
+// (~/.base-studio-code/hooks.log via `bsc logs tail hook` + hookTelemetry.ts). The over-time chart + KPI
 // cards are shared primitives (StackedDayBars / StatCard); the per-hook/results charts stay local.
 // `activeHooks`/`preCount` come from the live store (enabled hooks); the rest from the parsed log.
 // Empty until the hook wrappers emit fires (PR 3) — renders a clean zero state.
@@ -27,9 +27,8 @@ export function HookAnalyticsTab() {
   const [an, setAn] = useState<HookAnalytics | null>(null);
   useEffect(() => {
     let cancelled = false;
-    invoke<string[]>("read_hook_log", { limit: 8000 })
-      .then(lines => { if (!cancelled) setAn(aggregateHookTelemetry(parseHookLog((lines ?? []).join("\n")), new Date(), DAYS)); })
-      .catch(() => { if (!cancelled) setAn(aggregateHookTelemetry([], new Date(), DAYS)); });
+    bscJson<string[]>(null, ["logs", "tail", "hook", "--limit", "8000", "--json"], [])
+      .then(lines => { if (!cancelled) setAn(aggregateHookTelemetry(parseHookLog((lines ?? []).join("\n")), new Date(), DAYS)); });
     return () => { cancelled = true; };
   }, []);
 

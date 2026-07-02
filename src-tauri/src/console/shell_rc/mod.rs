@@ -143,8 +143,8 @@ pub(crate) const BSC_MCP_RC: &str = concat!(
 /// per-session source) and appends one TAB-separated line — `ts \t pane \t session_id \t
 /// transcript_path` — to the app-wide `$BSC_TOKENS_LOG`, tagged with `$BSC_AUDIT_PANE`.
 /// The session id is sanitized like bsc-skill's fields (strip tabs/newlines, cap length);
-/// the transcript path is left verbatim (a JSON-escaped native path) for `read_token_usage`
-/// to decode + parse. Best-effort + always exits 0 so it never blocks a stop. A raw string
+/// the transcript path is left verbatim (a JSON-escaped native path) for the token-usage reader
+/// (`bsc logs cost`) to decode + parse. Best-effort + always exits 0 so it never blocks a stop. A raw string
 /// keeps the embedded quotes/regex readable.
 pub(crate) const BSC_TOKENS_RC: &str = concat!(
     r#"bsc-tokens() { l="${BSC_TOKENS_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; sid="$(printf '%s' "$j" | __bsc_jstr session_id | cut -c1-120)"; tp="$(printf '%s' "$j" | grep -oE '"transcript_path"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1 | sed -E 's/^"transcript_path"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$sid" "$tp"; return 0; }"#,
@@ -156,7 +156,7 @@ pub(crate) const BSC_TOKENS_RC: &str = concat!(
 /// opens) and `bsc-activity idle` on `Stop` / `SubagentStop` (the turn closes). It drains the hook
 /// JSON from stdin (so the hook never blocks on an unread pipe), then appends one TAB-separated
 /// line — `ts \t pane \t state` — to the app-wide `$BSC_ACTIVITY_LOG`, tagged with `$BSC_AUDIT_PANE`.
-/// `ts` is epoch ms (so `read_pane_activity` orders prompt-vs-stop without timezone parsing). The
+/// `ts` is epoch ms (so `bsc logs pane-activity` orders prompt-vs-stop without timezone parsing). The
 /// frontend polls the latest state per pane and GATES the silence timer: a pane whose last event is
 /// `run` (turn still open) does not false-idle while a worker is thinking / running a long silent
 /// tool call / backing off. Authoritative idle only ever comes from `Stop`. The state arg is
@@ -170,7 +170,7 @@ pub(crate) const BSC_ACTIVITY_RC: &str = concat!(
 
 /// The `bsc-done` helper (#1379): a fleet WORKER calls this to CLOSE its own console once its owned
 /// work is complete (the close-nudge tells it to). It appends one line — `ts \t pane` — to the
-/// app-wide `$BSC_DONE_LOG`, tagged with `$BSC_AUDIT_PANE`. The frontend polls it (`read_done_panes`)
+/// app-wide `$BSC_DONE_LOG`, tagged with `$BSC_AUDIT_PANE`. The frontend polls it (`bsc logs done-panes`)
 /// and, for a worker that self-reported done, classifies the resting state from plan.db (NOT this
 /// say-so) and reaps the pane (`markPaneEnded` + `pty_kill`). Drains stdin so a piped reason can't
 /// block; best-effort + always exits 0.

@@ -195,6 +195,63 @@ pub fn cost_for_session(dir: &Path, session: &str) -> Option<Cost> {
     all_costs(dir).into_iter().find(|c| c.session == session)
 }
 
+/// The latest `session_id` per pane from `tokens.log` (`ts·pane·session·transcript`). [`Cost`] keys a
+/// session by its pane but doesn't carry the `session_id`, so this recovers the `pane → session_id`
+/// map the desktop token-usage record ([`Usage`]) needs to stay complete. A later line for a pane
+/// supersedes earlier ones (a resumed session keeps its accumulating transcript).
+pub fn session_ids(dir: &Path) -> HashMap<String, String> {
+    let text = std::fs::read_to_string(dir.join("tokens.log")).unwrap_or_default();
+    let mut map = HashMap::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 4 {
+            continue;
+        }
+        let (pane, sid, tp) = (f[1], f[2], f[3]);
+        if pane.is_empty() || tp.is_empty() {
+            continue;
+        }
+        map.insert(pane.to_string(), sid.to_string()); // last line wins
+    }
+    map
+}
+
+/// The desktop per-pane token + cost record (#416): the `bsc logs cost --full` shape the app's
+/// `read_token_usage` command returned. Same numbers as [`Cost`], but keyed by `pane`, carrying the
+/// `session_id` (recovered from `tokens.log`), and using the `*_tokens` field names the frontend
+/// `PaneTokenUsage` type expects. The serde field names are a frontend contract — keep them exact.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Usage {
+    pub pane: String,
+    pub session_id: String,
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cost_usd: f64,
+}
+
+/// Per-pane token usage for the desktop (#416 / #2144), newest pane first, bounded to `limit`.
+/// Delegates the pricing to [`all_costs`] and enriches each row with its `session_id`.
+pub fn usage(dir: &Path, limit: usize) -> Vec<Usage> {
+    let sids = session_ids(dir);
+    all_costs(dir)
+        .into_iter()
+        .take(limit)
+        .map(|c| Usage {
+            session_id: sids.get(&c.session).cloned().unwrap_or_default(),
+            pane: c.session,
+            model: c.model,
+            input_tokens: c.input,
+            output_tokens: c.output,
+            cache_creation_tokens: c.cache_creation,
+            cache_read_tokens: c.cache_read,
+            cost_usd: c.cost_usd,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +336,33 @@ mod tests {
         assert_eq!(c.session, "key:ui");
         assert!((c.cost_usd - 15.0).abs() < 1e-9);
         assert!(cost_for_session(&dir, "key:none").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn usage_enriches_cost_with_session_id_and_pane_shape() {
+        // `bsc logs cost --full` (#2144): the desktop `read_token_usage` shape — keyed by pane,
+        // carrying the session_id from tokens.log, with the `*_tokens` frontend field names.
+        let dir = std::env::temp_dir().join(format!("bsc-logs-usage-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tp = dir.join("t.jsonl");
+        std::fs::write(&tp, r#"{"message":{"model":"claude-sonnet-4-6","usage":{"output_tokens":1000000}}}"#).unwrap();
+        std::fs::write(
+            dir.join("tokens.log"),
+            format!("2026-06-26T10:00:00Z\tkey:ui\tsid-42\t{}\n", tp.to_string_lossy().replace('\\', "\\\\")),
+        ).unwrap();
+
+        let sids = session_ids(&dir);
+        assert_eq!(sids.get("key:ui").map(String::as_str), Some("sid-42"));
+
+        let rows = usage(&dir, 64);
+        assert_eq!(rows.len(), 1);
+        let u = &rows[0];
+        assert_eq!((u.pane.as_str(), u.session_id.as_str(), u.model.as_str()), ("key:ui", "sid-42", "claude-sonnet-4-6"));
+        assert_eq!(u.output_tokens, 1_000_000);
+        assert!((u.cost_usd - 15.0).abs() < 1e-9);
+        // `limit` bounds the record count.
+        assert!(usage(&dir, 0).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

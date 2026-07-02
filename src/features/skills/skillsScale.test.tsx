@@ -40,11 +40,14 @@ describe("SkillsWorkspace — KPI leaderboard digest", () => {
   });
 
   it("expanding the digest renders the tiles + 'Most invoked' leaderboard ranked by invocations", async () => {
-    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
-      cmd === "read_skill_log"
-        ? logFor([{ name: "Cut a release", n: 12, ok: 12 }, { name: "Open a clean PR", n: 5, ok: 4 }])
-        : null,
-    );
+    vi.mocked(invoke).mockImplementation(async (cmd: string, payload?: unknown) => {
+      // Skill telemetry now reads via the `bsc` bridge: `bsc logs tail skill` → a JSON string of the
+      // raw log lines on stdout (#2144).
+      if (cmd === "bsc" && (payload as { args: string[] }).args[0] === "logs") {
+        return JSON.stringify(logFor([{ name: "Cut a release", n: 12, ok: 12 }, { name: "Open a clean PR", n: 5, ok: 4 }]));
+      }
+      return null;
+    });
     const { container } = render(<SkillsWorkspace />);
     // telemetry merges asynchronously; wait for the usage to land.
     await waitFor(() => expect(screen.getByText("12×")).toBeTruthy());

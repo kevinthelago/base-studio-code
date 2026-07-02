@@ -144,7 +144,8 @@ describe("McpWorkspace + HooksView", () => {
       .find((t) => t.textContent?.includes("Analytics")) as HTMLElement;
     expect(analyticsTab).toBeTruthy();
     fireEvent.click(analyticsTab);
-    // KPI cards + the call-results zero state render (read_mcp_log mock resolves null → empty).
+    // KPI cards + the call-results zero state render (the `bsc logs tail mcp` bridge read degrades to
+    // an empty list under the default invoke mock).
     expect(await screen.findByText("Total calls")).toBeTruthy();
     expect(screen.getByText("Calls over time")).toBeTruthy();
     expect(screen.getByText(/No calls recorded yet/)).toBeTruthy();
