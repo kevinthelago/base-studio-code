@@ -21,7 +21,7 @@ export type PrimitiveName =
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
   // feedback
-  | "Banner" | "EmptyState" | "StatusDot";
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback";
 
@@ -279,6 +279,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "loud", type: "boolean", description: "Stronger emphasis." },
       { name: "right", type: "node", description: "Right-aligned content." },
       { name: "onDismiss", type: "function", description: "Show a dismiss ✕ and call this." },
+    ],
+  },
+  {
+    name: "InlineError", group: "feedback", importPath: "@/shared/ui/feedback/InlineError",
+    description: "A small static mono danger callout — a short error string on a translucent danger wash.",
+    props: [
+      CHILDREN,
+      { name: "pad", type: "space", default: "[8, 12]", description: "Inner padding — a rung/px or a [block, inline] pair." },
+      { name: "radius", type: "enum", values: ["sm", "md", "lg"], default: 4, description: "Corner radius rung (--r-*) or raw px." },
+      { name: "borderFade", type: "number", default: 70, description: "Border tint — transparency % of --danger in the 1px border (some sites use 60)." },
     ],
   },
   {

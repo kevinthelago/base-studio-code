@@ -8,6 +8,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { DELETE_MUTATION, type GhProject } from "./publishedModel";
 
 interface DeleteProjectModalProps {
@@ -160,12 +161,9 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
                   </Text>
                 )}
                 {deleteError && (
-                  <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
-                    border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                    fontSize: 11, color: "var(--danger)",
-                  }}>
+                  <InlineError style={{ marginBottom: 14 }}>
                     {deleteError}
-                  </Box>
+                  </InlineError>
                 )}
                 <Row gap={8} align="stretch" justify="end">
                   <Button variant="ghost" onClick={() => { setConfirmDeleteRepos(false); setDeleteError(null); }} disabled={deleting}>back</Button>
@@ -187,12 +185,9 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
               or delete everything.
             </Text>
             {deleteError && (
-              <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
-                border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                fontSize: 11, color: "var(--danger)",
-              }}>
+              <InlineError style={{ marginBottom: 14 }}>
                 {deleteError}
-              </Box>
+              </InlineError>
             )}
             {/* Keep — the default / safe primary action. */}
             <Button
@@ -251,12 +246,9 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
               only the project board is.
             </Text>
             {deleteError && (
-              <Box className="mono" pad={[8, 12]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={4} style={{ marginBottom: 14,
-                border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-                fontSize: 11, color: "var(--danger)",
-              }}>
+              <InlineError style={{ marginBottom: 14 }}>
                 {deleteError}
-              </Box>
+              </InlineError>
             )}
             <Row gap={8} align="stretch" justify="end">
               <Button
