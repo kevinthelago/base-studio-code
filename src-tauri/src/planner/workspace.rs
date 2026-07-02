@@ -54,7 +54,7 @@ pub(crate) fn setup_workspaces(
     }
     // Discovery-stage sections get their own subdir (#807) — created ONLY when the blueprint
     // actually carries a discovery stage. The planner writes `discovery/<topic>.md` there;
-    // read_plan_sections ingests it alongside the hub root.
+    // read_plan_stages ingests it alongside the hub root.
     // Migration (#1578: Context stage → Discovery): an in-flight project may have a `context/`
     // dir from before the rename — move it in place so its prose carries forward.
     let (legacy, current) = (planning_dir.join("context"), planning_dir.join("discovery"));

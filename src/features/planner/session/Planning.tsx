@@ -30,7 +30,7 @@ import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
 import { usePlannerTagStream } from "./usePlannerTagStream";
-import { usePlanSectionPoll } from "./usePlanSectionPoll";
+import { usePlanStagePoll } from "./usePlanStagePoll";
 import { usePlannerRepoManagement } from "./usePlannerRepoManagement";
 import { usePlanMcpDownloads } from "./usePlanMcpDownloads";
 import { usePlanSkillsManagement } from "./usePlanSkillsManagement";
@@ -71,13 +71,13 @@ export function Planning({ visible }: { visible: boolean }) {
     githubToken,
     activeProjectRepos,
     projectLocalRepos,
-    planSections, planConfirmedSections,
+    planStages, planConfirmedStages,
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
     planSourceConfig, planIntegrationConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
-    planSkippedSections, skipPlanSection,
+    planSkippedStages, skipPlanStage,
     planFleet,
     planFleetTopology, setPlanFleetTopology,
     planFleetDirectorDrive, setPlanFleetDirectorDrive,
@@ -90,7 +90,7 @@ export function Planning({ visible }: { visible: boolean }) {
     addProjectRepo, fleetStartProject,
     agentProfiles,
     commands, schedules,
-    confirmPlanSection,
+    confirmPlanStage,
   } = useAppStore();
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
@@ -202,15 +202,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // recompute every render (the `?? {}` / `?? []` fallbacks would otherwise mint
   // a fresh ref each time the project has no sections yet).
   const savedSections = useMemo(
-    () => planSections[effectiveProjectId] ?? {}, [planSections, effectiveProjectId]);
+    () => planStages[effectiveProjectId] ?? {}, [planStages, effectiveProjectId]);
   const confirmedSet  = useMemo(
-    () => new Set(planConfirmedSections[effectiveProjectId] ?? []),
-    [planConfirmedSections, effectiveProjectId]);
+    () => new Set(planConfirmedStages[effectiveProjectId] ?? []),
+    [planConfirmedStages, effectiveProjectId]);
   // Optional stages the user deliberately skipped (#921) — they resolve the stage's gate (so the
   // flow advances) but render as "skipped", not "complete".
   const skippedSet = useMemo(
-    () => new Set(planSkippedSections[effectiveProjectId] ?? []),
-    [planSkippedSections, effectiveProjectId]);
+    () => new Set(planSkippedStages[effectiveProjectId] ?? []),
+    [planSkippedStages, effectiveProjectId]);
 
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
@@ -424,14 +424,14 @@ export function Planning({ visible }: { visible: boolean }) {
   // are in scope.
   usePlannerTunnelSync({
     effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
-    planningDir, paneId, projectTitle, confirmPlanSection,
+    planningDir, paneId, projectTitle, confirmPlanStage,
   });
 
   // Stage gate-confirm/skip logic (#1775, usePlanConfirmations): the active stage's pending sections,
   // the confirm-stage primitive (#1068), the auto-advance effect (#1068), and the optional skip (#921).
   const { pendingConfirm, confirmStageKeys, onSkipStage } = usePlanConfirmations({
     stages, focusActiveIdx, sections, planSecs, confirmedSet, featureState, featureCycle,
-    effectiveProjectId, paneId, confirmPlanSection, skipPlanSection,
+    effectiveProjectId, paneId, confirmPlanStage, skipPlanStage,
     autoCompleteGates, autoPlanActive: autoPlanWithClaude && llmHasKey,
   });
   // #2121 — the UI stage's conditional footer. The staged design "needs routing" when it hasn't
@@ -466,8 +466,8 @@ export function Planning({ visible }: { visible: boolean }) {
     } catch (e) {
       console.error("route design failed:", e);
     }
-    confirmPlanSection(projectKey, "ui");
-  }, [effectiveProjectId, confirmPlanSection]);
+    confirmPlanStage(projectKey, "ui");
+  }, [effectiveProjectId, confirmPlanStage]);
 
   // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
   // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
@@ -596,8 +596,8 @@ export function Planning({ visible }: { visible: boolean }) {
   usePlannerPromptDelivery(effectiveProjectId, sendPrompt);
 
 
-  // Planner 2s plan.db + section-file poll (#1474, usePlanSectionPoll).
-  usePlanSectionPoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir });
+  // Planner 2s plan.db + section-file poll (#1474, usePlanStagePoll).
+  usePlanStagePoll({ visible, projectId: effectiveProjectId, publishRepos, enqueueMcpDownloads, planningDir });
 
 
   // Session lifecycle (#1642, usePlanningSession): the `restarting` flag + the regenerate /

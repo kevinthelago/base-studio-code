@@ -1,7 +1,7 @@
 // Shared model + loader for the data-COLLECTION focused panes (Targets, Source
 // legitimacy, …). These stages have no dedicated backend — the planner declares
 // them as JSON section files in the project hub (e.g. `collectTargets.json`,
-// `sourceLicensing.json`). The panes read those files back via `read_plan_sections`
+// `sourceLicensing.json`). The panes read those files back via `read_plan_stages`
 // (which returns every .md/.json section keyed by file stem) and render them.
 //
 // Pure types + a tolerant parser. The React fetch hook (`useStageJson`) lives in

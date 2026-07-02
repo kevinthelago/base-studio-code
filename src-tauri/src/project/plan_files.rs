@@ -98,8 +98,8 @@ pub(crate) fn clear_project_plan_files(project_key: String) -> Result<u32, Strin
 /// is non-empty. Callers poll this on a short interval to pick up sections that
 /// Claude writes via its Write tool (more reliable than parsing PTY output).
 #[tauri::command]
-pub(crate) fn read_plan_sections(project_key: String) -> Result<std::collections::HashMap<String, String>, String> {
-    let _perf = PerfSpan::new("read_plan_sections");
+pub(crate) fn read_plan_stages(project_key: String) -> Result<std::collections::HashMap<String, String>, String> {
+    let _perf = PerfSpan::new("read_plan_stages");
     let safe_key  = sanitize_project_key(&project_key);
     if safe_key.is_empty() {
         return Ok(std::collections::HashMap::new());
@@ -114,8 +114,8 @@ pub(crate) fn read_plan_sections(project_key: String) -> Result<std::collections
     // Context-stage discovery topics, #807). Reading both keeps pre-existing flat projects
     // working; context/ is ingested last so a section there wins over a stale root copy.
     let mut sections = std::collections::HashMap::new();
-    ingest_section_files(&plans_dir, &mut sections);
-    ingest_section_files(&discovery_dir_for(&project_key), &mut sections);
+    ingest_stage_files(&plans_dir, &mut sections);
+    ingest_stage_files(&discovery_dir_for(&project_key), &mut sections);
     Ok(sections)
 }
 
