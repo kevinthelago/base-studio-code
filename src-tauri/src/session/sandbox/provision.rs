@@ -190,7 +190,7 @@ fn sandbox_disk_usage_inner() -> SandboxDisk {
     let install_dir = sandbox_install_dir();
     SandboxDisk {
         installed: install_dir.exists(),
-        distro_bytes: crate::fleet::teardown::dir_size(&install_dir),
+        distro_bytes: crate::fleet::disk::dir_size(&install_dir),
         tarball_bytes: std::fs::metadata(sandbox_rootfs_tarball()).map(|m| m.len()).unwrap_or(0),
     }
 }
@@ -203,7 +203,7 @@ pub(crate) fn remove_sandbox() -> Result<u64, String> {
     require_windows()?;
     let install_dir = sandbox_install_dir();
     let tarball = sandbox_rootfs_tarball();
-    let freed = crate::fleet::teardown::dir_size(&install_dir)
+    let freed = crate::fleet::disk::dir_size(&install_dir)
         + std::fs::metadata(&tarball).map(|m| m.len()).unwrap_or(0);
     for args in [["--terminate", AGENT_SANDBOX_DISTRO], ["--unregister", AGENT_SANDBOX_DISTRO]] {
         let mut cmd = std::process::Command::new("wsl.exe");
