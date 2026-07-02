@@ -14,7 +14,7 @@ pub(crate) fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCf
         let slug = skill_slug(&s.name);
         if slug.is_empty() { continue; }
         let dir = skills_root.join(&slug);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).str_err()?;
         let mut doc = String::from("---\n");
         doc.push_str(&format!("name: {}\n", yaml_quote(&s.name)));
         doc.push_str(&format!("description: {}\n", yaml_quote(&s.description)));
@@ -23,7 +23,7 @@ pub(crate) fn write_session_skills(cwd_root: &std::path::Path, skills: &[SkillCf
         }
         doc.push_str("---\n\n");
         doc.push_str(&s.prompt);
-        std::fs::write(dir.join("SKILL.md"), doc).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("SKILL.md"), doc).str_err()?;
     }
     Ok(())
 }

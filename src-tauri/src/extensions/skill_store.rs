@@ -9,6 +9,7 @@
 // would split a group from skills owned by another project; this DB is shared by all of them. WAL +
 // busy_timeout (set in `skilldb::Store::open`) let the CLI and the live app touch it concurrently.
 
+use crate::StrErr;
 use skilldb::{Skill, SkillGroup, Store};
 use std::path::PathBuf;
 
@@ -19,37 +20,37 @@ fn db_path() -> PathBuf {
 }
 
 fn open() -> Result<Store, String> {
-    Store::open(&db_path()).map_err(|e| e.to_string())
+    Store::open(&db_path()).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_store_list() -> Result<Vec<Skill>, String> {
-    open()?.list().map_err(|e| e.to_string())
+    open()?.list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_store_upsert(skill: Skill) -> Result<(), String> {
-    open()?.upsert(&skill).map_err(|e| e.to_string())
+    open()?.upsert(&skill).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_store_remove(id: String) -> Result<(), String> {
-    open()?.remove(&id).map_err(|e| e.to_string())
+    open()?.remove(&id).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_group_list() -> Result<Vec<SkillGroup>, String> {
-    open()?.group_list().map_err(|e| e.to_string())
+    open()?.group_list().str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_group_upsert(group: SkillGroup) -> Result<(), String> {
-    open()?.group_upsert(&group).map_err(|e| e.to_string())
+    open()?.group_upsert(&group).str_err()
 }
 
 #[tauri::command]
 pub(crate) fn skill_group_remove(id: String) -> Result<(), String> {
-    open()?.group_remove(&id).map_err(|e| e.to_string())
+    open()?.group_remove(&id).str_err()
 }
 
 /// Expand a group id to its member skills (de-duped, dangling member ids skipped) — the same
@@ -57,5 +58,5 @@ pub(crate) fn skill_group_remove(id: String) -> Result<(), String> {
 /// so the UI preview of a group matches what a launched session will actually receive.
 #[tauri::command]
 pub(crate) fn skill_group_resolve(group_id: String) -> Result<Vec<Skill>, String> {
-    open()?.resolve(&group_id).map_err(|e| e.to_string())
+    open()?.resolve(&group_id).str_err()
 }

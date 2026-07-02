@@ -10,6 +10,7 @@
 //! scan-persist hook (#786).
 
 #[cfg(feature = "source-stage")]
+use crate::StrErr;
 use bsc_data::{Connector, FieldType, RestPreset};
 #[cfg(feature = "source-stage")]
 use super::data_csv::{infer_field_type, store_path};
@@ -172,7 +173,7 @@ fn declared_fields(declared: &[bsc_data::SourceField]) -> Vec<ScanField> {
 /// Run objects() (bounded, with a sample-count read) + scan_platform() over a built connector.
 #[cfg(feature = "source-stage")]
 fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, String> {
-    let objs = conn.objects().map_err(|e| e.to_string())?;
+    let objs = conn.objects().str_err()?;
     let mut objects = Vec::new();
     for o in objs.into_iter().take(12) {
         let rs = conn.read(&o.name).ok();
@@ -186,7 +187,7 @@ fn run_scan<C: Connector>(conn: &C, instance: String) -> Result<ScanResult, Stri
         };
         objects.push(ScanObject { name: o.name, count, fields });
     }
-    let platform = conn.scan_platform().map_err(|e| e.to_string())?;
+    let platform = conn.scan_platform().str_err()?;
     let behaviors = behaviors_summary(&platform);
     Ok(ScanResult {
         live: true,
@@ -273,8 +274,8 @@ fn persist_scan(project_key: &str, scan: &bsc_data::PlatformScan) {
         return;
     }
     let result = (|| -> Result<std::path::PathBuf, String> {
-        let db = store_path(project_key).map_err(|e| e.to_string())?;
-        bsc_data::MetaStore::open(&db).and_then(|s| s.set_scan(scan)).map_err(|e| e.to_string())?;
+        let db = store_path(project_key).str_err()?;
+        bsc_data::MetaStore::open(&db).and_then(|s| s.set_scan(scan)).str_err()?;
         Ok(db)
     })();
     match result {
@@ -305,7 +306,7 @@ fn scan_runtime_preset(
     source_uid: &str,
     fields: &std::collections::HashMap<String, String>,
 ) -> Result<ScanResult, String> {
-    match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).map_err(|e| e.to_string())? {
+    match bsc_data::find_runtime_preset(&bsc_data::runtime_store_path(), connector_id).str_err()? {
         Some(preset) => {
             let secret = crate::sources::credentials::get_secret(project, source_uid, runtime_secret_field(&preset.auth))
                 .unwrap_or_default();
