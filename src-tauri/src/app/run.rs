@@ -7,7 +7,7 @@ use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
 use crate::observability::{self, logs, perf, tokens};
 use crate::platform::docstore;
-use crate::project::{self, plan_db};
+use crate::project;
 use crate::sources::{credentials, data, oauth as source_oauth};
 use tauri::{Manager, RunEvent};
 
@@ -179,14 +179,11 @@ pub fn run() {
             #[cfg(feature = "source-stage")]
             data::data_infer_model,
             #[cfg(feature = "source-stage")]
-            data::data_persist_model,
-            #[cfg(feature = "source-stage")]
             data::data_get_model,
             #[cfg(feature = "source-stage")]
             data::data_load_reconciled,
             #[cfg(feature = "source-stage")]
             data::data_platform_scan,
-            data::data_runtime_connectors,
             credentials::source_save_secret,
             credentials::source_has_secret,
             credentials::source_delete_secret,
@@ -304,40 +301,6 @@ pub fn run() {
             logs::log_get_config,
             logs::log_set_config,
             logs::enforce_log_caps,
-            plan_db::plan_upsert_issue,
-            plan_db::plan_list_issues,
-            plan_db::plan_remove_issue,
-            plan_db::plan_set_issue_status,
-            plan_db::plan_upsert_feature,
-            plan_db::plan_list_features,
-            plan_db::plan_remove_feature,
-            plan_db::plan_add_repo,
-            plan_db::plan_list_repos,
-            plan_db::plan_remove_repo,
-            plan_db::plan_set_fleet,
-            plan_db::plan_get_fleet,
-            plan_db::plan_remove_stream,
-            plan_db::plan_set_deploy,
-            plan_db::plan_get_deploy,
-            plan_db::plan_set_deps,
-            plan_db::plan_get_deps,
-            plan_db::plan_add_mcp,
-            plan_db::plan_list_mcp,
-            plan_db::plan_remove_mcp,
-            plan_db::plan_list_automations,
-            plan_db::plan_list_startup,
-            plan_db::plan_set_blueprint,
-            plan_db::plan_get_blueprint,
-            plan_db::plan_list_discovery,
-            plan_db::plan_require_discovery,
-            plan_db::plan_triage_record_run,
-            plan_db::plan_triage_last_run,
-            plan_db::plan_issues_changed_since,
-            plan_db::plan_lesson_list,
-            plan_db::plan_lesson_confirm,
-            plan_db::plan_lesson_discard,
-            plan_db::plan_lesson_remove,
-            plan_db::plan_lesson_expire,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
