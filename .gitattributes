@@ -3,3 +3,12 @@
 # platform so the embedded content (and the generated files) are byte-identical
 # regardless of where the build runs (#769).
 src-tauri/templates/*.md text eol=lf
+
+# Planner prose blocks embedded via include_dir! (config::load_str) and written
+# verbatim into generated hub files (github_context.md / CLAUDE.md / automations.md).
+# Pin to LF so the embedded bytes — and the generated files — stay byte-identical
+# on every platform, matching the inline Rust literals they replaced (#2075 / #2027).
+src-tauri/data/planner/github-commands.md   text eol=lf
+src-tauri/data/planner/github-repo-item.md  text eol=lf
+src-tauri/data/planner/linked-repo-item.md  text eol=lf
+src-tauri/data/planner/automations-empty.md text eol=lf

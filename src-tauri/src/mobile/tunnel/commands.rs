@@ -338,11 +338,9 @@ pub async fn tunnel_check_relay(
     let health_url = format!("{base}/health");
 
     let t0 = std::time::Instant::now();
-    let result = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default()
+    let result = crate::platform::http::client()
         .get(&health_url)
+        .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
     let latency_ms = t0.elapsed().as_millis() as u64;

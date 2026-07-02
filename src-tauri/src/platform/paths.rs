@@ -3,7 +3,7 @@
 //! context dirs, and the published marker. Pure path construction (no I/O except the marker probe).
 //! Extracted verbatim from `lib.rs`.
 
-use crate::platform::fsx::sanitize_project_key;
+use crate::platform::fsx::{sanitize_project_key, worktree_slug};
 
 /// The user's home directory. Delegates to the shared [`bsc_util::home_dir`] (#1646) so the app
 /// and every `bsc-*` CLI resolve the SAME directory; an unset home falls back to the empty path
@@ -61,8 +61,16 @@ pub(crate) fn legacy_draft_dir(project_key: &str) -> std::path::PathBuf {
 /// `projects/<sanitized-project-key>/<short-repo-name>`, where the short name is
 /// the part of `owner/name` after the `/`. Each repo clone is a repo session's CWD.
 pub(crate) fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::PathBuf {
-    let short = repo_full_name.rsplit('/').next().unwrap_or(repo_full_name);
-    project_dir(project_key).join(short)
+    project_dir(project_key).join(repo_short(repo_full_name))
+}
+
+/// The SHORT repo name: the segment of a GitHub `owner/name` after the last `/` (or the
+/// whole string when there's no `/`). Every on-disk path derived from a repo uses this short
+/// form — the clone dir under the hub ([`repo_dir`]) and the worktree dir name
+/// ([`worktree_dir_name`]) — so this is the single source of that idiom (#2061), replacing the
+/// hand-rolled `repo.rsplit('/').next().unwrap_or(repo)` scattered across the fleet.
+pub(crate) fn repo_short(repo_full_name: &str) -> &str {
+    repo_full_name.rsplit('/').next().unwrap_or(repo_full_name)
 }
 
 /// The fleet's git worktrees live OUTSIDE the project hub, at
@@ -77,6 +85,29 @@ pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
     bsc_base_dir()
         .join("worktrees")
         .join(sanitize_project_key(project_key))
+}
+
+/// The on-disk directory NAME of a fleet worker's worktree: `<repoShort>--<slug>`, where
+/// `slug` = [`worktree_slug`]`(agent_id)`. Join it onto [`worktrees_dir`] for the absolute path.
+/// The SINGLE builder for that name (#2061) — create ([`crate::fleet::worktree::ensure_worktree`]),
+/// discover (`console::discovery`), and teardown (`fleet::teardown`) all route through this + its
+/// inverse [`parse_worktree_dir_name`] so the paths can never silently disagree.
+pub(crate) fn worktree_dir_name(repo: &str, agent_id: &str) -> String {
+    format!("{}--{}", repo_short(repo), worktree_slug(agent_id))
+}
+
+/// Inverse of [`worktree_dir_name`]: split a worktree dir name into `(repo_short, slug)`, returning
+/// `None` when there is no `--` boundary.
+///
+/// The FIRST `--` is the boundary: [`worktree_slug`] never emits `--` (it maps every non-`[A-Za-z0-9._-]`
+/// char to a single `-`, so a doubled dash can only come from the literal separator), so the only way
+/// the round-trip could mis-split is a repo SHORT name that itself contains `--`. GitHub repo names can
+/// technically contain consecutive hyphens, so that is the documented guard: `worktree_dir_name` →
+/// `parse_worktree_dir_name` round-trips exactly for any repo short name WITHOUT `--`; a `--`-containing
+/// short name would be truncated at its first `--` (matching the pre-existing `split_once("--")` callers
+/// this consolidates). In practice no linked repo short name has ever contained `--`.
+pub(crate) fn parse_worktree_dir_name(name: &str) -> Option<(&str, &str)> {
+    name.split_once("--")
 }
 
 /// Absolute on-disk location of a project's plan section files, which live FLAT
@@ -114,11 +145,7 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn project_dir_places_the_sanitized_key_directly_under_projects() {
@@ -139,6 +166,35 @@ mod relocated_tests {
         // The key is sanitized; the repo collapses to its segment after the last '/'.
         let s = repo_dir("acme/api project", "owner/api").to_string_lossy().replace('\\', "/");
         assert!(s.ends_with("/projects/acme_api_project/api"), "got {s}");
+    }
+    #[test]
+    fn repo_short_takes_the_segment_after_the_last_slash() {
+        assert_eq!(repo_short("acme/wotos-ui"), "wotos-ui");
+        assert_eq!(repo_short("owner/api"), "api");
+        // No '/' → the whole string.
+        assert_eq!(repo_short("localrepo"), "localrepo");
+        // Only the LAST '/' matters (defensive — full names are owner/name).
+        assert_eq!(repo_short("a/b/c"), "c");
+    }
+    #[test]
+    fn worktree_dir_name_builds_and_round_trips_through_parse() {
+        // Build: <repoShort>--<slug(agent)>; the agent id is slugified, the repo collapses to its short name.
+        let name = worktree_dir_name("acme/wotos-ui", "feat/login");
+        assert_eq!(name, "wotos-ui--feat-login");
+        // Round-trip: parse recovers (repo_short, slug) for a name WITHOUT '--' in the repo short.
+        assert_eq!(parse_worktree_dir_name(&name), Some(("wotos-ui", "feat-login")));
+        // A dir name with no boundary parses to None (no owning clone).
+        assert_eq!(parse_worktree_dir_name("nodashes"), None);
+    }
+    #[test]
+    fn parse_worktree_dir_name_splits_at_the_first_dash_pair() {
+        // The documented guard: a repo short name containing '--' truncates at its FIRST '--'
+        // (matches the pre-existing split_once("--") behavior this consolidates). worktree_slug
+        // itself never emits '--', so a well-formed name always round-trips.
+        let name = worktree_dir_name("owner/a--b", "s1");
+        assert_eq!(name, "a--b--s1");
+        // First '--' is the boundary → repo short truncates to "a", slug is the remainder.
+        assert_eq!(parse_worktree_dir_name(&name), Some(("a", "b--s1")));
     }
     #[test]
     fn worktrees_dir_is_outside_the_project_hub() {
