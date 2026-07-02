@@ -26,6 +26,16 @@ pub(crate) fn github_client_id() -> String {
     GITHUB_CLIENT_ID.to_string()
 }
 
+/// Reject the device flow when this build has no baked-in OAuth Client ID (see
+/// [`GITHUB_CLIENT_ID`]): both `github_device_start` and `github_device_poll` short-circuit
+/// with this one PAT-fallback error before touching the network.
+fn require_client_id() -> Result<(), String> {
+    if GITHUB_CLIENT_ID.is_empty() {
+        return Err("This build has no GitHub OAuth Client ID; use a personal access token instead.".to_string());
+    }
+    Ok(())
+}
+
 /// The device/user codes returned by `POST /login/device/code`. `user_code` is
 /// shown to the user, `verification_uri` is opened in their browser, `device_code`
 /// is the opaque handle passed back to `github_device_poll`, and `interval` is the
@@ -47,23 +57,17 @@ pub(crate) struct DeviceStart {
 /// answers with an `error` field.
 #[tauri::command]
 pub(crate) async fn github_device_start(scope: String) -> Result<DeviceStart, String> {
-    if GITHUB_CLIENT_ID.is_empty() {
-        return Err("This build has no GitHub OAuth Client ID; use a personal access token instead.".to_string());
-    }
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://github.com/login/device/code")
-        .header("Accept", "application/json")
-        .header("User-Agent", super::USER_AGENT)
-        .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", scope.as_str())])
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    require_client_id()?;
+    let (status, json) = crate::platform::http::send_json(
+        crate::platform::http::client()
+            .post("https://github.com/login/device/code")
+            .header("Accept", "application/json")
+            .header("User-Agent", super::USER_AGENT)
+            .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", scope.as_str())]),
+        |e| format!("Request failed: {}", e),
+        |e| format!("Failed to parse response: {}", e),
+    )
+    .await?;
     if let Some(err) = json["error"].as_str() {
         let desc = json["error_description"].as_str().unwrap_or(err);
         log::warn!("github_device_start error: {err}: {desc}");
@@ -105,26 +109,21 @@ pub(crate) struct DevicePoll {
 /// an `Err`, so the caller can distinguish "keep polling" from "request broke".
 #[tauri::command]
 pub(crate) async fn github_device_poll(device_code: String) -> Result<DevicePoll, String> {
-    if GITHUB_CLIENT_ID.is_empty() {
-        return Err("This build has no GitHub OAuth Client ID; use a personal access token instead.".to_string());
-    }
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://github.com/login/oauth/access_token")
-        .header("Accept", "application/json")
-        .header("User-Agent", super::USER_AGENT)
-        .form(&[
-            ("client_id", GITHUB_CLIENT_ID),
-            ("device_code", device_code.as_str()),
-            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    require_client_id()?;
+    let (_status, json) = crate::platform::http::send_json(
+        crate::platform::http::client()
+            .post("https://github.com/login/oauth/access_token")
+            .header("Accept", "application/json")
+            .header("User-Agent", super::USER_AGENT)
+            .form(&[
+                ("client_id", GITHUB_CLIENT_ID),
+                ("device_code", device_code.as_str()),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ]),
+        |e| format!("Request failed: {}", e),
+        |e| format!("Failed to parse response: {}", e),
+    )
+    .await?;
     Ok(DevicePoll {
         access_token: json["access_token"].as_str().map(|s| s.to_string()),
         error: json["error"].as_str().map(|s| s.to_string()),

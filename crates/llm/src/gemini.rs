@@ -3,7 +3,14 @@
 //! `candidates[0].content.parts[].text` back into the normalized `{content,usage}`
 //! so llm_complete's consumers read it unchanged.
 
-use super::{post_json, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+use super::{canonical_usage, post_json, tool_decl_inner, usage_u64, LlmProvider, LlmRequest, Msg, ToolCall, Turn, TurnResult};
+
+/// Map `tools` onto Gemini's `[{ functionDeclarations: [...] }]` shape (its one wrapper). Shared by the
+/// tool-using `turn` path and the one-shot `complete` path so both attach tools identically.
+fn function_declarations(tools: &[super::ToolDef]) -> serde_json::Value {
+    let decls: Vec<serde_json::Value> = tools.iter().map(tool_decl_inner).collect();
+    serde_json::json!([ { "functionDeclarations": decls } ])
+}
 
 pub struct GeminiProvider;
 
@@ -59,12 +66,7 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
         body["systemInstruction"] = serde_json::json!({ "parts": [ { "text": t.system } ] });
     }
     if !t.tools.is_empty() {
-        let decls: Vec<serde_json::Value> = t
-            .tools
-            .iter()
-            .map(|d| serde_json::json!({ "name": d.name, "description": d.description, "parameters": d.schema }))
-            .collect();
-        body["tools"] = serde_json::json!([ { "functionDeclarations": decls } ]);
+        body["tools"] = function_declarations(&t.tools);
     }
     body
 }
@@ -73,12 +75,7 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
 /// to the canonical 4-key shape `tokens.rs` parses; Gemini has no prompt-cache split,
 /// so cache_* = 0. Pure.
 pub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {
-    serde_json::json!({
-        "input_tokens": usage_u64(u, "promptTokenCount"),
-        "output_tokens": usage_u64(u, "candidatesTokenCount"),
-        "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": 0,
-    })
+    canonical_usage(usage_u64(u, "promptTokenCount"), usage_u64(u, "candidatesTokenCount"))
 }
 
 /// Parse a Gemini response into a [`TurnResult`]: text from `text` parts, tool
@@ -144,7 +141,22 @@ pub(crate) fn build_request_body(req: &LlmRequest) -> serde_json::Value {
     if !req.system.is_empty() {
         body["systemInstruction"] = serde_json::json!({ "parts": [ { "text": req.system } ] });
     }
-    // TODO tools: map req.tools -> Gemini `tools.functionDeclarations` when callers pass tools.
+    // Attach tool declarations when the caller passes any (#2093) — the one-shot path formerly dropped
+    // them, so a `complete` call with tools ran as if it had none. Gemini's `req.tools` are the raw
+    // JSON the caller already speaks; each is expected to be a `{name, description, parameters/schema}`
+    // object, mapped to Gemini's single `functionDeclarations` wrapper.
+    let decls: Vec<serde_json::Value> = req
+        .tools
+        .iter()
+        .map(|t| serde_json::json!({
+            "name": t.get("name").cloned().unwrap_or(serde_json::Value::Null),
+            "description": t.get("description").cloned().unwrap_or(serde_json::Value::Null),
+            "parameters": t.get("parameters").or_else(|| t.get("schema")).cloned().unwrap_or(serde_json::Value::Null),
+        }))
+        .collect();
+    if !decls.is_empty() {
+        body["tools"] = serde_json::json!([ { "functionDeclarations": decls } ]);
+    }
     body
 }
 
@@ -255,6 +267,40 @@ mod tests {
         assert_eq!(body["contents"][0]["parts"][0]["text"], "hi");
         assert_eq!(body["contents"][1]["role"], "model"); // assistant -> model
         assert_eq!(body["generationConfig"]["maxOutputTokens"], 1024);
+    }
+
+    #[test]
+    fn build_request_attaches_tools_on_the_one_shot_path() {
+        // #2093 regression: the one-shot `complete` path formerly dropped tools (`// TODO tools`), so a
+        // `complete` call with tools ran as if it had none. It must now map them to Gemini's single
+        // `functionDeclarations` wrapper. One-shot `req.tools` are raw JSON `{name,description,parameters}`.
+        let req = LlmRequest {
+            model: "gemini-x".into(),
+            system: String::new(),
+            messages: vec![serde_json::json!({"role":"user","content":"hi"})],
+            tools: vec![serde_json::json!({
+                "name": "read_file",
+                "description": "read a file",
+                "parameters": {"type":"object","properties":{"path":{"type":"string"}}}
+            })],
+            max_tokens: 16,
+        };
+        let body = build_request_body(&req);
+        assert_eq!(body["tools"][0]["functionDeclarations"][0]["name"], "read_file");
+        assert_eq!(body["tools"][0]["functionDeclarations"][0]["description"], "read a file");
+        assert_eq!(body["tools"][0]["functionDeclarations"][0]["parameters"]["type"], "object");
+    }
+
+    #[test]
+    fn build_request_omits_tools_when_none_passed() {
+        let req = LlmRequest {
+            model: "gemini-x".into(),
+            system: String::new(),
+            messages: vec![serde_json::json!({"role":"user","content":"hi"})],
+            tools: vec![],
+            max_tokens: 16,
+        };
+        assert!(build_request_body(&req).get("tools").is_none());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Box } from "@/shared/ui/layout/Box";
 import { useAppStore } from "@/store";
 import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./lib/skillTelemetry";
 
@@ -25,9 +26,9 @@ export function SkillsStatus() {
   const { loaded, invToday, worst } = skillStatusKpis(skillCount, stats);
   return (
     <>
-      <span className="s"><i /> {loaded} {loaded === 1 ? "skill" : "skills"} loaded</span>
-      <span className="s"><i /> {invToday} {invToday === 1 ? "invocation" : "invocations"} today</span>
-      {worst && <span className="s"><i className="warn" /> {worst.skill} {worst.rate}%</span>}
+      <Box as="span" className="s"><i /> {loaded} {loaded === 1 ? "skill" : "skills"} loaded</Box>
+      <Box as="span" className="s"><i /> {invToday} {invToday === 1 ? "invocation" : "invocations"} today</Box>
+      {worst && <Box as="span" className="s"><i className="warn" /> {worst.skill} {worst.rate}%</Box>}
     </>
   );
 }

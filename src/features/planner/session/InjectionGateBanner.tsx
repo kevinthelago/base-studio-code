@@ -4,6 +4,10 @@
 // and demands the flagged content be removed.
 
 import { type InjectionGate, injectionSignature } from "../lib/planInjection";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 const MONO = "var(--mono)";
 const CAT_LABEL: Record<string, string> = {
@@ -22,38 +26,38 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
   const n = gate.findings.length;
 
   return (
-    <div data-testid="injection-banner" style={{
+    <Box data-testid="injection-banner" style={{
       flex: "0 0 auto", margin: "10px 12px 0", borderRadius: "var(--r-md)", overflow: "hidden",
       border: `1px solid color-mix(in oklch, ${color}, transparent 60%)`,
       background: `color-mix(in oklch, ${color}, transparent 90%)`,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px" }}>
-        <span style={{ fontSize: 13, color }}>{blocked ? "⛔" : cleared ? "✓" : "⚠"}</span>
-        <span style={{ fontFamily: MONO, fontSize: 11, color, fontWeight: 600 }}>
+      <Row gap={8} style={{ padding: "8px 11px" }}>
+        <Text as="span" size={13} style={{ color }}>{blocked ? "⛔" : cleared ? "✓" : "⚠"}</Text>
+        <Text as="span" size={11} weight={600} style={{ fontFamily: MONO, color }}>
           {n} possible prompt-injection marker{n !== 1 ? "s" : ""} in the plan
-        </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)" }}>
+        </Text>
+        <Box as="span" style={{ flex: 1 }} />
+        <Text as="span" size={9} tone="dim" style={{ fontFamily: MONO }}>
           {blocked ? "hard-block" : cleared ? "reviewed" : "review to publish"}
-        </span>
-      </div>
+        </Text>
+      </Row>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 11px 9px", maxHeight: 160, overflowY: "auto" }}>
+      <Stack gap={4} style={{ padding: "0 11px 9px", maxHeight: 160, overflowY: "auto" }}>
         {gate.findings.map((f, i) => (
-          <div key={`${f.file}-${f.line}-${i}`} style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg-muted)", lineHeight: 1.45 }}>
-            <span style={{ color: "var(--info)" }}>{f.file}:{f.line}</span>
-            {" · "}<span style={{ color }}>{CAT_LABEL[f.category] ?? f.category}</span>
-            <div style={{ color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.context}</div>
-          </div>
+          <Text as="div" key={`${f.file}-${f.line}-${i}`} size={9.5} tone="muted" style={{ fontFamily: MONO, lineHeight: 1.45 }}>
+            <Text as="span" style={{ color: "var(--info)" }}>{f.file}:{f.line}</Text>
+            {" · "}<Text as="span" style={{ color }}>{CAT_LABEL[f.category] ?? f.category}</Text>
+            <Text as="div" tone="dim" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.context}</Text>
+          </Text>
         ))}
-      </div>
+      </Stack>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderTop: `1px solid color-mix(in oklch, ${color}, transparent 70%)` }}>
-        <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", flex: 1, lineHeight: 1.5 }}>
+      <Row gap={8} style={{ padding: "8px 11px", borderTop: `1px solid color-mix(in oklch, ${color}, transparent 70%)` }}>
+        <Text as="span" size={9} tone="dim" style={{ fontFamily: MONO, flex: 1, lineHeight: 1.5 }}>
           {blocked
             ? "These read like instructions injected from reviewed content. Remove them from the plan to publish (hard-block is on in Settings)."
             : "Confirm none of these is an instruction smuggled in from a reviewed repo or page before it seeds the fleet."}
-        </span>
+        </Text>
         {!blocked && !cleared && (
           <button
             data-testid="injection-ack"
@@ -64,7 +68,7 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
             }}
           >I&apos;ve reviewed these</button>
         )}
-      </div>
-    </div>
+      </Row>
+    </Box>
   );
 }

@@ -18,7 +18,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
-use crate::worktree_slug;
+use crate::worktree_dir_name;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -150,8 +150,7 @@ fn discover_hub(
         for s in streams {
             let Some(id) = s.get("id").and_then(|x| x.as_str()) else { continue };
             let repo = s.get("repo").and_then(|x| x.as_str()).unwrap_or("");
-            let short = repo.rsplit('/').next().unwrap_or(repo);
-            let wt = wts.join(format!("{short}--{}", worktree_slug(id)));
+            let wt = wts.join(worktree_dir_name(repo, id));
             let on_disk = wt.exists();
             let cwd = on_disk.then(|| wt.to_string_lossy().to_string());
             upsert(map, &format!("{key}:{id}"), Some(key.to_string()),

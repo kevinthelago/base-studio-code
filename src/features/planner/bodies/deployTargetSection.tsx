@@ -14,6 +14,12 @@ import {
 } from "../lib/deployConfig";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 import { prop, chip, Card, Seg, Field, Toggle, Select } from "./deployPrimitives";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Row } from "@/shared/ui/layout/Row";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 /** Cloud body (#1192) — today's card: platform dropdown → workload → region/build/runtime →
  *  containerization & orchestration for container workloads. Unchanged from the original. */
@@ -33,20 +39,20 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
   return (
     <>
           {/* platform dropdown */}
-          <div style={{ ...grpLabel, marginBottom: 8 }}>platform</div>
-          <div style={{ position: "relative" }}>
+          <Text as="div" style={{ ...grpLabel, marginBottom: 8 }}>platform</Text>
+          <Box style={{ position: "relative" }}>
             <button onClick={() => setOpen((v) => !v)} style={{
               width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", cursor: "pointer",
               borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
-              <span style={{ fontSize: 14, width: 16, textAlign: "center", color: selPlat ? `oklch(0.78 0.12 ${selPlat.h})` : "var(--fg-dim)" }}>{selPlat?.glyph ?? "▢"}</span>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: selPlat ? "var(--fg)" : "var(--fg-dim)" }}>{selPlat?.name ?? "Select a platform…"}</span>
-              <span style={{ flex: 1 }} />
-              <span style={monoSm}>{PLATFORMS.length} options</span>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .14s" }}>▾</span>
+              <Text size={14} style={{ width: 16, textAlign: "center", color: selPlat ? `oklch(0.78 0.12 ${selPlat.h})` : "var(--fg-dim)" }}>{selPlat?.glyph ?? "▢"}</Text>
+              <Text mono size={11} style={{ color: selPlat ? "var(--fg)" : "var(--fg-dim)" }}>{selPlat?.name ?? "Select a platform…"}</Text>
+              <Box as="span" style={{ flex: 1 }} />
+              <Text as="span" style={monoSm}>{PLATFORMS.length} options</Text>
+              <Box as="span" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .14s" }}>▾</Box>
             </button>
             {open && (
-              <div style={{
+              <Box style={{
                 position: "absolute", top: "calc(100% + 5px)", left: 0, right: 0, zIndex: 30, maxHeight: 236, overflowY: "auto",
                 padding: 5, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border)", boxShadow: "0 14px 40px rgba(0,0,0,.55)",
               }}>
@@ -58,22 +64,22 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                       borderRadius: "var(--r-sm)", border: "1px solid " + (on ? "color-mix(in oklch, var(--accent), transparent 62%)" : "transparent"),
                       background: on ? "color-mix(in oklch, var(--accent), transparent 88%)" : "transparent",
                     }}>
-                      <span style={{ fontSize: 14, width: 18, textAlign: "center", color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph}</span>
-                      <span style={{ fontFamily: MONO, fontSize: 10.5, color: on ? "var(--fg)" : "var(--fg-muted)" }}>{p.name}</span>
-                      <span style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", padding: "1px 6px", borderRadius: 99, border: "1px solid var(--border-soft)" }}>{p.kinds.join(" · ")}</span>
-                      <span style={{ flex: 1 }} />
-                      {on && <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--accent)" }}>✓</span>}
+                      <Text size={14} style={{ width: 18, textAlign: "center", color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph}</Text>
+                      <Text mono size={10.5} style={{ color: on ? "var(--fg)" : "var(--fg-muted)" }}>{p.name}</Text>
+                      <Box as="span" style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", padding: "1px 6px", borderRadius: 99, border: "1px solid var(--border-soft)" }}>{p.kinds.join(" · ")}</Box>
+                      <Box as="span" style={{ flex: 1 }} />
+                      {on && <Text mono size={10} tone="accent">✓</Text>}
                     </button>
                   );
                 })}
-              </div>
+              </Box>
             )}
-          </div>
+          </Box>
 
           {svc.platform ? (
             <>
               {/* workload */}
-              <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "11px 0" }}>
+              <Row gap={7} wrap align="stretch" style={{ margin: "11px 0" }}>
                 {platform(svc.platform).kinds.map((k) => {
                   const on = svc.workload === k;
                   return (
@@ -83,69 +89,69 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                     }}>{WORKLOAD[k].label}</button>
                   );
                 })}
-              </div>
+              </Row>
               {/* fields */}
-              <div style={{ display: "flex", gap: 8 }}>
+              <Row gap={8} align="stretch">
                 <Field label="region" value={svc.region} onChange={(v) => setSvc({ region: v })} />
                 <Field label={isContainer ? "image" : "build cmd"} value={svc.build} onChange={(v) => setSvc({ build: v })} />
                 {isContainer
                   ? <Field label="runtime" value={svc.runtime} onChange={(v) => setSvc({ runtime: v })} />
                   : <Field label="output dir" value={svc.output} onChange={(v) => setSvc({ output: v })} />}
-              </div>
+              </Row>
 
               {/* containerization & orchestration */}
-              <div style={{
+              <Box style={{
                 marginTop: 11, borderRadius: "var(--r-md)", padding: "11px 12px",
                 border: "1px solid " + (isContainer ? "color-mix(in oklch, var(--violet), transparent 80%)" : "var(--border-soft)"),
                 background: isContainer ? "color-mix(in oklch, var(--violet), transparent 95%)" : "var(--bg-canvas)",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: isContainer ? 10 : 0 }}>
-                  <span style={{ fontSize: 11, color: isContainer ? "var(--violet)" : "var(--fg-dim)" }}>⬢</span>
-                  <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--fg)" }}>Containerization &amp; orchestration</span>
-                  <span style={{ flex: 1 }} />
+                <Row gap={7} style={{ marginBottom: isContainer ? 10 : 0 }}>
+                  <Text size={11} style={{ color: isContainer ? "var(--violet)" : "var(--fg-dim)" }}>⬢</Text>
+                  <Text mono size={9.5} style={{ color: "var(--fg)" }}>Containerization &amp; orchestration</Text>
+                  <Spacer />
                   {isContainer
-                    ? <span style={{ ...chip, fontSize: 7.5, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>distributed</span>
-                    : <span style={{ ...chip, fontSize: 7.5 }}>{WORKLOAD[svc.workload].label}</span>}
-                </div>
+                    ? <Box as="span" style={{ ...chip, fontSize: 7.5, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>distributed</Box>
+                    : <Box as="span" style={{ ...chip, fontSize: 7.5 }}>{WORKLOAD[svc.workload].label}</Box>}
+                </Row>
                 {isContainer ? (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <span style={grpLabel}>engine · image</span>
-                        <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Docker · {svc.runtime && svc.runtime !== "—" ? svc.runtime : "base image"}</span>
-                      </div>
+                    <Grid cols={2} gap={8} style={{ marginBottom: 10 }}>
+                      <Stack gap={4}>
+                        <Text as="span" style={grpLabel}>engine · image</Text>
+                        <Box as="span" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Docker · {svc.runtime && svc.runtime !== "—" ? svc.runtime : "base image"}</Box>
+                      </Stack>
                       <Field label="image registry" value={svc.registry ?? (svc.repo ? `ghcr.io/${svc.repo}` : "")} onChange={(v) => setSvc({ registry: v })} />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                      <span style={{ ...grpLabel, flex: "0 0 62px" }}>orchestrator</span>
+                    </Grid>
+                    <Row gap={8} style={{ marginBottom: 9 }}>
+                      <Text as="span" style={{ ...grpLabel, flex: "0 0 62px" }}>orchestrator</Text>
                       <Seg value={svc.orchestrator ?? "k8s"} options={ORCHESTRATORS.map((o) => o.id)} onChange={(v) => setSvc({ orchestrator: v })} />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ ...grpLabel, flex: "0 0 62px" }}>replicas</span>
+                    </Row>
+                    <Row gap={8}>
+                      <Text as="span" style={{ ...grpLabel, flex: "0 0 62px" }}>replicas</Text>
                       <Seg value={svc.replicas ?? "3"} options={REPLICA_OPTIONS} onChange={(v) => setSvc({ replicas: v })} />
-                      <span style={{ flex: 1 }} />
-                      <span style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)" }}>nodes share the workload</span>
-                    </div>
+                      <Spacer />
+                      <Text mono size={8} tone="dim">nodes share the workload</Text>
+                    </Row>
                   </>
                 ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 9 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--fg-dim)", lineHeight: 1.45, flex: 1 }}>
+                  <Row gap={9} style={{ marginTop: 9 }}>
+                    <Text mono size={9} tone="dim" style={{ lineHeight: 1.45, flex: 1 }}>
                       Not containerized — this <b style={{ color: "var(--fg-muted)" }}>{WORKLOAD[svc.workload].label}</b> service deploys without a container image or orchestrator.
-                    </span>
+                    </Text>
                     {canContainerize && (
                       <button onClick={() => setSvc({ workload: "container" })} style={{
                         fontFamily: MONO, fontSize: 8.5, color: "var(--violet)", padding: "4px 10px", borderRadius: 99, cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto",
                         background: "color-mix(in oklch, var(--violet), transparent 88%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 72%)",
                       }}>containerize →</button>
                     )}
-                  </div>
+                  </Row>
                 )}
-              </div>
+              </Box>
             </>
           ) : (
-            <div style={{ marginTop: 13, border: "1px dashed color-mix(in oklch, var(--accent), transparent 60%)", borderRadius: "var(--r-md)", padding: "11px 13px", display: "flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 10, color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 93%)" }}>
-              <span>↑</span><span>no target for <b>{svc.id}</b> yet — choose a platform from the list above</span>
-            </div>
+            <Row gap={8} style={{ marginTop: 13, border: "1px dashed color-mix(in oklch, var(--accent), transparent 60%)", borderRadius: "var(--r-md)", padding: "11px 13px", fontFamily: MONO, fontSize: 10, color: "var(--accent)", background: "color-mix(in oklch, var(--accent), transparent 93%)" }}>
+              <Text>↑</Text><Text>no target for <b>{svc.id}</b> yet — choose a platform from the list above</Text>
+            </Row>
           )}
     </>
   );
@@ -160,38 +166,38 @@ function LocalBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
   return (
     <>
       {/* Kind sub-toggle */}
-      <div style={{ ...grpLabel, marginBottom: 8 }}>kind</div>
-      <div style={{ marginBottom: 11 }}>
+      <Text as="div" style={{ ...grpLabel, marginBottom: 8 }}>kind</Text>
+      <Box style={{ marginBottom: 11 }}>
         <Seg<LocalKind> value={kind} options={["library", "application"] as const}
           onChange={(v) => setSvc({ localKind: v, proposed: false })} />
-      </div>
+      </Box>
 
       {kind === "library" ? (
         <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
+          <Row gap={8} align="stretch" style={{ marginBottom: 9 }}>
             <Select label="publish registry" value={svc.publishRegistry ?? ""} options={PUBLISH_REGISTRIES}
               onChange={(v) => setSvc({ publishRegistry: v as PublishRegistry })} />
             <Field label="package name" value={svc.packageName ?? ""} onChange={(v) => setSvc({ packageName: v })} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          </Row>
+          <Row gap={8} align="stretch">
             <Field label="build cmd" value={svc.build === "—" ? "" : svc.build} onChange={(v) => setSvc({ build: v })} />
             <Select label="publish trigger" value={svc.publishTrigger ?? ""} options={PUBLISH_TRIGGERS}
               onChange={(v) => setSvc({ publishTrigger: v as PublishTrigger })} />
-          </div>
+          </Row>
         </>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 9 }}>
+          <Row gap={8} align="stretch" style={{ marginBottom: 9 }}>
             <Field label="build target(s)" value={svc.buildTargets ?? ""} onChange={(v) => setSvc({ buildTargets: v })} />
             <Field label="build cmd" value={svc.build === "—" ? "" : svc.build} onChange={(v) => setSvc({ build: v })} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          </Row>
+          <Row gap={8} align="stretch">
             <Field label="output artifact" value={svc.artifact ?? ""} onChange={(v) => setSvc({ artifact: v })} />
             <Field label="run command" value={svc.runCmd ?? ""} onChange={(v) => setSvc({ runCmd: v })} />
-          </div>
+          </Row>
 
           {/* Port forwarding — expose a locally-running app remotely */}
-          <div style={{
+          <Box style={{
             marginTop: 11, borderRadius: "var(--r-md)", padding: "11px 12px",
             border: "1px solid " + (pf.enabled ? "color-mix(in oklch, var(--info), transparent 78%)" : "var(--border-soft)"),
             background: pf.enabled ? "color-mix(in oklch, var(--info), transparent 94%)" : "var(--bg-canvas)",
@@ -199,13 +205,13 @@ function LocalBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
             <Toggle on={pf.enabled} onClick={() => setPf({ enabled: !pf.enabled })}
               label="Port forwarding" value={pf.enabled ? `:${pf.port || "NNNN"} via ${pf.method}` : "expose this app remotely"} />
             {pf.enabled && (
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <Row gap={8} align="stretch" style={{ marginTop: 10 }}>
                 <Field label="port" value={pf.port} onChange={(v) => setPf({ port: v })} />
                 <Select label="method" value={pf.method} options={PORT_FORWARD_METHODS}
                   onChange={(v) => setPf({ method: v as PortForwardMethod })} />
-              </div>
+              </Row>
             )}
-          </div>
+          </Box>
         </>
       )}
     </>
@@ -228,34 +234,34 @@ export function ServiceTargetEditor({ svc, setSvc }: {
     <>
       {/* selected service meta — bare identity line (#1421 follow-up, 1a): what this repo IS, not a
           config field, so it stays above the numbered cards rather than inside one. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+      <Row gap={7} wrap>
         {(() => { const h = hostMeta(svc.host); return (
-          <span style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
-          </span>
+          <Box as="span" style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
+            <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
+          </Box>
         ); })()}
         {hostMeta(svc.host).kind !== "cloud" && (
-          <span style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</span>
+          <Box as="span" style={{ ...chip, color: "var(--violet)", borderColor: "color-mix(in oklch, var(--violet), transparent 72%)", background: "color-mix(in oklch, var(--violet), transparent 86%)" }}>self-hosted</Box>
         )}
-        <span style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</span>
-        <span style={chip}>{svc.stack}</span>
-        <span style={{ flex: 1 }} />
-        {svc.proposed && <span style={prop}>✦ proposed</span>}
-      </div>
+        <Box as="span" style={{ ...chip, color: "var(--info)" }}>⎇ {svc.repo || "—"}/{svc.path}</Box>
+        <Box as="span" style={chip}>{svc.stack}</Box>
+        <Spacer />
+        {svc.proposed && <Box as="span" style={prop}>✦ proposed</Box>}
+      </Row>
 
       {/* 01 · Target & build — mode + platform/region/build (+ containerization for cloud). Starts
           open only while no target is set, so an unconfigured repo surfaces the picker immediately. */}
       <Card n="01" title="Target & build" hint={targetHint} done={targeted} defaultOpen={!targeted}>
         {/* Cloud · Local mode toggle (#1192) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-          <span style={grpLabel}>mode</span>
+        <Row gap={9} style={{ marginBottom: 12 }}>
+          <Text as="span" style={grpLabel}>mode</Text>
           <Seg<DeployMode> value={mode} options={["cloud", "local"] as const}
             onChange={(v) => setSvc({ mode: v, proposed: false })} />
-          <span style={{ flex: 1 }} />
-          <span style={{ fontFamily: MONO, fontSize: 8.5, color: "var(--fg-dim)" }}>
+          <Spacer />
+          <Text mono size={8.5} tone="dim">
             {mode === "cloud" ? "ships to a hosted platform" : "a library or a build-and-run-here app"}
-          </span>
-        </div>
+          </Text>
+        </Row>
 
         {mode === "cloud" ? <CloudBody svc={svc} setSvc={setSvc} /> : <LocalBody svc={svc} setSvc={setSvc} />}
       </Card>

@@ -1,5 +1,8 @@
 import { useAppStore } from "@/store";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -37,59 +40,59 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
     (status === "all" || r.status === status) && (sched === "all" || r.autoId === sched));
 
   const chip = (st: StatusFilter, label: string, count?: number) => (
-    <span className={"status-chip" + (status === st ? " on" : "")} data-st={st} onClick={() => setStatus(st)}>
-      <span className="dot" />{label}
-      {count !== undefined && <span style={{ color: "var(--fg-dim)", marginLeft: 2 }}>{count}</span>}
-    </span>
+    <Box as="span" className={"status-chip" + (status === st ? " on" : "")} data-st={st} onClick={() => setStatus(st)}>
+      <Box as="span" className="dot" />{label}
+      {count !== undefined && <Text as="span" tone="dim" style={{ marginLeft: 2 }}>{count}</Text>}
+    </Box>
   );
 
   if (rows.length === 0) {
     return (
-      <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-dim)", fontSize: 12 }}>
+      <Row justify="center" className="mono" style={{ flex: 1, color: "var(--fg-dim)", fontSize: 12 }}>
         No runs yet — armed automations record their runs here.
-      </div>
+      </Row>
     );
   }
 
   return (
     <>
-      <div className="hist-summary">
+      <Box className="hist-summary">
         <StatTile k="total runs" v={rows.length} sub={<>across {automations.length} automations</>} />
         <StatTile k="success rate" v={`${succRate}%`} tone="success" sub={<>{ok} ok · {skipped} skipped · {fail} fail</>} />
         <StatTile k="skipped" v={skipped} sub="target wasn't open" />
         <StatTile k="failed" v={fail} tone="danger" sub="dispatch errored" />
-      </div>
+      </Box>
 
-      <div className="history-toolbar">
-        <span className="lbl">status</span>
-        <div className="chips">
+      <Box className="history-toolbar">
+        <Box as="span" className="lbl">status</Box>
+        <Box className="chips">
           {chip("all", "all")}
           {chip("ok", "ok", ok)}
           {chip("skipped", "skipped", skipped)}
           {chip("fail", "fail", fail)}
-        </div>
-        <span className="lbl" style={{ marginLeft: 14 }}>automation</span>
+        </Box>
+        <Box as="span" className="lbl" style={{ marginLeft: 14 }}>automation</Box>
         <select className="input" style={{ width: 240 }} value={sched} onChange={e => setSched(e.target.value)}>
           <option value="all">all automations</option>
           {automations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <div className="spacer" />
-      </div>
+        <Box className="spacer" />
+      </Box>
 
-      <div className="hist-table">
-        <div className="hist-row head">
-          <span>when</span><span>automation</span><span>target</span><span>status</span><span>note</span>
-        </div>
+      <Box className="hist-table">
+        <Box className="hist-row head">
+          <Text as="span">when</Text><Text as="span">automation</Text><Text as="span">target</Text><Text as="span">status</Text><Text as="span">note</Text>
+        </Box>
         {filtered.map((r, i) => (
-          <div className="hist-row" key={i}>
-            <span className="when">{fmtStamp(r.at)}</span>
-            <span className="sched">{r.name}</span>
-            <span className="target">{r.target}</span>
-            <span className={"st-cell " + r.status}><span className="sym">{SYM[r.status]}</span> {r.status}</span>
-            <span className="out">{r.note}</span>
-          </div>
+          <Box className="hist-row" key={i}>
+            <Box as="span" className="when">{fmtStamp(r.at)}</Box>
+            <Box as="span" className="sched">{r.name}</Box>
+            <Box as="span" className="target">{r.target}</Box>
+            <Box as="span" className={"st-cell " + r.status}><Box as="span" className="sym">{SYM[r.status]}</Box> {r.status}</Box>
+            <Box as="span" className="out">{r.note}</Box>
+          </Box>
         ))}
-      </div>
+      </Box>
     </>
   );
 }

@@ -10,6 +10,11 @@ import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import type { CatalogItem } from "@/shared/data/mcpCatalog";
 import type { GhProjectRef } from "@/shared/lib/github/types";
@@ -58,7 +63,7 @@ export function useGhProjects(githubToken: string): GhProject[] {
 /** The enable/disable pill toggle on a row. */
 export function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
-    <div
+    <Box
       className={"toggle" + (on ? " on" : "")}
       title={on ? "enabled" : "disabled"}
       onClick={ev => { ev.stopPropagation(); onToggle(); }}
@@ -75,14 +80,14 @@ export function scopeChips(e: { enabled: boolean; projects: string[] }, projects
     .filter(Boolean) as GhProject[];
   if (named.length === 0) {
     // Scoped to project ids we couldn't resolve (no token / not in the list).
-    return <span className="ptag muted">{e.projects.length} project{e.projects.length === 1 ? "" : "s"}</span>;
+    return <Box as="span" className="ptag muted">{e.projects.length} project{e.projects.length === 1 ? "" : "s"}</Box>;
   }
   return (
     <>
       {named.slice(0, 2).map(p => (
-        <span key={p.id} className="ptag"><span className="pdot" style={{ background: "var(--accent-dim)" }} />{p.title}</span>
+        <Box as="span" key={p.id} className="ptag"><Box as="span" className="pdot" style={{ background: "var(--accent-dim)" }} />{p.title}</Box>
       ))}
-      {named.length > 2 && <span className="ptag muted">+{named.length - 2}</span>}
+      {named.length > 2 && <Box as="span" className="ptag muted">+{named.length - 2}</Box>}
     </>
   );
 }
@@ -102,12 +107,12 @@ export function ProjectAssignment({ item, projects, onSet }: {
     onSet(next);
   };
   return (
-    <div className="field">
+    <Box className="field">
       <label>project assignment</label>
-      <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
+      <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
         <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
-        <div style={{ flex: 1 }} />
-        <div
+        <Spacer />
+        <Box
           className={"toggle" + (isGlobal ? " on" : "")}
           title={isGlobal ? "global" : "scoped to projects"}
           onClick={() => onSet(isGlobal ? (projects[0] ? [projects[0].id] : []) : [])}
@@ -117,36 +122,36 @@ export function ProjectAssignment({ item, projects, onSet }: {
       {!isGlobal && (
         <>
           {projects.length === 0
-            ? <div className="hint" style={{ marginTop: 6 }}>No projects — global only. Connect GitHub in Settings to scope per project.</div>
+            ? <Box className="hint" style={{ marginTop: 6 }}>No projects — global only. Connect GitHub in Settings to scope per project.</Box>
             : (
-              <div className="proj-multi" style={{ marginTop: 6 }}>
+              <Box className="proj-multi" style={{ marginTop: 6 }}>
                 {projects.map(p => {
                   const sel = item.projects.includes(p.id);
                   return (
-                    <div key={p.id} className={"pm-row" + (sel ? " on" : "")} onClick={() => toggleProject(p.id)}>
-                      <div className="check">{sel ? "✓" : ""}</div>
-                      <div>
-                        <div className="pname">{p.title}</div>
-                        <div className="pbranch">#{p.number}</div>
-                      </div>
-                      <div className="pside"><ColorSwatch color="var(--accent-dim)" size={8} /></div>
-                    </div>
+                    <Box key={p.id} className={"pm-row" + (sel ? " on" : "")} onClick={() => toggleProject(p.id)}>
+                      <Box className="check">{sel ? "✓" : ""}</Box>
+                      <Box>
+                        <Text as="div" className="pname">{p.title}</Text>
+                        <Text as="div" className="pbranch">#{p.number}</Text>
+                      </Box>
+                      <Box className="pside"><ColorSwatch color="var(--accent-dim)" size={8} /></Box>
+                    </Box>
                   );
                 })}
-              </div>
+              </Box>
             )}
           {projects.length > 0 && (
-            <div style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "center" }}>
-              <span className="hint">{item.projects.length} of {projects.length} projects</span>
-              <div style={{ flex: 1 }} />
-              <span className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet(projects.map(p => p.id))}>select all</span>
-              <span className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet([])}>make global</span>
-            </div>
+            <Row gap={8} style={{ marginTop: 4 }}>
+              <Text as="span" className="hint">{item.projects.length} of {projects.length} projects</Text>
+              <Spacer />
+              <Box as="span" className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet(projects.map(p => p.id))}>select all</Box>
+              <Box as="span" className="hint" style={{ cursor: "pointer", color: "var(--accent-dim)" }} onClick={() => onSet([])}>make global</Box>
+            </Row>
           )}
         </>
       )}
-      <div className="hint" style={{ marginTop: 6 }}>Global applies to every project; otherwise only the projects you pick.</div>
-    </div>
+      <Box className="hint" style={{ marginTop: 6 }}>Global applies to every project; otherwise only the projects you pick.</Box>
+    </Box>
   );
 }
 
@@ -169,16 +174,16 @@ export function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, o
       selected={selected}
       off={!on}
       onClick={onSelect}
-      lead={<div className={"health " + (on ? "" : "off")} />}
+      lead={<Box className={"health " + (on ? "" : "off")} />}
       title={name || "Untitled"}
       badge={<Chip tone={tagCls === "green" ? "success" : tagCls === "info" ? "info" : tagCls === "amber" ? "accent" : "neutral"}>{tagLabel}</Chip>}
       subtitle={desc}
       trailing={
         <>
-          <div className="row-stats">
-            <div className="row-chips">{scopeChip}</div>
-            <div>—</div>
-          </div>
+          <Box className="row-stats">
+            <Box className="row-chips">{scopeChip}</Box>
+            <Box>—</Box>
+          </Box>
           {aside}
           <ToggleSwitch on={on} onToggle={onToggle} />
         </>
@@ -190,32 +195,32 @@ export function InstalledRow({ name, tagCls, tagLabel, desc, scopeChip, aside, o
 /** One catalog card. The action button (download vs. add) is passed in by the feature. */
 export function CatalogCard({ item, action }: { item: CatalogItem; action: React.ReactNode }) {
   return (
-    <div className="cat-card">
-      <div className="cat-head">
-        <div className="cat-icon">{item.icon}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="cat-name">{item.name}</div>
-          <div className="cat-by">{item.by}</div>
-        </div>
-      </div>
-      <div className="cat-desc">{item.desc}</div>
-      {item.install && <div className="hint" style={{ marginTop: 6, fontSize: 10 }}>{item.install}</div>}
-      <div className="cat-foot">
-        <span className="hint">{item.by.startsWith("@modelcontextprotocol") ? "official MCP" : (item.by === "first-party" || item.link) ? "first-party" : "third-party"}</span>
-        <div className="spacer" />
+    <Box className="cat-card">
+      <Box className="cat-head">
+        <Box className="cat-icon">{item.icon}</Box>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Text as="div" className="cat-name">{item.name}</Text>
+          <Text as="div" className="cat-by">{item.by}</Text>
+        </Box>
+      </Box>
+      <Text as="div" className="cat-desc">{item.desc}</Text>
+      {item.install && <Box className="hint" style={{ marginTop: 6, fontSize: 10 }}>{item.install}</Box>}
+      <Box className="cat-foot">
+        <Text as="span" className="hint">{item.by.startsWith("@modelcontextprotocol") ? "official MCP" : (item.by === "first-party" || item.link) ? "first-party" : "third-party"}</Text>
+        <Box className="spacer" />
         {action}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
 /** The env-var key/value editor drawer field (shared by servers + hooks). */
 export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onChange: (env: Array<[string, string]>) => void }) {
   return (
-    <div className="field"><label>environment</label>
-      <div className="kv-list">
+    <Box className="field"><label>environment</label>
+      <Box className="kv-list">
         {env.map(([k, v], i) => (
-          <div className="kv-row" key={i}>
+          <Box className="kv-row" key={i}>
             <input
               className="input k"
               value={k}
@@ -227,15 +232,15 @@ export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onC
               onChange={ev => onChange(env.map((row, j) => j === i ? [row[0], ev.target.value] : row))}
             />
             <IconButton aria-label="remove" size="xs" onClick={() => onChange(env.filter((_, j) => j !== i))} />
-          </div>
+          </Box>
         ))}
-        <button
-          className="btn ghost"
+        <Button
+          variant="ghost"
           style={{ height: 24, fontSize: 10.5, width: "fit-content" }}
           onClick={() => onChange([...env, ["", ""]])}
-        >+ env var</button>
-      </div>
-    </div>
+        >+ env var</Button>
+      </Box>
+    </Box>
   );
 }
 
@@ -252,17 +257,17 @@ export function DrawerBody({ item, kindLabel, projects, onName, onSetProjects, o
 }) {
   return (
     <>
-      <div className="field">
+      <Box className="field">
         <label>name</label>
         <input className="input" value={item.name} onChange={ev => onName(ev.target.value)} />
-      </div>
+      </Box>
 
-      <div className="dr-stat">
-        <div className="k">status</div><div className="v" style={{ color: item.enabled ? "var(--success)" : "var(--fg-dim)" }}>{item.enabled ? "enabled" : "disabled"}</div>
-        <div className="k">kind</div><div className="v">{kindLabel}</div>
-        <div className="k">last used</div><div className="v">—</div>
-        <div className="k">calls (24h)</div><div className="v">—</div>
-      </div>
+      <Box className="dr-stat">
+        <Text as="div" className="k">status</Text><Text as="div" className="v" style={{ color: item.enabled ? "var(--success)" : "var(--fg-dim)" }}>{item.enabled ? "enabled" : "disabled"}</Text>
+        <Text as="div" className="k">kind</Text><Text as="div" className="v">{kindLabel}</Text>
+        <Text as="div" className="k">last used</Text><Text as="div" className="v">—</Text>
+        <Text as="div" className="k">calls (24h)</Text><Text as="div" className="v">—</Text>
+      </Box>
 
       <ProjectAssignment item={item} projects={projects} onSet={onSetProjects} />
       {children}

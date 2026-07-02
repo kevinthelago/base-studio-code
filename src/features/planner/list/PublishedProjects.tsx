@@ -8,6 +8,12 @@ import { useAppStore } from "@/store";
 import { mintProjectId, findByTitle } from "@/shared/lib/core/projectPaths";
 import { timeAgo, timeAgoMs } from "@/shared/lib/core/format";
 import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { DEFAULT_BLUEPRINT_ID } from "../stages/blueprints";
 import type { DraftRow } from "./drafts";
 
@@ -26,39 +32,39 @@ export function projStatus(p: { closed: boolean }): ProjStatus {
 function FleetPill({ running, paused }: { running: number; paused: number }) {
   if (running === 0 && paused === 0) return null;
   return (
-    <span className="mono" style={{
+    <Box as="span" className="mono" style={{
       display: "inline-flex", alignItems: "center", gap: 6, padding: "2px 9px", borderRadius: 99,
       fontSize: 9.5, color: "var(--success)",
       background: "color-mix(in oklch, var(--success), transparent 88%)",
       border: "1px solid color-mix(in oklch, var(--success), transparent 70%)",
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
-      <span>{running} agent{running !== 1 ? "s" : ""} running</span>
-      {paused > 0 && <span style={{ color: "var(--fg-dim)" }}>· {paused} paused</span>}
-    </span>
+      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: "var(--success)", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <Box as="span">{running} agent{running !== 1 ? "s" : ""} running</Box>
+      {paused > 0 && <Text as="span" tone="dim">· {paused} paused</Text>}
+    </Box>
   );
 }
 
 /** Lifecycle sub-group header within the Projects section (Active · Drafting · Shipped). */
 function GroupHeader({ label, count, dot }: { label: string; count: number; dot: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 7px", paddingLeft: 2 }}>
-      <span style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
-      <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</span>
-      <span className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</span>
-    </div>
+    <Row gap={8} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+      <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />
+      <Text mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</Text>
+      <Box as="span" className="mono" style={{ padding: "0 5px", borderRadius: 8, fontSize: 9, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{count}</Box>
+    </Row>
   );
 }
 
 /** Milestone-progress bar: fraction of the project's items that are closed. */
 function ProgressBar({ pct }: { pct: number }) {
   return (
-    <span title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
-        <span style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
-      </span>
-      <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{Math.round(pct * 100)}%</span>
-    </span>
+    <Box as="span" title={`${Math.round(pct * 100)}% of items closed`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <Box as="span" style={{ width: 56, height: 4, borderRadius: 99, background: "var(--bg-elev2)", overflow: "hidden", display: "inline-block" }}>
+        <Box as="span" style={{ display: "block", height: "100%", width: `${pct * 100}%`, background: pct >= 1 ? "var(--success)" : "var(--accent)" }} />
+      </Box>
+      <Text as="span" mono size={9.5} tone="dim">{Math.round(pct * 100)}%</Text>
+    </Box>
   );
 }
 
@@ -134,66 +140,68 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
   useClickOutside(menuRef, () => setMenuOpenId(null), isOpen);
 
   return (
-    <div
+    <Grid
       onClick={() => onPlan(p)}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      cols="1fr auto" gap={16} align="center"
       style={{
-        padding: "13px 16px 13px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center",
+        padding: "13px 16px 13px 18px",
         cursor: "pointer", borderLeft: "2px solid " + (hover ? "var(--accent)" : "transparent"),
         background: hover ? "var(--bg-elev)" : "var(--bg-panel)",
       }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5, flexWrap: "wrap" }}>
-          <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{p.number}</span>
-          <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>{p.title}</h3>
+      <Box style={{ minWidth: 0 }}>
+        <Row gap={9} wrap style={{ marginBottom: 5 }}>
+          <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_META[status].dot, flexShrink: 0 }} />
+          <Text mono size={10} tone="dim">#{p.number}</Text>
+          <Text as="h3" size={14} weight={600} style={{ margin: 0, fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.title}</Text>
           <Chip tone={tagTone(STATUS_META[status].cls)} style={{ fontSize: 9.5 }}>{STATUS_META[status].label}</Chip>
           {repos.slice(0, 2).map(r => <Chip key={r} style={{ fontSize: 9.5 }}>{r}</Chip>)}
           {repos.length > 2 && <Chip style={{ fontSize: 9.5 }}>+{repos.length - 2}</Chip>}
-        </div>
-        <div style={{ color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
+        </Row>
+        <Text as="div" tone="muted" size={12} style={{ lineHeight: 1.5, marginBottom: 9, maxWidth: 620 }}>
           {p.shortDescription ?? "No description."}
-        </div>
-        <div className="mono" style={{ display: "flex", gap: 16, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)", flexWrap: "wrap" }}>
-          {p.items.totalCount > 0 && <span><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</span>}
-          {open > 0 && <span><b style={{ color: "var(--fg)" }}>{open}</b> open</span>}
+        </Text>
+        <Row className="mono" gap={16} wrap style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
+          {p.items.totalCount > 0 && <Box as="span"><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</Box>}
+          {open > 0 && <Box as="span"><b style={{ color: "var(--fg)" }}>{open}</b> open</Box>}
           {p.items.totalCount > 0 && <ProgressBar pct={pct} />}
-          <span style={{ color: "var(--fg-dim)" }}>updated {timeAgo(p.updatedAt)}</span>
-        </div>
-      </div>
+          <Text tone="dim">updated {timeAgo(p.updatedAt)}</Text>
+        </Row>
+      </Box>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      <Row gap={10} style={{ flexShrink: 0 }}>
         <FleetPill running={running} paused={paused} />
-        <span className="mono" style={{
+        <Box as="span" className="mono" style={{
           fontSize: 10.5, whiteSpace: "nowrap",
           color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
-        }}>open planning →</span>
+        }}>open planning →</Box>
 
         {/* ⋯ menu — stops row-click propagation */}
+        {/* eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef) */}
         <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-          <button
-            className="btn ghost"
+          <Button
+            variant="ghost"
             style={{ height: 26, width: 26, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setMenuOpenId(isOpen ? null : p.id)}
             title="More options"
           >
             <MoreHorizontal size={14} />
-          </button>
+          </Button>
 
           {isOpen && (
-            <div className="menu" style={{ minWidth: 178 }}>
+            <Box className="menu" style={{ minWidth: 178 }}>
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> open board on GitHub
               </button>
-              <div style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
+              <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
               <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
                 <Trash2 size={12} /> delete project
               </button>
-            </div>
+            </Box>
           )}
         </div>
-      </div>
-    </div>
+      </Row>
+    </Grid>
   );
 }
 
@@ -443,40 +451,41 @@ export function PublishedProjects({
           A min-width floor (not 0) so the projects column stays usable in a narrow / half window:
           the shrinkable blueprints rail (below) gives back space first, instead of this column
           collapsing to nothing and the fixed-width rail overflowing the clipped section. */}
-      <div style={{ flex: "1 1 0", minWidth: 320, display: "flex", flexDirection: "column" }}>
+      <Stack style={{ flex: "1 1 0", minWidth: 320 }}>
         {/* fixed header: title · summary · sync/new · new-project form · search+sort */}
-        <div style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <h2 className="mono" style={{ margin: 0, fontSize: 19, fontWeight: 600, color: "var(--fg)" }}>Projects</h2>
-                <span className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</span>
-              </div>
-              <div className="mono" style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ color: "var(--success)" }}>● github connected</span>
-                <span style={{ color: "var(--fg-dim)" }}>·</span>
-                <span>{totalSummary}</span>
+        <Box style={{ flex: "0 0 auto", padding: "20px 28px 0" }}>
+          <Row align="start" gap={14}>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Row gap={10}>
+                <Text as="h2" mono size={19} weight={600} style={{ margin: 0, color: "var(--fg)" }}>Projects</Text>
+                <Box as="span" className="mono" style={{ padding: "1px 7px", borderRadius: 8, fontSize: 10, background: "var(--bg-elev2)", color: "var(--fg-muted)", border: "1px solid var(--border-soft)" }}>{publishedAndDrafts}</Box>
+              </Row>
+              <Row className="mono" gap={8} wrap style={{ color: "var(--fg-muted)", fontSize: 11.5, marginTop: 7 }}>
+                <Text tone="success">● github connected</Text>
+                <Text tone="dim">·</Text>
+                <Box as="span">{totalSummary}</Box>
                 {lastSync && (
                   <>
-                    <span style={{ color: "var(--fg-dim)" }}>·</span>
-                    <span style={{ color: "var(--fg-dim)" }}>last sync {timeAgo(lastSync.toISOString())}</span>
+                    <Text tone="dim">·</Text>
+                    <Text tone="dim">last sync {timeAgo(lastSync.toISOString())}</Text>
                   </>
                 )}
-              </div>
-            </div>
-            <button className="btn ghost" onClick={fetchProjects} disabled={loading}>
+              </Row>
+            </Box>
+            <Button variant="ghost" onClick={fetchProjects} disabled={loading}>
               {loading ? "syncing…" : "↻ sync"}
-            </button>
+            </Button>
             <button ref={newBtnRef} className="btn primary" onClick={() => setNewOpen(o => !o)}>+ New project</button>
-          </div>
+          </Row>
 
           {/* new project — inline; click outside to dismiss (the title is kept for next time) */}
           {newOpen && (
+            // eslint-disable-next-line no-restricted-syntax -- click-outside form needs a real DOM ref (Box isn't forwardRef)
             <div ref={newFormRef} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 14,
               background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
             }}>
-              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}>+ plan</span>
+              <Text mono size={10} tone="dim" style={{ whiteSpace: "nowrap" }}>+ plan</Text>
               <input
                 autoFocus
                 value={title}
@@ -490,20 +499,20 @@ export function PublishedProjects({
                 }}
               />
               {titleConflict && (
-                <span className="mono" style={{ fontSize: 10, color: "var(--danger)", whiteSpace: "nowrap" }}>⚠ exists</span>
+                <Text mono size={10} tone="danger" style={{ whiteSpace: "nowrap" }}>⚠ exists</Text>
               )}
-              <button
+              <Button
                 onClick={handleStartPlanning}
                 disabled={!titleTrimmed || !!titleConflict}
-                className="btn primary"
+                variant="primary"
                 style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
-              >start planning →</button>
+              >start planning →</Button>
             </div>
           )}
 
           {/* search + sort */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, paddingBottom: 16, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 1 300px", minWidth: 0 }}>
+          <Row gap={12} wrap style={{ marginTop: 16, paddingBottom: 16 }}>
+            <Row gap={8} style={{ height: 30, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", flex: "0 1 300px", minWidth: 0 }}>
               <Search size={13} style={{ color: "var(--fg-dim)" }} />
               <input
                 value={query}
@@ -512,23 +521,23 @@ export function PublishedProjects({
                 className="mono"
                 style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 11, color: "var(--fg)" }}
               />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>sort</span>
-              <div style={{ display: "flex", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
+            </Row>
+            <Row gap={7}>
+              <Text mono size={10} tone="dim">sort</Text>
+              <Row align="stretch" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
                 <button className="mono" onClick={() => setSort("recency")} style={sortBtn(sort === "recency")}>recency</button>
-                <span style={{ width: 1, background: "var(--border-soft)" }} />
+                <Box as="span" style={{ width: 1, background: "var(--border-soft)" }} />
                 <button className="mono" onClick={() => setSort("name")} style={sortBtn(sort === "name")}>name</button>
-              </div>
-            </div>
-            {q && <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--fg-dim)" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</span>}
-          </div>
-        </div>
+              </Row>
+            </Row>
+            {q && <Text mono size={10} tone="dim" style={{ marginLeft: "auto" }}>{grandTotal} match{grandTotal !== 1 ? "es" : ""}</Text>}
+          </Row>
+        </Box>
 
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
+        <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <div className="mono" style={{
+            <Box className="mono" style={{
               padding: "12px 16px", borderRadius: 6, marginBottom: 16,
               background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
@@ -537,48 +546,48 @@ export function PublishedProjects({
               {error.includes("read:project")
                 ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
                 : error}
-            </div>
+            </Box>
           )}
 
           {loading && visibleProjects.length === 0 && (
-            <div className="mono" style={{ textAlign: "center", padding: "40px 0", fontSize: 12, color: "var(--fg-dim)" }}>
+            <Text as="div" mono size={12} tone="dim" style={{ textAlign: "center", padding: "40px 0" }}>
               Loading projects…
-            </div>
+            </Text>
           )}
 
           {draftError && (
-            <div className="mono" style={{
+            <Box className="mono" style={{
               padding: "8px 12px", borderRadius: "var(--r-md)", marginBottom: 12, fontSize: 11,
               color: "var(--danger)", background: "color-mix(in oklch, var(--danger), transparent 88%)",
               border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)",
-            }}>{draftError}</div>
+            }}>{draftError}</Box>
           )}
 
           {/* drafts — compact chips (click = resume · ✕ = delete) */}
           {fDrafts.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 20, flexWrap: "wrap" }}>
-              <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+            <Row gap={9} wrap style={{ marginBottom: 20 }}>
+              <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
                 {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
-              </span>
+              </Text>
               {fDrafts.map(d => (
-                <span
+                <Box as="span"
                   key={d.key}
                   onClick={() => reopenDraft(d)}
                   title={d.pitch || undefined}
                   className="mono"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
                 >
-                  <span style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
+                  <Box as="span" style={{ width: 5, height: 5, borderRadius: 99, background: "var(--accent)", flexShrink: 0 }} />
                   {d.title}
-                  <span style={{ color: "var(--fg-dim)" }}>{timeAgoMs(d.sort)}</span>
-                  <span
+                  <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+                  <Box as="span"
                     onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
                     title="delete draft"
                     style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
-                  >✕</span>
-                </span>
+                  >✕</Box>
+                </Box>
               ))}
-            </div>
+            </Row>
           )}
 
           {/* published projects, grouped by lifecycle */}
@@ -586,11 +595,11 @@ export function PublishedProjects({
             const items = grouped[status];
             if (items.length === 0) return null;
             return (
-              <div key={status} style={{ marginBottom: 22 }}>
+              <Box key={status} style={{ marginBottom: 22 }}>
                 <GroupHeader label={STATUS_META[status].label} count={items.length} dot={STATUS_META[status].dot} />
-                <div style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
+                <Box style={{ border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", overflow: "visible", opacity: status === "shipped" ? 0.82 : 1 }}>
                   {items.map((p, i) => (
-                    <div key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
+                    <Box key={p.id} style={{ borderTop: i ? "1px solid var(--border-soft)" : "none" }}>
                       <ProjectRow
                         p={p}
                         running={fleetByProject[p.id]?.running ?? 0}
@@ -601,27 +610,27 @@ export function PublishedProjects({
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                       />
-                    </div>
+                    </Box>
                   ))}
-                </div>
-              </div>
+                </Box>
+              </Box>
             );
           })}
 
           {/* empty (main column only — the rail has its own) */}
           {!loading && projectsEmpty && (
             q ? (
-              <div className="mono" style={{ textAlign: "center", padding: "48px 0", fontSize: 12, color: "var(--fg-dim)" }}>
+              <Text as="div" mono size={12} tone="dim" style={{ textAlign: "center", padding: "48px 0" }}>
                 No projects match “{query}”.
-              </div>
+              </Text>
             ) : !error && (
-              <div className="mono" style={{ textAlign: "center", padding: "48px 0", fontSize: 12, color: "var(--fg-dim)" }}>
+              <Text as="div" mono size={12} tone="dim" style={{ textAlign: "center", padding: "48px 0" }}>
                 Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
-              </div>
+              </Text>
             )
           )}
-        </div>
-      </div>
+        </Box>
+      </Stack>
 
       {/* Published-project delete — Keep vs Delete (#1216). A published project is a real shipped app
           on GitHub (board + milestones + issues + repos), so removing it from base-studio-code must
@@ -629,8 +638,8 @@ export function PublishedProjects({
           everything (deliberate, secondary) layers the GitHub project DELETE_MUTATION on top, behind
           an explicit second confirm. */}
       {deleteTarget && (
-        <div className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
-          <div style={{
+        <Box className="modal-scrim" onClick={overlayDismiss(deleting ? undefined : closeDeleteModal)}>
+          <Box style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 460, maxWidth: "90vw",
           }}>
@@ -639,10 +648,10 @@ export function PublishedProjects({
                 const repoNames = deleteTarget.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
                 return (
                   <>
-                    <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--danger)" }}>
+                    <Text as="h3" mono size={14} tone="danger" style={{ margin: "0 0 8px" }}>
                       Delete everything + repositories?
-                    </h3>
-                    <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                    </Text>
+                    <Text as="p" size={12} tone="muted" style={{ margin: "0 0 18px", lineHeight: 1.6 }}>
                       This <b style={{ color: "var(--fg)" }}>permanently deletes</b> the local copy, the GitHub project
                       board, and{" "}
                       <b style={{ color: "var(--fg)" }}>
@@ -650,137 +659,137 @@ export function PublishedProjects({
                       </b>{" "}
                       for <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b>.{" "}
                       <b style={{ color: "var(--danger)" }}>This cannot be undone.</b>
-                    </p>
+                    </Text>
                     {repoNames.length > 0 && (
-                      <div className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", marginBottom: 16, lineHeight: 1.7 }}>
-                        {repoNames.map((r) => <div key={r}>· {r}</div>)}
-                      </div>
+                      <Text as="div" mono size={11} tone="muted" style={{ marginBottom: 16, lineHeight: 1.7 }}>
+                        {repoNames.map((r) => <Box key={r}>· {r}</Box>)}
+                      </Text>
                     )}
                     {deleteError && (
-                      <div className="mono" style={{
+                      <Box className="mono" style={{
                         padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                         background: "color-mix(in oklch, var(--danger), transparent 88%)",
                         border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                         fontSize: 11, color: "var(--danger)",
                       }}>
                         {deleteError}
-                      </div>
+                      </Box>
                     )}
-                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      <button className="btn ghost" onClick={() => { setConfirmDeleteRepos(false); setDeleteError(null); }} disabled={deleting}>back</button>
-                      <button className="btn danger" onClick={handleDeleteWithRepos} disabled={deleting} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Row gap={8} align="stretch" justify="end">
+                      <Button variant="ghost" onClick={() => { setConfirmDeleteRepos(false); setDeleteError(null); }} disabled={deleting}>back</Button>
+                      <Button danger onClick={handleDeleteWithRepos} disabled={deleting} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <Trash2 size={12} />
                         {deleting ? "deleting…" : "delete everything + repos"}
-                      </button>
-                    </div>
+                      </Button>
+                    </Row>
                   </>
                 );
               })()
             ) : !confirmDeleteAll ? (
               <>
-                <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
+                <Text as="h3" mono size={14} style={{ margin: "0 0 8px", color: "var(--fg)" }}>
                   Remove “{deleteTarget.title}”?
-                </h3>
-                <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                </Text>
+                <Text as="p" size={12} tone="muted" style={{ margin: "0 0 18px", lineHeight: 1.6 }}>
                   This project is published to GitHub. Choose whether to keep the shipped app on GitHub
                   or delete everything.
-                </p>
+                </Text>
                 {deleteError && (
-                  <div className="mono" style={{
+                  <Box className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
-                  </div>
+                  </Box>
                 )}
                 {/* Keep — the default / safe primary action. */}
-                <button
-                  className="btn primary"
+                <Button
+                  variant="primary"
                   onClick={handleDeleteKeep}
                   disabled={deleting}
                   autoFocus
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", marginBottom: 10 }}
                 >
-                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  <Box as="span" style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>Keep the app — stop tracking it here</Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy only. Your GitHub project board, milestones, issues, and repos stay intact.
-                  </span>
-                </button>
+                  </Box>
+                </Button>
                 {/* Delete everything — secondary; arms the explicit destructive confirm (NOT the default). */}
-                <button
-                  className="btn ghost"
+                <Button
+                  variant="ghost"
                   onClick={() => { setConfirmDeleteAll(true); setDeleteError(null); }}
                   disabled={deleting}
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                  <Box as="span" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
                     <Trash2 size={12} /> Delete everything
-                  </span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  </Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy AND deletes the GitHub project board. (Your repos and their code are not deleted.)
-                  </span>
-                </button>
+                  </Box>
+                </Button>
                 {/* Delete everything + repositories — the MOST destructive; arms its own confirm. */}
-                <button
-                  className="btn ghost"
+                <Button
+                  variant="ghost"
                   onClick={() => { setConfirmDeleteRepos(true); setDeleteError(null); }}
                   disabled={deleting}
                   style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", color: "var(--danger)", marginBottom: 16 }}
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                  <Box as="span" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
                     <Trash2 size={12} /> Delete everything + repositories
-                  </span>
-                  <span className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
+                  </Box>
+                  <Box as="span" className="mono" style={{ display: "block", fontSize: 10.5, opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>
                     Removes the local copy, the GitHub project board, AND permanently deletes the linked GitHub repositories and all their code. This cannot be undone.
-                  </span>
-                </button>
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button className="btn ghost" onClick={closeDeleteModal} disabled={deleting}>cancel</button>
-                </div>
+                  </Box>
+                </Button>
+                <Row gap={8} align="stretch" justify="end">
+                  <Button variant="ghost" onClick={closeDeleteModal} disabled={deleting}>cancel</Button>
+                </Row>
               </>
             ) : (
               <>
-                <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--danger)" }}>
+                <Text as="h3" mono size={14} tone="danger" style={{ margin: "0 0 8px" }}>
                   Delete everything?
-                </h3>
-                <p style={{ margin: "0 0 18px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+                </Text>
+                <Text as="p" size={12} tone="muted" style={{ margin: "0 0 18px", lineHeight: 1.6 }}>
                   This permanently deletes the <b style={{ color: "var(--fg)" }}>GitHub project board</b> for{" "}
                   <b style={{ color: "var(--fg)" }}>{deleteTarget.title}</b> (its milestones and issue cards) and
                   removes the local copy. <b style={{ color: "var(--fg)" }}>Your repositories and their code are not deleted</b> —
                   only the project board is.
-                </p>
+                </Text>
                 {deleteError && (
-                  <div className="mono" style={{
+                  <Box className="mono" style={{
                     padding: "8px 12px", borderRadius: 4, marginBottom: 14,
                     background: "color-mix(in oklch, var(--danger), transparent 88%)",
                     border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
                     fontSize: 11, color: "var(--danger)",
                   }}>
                     {deleteError}
-                  </div>
+                  </Box>
                 )}
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button
-                    className="btn ghost"
+                <Row gap={8} align="stretch" justify="end">
+                  <Button
+                    variant="ghost"
                     onClick={() => { setConfirmDeleteAll(false); setDeleteError(null); }}
                     disabled={deleting}
-                  >back</button>
-                  <button
-                    className="btn danger"
+                  >back</Button>
+                  <Button
+                    danger
                     onClick={handleDeleteEverything}
                     disabled={deleting}
                     style={{ display: "flex", alignItems: "center", gap: 6 }}
                   >
                     <Trash2 size={12} />
                     {deleting ? "deleting…" : "delete everything"}
-                  </button>
-                </div>
+                  </Button>
+                </Row>
               </>
             )}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
     </>
   );

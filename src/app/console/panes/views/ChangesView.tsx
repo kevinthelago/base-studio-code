@@ -1,3 +1,7 @@
+import { Box } from "@/shared/ui/layout/Box";
+import { Row } from "@/shared/ui/layout/Row";
+import { Text } from "@/shared/ui/typography/Text";
+
 export interface DiffLine {
   sign: " " | "+" | "-";
   text: string;
@@ -20,46 +24,45 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
   const totalDel = hunks.reduce((s, h) => s + h.del, 0);
 
   return (
-    <div style={{
+    <Box style={{
       flex: 1, minHeight: 0, overflow: "auto",
       padding: small ? "6px 8px" : "10px 12px",
     }}>
-      <div className="mono" style={{
-        display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8,
+      <Row className="mono" align="baseline" gap={8} style={{
+        marginBottom: 8,
         fontSize: 10, color: "var(--fg-dim)",
         textTransform: "uppercase", letterSpacing: ".06em",
       }}>
-        <span>{hunks.length} files changed</span>
-        <span>·</span>
-        <span style={{ color: "var(--success)" }}>+{totalAdd}</span>
-        <span style={{ color: "var(--danger)" }}>−{totalDel}</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ color: "var(--accent)", textTransform: "none", letterSpacing: 0 }}>stash · commit</span>
-      </div>
+        <Text>{hunks.length} files changed</Text>
+        <Text>·</Text>
+        <Text tone="success">+{totalAdd}</Text>
+        <Text tone="danger">−{totalDel}</Text>
+        <Box style={{ flex: 1 }} />
+        <Text tone="accent" style={{ textTransform: "none", letterSpacing: 0 }}>stash · commit</Text>
+      </Row>
       {hunks.map((h, i) => (
-        <div key={i} style={{
+        <Box key={i} style={{
           marginBottom: 8, borderRadius: 5,
           border: "1px solid var(--border-soft)", overflow: "hidden",
         }}>
-          <div className="mono" style={{
+          <Row className="mono" align="baseline" gap={8} style={{
             padding: "5px 9px", background: "var(--bg-elev)",
-            display: "flex", alignItems: "baseline", gap: 8,
             fontSize: small ? 10 : 11,
           }}>
-            <span style={{
+            <Text style={{
               color: "var(--fg)", flex: 1,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>{h.file}</span>
-            <span style={{ color: "var(--success)", fontSize: small ? 9.5 : 10 }}>+{h.add}</span>
-            <span style={{ color: "var(--danger)",  fontSize: small ? 9.5 : 10 }}>−{h.del}</span>
-          </div>
+            }}>{h.file}</Text>
+            <Text tone="success" size={small ? 9.5 : 10}>+{h.add}</Text>
+            <Text tone="danger" size={small ? 9.5 : 10}>−{h.del}</Text>
+          </Row>
           <pre className="mono" style={{
             margin: 0, padding: "6px 0",
             fontSize: small ? 9.5 : 10.5,
             lineHeight: 1.5, background: "var(--bg-canvas)",
           }}>
             {h.sample.map((line, j) => (
-              <div key={j} style={{
+              <Box key={j} style={{
                 padding: "0 9px",
                 background: line.sign === "+" ? "color-mix(in oklch, var(--success), transparent 88%)"
                   : line.sign === "-" ? "color-mix(in oklch, var(--danger), transparent 88%)"
@@ -68,13 +71,13 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
                   : line.sign === "-" ? "var(--danger)"
                   : "var(--fg-muted)",
               }}>
-                <span style={{ display: "inline-block", width: 10, color: "var(--fg-dim)" }}>{line.sign}</span>
+                <Text tone="dim" style={{ display: "inline-block", width: 10 }}>{line.sign}</Text>
                 {line.text}
-              </div>
+              </Box>
             ))}
           </pre>
-        </div>
+        </Box>
       ))}
-    </div>
+    </Box>
   );
 }

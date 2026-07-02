@@ -3,7 +3,7 @@
 //! context dirs, and the published marker. Pure path construction (no I/O except the marker probe).
 //! Extracted verbatim from `lib.rs`.
 
-use crate::platform::fsx::sanitize_project_key;
+use crate::platform::fsx::{sanitize_project_key, worktree_slug};
 
 /// The user's home directory. Delegates to the shared [`bsc_util::home_dir`] (#1646) so the app
 /// and every `bsc-*` CLI resolve the SAME directory; an unset home falls back to the empty path
@@ -27,8 +27,40 @@ pub(crate) fn bsc_base_dir() -> std::path::PathBuf {
 /// [`crate::mark_published`]. This replaces the #904 draft/ vs projects/ split, whose publish-time
 /// rename fought the Windows cwd lock (a live process can't have its cwd renamed), orphaned Claude
 /// history, and wedged into a permanent split-brain when the rename half-failed.
+/// The root that holds every project hub: `~/.base-studio-code/projects`. One source of truth for the
+/// path so callers stop hand-rolling `bsc_base_dir().join("projects")` (#2081).
+pub(crate) fn projects_root() -> std::path::PathBuf {
+    bsc_base_dir().join("projects")
+}
+
 pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
-    bsc_base_dir().join("projects").join(sanitize_project_key(project_key))
+    projects_root().join(sanitize_project_key(project_key))
+}
+
+/// The project hub's per-project SQLite plan store: `projects/<key>/plan.db` (#plan-db). The sole fleet
+/// store (#1805). One helper so the path stops being spelled two ways — `project_dir(key).join("plan.db")`
+/// vs `bsc_base_dir().join("projects").join(key).join("plan.db")` — which is exactly the drift this
+/// module exists to prevent (#2081). Key sanitize is idempotent, so a cwd-derived (already-sanitized)
+/// key resolves to the same path.
+pub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("plan.db")
+}
+
+/// The project's canonical DuckDB **data store**: `~/.base-studio-code/data/<key>.duckdb` — the Data
+/// Model + PlatformScan the planner reads via `bsc data` (#1446). Pure path construction (no `mkdir`);
+/// callers that write create the parent themselves. Sanitizes the key (idempotent on a cwd-derived key).
+pub(crate) fn data_db_path(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("data").join(format!("{}.duckdb", sanitize_project_key(project_key)))
+}
+
+/// The global skills store: `~/.base-studio-code/skills.db` (the `bsc skill` CLI's db). Not per-project.
+pub(crate) fn skills_db() -> std::path::PathBuf {
+    bsc_base_dir().join("skills.db")
+}
+
+/// The performance/cost metrics store: `~/.base-studio-code/perf.db` (#1607). Not per-project.
+pub(crate) fn perf_db() -> std::path::PathBuf {
+    bsc_base_dir().join("perf.db")
 }
 
 /// The published-marker file inside a project hub (#922): `projects/<key>/.published`. Its presence
@@ -61,8 +93,16 @@ pub(crate) fn legacy_draft_dir(project_key: &str) -> std::path::PathBuf {
 /// `projects/<sanitized-project-key>/<short-repo-name>`, where the short name is
 /// the part of `owner/name` after the `/`. Each repo clone is a repo session's CWD.
 pub(crate) fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::PathBuf {
-    let short = repo_full_name.rsplit('/').next().unwrap_or(repo_full_name);
-    project_dir(project_key).join(short)
+    project_dir(project_key).join(repo_short(repo_full_name))
+}
+
+/// The SHORT repo name: the segment of a GitHub `owner/name` after the last `/` (or the
+/// whole string when there's no `/`). Every on-disk path derived from a repo uses this short
+/// form — the clone dir under the hub ([`repo_dir`]) and the worktree dir name
+/// ([`worktree_dir_name`]) — so this is the single source of that idiom (#2061), replacing the
+/// hand-rolled `repo.rsplit('/').next().unwrap_or(repo)` scattered across the fleet.
+pub(crate) fn repo_short(repo_full_name: &str) -> &str {
+    repo_full_name.rsplit('/').next().unwrap_or(repo_full_name)
 }
 
 /// The fleet's git worktrees live OUTSIDE the project hub, at
@@ -77,6 +117,29 @@ pub(crate) fn worktrees_dir(project_key: &str) -> std::path::PathBuf {
     bsc_base_dir()
         .join("worktrees")
         .join(sanitize_project_key(project_key))
+}
+
+/// The on-disk directory NAME of a fleet worker's worktree: `<repoShort>--<slug>`, where
+/// `slug` = [`worktree_slug`]`(agent_id)`. Join it onto [`worktrees_dir`] for the absolute path.
+/// The SINGLE builder for that name (#2061) — create ([`crate::fleet::worktree::ensure_worktree`]),
+/// discover (`console::discovery`), and teardown (`fleet::teardown`) all route through this + its
+/// inverse [`parse_worktree_dir_name`] so the paths can never silently disagree.
+pub(crate) fn worktree_dir_name(repo: &str, agent_id: &str) -> String {
+    format!("{}--{}", repo_short(repo), worktree_slug(agent_id))
+}
+
+/// Inverse of [`worktree_dir_name`]: split a worktree dir name into `(repo_short, slug)`, returning
+/// `None` when there is no `--` boundary.
+///
+/// The FIRST `--` is the boundary: [`worktree_slug`] never emits `--` (it maps every non-`[A-Za-z0-9._-]`
+/// char to a single `-`, so a doubled dash can only come from the literal separator), so the only way
+/// the round-trip could mis-split is a repo SHORT name that itself contains `--`. GitHub repo names can
+/// technically contain consecutive hyphens, so that is the documented guard: `worktree_dir_name` →
+/// `parse_worktree_dir_name` round-trips exactly for any repo short name WITHOUT `--`; a `--`-containing
+/// short name would be truncated at its first `--` (matching the pre-existing `split_once("--")` callers
+/// this consolidates). In practice no linked repo short name has ever contained `--`.
+pub(crate) fn parse_worktree_dir_name(name: &str) -> Option<(&str, &str)> {
+    name.split_once("--")
 }
 
 /// Absolute on-disk location of a project's plan section files, which live FLAT
@@ -114,11 +177,29 @@ pub(crate) fn nearest_existing_ancestor(path: &str) -> String {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
+
+    #[test]
+    fn well_known_locations_compose_off_the_base_and_project_dirs() {
+        // #2081: the named location helpers replace ~20 ad-hoc `bsc_base_dir().join(...)` joins.
+        assert_eq!(projects_root(), bsc_base_dir().join("projects"));
+        assert_eq!(project_dir("k"), projects_root().join("k"));
+        assert_eq!(skills_db(), bsc_base_dir().join("skills.db"));
+        assert_eq!(perf_db(), bsc_base_dir().join("perf.db"));
+        assert_eq!(data_db_path("k"), bsc_base_dir().join("data").join("k.duckdb"));
+    }
+
+    #[test]
+    fn plan_db_path_collapses_the_two_former_spellings() {
+        // #2081 regression: plan.db was spelled `project_dir(k).join("plan.db")` in one place and
+        // `bsc_base_dir().join("projects").join(k).join("plan.db")` in another. Both must resolve to
+        // the SAME path so the drift can't recur. Key sanitize is idempotent, so an already-sanitized
+        // (cwd-derived) key resolves identically.
+        assert_eq!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
+        assert_eq!(plan_db_path("my-app"), projects_root().join("my-app").join("plan.db"));
+        // sanitize is applied and idempotent.
+        assert_eq!(plan_db_path("a/b"), plan_db_path("a_b"));
+    }
 
     #[test]
     fn project_dir_places_the_sanitized_key_directly_under_projects() {
@@ -139,6 +220,35 @@ mod relocated_tests {
         // The key is sanitized; the repo collapses to its segment after the last '/'.
         let s = repo_dir("acme/api project", "owner/api").to_string_lossy().replace('\\', "/");
         assert!(s.ends_with("/projects/acme_api_project/api"), "got {s}");
+    }
+    #[test]
+    fn repo_short_takes_the_segment_after_the_last_slash() {
+        assert_eq!(repo_short("acme/wotos-ui"), "wotos-ui");
+        assert_eq!(repo_short("owner/api"), "api");
+        // No '/' → the whole string.
+        assert_eq!(repo_short("localrepo"), "localrepo");
+        // Only the LAST '/' matters (defensive — full names are owner/name).
+        assert_eq!(repo_short("a/b/c"), "c");
+    }
+    #[test]
+    fn worktree_dir_name_builds_and_round_trips_through_parse() {
+        // Build: <repoShort>--<slug(agent)>; the agent id is slugified, the repo collapses to its short name.
+        let name = worktree_dir_name("acme/wotos-ui", "feat/login");
+        assert_eq!(name, "wotos-ui--feat-login");
+        // Round-trip: parse recovers (repo_short, slug) for a name WITHOUT '--' in the repo short.
+        assert_eq!(parse_worktree_dir_name(&name), Some(("wotos-ui", "feat-login")));
+        // A dir name with no boundary parses to None (no owning clone).
+        assert_eq!(parse_worktree_dir_name("nodashes"), None);
+    }
+    #[test]
+    fn parse_worktree_dir_name_splits_at_the_first_dash_pair() {
+        // The documented guard: a repo short name containing '--' truncates at its FIRST '--'
+        // (matches the pre-existing split_once("--") behavior this consolidates). worktree_slug
+        // itself never emits '--', so a well-formed name always round-trips.
+        let name = worktree_dir_name("owner/a--b", "s1");
+        assert_eq!(name, "a--b--s1");
+        // First '--' is the boundary → repo short truncates to "a", slug is the remainder.
+        assert_eq!(parse_worktree_dir_name(&name), Some(("a", "b--s1")));
     }
     #[test]
     fn worktrees_dir_is_outside_the_project_hub() {

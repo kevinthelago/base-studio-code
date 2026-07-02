@@ -10,6 +10,8 @@ import { appSessionTag } from "./lib/appSession";
 import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
+import { Button } from "@/shared/ui/controls/Button";
+import { Box } from "@/shared/ui/layout/Box";
 import { modeTone } from "./lib/badgeTone";
 
 export interface AssignmentsTabProps {
@@ -34,13 +36,13 @@ export function ProfileSelect({ current, profiles, onPick }: {
     return () => window.removeEventListener("click", close);
   }, [open]);
   return (
-    <div className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
-      <span className="sw" style={{ background: current?.color }} />
-      <span className="nm">{current?.name ?? "—"}</span>
+    <Box className="prof-select" style={{ position: "relative" }} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
+      <Box as="span" className="sw" style={{ background: current?.color }} />
+      <Box as="span" className="nm">{current?.name ?? "—"}</Box>
       {current && <Chip tone={modeTone(current.mode)} size="sm" style={{ marginLeft: 2 }}>{current.mode}</Chip>}
-      <span className="cv">▾</span>
+      <Box as="span" className="cv">▾</Box>
       {open && (
-        <div className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
+        <Box className="prof-menu" role="listbox" onClick={(e) => e.stopPropagation()}>
           {profiles.map((p) => (
             <button
               key={p.id}
@@ -50,14 +52,14 @@ export function ProfileSelect({ current, profiles, onPick }: {
               className={"prof-opt" + (p.id === current?.id ? " on" : "")}
               onClick={() => { onPick(p.id); setOpen(false); }}
             >
-              <span className="sw" style={{ background: p.color }} />
-              <span className="nm">{p.name}</span>
+              <Box as="span" className="sw" style={{ background: p.color }} />
+              <Box as="span" className="nm">{p.name}</Box>
               <Chip tone={modeTone(p.mode)} size="sm">{p.mode}</Chip>
             </button>
           ))}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -69,26 +71,26 @@ function AppSessionRow({ p, onOpen }: { p: AgentProfile; onOpen: (id: string) =>
   return (
     <CardListRow
       variant="grouped"
-      lead={<span className="pdot running" />}
+      lead={<Box as="span" className="pdot running" />}
       title={appSessionTag(p)}
-      subtitle={<span className="mono">{p.session}</span>}
+      subtitle={<Box as="span" className="mono">{p.session}</Box>}
       titleAside={
-        <div className="prof-select" onClick={() => onOpen(p.id)}>
-          <span className="sw" style={{ background: p.color }} />
-          <span className="nm">{p.name}</span>
+        <Box className="prof-select" onClick={() => onOpen(p.id)}>
+          <Box as="span" className="sw" style={{ background: p.color }} />
+          <Box as="span" className="nm">{p.name}</Box>
           <Chip tone="info" size="xs" style={{ marginLeft: 2 }}>locked</Chip>
-        </div>
+        </Box>
       }
       body={
-        <div className="resolved">
-          <span className="lbl">runs:</span>
+        <Box className="resolved">
+          <Box as="span" className="lbl">runs:</Box>
           {all.map((r) => (
-            <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
+            <Box as="span" key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</Box>
           ))}
-          <span className="rchip" style={{ borderStyle: "dashed" }}>owns {p.surface}</span>
-        </div>
+          <Box as="span" className="rchip" style={{ borderStyle: "dashed" }}>owns {p.surface}</Box>
+        </Box>
       }
-      trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</button>}
+      trailing={<Button variant="ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(p.id)}>edit role →</Button>}
     />
   );
 }
@@ -97,33 +99,33 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
   return (
     <>
       <SectionHeader title="Application sessions" hint="always present · one per workspace · role is fixed" meta={<>{roles.length} system roles</>} />
-      <div className="asn-grid" style={{ marginBottom: 14 }}>
-        <div className="console-card" style={{ borderColor: "color-mix(in oklch, var(--info), transparent 78%)" }}>
-          <div className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
-            <span className="cdot" style={{ background: "var(--info)" }} />
-            <span className="cn">system</span>
-            <span className="repo">workspace-wide</span>
-            <span className="spacer" />
-            <span className="hint mono">launched at startup · not reassignable</span>
-          </div>
+      <Box className="asn-grid" style={{ marginBottom: 14 }}>
+        <Box className="console-card" style={{ borderColor: "color-mix(in oklch, var(--info), transparent 78%)" }}>
+          <Box className="ch" style={{ background: "color-mix(in oklch, var(--info), transparent 92%)" }}>
+            <Box as="span" className="cdot" style={{ background: "var(--info)" }} />
+            <Box as="span" className="cn">system</Box>
+            <Box as="span" className="repo">workspace-wide</Box>
+            <Box as="span" className="spacer" />
+            <Box as="span" className="hint mono">launched at startup · not reassignable</Box>
+          </Box>
           {roles.map((p) => <AppSessionRow key={p.id} p={p} onOpen={onOpen} />)}
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       <SectionHeader title="Console sessions" hint="each pane runs under one profile · the resolved command allowlist shows what actually runs there" meta={<>{consoles.length} consoles · {paneTotal} panes</>} />
-      <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
-        <div className="asn-grid">
+      <Box style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
+        <Box className="asn-grid">
           {consoles.map((c) => (
-            <div className="console-card" key={c.id}>
-              <div className="ch">
-                <span className="cdot" />
-                <span className="cn">{c.name}</span>
-                <span className="repo">{c.repo}</span>
-                <span className="spacer" />
-                <span className="hint mono">
+            <Box className="console-card" key={c.id}>
+              <Box className="ch">
+                <Box as="span" className="cdot" />
+                <Box as="span" className="cn">{c.name}</Box>
+                <Box as="span" className="repo">{c.repo}</Box>
+                <Box as="span" className="spacer" />
+                <Box as="span" className="hint mono">
                   project allow: {(c.projectAllow || []).join(", ") || "—"}{c.repoAllow ? ` · repo: ${c.repoAllow.join(", ")}` : ""}
-                </span>
-              </div>
+                </Box>
+              </Box>
               {c.panes.map((pane) => {
                 const p = find(pane.profileId);
                 const resolved = resolveAllowlistFrom(c, p);
@@ -131,27 +133,27 @@ export function AssignmentsTab({ roles, consoles, paneTotal, profiles, onAssign,
                   <CardListRow
                     key={pane.id}
                     variant="grouped"
-                    lead={<span className={`pdot ${pane.status}`} />}
+                    lead={<Box as="span" className={`pdot ${pane.status}`} />}
                     title={pane.agent}
-                    subtitle={<span className="mono">{pane.id}</span>}
+                    subtitle={<Box as="span" className="mono">{pane.id}</Box>}
                     titleAside={<ProfileSelect current={p} profiles={profiles} onPick={(id) => onAssign(c.id, pane.id, id)} />}
                     body={
-                      <div className="resolved">
-                        <span className="lbl">runs:</span>
+                      <Box className="resolved">
+                        <Box as="span" className="lbl">runs:</Box>
                         {resolved.map((r) => (
-                          <span key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</span>
+                          <Box as="span" key={r.cmd} className={`rchip ${r.origin === "guaranteed" ? "guar" : ""}`} title={`from ${r.origin}`}>{r.cmd}</Box>
                         ))}
-                        {resolved.length === 0 && <span className="rchip">— prompt for everything —</span>}
-                      </div>
+                        {resolved.length === 0 && <Box as="span" className="rchip">— prompt for everything —</Box>}
+                      </Box>
                     }
-                    trailing={<button className="btn ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</button>}
+                    trailing={<Button variant="ghost" style={{ height: 24, fontSize: 10 }} onClick={() => onOpen(pane.profileId)}>edit profile →</Button>}
                   />
                 );
               })}
-            </div>
+            </Box>
           ))}
-        </div>
-      </div>
+        </Box>
+      </Box>
     </>
   );
 }

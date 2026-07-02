@@ -256,3 +256,23 @@ export function resolveEffectiveInitCmd(
       })
     : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
 }
+
+/**
+ * Whether a Claude pane's baked startup prompt must be SUPPRESSED when it resumes a prior
+ * conversation on a crash-restore remount (#2052). Keyed off the transient per-pane
+ * `restoreRequested` flag set by `restoreSessionsFromCrash` — so it is true ONLY on the
+ * crash-recovery relaunch, never on an intentional launch (a fresh triage/fleet kickoff, a
+ * manual console, or a tab-switch reconnect all leave it false, so their prompts deliver as
+ * usual). The backend's `fresh_only` only bites when the resumed session actually has history
+ * (`fresh_only && has_history`), so a prompt still fires on a genuinely fresh launch.
+ *
+ * Without this, the crash-restore remount re-bakes the pane's persisted startup prompt /
+ * checkpoint note as `claude --continue`'s initial message, which Claude then SUBMITS into the
+ * already-resumed conversation — re-running (or, if that persisted text was a slash command like
+ * `/clear`, WIPING) the restored history. Mirrors the planner's `startupPromptFreshOnly`
+ * (`plannerLaunch`).
+ */
+export function resolveStartupPromptFreshOnly(s: AppStore, paneId: string, isClaudeProvider: boolean): boolean {
+  if (!isClaudeProvider || isManualPaneId(paneId)) return false;
+  return !!s.restoreRequested[paneId];
+}

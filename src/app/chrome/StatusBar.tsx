@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "@/store";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 interface StatusBarProps {
   extra?: React.ReactNode;
@@ -23,21 +25,21 @@ export function StatusBar({ extra }: StatusBarProps) {
   }, 0);
 
   return (
-    <div className="statusbar">
-      <div className="s">
+    <Box className="statusbar">
+      <Box className="s">
         <i className={claudeOk ? "" : "off"} />
         claude · {claudeOk ? "connected" : "no key"}
-      </div>
-      <div className="s">
+      </Box>
+      <Box className="s">
         <i className={githubConnected ? "" : "off"} />
         github · {githubConnected ? "synced" : "not connected"}
-      </div>
-      <div className="spacer" />
+      </Box>
+      <Box className="spacer" />
       {extra}
-      <div className="s" style={{ color: "var(--fg-dim)" }}>
+      <Box className="s" style={{ color: "var(--fg-dim)" }}>
         {tabs.length} {tabs.length === 1 ? "tab" : "tabs"} · {totalPanes} {totalPanes === 1 ? "pane" : "panes"}
-      </div>
-      {appVersion && <div>v{appVersion}</div>}
-    </div>
+      </Box>
+      {appVersion && <Text as="div">v{appVersion}</Text>}
+    </Box>
   );
 }

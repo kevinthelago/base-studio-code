@@ -13,6 +13,10 @@ import type { Section } from "../github/ghStructure";
 import type { NodeProgress } from "../github/ghProgress";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveDirectorDrive } from "../fleet/directorDrive";
+import { resolveStrategy } from "../lib/integrationStrategy";
+import { depsForRepo } from "../issues/dependencies";
+import { buildWorkerScope } from "../fleet/workerScope";
+import { buildStreamPrompt } from "@/store/helpers";
 
 // The render-shape contract lives in projectPane.types (#356, the shared pane
 // types). This adapter imports those shapes and re-exports them so existing
@@ -128,6 +132,10 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
     // per-stream perm/preset overrides anymore. An explicit `s.profile` override still resolves.
     const profile = input.profiles.find(p => p.id === (s.profile ?? "pf_auto"));
     const flow = resolveFlow(s.flow);
+    // #2053: compute the exact kickoff + lane context this stream will launch with, so the card can
+    // preview them (pure — the same builders fleetStartProject / write_worker_context use).
+    const strategy = resolveStrategy(s.strategy, input.fleet?.strategy);
+    const scope = buildWorkerScope(s, depsForRepo(input.dependencies ?? [], s.repo));
     return {
       id: s.id,
       name: s.name.startsWith("@") ? s.name : "@" + s.id,
@@ -144,6 +152,9 @@ function buildAgents(input: BuildProjectPaneInput): Agent[] {
       model: s.model,
       strategy: s.strategy,
       ctx: s.owns.length,
+      kickoff: buildStreamPrompt(s, strategy),
+      scope,
+      authoredPrompt: s.prompt,
     };
   });
 }

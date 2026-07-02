@@ -298,14 +298,13 @@ fn capture_and_exchange(
     if !client_secret.is_empty() {
         form.push(("client_secret", client_secret));
     }
-    let resp: Value = reqwest::blocking::Client::new()
-        .post(token_url)
-        .form(&form)
-        .header("Accept", "application/json")
-        .send()
-        .and_then(|r| r.error_for_status())
-        .and_then(|r| r.json())
-        .map_err(|e| format!("token exchange failed: {e}"))?;
+    let resp: Value = crate::platform::http::blocking_send_json(
+        crate::platform::http::blocking_client()
+            .post(token_url)
+            .form(&form)
+            .header("Accept", "application/json"),
+        |e| format!("token exchange failed: {e}"),
+    )?;
 
     let access = resp["access_token"].as_str().ok_or("token response missing access_token")?.to_string();
     let refresh = resp["refresh_token"].as_str().map(str::to_string);

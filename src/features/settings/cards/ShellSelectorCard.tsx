@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { Card } from "@/shared/ui/data/Card";
+import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import {
   loadShellKind,
   saveShellKind,
@@ -31,11 +34,11 @@ export function ShellSelectorCard() {
 
   return (
     <Card title="Console shell" hint="the shell new console sessions launch under · applies to the next launch">
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <Row gap={6} align="stretch" wrap>
         {SHELL_OPTIONS.map((o) => {
           const on = o.kind === kind;
           return (
-            <div
+            <Box
               key={o.kind}
               className="mono"
               onClick={() => choose(o.kind)}
@@ -47,22 +50,22 @@ export function ShellSelectorCard() {
                 border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),
                 fontWeight: on ? 600 : 400,
               }}
-            >{o.label}</div>
+            >{o.label}</Box>
           );
         })}
-      </div>
-      <div className="hint" style={{ marginTop: 10, lineHeight: 1.55 }}>
+      </Row>
+      <Box className="hint" style={{ marginTop: 10, lineHeight: 1.55 }}>
         {active.note}
         {!active.helpersFull && (
           <>
             {" "}
-            <span style={{ color: "#e5c07b" }}>
+            <Text as="span" style={{ color: "#e5c07b" }}>
               ⚠ The bsc-* helpers (checkpoint, notes, coordination) and startup-prompt
               injection are bash-only — sessions under this shell run without them.
-            </span>
+            </Text>
           </>
         )}
-      </div>
+      </Box>
     </Card>
   );
 }

@@ -152,42 +152,27 @@ pub(crate) fn write_session_settings(
         .chain(mandatory_bash().iter().cloned())
         .chain(allowed_commands.iter().map(|c| c.trim().to_string()))
     {
-        if !c.is_empty() {
-            let r = format!("Bash({} *)", c);
-            if !allow_rules.contains(&r) { allow_rules.push(r); }
-        }
+        if !c.is_empty() { push_unique_trimmed(&mut allow_rules, &bash_rule(&c)); }
     }
 
     // Deny: curated dangerous defaults + user/project denies (deny > allow).
     let mut deny_rules: Vec<String> = bsc_util::dangerous::claude_deny_rules().map(|s| s.to_string()).collect();
     for c in denied_commands {
         let c = c.trim();
-        if !c.is_empty() {
-            let r = format!("Bash({} *)", c);
-            if !deny_rules.contains(&r) { deny_rules.push(r); }
-        }
+        if !c.is_empty() { push_unique_trimmed(&mut deny_rules, &bash_rule(c)); }
     }
 
     // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
     // passes `Edit(<glob>)` / `Write` / … here to scope or deny the file-write tools.
-    for r in allow_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !allow_rules.contains(&r) { allow_rules.push(r); }
-    }
-    for r in deny_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !deny_rules.contains(&r) { deny_rules.push(r); }
-    }
+    for r in allow_tool_rules { push_unique_trimmed(&mut allow_rules, r); }
+    for r in deny_tool_rules { push_unique_trimmed(&mut deny_rules, r); }
 
     // Ask: rules that PROMPT the user before the command (Claude Code precedence
     // deny > ask > allow, so a specific ask overrides the broad Bash allow). The
     // flow's hard push-confirm gate (#297) passes `Bash(git push *)` / `Bash(gh pr
     // create *)` here so pushes/PRs require approval instead of auto-running.
     let mut ask_rules: Vec<String> = Vec::new();
-    for r in ask_tool_rules {
-        let r = r.trim().to_string();
-        if !r.is_empty() && !ask_rules.contains(&r) { ask_rules.push(r); }
-    }
+    for r in ask_tool_rules { push_unique_trimmed(&mut ask_rules, r); }
 
     // Replace mode (#799): drop the existing allow/deny/ask lists first, so the freshly
     // computed role+profile set is AUTHORITATIVE. Without this, merge only UNIONS — a
@@ -219,27 +204,7 @@ pub(crate) fn write_session_settings(
                 serde_json::Value::String("bypassPermissions".into()),
             );
         }
-        // Layer 4 — the OS sandbox (#1916): under bypass, OS-confine the Bash subprocess tree, the one
-        // tool a PreToolUse hook can't fully contain (macOS Seatbelt / Linux + WSL2 bubblewrap). On NATIVE
-        // Windows it warns + falls back to unsandboxed (`failIfUnavailable: false`) — a safe no-op until a
-        // session runs in WSL2. The sandbox's default write boundary is cwd + $TMPDIR; WIDEN it or it
-        // breaks real work: the bsc state dir (`~/.base-studio-code` — coord/audit logs, plan.db) and the
-        // cwd's MAIN git repo (a linked worktree's git data lives in `<main>/.git/worktrees/<id>`, outside
-        // the cwd). Reads stay open (builds need system libs); credential + read confinement is a follow-on.
-        let mut allow_write = vec![serde_json::Value::String(
-            crate::platform::paths::bsc_base_dir().to_string_lossy().into_owned(),
-        )];
-        if let Some(main) = crate::session::claude_config::git_main_worktree(cwd) {
-            allow_write.push(serde_json::Value::String(main));
-        }
-        config.as_object_mut().unwrap().insert(
-            "sandbox".into(),
-            serde_json::json!({
-                "enabled": true,
-                "failIfUnavailable": false,
-                "filesystem": { "allowWrite": allow_write },
-            }),
-        );
+        config.as_object_mut().unwrap().insert("sandbox".into(), build_sandbox_block(cwd));
     } else {
         if let Some(perms) = config.get_mut("permissions").and_then(|p| p.as_object_mut()) {
             // Allow-list posture: drop any stale bypass left by a prior bypass launch so the toggle takes.
@@ -295,6 +260,46 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
     for r in rules {
         if seen.insert(r.clone()) { arr.push(serde_json::Value::String(r.clone())); }
     }
+}
+
+/// Wrap a bare command in the `Bash(<cmd> *)` prefix-match rule Claude Code auto-approves.
+/// The command is trimmed; callers guard against an empty command before wrapping (an empty
+/// command would otherwise yield the meaningless `Bash( *)`).
+fn bash_rule(cmd: &str) -> String {
+    format!("Bash({} *)", cmd.trim())
+}
+
+/// Append `rule` (trimmed) to `vec` unless it is empty or already present — the trim + dedup
+/// step shared by all five allow/deny/ask rule-assembly sites. Order is preserved (first
+/// occurrence wins), so deny > ask > allow precedence is untouched (each list is assembled
+/// independently and merged separately).
+fn push_unique_trimmed(vec: &mut Vec<String>, rule: &str) {
+    let rule = rule.trim();
+    if !rule.is_empty() && !vec.iter().any(|r| r == rule) {
+        vec.push(rule.to_string());
+    }
+}
+
+/// The bypass OS-sandbox block (#1916, Layer 4): under bypass, OS-confine the Bash subprocess
+/// tree — the one tool a PreToolUse hook can't fully contain (macOS Seatbelt / Linux + WSL2
+/// bubblewrap). On NATIVE Windows it warns + falls back to unsandboxed (`failIfUnavailable:
+/// false`) — a safe no-op until a session runs in WSL2. The sandbox's default write boundary is
+/// cwd + $TMPDIR; this WIDENS it or it breaks real work: the bsc state dir (`~/.base-studio-code`
+/// — coord/audit logs, plan.db) and the cwd's MAIN git repo (a linked worktree's git data lives
+/// in `<main>/.git/worktrees/<id>`, outside the cwd). Reads stay open (builds need system libs);
+/// credential + read confinement is a follow-on.
+fn build_sandbox_block(cwd: &str) -> serde_json::Value {
+    let mut allow_write = vec![serde_json::Value::String(
+        crate::platform::paths::bsc_base_dir().to_string_lossy().into_owned(),
+    )];
+    if let Some(main) = crate::session::claude_config::git_main_worktree(cwd) {
+        allow_write.push(serde_json::Value::String(main));
+    }
+    serde_json::json!({
+        "enabled": true,
+        "failIfUnavailable": false,
+        "filesystem": { "allowWrite": allow_write },
+    })
 }
 
 #[cfg(test)]

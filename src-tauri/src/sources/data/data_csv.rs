@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, Entity, Field, FieldType, LoadSource, Precedence, SourceLoad};
+use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, LoadSource, Precedence, SourceLoad};
+#[cfg(feature = "source-stage")]
+use bsc_data::{Entity, Field, FieldType};
 
 /// A preview of a CSV source: its columns and the first `limit` rows.
 #[derive(serde::Serialize)]
@@ -40,9 +42,11 @@ pub struct NullCount {
 
 /// Per-Data-Model DuckDB file under `~/.base-studio-code/data/<store_id>.duckdb`.
 pub(super) fn store_path(store_id: &str) -> std::io::Result<PathBuf> {
-    let dir = crate::bsc_base_dir().join("data");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("{}.duckdb", crate::sanitize_project_key(store_id))))
+    let db = crate::platform::paths::data_db_path(store_id);
+    if let Some(dir) = db.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    Ok(db)
 }
 
 /// Core load — factored out of the command so it's testable with explicit paths
@@ -235,9 +239,9 @@ pub fn data_source_inventory(csv_path: String) -> Result<Vec<SourceObjectView>, 
 #[cfg(feature = "source-stage")]
 #[tauri::command]
 pub fn data_source_sample(csv_path: String, limit: usize) -> Result<CsvPreview, String> {
-    let rs = CsvConnector::new(&csv_path).read("").map_err(|e| e.to_string())?;
-    let total = rs.rows.len();
-    Ok(CsvPreview { columns: rs.columns, rows: rs.rows.into_iter().take(limit).collect(), total })
+    // Same behavior as `data_preview_csv` — one implementation, two command names for the
+    // load-loop vs the source-stage connection UX.
+    data_preview_csv(csv_path, limit)
 }
 
 /// Infer a canonical Data Model from a CSV file.

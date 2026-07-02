@@ -6,27 +6,34 @@ import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
+import { Row } from "@/shared/ui/layout/Row";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 
 function runsTable(runs: Automation["runs"]) {
   if (runs.length === 0) {
     return (
-      <div className="mono" style={{ padding: 14, textAlign: "center", color: "var(--fg-dim)", fontSize: 11, border: "1px dashed var(--border)", borderRadius: 6 }}>
+      <Box className="mono" style={{ padding: 14, textAlign: "center", color: "var(--fg-dim)", fontSize: 11, border: "1px dashed var(--border)", borderRadius: 6 }}>
         no runs yet
-      </div>
+      </Box>
     );
   }
   return (
-    <div className="runs-table">
+    <Box className="runs-table">
       {runs.map((r, i) => (
-        <div className="r" key={i}>
-          <span className="t">{fmtStamp(r.at)}</span>
-          <span className={"st " + r.status}>{r.status === "ok" ? "✓ ok" : r.status === "skipped" ? "− skipped" : "✗ fail"}</span>
-          <span className="out">{r.note}</span>
-        </div>
+        <Box className="r" key={i}>
+          <Box as="span" className="t">{fmtStamp(r.at)}</Box>
+          <Box as="span" className={"st " + r.status}>{r.status === "ok" ? "✓ ok" : r.status === "skipped" ? "− skipped" : "✗ fail"}</Box>
+          <Box as="span" className="out">{r.note}</Box>
+        </Box>
       ))}
-    </div>
+    </Box>
   );
 }
 
@@ -44,44 +51,44 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
       <EmptyState
         title="No automations yet"
         description="Schedule a command to fire into a console pane on a cadence."
-        actions={<button className="btn primary" onClick={onNew}>+ New automation</button>}
+        actions={<Button variant="primary" onClick={onNew}>+ New automation</Button>}
       />
     );
   }
 
   const armedCount = automations.filter(a => a.armed).length;
   return (
-    <div className="sched-layout">
-      <div className="card sched-list">
-        <div className="head">
-          <div className="head-row">
+    <Box className="sched-layout">
+      <Card className="sched-list">
+        <Box className="head">
+          <Box className="head-row">
             <h3>Schedules</h3>
-            <span className="hint">{automations.length} total · {armedCount} armed</span>
-          </div>
-        </div>
-        <div className="scroll">
+            <Box as="span" className="hint">{automations.length} total · {armedCount} armed</Box>
+          </Box>
+        </Box>
+        <Box className="scroll">
           {automations.map(a => (
-            <div key={a.id} className={"sched-row" + (a.id === selectedId ? " on" : "")} onClick={() => onSelect(a.id)}>
-              <div className="l1">
-                <span className={"dot" + (a.armed ? "" : " off")} />
-                <span className="spacer" />
+            <Box key={a.id} className={"sched-row" + (a.id === selectedId ? " on" : "")} onClick={() => onSelect(a.id)}>
+              <Box className="l1">
+                <Box as="span" className={"dot" + (a.armed ? "" : " off")} />
+                <Box as="span" className="spacer" />
                 <Chip style={{ fontSize: 9.5 }}>{a.action}</Chip>
-              </div>
-              <div className="name">{a.name}</div>
-              <div className="meta">
-                <span>{a.when.kind === "simple"
+              </Box>
+              <Box className="name">{a.name}</Box>
+              <Box className="meta">
+                <Text as="span">{a.when.kind === "simple"
                   ? `⏱ every ${a.when.every}${a.when.every !== "minute" ? " · " + a.when.at : ""}`
-                  : `⏱ cron · ${a.when.expr}`}</span>
-                <span>{a.targetTab ? `→ ${a.targetTab} › pane ${a.targetPaneIdx + 1}` : "→ (no target)"}</span>
-              </div>
-            </div>
+                  : `⏱ cron · ${a.when.expr}`}</Text>
+                <Text as="span">{a.targetTab ? `→ ${a.targetTab} › pane ${a.targetPaneIdx + 1}` : "→ (no target)"}</Text>
+              </Box>
+            </Box>
           ))}
-          <div style={{ padding: "12px 14px" }}>
-            <button className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>+ new automation</button>
-          </div>
-        </div>
-      </div>
-    </div>
+          <Box style={{ padding: "12px 14px" }}>
+            <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>+ new automation</Button>
+          </Box>
+        </Box>
+      </Card>
+    </Box>
   );
 }
 
@@ -117,16 +124,16 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
       header={sel && (
         <>
           <input className="name-input" value={sel.name} onChange={e => updateAutomation(sel.id, { name: e.target.value })} />
-          <span className={"toggle" + (sel.armed ? " on" : "")} title="armed" onClick={() => setAutomationArmed(sel.id, !sel.armed)} />
-          <span className="mono" style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)", fontSize: 11 }}>{sel.armed ? "armed" : "disarmed"}</span>
+          <Box as="span" className={"toggle" + (sel.armed ? " on" : "")} title="armed" onClick={() => setAutomationArmed(sel.id, !sel.armed)} />
+          <Text as="span" mono size={11} style={{ color: sel.armed ? "var(--success)" : "var(--fg-dim)" }}>{sel.armed ? "armed" : "disarmed"}</Text>
         </>
       )}
       body={sel && (
         <>
           {/* when */}
-          <div className="es"><div className="es-row">
-            <div className="es-lbl accent">when</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Box className="es"><Box className="es-row">
+            <Box className="es-lbl accent">when</Box>
+            <Stack gap={8}>
               <SegmentedControl
                 options={[
                   { label: "simple", on: sel.when.kind === "simple", onClick: () => setMode("simple") },
@@ -134,53 +141,53 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                 ]}
               />
               {sel.when.kind === "simple" ? (
-                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
-                  <span>every</span>
+                <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
+                  <Text as="span">every</Text>
                   <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
                     {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                   {sel.when.every !== "minute" && (
                     <>
-                      <span>at</span>
+                      <Text as="span">at</Text>
                       <input className="input" style={{ width: 90 }} value={sel.when.at}
                         placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
                         onChange={e => patchSimple({ at: e.target.value })} />
                     </>
                   )}
-                </div>
+                </Row>
               ) : (
-                <div className="mono" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "var(--fg-muted)" }}>
-                  <span>cron</span>
+                <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
+                  <Text as="span">cron</Text>
                   <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
                     onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
                   {isValidCron(sel.when.expr)
-                    ? <span style={{ color: "var(--fg-dim)", fontSize: 10 }}>min hour day-of-month month day-of-week</span>
-                    : <span style={{ color: "var(--danger)", fontSize: 10 }}>invalid expression</span>}
-                </div>
+                    ? <Text as="span" tone="dim" size={10}>min hour day-of-month month day-of-week</Text>
+                    : <Text as="span" tone="danger" size={10}>invalid expression</Text>}
+                </Row>
               )}
-              <div className="cron-strip">
-                <span className="label">next run</span>
-                <span className="expr">{sel.armed ? fmtStamp(sel.nextRunAt) : "disarmed"}</span>
-                <span style={{ flex: 1 }} />
-                <span>last · <b>{sel.lastRunAt ? fmtStamp(sel.lastRunAt) : "never"}</b></span>
-              </div>
-            </div>
-          </div></div>
+              <Box className="cron-strip">
+                <Box as="span" className="label">next run</Box>
+                <Box as="span" className="expr">{sel.armed ? fmtStamp(sel.nextRunAt) : "disarmed"}</Box>
+                <Box as="span" style={{ flex: 1 }} />
+                <Text as="span">last · <b>{sel.lastRunAt ? fmtStamp(sel.lastRunAt) : "never"}</b></Text>
+              </Box>
+            </Stack>
+          </Box></Box>
 
           {/* target */}
-          <div className="es"><div className="es-row">
-            <div className="es-lbl info">target</div>
+          <Box className="es"><Box className="es-row">
+            <Box className="es-lbl info">target</Box>
             {tabs.length === 0 ? (
-              <div className="hint">No console tabs open — open a console (and a pane) to target.</div>
+              <Box className="hint">No console tabs open — open a console (and a pane) to target.</Box>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div className="field"><label>console</label>
+              <Grid cols={2} gap={10}>
+                <Box className="field"><label>console</label>
                   <select className="input" value={sel.targetTab} onChange={e => updateAutomation(sel.id, { targetTab: e.target.value, targetPaneIdx: 0 })}>
                     {!tabs.some(t => t.name === sel.targetTab) && <option value={sel.targetTab}>{sel.targetTab || "(pick a console)"}</option>}
                     {tabs.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
                   </select>
-                </div>
-                <div className="field"><label>pane</label>
+                </Box>
+                <Box className="field"><label>pane</label>
                   <select className="input" value={sel.targetPaneIdx} onChange={e => updateAutomation(sel.id, { targetPaneIdx: Number(e.target.value) })}>
                     {paneOpts.length === 0 && <option value={0}>Pane 1</option>}
                     {paneOpts.map(i => {
@@ -188,32 +195,32 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
                       return <option key={i} value={i}>Pane {i + 1}{nm ? ` · ${nm}` : ""}</option>;
                     })}
                   </select>
-                </div>
-              </div>
+                </Box>
+              </Grid>
             )}
-          </div></div>
+          </Box></Box>
 
           {/* action */}
-          <div className="es"><div className="es-row">
-            <div className="es-lbl success">action</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Box className="es"><Box className="es-row">
+            <Box className="es-lbl success">action</Box>
+            <Stack gap={10}>
               <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
-              <span className="hint">Typed into the target pane's session, then submitted.</span>
-            </div>
-          </div></div>
+              <Box as="span" className="hint">Typed into the target pane's session, then submitted.</Box>
+            </Stack>
+          </Box></Box>
 
           {/* history */}
-          <div className="es" style={{ background: "var(--bg-canvas)" }}><div className="es-row">
-            <div className="es-lbl muted">history</div>
-            <div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-                <span className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>last {sel.runs.length} runs</span>
-                <span style={{ flex: 1 }} />
-                {sel.runs.length > 0 && <button className="btn ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</button>}
-              </div>
+          <Box className="es" style={{ background: "var(--bg-canvas)" }}><Box className="es-row">
+            <Box className="es-lbl muted">history</Box>
+            <Box>
+              <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>
+                <Text as="span" mono size={11} tone="muted">last {sel.runs.length} runs</Text>
+                <Box as="span" style={{ flex: 1 }} />
+                {sel.runs.length > 0 && <Button variant="ghost" style={{ height: 22, fontSize: 10.5 }} onClick={() => onViewAllHistory(sel.id)}>view all →</Button>}
+              </Row>
               {runsTable(sel.runs)}
-            </div>
-          </div></div>
+            </Box>
+          </Box></Box>
         </>
       )}
     />

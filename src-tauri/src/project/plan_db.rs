@@ -6,7 +6,7 @@ use plandb::{Automation, Lesson, PlanFeature, PlanIssue, StartupScript, Store, S
 use std::path::PathBuf;
 
 fn db_path(project_key: &str) -> PathBuf {
-    crate::project_dir(project_key).join("plan.db")
+    crate::plan_db_path(project_key)
 }
 
 fn open(project_key: &str) -> Result<Store, String> {
@@ -316,11 +316,7 @@ pub(crate) fn plan_lesson_expire(project_key: String, before: i64) -> Result<usi
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn plan_get_fleet_imports_a_stray_fleet_json_then_deletes_it() {

@@ -90,8 +90,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
-        .manage(perf::PerfState::new(bsc_base_dir().join("perf.db")))
-        .manage(logs::LogState::new())
+        .manage(perf::PerfState::new(perf_db()))
+        .manage(logs::LogState::new(logs::LogConfig::default()))
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
@@ -171,12 +171,19 @@ pub fn run() {
             data::data_preview_csv,
             data::data_load_csv,
             data::data_reconcile_csvs,
+            #[cfg(feature = "source-stage")]
             data::data_source_inventory,
+            #[cfg(feature = "source-stage")]
             data::data_source_sample,
+            #[cfg(feature = "source-stage")]
             data::data_infer_model,
+            #[cfg(feature = "source-stage")]
             data::data_persist_model,
+            #[cfg(feature = "source-stage")]
             data::data_get_model,
+            #[cfg(feature = "source-stage")]
             data::data_load_reconciled,
+            #[cfg(feature = "source-stage")]
             data::data_platform_scan,
             data::data_runtime_connectors,
             credentials::source_save_secret,
@@ -188,6 +195,7 @@ pub fn run() {
             planner::directives::planner_stage_directive,
             crate::platform::config::export_config_bundle,
             crate::platform::config::import_config_bundle,
+            crate::platform::config::get_config_files,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
@@ -203,7 +211,7 @@ pub fn run() {
             fleet::worktree::ensure_worktree,
             fleet::teardown::teardown_worktree,
             fleet::teardown::reclaim_worktrees,
-            fleet::teardown::worktrees_disk_usage,
+            fleet::disk::worktrees_disk_usage,
             fleet::director::ensure_director_protocol,
             docstore::get_base_dir,
             session::claude_config::read_claude_config,
@@ -354,11 +362,7 @@ pub fn run() {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn level_color_is_distinct_per_level() {

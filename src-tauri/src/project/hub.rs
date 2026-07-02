@@ -143,7 +143,7 @@ pub(crate) struct LocalProject {
 pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
     // Single root since #922: every hub lives under projects/<key>; `published` is the in-place
     // `.published` marker, not the directory's location.
-    let root = bsc_base_dir().join("projects");
+    let root = projects_root();
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(&root) else { return Ok(out) };
     for entry in entries.flatten() {
@@ -264,11 +264,7 @@ pub(crate) fn repo_dir_path(project_key: String, repo: String) -> String {
 mod relocated_tests {
     #![allow(unused_imports)]
     use super::*;
-    use crate::prelude::*;
-    use crate::project::{hub::*, plan_files::*, plan_db::*, blueprints::*, dead_code::*, ui_skeleton::*, files::*};
-    use crate::fleet::{worktree::*, director::*, inspect::*};
-    use crate::extensions::{mcp::*, cfg::*};
-    use crate::testutil::{ENV_LOCK, temp_home, write_file};
+    use crate::testutil::prelude::*;
 
     #[test]
     fn mark_published_writes_an_in_place_marker_read_by_is_published() {
