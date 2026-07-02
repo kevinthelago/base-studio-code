@@ -25,6 +25,7 @@ import { Card } from "./data/Card";
 import { Chip } from "./data/Chip";
 import { StatTile } from "./data/StatTile";
 import { FillBar } from "./data/FillBar";
+import { Code } from "./data/Code";
 import { Banner } from "./feedback/Banner";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
@@ -39,7 +40,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Box, Stack, Row, Spacer, Grid,
   Text,
   Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, SelectField,
-  Card, Chip, StatTile, FillBar,
+  Card, Chip, StatTile, FillBar, Code,
   Banner, EmptyState, StatusDot,
 };
 
