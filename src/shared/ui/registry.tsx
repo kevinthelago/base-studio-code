@@ -9,6 +9,7 @@
 import type { ComponentType } from "react";
 import type { PrimitiveName } from "./manifest";
 
+import { Box } from "./layout/Box";
 import { Stack } from "./layout/Stack";
 import { Row } from "./layout/Row";
 import { Spacer } from "./layout/Spacer";
@@ -35,7 +36,7 @@ type AnyComponent = ComponentType<any>;
 /** name → component for every primitive in the manifest. The `Record<PrimitiveName>` type enforces
  *  exhaustive, in-sync coverage at compile time. */
 export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
-  Stack, Row, Spacer, Grid,
+  Box, Stack, Row, Spacer, Grid,
   Text,
   Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, SelectField,
   Card, Chip, StatTile, FillBar,

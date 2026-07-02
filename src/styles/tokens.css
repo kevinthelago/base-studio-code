@@ -45,6 +45,17 @@
      half-sizes (9.5/10.5/11.5/13) stay legal as raw pixel numbers on `<Text size={N}>`; these
      named rungs are the canonical sizes to reach for first. */
   --fs-xxs: 9px; --fs-xs: 10px; --fs-sm: 11px; --fs-md: 12px; --fs-lg: 14px; --fs-xl: 18px;
+  /* control-height scale (#2080) — the canonical heights for buttons/inputs/pills the Box
+     primitive + controls reach for instead of inline `height: 24/28/30`. */
+  --ctl-xs: 22px; --ctl-sm: 24px; --ctl-md: 28px; --ctl-lg: 32px;
+  /* stroke shorthands (#2080) — the ubiquitous `1px solid var(--border[-soft])` as one token. */
+  --stroke: 1px solid var(--border); --stroke-soft: 1px solid var(--border-soft);
+  /* elevation scale (#2080) — the canonical drop-shadows for cards/menus/modals instead of
+     per-site `0 Npx Npx rgba(...)`. sm=hairline · md=menu/popover · lg=panel · xl=modal. */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.30);
+  --shadow-md: 0 6px 22px rgba(0,0,0,.45);
+  --shadow-lg: 0 20px 60px rgba(0,0,0,.50);
+  --shadow-xl: 0 24px 70px rgba(0,0,0,.50);
   /* modal chrome (#1776): one scrim color + z-index for every modal/overlay.
      --z-modal sits above app chrome + menus (≤3000) and below the achievement toast (9999);
      --z-modal-float is for a fixed toast that must float above its own modal. */
