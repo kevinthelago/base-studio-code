@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { armedSummary, fmtClock } from "./format";
+import { Box } from "@/shared/ui/layout/Box";
 
 /**
  * Live armed-schedules summary for the app status bar (Automations page) — replaces the
@@ -12,15 +13,15 @@ export function AutomationsStatus() {
 
   if (count === 0) {
     return (
-      <span className="s" style={{ color: "var(--fg-dim)" }}>
+      <Box as="span" className="s" style={{ color: "var(--fg-dim)" }}>
         <i className="off" /> no schedules armed
-      </span>
+      </Box>
     );
   }
   return (
-    <span className="s">
+    <Box as="span" className="s">
       <i className="warn" /> {count} {count === 1 ? "schedule" : "schedules"} armed
       {nextAt != null && ` · next at ${fmtClock(nextAt)}`}
-    </span>
+    </Box>
   );
 }

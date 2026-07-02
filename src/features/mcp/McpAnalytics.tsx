@@ -8,6 +8,8 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via read_mcp_log + mcpTelemetry.ts). The over-time chart +
@@ -51,13 +53,13 @@ export function McpAnalyticsTab() {
     return list;
   }, [an, filter]);
 
-  if (!an) return <div className="hint" style={{ padding: 16 }}>Loading MCP telemetry…</div>;
+  if (!an) return <Box className="hint" style={{ padding: 16 }}>Loading MCP telemetry…</Box>;
 
   const maxServerCalls = Math.max(1, ...an.perServer.map((s) => s.calls));
   const errCount = an.recent.filter((c) => c.outcome === "fail").length;
 
   return (
-    <div style={{ padding: "4px 0 12px" }}>
+    <Box style={{ padding: "4px 0 12px" }}>
       {/* KPI cards */}
       <Grid cols={4} gap={8} style={{ marginBottom: 12 }}>
         <StatCard k="Total calls" v={an.total} sub={`last ${DAYS} days`} />
@@ -78,8 +80,8 @@ export function McpAnalyticsTab() {
         <TelemetryPanel
           title="Calls per server"
           right={<>
-            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</span>
-            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</span>
+            <Row inline gap={5} className="mono" style={{ fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--info)" />http</Row>
+            <Row inline gap={5} className="mono" style={{ fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</Row>
           </>}
         >
           <ItemBars
@@ -90,31 +92,31 @@ export function McpAnalyticsTab() {
                 color: transport === "http" ? "var(--info)" : "var(--violet, oklch(0.70 0.12 300))",
               };
             })}
-            empty={<span className="hint">No MCP calls recorded yet.</span>}
+            empty={<Text as="span" className="hint">No MCP calls recorded yet.</Text>}
           />
         </TelemetryPanel>
 
         {/* Success vs errors */}
         <TelemetryPanel title="Success vs errors" hint="per server">
           <Stack gap={14}>
-            {an.perServerSplit.length === 0 && <span className="hint">No calls yet.</span>}
+            {an.perServerSplit.length === 0 && <Text as="span" className="hint">No calls yet.</Text>}
             {an.perServerSplit.map((p) => (
               <SplitBar key={p.server} label={p.server} a={p.ok} b={p.errors} aLabel="ok" bLabel="err" />
             ))}
           </Stack>
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
-            Parsed from <span className="mono" style={{ color: "var(--fg-muted)" }}>~/.base-studio-code/mcp.log</span> via <span className="mono" style={{ color: "var(--fg-muted)" }}>mcpTelemetry.ts</span> — one line per call (ts · server · tool · outcome · ms).
-          </div>
+          <Box style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
+            Parsed from <Text as="span" mono tone="muted">~/.base-studio-code/mcp.log</Text> via <Text as="span" mono tone="muted">mcpTelemetry.ts</Text> — one line per call (ts · server · tool · outcome · ms).
+          </Box>
         </TelemetryPanel>
       </Grid>
 
       {/* Call results log */}
-      <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
+      <Box style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "14px 16px" }}>
         <Row align="baseline" gap={10} style={{ marginBottom: 12 }}>
           <h3 className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg)", fontWeight: 600 }}>Call results</h3>
-          <span style={{ fontSize: 10.5, color: "var(--fg-dim)" }}>what servers returned to agents</span>
+          <Text as="span" size={10.5} tone="dim">what servers returned to agents</Text>
           <Spacer />
-          {errCount > 0 && <span className="mono" style={{ fontSize: 10, color: "var(--danger)" }}>{errCount} errors</span>}
+          {errCount > 0 && <Text as="span" mono size={10} tone="danger">{errCount} errors</Text>}
           <Row inline align="stretch" style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
             {(["all", "ok", "errors"] as const).map((f) => (
               <button
@@ -131,14 +133,14 @@ export function McpAnalyticsTab() {
           </Row>
         </Row>
         {recent.length === 0 ? (
-          <span className="hint">No calls recorded yet — the MCP call log fills as agents use these servers.</span>
+          <Text as="span" className="hint">No calls recorded yet — the MCP call log fills as agents use these servers.</Text>
         ) : (
           <Stack>
             {recent.map((c, i) => <CallRow key={i} c={c} />)}
           </Stack>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -147,13 +149,13 @@ function CallRow({ c }: { c: McpCall }) {
   const label = c.outcome === "fail" ? "fail" : c.outcome === "warn" ? "warn" : "ok";
   return (
     <Row className="mono" gap={10} style={{ padding: "6px 0", borderTop: "1px solid var(--border-soft)", fontSize: 10.5 }}>
-      <span style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts)}</span>
-      <span style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{c.server}<span style={{ color: "var(--fg-muted)" }}>.{c.tool}</span></span>
-      <span style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</span>
-      <span style={{ color: "var(--fg-muted)" }}>{c.ms ? fmtMs(c.ms) : "—"}</span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: dot, width: 44, justifyContent: "flex-end" }}>
-        <span style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />{label}
-      </span>
+      <Box as="span" style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts)}</Box>
+      <Box as="span" style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{c.server}<Text as="span" tone="muted">.{c.tool}</Text></Box>
+      <Box as="span" style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</Box>
+      <Text as="span" tone="muted">{c.ms ? fmtMs(c.ms) : "—"}</Text>
+      <Row inline justify="end" gap={5} style={{ color: dot, width: 44 }}>
+        <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: dot }} />{label}
+      </Row>
     </Row>
   );
 }
