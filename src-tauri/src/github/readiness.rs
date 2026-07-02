@@ -12,6 +12,36 @@ pub(crate) const GH_AUTH_MARK: &str = "BSC_GH_AUTH_OK";
 /// is absent). A distinct prefix keeps parsing a locale-independent substring scan,
 /// like the GitHub-readiness markers above.
 pub(crate) const PREFLIGHT_MARK: &str = "BSC_PREREQ";
+/// Run a best-effort probe `script` through the SAME resolved login shell + caller env
+/// (`session_env`, e.g. `GH_TOKEN`) an agent's `bash -c` subshells inherit, returning its
+/// stdout. Shared by [`github_readiness`] and the diagnostics preflight — both resolve the
+/// shell, run `-lc <script>` in `cwd` under `no_window`, and only differ in the script and how
+/// the stdout is parsed. On spawn failure logs a warning tagged `label` and returns an empty
+/// string, so callers degrade to an all-missing result rather than erroring.
+fn run_probe_shell(
+    label: &str,
+    script: &str,
+    cwd: &str,
+    env: Option<HashMap<String, String>>,
+) -> String {
+    let shell = crate::platform::shell::resolve_shell();
+    let mut cmd = std::process::Command::new(&shell);
+    cmd.arg("-lc").arg(script);
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    let env_map = env.unwrap_or_default();
+    for (k, v) in crate::console::pty::session_env(&env_map) {
+        cmd.env(k, v);
+    }
+    match no_window(&mut cmd).output() {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Err(e) => {
+            log::warn!("{label} probe failed to spawn ({shell}): {e}");
+            String::new()
+        }
+    }
+}
 /// Parse the probe shell's stdout into `(gh_on_path, git_on_path, gh_authed)`. Pure.
 pub(crate) fn parse_github_probe(stdout: &str) -> (bool, bool, bool) {
     (
@@ -33,28 +63,13 @@ pub(crate) fn github_readiness(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<serde_json::Value, String> {
-    let shell = crate::platform::shell::resolve_shell();
     let script = format!(
         "command -v git >/dev/null 2>&1 && echo {GIT_PATH_MARK}; \
          command -v gh  >/dev/null 2>&1 && echo {GH_PATH_MARK}; \
          gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
     );
-    let mut cmd = std::process::Command::new(&shell);
-    cmd.arg("-lc").arg(&script);
-    if !cwd.is_empty() {
-        cmd.current_dir(&cwd);
-    }
-    let env_map = env.unwrap_or_default();
-    for (k, v) in crate::console::pty::session_env(&env_map) {
-        cmd.env(k, v);
-    }
-    let (gh, git, auth) = match no_window(&mut cmd).output() {
-        Ok(out) => parse_github_probe(&String::from_utf8_lossy(&out.stdout)),
-        Err(e) => {
-            log::warn!("github_readiness probe failed to spawn ({shell}): {e}");
-            (false, false, false)
-        }
-    };
+    let (gh, git, auth) =
+        parse_github_probe(&run_probe_shell("github_readiness", &script, &cwd, env));
     Ok(serde_json::json!({ "ghOnPath": gh, "gitOnPath": git, "ghAuthed": auth }))
 }
 /// One prerequisite's detected state, reported to the Diagnostics UI (#446). Field
@@ -196,7 +211,6 @@ fn preflight_inner(
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<PrereqStatus>, String> {
-    let shell = crate::platform::shell::resolve_shell();
     // One tab-delimited line per tool: BSC_PREREQ <name> <path> <version>. `tr` drops
     // CRs/tabs so a Windows version string can't break the field layout.
     let script = format!(
@@ -207,22 +221,7 @@ fn preflight_inner(
          done; \
          gh auth status >/dev/null 2>&1 && echo {GH_AUTH_MARK}",
     );
-    let mut cmd = std::process::Command::new(&shell);
-    cmd.arg("-lc").arg(&script);
-    if !cwd.is_empty() {
-        cmd.current_dir(&cwd);
-    }
-    let env_map = env.unwrap_or_default();
-    for (k, v) in crate::console::pty::session_env(&env_map) {
-        cmd.env(k, v);
-    }
-    let stdout = match no_window(&mut cmd).output() {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
-        Err(e) => {
-            log::warn!("preflight probe failed to spawn ({shell}): {e}");
-            String::new()
-        }
-    };
+    let stdout = run_probe_shell("preflight", &script, &cwd, env);
     Ok(interpret_preflight(&stdout, detect_git_bash()))
 }
 /// Read the persisted console-shell preference (#447) for the Diagnostics selector.
