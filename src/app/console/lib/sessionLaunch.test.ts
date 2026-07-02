@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, SCOPE_DENY_ALL } from "./sessionLaunch";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
@@ -180,5 +180,26 @@ describe("resolveEffectiveInitCmd", () => {
   it("silently auto-resumes a non-manual claude pane after an unclean shutdown when opted in", () => {
     const s = mkStore({ paneWasClaude: { t0p1: true }, autoResumeClaude: true, uncleanShutdown: true });
     expect(resolveEffectiveInitCmd(s, "t0p1", true, undefined, undefined, provider)).toBe("claude --continue");
+  });
+});
+
+describe("resolveStartupPromptFreshOnly (#2052)", () => {
+  it("is true only on a crash-restore remount of a claude pane", () => {
+    const restored = mkStore({ restoreRequested: { t0p0: true } });
+    expect(resolveStartupPromptFreshOnly(restored, "t0p0", true)).toBe(true);
+  });
+
+  it("is false on a normal launch (no restore requested) — so triage/fleet kickoffs still deliver", () => {
+    expect(resolveStartupPromptFreshOnly(mkStore(), "t0p0", true)).toBe(false);
+  });
+
+  it("is false for a manual console even when a restore was requested (#1176)", () => {
+    const s = mkStore({ restoreRequested: { "man:tab:p0": true } });
+    expect(resolveStartupPromptFreshOnly(s, "man:tab:p0", true)).toBe(false);
+  });
+
+  it("is false for a non-claude provider", () => {
+    const s = mkStore({ restoreRequested: { t0p0: true } });
+    expect(resolveStartupPromptFreshOnly(s, "t0p0", false)).toBe(false);
   });
 });
