@@ -120,25 +120,38 @@ pub(crate) fn select_project_shells(
     (kill, keep)
 }
 
-/// Reap a deleted project's still-running shells (#1279): tree-kill every live pid whose ledger
-/// pane id is `<key>:…` and forget all of the project's ledger entries, so a deleted project's
-/// shells can't survive as orphaned pids that discovery would surface as unrestorable. Returns the
-/// count of live shells killed (for logging). Best-effort: a missing/empty ledger is a no-op.
-pub(crate) fn reap_project_shells(key: &str) -> usize {
+/// The shared reap body: lock the ledger, load it, run `select` to split (pids-to-kill, survivors),
+/// tree-kill each — logging via `log_kill` for the per-reaper message — and persist the survivors
+/// only when the set changed. Returns the killed pids. Backs `reap_project_shells` / `reap_session` /
+/// `reconcile_on_boot`; only the pure selector + the log wording differ. The risky decision logic
+/// lives in the `select_*` splitters (pure, unit-tested); this is the imperative glue around them.
+fn reap_with(
+    select: impl FnOnce(&[LedgerEntry], &OsProbe) -> (Vec<u32>, Vec<LedgerEntry>),
+    log_kill: impl Fn(u32),
+) -> Vec<u32> {
     let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let entries = load_unlocked();
-    if entries.is_empty() {
-        return 0;
-    }
-    let (kill, keep) = select_project_shells(&entries, key, &OsProbe);
+    let (kill, keep) = select(&entries, &OsProbe);
     for pid in &kill {
-        log::warn!("[pty-reaper] reaping shell pid={pid} of deleted project {key:?}");
+        log_kill(*pid);
         tree_kill(*pid);
     }
     if keep.len() != entries.len() {
         save_unlocked(&keep);
     }
-    kill.len()
+    kill
+}
+
+/// Reap a deleted project's still-running shells (#1279): tree-kill every live pid whose ledger
+/// pane id is `<key>:…` and forget all of the project's ledger entries, so a deleted project's
+/// shells can't survive as orphaned pids that discovery would surface as unrestorable. Returns the
+/// count of live shells killed (for logging). Best-effort: a missing/empty ledger is a no-op.
+pub(crate) fn reap_project_shells(key: &str) -> usize {
+    reap_with(
+        |entries, probe| select_project_shells(entries, key, probe),
+        |pid| log::warn!("[pty-reaper] reaping shell pid={pid} of deleted project {key:?}"),
+    )
+    .len()
 }
 
 /// Pure split for reaping ONE session by its identity pane id (#1266 "Discard"): return its live pid
@@ -169,17 +182,14 @@ pub(crate) fn select_session_shell(
 /// orphaned/unwanted session. Returns true if a live shell was killed. Best-effort: an unknown pane id
 /// is a no-op (returns false).
 pub(crate) fn reap_session(pane_id: &str) -> bool {
-    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let entries = load_unlocked();
-    let (kill, keep) = select_session_shell(&entries, pane_id, &OsProbe);
-    if let Some(pid) = kill {
-        log::warn!("[pty-reaper] reaping discarded session pid={pid} pane={pane_id:?}");
-        tree_kill(pid);
-    }
-    if keep.len() != entries.len() {
-        save_unlocked(&keep);
-    }
-    kill.is_some()
+    !reap_with(
+        |entries, probe| {
+            let (kill, keep) = select_session_shell(entries, pane_id, probe);
+            (kill.into_iter().collect(), keep)
+        },
+        |pid| log::warn!("[pty-reaper] reaping discarded session pid={pid} pane={pane_id:?}"),
+    )
+    .is_empty()
 }
 
 /// Drop every entry this app instance owns. Called from `kill_all_pty_sessions` (clean exit), so a
@@ -209,18 +219,10 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
 /// Boot reconcile: tree-kill any straggler from a prior run whose owner is gone, then persist the
 /// survivors (entries still owned by a live instance). Returns the count reaped, for logging.
 pub(crate) fn reconcile_on_boot() -> usize {
-    let _g = LEDGER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let entries = load_unlocked();
-    if entries.is_empty() {
-        return 0;
-    }
-    let (kill, keep) = select_orphans(&entries, &OsProbe);
-    for pid in &kill {
-        log::warn!("[pty-reaper] reaping orphaned PTY child pid={pid} (owning app instance is gone)");
-        tree_kill(*pid);
-    }
-    save_unlocked(&keep);
-    kill.len()
+    reap_with(select_orphans, |pid| {
+        log::warn!("[pty-reaper] reaping orphaned PTY child pid={pid} (owning app instance is gone)")
+    })
+    .len()
 }
 
 /// Probe of OS process state — the only impurity; mocked in tests.
