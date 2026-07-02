@@ -19,13 +19,6 @@ export interface CatalogItem {
   builtIn?: boolean;
 }
 
-/** Scope copy shared by the MCP + Hooks scope pickers. */
-export const SCOPE_COPY: Record<string, string> = {
-  global: "on every project",
-  project: "for the projects you pick",
-  console: "for one console only",
-};
-
 export const MCP_CATALOG: CatalogItem[] = [
   // First-party MCP servers (#858) — install from source via the download link.
   { name: "Compliance",          by: "base-studio-code", icon: "✓", desc: "The live source of truth for compliance standards — regulation (GDPR, CCPA/CPRA), accessibility (WCAG 2.2 AA), security (SOC 2), and user-protection rules — so the planner bakes the right, citable requirements into every plan, scoped by the project's regions and data types. User-updatable without an app release (#1005). Built in — no download, build, or Docker.",

@@ -35,11 +35,6 @@ export function destinationMeta(id: string): DestinationOption {
 
 /** How the data is written into the destination. */
 export type WriteMode = "append" | "upsert" | "replace";
-export const WRITE_MODES: { id: WriteMode; label: string; desc: string }[] = [
-  { id: "append",  label: "append",  desc: "Add every extracted row (no dedupe)." },
-  { id: "upsert",  label: "upsert",  desc: "Insert-or-update by the identity key (idempotent)." },
-  { id: "replace", label: "replace", desc: "Full-replace the target each run." },
-];
 
 export interface DestinationConfig {
   type: DestinationType | "";
@@ -52,10 +47,6 @@ export interface DestinationConfig {
 
 /** Full snapshot every run vs. only what changed since the last watermark (CDC). */
 export type SyncMode = "full" | "incremental";
-export const SYNC_MODES: { id: SyncMode; label: string; desc: string }[] = [
-  { id: "full",        label: "full",        desc: "Re-extract everything each run — simple, heavier." },
-  { id: "incremental", label: "incremental", desc: "Only rows changed since the watermark (CDC)." },
-];
 
 export interface SyncConfig {
   mode: SyncMode | "";

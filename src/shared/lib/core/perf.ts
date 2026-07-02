@@ -172,14 +172,6 @@ export function startPerfMonitor(): void {
   }, FLUSH_MS);
 }
 
-export function stopPerfMonitor(): void {
-  observer?.disconnect();
-  observer = null;
-  if (timer !== null) { clearInterval(timer); timer = null; }
-  resetWindow();
-  stats.terminals = 0;
-}
-
 /**
  * Time an async operation, logging a warning when it exceeds `thresholdMs`.
  * Returns the operation's result untouched (and still times on throw).
