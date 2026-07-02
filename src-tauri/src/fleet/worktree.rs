@@ -250,15 +250,8 @@ pub(crate) fn inject_skills(hub: &std::path::Path, wt_local: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::unique_dir;
     use std::fs;
-
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("bsc-wt-{tag}-{}-{nanos}", std::process::id()))
-    }
 
     /// Stand up a real git repo so `seed_union_merge_gitattributes` (which gates on `.git`) runs.
     fn init_repo(dir: &std::path::Path) {
@@ -291,7 +284,7 @@ mod tests {
     /// recovers instead of erroring.
     #[test]
     fn add_worktree_heals_a_dangling_record() {
-        let base = unique_dir("heal");
+        let base = unique_dir("bsc-wt", "heal");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         // Create branch `feat` + a worktree on it, then delete the dir without telling git.
@@ -314,7 +307,7 @@ mod tests {
     /// re-probes after pruning and switches to the reuse form. Reproduces the STEM `ui-modes` launch.
     #[test]
     fn add_worktree_reprobes_after_a_failed_create() {
-        let base = unique_dir("reprobe");
+        let base = unique_dir("bsc-wt", "reprobe");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         // Occupy the TARGET path with a dangling record (a worktree on a different branch, dir
@@ -340,7 +333,7 @@ mod tests {
     #[test]
     fn concurrent_worktree_adds_and_removes_are_reliable() {
         use std::sync::{Arc, Barrier};
-        let base = unique_dir("stress");
+        let base = unique_dir("bsc-wt", "stress");
         let clone = base.join("clone");
         init_repo_with_commit(&clone);
         let clone_str = clone.to_string_lossy().into_owned();
@@ -380,7 +373,7 @@ mod tests {
     /// failure is debuggable from the message alone.
     #[test]
     fn add_worktree_surfaces_git_stderr() {
-        let base = unique_dir("stderr");
+        let base = unique_dir("bsc-wt", "stderr");
         // A clone path that is not a git repo → every git call errors; the message must reach the
         // caller (and the prune+retry can't paper over it).
         let bogus = base.join("not-a-repo");
@@ -395,7 +388,7 @@ mod tests {
     /// #851: seeds `.gitignore`/`.env.example` with merge=union so concurrent appends auto-resolve.
     #[test]
     fn seeds_union_merge_for_the_additive_commons() {
-        let dir = unique_dir("seed");
+        let dir = unique_dir("bsc-wt", "seed");
         init_repo(&dir);
         seed_union_merge_gitattributes(&dir);
         let attrs = fs::read_to_string(dir.join(".gitattributes")).unwrap();
@@ -420,7 +413,7 @@ mod tests {
     /// #1373: inject reads the hub's .ui-skeleton/ for screen names and appends the block once.
     #[test]
     fn inject_design_context_appends_once_from_the_skeleton() {
-        let dir = unique_dir("design-ctx");
+        let dir = unique_dir("bsc-wt", "design-ctx");
         let hub = dir.join("hub");
         fs::create_dir_all(hub.join(".ui-skeleton")).unwrap();
         fs::write(hub.join(".ui-skeleton").join("Login.jsx"), "export default () => null").unwrap();
@@ -439,7 +432,7 @@ mod tests {
     /// #1373: no dropped design (empty/absent .ui-skeleton/) ⇒ no block, no churn.
     #[test]
     fn inject_design_context_is_a_noop_without_dropped_design() {
-        let dir = unique_dir("no-design");
+        let dir = unique_dir("bsc-wt", "no-design");
         let hub = dir.join("hub");
         fs::create_dir_all(&hub).unwrap();
         let wt_local = dir.join("CLAUDE.local.md");
@@ -452,7 +445,7 @@ mod tests {
     /// Idempotent + additive: re-running writes nothing new and preserves hand-authored attributes.
     #[test]
     fn seed_is_idempotent_and_preserves_existing_content() {
-        let dir = unique_dir("idem");
+        let dir = unique_dir("bsc-wt", "idem");
         init_repo(&dir);
         fs::write(dir.join(".gitattributes"), "*.png binary\n").unwrap();
         seed_union_merge_gitattributes(&dir);
@@ -470,7 +463,7 @@ mod tests {
     /// A non-repo directory is skipped (best-effort; nothing to seed without a `.git`).
     #[test]
     fn seed_skips_a_non_repo_dir() {
-        let dir = unique_dir("norepo");
+        let dir = unique_dir("bsc-wt", "norepo");
         fs::create_dir_all(&dir).unwrap();
         seed_union_merge_gitattributes(&dir);
         assert!(!dir.join(".gitattributes").exists());
