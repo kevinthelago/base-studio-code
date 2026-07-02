@@ -136,6 +136,7 @@ function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMe
             background: `color-mix(in oklch, ${hue}, transparent 90%)`, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
           }}>{b.category}</Box>
         </Row>
+        {/* eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef) */}
         <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <Button
             variant="ghost"

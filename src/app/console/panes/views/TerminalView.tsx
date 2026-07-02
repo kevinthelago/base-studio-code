@@ -738,6 +738,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   }, [redrawNonce]);
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- terminal region with conditional display (flex/none)
     <div
       style={{
         flex: 1, minHeight: 0, position: "relative",
@@ -777,11 +778,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       {/* Terminal host. Normal height (#1239): Claude's own TUI input renders inside the visible
           box — the #1158 grow-taller-than-the-clip-box hack (to push Claude's input out of view
           beneath our native overlay) was reverted along with the overlay. */}
+      {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount region (measured) */}
       <div style={{
         flex: 1, minHeight: 0, overflow: "hidden",
         background: TERM_THEME.background as string,
         display: criticalChecks.length > 0 ? "none" : undefined,
       }}>
+        {/* eslint-disable-next-line no-restricted-syntax -- xterm/PTY terminal mount ref */}
         <div
           ref={containerRef}
           style={{ height: "100%", padding: "6px 4px" }}

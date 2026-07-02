@@ -178,6 +178,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
         const sel = s.uid === selectedUid;
         return (
           <Box key={s.uid}>
+            {/* eslint-disable-next-line no-restricted-syntax -- drag-reorder stage node (draggable + drag handlers) */}
             <div
               className={"stage" + (sel ? " is-sel" : "") + (locked ? " locked" : "") + (dragIdx === i ? " dragging" : "") + (overIdx === i && dragIdx !== null && dragIdx !== i ? " dragover" : "")}
               draggable

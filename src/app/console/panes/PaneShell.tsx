@@ -169,6 +169,7 @@ export function PaneShell({
   );
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- pane root needs a real DOM ref (focus + measure)
     <div
       ref={paneRef}
       className={focused ? "pane focused" : "pane"}
@@ -286,11 +287,13 @@ export function PaneShell({
 
       {banner}
 
+      {/* eslint-disable-next-line no-restricted-syntax -- host wrapper for the PTY terminal / view children (measured region) */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {children}
       </div>
 
       {menuOpen && createPortal(
+        // eslint-disable-next-line no-restricted-syntax -- portal menu needs a real DOM ref for measured placement (Box isn't forwardRef)
         <div ref={menuRef} style={{
           position: "fixed",
           // Hidden for the first (measure) pass, then placed; off-screen meanwhile so the

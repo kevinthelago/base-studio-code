@@ -749,9 +749,11 @@ export function Planning({ visible }: { visible: boolean }) {
       )}
 
       {/* Split panel */}
+      {/* eslint-disable-next-line no-restricted-syntax -- measured split-panel hosting the PTY terminal region */}
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
         {/* Claude CLI terminal */}
         <section style={{ flex: "1 1 0", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
+          {/* eslint-disable-next-line no-restricted-syntax -- PTY terminal mount ref */}
           <div
             ref={containerRef}
             style={{
@@ -764,6 +766,7 @@ export function Planning({ visible }: { visible: boolean }) {
         </section>
 
         {/* Drag handle between the terminal and the plan-sections panel (#43). */}
+        {/* eslint-disable-next-line no-restricted-syntax -- resize drag handle spreads measured handleProps */}
         <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
 
         {/* Plan sections / publish progress panel */}

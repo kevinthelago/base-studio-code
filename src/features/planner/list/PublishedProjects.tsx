@@ -177,6 +177,7 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menu
         }}>open planning →</Box>
 
         {/* ⋯ menu — stops row-click propagation */}
+        {/* eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef) */}
         <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <Button
             variant="ghost"
@@ -479,6 +480,7 @@ export function PublishedProjects({
 
           {/* new project — inline; click outside to dismiss (the title is kept for next time) */}
           {newOpen && (
+            // eslint-disable-next-line no-restricted-syntax -- click-outside form needs a real DOM ref (Box isn't forwardRef)
             <div ref={newFormRef} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 14,
               background: "var(--bg-panel)", border: "1px solid var(--accent-dim)", borderRadius: 8,
