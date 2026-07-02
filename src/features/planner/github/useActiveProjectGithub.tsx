@@ -45,9 +45,7 @@ export function useActiveProjectGithub<T = { node: Record<string, unknown> }>(
 export function QueryBanner({ error, style }: { error: string | null; style?: CSSProperties }) {
   if (!error) return null;
   return (
-    <Box className="mono" style={{
-      padding: "12px 16px", borderRadius: 6,
-      background: "color-mix(in oklch, var(--danger), transparent 88%)",
+    <Box className="mono" pad={[12, 16]} bg="color-mix(in oklch, var(--danger), transparent 88%)" radius={6} style={{
       border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
       fontSize: 11, color: "var(--danger)",
       ...style,

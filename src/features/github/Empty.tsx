@@ -22,9 +22,8 @@ export function GitHubEmpty() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
-    <Box as="section" style={{
-      flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-      background: "var(--bg-canvas)", padding: "40px 32px", overflow: "auto",
+    <Box as="section" pad={[40, 32]} bg="var(--bg-canvas)" style={{
+      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto",
     }}>
       <Grid cols="1.1fr 1fr" gap={32} align="center" style={{
         maxWidth: 880, width: "100%",
@@ -49,9 +48,8 @@ export function GitHubEmpty() {
             </Button>
           }
           extra={
-            <Box style={{
-              marginTop: 20, padding: "12px 14px",
-              borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+            <Box pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
+              marginTop: 20,
             }}>
               <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>
               <Row gap={6} wrap align="stretch">
@@ -83,9 +81,8 @@ export function GitHubEmpty() {
               padding: "12px 14px",
               background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: 8,
             }}>
-              <Box as="span" className="mono" style={{
-                width: 20, height: 20, borderRadius: 5,
-                background: "var(--bg-elev2)",
+              <Box as="span" className="mono" bg="var(--bg-elev2)" radius={5} style={{
+                width: 20, height: 20,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "var(--accent)", fontWeight: 700, fontSize: 11,
                 marginTop: 1,

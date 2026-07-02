@@ -19,7 +19,7 @@ const EVERY_OPTS: Every[] = ["minute", "hour", "day", "weekday"];
 function runsTable(runs: Automation["runs"]) {
   if (runs.length === 0) {
     return (
-      <Box className="mono" style={{ padding: 14, textAlign: "center", color: "var(--fg-dim)", fontSize: 11, border: "1px dashed var(--border)", borderRadius: 6 }}>
+      <Box className="mono" pad={14} radius={6} style={{ textAlign: "center", color: "var(--fg-dim)", fontSize: 11, border: "1px dashed var(--border)"}}>
         no runs yet
       </Box>
     );
@@ -83,7 +83,7 @@ export function SchedulesTab({ selectedId, onSelect, onNew }: {
               </Box>
             </Box>
           ))}
-          <Box style={{ padding: "12px 14px" }}>
+          <Box pad={[12, 14]}>
             <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>+ new automation</Button>
           </Box>
         </Box>
@@ -210,7 +210,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
           </Box></Box>
 
           {/* history */}
-          <Box className="es" style={{ background: "var(--bg-canvas)" }}><Box className="es-row">
+          <Box className="es" bg="var(--bg-canvas)"><Box className="es-row">
             <Box className="es-lbl muted">history</Box>
             <Box>
               <Row align="baseline" gap={10} style={{ marginBottom: 10 }}>

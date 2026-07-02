@@ -156,7 +156,7 @@ export function SessionRecoveryBanner() {
             const restorable = sessions.filter((s) => !s.reapOnly);
             const label = manual ? "Manual scratch shells" : orphan ? "Orphaned (deleted project)" : key;
             return (
-              <Box key={key} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, overflow: "hidden" }}>
+              <Box key={key} border="soft" radius={6} style={{ overflow: "hidden" }}>
                 <Row gap={8} style={{ padding: "6px 10px", background: "var(--bg-panel)" }}>
                   <Box as="span" className="mono" style={{ fontSize: 11, color: "var(--fg)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</Box>
                   <Text className="hint" size={10.5}>{sessions.length}</Text>
@@ -301,8 +301,8 @@ export function SandboxSetupBanner() {
           <b>Agent sandbox not set up</b> — {installing ? "installing…" : (installMsg ?? sandbox.detail)}
         </Text>
         {installing && (
-          <Box aria-hidden style={{ height: 3, borderRadius: 2, background: "color-mix(in oklch, var(--warn), transparent 75%)", overflow: "hidden" }}>
-            <Box style={{ height: "100%", width: "30%", background: "var(--warn)", animation: "scan 1.1s linear infinite" }} />
+          <Box aria-hidden bg="color-mix(in oklch, var(--warn), transparent 75%)" radius={2} style={{ height: 3, overflow: "hidden" }}>
+            <Box bg="var(--warn)" style={{ height: "100%", width: "30%", animation: "scan 1.1s linear infinite" }} />
           </Box>
         )}
       </Stack>

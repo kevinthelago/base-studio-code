@@ -46,12 +46,11 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
             key={section.key}
             className={isHighlit ? "attn-pulse" : undefined}
             title={`${section.name} — ${status}${isBlocked ? " · gate blocked" : ""}${isHighlit ? " · incomplete" : ""}`}
-            style={{
-              flex: 1, height: 12, borderRadius: 6, overflow: "hidden", position: "relative",
-              background: isHighlit ? "color-mix(in oklch, var(--danger), transparent 70%)" : "var(--bg-elev2)",
+            bg={isHighlit ? "color-mix(in oklch, var(--danger), transparent 70%)" : "var(--bg-elev2)"} radius={6} style={{
+              flex: 1, height: 12, overflow: "hidden", position: "relative",
             }}
           >
-            <Box style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isBlocked ? "var(--danger)" : fillColor(status), borderRadius: 6 }} />
+            <Box bg={isBlocked ? "var(--danger)" : fillColor(status)} radius={6} style={{ position: "absolute", inset: 0, width: `${pct}%`}} />
           </Box>
         );
       })}

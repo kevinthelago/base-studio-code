@@ -18,11 +18,10 @@ import { Text } from "@/shared/ui/typography/Text";
 export function ModeChip({ mode }: { mode: CollectMode }) {
   const h = modeHue(mode);
   return (
-    <Box as="span" style={{
-      display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 7px", borderRadius: 99,
+    <Box as="span" pad={[1, 7]} bg={`color-mix(in oklch, oklch(0.74 0.12 ${h}), transparent 88%)`} radius={99} style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
       fontFamily: mono, fontSize: 9.5, whiteSpace: "nowrap",
       color: `oklch(0.78 0.11 ${h})`,
-      background: `color-mix(in oklch, oklch(0.74 0.12 ${h}), transparent 88%)`,
       border: `1px solid color-mix(in oklch, oklch(0.74 0.12 ${h}), transparent 72%)`,
     }}>
       <Box as="span">{mode === "scrape" ? "🕸" : "⤓"}</Box>{mode}
@@ -33,9 +32,7 @@ export function ModeChip({ mode }: { mode: CollectMode }) {
 /** A Data Model entity name chip. */
 export function EntityChip({ name }: { name: string }) {
   return (
-    <Box as="span" style={{
-      padding: "1px 6px", borderRadius: 4, fontFamily: mono, fontSize: 9.5, color: "var(--fg-muted)",
-      background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
+    <Box as="span" pad={[1, 6]} bg="var(--bg-elev2)" border="soft" radius={4} style={{ fontFamily: mono, fontSize: 9.5, color: "var(--fg-muted)",
     }}>{name}</Box>
   );
 }
@@ -45,9 +42,8 @@ export function Card({ label, hint, badge, accent, children }: {
   label: string; hint?: string; badge?: ReactNode; accent?: boolean; children: ReactNode;
 }) {
   return (
-    <Box style={{
+    <Box pad={[10, 12]} bg="var(--bg-panel)" radius={8} style={{
       border: "1px solid " + (accent ? "color-mix(in oklch, var(--accent), transparent 72%)" : "var(--border-soft)"),
-      borderRadius: 8, padding: "10px 12px", background: "var(--bg-panel)",
     }}>
       <Row gap={8} style={{ marginBottom: 9 }}>
         <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".07em" }}>{label}</Text>
@@ -67,9 +63,7 @@ export function ListItemCard({ title, meta, badge, highlight }: {
   title: ReactNode; meta?: ReactNode; badge?: ReactNode; highlight?: boolean;
 }) {
   return (
-    <Box style={{
-      padding: "8px 10px", borderRadius: 6,
-      background: highlight ? "var(--accent-soft)" : "var(--bg-canvas)",
+    <Box pad={[8, 10]} bg={highlight ? "var(--accent-soft)" : "var(--bg-canvas)"} radius={6} style={{
       border: highlight ? "1px solid var(--accent)" : "1px solid var(--border-soft)",
     }}>
       <Row gap={6}>

@@ -254,9 +254,8 @@ export function Insights() {
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>?</Box>
                           ) : (
-                            <Box as="span" className="mono" style={{
-                              width: 16, height: 16, borderRadius: "50%",
-                              background: avatarColor(a.login), color: "#1a120a",
+                            <Box as="span" className="mono" bg={avatarColor(a.login)} style={{
+                              width: 16, height: 16, borderRadius: "50%", color: "#1a120a",
                               fontWeight: 700, fontSize: 9,
                               display: "flex", alignItems: "center", justifyContent: "center",
                             }}>{a.login[0]?.toUpperCase()}</Box>
@@ -264,12 +263,10 @@ export function Insights() {
                           <Text as="div" mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {a.login}
                           </Text>
-                          <Box style={{ height: 10, borderRadius: 3, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                            <Box style={{
+                          <Box bg="var(--bg-elev2)" radius={3} style={{ height: 10, overflow: "hidden" }}>
+                            <Box bg={avatarColor(a.login === "(unassigned)" ? "?" : a.login)} radius={3} style={{
                               height: "100%",
                               width: `${(a.count / maxAssigneeCount) * 100}%`,
-                              background: avatarColor(a.login === "(unassigned)" ? "?" : a.login),
-                              borderRadius: 3,
                             }} />
                           </Box>
                           <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>{a.count}</Text>
@@ -288,11 +285,11 @@ export function Insights() {
                   <Spacer />
                   <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
                     <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <Box as="span" style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--info), transparent 40%)", display: "inline-block" }} />
+                      <Box as="span" bg="color-mix(in oklch, var(--info), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
                       opened
                     </Box>
                     <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <Box as="span" style={{ width: 10, height: 10, borderRadius: 2, background: "color-mix(in oklch, var(--success), transparent 40%)", display: "inline-block" }} />
+                      <Box as="span" bg="color-mix(in oklch, var(--success), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
                       closed
                     </Box>
                   </Row>

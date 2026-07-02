@@ -53,7 +53,7 @@ export function ActivityHeatmap({
         <Box as="span" className="mono" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 10, color: "var(--fg-dim)" }}>
           less
           {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
-            <Box as="span" key={i} style={{ width: 10, height: 10, borderRadius: 2, display: "inline-block", background: heatFill(v) }} />
+            <Box as="span" key={i} bg={heatFill(v)} radius={2} style={{ width: 10, height: 10, display: "inline-block"}} />
           ))}
           more
         </Box>

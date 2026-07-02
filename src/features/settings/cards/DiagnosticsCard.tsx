@@ -148,8 +148,7 @@ export function DiagnosticsCard() {
       </Row>
 
       {error && (
-        <Box className="mono" style={{
-          padding: "10px 14px", color: "var(--danger)", fontSize: 11,
+        <Box className="mono" pad={[10, 14]} style={{ color: "var(--danger)", fontSize: 11,
           borderBottom: "1px solid var(--border-soft)",
         }}>
           Probe failed: {error}
@@ -161,7 +160,7 @@ export function DiagnosticsCard() {
           {report.prereqs.map((v, i) => <PrereqRow key={v.name} verdict={v} alt={i % 2 === 1} />)}
         </Stack>
       ) : !running && !error ? (
-        <Box className="mono" style={{ padding: "20px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
+        <Box className="mono" pad={[20, 14]} style={{ textAlign: "center", fontSize: 11, color: "var(--fg-dim)" }}>
           No prerequisite data yet.
         </Box>
       ) : null}

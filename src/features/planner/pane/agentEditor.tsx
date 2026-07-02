@@ -32,7 +32,7 @@ export function AgentEditor({ a, onFlow, onModel }: {
     <>
       {/* Kickoff preview (#2053) — the exact first message this worker gets at launch, plus its lane
           context (CLAUDE.local.md) collapsed below. Read-only: it mirrors what the launch generates. */}
-      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+      <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
         <Row className="ulabel" gap={8} style={{ marginBottom: 8 }}>
           <Box as="span">kickoff</Box>
           <Text as="span" mono size={9} tone={a.authoredPrompt ? "accent" : "dim"}>
@@ -54,7 +54,7 @@ export function AgentEditor({ a, onFlow, onModel }: {
       </Box>
 
       {onModel && (
-        <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+        <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
           <Box className="ulabel" style={{ marginBottom: 8 }}>model</Box>
           <Row gap={8}>
             <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
@@ -66,7 +66,7 @@ export function AgentEditor({ a, onFlow, onModel }: {
         </Box>
       )}
 
-      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+      <Box pad={[10, 12]} bg="var(--bg-panel)" style={{ borderTop: "1px solid var(--border-soft)"}}>
         <Box className="ulabel" style={{ marginBottom: 8 }}>flow</Box>
         <Stack gap={8}>
           <Row gap={8}>
@@ -103,7 +103,7 @@ export function StreamCard({ a, agents, onFlow, onModel }: {
   onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   return (
-    <Box style={{ marginTop: 14, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)" }}>
+    <Box bg="var(--bg-canvas)" radius={6} style={{ marginTop: 14, overflow: "hidden", border: "1px solid var(--accent-dim)" }}>
       {/* identity */}
       <Grid cols="auto 1fr auto" gap={8} align="center" style={{ padding: "9px 10px" }}>
         <Row gap={7}>
@@ -155,7 +155,7 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
   }
   const running = agents.filter((a) => a.status === "run").length;
   return (
-    <Box style={{ padding: "4px 0" }}>
+    <Box pad={[4, 0]}>
       <Row className="mono" gap={8} style={{ padding: "0 2px 8px", fontSize: 9.5, color: "var(--fg-dim)" }}>
         <Box as="span">{agents.length} agents · {running} running</Box>
         <Box as="span" style={{ flex: 1 }} />
@@ -165,9 +165,7 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
         {agents.map((a) => {
           const on = open === a.id;
           return (
-            <Box key={a.id} style={{
-              borderRadius: 6, overflow: "hidden",
-              background: "var(--bg-canvas)",
+            <Box key={a.id} bg="var(--bg-canvas)" radius={6} style={{ overflow: "hidden",
               border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
               <Grid onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }}

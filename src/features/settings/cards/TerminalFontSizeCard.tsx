@@ -46,9 +46,8 @@ export function TerminalFontSizeCard() {
       </Row>
       <Box
         className="mono"
-        style={{
-          marginTop: 14, padding: "10px 12px", borderRadius: 6,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        pad={[10, 12]} bg="var(--bg-canvas)" border="soft" radius={6} style={{
+          marginTop: 14,
           fontSize: terminalFontSize, color: "var(--fg-muted)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}

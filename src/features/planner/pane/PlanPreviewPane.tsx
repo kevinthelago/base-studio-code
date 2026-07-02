@@ -90,7 +90,7 @@ export function PlanPreviewPane({ projectKey, onClose }: { projectKey: string; o
         </>
       }
       footer={declared.length > 0 && (
-        <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "8px 12px", maxHeight: 180, overflow: "auto" }}>
+        <Box pad={[8, 12]} style={{ borderTop: "1px solid var(--border-soft)", maxHeight: 180, overflow: "auto" }}>
           <Row className="mono" gap={8} style={{ fontSize: 10, color: "var(--fg-muted)", marginBottom: 6 }}>
             <Box as="span">screens</Box>
             <button

@@ -55,7 +55,7 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
         </Grid>
       )}
       <Row gap={8} style={{ fontSize: 11 }}>
-        {lesson.seen > 1 && <Box as="span" className="pill" style={{ background: "var(--bg-panel)", color: "var(--fg-muted)" }}>seen ×{lesson.seen}</Box>}
+        {lesson.seen > 1 && <Box as="span" className="pill" bg="var(--bg-panel)" style={{ color: "var(--fg-muted)" }}>seen ×{lesson.seen}</Box>}
         {lesson.provenance && <Box as="span" className="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.provenance}</Box>}
         <Box as="span" style={{ flex: 1 }} />
         <Button variant="ghost" disabled={busy} onClick={() => setEditing((e) => !e)}>{editing ? "done editing" : "edit"}</Button>

@@ -52,9 +52,8 @@ function Lbl({ children, hint, style }: { children: React.ReactNode; hint?: stri
 function StageGlyph({ k, size = 26 }: { k: string; size?: number }) {
   const meta = stageKind(k);
   return (
-    <Box as="span" style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: 6,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      background: tint(meta.h, 0.16), color: hue(meta.h) }}>
+    <Box as="span" bg={tint(meta.h, 0.16)} radius={6} style={{ width: size, height: size, flex: `0 0 ${size}px`,
+      display: "flex", alignItems: "center", justifyContent: "center", color: hue(meta.h) }}>
       <Ic n={meta.glyph} size={size * 0.56} />
     </Box>
   );
@@ -77,12 +76,11 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
         <Lbl hint="name & accent">Identity</Lbl>
         <Row gap={11} align="start">
           <Stack gap={7} align="center">
-            <Box as="span" className="ed-icon" style={{ width: 44, height: 44, fontSize: 19, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9,
-              background: tint(h, 0.18), color: hue(h), border: `1px solid ${tint(h, 0.4)}` }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</Box>
+            <Box as="span" className="ed-icon" bg={tint(h, 0.18)} radius={9} style={{ width: 44, height: 44, fontSize: 19, display: "flex", alignItems: "center", justifyContent: "center", color: hue(h), border: `1px solid ${tint(h, 0.4)}` }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</Box>
             <Row gap={4}>
               {HUE_CHOICES.map((c) => (
                 <Box as="span" key={c} onClick={() => set({ h: c })} title="accent hue"
-                  style={{ width: 13, height: 13, borderRadius: 4, cursor: "pointer", background: hue(c),
+                  bg={hue(c)} radius={4} style={{ width: 13, height: 13, cursor: "pointer",
                     outline: h === c ? "2px solid var(--fg)" : "none", outlineOffset: 1 }} />
               ))}
             </Row>
@@ -170,7 +168,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
   };
 
   return (
-    <Box className="rail-list" style={{ padding: 0, overflow: "visible" }}>
+    <Box className="rail-list" pad={0} style={{ overflow: "visible" }}>
       {stages.map((s, i) => {
         const k = stageKind(s.key);
         const depNames = s.deps.map((d) => stages.find((x) => x.key === d)?.name || d);
@@ -228,7 +226,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                       const ck = stageKind(c.key); const on = s.deps.includes(c.key);
                       return (
                         <button key={c.uid} className={"dep-chip" + (on ? " on" : "")} onClick={() => setSections(toggleDep(stages, s.uid, c.key))}>
-                          <Box as="span" className="dg" style={{ background: tint(ck.h, 0.2), color: hue(ck.h) }}><Ic n={ck.glyph} size={10} /></Box>
+                          <Box as="span" className="dg" bg={tint(ck.h, 0.2)} style={{ color: hue(ck.h) }}><Ic n={ck.glyph} size={10} /></Box>
                           {c.name}{on && <Text as="span" style={{ opacity: 0.7 }}> ✓</Text>}
                         </button>
                       );
@@ -258,7 +256,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                 const k = stageKind(kk);
                 return (
                   <button className="pal-item" key={kk} title={k.blurb} onClick={() => add(kk)}>
-                    <Box as="span" className="pg" style={{ background: tint(k.h, 0.18), color: hue(k.h) }}><Ic n={k.glyph} size={12} /></Box>
+                    <Box as="span" className="pg" bg={tint(k.h, 0.18)} style={{ color: hue(k.h) }}><Ic n={k.glyph} size={12} /></Box>
                     <Box as="span" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}{used.has(kk) && <Text as="span" className="dim"> ·</Text>}</Box>
                   </button>
                 );
@@ -317,7 +315,7 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
                     const d = DISPOSITIONS[key];
                     return (
                       <Box className={"disp" + (s.output === key ? " on" : "")} key={key} onClick={() => setSections(setOutput(stages, s.uid, key))}>
-                        <Box as="span" className="dgl" style={{ background: tint(d.h, 0.16), color: hue(d.h) }}><Ic n={d.glyph} size={13} /></Box>
+                        <Box as="span" className="dgl" bg={tint(d.h, 0.16)} style={{ color: hue(d.h) }}><Ic n={d.glyph} size={13} /></Box>
                         <Box as="span" className="dtxt"><Text as="div" className="dt">{d.title}</Text><Text as="div" className="dd">{d.desc}</Text></Box>
                       </Box>
                     );
@@ -405,7 +403,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
   return (
     <Stack gap={16}>
       <Box className="hero" style={{ marginBottom: 0 }}>
-        <Box as="span" className="hicon" style={{ background: tint(h, 0.16), color: hue(h) }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</Box>
+        <Box as="span" className="hicon" bg={tint(h, 0.16)} style={{ color: hue(h) }}>{bp.icon || (bp.name?.[0] ?? "B").toUpperCase()}</Box>
         <Box className="htxt">
           <Text as="div" className="heyebrow">blueprint</Text>
           <Box className="mono" style={{ fontSize: 14, color: "var(--fg)", marginBottom: 3 }}>{bp.name || "Untitled blueprint"}</Box>
@@ -455,7 +453,7 @@ export function PublishView({ bp, onChange, onPublish, published }: AuthorViewPr
           {VIS.map((v) => (
             <Box key={v.key} className={"disp" + (vis === v.key ? " on" : "")} style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}
               onClick={() => onChange({ ...bp, visibility: v.key })}>
-              <Box as="span" className="dgl" style={{ background: vis === v.key ? tint(h, 0.18) : "var(--bg-elev)", color: vis === v.key ? hue(h) : "var(--fg-muted)" }}><Ic n={v.glyph} size={13} /></Box>
+              <Box as="span" className="dgl" bg={vis === v.key ? tint(h, 0.18) : "var(--bg-elev)"} style={{ color: vis === v.key ? hue(h) : "var(--fg-muted)" }}><Ic n={v.glyph} size={13} /></Box>
               <Box as="span" className="dtxt"><Text as="div" className="dt">{v.title}</Text><Text as="div" className="dd">{v.desc}</Text></Box>
             </Box>
           ))}

@@ -112,13 +112,13 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
       )}
       {sections.map((sec, si) => (
         <Box key={sec.id} className="skill-section" data-section-id={sec.id}
-          style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, borderRadius: "var(--r-lg)", overflow: "hidden", background: "var(--bg-panel)" }}>
+          bg="var(--bg-panel)" radius="lg" style={{ marginBottom: 14, border: `1px solid ${tintBg(sec.hue, 78)}`, overflow: "hidden"}}>
           {/* Section header — sticky; its own hue tile + a left accent rail ties the rows below to it.
               Later sections sit above earlier ones as they scroll under (descending z, opaque bg). */}
           <Row gap={9} style={{ padding: "10px 16px", position: "sticky", top: 0, zIndex: sections.length - si + 4, background: `color-mix(in oklch, ${sec.hue} 8%, var(--bg-elev))`, borderBottom: `1px solid ${tintBg(sec.hue, 74)}`, boxShadow: `inset 3px 0 0 ${sec.hue}` }}>
             <Box as="span" style={hueTile(sec.hue)}>{sec.glyph}</Box>
             <Text as="span" size={12} weight={600} style={{ color: "var(--fg)", textTransform: "capitalize" }}>{sec.label}</Text>
-            <Box as="span" className="mono" style={{ fontSize: 10, color: sec.hue, background: tintBg(sec.hue, 84), borderRadius: 99, padding: "1px 7px" }}>{sec.items.length}</Box>
+            <Box as="span" className="mono" pad={[1, 7]} bg={tintBg(sec.hue, 84)} radius={99} style={{ fontSize: 10, color: sec.hue}}>{sec.items.length}</Box>
           </Row>
           {/* Member rows, indented under the header so they clearly belong to this section. */}
           <Box style={{ paddingLeft: 10, borderLeft: `2px solid ${tintBg(sec.hue, 70)}` }}>
@@ -134,7 +134,7 @@ export function SkillsGroupedView({ sections, showNoGroupsHint, onNewGroup, h }:
 export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef; groups: SkillGroup[]; onOpen: () => void; onPin: () => void; onToggle: () => void }) {
   const sc = successColor(s.invocations > 0 ? s.success : null);
   return (
-    <Box className="skill-card" data-skill-id={s.id} onClick={onOpen} style={{ background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "13px 14px", cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
+    <Box className="skill-card" data-skill-id={s.id} onClick={onOpen} pad={[13, 14]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ cursor: "pointer", opacity: s.enabled ? 1 : 0.6 }}>
       <Row align="start" gap={11}>
         <Box as="span" style={glyphTile(s.kind, true)}>{KIND[s.kind].glyph}</Box>
         <Box style={{ flex: 1, minWidth: 0 }}>
@@ -155,7 +155,7 @@ export function SkillCard({ s, groups, onOpen, onPin, onToggle }: { s: SkillDef;
         {s.tools.slice(0, 3).map((t) => <Text key={t} as="span" className="kbd" size={10}>{t}</Text>)}
       </Row>
       <Row gap={10} style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid var(--border-soft)" }}>
-        <Row align="stretch" gap={5}>{s.profiles.map((p: SkillProfile) => <Row key={p} inline gap={4}><Box as="span" style={{ width: 6, height: 6, borderRadius: "50%", background: PROFILE_COLOR[p] }} /><Text as="span" mono size={9.5} tone="dim">{p}</Text></Row>)}</Row>
+        <Row align="stretch" gap={5}>{s.profiles.map((p: SkillProfile) => <Row key={p} inline gap={4}><Box as="span" bg={PROFILE_COLOR[p]} style={{ width: 6, height: 6, borderRadius: "50%"}} /><Text as="span" mono size={9.5} tone="dim">{p}</Text></Row>)}</Row>
         <Box as="span" style={{ flex: 1 }} />
         <Text as="span" mono size={10.5} style={{ color: s.invocations ? "var(--fg-muted)" : "var(--fg-dim)" }}>{s.invocations ? fmtCount(s.invocations) + "×" : "never"}</Text>
         {s.invocations > 0 && <Text as="span" mono size={10} style={{ color: sc }}>{s.success}%</Text>}

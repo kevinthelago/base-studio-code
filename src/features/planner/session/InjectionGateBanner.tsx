@@ -26,10 +26,9 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
   const n = gate.findings.length;
 
   return (
-    <Box data-testid="injection-banner" style={{
-      flex: "0 0 auto", margin: "10px 12px 0", borderRadius: "var(--r-md)", overflow: "hidden",
+    <Box data-testid="injection-banner" bg={`color-mix(in oklch, ${color}, transparent 90%)`} radius="md" style={{
+      flex: "0 0 auto", margin: "10px 12px 0", overflow: "hidden",
       border: `1px solid color-mix(in oklch, ${color}, transparent 60%)`,
-      background: `color-mix(in oklch, ${color}, transparent 90%)`,
     }}>
       <Row gap={8} style={{ padding: "8px 11px" }}>
         <Text as="span" size={13} style={{ color }}>{blocked ? "⛔" : cleared ? "✓" : "⚠"}</Text>

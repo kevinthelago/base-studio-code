@@ -41,9 +41,8 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
         <Text tone="accent" style={{ textTransform: "none", letterSpacing: 0 }}>stash · commit</Text>
       </Row>
       {hunks.map((h, i) => (
-        <Box key={i} style={{
-          marginBottom: 8, borderRadius: 5,
-          border: "1px solid var(--border-soft)", overflow: "hidden",
+        <Box key={i} border="soft" radius={5} style={{
+          marginBottom: 8, overflow: "hidden",
         }}>
           <Row className="mono" align="baseline" gap={8} style={{
             padding: "5px 9px", background: "var(--bg-elev)",
@@ -62,11 +61,9 @@ export function ChangesView({ small = false, hunks }: ChangesViewProps) {
             lineHeight: 1.5, background: "var(--bg-canvas)",
           }}>
             {h.sample.map((line, j) => (
-              <Box key={j} style={{
-                padding: "0 9px",
-                background: line.sign === "+" ? "color-mix(in oklch, var(--success), transparent 88%)"
+              <Box key={j} pad={[0, 9]} bg={line.sign === "+" ? "color-mix(in oklch, var(--success), transparent 88%)"
                   : line.sign === "-" ? "color-mix(in oklch, var(--danger), transparent 88%)"
-                  : "transparent",
+                  : "transparent"} style={{
                 color: line.sign === "+" ? "var(--success)"
                   : line.sign === "-" ? "var(--danger)"
                   : "var(--fg-muted)",

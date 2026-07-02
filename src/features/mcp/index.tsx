@@ -167,7 +167,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
               )
             } />
           ))}
-          {items.length === 0 && <Box className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</Box>}
+          {items.length === 0 && <Box className="hint" pad={[8, 2]}>No catalog entries match “{search}”.</Box>}
         </Box>
       </>
     );
@@ -279,7 +279,7 @@ export function HooksView() {
         <SectionHeader title="Hooks" hint="Claude Code lifecycle automations" meta={<>{onCount}/{hooks.length} enabled</>} />
         <Box className="row-list">
           {hooks.length === 0 && (
-            <Box className="hint" style={{ padding: "8px 2px" }}>No hooks yet — add one from the catalog.</Box>
+            <Box className="hint" pad={[8, 2]}>No hooks yet — add one from the catalog.</Box>
           )}
           {hooks.map(e => (
             <InstalledRow
@@ -314,7 +314,7 @@ export function HooksView() {
               <Button style={{ height: 22, fontSize: 10, padding: "0 10px" }} onClick={() => addFromCatalog(c)}>add</Button>
             } />
           ))}
-          {items.length === 0 && <Box className="hint" style={{ padding: "8px 2px" }}>No catalog entries match “{search}”.</Box>}
+          {items.length === 0 && <Box className="hint" pad={[8, 2]}>No catalog entries match “{search}”.</Box>}
         </Box>
       </>
     );

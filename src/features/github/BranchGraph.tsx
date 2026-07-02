@@ -194,7 +194,7 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
         <Row gap={14} wrap align="stretch" style={{ marginTop: 10 }}>
           {layout.laneNames.map((name, i) => (
             <Box as="span" key={name} className="mono" style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 10.5, color: "var(--fg-muted)" }}>
-              <Box as="span" style={{ width: 10, height: 2, background: laneColors[i], borderRadius: 1, flexShrink: 0 }} />
+              <Box as="span" bg={laneColors[i]} radius={1} style={{ width: 10, height: 2, flexShrink: 0 }} />
               {name}
             </Box>
           ))}

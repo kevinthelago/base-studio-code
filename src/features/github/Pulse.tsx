@@ -192,8 +192,8 @@ function Contributors({ contributors }: { contributors: Contributor[] }) {
           <Text as="span" tone="accent">◆ {botCommits}</Text> bot · <Text as="span" style={{ color: "var(--fg)" }}>{humanCommits}</Text> human
         </Text>} />
       <Row align="stretch" style={{ height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 12 }}>
-        <Box title="bots" style={{ width: `${botShare}%`, background: "var(--accent)" }} />
-        <Box title="humans" style={{ flex: 1, background: "oklch(0.68 0.12 250)" }} />
+        <Box title="bots" bg="var(--accent)" style={{ width: `${botShare}%`}} />
+        <Box title="humans" bg="oklch(0.68 0.12 250)" style={{ flex: 1}} />
       </Row>
       <Stack gap={7}>
         {sorted.map(c => (
@@ -230,7 +230,7 @@ function CIHealth({ ci, workflows }: { ci: CiHealth; workflows: Workflow[] }) {
     <Box className="card">
       <CardHead title="CI health" hint={`${ci.runs} runs · 14d`} />
       {ci.runs === 0 ? (
-        <Box className="hint" style={{ padding: "8px 2px" }}>No workflow runs in the window.</Box>
+        <Box className="hint" pad={[8, 2]}>No workflow runs in the window.</Box>
       ) : (
         <>
           <Row gap={16} style={{ marginBottom: 12 }}>
@@ -296,7 +296,7 @@ function ReviewLatency({ buckets, medianH }: { buckets: Array<{ label: string; v
     <Box className="card">
       <CardHead title="Review latency" hint="PR open → merged · last 14d" />
       {total === 0 ? (
-        <Box className="hint" style={{ padding: "8px 2px" }}>No merged PRs in the window.</Box>
+        <Box className="hint" pad={[8, 2]}>No merged PRs in the window.</Box>
       ) : (
         <>
           <Bars labels={buckets.map(b => b.label)} height={116} tip={tip}

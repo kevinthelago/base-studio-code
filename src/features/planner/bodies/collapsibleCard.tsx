@@ -24,8 +24,7 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <Box radius="lg" bg="var(--bg-panel)" style={{
-      padding: "13px 14px",
+    <Box radius="lg" bg="var(--bg-panel)" pad={[13, 14]} style={{
       border: "1px solid " + (tone ? `color-mix(in oklch, ${tone}, transparent 78%)` : "var(--border-soft)"),
     }}>
       <Row
@@ -34,10 +33,9 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
         style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
         {icon && (
-          <Box as="span" radius={6} bg="var(--bg-elev)" style={{
+          <Box as="span" radius={6} bg="var(--bg-elev)" border="soft" style={{
             width: 20, height: 20, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: MONO, fontSize: 11, color: tone ?? "var(--fg-dim)",
-            border: "1px solid var(--border-soft)",
           }}>{icon}</Box>
         )}
         <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{title}</Text>

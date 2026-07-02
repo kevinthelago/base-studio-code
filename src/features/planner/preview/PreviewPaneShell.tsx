@@ -144,7 +144,7 @@ export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
         </>
       }
       footer={declared.length > 0 && (
-        <Box style={{ borderTop: '1px solid var(--border-soft)', padding: '8px 12px', maxHeight: 180, overflow: 'auto' }}>
+        <Box pad={[8, 12]} style={{ borderTop: '1px solid var(--border-soft)', maxHeight: 180, overflow: 'auto' }}>
           <Row gap={8} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-muted)', marginBottom: 6 }}>
             <Text as="span">screens</Text>
             <Button
@@ -185,7 +185,7 @@ export function PreviewPaneShell({ projectKey, onClose }: StageScreenProps) {
     >
       <Stack style={{ flex: 1, minHeight: 0 }}>
         {stageStatus === 'fail' ? (
-          <Box style={{ padding: 16, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--danger)', whiteSpace: 'pre-wrap', overflow: 'auto' }}>
+          <Box pad={16} style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--danger)', whiteSpace: 'pre-wrap', overflow: 'auto' }}>
             {run?.message || 'Preview failed to build.'}
           </Box>
         ) : (

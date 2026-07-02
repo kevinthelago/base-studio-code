@@ -18,9 +18,8 @@ export function ProjectsEmpty() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
-    <Box as="section" style={{
-      flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-      background: "var(--bg-canvas)", padding: "40px 32px", overflow: "auto",
+    <Box as="section" pad={[40, 32]} bg="var(--bg-canvas)" style={{
+      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto",
     }}>
       <EmptyState
         variant="card"
@@ -39,9 +38,8 @@ export function ProjectsEmpty() {
           </button>
         }
         extra={
-          <Box style={{
-            marginTop: 20, padding: "12px 14px",
-            borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          <Box pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
+            marginTop: 20,
             textAlign: "left",
           }}>
             <SectionLabel style={{ marginBottom: 6 }}>Scopes requested</SectionLabel>

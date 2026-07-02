@@ -139,12 +139,12 @@ export function StorageCard() {
       </Row>
 
       {projects.length === 0 ? (
-        <Box className="mono" style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "20px 16px", fontSize: 11.5, color: "var(--fg-dim)" }}>
+        <Box className="mono" pad={[20, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ fontSize: 11.5, color: "var(--fg-dim)" }}>
           {scanning ? "Scanning…" : "No fleet worktrees on disk."}
         </Box>
       ) : (
         projects.map((p) => (
-          <Box key={p.key} style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
+          <Box key={p.key} pad={[4, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ marginBottom: 12 }}>
             <Row gap={12} style={{ padding: "10px 0", borderBottom: "1px solid var(--border-soft)" }}>
               <Box style={{ flex: 1, minWidth: 0 }}>
                 <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{p.key}</Text>
@@ -169,7 +169,7 @@ export function StorageCard() {
       )}
 
       {sandbox && (sandbox.installed || sandbox.tarballBytes > 0) && (
-        <Box style={{ background: "var(--bg-panel)", borderRadius: 8, border: "1px solid var(--border-soft)", padding: "4px 16px", marginBottom: 12 }}>
+        <Box pad={[4, 16]} bg="var(--bg-panel)" border="soft" radius={8} style={{ marginBottom: 12 }}>
           <Row gap={12} style={{ padding: "10px 0" }}>
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>Agent sandbox (WSL2)</Text>

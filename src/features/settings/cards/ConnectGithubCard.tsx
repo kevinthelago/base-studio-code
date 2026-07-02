@@ -24,16 +24,15 @@ function ConnectFlowCard() {
 
       {clientId ? (
         device ? (
-          <Box style={{
-            marginBottom: 18, padding: "16px", borderRadius: 8,
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+          <Box pad={16} bg="var(--bg-elev)" border="soft" radius={8} style={{
+            marginBottom: 18,
           }}>
             <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.6 }}>
               In the browser tab that just opened, enter this code to authorize:
             </p>
-            <Box className="mono" style={{
+            <Box className="mono" pad={[10, 0]} style={{
               fontSize: 26, fontWeight: 700, letterSpacing: ".18em",
-              textAlign: "center", color: "var(--accent)", padding: "10px 0",
+              textAlign: "center", color: "var(--accent)",
               userSelect: "all",
             }}>
               {device.user_code}
@@ -71,9 +70,9 @@ function ConnectFlowCard() {
               margin: "16px 0 4px",
               color: "var(--fg-dim)", fontSize: 10.5,
             }}>
-              <Box style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+              <Box bg="var(--border-soft)" style={{ flex: 1, height: 1}} />
               or use a token
-              <Box style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+              <Box bg="var(--border-soft)" style={{ flex: 1, height: 1}} />
             </Row>
           </Box>
         )
@@ -112,9 +111,8 @@ function ConnectFlowCard() {
       </Row>
 
       {error && (
-        <Box className="mono" style={{
-          marginTop: 10, padding: "8px 12px", borderRadius: 6,
-          background: "var(--bg-elev)", border: "1px solid var(--danger)",
+        <Box className="mono" pad={[8, 12]} bg="var(--bg-elev)" radius={6} style={{
+          marginTop: 10, border: "1px solid var(--danger)",
           color: "var(--danger)", fontSize: 11,
         }}>
           {error}

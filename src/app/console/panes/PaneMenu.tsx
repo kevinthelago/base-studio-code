@@ -80,9 +80,7 @@ export function PaneMenu({
       fontSize: 11,
     }}>
       {/* Header */}
-      <Box style={{
-        padding: "10px 12px", borderBottom: "1px solid var(--border-soft)",
-        background: "var(--bg-elev)",
+      <Box pad={[10, 12]} bg="var(--bg-elev)" style={{ borderBottom: "1px solid var(--border-soft)",
       }}>
         <Row align="baseline" gap={8}>
           <Text size={12} weight={600} style={{ color: "var(--fg)" }}>{agent}</Text>
@@ -95,7 +93,7 @@ export function PaneMenu({
         {/* Harness + provider (#1319) — moved here from the header pill. The provider-hue dot + the
             harness label that once sat in the header now identify the runtime inside the menu. */}
         <Row gap={6} style={{ marginTop: 6 }}>
-          <Box as="span" style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: provColor }} />
+          <Box as="span" bg={provColor} style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0}} />
           <Text size={10} tone="muted">{harness}</Text>
           <Box as="span" style={{ flex: 1 }} />
           <Text size={9.5} style={{ color: running ? "var(--accent)" : "var(--fg-dim)" }}>
@@ -111,9 +109,8 @@ export function PaneMenu({
           const isRunning = runningModel != null && m.id === runningModel;
           return (
             <MenuRow key={m.id} on={on} onClick={onModel ? () => { onModel(m.id); onClose?.(); } : undefined}>
-              <Box as="span" style={{
+              <Box as="span" bg={on ? "var(--accent)" : "var(--border)"} style={{
                 width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                background: on ? "var(--accent)" : "var(--border)",
               }} />
               <Text style={{ color: on ? "var(--accent)" : "var(--fg)", flex: 1 }}>{m.id}</Text>
               {isRunning && <Text tone="accent" size={9} style={{ marginRight: 6 }}>running</Text>}
@@ -171,7 +168,7 @@ export function PaneMenu({
 
 function MenuSection({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <Box style={{ padding: "6px 6px", borderBottom: last ? "0" : "1px solid var(--border-soft)" }}>
+    <Box pad={[6, 6]} style={{ borderBottom: last ? "0" : "1px solid var(--border-soft)" }}>
       <Text as="div" tone="dim" size={9.5} style={{
         padding: "4px 8px 6px",
         textTransform: "uppercase", letterSpacing: ".08em",

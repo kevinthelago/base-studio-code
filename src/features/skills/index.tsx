@@ -225,7 +225,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       {mode === "library" && (
         <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* KPI digest (collapsible) */}
-          <Box style={{ borderBottom: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
+          <Box bg="var(--bg-canvas)" style={{ borderBottom: "1px solid var(--border-soft)"}}>
             <Row gap={18} style={{ padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
               <button onClick={() => setDigestOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
                 <Text as="span" size={9} style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none" }}>▸</Text>
@@ -244,13 +244,13 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   { label: "Avg success", value: kpis.invWeek ? kpis.avgSuccess + "%" : "—", sub: "across active" },
                   { label: "Never run", value: String(neverRun), sub: "candidates to prune" },
                 ].map((t) => (
-                  <Box key={t.label} style={{ flex: "0 0 auto", width: 150, padding: "11px 13px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
+                  <Box key={t.label} pad={[11, 13]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: "0 0 auto", width: 150}}>
                     <Box className="mono-label">{t.label}</Box>
                     <Text as="div" mono size={20} weight={600} style={{ color: "var(--fg)", marginTop: 5 }}>{t.value}</Text>
                     <Text as="div" size={10.5} tone="muted" style={{ marginTop: 2 }}>{t.sub}</Text>
                   </Box>
                 ))}
-                <Box className="skills-leaderboard" style={{ flex: 1, padding: "10px 14px", background: "var(--bg-panel)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)" }}>
+                <Box className="skills-leaderboard" pad={[10, 14]} bg="var(--bg-panel)" border="soft" radius="lg" style={{ flex: 1}}>
                   <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</Text>
                   {leaders.length === 0 ? (
                     <Text as="div" size={11} tone="dim">No invocations yet — run the fleet to populate the leaderboard.</Text>
@@ -283,7 +283,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
               <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
               <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></button>
               {sortOpen && (
-                <Box style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
+                <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
                   {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
                 </Box>
               )}
@@ -299,7 +299,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {/* Body */}
           <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             {/* Facet column */}
-            <Box style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", background: "var(--bg-canvas)", padding: "14px 14px 40px 18px" }}>
+            <Box bg="var(--bg-canvas)" style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", padding: "14px 14px 40px 18px" }}>
               {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
               <Box style={{ marginBottom: 18 }}>
                 <Row gap={6} style={{ marginBottom: 8 }}>
@@ -355,7 +355,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   <Row inline align="stretch" style={{ position: "relative" }}>
                     <Button disabled={selected.size === 0} onClick={() => setScopePickerOpen((v) => !v)}>Set scope…</Button>
                     {scopePickerOpen && (
-                      <Box style={{ position: "absolute", top: 32, left: 0, zIndex: 50, minWidth: 200, maxHeight: 240, overflowY: "auto", background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", boxShadow: "0 14px 36px rgba(0,0,0,.45)", padding: 4 }}>
+                      <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 32, left: 0, zIndex: 50, minWidth: 200, maxHeight: 240, overflowY: "auto", boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
                         <Text as="div" size={11.5} onClick={() => bulkSetScope([])} style={{ padding: "6px 9px", borderRadius: 4, cursor: "pointer", color: "var(--fg)" }}>Global (all projects)</Text>
                         {projects.length === 0
                           ? <Text as="div" size={10.5} tone="dim" style={{ padding: "6px 9px" }}>Connect GitHub in Settings to scope per project.</Text>
@@ -411,7 +411,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {runRows.length === 0 ? (
             <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
           ) : (
-            <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+            <Box border="soft" radius={6} style={{ overflow: "hidden" }}>
               <Grid className="mono" cols="1.6fr 86px 60px 64px 90px" gap={10} style={{ padding: "8px 12px", background: "var(--bg-panel)", fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase" }}>
                 <Box as="span">skill</Box><Box as="span" style={{ textAlign: "right" }}>invocations</Box><Box as="span" style={{ textAlign: "right" }}>today</Box><Box as="span" style={{ textAlign: "right" }}>success</Box><Box as="span" style={{ textAlign: "right" }}>7-day</Box>
               </Grid>
@@ -437,7 +437,7 @@ function NewGroupDialog({ onCreate, onClose }: { onCreate: (name: string) => voi
   const [name, setName] = useState("");
   return (
     <Box className="modal-scrim" onClick={onClose}>
-      <Box onClick={(e) => e.stopPropagation()} style={{ width: 360, background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", padding: 18, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
+      <Box onClick={(e) => e.stopPropagation()} pad={18} bg="var(--bg-panel)" border radius="lg" style={{ width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}>
         <Text as="div" size={14} weight={600} style={{ marginBottom: 4 }}>New task group</Text>
         <Text as="div" size={11.5} tone="muted" style={{ marginBottom: 12 }}>A named ⬡ bundle of skills you can toggle onto a session or fleet stream at once.</Text>
         <input autoFocus className="input" placeholder="e.g. Release day" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onCreate(name.trim()); }} style={{ width: "100%", marginBottom: 14 }} />
@@ -492,7 +492,7 @@ function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, onCommit,
           {/* Project assignment */}
           <Box className="field">
             <label>project assignment</label>
-            <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
+            <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
               <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><Spacer />
               <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
             </Banner>

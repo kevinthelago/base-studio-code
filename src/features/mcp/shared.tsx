@@ -85,7 +85,7 @@ export function scopeChips(e: { enabled: boolean; projects: string[] }, projects
   return (
     <>
       {named.slice(0, 2).map(p => (
-        <Box as="span" key={p.id} className="ptag"><Box as="span" className="pdot" style={{ background: "var(--accent-dim)" }} />{p.title}</Box>
+        <Box as="span" key={p.id} className="ptag"><Box as="span" className="pdot" bg="var(--accent-dim)" />{p.title}</Box>
       ))}
       {named.length > 2 && <Box as="span" className="ptag muted">+{named.length - 2}</Box>}
     </>
@@ -109,7 +109,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
   return (
     <Box className="field">
       <label>project assignment</label>
-      <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />}>
+      <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
         <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b>
         <Spacer />
         <Box

@@ -26,7 +26,7 @@ export function TelemetryView({ usage, small }: { usage?: PaneTokenUsage; small?
   // No transcript recorded yet (pane idle, or the agent hasn't taken a turn).
   if (!usage) {
     return (
-      <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
+      <Box pad={[12, 13]} style={{ flex: 1, minHeight: 0, overflow: "auto", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.7 }}>
         <Text as="div" style={grpLabel}>TELEMETRY</Text>
         <Text as="div" tone="dim" style={{ marginTop: 8 }}>
           No session telemetry yet — tokens and cost appear here once the agent takes a turn in this pane.
@@ -48,14 +48,14 @@ export function TelemetryView({ usage, small }: { usage?: PaneTokenUsage; small?
   ];
 
   const card = (label: string, value: string) => (
-    <Box style={{ padding: 11, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8 }}>
+    <Box pad={11} bg="var(--bg-canvas)" border="soft" radius={8}>
       <Text as="div" style={grpLabel}>{label}</Text>
       <Text as="div" size={20} weight={600} style={{ color: "var(--fg)", marginTop: 3 }}>{value}</Text>
     </Box>
   );
 
   return (
-    <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 13px", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)" }}>
+    <Box pad={[12, 13]} style={{ flex: 1, minHeight: 0, overflow: "auto", fontFamily: MONO, fontSize: 11.5, color: "var(--fg-muted)" }}>
       <Grid cols={2} gap={8} style={{ marginBottom: 10 }}>
         {card("COST", cost)}
         {card("TOKENS", fmtTok(sessionTok))}

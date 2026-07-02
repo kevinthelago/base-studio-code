@@ -275,9 +275,8 @@ export function PaneShell({
 
         {/* Role badge */}
         {role && (
-          <Box as="span" className="mono" style={{
-            height: 21, padding: "0 7px", display: "flex", alignItems: "center", borderRadius: 6,
-            background: role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)",
+          <Box as="span" className="mono" pad={[0, 7]} bg={role === "director" ? "var(--accent-soft)" : "var(--bg-elev2)"} radius={6} style={{
+            height: 21, display: "flex", alignItems: "center",
             color: role === "director" ? "var(--accent-text)" : "var(--fg-muted)",
             fontSize: 10, fontWeight: 600, letterSpacing: ".03em",
             flex: "0 0 auto", whiteSpace: "nowrap",

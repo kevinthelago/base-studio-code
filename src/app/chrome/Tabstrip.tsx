@@ -75,7 +75,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
       >
         <Pencil size={12} /> Rename
       </button>
-      <Box style={{ height: 1, background: "var(--border-soft)", margin: "0 8px" }} />
+      <Box bg="var(--border-soft)" style={{ height: 1, margin: "0 8px" }} />
       <Box style={{ padding: "6px 12px 10px" }}>
         <Text as="div" size={9.5} tone="dim" style={{ marginBottom: 7, textTransform: "uppercase", letterSpacing: "0.07em" }}>
           Layout
@@ -101,7 +101,7 @@ function LayoutMenu({ layout, onRename, onPick }: {
               >
                 <Grid cols={`repeat(${c}, 8px)`} rows={`repeat(${r}, 5px)`} gap={1.5}>
                   {Array.from({ length: c * r }).map((_, idx) => (
-                    <Box key={idx} style={{ borderRadius: 1, background: current ? "var(--accent)" : "var(--border)" }} />
+                    <Box key={idx} bg={current ? "var(--accent)" : "var(--border)"} radius={1} />
                   ))}
                 </Grid>
                 {l}

@@ -43,7 +43,7 @@ function SessionTag({ session, profile }: { session: string; profile?: AgentProf
       <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{session}</h3>
       {profile && (
         <Box as="span" className="hint mono" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10 }}>
-          <Box as="span" className="sw" style={{ background: profile.color, width: 8, height: 8, borderRadius: 2, display: "inline-block" }} />
+          <Box as="span" className="sw" bg={profile.color} radius={2} style={{ width: 8, height: 8, display: "inline-block" }} />
           {profile.name}
         </Box>
       )}
@@ -155,9 +155,8 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
               </Row>
               <Row gap={6} wrap align="stretch">
                 {v.deps.map((d) => (
-                  <Box as="span" key={d.ref} className="mono" style={{
-                    fontSize: 11, padding: "3px 8px", borderRadius: 5,
-                    border: "1px solid var(--border-soft)", color: depColor(d.status),
+                  <Box as="span" key={d.ref} className="mono" pad={[3, 8]} border="soft" radius={5} style={{
+                    fontSize: 11, color: depColor(d.status),
                   }}>
                     {d.ref} · {d.status}
                   </Box>
@@ -191,11 +190,10 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
                     return (
                       <Box as="span" key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         {i > 0 && <Text as="span" mono tone="dim" size={10}>→</Text>}
-                        <Box as="span" className="mono" style={{
-                          fontSize: 11, padding: "3px 8px", borderRadius: 5,
+                        <Box as="span" className="mono" pad={[3, 8]} bg={current ? "var(--bg-elev)" : "transparent"} radius={5} style={{
+                          fontSize: 11,
                           border: "1px solid " + (current ? "var(--accent)" : "var(--border-soft)"),
                           color: current ? "var(--accent)" : "var(--fg-muted)",
-                          background: current ? "var(--bg-elev)" : "transparent",
                         }}>
                           {st.name} <Text as="span" tone="dim" size={9.5}>{st.role}</Text>{attempts > 1 ? ` ×${attempts}` : ""}
                         </Box>

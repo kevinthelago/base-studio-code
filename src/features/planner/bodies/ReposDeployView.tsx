@@ -29,8 +29,8 @@ function Avatar({ id, sz = 16 }: { id: string; sz?: number }) {
   let hue = 0;
   for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
   return (
-    <Box as="span" style={{
-      width: sz, height: sz, borderRadius: 99, background: `oklch(0.7 0.13 ${hue})`, color: "#0b0d10",
+    <Box as="span" bg={`oklch(0.7 0.13 ${hue})`} radius={99} style={{
+      width: sz, height: sz, color: "#0b0d10",
       fontFamily: MONO, fontSize: sz * 0.5, fontWeight: 700, display: "inline-flex", alignItems: "center",
       justifyContent: "center", border: "1.5px solid var(--bg-canvas)",
     }}>{(id[0] ?? "?").toUpperCase()}</Box>
@@ -94,7 +94,7 @@ export function DeploymentBody({
           {r.behind > 0 && <Text as="span" style={{ color: "var(--info)" }}>↓{r.behind}</Text>}
         </Text>
       )}
-      {r.lang && <Box as="span" style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 99, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border-soft)" }}>{r.lang}</Box>}
+      {r.lang && <Box as="span" pad={[1, 7]} bg="var(--bg-elev2)" border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-muted)"}}>{r.lang}</Box>}
       {r.agents.length > 0 && (
         <Box as="span" style={{ display: "inline-flex", alignItems: "center" }}>
           {r.agents.map((id, i) => <Box as="span" key={id} style={{ marginLeft: i ? -5 : 0 }}><Avatar id={id} sz={14} /></Box>)}
@@ -132,7 +132,7 @@ export function DeploymentBody({
               // identity so it's not dropped; the service seeds when the plan is next saved.
               return (
                 <Row key={r.id} gap={9} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-lg)", padding: "11px 13px" }}>
-                  <Box as="span" style={{ width: 7, height: 7, borderRadius: 99, flex: "0 0 7px", background: r.cloned ? "var(--success)" : "var(--fg-dim)" }} />
+                  <Box as="span" bg={r.cloned ? "var(--success)" : "var(--fg-dim)"} radius={99} style={{ width: 7, height: 7, flex: "0 0 7px"}} />
                   <Text as="span" mono size={12} style={{ color: "var(--fg)" }}>{r.id}</Text>
                   {repoMeta(r)}
                   <Spacer />
