@@ -5,6 +5,7 @@
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { Button } from "@/shared/ui/controls/Button";
 import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -27,7 +28,7 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
     <Card>
       <CardHead title="Worker board" hint="one agent per stream · click a worker to open it"
         right={<Text as="span" mono size={10.5} tone="accent">{workers.length} live</Text>} />
-      <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+      <Box border="soft" radius={6} style={{ overflow: "hidden" }}>
         <Grid cols={GRID} gap={10} className="mono" style={{
           padding: "7px 12px",
           background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
@@ -112,8 +113,8 @@ function Throughput({ gh }: { gh: FleetGithub }) {
     <Card>
       <CardHead title="Fleet throughput" hint="issues landed vs PRs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
-      {gh.loading && total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>Loading from GitHub…</Box>
-        : total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>No landed issues or merged PRs in the window.</Box>
+      {gh.loading && total === 0 ? <Box className="hint" pad={[8, 2]}>Loading from GitHub…</Box>
+        : total === 0 ? <Box className="hint" pad={[8, 2]}>No landed issues or merged PRs in the window.</Box>
         : <>
             <LineArea labels={d.labels} height={150} tip={tip} series={[
               { name: "landed", color: "var(--success)", data: d.landed },
@@ -135,7 +136,7 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
   return (
     <Card>
       <CardHead title="Time-to-land" hint="PR open → merged · last 14d" />
-      {total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</Box>
+      {total === 0 ? <Box className="hint" pad={[8, 2]}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</Box>
         : <>
             <Bars labels={gh.timeToLand.map(b => b.label)} height={116} tip={tip}
               groups={[{ name: "PRs", color: "var(--info)", data: gh.timeToLand.map(b => b.v) }]} />
@@ -155,7 +156,7 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
       <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
         right={<Text as="span" mono size={10.5} tone="accent">{gh.mergeQueue.length}</Text>} />
       {gh.mergeQueue.length === 0
-        ? <Box className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</Box>
+        ? <Box className="hint" pad={[8, 2]}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</Box>
         : (
           <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
             {gh.mergeQueue.map((q, i) => (
@@ -226,13 +227,13 @@ export function Fleet() {
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
             </Text>
           </Box>
-          <button className="btn ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
+          <Button variant="ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
             {gh.loading ? "refreshing…" : "↻ refresh"}
-          </button>
-          <button className="btn" title="Launch the fleet from this project's plan"
+          </Button>
+          <Button title="Launch the fleet from this project's plan"
             onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
             launch worker
-          </button>
+          </Button>
         </Row>
 
         <Box className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>

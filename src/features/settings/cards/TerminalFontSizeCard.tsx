@@ -20,6 +20,7 @@ export function TerminalFontSizeCard() {
           disabled={terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
           onClick={() => setTerminalFontSize(adjustFontSize(terminalFontSize, -1))}
         >−</Button>
+        {/* eslint-disable-next-line no-restricted-syntax -- range slider; no shared primitive for <input type="range"> */}
         <input
           type="range"
           aria-label="Terminal font size"
@@ -46,9 +47,8 @@ export function TerminalFontSizeCard() {
       </Row>
       <Box
         className="mono"
-        style={{
-          marginTop: 14, padding: "10px 12px", borderRadius: 6,
-          background: "var(--bg-canvas)", border: "1px solid var(--border-soft)",
+        pad={[10, 12]} bg="var(--bg-canvas)" border="soft" radius={6} style={{
+          marginTop: 14,
           fontSize: terminalFontSize, color: "var(--fg-muted)",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}

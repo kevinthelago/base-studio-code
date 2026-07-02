@@ -13,6 +13,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Code } from "@/shared/ui/data/Code";
 
 export function AgentEditor({ a, onFlow, onModel }: {
   a: Agent;
@@ -22,17 +23,11 @@ export function AgentEditor({ a, onFlow, onModel }: {
   const [flow, setFlow] = useState<Flow>(a.flow);
   const [model, setModel] = useState<ModelId | undefined>(a.model);
   useEffect(() => { setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Read-only preview block for the kickoff + lane-context text (#2053).
-  const preStyle: React.CSSProperties = {
-    margin: 0, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-    fontFamily: "var(--mono)", fontSize: 10, lineHeight: 1.5, color: "var(--fg-muted)",
-    background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 5, padding: "8px 9px",
-  };
   return (
     <>
       {/* Kickoff preview (#2053) — the exact first message this worker gets at launch, plus its lane
           context (CLAUDE.local.md) collapsed below. Read-only: it mirrors what the launch generates. */}
-      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+      <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
         <Row className="ulabel" gap={8} style={{ marginBottom: 8 }}>
           <Box as="span">kickoff</Box>
           <Text as="span" mono size={9} tone={a.authoredPrompt ? "accent" : "dim"}>
@@ -44,17 +39,17 @@ export function AgentEditor({ a, onFlow, onModel }: {
             Launches from an authored kickoff script — <Box as="span" className="glob">{a.authoredPrompt}</Box>. The generated default below is the fallback.
           </Text>
         )}
-        <pre style={preStyle}>{a.kickoff}</pre>
+        <Code>{a.kickoff}</Code>
         <details style={{ marginTop: 8 }}>
           <summary className="mono" style={{ cursor: "pointer", fontSize: 10, color: "var(--fg-dim)", userSelect: "none" }}>
             Lane context — CLAUDE.local.md
           </summary>
-          <pre style={{ ...preStyle, marginTop: 6 }}>{a.scope}</pre>
+          <Code style={{ marginTop: 6 }}>{a.scope}</Code>
         </details>
       </Box>
 
       {onModel && (
-        <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)" }}>
+        <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
           <Box className="ulabel" style={{ marginBottom: 8 }}>model</Box>
           <Row gap={8}>
             <Seg options={["default", "haiku", "sonnet", "opus"]} value={model ? modelTier(model) : "default"}
@@ -66,7 +61,7 @@ export function AgentEditor({ a, onFlow, onModel }: {
         </Box>
       )}
 
-      <Box style={{ padding: "10px 12px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-panel)" }}>
+      <Box pad={[10, 12]} bg="var(--bg-panel)" style={{ borderTop: "1px solid var(--border-soft)"}}>
         <Box className="ulabel" style={{ marginBottom: 8 }}>flow</Box>
         <Stack gap={8}>
           <Row gap={8}>
@@ -103,7 +98,7 @@ export function StreamCard({ a, agents, onFlow, onModel }: {
   onModel?: (streamId: string, model: ModelId | undefined) => void;
 }) {
   return (
-    <Box style={{ marginTop: 14, borderRadius: 6, overflow: "hidden", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)" }}>
+    <Box bg="var(--bg-canvas)" radius={6} style={{ marginTop: 14, overflow: "hidden", border: "1px solid var(--accent-dim)" }}>
       {/* identity */}
       <Grid cols="auto 1fr auto" gap={8} align="center" style={{ padding: "9px 10px" }}>
         <Row gap={7}>
@@ -155,7 +150,7 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
   }
   const running = agents.filter((a) => a.status === "run").length;
   return (
-    <Box style={{ padding: "4px 0" }}>
+    <Box pad={[4, 0]}>
       <Row className="mono" gap={8} style={{ padding: "0 2px 8px", fontSize: 9.5, color: "var(--fg-dim)" }}>
         <Box as="span">{agents.length} agents · {running} running</Box>
         <Box as="span" style={{ flex: 1 }} />
@@ -165,9 +160,7 @@ export function AgentsA({ agents = [], onFlow, onModel, focusedStream, onSelect 
         {agents.map((a) => {
           const on = open === a.id;
           return (
-            <Box key={a.id} style={{
-              borderRadius: 6, overflow: "hidden",
-              background: "var(--bg-canvas)",
+            <Box key={a.id} bg="var(--bg-canvas)" radius={6} style={{ overflow: "hidden",
               border: "1px solid " + (on ? "var(--accent-dim)" : "var(--border-soft)"),
             }}>
               <Grid onClick={() => { const next = on ? null : a.id; setOpen(next); onSelect?.(next); }}

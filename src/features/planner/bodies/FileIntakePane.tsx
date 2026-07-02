@@ -10,8 +10,6 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { useAppStore } from "@/store";
 import { StageScreenFrame } from "../preview/StageScreenFrame";
 import {
   classifyFile, isBinaryKind, intakeEntry, mergeIntake, serializeIntake, parseIntake, hashContent,
@@ -35,12 +33,10 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
-  const confirmPlanSection = useAppStore((s) => s.confirmPlanSection);
   const [entries, setEntries] = useState<IntakeEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [routed, setRouted] = useState(false);
   // A second hidden input with `webkitdirectory` — the native FOLDER picker (#831). The
   // attribute isn't in React's input types, so it's set imperatively once mounted.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -149,6 +145,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
           <Box as="span" className="hint">or click to browse a folder — images, SVG, components, markup, anything</Box>
           {/* The drop box IS the browse affordance: clicking it opens the native folder picker
               (webkitdirectory is set on this input via the effect above). Files can also be dragged in. */}
+          {/* eslint-disable-next-line no-restricted-syntax -- native file-picker input (type=file + imperative webkitdirectory); no primitive covers it */}
           <input ref={folderInputRef} type="file" multiple style={{ display: "none" }} onChange={onPick} />
         </label>
 
@@ -165,26 +162,13 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
                 <Text as="span" mono size={9.5} tone="dim">{(e.size / 1024).toFixed(1)}k</Text>
               </Row>
             ))}
-            <button
-              className="btn primary"
-              style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
-              disabled={busy}
-              onClick={() => {
-                // Deterministic: promote the dropped components into .ui-skeleton/ so the preview
-                // shows the REAL design, not the demo (#1373).
-                fireInvoke("sync_design_to_skeleton", { projectKey });
-                // The user confirms the design is staged — completes the UI stage. The ACTUAL routing
-                // of files to repos now happens change-aware on TRIAGE (#2097), not here: at plan time
-                // the repos may not be published yet, and re-routing unchanged files is wasteful.
-                confirmPlanSection(projectKey, "ui");
-                setRouted(true);
-              }}
-            >Confirm design staged →</button>
-            {routed && (
-              <Text as="div" className="hint" tone="success">
-                Design staged. On the next triage, only the files that changed get routed to the owning repo(s).
-              </Text>
-            )}
+            {/* No route button here (#2121) — the UI stage's footer shows a "route design to project"
+                action while the staged design is new/changed; clicking it syncs the skeleton and marks
+                the design current. The actual routing of files to repos happens change-aware on
+                triage (#2097). */}
+            <Text as="div" className="hint" tone="dim" style={{ marginTop: 6 }}>
+              Staged. Use the footer&apos;s “route design to project” action to route it — only files that changed re-route on triage.
+            </Text>
           </Stack>
         )}
       </Stack>

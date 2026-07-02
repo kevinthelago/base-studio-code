@@ -44,8 +44,7 @@ export function Dot({ s }: { s: string }) {
 export function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
   const R = ROLES[role] || { c: "var(--fg-dim)", label: role };
   return (
-    <Box as="span" className="role" style={{
-      background: `color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`,
+    <Box as="span" className="role" bg={`color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`} style={{
       color: R.c, border: `1px solid color-mix(in oklch, ${R.c}, transparent 72%)`,
     }}>
       <i style={{ background: R.c }} />{R.label}
@@ -57,7 +56,7 @@ export function Avatar({ id, sz = 17, agents = [] }: { id: string; sz?: number; 
   const a = agents.find((x) => x.id === id);
   const color = a ? a.color : "var(--fg-dim)";
   const initial = a ? a.initial : "?";
-  return <Box as="span" className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</Box>;
+  return <Box as="span" className="av" bg={color} style={{ width: sz, height: sz, fontSize: sz * 0.53 }}>{initial}</Box>;
 }
 
 export function PostureBar({ perm }: { perm: Perm }) {
@@ -106,9 +105,8 @@ export function Tile({ v, k }: { v: number | string; k: string }) {
 }
 
 export function KindDot({ kind }: { kind: string }) {
-  return <Box as="span" style={{
-    width: 6, height: 6, borderRadius: 2, flex: "0 0 6px",
-    background: CTX_KIND[kind] || "var(--fg-dim)",
+  return <Box as="span" bg={CTX_KIND[kind] || "var(--fg-dim)"} radius={2} style={{
+    width: 6, height: 6, flex: "0 0 6px",
   }} />;
 }
 
@@ -116,14 +114,14 @@ export function Seg({ options, value, onChange, tiny }: {
   options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
 }) {
   return (
-    <Box as="span" className="mono" style={{
-      display: "inline-flex", border: "1px solid var(--border-soft)",
-      borderRadius: 5, overflow: "hidden",
+    <Box as="span" className="mono" border="soft" radius={5} style={{
+      display: "inline-flex", overflow: "hidden",
       fontSize: tiny ? 9 : 9.5,
     }}>
       {options.map((o, i) => {
         const on = o === value;
         return (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled segmented cell (local `Seg` primitive); SegmentedControl/.btn would change rendering
           <button key={o} onClick={() => onChange && onChange(o)} style={{
             border: 0, borderRight: i < options.length - 1 ? "1px solid var(--border-soft)" : 0,
             background: on ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent",

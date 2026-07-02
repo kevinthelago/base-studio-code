@@ -85,6 +85,7 @@ export function ProgressionRail({
         return (
           <Fragment key={n.key}>
             {onSelect ? (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke `.prail-seg` rail-node button (status-computed class, styled by progressionRail.css, not the .btn kit)
               <button type="button" className={segClass} title={n.title ?? n.label} onClick={() => onSelect(i)}>
                 {inner}
               </button>

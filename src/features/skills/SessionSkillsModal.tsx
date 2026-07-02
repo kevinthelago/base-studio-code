@@ -108,10 +108,10 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   }
 
   return (
-    <Box className="modal-scrim start" onClick={onClose} style={{ padding: "34px 20px", overflow: "auto" }}>
+    <Box className="modal-scrim start" onClick={onClose} pad={[34, 20]} style={{ overflow: "auto" }}>
       <Stack onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
         {/* header */}
-        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={11}>
             <Text as="div" size={15} weight={600} style={{ color: "var(--fg)" }}>Skills for this session</Text>
             <Box as="span" style={{ flex: 1 }} />
@@ -125,6 +125,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
           <Row gap={10} style={{ marginTop: 13 }}>
             <Row gap={8} style={{ flex: 1, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
               <Text as="span" tone="dim" size={13}>⌕</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
             </Row>
             <Row align="stretch" style={{ height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
@@ -132,6 +133,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
                 <Row key={t} onClick={() => setTab(t)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
             </Row>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke 30px toolbar button with custom inline styling, not a .btn control */}
             <button onClick={() => resetSessionSkills(sessionKey)} style={{ height: 30, padding: "0 11px", borderRadius: "var(--r-md)", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>↺ Reset all</button>
           </Row>
           {/* quick-add a task group */}
@@ -139,6 +141,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
             <Row gap={8} wrap style={{ marginTop: 11 }}>
               <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>⬡ Quick-add a task group</Text>
               {skillGroups.map((g) => { const on = groupIds.includes(g.id); return (
+                // eslint-disable-next-line no-restricted-syntax -- bespoke per-group pill toggle with hue-tinted inline styling, not a .btn control
                 <button key={g.id} onClick={() => setSessionSkillGroup(sessionKey, g.id, !on)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 99, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", border: "1px solid " + (on ? g.hue : "var(--border)"), background: on ? `color-mix(in oklch, ${g.hue}, transparent 85%)` : "transparent", color: on ? g.hue : "var(--fg-muted)" }}>
                   <Box as="span" style={{ opacity: 0.75 }}>⬡</Box>{g.name}<Text as="span" mono size={9.5} style={{ opacity: 0.7 }}>{on ? "✓" : "+" + groupSkillCount(g, skills)}</Text>
                 </button>
@@ -168,6 +171,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         <Row gap={12} style={{ padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
           <Text as="span" size={11} tone="dim" style={{ lineHeight: 1.4 }}>Written as <Text as="span" mono tone="muted">.claude/skills/&lt;slug&gt;/SKILL.md</Text> on next relaunch.</Text>
           <Box as="span" style={{ flex: 1 }} />
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke accent-filled footer CTA with custom inline styling, not a .btn control */}
           <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
         </Row>
       </Stack>

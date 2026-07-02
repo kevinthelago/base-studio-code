@@ -51,7 +51,7 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
         <>
           <Row align="stretch" style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "var(--bg-elev2)", marginBottom: 10 }}>
             {entries.map(l => (
-              <Box key={l.n} title={`${l.n} · ${l.pct}%`} style={{ width: `${l.pct}%`, background: l.c }} />
+              <Box key={l.n} title={`${l.n} · ${l.pct}%`} bg={l.c} style={{ width: `${l.pct}%`}} />
             ))}
           </Row>
           <Stack className="mono" gap={5} style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>

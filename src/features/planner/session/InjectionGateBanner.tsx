@@ -26,10 +26,9 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
   const n = gate.findings.length;
 
   return (
-    <Box data-testid="injection-banner" style={{
-      flex: "0 0 auto", margin: "10px 12px 0", borderRadius: "var(--r-md)", overflow: "hidden",
+    <Box data-testid="injection-banner" bg={`color-mix(in oklch, ${color}, transparent 90%)`} radius="md" style={{
+      flex: "0 0 auto", margin: "10px 12px 0", overflow: "hidden",
       border: `1px solid color-mix(in oklch, ${color}, transparent 60%)`,
-      background: `color-mix(in oklch, ${color}, transparent 90%)`,
     }}>
       <Row gap={8} style={{ padding: "8px 11px" }}>
         <Text as="span" size={13} style={{ color }}>{blocked ? "⛔" : cleared ? "✓" : "⚠"}</Text>
@@ -59,6 +58,7 @@ export function InjectionGateBanner({ gate, onAcknowledge }: {
             : "Confirm none of these is an instruction smuggled in from a reviewed repo or page before it seeds the fleet."}
         </Text>
         {!blocked && !cleared && (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled banner ack button (accent-fill, banner-scoped styling, not the .btn kit)
           <button
             data-testid="injection-ack"
             onClick={() => onAcknowledge(injectionSignature(gate.findings))}

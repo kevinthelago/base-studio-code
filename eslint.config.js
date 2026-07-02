@@ -49,6 +49,22 @@ export default tseslint.config(
           selector: "JSXOpeningElement[name.name='span']",
           message: "Use a UI-kit primitive instead of a raw <span> — <Text> for text, or <Box as=\"span\"> for an inline container. See src/shared/ui. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
         },
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use a UI-kit primitive instead of a raw <button> — <Button> (variant/size/danger), <IconButton> for icon-glyph actions, or <SegmentedControl> for a toggle group. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message: "Use a UI-kit primitive instead of a raw <input> — <TextField> (labelled) or wrap the control with <Field>; <Checkbox>/<Toggle> for booleans. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: "Use a UI-kit primitive instead of a raw <select> — <SelectField>. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message: "Use a UI-kit primitive instead of a raw <textarea>. See src/shared/ui/controls. If truly required, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
+        },
       ],
     },
   },

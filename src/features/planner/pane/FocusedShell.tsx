@@ -22,6 +22,7 @@ export function StagePromptHelp({ prompts, onInject }: {
   if (prompts.length === 0) return null;
   return (
     <>
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke floating prompt-helper toggle (absolute-positioned, open-state accent-tinted inline styling, not the .btn/IconButton kit) */}
       <button
         className="mono"
         title="Inject a prompt for this stage"
@@ -40,16 +41,16 @@ export function StagePromptHelp({ prompts, onInject }: {
         <>
           {/* click-away catcher */}
           <Box onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
-          <Box role="menu" style={{
+          <Box role="menu" pad={6} bg="var(--bg-panel)" border radius="lg" style={{
             position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
-            background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)",
-            boxShadow: "0 16px 48px rgba(0,0,0,.5)", padding: 6,
+            boxShadow: "0 16px 48px rgba(0,0,0,.5)",
           }}>
             <Text as="div" mono size={9.5} tone="dim" style={{
               padding: "6px 8px 8px", letterSpacing: ".06em",
               textTransform: "uppercase",
             }}>Inject a prompt for this stage</Text>
             {prompts.map((p, i) => (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke prompt-list menu item (block card-styled, text-left inline styling, not the .btn kit)
               <button
                 key={i}
                 onClick={() => { onInject(p.text); setOpen(false); }}
@@ -143,9 +144,8 @@ export function StageHeader({ stage, pill, promptHelp }: {
       </Box>
       <p className="ph-blurb">{stage.blurb}</p>
       {hasReasons && showReasons && (
-        <Box role="status" className="mono" style={{
-          marginTop: 8, padding: "8px 11px", borderRadius: 7, maxWidth: 420,
-          background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
+        <Box role="status" className="mono" pad={[8, 11]} bg="var(--bg-elev)" border="soft" radius={7} style={{
+          marginTop: 8, maxWidth: 420,
           fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
         }}>
           <Text as="div" tone="dim" size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
@@ -174,7 +174,7 @@ export function LockBanner({ activeName }: { activeName: string }) {
 /** Shown when reviewing a completed stage. */
 export function DoneBanner() {
   return (
-    <Box className="lock-banner" style={{ background: "color-mix(in oklch,var(--success),transparent 91%)", borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
+    <Box className="lock-banner" bg="color-mix(in oklch,var(--success),transparent 91%)" style={{ borderColor: "color-mix(in oklch,var(--success),transparent 72%)" }}>
       ✓ <Text as="span" tone="muted"><b style={{ color: "var(--success)" }}>Completed.</b> Edits here re-open the stage for review.</Text>
     </Box>
   );
@@ -184,6 +184,7 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
   "back-to-current": "↩ back to current",
   "jump-to-current": "jump to current →",
   "approve-continue": "approve & continue →",
+  "route-design": "◈ route design to project →",
   "publish": "⎇ Publish to GitHub",
 };
 
@@ -207,7 +208,7 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
     : action.kind === "publish" && published ? "⟳ Update GitHub"
     : action.kind === "publish" && publishLabel ? publishLabel
     : FOOTER_LABEL[action.kind];
-  const primary = action.kind === "approve-continue" || action.kind === "publish";
+  const primary = action.kind === "approve-continue" || action.kind === "route-design" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
   // In override mode (#1285) the button IS enabled, but the tooltip warns it bypasses the gate.
   const unmet = stage.unmet ?? [];
@@ -223,6 +224,7 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
       <Box as="span" style={{ flex: 1 }} />
       {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
       {action.canSkip && onSkip && (
+        // eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit)
         <button
           className="nav-btn"
           onClick={onSkip}
@@ -231,6 +233,7 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
           skip stage →
         </button>
       )}
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit) */}
       <button
         className={"nav-btn" + (primary ? " primary" : "")}
         disabled={!action.enabled}

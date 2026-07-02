@@ -38,7 +38,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
   const busy = (s: McpServer) => s.status === "downloading" || s.status === "building";
 
   const tile = (v: React.ReactNode, k: string, c?: string) => (
-    <Box style={{ flex: 1, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 11px" }}>
+    <Box pad={[8, 11]} bg="var(--bg-canvas)" border="soft" radius={8} style={{ flex: 1}}>
       <Text as="div" mono size={18} weight={600} style={{ color: c ?? "var(--fg)" }}>{v}</Text>
       <Box className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</Box>
     </Box>
@@ -63,14 +63,13 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           const isOpen = open.has(s.id);
           const isErr = s.enabled && s.status === "error";
           return (
-            <Box key={s.id} style={{
-              borderRadius: 9, background: "var(--bg-canvas)", overflow: "hidden",
+            <Box key={s.id} bg="var(--bg-canvas)" radius={9} style={{ overflow: "hidden",
               border: "1px solid " + (isErr ? "color-mix(in oklch, var(--danger), transparent 60%)" : isOpen ? "var(--border)" : "var(--border-soft)"),
               opacity: s.enabled ? 1 : 0.72,
             }}>
               <Row gap={10} style={{ padding: "10px 12px" }}>
-                <Box as="span" className="mono" style={{
-                  width: 24, height: 24, borderRadius: 6, display: "grid", placeItems: "center", flex: "0 0 24px",
+                <Box as="span" className="mono" radius={6} style={{
+                  width: 24, height: 24, display: "grid", placeItems: "center", flex: "0 0 24px",
                   fontSize: 12, color: tr.c,
                   border: `1px solid color-mix(in oklch, ${tr.c}, transparent 55%)`,
                 }}>{(s.name[0] ?? "?").toUpperCase()}</Box>
@@ -96,6 +95,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
                 <Row gap={7} style={{ padding: "0 12px 10px" }}>
                   <Text as="span" mono size={9.5} tone="danger">⚠ {s.err}</Text>
                   <Spacer />
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
                 </Row>
               )}
@@ -103,9 +103,8 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
               {isOpen && (
                 <Box style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
                   <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 4 }}>command</Text>
-                  <Box className="mono" style={{
-                    fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-elev)",
-                    border: "1px solid var(--border-soft)", borderRadius: 6, padding: "6px 9px", marginBottom: 11,
+                  <Box className="mono" pad={[6, 9]} bg="var(--bg-elev)" border="soft" radius={6} style={{
+                    fontSize: 10, color: "var(--fg-muted)", marginBottom: 11,
                     overflowX: "auto", whiteSpace: "nowrap",
                   }}><Text as="span" tone="accent">$ </Text>{s.cmd || "—"}</Box>
 
@@ -113,7 +112,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
                   {s.agents.length > 0 ? (
                     <Row gap={6} wrap align="stretch" style={{ marginBottom: 11 }}>
                       {s.agents.map((id) => (
-                        <Box as="span" key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</Box>
+                        <Box as="span" key={id} className="mono" pad={[2, 8]} bg="var(--bg-elev)" border="soft" radius={99} style={{ fontSize: 9.5, color: "var(--fg)"}}>@{id}</Box>
                       ))}
                     </Row>
                   ) : (
@@ -122,11 +121,13 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
 
                   <Row gap={7} align="stretch">
                     {s.downloadable && s.status !== "ready" && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control
                       <button className="mini accent" disabled={busy(s)} onClick={() => onBuild?.(s)}>
                         {s.status === "downloading" ? "downloading…" : s.status === "building" ? "building…" : s.status === "available" ? "download + build" : "build"}
                       </button>
                     )}
                     <Spacer />
+                    {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini` button, not a `.btn`-family control */}
                     <button className="mini" onClick={() => onRemove?.(s.id)}>remove</button>
                   </Row>
                 </Box>
@@ -137,6 +138,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
       </Stack>
 
       <Row gap={7} align="stretch">
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline add-row input (flex Row + Enter handler); TextField's .field wrapper would change layout */}
         <input
           className="input"
           placeholder="＋ add an MCP server — catalog name, command, or remote URL"
@@ -145,6 +147,7 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           onKeyDown={(e) => { if (e.key === "Enter" && draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}
           style={{ flex: 1, height: 28, fontSize: 10.5 }}
         />
+        {/* eslint-disable-next-line no-restricted-syntax -- bespoke `.mini accent` button, not a `.btn`-family control */}
         <button className="mini accent" disabled={!draft.trim()} onClick={() => { if (draft.trim()) { onAdd?.(draft.trim()); setDraft(""); } }}>add</button>
       </Row>
     </Stack>

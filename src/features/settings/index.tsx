@@ -29,9 +29,9 @@ export function SettingsWorkspace() {
 
   return (
     <Row align="stretch" style={{ flex: 1, minHeight: 0 }}>
-      <Box as="aside" style={{
-        width: 200, flex: "0 0 200px", background: "var(--bg-panel)",
-        borderRight: "1px solid var(--border-soft)", padding: "16px 8px",
+      <Box as="aside" pad={[16, 8]} bg="var(--bg-panel)" style={{
+        width: 200, flex: "0 0 200px",
+        borderRight: "1px solid var(--border-soft)",
         display: "flex", flexDirection: "column", gap: 2,
       }}>
         <Text as="div" mono size={10} tone="dim" style={{
@@ -40,10 +40,9 @@ export function SettingsWorkspace() {
         {SECTIONS.map(it => {
           const on = it.k === active.k;
           return (
-            <Box key={it.k} className="mono" onClick={() => setSettingsSection(it.k)} style={{
-              padding: "7px 12px", borderRadius: 6,
+            <Box key={it.k} className="mono" onClick={() => setSettingsSection(it.k)} bg={on ? "var(--bg-elev)" : "transparent"} radius={6} style={{
+              padding: "7px 12px",
               fontSize: 11.5,
-              background: on ? "var(--bg-elev)" : "transparent",
               color: on ? "var(--fg)" : "var(--fg-muted)",
               cursor: "pointer",
               borderLeft: on ? "2px solid var(--accent)" : "2px solid transparent",
@@ -52,7 +51,7 @@ export function SettingsWorkspace() {
           );
         })}
       </Box>
-      <Box as="section" style={{ flex: 1, padding: 24, overflow: "auto", minWidth: 0 }}>
+      <Box as="section" pad={24} style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
         <active.Page />
       </Box>
     </Row>

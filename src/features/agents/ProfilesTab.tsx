@@ -57,6 +57,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
             <h3>Roles</h3>
             <Box as="span" className="hint">{roles.length} application · {profiles.length} custom</Box>
           </Box>
+          {/* eslint-disable-next-line no-restricted-syntax -- uncontrolled placeholder filter input (no value/onChange), header toolbar; TextField's .field wrapper would change layout */}
           <input className="input" placeholder="filter…" style={{ marginTop: 8, height: 24, fontSize: 10.5 }} />
         </Box>
         <Box className="scroll">
@@ -64,7 +65,7 @@ export function ProfilesTab(props: ProfilesTabProps) {
           {roles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
           <Box className="list-label">Custom &amp; generated</Box>
           {profiles.map((p) => <ProfRow key={p.id} p={p} on={p.id === selected.id} consoles={consoles} onClick={() => onSelect(p.id)} />)}
-          <Box style={{ padding: "12px 14px" }}>
+          <Box pad={[12, 14]}>
             <Button variant="ghost" style={{ width: "100%", justifyContent: "center" }} onClick={onCreate}>+ new role</Button>
           </Box>
         </Box>
@@ -109,7 +110,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
     <>
       <Box className="pd-head">
         <Box className="top">
-          <Box as="span" className="pswatch" style={{ background: p.color }}>{isApp ? "◆" : initialOf(p.name)}</Box>
+          <Box as="span" className="pswatch" bg={p.color}>{isApp ? "◆" : initialOf(p.name)}</Box>
           <Box className="pt">
             <Box className="nm">
               {p.name}{" "}
@@ -124,7 +125,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
         </Box>
         {isApp && (
           <Stack gap={10} style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)" }}>
-            <Banner tone="info" lead={<Box as="span" style={{ width: 22, height: 22, borderRadius: 6, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e", background: p.color }}>◆</Box>}>
+            <Banner tone="info" lead={<Box as="span" bg={p.color} radius={6} style={{ width: 22, height: 22, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e"}}>◆</Box>}>
               <Text as="span"><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</Text>
             </Banner>
             <Box className="owns-card">
@@ -175,6 +176,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
           {p.commands.map((c) => (
             <Box as="span" key={c} className="cmd-chip">{c}<Box as="span" className="x" onClick={() => removeCmd(c)}>×</Box></Box>
           ))}
+          {/* eslint-disable-next-line no-restricted-syntax -- bespoke .cmd-add chip-add button (dashed add-chip), not a .btn */}
           <button className="cmd-add" onClick={addCmd}>+ add command</button>
         </Box>
         <Banner tone="neutral" style={{ marginTop: 9 }} lead={<Box as="span" style={{ color: "var(--info)" }}>ℹ</Box>}>
@@ -216,6 +218,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
             return (
               <Box className="scope-line" key={`a${i}`}>
                 <Box as="span" className="gly allow">＋</Box>
+                {/* eslint-disable-next-line no-restricted-syntax -- inline scope-line input (glyph + input + × in a flex row); TextField's .field wrapper would change layout */}
                 <input
                   className="input"
                   value={g}
@@ -223,6 +226,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
                   onChange={placeholder ? undefined : (e) => editPath("allow", i, e.target.value)}
                   style={placeholder ? { opacity: 0.5 } : undefined}
                 />
+                {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline .x remove glyph (scope-line styling, no aria-label), not an IconButton */}
                 {!placeholder && <button className="x" onClick={() => removePath("allow", i)}>×</button>}
               </Box>
             );
@@ -230,12 +234,16 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
           {p.paths.deny.map((g, i) => (
             <Box className="scope-line" key={`d${i}`}>
               <Box as="span" className="gly deny">－</Box>
+              {/* eslint-disable-next-line no-restricted-syntax -- inline scope-line input (glyph + input + × in a flex row); TextField's .field wrapper would change layout */}
               <input className="input" value={g} onChange={(e) => editPath("deny", i, e.target.value)} />
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline .x remove glyph (scope-line styling, no aria-label), not an IconButton */}
               <button className="x" onClick={() => removePath("deny", i)}>×</button>
             </Box>
           ))}
           <Row gap={6} align="stretch" style={{ marginTop: 2 }}>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke .cmd-add chip-add button (dashed add-chip), not a .btn */}
             <button className="cmd-add" onClick={() => addPath("allow")}>+ allow path</button>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke .cmd-add chip-add button (dashed add-chip), not a .btn */}
             <button className="cmd-add" onClick={() => addPath("deny")}>+ deny path</button>
           </Row>
         </Box>
@@ -249,12 +257,14 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
             {p.net.allow.map((h) => (
               <Box as="span" key={h} className="cmd-chip">{h === "*" ? <Text as="span" tone="accent">* all hosts</Text> : h}<Box as="span" className="x" onClick={() => removeHost(h)}>×</Box></Box>
             ))}
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke .cmd-add chip-add button (dashed add-chip), not a .btn */}
             <button className="cmd-add" onClick={addHost}>+ add host</button>
           </Box>
         ) : (
           <>
             <Banner tone="neutral" style={{ marginTop: 9 }} lead={<Text as="span" tone="dim">⊘</Text>}>No outbound network. The web / fetch tools are blocked regardless of their tri-state above.</Banner>
             <Box className="cmd-chips" style={{ marginTop: 9 }}>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke .cmd-add chip-add button (dashed add-chip), not a .btn */}
               <button className="cmd-add" onClick={addHost}>+ add host</button>
             </Box>
           </>

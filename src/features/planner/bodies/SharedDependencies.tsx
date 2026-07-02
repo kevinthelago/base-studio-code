@@ -24,11 +24,9 @@ const ecoColor = (eco: string) => (eco === "cargo" ? "var(--warn)" : NPM);
 function pill(text: string, color: string, opts: { fs?: number; tint?: number } = {}) {
   const t = opts.tint ?? 86;
   return (
-    <Box as="span" style={{
+    <Box as="span" pad={[2, 6]} bg={`color-mix(in oklch, ${color}, transparent ${t}%)`} radius={4} style={{
       fontFamily: MONO, fontWeight: 600, fontSize: opts.fs ?? 8.5, color,
-      background: `color-mix(in oklch, ${color}, transparent ${t}%)`,
-      border: `1px solid color-mix(in oklch, ${color}, transparent ${t - 14}%)`,
-      padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap",
+      border: `1px solid color-mix(in oklch, ${color}, transparent ${t - 14}%)`, whiteSpace: "nowrap",
     }}>{text}</Box>
   );
 }
@@ -38,11 +36,9 @@ function DepRow({ d, registries }: { d: StreamDependency; registries: Record<str
   const verColor = d.version ? "var(--fg-dim)" : "var(--warn)";
   return (
     <Row align="baseline" gap={8}>
-      <Box as="span" style={{
+      <Box as="span" pad={[2, 5]} bg={`color-mix(in oklch, ${isPrivate ? "var(--violet)" : ecoColor(d.ecosystem)}, transparent 84%)`} radius={4} style={{
         flexShrink: 0, fontFamily: MONO, fontWeight: 600, fontSize: 8, color: isPrivate ? "var(--violet)" : ecoColor(d.ecosystem),
-        background: `color-mix(in oklch, ${isPrivate ? "var(--violet)" : ecoColor(d.ecosystem)}, transparent 84%)`,
         border: `1px solid color-mix(in oklch, ${isPrivate ? "var(--violet)" : ecoColor(d.ecosystem)}, transparent 70%)`,
-        padding: "2px 5px", borderRadius: 4,
       }}>{d.ecosystem}</Box>
       <Box style={{ flex: 1, minWidth: 0 }}>
         <Text mono weight={600} size={10.5} style={{ color: "var(--fg)" }}>{d.name}</Text>
@@ -100,12 +96,12 @@ export function SharedDependenciesSection({ agents, dependencies = [], registrie
         const cloned = v.total === 0;
         return (
           <Box key={v.repo}>
-            <Box style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 9, overflow: "hidden" }}>
+            <Box bg="var(--bg-elev)" border radius={9} style={{ overflow: "hidden" }}>
               {/* repo header */}
-              <Box style={{ padding: 11, borderBottom: "1px solid var(--border-soft)" }}>
+              <Box pad={11} style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <Row gap={8}>
                   <Text mono weight={600} size={11.5} style={{ color: "var(--fg)" }}>{v.repo}</Text>
-                  <Box as="span" style={{ fontFamily: MONO, fontWeight: 500, fontSize: 9, color: "var(--fg-muted)", background: "var(--bg-elev2)", border: "1px solid var(--border)", padding: "2px 6px", borderRadius: 4 }}>{v.streams.length} streams</Box>
+                  <Box as="span" pad={[2, 6]} bg="var(--bg-elev2)" border radius={4} style={{ fontFamily: MONO, fontWeight: 500, fontSize: 9, color: "var(--fg-muted)"}}>{v.streams.length} streams</Box>
                   <Text mono weight={500} size={9} tone="dim">→ reconcile to 1 lock</Text>
                   <Text size={11} style={{ marginLeft: "auto", color: cloned ? "var(--warn)" : "var(--success)" }}>{cloned ? "!" : "🔒"}</Text>
                 </Row>
@@ -130,9 +126,9 @@ export function SharedDependenciesSection({ agents, dependencies = [], registrie
                 const c = colorOf(g.stream);
                 const last = i === v.byStream.length - 1;
                 return (
-                  <Box key={g.stream} style={{ padding: "10px 11px", borderBottom: last ? undefined : "1px solid var(--border-soft)" }}>
+                  <Box key={g.stream} pad={[10, 11]} style={{ borderBottom: last ? undefined : "1px solid var(--border-soft)" }}>
                     <Row gap={7} style={{ marginBottom: g.empty ? 0 : 9 }}>
-                      <Box as="span" style={{ width: 7, height: 7, borderRadius: 2, background: c }} />
+                      <Box as="span" bg={c} radius={2} style={{ width: 7, height: 7}} />
                       <Text mono weight={600} size={10.5} style={{ color: "var(--fg)" }}>{nameOf(g.stream)}</Text>
                       <Text mono weight={500} size={9} tone="dim">{g.empty ? "· orchestrates" : `· declares ${g.deps.length}`}</Text>
                       {!g.empty && (

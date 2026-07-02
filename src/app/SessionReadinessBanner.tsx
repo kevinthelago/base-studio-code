@@ -39,6 +39,7 @@ export function SessionReadinessBanner({
           <Box as="span" key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <Text>{w.message}</Text>
             {w.id === "gh-auth" && onSignInGitHub && (
+              // eslint-disable-next-line no-restricted-syntax -- bespoke inline "Sign in" link-button (currentColor border, banner-scoped styling)
               <button
                 onClick={onSignInGitHub}
                 style={{

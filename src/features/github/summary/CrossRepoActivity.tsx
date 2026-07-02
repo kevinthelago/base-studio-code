@@ -16,6 +16,7 @@ export function CrossRepoActivity({ events, loading }: {
       tone={EVENT_TONE}
       actionWidth={70}
       right={
+        // eslint-disable-next-line no-restricted-syntax -- uncontrolled decorative filter select (no value/onChange) in a toolbar right slot; SelectField requires value/onChange + would change layout
         <select className="input" style={{ height: 24, width: 100, fontSize: 10.5 }}>
           <option>all events</option><option>PRs only</option><option>commits</option>
         </select>

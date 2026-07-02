@@ -97,6 +97,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
         <Text tone="dim">repos</Text>
 
         {multi ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke borderless disclosure toggle (not a .btn-family button)
           <button
             onClick={() => setExpanded(e => !e)}
             className="mono"
@@ -140,9 +141,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                 ) : (
                   <Box as="span"
                     onClick={() => handleClone(fullName)}
-                    style={{
-                      padding: "1px 6px", borderRadius: 3,
-                      background: "var(--bg-elev)", border: "1px solid var(--border)",
+                    pad={[1, 6]} bg="var(--bg-elev)" border radius={3} style={{
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
@@ -157,9 +156,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
           <Box as="span"
             onClick={() => failedRepos.forEach(r => handleClone(r))}
             className="mono"
-            style={{
-              padding: "1px 8px", borderRadius: 3,
-              background: "var(--bg-elev)", border: "1px solid var(--border)",
+            pad={[1, 8]} bg="var(--bg-elev)" border radius={3} style={{
               color: "var(--danger)", cursor: "pointer", fontSize: 10,
             }}
           >retry failed →</Box>
@@ -189,9 +186,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
                 ) : (
                   <Box as="span"
                     onClick={() => handleClone(fullName)}
-                    style={{
-                      padding: "1px 6px", borderRadius: 3,
-                      background: "var(--bg-elev)", border: "1px solid var(--border)",
+                    pad={[1, 6]} bg="var(--bg-elev)" border radius={3} style={{
                       color: err ? "var(--danger)" : "var(--fg-muted)",
                       cursor: "pointer", fontSize: 10,
                     }}
@@ -240,10 +235,8 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
             <Text as="h2" mono size={18} weight={600} style={{ margin: 0 }}>{project.name}</Text>
             {project.repo && <Chip>{project.repo}</Chip>}
             {project.number > 0 && (
-              <Box as="span" className="mono" style={{
-                padding: "1px 6px", borderRadius: 3,
+              <Box as="span" className="mono" pad={[1, 6]} bg="color-mix(in oklch, var(--info), transparent 88%)" radius={3} style={{
                 fontSize: 9.5, color: "var(--info)",
-                background: "color-mix(in oklch, var(--info), transparent 88%)",
                 border: "1px solid color-mix(in oklch, var(--info), transparent 70%)",
               }}>⎇ synced w/ {project.repo}/projects/{project.number}</Box>
             )}

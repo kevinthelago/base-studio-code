@@ -41,6 +41,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
           {/* platform dropdown */}
           <Text as="div" style={{ ...grpLabel, marginBottom: 8 }}>platform</Text>
           <Box style={{ position: "relative" }}>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled dropdown trigger button; Button/.btn would change rendering */}
             <button onClick={() => setOpen((v) => !v)} style={{
               width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", cursor: "pointer",
               borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid " + (open ? "var(--accent-dim)" : "var(--border-soft)"),
@@ -52,13 +53,13 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
               <Box as="span" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg-dim)", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .14s" }}>▾</Box>
             </button>
             {open && (
-              <Box style={{
-                position: "absolute", top: "calc(100% + 5px)", left: 0, right: 0, zIndex: 30, maxHeight: 236, overflowY: "auto",
-                padding: 5, borderRadius: "var(--r-md)", background: "var(--bg-elev)", border: "1px solid var(--border)", boxShadow: "0 14px 40px rgba(0,0,0,.55)",
+              <Box pad={5} bg="var(--bg-elev)" border radius="md" style={{
+                position: "absolute", top: "calc(100% + 5px)", left: 0, right: 0, zIndex: 30, maxHeight: 236, overflowY: "auto", boxShadow: "0 14px 40px rgba(0,0,0,.55)",
               }}>
                 {PLATFORMS.map((p) => {
                   const on = svc.platform === p.id;
                   return (
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled dropdown option button; Button/.btn would change rendering
                     <button key={p.id} onClick={() => pickPlatform(p.id)} style={{
                       width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 9px", cursor: "pointer",
                       borderRadius: "var(--r-sm)", border: "1px solid " + (on ? "color-mix(in oklch, var(--accent), transparent 62%)" : "transparent"),
@@ -66,7 +67,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                     }}>
                       <Text size={14} style={{ width: 18, textAlign: "center", color: `oklch(0.78 0.12 ${p.h})` }}>{p.glyph}</Text>
                       <Text mono size={10.5} style={{ color: on ? "var(--fg)" : "var(--fg-muted)" }}>{p.name}</Text>
-                      <Box as="span" style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)", padding: "1px 6px", borderRadius: 99, border: "1px solid var(--border-soft)" }}>{p.kinds.join(" · ")}</Box>
+                      <Box as="span" pad={[1, 6]} border="soft" radius={99} style={{ fontFamily: MONO, fontSize: 8, color: "var(--fg-dim)"}}>{p.kinds.join(" · ")}</Box>
                       <Box as="span" style={{ flex: 1 }} />
                       {on && <Text mono size={10} tone="accent">✓</Text>}
                     </button>
@@ -83,6 +84,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                 {platform(svc.platform).kinds.map((k) => {
                   const on = svc.workload === k;
                   return (
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill toggle button; Button/.btn would change rendering
                     <button key={k} onClick={() => setSvc({ workload: k })} style={{
                       padding: "2px 9px", borderRadius: 99, cursor: "pointer", fontFamily: MONO, fontSize: 9.5,
                       border: "1px solid " + (on ? WORKLOAD[k].c : "var(--border-soft)"), color: on ? WORKLOAD[k].c : "var(--fg-dim)", background: "transparent",
@@ -100,10 +102,9 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
               </Row>
 
               {/* containerization & orchestration */}
-              <Box style={{
-                marginTop: 11, borderRadius: "var(--r-md)", padding: "11px 12px",
+              <Box pad={[11, 12]} bg={isContainer ? "color-mix(in oklch, var(--violet), transparent 95%)" : "var(--bg-canvas)"} radius="md" style={{
+                marginTop: 11,
                 border: "1px solid " + (isContainer ? "color-mix(in oklch, var(--violet), transparent 80%)" : "var(--border-soft)"),
-                background: isContainer ? "color-mix(in oklch, var(--violet), transparent 95%)" : "var(--bg-canvas)",
               }}>
                 <Row gap={7} style={{ marginBottom: isContainer ? 10 : 0 }}>
                   <Text size={11} style={{ color: isContainer ? "var(--violet)" : "var(--fg-dim)" }}>⬢</Text>
@@ -118,7 +119,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                     <Grid cols={2} gap={8} style={{ marginBottom: 10 }}>
                       <Stack gap={4}>
                         <Text as="span" style={grpLabel}>engine · image</Text>
-                        <Box as="span" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-sm)", padding: "5px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Docker · {svc.runtime && svc.runtime !== "—" ? svc.runtime : "base image"}</Box>
+                        <Box as="span" pad={[5, 8]} bg="var(--bg-elev)" border="soft" radius="sm" style={{ fontFamily: MONO, fontSize: 10, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Docker · {svc.runtime && svc.runtime !== "—" ? svc.runtime : "base image"}</Box>
                       </Stack>
                       <Field label="image registry" value={svc.registry ?? (svc.repo ? `ghcr.io/${svc.repo}` : "")} onChange={(v) => setSvc({ registry: v })} />
                     </Grid>
@@ -139,6 +140,7 @@ function CloudBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
                       Not containerized — this <b style={{ color: "var(--fg-muted)" }}>{WORKLOAD[svc.workload].label}</b> service deploys without a container image or orchestrator.
                     </Text>
                     {canContainerize && (
+                      // eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled pill CTA button; Button/.btn would change rendering
                       <button onClick={() => setSvc({ workload: "container" })} style={{
                         fontFamily: MONO, fontSize: 8.5, color: "var(--violet)", padding: "4px 10px", borderRadius: 99, cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto",
                         background: "color-mix(in oklch, var(--violet), transparent 88%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 72%)",
@@ -197,10 +199,9 @@ function LocalBody({ svc, setSvc }: { svc: DeployService; setSvc: (patch: Partia
           </Row>
 
           {/* Port forwarding — expose a locally-running app remotely */}
-          <Box style={{
-            marginTop: 11, borderRadius: "var(--r-md)", padding: "11px 12px",
+          <Box pad={[11, 12]} bg={pf.enabled ? "color-mix(in oklch, var(--info), transparent 94%)" : "var(--bg-canvas)"} radius="md" style={{
+            marginTop: 11,
             border: "1px solid " + (pf.enabled ? "color-mix(in oklch, var(--info), transparent 78%)" : "var(--border-soft)"),
-            background: pf.enabled ? "color-mix(in oklch, var(--info), transparent 94%)" : "var(--bg-canvas)",
           }}>
             <Toggle on={pf.enabled} onClick={() => setPf({ enabled: !pf.enabled })}
               label="Port forwarding" value={pf.enabled ? `:${pf.port || "NNNN"} via ${pf.method}` : "expose this app remotely"} />
@@ -237,7 +238,7 @@ export function ServiceTargetEditor({ svc, setSvc }: {
       <Row gap={7} wrap>
         {(() => { const h = hostMeta(svc.host); return (
           <Box as="span" style={{ ...chip, display: "inline-flex", alignItems: "center", gap: 5, color: h.color }}>
-            <Box as="span" style={{ width: 6, height: 6, borderRadius: 99, background: h.color }} />{h.domain}
+            <Box as="span" bg={h.color} radius={99} style={{ width: 6, height: 6}} />{h.domain}
           </Box>
         ); })()}
         {hostMeta(svc.host).kind !== "cloud" && (

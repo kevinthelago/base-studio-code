@@ -44,13 +44,12 @@ export function PermissionPostureCard() {
         >
           <Box
             as="span"
-            style={{
+            bg={sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)"} style={{
               width: 8,
               height: 8,
               borderRadius: "50%",
               marginTop: 4,
               flexShrink: 0,
-              background: sandbox.ready ? "var(--ok, #3fb950)" : "var(--warn, #d29922)",
             }}
             aria-hidden
           />
@@ -76,6 +75,7 @@ export function PermissionPostureCard() {
             {!sandbox.ready && sandbox.autoInstallable && (
               <Stack gap={6} style={{ marginTop: 8 }}>
                 <Row gap={8} wrap>
+                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke compact accent install button with custom inline styling; not the .btn family */}
                   <button
                     onClick={install}
                     disabled={installing}
@@ -92,8 +92,8 @@ export function PermissionPostureCard() {
                   )}
                 </Row>
                 {installing && (
-                  <Box aria-hidden style={{ height: 3, borderRadius: 2, background: "var(--bg-elev2)", overflow: "hidden" }}>
-                    <Box style={{ height: "100%", width: "30%", background: "var(--accent)", animation: "scan 1.1s linear infinite" }} />
+                  <Box aria-hidden bg="var(--bg-elev2)" radius={2} style={{ height: 3, overflow: "hidden" }}>
+                    <Box bg="var(--accent)" style={{ height: "100%", width: "30%", animation: "scan 1.1s linear infinite" }} />
                   </Box>
                 )}
                 {installLog.length > 0 && (
