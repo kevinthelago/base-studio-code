@@ -6,7 +6,7 @@ import { PROJECT_MODES } from "./projectModes";
 describe("Projects page modes (#548, #1876)", () => {
   it("offers Planner · Fleet in that order", () => {
     // The Data Models page was archived with the data-platform panes (5def26b7, v1.0.5 prep).
-    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Planner", "Fleet"]);
+    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Fleet", "Personas"]);
   });
 
   it("does not include the retired Blueprints / Summary / Data Models modes", () => {

@@ -17,10 +17,11 @@ describe("GitHub mode strip", () => {
 });
 
 describe("Projects modes (#1876)", () => {
-  it("no longer offers Summary — Planner + Fleet (+ Data Models)", () => {
+  it("no longer offers Summary — Projects + Fleet + Personas (#2094 label swap)", () => {
     const labels = PROJECT_MODES.map((m) => m.label);
     expect(labels).not.toContain("Summary");
-    expect(labels).toContain("Planner");
+    expect(labels).toContain("Projects");
     expect(labels).toContain("Fleet");
+    expect(labels).toContain("Personas");
   });
 });

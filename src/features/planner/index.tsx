@@ -8,6 +8,7 @@ import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { Fleet } from "./fleet/Fleet";
+import { PersonasPanel } from "@/features/personas";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -73,6 +74,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {mode === "fleet" && (
         <Stack style={{ flex: 1, minHeight: 0 }}>
           <Fleet />
+        </Stack>
+      )}
+
+      {/* Personas — the CRUD-able agent-identity library (#2094). Mounts on demand. Torn-off section
+          windows never force this mode (it's authoring, not a live PTY). */}
+      {mode === "personas" && !pageOverride && (
+        <Stack style={{ flex: 1, minHeight: 0 }}>
+          <PersonasPanel />
         </Stack>
       )}
 
