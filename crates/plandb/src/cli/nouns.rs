@@ -57,6 +57,41 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
 }
 
 /// `repo` — repos linked to the project (durable in plan.db).
+/// `triage` — per-repo triage-run markers (#1004) + the since-marker issue delta. Backs the UI's
+/// triage flow through the bridge (#2114/#2124): the same actions the app's `plan_triage_*` /
+/// `plan_issues_changed_since` Tauri commands drove, now reachable from the one `bsc` surface.
+pub(crate) fn cmd_triage(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `triage record <owner/repo>` — mark a triage launch at now; prints the recorded epoch-seconds.
+        "record" => {
+            let repo = args.positional.get(2).ok_or("usage: bsc plan triage record <owner/repo>")?;
+            let t = s.triage_record_run(repo).map_err(|e| e.to_string())?;
+            print_json(&serde_json::json!(t), args.pretty);
+            Ok(())
+        }
+        // `triage last <owner/repo>` — the last triage-launch timestamp (epoch seconds), or null.
+        "last" => {
+            let repo = args.positional.get(2).ok_or("usage: bsc plan triage last <owner/repo>")?;
+            let t = s.triage_last_run(repo).map_err(|e| e.to_string())?;
+            print_json(&serde_json::json!(t), args.pretty);
+            Ok(())
+        }
+        // `triage changed <owner/repo> --since <epoch>` — the JSON array of issues whose status
+        // changed since <epoch>, scoped to <repo> (empty repo = the whole project). The triage
+        // resume-delta, same shape `plan_issues_changed_since` returned.
+        "changed" => {
+            let repo = args.positional.get(2).ok_or("usage: bsc plan triage changed <owner/repo> --since <epoch>")?;
+            let since = args.since.ok_or("triage changed needs --since <epoch-seconds>")?;
+            let issues = s.issues_changed_since(repo, since).map_err(|e| e.to_string())?;
+            print_json(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "triage", other)),
+    }
+}
+
 pub(crate) fn cmd_repo(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let s = open_store(&args.db)?;
