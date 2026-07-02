@@ -17,26 +17,39 @@ describe("lessons bridge (#1362)", () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
   });
 
-  it("loadPendingLessons queries the pending status for the project", async () => {
+  it("loadPendingLessons drives `bsc plan lesson list --status pending` and parses the JSON", async () => {
+    // The bridge (#2114) returns raw stdout — a JSON string — which bscJson parses back to Lesson[].
     const calls: Array<{ cmd: string; args: unknown }> = [];
-    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => { calls.push({ cmd, args }); return [lesson()]; });
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      calls.push({ cmd, args });
+      return JSON.stringify([lesson()]);
+    });
     const out = await loadPendingLessons("proj-key");
     expect(out).toHaveLength(1);
-    expect(calls[0]).toEqual({ cmd: "plan_lesson_list", args: { projectKey: "proj-key", status: "pending" } });
+    expect(out[0].id).toBe("lesson-abc");
+    expect(calls[0]).toEqual({
+      cmd: "bsc",
+      args: { projectKey: "proj-key", args: ["plan", "lesson", "list", "--status", "pending"] },
+    });
   });
 
-  it("loadPendingLessons returns [] for an empty key and on bridge failure", async () => {
+  it("loadPendingLessons returns [] for an empty key, empty output, and on bridge failure", async () => {
     expect(await loadPendingLessons("")).toEqual([]);
+    vi.mocked(invoke).mockResolvedValue(""); // no plan.db yet ⇒ empty stdout ⇒ fallback
+    expect(await loadPendingLessons("proj-key")).toEqual([]);
     vi.mocked(invoke).mockRejectedValue(new Error("no host"));
     expect(await loadPendingLessons("proj-key")).toEqual([]);
   });
 
-  it("confirm / discard call the matching commands", async () => {
-    const calls: string[] = [];
-    vi.mocked(invoke).mockImplementation(async (cmd: string) => { calls.push(cmd); return undefined; });
+  it("confirm / discard drive the matching `bsc plan lesson` verbs", async () => {
+    const calls: Array<{ cmd: string; args: unknown }> = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => { calls.push({ cmd, args }); return ""; });
     await confirmLesson("k", "id1");
     await discardLesson("k", "id2");
-    expect(calls).toEqual(["plan_lesson_confirm", "plan_lesson_discard"]);
+    expect(calls).toEqual([
+      { cmd: "bsc", args: { projectKey: "k", args: ["plan", "lesson", "confirm", "id1"] } },
+      { cmd: "bsc", args: { projectKey: "k", args: ["plan", "lesson", "discard", "id2"] } },
+    ]);
   });
 });
 
