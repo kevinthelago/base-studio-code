@@ -12,6 +12,7 @@ import { PlanBody } from "./FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
 import { SharedDependenciesSection } from "./SharedDependencies";
 import { CollapsibleCard } from "./collapsibleCard";
+import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import type { FleetHandlers } from "./focusedHandlers";
 
@@ -29,10 +30,10 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
       <PlanBody data={data} focus={focus} onFocus={setFocus} />
 
       {fleet && (agents.length === 0 ? (
-        <div className="empty-state" style={{ marginTop: 18 }}>
-          <span className="empty-icon">◎</span>
-          <span>No fleet yet — plan the work streams first</span>
-        </div>
+        <Box className="empty-state" style={{ marginTop: 18 }}>
+          <Box as="span" className="empty-icon">◎</Box>
+          <Box as="span">No fleet yet — plan the work streams first</Box>
+        </Box>
       ) : (
         <Stack gap={10} style={{ marginTop: 18 }}>
           {/* Coordination — fleet-wide topology + director drive. */}

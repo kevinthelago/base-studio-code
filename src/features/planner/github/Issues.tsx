@@ -13,6 +13,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
+import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
 import type { GhLabel } from "@/shared/lib/github/types";
 
@@ -84,7 +85,7 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
         padding: "14px 20px", borderBottom: "1px solid var(--border-soft)",
         background: "var(--bg-elev)",
       }}>
-        <div style={{ flex: 1 }}>
+        <Box style={{ flex: 1 }}>
           <Row gap={8} align="baseline">
             <Text mono size={11} tone="dim">#{issue.number}</Text>
             <h3 style={{ margin: 0, fontSize: 14, color: "var(--fg)" }}>{issue.title}</h3>
@@ -103,28 +104,28 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
             )}
             {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
           </Row>
-        </div>
+        </Box>
         <Button variant="ghost" style={{ height: 26 }}>open on github →</Button>
         <IconButton aria-label="close" onClick={onClose} />
       </Row>
 
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <Box style={{ flex: 1, overflow: "auto" }}>
         {/* Body */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
-            <div style={{ fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
+            <Text as="div" size={12.5} tone="muted" style={{ lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
               {issue.body.slice(0, 800)}{issue.body.length > 800 ? "…" : ""}
-            </div>
+            </Text>
           ) : (
             <Text as="div" mono size={11} tone="dim" style={{ fontStyle: "italic" }}>No description.</Text>
           )}
-        </div>
+        </Box>
 
         {/* Meta */}
         <Stack gap={10} style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)" }}>
           {issue.assignees.length > 0 && (
-            <div>
+            <Box>
               <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>assignees</Text>
               <Row gap={8} wrap align="stretch">
                 {issue.assignees.map(a => (
@@ -134,24 +135,23 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
                   </Row>
                 ))}
               </Row>
-            </div>
+            </Box>
           )}
           <Row className="mono" gap={24} align="stretch" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
-            {issue.comments > 0 && <span>💬 {issue.comments} comment{issue.comments !== 1 ? "s" : ""}</span>}
-            <span>updated {timeAgoShort(issue.updatedAt)} ago</span>
+            {issue.comments > 0 && <Text as="span">💬 {issue.comments} comment{issue.comments !== 1 ? "s" : ""}</Text>}
+            <Text as="span">updated {timeAgoShort(issue.updatedAt)} ago</Text>
           </Row>
         </Stack>
 
         {/* Claude breakdown */}
-        <div style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
+        <Box style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
           <Row gap={8} style={{ marginBottom: 10 }}>
-            <div className="mono" style={{
+            <Row className="mono" justify="center" style={{
               width: 20, height: 20, borderRadius: 5,
               background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
               color: "#1a120a", fontWeight: 700, fontSize: 11,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>C</div>
-            <span className="mono" style={{ fontSize: 11, color: "var(--fg)" }}>Claude</span>
+            }}>C</Row>
+            <Text as="span" mono size={11} style={{ color: "var(--fg)" }}>Claude</Text>
             <Spacer />
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ break down</Button>
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>open in pane</Button>
@@ -161,8 +161,8 @@ function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void
             placeholder="ask claude about this issue…"
             style={{ width: "100%", height: 54, padding: "8px 10px", fontSize: 11, boxSizing: "border-box" }}
           />
-        </div>
-      </div>
+        </Box>
+      </Box>
     </aside>
   );
 }
@@ -307,22 +307,22 @@ function IssueRow({ issue, selected, onClick }: { issue: FlatIssue; selected: bo
       </Row>
 
       {/* Title + labels */}
-      <div style={{ minWidth: 0 }}>
-        <div style={{
-          fontSize: 12.5, color: "var(--fg)", marginBottom: 4,
+      <Box style={{ minWidth: 0 }}>
+        <Text as="div" size={12.5} style={{
+          color: "var(--fg)", marginBottom: 4,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{issue.title}</div>
+        }}>{issue.title}</Text>
         <Row gap={4} wrap align="stretch">
           {issue.statusName && (
-            <span className="mono" style={{
+            <Box as="span" className="mono" style={{
               padding: "1px 5px", borderRadius: 3,
               fontSize: 9, color: "var(--fg-dim)",
               background: "var(--bg-elev2)", border: "1px solid var(--border-soft)",
-            }}>{issue.statusName}</span>
+            }}>{issue.statusName}</Box>
           )}
           {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
         </Row>
-      </div>
+      </Box>
 
       {/* Assignees + milestone */}
       <Stack gap={4} style={{ minWidth: 0 }}>
@@ -464,15 +464,15 @@ export function Issues() {
             textTransform: "uppercase", letterSpacing: ".05em",
           }}
         >
-          <div>#</div>
-          <div>title</div>
-          <div>assignee · milestone</div>
-          <div style={{ textAlign: "center" }}>comments</div>
-          <div style={{ textAlign: "right" }}>updated</div>
-          <div />
+          <Text as="div">#</Text>
+          <Text as="div">title</Text>
+          <Text as="div">assignee · milestone</Text>
+          <Text as="div" style={{ textAlign: "center" }}>comments</Text>
+          <Text as="div" style={{ textAlign: "right" }}>updated</Text>
+          <Box />
         </Grid>
 
-        <div style={{ flex: 1, overflow: "auto", background: "var(--bg-canvas)", position: "relative" }}>
+        <Box style={{ flex: 1, overflow: "auto", background: "var(--bg-canvas)", position: "relative" }}>
           {loading && rawIssues.length === 0 && (
             <Text as="div" mono size={12} tone="dim" style={{ padding: "40px 0", textAlign: "center" }}>
               Loading issues…
@@ -493,7 +493,7 @@ export function Issues() {
             </Text>
           )}
 
-          <div style={{
+          <Box style={{
             opacity: panelOpen ? 0.35 : 1,
             pointerEvents: panelOpen ? "none" : undefined,
             transition: "opacity 0.15s",
@@ -506,12 +506,12 @@ export function Issues() {
                 onClick={() => setSelectedIssue(selectedIssue?.id === issue.id ? null : issue)}
               />
             ))}
-          </div>
+          </Box>
 
           {panelOpen && selectedIssue && (
             <DetailPanel issue={selectedIssue} onClose={() => setSelectedIssue(null)} />
           )}
-        </div>
+        </Box>
       </Stack>
     </>
   );

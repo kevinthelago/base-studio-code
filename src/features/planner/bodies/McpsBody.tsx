@@ -9,6 +9,8 @@ import type { McpServer } from "@/features/planner/pane/projectPaneData";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import type { McpHandlers } from "./focusedHandlers";
 
 const MCP_TRANSPORT: Record<string, { c: string; label: string }> = {
@@ -36,22 +38,22 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
   const busy = (s: McpServer) => s.status === "downloading" || s.status === "building";
 
   const tile = (v: React.ReactNode, k: string, c?: string) => (
-    <div style={{ flex: 1, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 11px" }}>
-      <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: c ?? "var(--fg)" }}>{v}</div>
-      <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</div>
-    </div>
+    <Box style={{ flex: 1, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: "8px 11px" }}>
+      <Text as="div" mono size={18} weight={600} style={{ color: c ?? "var(--fg)" }}>{v}</Text>
+      <Box className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>{k}</Box>
+    </Box>
   );
 
   return (
     <Stack gap={12}>
       <Row gap={8} align="stretch">
-        {tile(<>{ready}<span style={{ fontSize: 11, color: "var(--fg-dim)" }}> / {list.length}</span></>, "ready", "var(--success)")}
+        {tile(<>{ready}<Text as="span" size={11} tone="dim"> / {list.length}</Text></>, "ready", "var(--success)")}
         {tile(list.filter((s) => s.enabled).length, "enabled")}
         {tile(errored, errored === 1 ? "needs attention" : "need attention", errored ? "var(--danger)" : undefined)}
       </Row>
 
       {list.length === 0 && (
-        <div className="empty-state"><span className="empty-icon">⊕</span><span>No MCP servers yet — assign one below or have the planner add it</span></div>
+        <Box className="empty-state"><Box as="span" className="empty-icon">⊕</Box><Box as="span">No MCP servers yet — assign one below or have the planner add it</Box></Box>
       )}
 
       <Stack gap={8}>
@@ -61,61 +63,61 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
           const isOpen = open.has(s.id);
           const isErr = s.enabled && s.status === "error";
           return (
-            <div key={s.id} style={{
+            <Box key={s.id} style={{
               borderRadius: 9, background: "var(--bg-canvas)", overflow: "hidden",
               border: "1px solid " + (isErr ? "color-mix(in oklch, var(--danger), transparent 60%)" : isOpen ? "var(--border)" : "var(--border-soft)"),
               opacity: s.enabled ? 1 : 0.72,
             }}>
               <Row gap={10} style={{ padding: "10px 12px" }}>
-                <span className="mono" style={{
+                <Box as="span" className="mono" style={{
                   width: 24, height: 24, borderRadius: 6, display: "grid", placeItems: "center", flex: "0 0 24px",
                   fontSize: 12, color: tr.c,
                   border: `1px solid color-mix(in oklch, ${tr.c}, transparent 55%)`,
-                }}>{(s.name[0] ?? "?").toUpperCase()}</span>
+                }}>{(s.name[0] ?? "?").toUpperCase()}</Box>
                 <Stack gap={3} onClick={() => toggleOpen(s.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
                   <Row gap={7}>
-                    <span className="mono-value">{s.name}</span>
-                    {s.official && <span className="chip" style={{ fontSize: 8 }}>official</span>}
-                    {!s.official && s.downloadable && <span className="chip" style={{ fontSize: 8 }}>first-party</span>}
-                    <span className="chip" style={{ fontSize: 8, color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</span>
+                    <Box as="span" className="mono-value">{s.name}</Box>
+                    {s.official && <Text as="span" className="chip" size={8}>official</Text>}
+                    {!s.official && s.downloadable && <Text as="span" className="chip" size={8}>first-party</Text>}
+                    <Text as="span" className="chip" size={8} style={{ color: tr.c, borderColor: `color-mix(in oklch, ${tr.c}, transparent 70%)` }}>{tr.label}</Text>
                   </Row>
-                  {s.desc && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</span>}
+                  {s.desc && <Box as="span" className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.desc}</Box>}
                 </Stack>
                 <Stack align="end" gap={5}>
                   <Row gap={5}>
-                    <span className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
-                    <span className="mono" style={{ fontSize: 9.5, color: stat.c }}>{stat.label}</span>
+                    <Box as="span" className={"sdot " + stat.dot} style={s.status === "error" ? { background: "var(--danger)" } : undefined} />
+                    <Text as="span" mono size={9.5} style={{ color: stat.c }}>{stat.label}</Text>
                   </Row>
-                  <span className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
+                  <Box as="span" className={"toggle" + (s.enabled ? " on" : "")} title={s.enabled ? "granted to the fleet" : "disabled"} onClick={() => onToggle?.(s.id)} />
                 </Stack>
               </Row>
 
               {isErr && s.err && (
                 <Row gap={7} style={{ padding: "0 12px 10px" }}>
-                  <span className="mono" style={{ fontSize: 9.5, color: "var(--danger)" }}>⚠ {s.err}</span>
+                  <Text as="span" mono size={9.5} tone="danger">⚠ {s.err}</Text>
                   <Spacer />
                   <button className="mini" onClick={() => onBuild?.(s)}>retry build</button>
                 </Row>
               )}
 
               {isOpen && (
-                <div style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 4 }}>command</div>
-                  <div className="mono" style={{
+                <Box style={{ padding: "10px 12px 12px", borderTop: "1px solid var(--border-soft)" }}>
+                  <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 4 }}>command</Text>
+                  <Box className="mono" style={{
                     fontSize: 10, color: "var(--fg-muted)", background: "var(--bg-elev)",
                     border: "1px solid var(--border-soft)", borderRadius: 6, padding: "6px 9px", marginBottom: 11,
                     overflowX: "auto", whiteSpace: "nowrap",
-                  }}><span style={{ color: "var(--accent)" }}>$ </span>{s.cmd || "—"}</div>
+                  }}><Text as="span" tone="accent">$ </Text>{s.cmd || "—"}</Box>
 
-                  <div className="mono" style={{ fontSize: 9, color: "var(--fg-dim)", marginBottom: 6 }}>scope · {s.scope}</div>
+                  <Text as="div" mono size={9} tone="dim" style={{ marginBottom: 6 }}>scope · {s.scope}</Text>
                   {s.agents.length > 0 ? (
                     <Row gap={6} wrap align="stretch" style={{ marginBottom: 11 }}>
                       {s.agents.map((id) => (
-                        <span key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</span>
+                        <Box as="span" key={id} className="mono" style={{ fontSize: 9.5, color: "var(--fg)", padding: "2px 8px", borderRadius: 99, background: "var(--bg-elev)", border: "1px solid var(--border-soft)" }}>@{id}</Box>
                       ))}
                     </Row>
                   ) : (
-                    <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginBottom: 11 }}>not wired yet — enable to grant the fleet access</div>
+                    <Text as="div" mono size={9.5} tone="dim" style={{ marginBottom: 11 }}>not wired yet — enable to grant the fleet access</Text>
                   )}
 
                   <Row gap={7} align="stretch">
@@ -127,9 +129,9 @@ export function McpsBody({ servers, onToggle, onBuild, onAdd, onRemove }: McpHan
                     <Spacer />
                     <button className="mini" onClick={() => onRemove?.(s.id)}>remove</button>
                   </Row>
-                </div>
+                </Box>
               )}
-            </div>
+            </Box>
           );
         })}
       </Stack>

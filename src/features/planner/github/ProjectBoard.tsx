@@ -13,6 +13,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
+import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
 import type { GhLabel } from "@/shared/lib/github/types";
 
@@ -106,7 +107,7 @@ function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: b
         <Spacer />
       </Row>
 
-      <div style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--fg)", lineHeight: 1.4 }}>{issue.title}</div>
+      <Text as="div" size={12} style={{ fontFamily: "var(--sans)", color: "var(--fg)", lineHeight: 1.4 }}>{issue.title}</Text>
 
       {issue.labels.length > 0 && (
         <Row gap={4} wrap align="stretch">
@@ -118,12 +119,12 @@ function IssueCard({ issue, focused, onClick }: { issue: BoardIssue; focused?: b
         <Row align="stretch">
           {issue.assignees.length > 0
             ? issue.assignees.map((a, i) => <Avatar key={a.login} login={a.login} size={18} ml={i === 0 ? 0 : -6} palette bordered fontScale={0.56} />)
-            : <span className="mono" style={{
+            : <Box as="span" className="mono" style={{
                 width: 18, height: 18, borderRadius: "50%",
                 border: "1px dashed var(--border)", color: "var(--fg-dim)",
                 fontSize: 10,
                 display: "flex", alignItems: "center", justifyContent: "center",
-              }}>?</span>
+              }}>?</Box>
           }
         </Row>
         <Spacer />
@@ -151,8 +152,8 @@ function Column({
         background: "var(--bg-elev)",
         fontSize: 11,
       }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: col.color }} />
-        <span style={{ color: "var(--fg)" }}>{col.name}</span>
+        <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: col.color }} />
+        <Text as="span" style={{ color: "var(--fg)" }}>{col.name}</Text>
         <Text tone="dim">{issues.length}</Text>
         <Spacer />
         <Text tone="dim" style={{ cursor: "pointer" }}>+</Text>
@@ -162,11 +163,11 @@ function Column({
         {issues.map(c => (
           <IssueCard key={c.id} issue={c} focused={c.focused} onClick={() => onIssueClick(c.number)} />
         ))}
-        <div style={{
+        <Box style={{
           marginTop: 4, padding: "7px 9px",
           border: "1px dashed var(--border)", borderRadius: 5,
           textAlign: "center", fontSize: 10, color: "var(--fg-dim)", cursor: "pointer",
-        }} className="mono">+ new card</div>
+        }} className="mono">+ new card</Box>
       </Stack>
     </Stack>
   );
@@ -188,7 +189,7 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
         padding: "14px 20px", borderBottom: "1px solid var(--border-soft)",
         background: "var(--bg-elev)",
       }}>
-        <div style={{ flex: 1 }}>
+        <Box style={{ flex: 1 }}>
           <Row gap={10} align="baseline">
             <Text mono size={11} tone="dim">#{issue.number}</Text>
             <h3 style={{ margin: 0, fontFamily: "var(--sans)", fontSize: 15, color: "var(--fg)" }}>{issue.title}</h3>
@@ -202,27 +203,27 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
             )}
             {issue.labels.map(l => <LabelChip key={l.name} label={l} />)}
           </Row>
-        </div>
+        </Box>
         <Button variant="ghost" style={{ height: 26 }}>open on github →</Button>
         <IconButton aria-label="close" onClick={onClose} />
       </Row>
 
       <Stack style={{ flex: 1, overflow: "auto" }}>
         {/* Description */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
-            <div style={{ fontFamily: "var(--sans)", fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
+            <Text as="div" size={12.5} tone="muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
               {issue.body.slice(0, 600)}{issue.body.length > 600 ? "…" : ""}
-            </div>
+            </Text>
           ) : (
             <Text as="div" mono size={11} tone="dim" style={{ fontStyle: "italic" }}>No description.</Text>
           )}
-        </div>
+        </Box>
 
         {/* Assignees */}
         {issue.assignees.length > 0 && (
-          <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+          <Box style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-soft)" }}>
             <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>assignees</Text>
             <Row gap={8} wrap align="stretch">
               {issue.assignees.map(a => (
@@ -232,26 +233,25 @@ function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => voi
                 </Row>
               ))}
             </Row>
-          </div>
+          </Box>
         )}
 
         {/* Claude subtask breakdown (demo) */}
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)" }}>
+        <Box style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-soft)" }}>
           <Row gap={10} align="baseline" style={{ marginBottom: 10 }}>
-            <div className="mono" style={{
+            <Row className="mono" justify="center" style={{
               width: 20, height: 20, borderRadius: 5,
               background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
               color: "#1a120a", fontWeight: 700, fontSize: 11,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>C</div>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>Claude · subtask breakdown</span>
+            }}>C</Row>
+            <Text as="span" mono size={11.5} style={{ color: "var(--fg)" }}>Claude · subtask breakdown</Text>
             <Spacer />
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ generate</Button>
           </Row>
-          <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic", padding: "8px 10px", background: "var(--bg-canvas)", borderRadius: 5 }}>
+          <Box className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", fontStyle: "italic", padding: "8px 10px", background: "var(--bg-canvas)", borderRadius: 5 }}>
             Click "generate" to have Claude break this issue into subtasks.
-          </div>
-        </div>
+          </Box>
+        </Box>
 
         {/* Composer */}
         <Stack gap={8} style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>

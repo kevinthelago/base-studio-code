@@ -9,6 +9,8 @@ import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar,
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
@@ -24,14 +26,14 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
   return (
     <Card>
       <CardHead title="Worker board" hint="one agent per stream · click a worker to open it"
-        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{workers.length} live</span>} />
-      <div style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+        right={<Text as="span" mono size={10.5} tone="accent">{workers.length} live</Text>} />
+      <Box style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
         <Grid cols={GRID} gap={10} className="mono" style={{
           padding: "7px 12px",
           background: "var(--bg-elev2)", borderBottom: "1px solid var(--border-soft)",
           fontSize: 9.5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: ".05em",
         }}>
-          <span>worker</span><span>status</span><span>current</span><span style={{ textAlign: "right" }}>issues</span><span />
+          <Box as="span">worker</Box><Box as="span">status</Box><Box as="span">current</Box><Box as="span" style={{ textAlign: "right" }}>issues</Box><Box as="span" />
         </Grid>
         {workers.map((w, i) => {
           const st = STATUS[w.status];
@@ -43,29 +45,29 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
             }}>
               <Row gap={7} style={{ minWidth: 0 }}>
                 <Avatar login={w.name} bot size={18} />
-                <div style={{ minWidth: 0 }}>
-                  <div className="mono" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
-                  <div className="mono" style={{ fontSize: 9, color: w.profileColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.profileLabel}</div>
-                </div>
+                <Box style={{ minWidth: 0 }}>
+                  <Text as="div" mono style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</Text>
+                  <Text as="div" mono size={9} style={{ color: w.profileColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.profileLabel}</Text>
+                </Box>
               </Row>
-              <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: st.color }}>
-                <span className={`wd ${w.status}`} />{st.label}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.issue}</div>
-                {w.note && <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.note}</div>}
-              </div>
-              <span className="mono" style={{ textAlign: "right", fontSize: 10.5, color: "var(--fg-muted)" }}>{w.ownedTotal}</span>
-              <span className="mono" style={{ textAlign: "right", fontSize: 13, color: "var(--fg-dim)" }}>›</span>
+              <Box as="span" className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: st.color }}>
+                <Box as="span" className={`wd ${w.status}`} />{st.label}
+              </Box>
+              <Box style={{ minWidth: 0 }}>
+                <Text as="div" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.issue}</Text>
+                {w.note && <Text as="div" mono size={9.5} tone="dim" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.note}</Text>}
+              </Box>
+              <Text as="span" mono size={10.5} tone="muted" style={{ textAlign: "right" }}>{w.ownedTotal}</Text>
+              <Text as="span" mono size={13} tone="dim" style={{ textAlign: "right" }}>›</Text>
             </Grid>
           );
         })}
-      </div>
+      </Box>
       <Row gap={14} align="stretch" wrap className="mono" style={{ marginTop: 10, fontSize: 10, color: "var(--fg-muted)" }}>
         {Object.values(STATUS).map(s => (
-          <span key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Box as="span" key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <ColorSwatch color={s.color} />{s.label}
-          </span>
+          </Box>
         ))}
       </Row>
     </Card>
@@ -84,8 +86,8 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
           {slices.map(s => (
             <Grid key={s.name} cols="12px 1fr 24px" gap={8} align="center" className="mono" style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>
               <ColorSwatch color={s.color} />
-              <span>{s.name}</span>
-              <span style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</span>
+              <Box as="span">{s.name}</Box>
+              <Text as="span" style={{ textAlign: "right", color: "var(--fg)" }}>{s.value}</Text>
             </Grid>
           ))}
         </Stack>
@@ -110,8 +112,8 @@ function Throughput({ gh }: { gh: FleetGithub }) {
     <Card>
       <CardHead title="Fleet throughput" hint="issues landed vs PRs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
-      {gh.loading && total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>Loading from GitHub…</div>
-        : total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>No landed issues or merged PRs in the window.</div>
+      {gh.loading && total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>Loading from GitHub…</Box>
+        : total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>No landed issues or merged PRs in the window.</Box>
         : <>
             <LineArea labels={d.labels} height={150} tip={tip} series={[
               { name: "landed", color: "var(--success)", data: d.landed },
@@ -133,13 +135,13 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
   return (
     <Card>
       <CardHead title="Time-to-land" hint="PR open → merged · last 14d" />
-      {total === 0 ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</div>
+      {total === 0 ? <Box className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</Box>
         : <>
             <Bars labels={gh.timeToLand.map(b => b.label)} height={116} tip={tip}
               groups={[{ name: "PRs", color: "var(--info)", data: gh.timeToLand.map(b => b.v) }]} />
-            <div className="mono" style={{ marginTop: 6, fontSize: 10, color: "var(--fg-dim)", textAlign: "center" }}>
+            <Text as="div" mono size={10} tone="dim" style={{ marginTop: 6, textAlign: "center" }}>
               median <b style={{ color: "var(--fg)" }}>{gh.medianLandH}h</b> over {total} merged PR{total === 1 ? "" : "s"}
-            </div>
+            </Text>
           </>}
       {tip.node}
     </Card>
@@ -151,19 +153,19 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
   return (
     <Card>
       <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
-        right={<span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{gh.mergeQueue.length}</span>} />
+        right={<Text as="span" mono size={10.5} tone="accent">{gh.mergeQueue.length}</Text>} />
       {gh.mergeQueue.length === 0
-        ? <div className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</div>
+        ? <Box className="hint" style={{ padding: "8px 2px" }}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</Box>
         : (
           <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
             {gh.mergeQueue.map((q, i) => (
               <Grid key={`${q.repo}${q.pr}`} cols="42px 1fr 64px" gap={8} align="center" className="hrow" style={{ padding: "9px 11px", fontSize: 11, background: i % 2 ? "var(--bg-panel)" : "var(--bg-elev)" }}>
-                <span className="mono" style={{ color: "var(--fg-dim)" }}>{q.pr}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.title}</div>
-                  <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</div>
-                </div>
-                <span className="mono" style={{ textAlign: "right", fontSize: 10, color: tone[q.state] }}>● {q.state}</span>
+                <Text as="span" mono tone="dim">{q.pr}</Text>
+                <Box style={{ minWidth: 0 }}>
+                  <Text as="div" style={{ color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.title}</Text>
+                  <Text as="div" mono size={9.5} tone="dim" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.repo}</Text>
+                </Box>
+                <Text as="span" mono size={10} style={{ textAlign: "right", color: tone[q.state] }}>● {q.state}</Text>
               </Grid>
             ))}
           </Stack>
@@ -177,9 +179,9 @@ function SpendNote() {
   return (
     <Card>
       <CardHead title="Tokens & spend" hint="not measured yet" />
-      <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", lineHeight: 1.6 }}>
+      <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6 }}>
         Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
-      </div>
+      </Text>
     </Card>
   );
 }
@@ -216,14 +218,14 @@ export function Fleet() {
 
   return (
     <section className="an-page">
-      <div className="an-wrap">
+      <Box className="an-wrap">
         <Row align="start" gap={14} style={{ marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
+          <Box style={{ flex: 1 }}>
             <h2 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Fleet</h2>
-            <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
+            <Text as="div" size={12} tone="muted" style={{ marginTop: 4 }}>
               {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
-            </div>
-          </div>
+            </Text>
+          </Box>
           <button className="btn ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
             {gh.loading ? "refreshing…" : "↻ refresh"}
           </button>
@@ -233,14 +235,14 @@ export function Fleet() {
           </button>
         </Row>
 
-        <div className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+        <Box className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
           <StatCard k="active workers" v={`${kpis.active}/${kpis.total}`} sub="running now" tone="accent" />
           <StatCard k="need attention" v={String(kpis.needAttention)} sub="blocked · asking · waiting" tone={kpis.needAttention > 0 ? "danger" : "fg"} />
           <StatCard k="idle" v={String(kpis.idle)} sub="at rest" tone="fg" />
           <StatCard k="landed today" v={String(gh.kpis.landedToday)} sub="issues closed" tone="success" />
           <StatCard k="PRs merged · 7d" v={String(gh.kpis.prsMergedWeek)} sub="across the fleet's repos" tone="info" />
           <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" />
-        </div>
+        </Box>
 
         <Grid cols="1.6fr 1fr" gap={14}>
           <Stack gap={14} style={{ minWidth: 0 }}>
@@ -254,7 +256,7 @@ export function Fleet() {
             <SpendNote />
           </Stack>
         </Grid>
-      </div>
+      </Box>
     </section>
   );
 }

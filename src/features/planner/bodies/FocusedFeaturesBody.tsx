@@ -5,6 +5,7 @@ import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Tile } from "@/features/planner/pane/focusedPrimitives";
 import { featureDefined, type PlanFeature } from "@/features/planner/issues/featureList";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
 
 export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
   const list = features ?? [];
@@ -14,22 +15,22 @@ export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
 
   if (list.length === 0) {
     return (
-      <div className="empty-state">
-        <span className="empty-icon">◇</span>
-        <span>No features yet — Claude proposes a starter set you curate</span>
-      </div>
+      <Box className="empty-state">
+        <Box as="span" className="empty-icon">◇</Box>
+        <Box as="span">No features yet — Claude proposes a starter set you curate</Box>
+      </Box>
     );
   }
 
   const definedCount = list.filter(featureDefined).length;
 
   return (
-    <div className="features-view">
-      <div className="tiles">
+    <Box className="features-view">
+      <Box className="tiles">
         <Tile v={list.length} k="features" />
         <Tile v={definedCount} k="defined" />
         <Tile v={list.length - definedCount} k="drafting" />
-      </div>
+      </Box>
       {list.map((f) => {
         const done = featureDefined(f);
         const acc = f.acceptance ?? [];
@@ -38,69 +39,69 @@ export function FeaturesBody({ features }: { features?: PlanFeature[] }) {
         const hasDetail = !!(f.approach || f.data || (f.tools && f.tools.length > 0) || acc.length > 0);
         const isOpen = open.has(f.slug);
         return (
-          <div
+          <Box
             key={f.slug}
             className={"feature-card" + (done ? " done" : "") + (isOpen ? " open" : "")}
             onClick={hasDetail ? () => toggle(f.slug) : undefined}
             style={{ cursor: hasDetail ? "pointer" : "default" }}
           >
-            <div className="feature-head">
-              <span className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</span>
-              <span className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
-              <span className="feature-name">{f.name}</span>
+            <Box className="feature-head">
+              <Box as="span" className="feature-caret">{hasDetail ? (isOpen ? "▼" : "▶") : ""}</Box>
+              <Box as="span" className="sdot" style={{ background: done ? "var(--success)" : "var(--fg-dim)" }} />
+              <Box as="span" className="feature-name">{f.name}</Box>
               <Spacer />
-              <span className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</span>
-            </div>
-            {f.behavior && <div className="feature-behavior">{f.behavior}</div>}
+              <Box as="span" className={"feature-badge" + (done ? " done" : "")}>{done ? "✓ defined" : "○ drafting"}</Box>
+            </Box>
+            {f.behavior && <Box className="feature-behavior">{f.behavior}</Box>}
 
             {isOpen ? (
-              <div
+              <Box
                 className="feature-detail"
                 onClick={(e) => e.stopPropagation()}
                 style={{ cursor: "default" }}
               >
                 {f.approach && (
-                  <div className="feature-field">
-                    <span className="feature-flabel">approach</span>
-                    <span className="feature-ftext">{f.approach}</span>
-                  </div>
+                  <Box className="feature-field">
+                    <Box as="span" className="feature-flabel">approach</Box>
+                    <Box as="span" className="feature-ftext">{f.approach}</Box>
+                  </Box>
                 )}
                 {f.tools && f.tools.length > 0 && (
-                  <div className="feature-field">
-                    <span className="feature-flabel">tools</span>
-                    <span className="feature-tools">{f.tools.map((t) => <span key={t} className="chip">{t}</span>)}</span>
-                  </div>
+                  <Box className="feature-field">
+                    <Box as="span" className="feature-flabel">tools</Box>
+                    <Box as="span" className="feature-tools">{f.tools.map((t) => <Box as="span" key={t} className="chip">{t}</Box>)}</Box>
+                  </Box>
                 )}
                 {f.data && (
-                  <div className="feature-field">
-                    <span className="feature-flabel">data + deps</span>
-                    <span className="feature-ftext">{f.data}</span>
-                  </div>
+                  <Box className="feature-field">
+                    <Box as="span" className="feature-flabel">data + deps</Box>
+                    <Box as="span" className="feature-ftext">{f.data}</Box>
+                  </Box>
                 )}
                 {acc.length > 0 && (
-                  <div className="feature-field col">
-                    <span className="feature-flabel">acceptance criteria</span>
-                    <div className="feature-acc">
+                  <Box className="feature-field col">
+                    <Box as="span" className="feature-flabel">acceptance criteria</Box>
+                    <Box className="feature-acc">
                       {acc.map((a, i) => (
-                        <div key={i} className="feature-acc-item">
-                          <span className="feature-acc-box" />
-                          <span>{a}</span>
-                        </div>
+                        <Box key={i} className="feature-acc-item">
+                          <Box as="span" className="feature-acc-box" />
+                          <Box as="span">{a}</Box>
+                        </Box>
                       ))}
-                    </div>
-                  </div>
+                    </Box>
+                  </Box>
                 )}
-              </div>
+              </Box>
             ) : (
               acc.length > 0 && (
-                <div className="feature-acc-count">
+                <Box className="feature-acc-count">
                   {acc.length} acceptance {acc.length === 1 ? "criterion" : "criteria"}
-                </div>
+                </Box>
               )
             )}
-          </div>
+          </Box>
         );
       })}
-    </div>
+    </Box>
   );
 }

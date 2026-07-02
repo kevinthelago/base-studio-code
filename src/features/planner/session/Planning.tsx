@@ -34,6 +34,8 @@ import { BackButton } from "@/shared/ui/controls/BackButton";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { clampIndex } from "../stages/focusedPlan";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
@@ -613,14 +615,14 @@ export function Planning({ visible }: { visible: boolean }) {
   return (
     <>
       {/* Header */}
-      <div style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
-        <div style={{ flex: 1 }}>
+      <Box style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <Box style={{ flex: 1 }}>
           <Row gap={10}>
             <BackButton variant="icon" onClick={() => setProjectsView("list")} aria-label="Back to Planner" />
             {isExisting
               ? (
                 <>
-                  <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>#{activeProjectNumber}</span>
+                  <Text as="span" mono size={10} tone="dim">#{activeProjectNumber}</Text>
                   {/* Published title is editable (#1226): blur/Enter commits to the GitHub board + local name. */}
                   <input
                     value={titleEdit ?? activeProjectName}
@@ -672,11 +674,11 @@ export function Planning({ visible }: { visible: boolean }) {
             <Chip tone="accent">● {isExisting ? "expanding" : "drafting"}</Chip>
           </Row>
           {autopilot.running && (
-            <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 4 }}>
+            <Text as="div" size={12} tone="accent" style={{ marginTop: 4 }}>
               ⚙ auto-planning · {autopilotProgressPct}%
-            </div>
+            </Text>
           )}
-        </div>
+        </Box>
         <button className="btn ghost" onClick={handleRestart} disabled={restarting}
           title="Restart the planner session (re-spawns Claude)">
           {restarting ? "restarting…" : "↺ restart"}
@@ -712,25 +714,25 @@ export function Planning({ visible }: { visible: boolean }) {
             </button>
           );
         })()}
-      </div>
+      </Box>
       {triageError && (
-        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12 }}>
+        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
           ⚠ {triageError}
-        </div>
+        </Text>
       )}
       {triageNote && !triageError && (
-        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--fg-muted)", fontSize: 12 }}>
+        <Text as="div" mono size={12} tone="muted" style={{ padding: "0 24px 8px" }}>
           ⏭ {triageNote}
-        </div>
+        </Text>
       )}
       {featureCycle.length > 0 && (
-        <div className="mono" style={{ padding: "0 24px 8px", color: "var(--danger)", fontSize: 12 }}>
+        <Text as="div" mono size={12} tone="danger" style={{ padding: "0 24px 8px" }}>
           ⚠ Feature dependency cycle: {featureCycle.join(" → ")} — break it to complete the Features stage.
-        </div>
+        </Text>
       )}
       {recoverable > 0 && (
         <Row className="mono" gap={10} style={{ padding: "0 24px 8px", fontSize: 12, color: "var(--fg-muted)" }}>
-          <span>⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</span>
+          <Box as="span">⤓ The plan store is empty — GitHub has {recoverable} published issue{recoverable === 1 ? "" : "s"} for {publishRepos.length === 1 ? "this repo" : "these repos"}.</Box>
           <button
             className="mono"
             onClick={() => void handleRecover()}
@@ -847,7 +849,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 padding: "10px 18px", borderBottom: "1px solid var(--border-soft)",
                 fontSize: 11,
               }}>
-                <span style={{
+                <Text as="span" style={{
                   color: publishPhase === "done"  ? "var(--success)"
                        : publishPhase === "error" ? "var(--danger)"
                        : "var(--accent)",
@@ -855,7 +857,7 @@ export function Planning({ visible }: { visible: boolean }) {
                   {publishPhase === "running" ? "⟳ publishing…"
                    : publishPhase === "done"  ? "✓ published"
                    : "✗ publish failed"}
-                </span>
+                </Text>
                 <Spacer />
                 {(publishPhase === "done" || publishPhase === "error") && (
                   <button
@@ -924,19 +926,19 @@ export function Planning({ visible }: { visible: boolean }) {
           onDismiss={() => setSwitchOpen(false)}
           actions={<button className="btn" onClick={() => setSwitchOpen(false)}>cancel</button>}
         >
-          <div style={{ marginBottom: 12, color: "var(--fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+          <Text as="div" size={12} tone="muted" style={{ marginBottom: 12, lineHeight: 1.6 }}>
             Switch this project to a different blueprint. This re-seeds the plan for the chosen blueprint and
             <b> clears the current plan + progress</b> — this can't be undone. Pick a target:
-          </div>
+          </Text>
           <Stack gap={8}>
             {switchTargets.map((bp) => (
               <button key={bp.id} className="btn ghost" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, height: "auto", padding: "10px 12px", textAlign: "left" }}
                 onClick={() => void doSwitchBlueprint(bp.id)}>
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "var(--fg)", fontWeight: 600 }}>{bp.name}</span>
+                <Box as="span" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Text as="span" weight={600} style={{ color: "var(--fg)" }}>{bp.name}</Text>
                   <Chip style={{ fontSize: 9 }}>{blueprintCategory(bp)}</Chip>
-                </span>
-                {bp.desc && <span style={{ color: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--sans)" }}>{bp.desc}</span>}
+                </Box>
+                {bp.desc && <Text as="span" size={11} tone="dim" style={{ fontFamily: "var(--sans)" }}>{bp.desc}</Text>}
               </button>
             ))}
           </Stack>

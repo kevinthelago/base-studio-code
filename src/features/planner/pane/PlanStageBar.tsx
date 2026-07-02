@@ -10,6 +10,7 @@ import type { PlanSignals } from "../stages/stageGate";
 import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode, type RailStatus } from "./ProgressionRail";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 
 function fillColor(status: string): string {
   switch (status) {
@@ -41,7 +42,7 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
         const isHighlit = highlight?.has(section.key) ?? false;
         const pct = Math.round((status === "complete" ? 1 : fraction) * 100);
         return (
-          <div
+          <Box
             key={section.key}
             className={isHighlit ? "attn-pulse" : undefined}
             title={`${section.name} — ${status}${isBlocked ? " · gate blocked" : ""}${isHighlit ? " · incomplete" : ""}`}
@@ -50,8 +51,8 @@ export function PlanStageBar({ sections, signals, blocked, highlight }: {
               background: isHighlit ? "color-mix(in oklch, var(--danger), transparent 70%)" : "var(--bg-elev2)",
             }}
           >
-            <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isBlocked ? "var(--danger)" : fillColor(status), borderRadius: 6 }} />
-          </div>
+            <Box style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isBlocked ? "var(--danger)" : fillColor(status), borderRadius: 6 }} />
+          </Box>
         );
       })}
     </Row>
@@ -94,8 +95,8 @@ export function PlanGateRow({ sections, signals }: {
     }));
   if (nodes.length === 0) return null;
   return (
-    <div style={{ marginTop: 11 }}>
+    <Box style={{ marginTop: 11 }}>
       <ProgressionRail nodes={nodes} variant="compact" />
-    </div>
+    </Box>
   );
 }

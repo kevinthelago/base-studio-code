@@ -3,6 +3,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
 /**
@@ -17,7 +18,7 @@ export function ProjectsEmpty() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
 
   return (
-    <section style={{
+    <Box as="section" style={{
       flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
       background: "var(--bg-canvas)", padding: "40px 32px", overflow: "auto",
     }}>
@@ -38,7 +39,7 @@ export function ProjectsEmpty() {
           </button>
         }
         extra={
-          <div style={{
+          <Box style={{
             marginTop: 20, padding: "12px 14px",
             borderRadius: 6, background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             textAlign: "left",
@@ -49,9 +50,9 @@ export function ProjectsEmpty() {
                 <Chip key={s}>{s}</Chip>
               ))}
             </Row>
-          </div>
+          </Box>
         }
       />
-    </section>
+    </Box>
   );
 }

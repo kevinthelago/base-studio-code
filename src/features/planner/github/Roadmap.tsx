@@ -15,6 +15,7 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
+import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
 
 function BurnDown({ open, closed }: { open: number; closed: number }) {
@@ -97,7 +98,7 @@ export function Roadmap() {
     <>
       <ProjectsHeader project={project} />
       <section style={{ flex: 1, overflow: "auto", padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+        <Box style={{ maxWidth: 1240, margin: "0 auto" }}>
           <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
           {/* Stat cards */}
@@ -111,10 +112,10 @@ export function Roadmap() {
           <Card style={{ padding: "16px 20px" }}>
             <Row gap={10} wrap style={{ marginBottom: 14 }}>
               <h3 style={{ margin: 0 }}>Milestones · weeks</h3>
-              <span className="hint">
+              <Box as="span" className="hint">
                 {loading ? "loading…"
                   : `${rows.length} shown${milestones.length !== rows.length ? ` of ${milestones.length}` : ""}`}
-              </span>
+              </Box>
               <Spacer />
               {(() => {
                 const chip = (active: boolean, label: string, onClick: () => void) => (
@@ -154,14 +155,14 @@ export function Roadmap() {
               <>
                 {/* Week header */}
                 <Grid cols="230px 1fr" gap={14} style={{ marginBottom: 8 }}>
-                  <div />
-                  <div style={{ position: "relative", height: 24 }}>
+                  <Box />
+                  <Box style={{ position: "relative", height: 24 }}>
                     {Array.from({ length: tickCount }, (_, i) => {
                       const week = i * tickInterval;
                       if (week > totalWeeks) return null;
                       const pct = (week / totalWeeks) * 100;
                       return (
-                        <div key={i} className="mono" style={{
+                        <Box key={i} className="mono" style={{
                           position: "absolute", left: `${pct}%`,
                           top: 0, paddingLeft: 4, paddingTop: 4,
                           borderLeft: i === 0 ? "none" : "1px dashed var(--border-soft)",
@@ -169,48 +170,47 @@ export function Roadmap() {
                           whiteSpace: "nowrap",
                         }}>
                           {tickLabel(week, origin, tickInterval)}
-                        </div>
+                        </Box>
                       );
                     })}
                     {todayWeek < totalWeeks && (
-                      <div style={{
+                      <Box style={{
                         position: "absolute", top: 0, bottom: -300,
                         left: `${(todayWeek / totalWeeks) * 100}%`,
                         width: 0, borderLeft: "1.5px dashed var(--accent)", zIndex: 2,
                       }}>
-                        <span className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</span>
-                      </div>
+                        <Box as="span" className="mono" style={{ position: "absolute", top: -2, left: 4, fontSize: 9.5, color: "var(--accent)" }}>today</Box>
+                      </Box>
                     )}
-                  </div>
+                  </Box>
                 </Grid>
 
                 {/* Milestone rows */}
                 <Stack gap={8}>
                   {rows.map(m => (
                     <Grid key={m.id} cols="230px 1fr" gap={14} align="center">
-                      <div>
+                      <Box>
                         <Row gap={6} align="baseline">
                           <Text mono size={11} tone="accent">M{m.id}</Text>
-                          <span style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--fg)" }}>{m.title}</span>
+                          <Text as="span" size={12} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{m.title}</Text>
                         </Row>
                         <Text as="div" mono size={9.5} tone="dim" style={{ marginTop: 3 }}>
                           due {m.dueLabel}
                         </Text>
-                      </div>
-                      <div style={{ position: "relative", height: 32 }}>
+                      </Box>
+                      <Box style={{ position: "relative", height: 32 }}>
                         {Array.from({ length: tickCount }, (_, i) => {
                           const week = i * tickInterval;
                           if (week > totalWeeks) return null;
                           return (
-                            <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(week / totalWeeks) * 100}%`, width: 1, background: "var(--border-soft)" }} />
+                            <Box key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(week / totalWeeks) * 100}%`, width: 1, background: "var(--border-soft)" }} />
                           );
                         })}
-                        <div style={{
+                        <Row style={{
                           position: "absolute", top: 4, bottom: 4,
                           left: `${(m.startWeek / totalWeeks) * 100}%`,
                           width: `${(m.lengthWeeks / totalWeeks) * 100}%`,
                           borderRadius: 5, overflow: "hidden",
-                          display: "flex", alignItems: "center",
                           background:
                             m.state === "done"     ? "color-mix(in oklch, var(--success), transparent 60%)"
                             : m.state === "doing"  ? "color-mix(in oklch, var(--accent), transparent 70%)"
@@ -224,21 +224,21 @@ export function Roadmap() {
                           ),
                         }}>
                           {m.pct > 0 && (
-                            <div style={{
+                            <Box style={{
                               position: "absolute", inset: 0, width: `${m.pct * 100}%`,
                               background: "color-mix(in oklch, var(--accent), transparent 40%)",
                             }} />
                           )}
-                          <span className="mono" style={{
+                          <Box as="span" className="mono" style={{
                             position: "relative", padding: "0 10px",
                             fontSize: 10.5,
                             color: m.state === "backlog" ? "var(--fg-muted)" : "var(--fg)",
                             whiteSpace: "nowrap",
                           }}>
                             {m.lengthWeeks}w · {m.pct > 0 ? `${Math.round(m.pct * 100)}% done` : m.state}
-                          </span>
-                        </div>
-                      </div>
+                          </Box>
+                        </Row>
+                      </Box>
                     </Grid>
                   ))}
                 </Stack>
@@ -250,11 +250,11 @@ export function Roadmap() {
           <Card style={{ padding: "16px 20px", marginTop: 14 }}>
             <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
               <h3 style={{ margin: 0 }}>Issue progress</h3>
-              <span className="hint">{totalIssues} total · {totalClosed} closed · {totalOpen} remaining</span>
+              <Box as="span" className="hint">{totalIssues} total · {totalClosed} closed · {totalOpen} remaining</Box>
             </Row>
             <BurnDown open={totalOpen} closed={totalClosed} />
           </Card>
-        </div>
+        </Box>
       </section>
     </>
   );

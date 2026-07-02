@@ -5,6 +5,8 @@
 // icon + title, so it fits any section (coordination, shared deps, …).
 import { useState } from "react";
 import { MONO } from "./bodyStyles";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 
@@ -22,8 +24,8 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{
-      borderRadius: "var(--r-lg)", padding: "13px 14px", background: "var(--bg-panel)",
+    <Box radius="lg" bg="var(--bg-panel)" style={{
+      padding: "13px 14px",
       border: "1px solid " + (tone ? `color-mix(in oklch, ${tone}, transparent 78%)` : "var(--border-soft)"),
     }}>
       <Row
@@ -32,19 +34,19 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
         style={{ marginBottom: open ? 12 : 0, cursor: "pointer", userSelect: "none" }}
       >
         {icon && (
-          <span style={{
-            width: 20, height: 20, borderRadius: 6, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
+          <Box as="span" radius={6} bg="var(--bg-elev)" style={{
+            width: 20, height: 20, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: MONO, fontSize: 11, color: tone ?? "var(--fg-dim)",
-            background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
-          }}>{icon}</span>
+            border: "1px solid var(--border-soft)",
+          }}>{icon}</Box>
         )}
-        <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{title}</span>
-        {hint && <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)" }}>{hint}</span>}
+        <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{title}</Text>
+        {hint && <Text as="span" mono size={9.5} tone="dim">{hint}</Text>}
         <Spacer />
         {right}
-        <span style={{ color: "var(--fg-dim)", fontFamily: MONO, fontSize: 11, width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
+        <Text as="span" tone="dim" mono size={11} style={{ width: 12, textAlign: "center" }}>{open ? "▾" : "▸"}</Text>
       </Row>
       {open && children}
-    </div>
+    </Box>
   );
 }

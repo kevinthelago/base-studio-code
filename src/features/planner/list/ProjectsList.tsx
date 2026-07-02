@@ -7,6 +7,7 @@ import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
 import { overlayDismiss } from "@/shared/hooks/useModalDismiss";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
@@ -258,7 +259,7 @@ export function ProjectsList() {
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
 
   return (
-    <section style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
+    <Box as="section" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
       <PublishedProjects
         visibleProjects={visibleProjects}
         grouped={grouped}
@@ -295,8 +296,8 @@ export function ProjectsList() {
       {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕
           must not delete instantly. Shared by the Drafts chips and the Blueprints rail. */}
       {draftDeleteTarget && (
-        <div className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
-          <div style={{
+        <Box className="modal-scrim" onClick={overlayDismiss(() => setDraftDeleteTarget(null))}>
+          <Box style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-soft)",
             borderRadius: "var(--r-lg)", padding: "24px 28px", width: 420, maxWidth: "90vw",
           }}>
@@ -318,9 +319,9 @@ export function ProjectsList() {
                 <Trash2 size={12} /> delete draft
               </Button>
             </Row>
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
-    </section>
+    </Box>
   );
 }

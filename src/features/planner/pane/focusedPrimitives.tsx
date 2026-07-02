@@ -4,6 +4,7 @@
 import type { Posture, Perm, Flow, Agent } from "./projectPaneData";
 import "./projectPane.css";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { Box } from "@/shared/ui/layout/Box";
 
 interface Role { c: string; label: string }
 interface Cap { k: string; g: string; label: string }
@@ -37,18 +38,18 @@ export const CTX_KIND: Record<string, string> = {
 
 /* primitives */
 export function Dot({ s }: { s: string }) {
-  return <span className={"sdot " + s} />;
+  return <Box as="span" className={"sdot " + s} />;
 }
 
 export function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
   const R = ROLES[role] || { c: "var(--fg-dim)", label: role };
   return (
-    <span className="role" style={{
+    <Box as="span" className="role" style={{
       background: `color-mix(in oklch, ${R.c}, transparent ${mute ? 90 : 84}%)`,
       color: R.c, border: `1px solid color-mix(in oklch, ${R.c}, transparent 72%)`,
     }}>
       <i style={{ background: R.c }} />{R.label}
-    </span>
+    </Box>
   );
 }
 
@@ -56,16 +57,16 @@ export function Avatar({ id, sz = 17, agents = [] }: { id: string; sz?: number; 
   const a = agents.find((x) => x.id === id);
   const color = a ? a.color : "var(--fg-dim)";
   const initial = a ? a.initial : "?";
-  return <span className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</span>;
+  return <Box as="span" className="av" style={{ width: sz, height: sz, background: color, fontSize: sz * 0.53 }}>{initial}</Box>;
 }
 
 export function PostureBar({ perm }: { perm: Perm }) {
   return (
-    <span className="posture" title="read · edit · create · run · net · push · pkg">
+    <Box as="span" className="posture" title="read · edit · create · run · net · push · pkg">
       {CAPS.map((c) => (
         <i key={c.k} className={perm[c.k]} title={`${c.label}: ${perm[c.k]}`} />
       ))}
-    </span>
+    </Box>
   );
 }
 
@@ -85,27 +86,27 @@ export function Tri({ value, onChange }: { value: Posture; onChange?: (v: Postur
 
 export function FlowBadges({ flow }: { flow: Flow }) {
   return (
-    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-      <span className="fbadge" title="autonomy">{flow.autonomy}</span>
-      <span className="fbadge" title="push policy">{flow.push}</span>
-      <span className={"fbadge" + (flow.gate === "hard" ? " hard" : "")} title="enforcement gate">
+    <Box as="span" style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      <Box as="span" className="fbadge" title="autonomy">{flow.autonomy}</Box>
+      <Box as="span" className="fbadge" title="push policy">{flow.push}</Box>
+      <Box as="span" className={"fbadge" + (flow.gate === "hard" ? " hard" : "")} title="enforcement gate">
         {flow.gate} gate
-      </span>
-    </span>
+      </Box>
+    </Box>
   );
 }
 
 export function Tile({ v, k }: { v: number | string; k: string }) {
   return (
-    <div className="tile">
-      <div className="v">{v}</div>
-      <div className="k">{k}</div>
-    </div>
+    <Box className="tile">
+      <Box className="v">{v}</Box>
+      <Box className="k">{k}</Box>
+    </Box>
   );
 }
 
 export function KindDot({ kind }: { kind: string }) {
-  return <span style={{
+  return <Box as="span" style={{
     width: 6, height: 6, borderRadius: 2, flex: "0 0 6px",
     background: CTX_KIND[kind] || "var(--fg-dim)",
   }} />;
@@ -115,7 +116,7 @@ export function Seg({ options, value, onChange, tiny }: {
   options: string[]; value: string; onChange?: (v: string) => void; tiny?: boolean;
 }) {
   return (
-    <span className="mono" style={{
+    <Box as="span" className="mono" style={{
       display: "inline-flex", border: "1px solid var(--border-soft)",
       borderRadius: 5, overflow: "hidden",
       fontSize: tiny ? 9 : 9.5,
@@ -131,6 +132,6 @@ export function Seg({ options, value, onChange, tiny }: {
           }}>{o}</button>
         );
       })}
-    </span>
+    </Box>
   );
 }
