@@ -57,7 +57,10 @@ export function PersonasPanel() {
   };
 
   return (
-    <Row gap={0} style={{ flex: 1, minHeight: 0 }}>
+    // `align="stretch"` so both columns fill the page height (Row's cross-axis default is `center`,
+    // which would collapse them to content height and leave the page short); flex:1 + minHeight:0 fill
+    // the <Screen> body, and each column scrolls internally.
+    <Row align="stretch" gap={0} style={{ flex: 1, minHeight: 0 }}>
       {/* ── List rail ── */}
       <Stack gap={8} style={{ width: 260, minWidth: 260, padding: 14, overflowY: "auto", borderRight: "1px solid var(--border-soft)" }}>
         <Row align="center" gap={8}>
