@@ -5,6 +5,7 @@
 import type { TabItem } from "@/app/chrome/TabBar";
 
 export const PROJECT_MODES: TabItem[] = [
-  { id: "projects",   label: "Planner",     hint: "plan a project" },
+  { id: "projects",   label: "Projects",    hint: "plan a project" },
   { id: "fleet",      label: "Fleet",       hint: "live orchestration" },
+  { id: "personas",   label: "Personas",    hint: "the agent identities you dispatch" },
 ];

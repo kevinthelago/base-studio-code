@@ -22,7 +22,7 @@ export interface WorkspaceMeta {
  *  same labels. Adding a screen is one entry here. */
 export const WORKSPACES: WorkspaceMeta[] = [
   { key: "console",    label: "Console",     Icon: TerminalSquare },
-  { key: "projects",   label: "Projects",    Icon: FolderKanban },
+  { key: "projects",   label: "Planner",     Icon: FolderKanban },
   { key: "skills",     label: "Skills",      Icon: Sparkles },
   { key: "automation", label: "Automations", Icon: Zap },
   { key: "mcp",        label: "MCP",         Icon: Server },

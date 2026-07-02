@@ -7,6 +7,8 @@ import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blue
 import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
+import { createPersonasSlice } from "@/features/personas/store";
+import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -43,6 +45,7 @@ export const useAppStore = create<AppStore>()(
       ...createSessionSlice(set, get, store),
       ...createSkillsSlice(set, get, store),
       ...createMcpSlice(set, get, store),
+      ...createPersonasSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -152,6 +155,7 @@ export const useAppStore = create<AppStore>()(
         // Task groups + per-session group toggles (#skills-groups) — reusable skill bundles.
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
+        personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
@@ -185,6 +189,10 @@ export const useAppStore = create<AppStore>()(
         // who seeded their store before the change. We replace each persisted built-in with
         // its current definition (by id) and add any new built-ins; user-created / forked /
         // imported blueprints are left untouched.
+        // Reconcile the persona library with the packaged built-ins (#2094): re-seed any dropped
+        // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
+        // code-owned-template discipline as the blueprints refresh below.
+        if (state?.personas) state.personas = reconcilePersonas(state.personas);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }
