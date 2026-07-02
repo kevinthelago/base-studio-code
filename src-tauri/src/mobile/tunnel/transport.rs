@@ -171,42 +171,9 @@ async fn session(
     let (mut sink, mut read) = ws.split();
     log::info!("tunnel: connected to relay as host; waiting for mobile peer (room {room})");
 
-    // Noise IK responder: read the mobile's first handshake message, answer it.
-    let mut hs = noise::responder(static_priv).str_err()?;
-    let mut scratch = vec![0u8; 65535];
-    let msg1 = next_binary(&mut read).await?;
-    log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
-    hs.read_message(&msg1, &mut scratch)
-        .map_err(|e| format!("handshake msg1 read failed: {e}"))?;
-    let n = hs
-        .write_message(&[], &mut scratch)
-        .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
-    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.str_err()?;
-    log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
-    let mut noise_tx = hs.into_transport_mode().str_err()?;
-
-    // First app frame must be `auth`; validate the pairing secret.
-    let frame = next_binary(&mut read).await?;
-    match decode_room_msg(&mut noise_tx, &frame)? {
-        ClientMsg::Auth { token, fcm_token } => {
-            let psk = app
-                .try_state::<TunnelState>()
-                .map(|s| s.psk())
-                .unwrap_or_default();
-            if !ct_eq(&token, &psk) {
-                log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
-                return Err("auth rejected (bad pairing secret)".into());
-            }
-            // Persist the device's FCM push token (#846) so a `user_request` can reach it
-            // even after the app backgrounds/quits and drops this relay connection.
-            if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
-                state.add_fcm_token(t);
-            }
-            log::info!("tunnel: auth accepted");
-        }
-        _ => return Err("expected auth as the first frame".into()),
-    }
-    send_msg(&mut sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+    // Run the Noise IK responder handshake + validate the mobile's auth frame; on success
+    // this yields the live Noise transport state for the rest of the session.
+    let mut noise_tx = noise_handshake_and_auth(app, &mut sink, &mut read, static_priv).await?;
 
     // Replay the full initial-state sequence to the freshly-paired client.
     replay_state(app, &mut sink, &mut noise_tx).await?;
@@ -274,6 +241,58 @@ async fn session(
             },
         }
     }
+}
+
+/// Run the Noise IK responder handshake, then validate the mobile's first (`auth`) frame
+/// against the pairing secret. Reads the peer's handshake msg1 off `read`, writes msg2 back
+/// over `sink`, promotes to transport mode, then decrypts the first app frame — which must be
+/// `Auth` carrying the correct PSK (constant-time compared). Persists the device's FCM push
+/// token (#846) when present, sends `AuthOk`, and returns the live Noise transport state.
+/// Any handshake read/write failure, a bad pairing secret, or a non-`auth` first frame is an
+/// early `Err` that tears the session down (and triggers a backoff reconnect in `run`).
+async fn noise_handshake_and_auth(
+    app: &AppHandle,
+    sink: &mut WsSink,
+    read: &mut WsStream,
+    static_priv: &[u8],
+) -> Result<snow::TransportState, String> {
+    // Noise IK responder: read the mobile's first handshake message, answer it.
+    let mut hs = noise::responder(static_priv).str_err()?;
+    let mut scratch = vec![0u8; 65535];
+    let msg1 = next_binary(read).await?;
+    log::info!("tunnel: peer joined — handshake msg1 received ({} bytes)", msg1.len());
+    hs.read_message(&msg1, &mut scratch)
+        .map_err(|e| format!("handshake msg1 read failed: {e}"))?;
+    let n = hs
+        .write_message(&[], &mut scratch)
+        .map_err(|e| format!("handshake msg2 write failed: {e}"))?;
+    sink.send(Message::Binary(scratch[..n].to_vec().into())).await.str_err()?;
+    log::debug!("tunnel: handshake msg2 sent ({n} bytes); awaiting auth");
+    let mut noise_tx = hs.into_transport_mode().str_err()?;
+
+    // First app frame must be `auth`; validate the pairing secret.
+    let frame = next_binary(read).await?;
+    match decode_room_msg(&mut noise_tx, &frame)? {
+        ClientMsg::Auth { token, fcm_token } => {
+            let psk = app
+                .try_state::<TunnelState>()
+                .map(|s| s.psk())
+                .unwrap_or_default();
+            if !ct_eq(&token, &psk) {
+                log::warn!("tunnel: auth rejected — pairing secret mismatch (stale QR or wrong desktop?)");
+                return Err("auth rejected (bad pairing secret)".into());
+            }
+            // Persist the device's FCM push token (#846) so a `user_request` can reach it
+            // even after the app backgrounds/quits and drops this relay connection.
+            if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
+                state.add_fcm_token(t);
+            }
+            log::info!("tunnel: auth accepted");
+        }
+        _ => return Err("expected auth as the first frame".into()),
+    }
+    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+    Ok(noise_tx)
 }
 
 /// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
