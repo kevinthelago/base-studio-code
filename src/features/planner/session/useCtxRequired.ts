@@ -3,8 +3,7 @@
 // reads it; context files gate on GENERATION (the file exists), not confirmation, so there's
 // nothing to confirm/mirror. Returns the live required-topic list.
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson, bscRun } from "@/shared/lib/core/bsc";
 import { DISCOVERY_BASELINE } from "../stages/planStageDerive";
 import type { BlueprintStage } from "../stages/blueprints";
 
@@ -23,7 +22,9 @@ export function useCtxRequired(effectiveProjectId: string, planSecs: BlueprintSt
     let alive = true;
     const tick = async () => {
       try {
-        const m = await invoke<string[]>("plan_list_discovery", { projectKey: effectiveProjectId });
+        // `bsc plan discovery list --json` emits the required-topic string array (the same `Vec<String>`
+        // the old `plan_list_discovery` command returned); bscJson degrades to [] when plan.db is absent.
+        const m = await bscJson<string[]>(effectiveProjectId, ["plan", "discovery", "list", "--json"], []);
         if (!alive) return;
         // Seed the baseline once per project/session if the set is empty — a deterministic floor before
         // the planner runs `bsc-plan context require`. The blueprint's context section `requires`
@@ -32,7 +33,7 @@ export function useCtxRequired(effectiveProjectId: string, planSecs: BlueprintSt
           ctxSeededRef.current.add(effectiveProjectId);
           const requires = planSecs.find(s => s.key === "discovery")?.requires ?? DISCOVERY_BASELINE;
           for (const t of requires) {
-            await safeInvoke("plan_require_discovery", { projectKey: effectiveProjectId, topic: t, required: true }, undefined);
+            await bscRun(effectiveProjectId, ["plan", "discovery", "require", t]);
           }
           return; // next tick reads the seeded set
         }
