@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, Entity, Field, FieldType, LoadSource, Precedence, SourceLoad};
+use bsc_data::{reconcile, Connector, CsvConnector, DataModel, DataStore, LoadSource, Precedence, SourceLoad};
+#[cfg(feature = "source-stage")]
+use bsc_data::{Entity, Field, FieldType};
 
 /// A preview of a CSV source: its columns and the first `limit` rows.
 #[derive(serde::Serialize)]

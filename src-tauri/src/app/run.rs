@@ -171,12 +171,19 @@ pub fn run() {
             data::data_preview_csv,
             data::data_load_csv,
             data::data_reconcile_csvs,
+            #[cfg(feature = "source-stage")]
             data::data_source_inventory,
+            #[cfg(feature = "source-stage")]
             data::data_source_sample,
+            #[cfg(feature = "source-stage")]
             data::data_infer_model,
+            #[cfg(feature = "source-stage")]
             data::data_persist_model,
+            #[cfg(feature = "source-stage")]
             data::data_get_model,
+            #[cfg(feature = "source-stage")]
             data::data_load_reconciled,
+            #[cfg(feature = "source-stage")]
             data::data_platform_scan,
             data::data_runtime_connectors,
             credentials::source_save_secret,
