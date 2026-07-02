@@ -16,7 +16,6 @@
 
 use crate::{DataModel, DataStore, MetaStore, PlatformScan};
 use bsc_cli_util::{emit, CmdDoc};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const TAGLINE: &str = "the per-project Data Model + Platform Behavior Summary + DataStore (#1446/#1717)";
@@ -197,12 +196,6 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     })
 }
 
-fn read_stdin() -> Result<String, String> {
-    let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-    Ok(buf)
-}
-
 /// Open the DataStore at `db`, seeding it with the Data Model persisted in the same file's
 /// MetaStore. The MetaStore connection is opened and **dropped** (releasing the DuckDB file lock)
 /// before the DataStore re-opens it, so the two single-file views never contend within this process.
@@ -248,8 +241,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         ("model", "set") => {
             let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
-            let model: DataModel =
-                serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing DataModel: {e}"))?;
+            let model: DataModel = bsc_sqlite_util::read_stdin_json_one("DataModel")?;
             store.set_model(&model, args.refined).map_err(|e| e.to_string())?;
             Ok(())
         }
@@ -263,8 +255,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         ("scan", "set") => {
             let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
-            let scan: PlatformScan =
-                serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing PlatformScan: {e}"))?;
+            let scan: PlatformScan = bsc_sqlite_util::read_stdin_json_one("PlatformScan")?;
             store.set_scan(&scan).map_err(|e| e.to_string())?;
             Ok(())
         }
@@ -395,8 +386,7 @@ fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
     match sub {
         // `connector add` reads a RuntimePreset JSON on stdin, validates, upserts by id.
         "add" => {
-            let preset: crate::RuntimePreset =
-                serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+            let preset: crate::RuntimePreset = bsc_sqlite_util::read_stdin_json_one("connector JSON")?;
             let id = preset.id.clone();
             crate::upsert_runtime_preset(&path, preset)?;
             if args.json {
@@ -456,21 +446,10 @@ fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
     }
 }
 
-/// Print a JSON value to stdout, indented under `--pretty` (else compact). The dev-loop verbs always
-/// emit JSON (there is no lean form), so they don't route through [`emit`].
-fn print_json(pretty: bool, value: &serde_json::Value) {
-    if pretty {
-        println!("{}", serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into()));
-    } else {
-        println!("{}", serde_json::to_string(value).unwrap_or_else(|_| "null".into()));
-    }
-}
-
 /// `connector validate` — read a [`RuntimePreset`] JSON on stdin, run its structural + secret-free
 /// validation, and print `ok`; a malformed/invalid preset is the command's error (#1963).
 fn cmd_connector_validate() -> Result<(), String> {
-    let preset: crate::RuntimePreset =
-        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+    let preset: crate::RuntimePreset = bsc_sqlite_util::read_stdin_json_one("connector JSON")?;
     preset.validate()?;
     println!("ok");
     Ok(())
@@ -505,7 +484,7 @@ fn cmd_connector_probe(args: &Args) -> Result<(), String> {
             crate::transport::report_sample_shape(&body, &base, &path)
         }
     };
-    print_json(args.pretty, &value);
+    bsc_sqlite_util::print_json(&value, args.pretty);
     Ok(())
 }
 
@@ -522,8 +501,7 @@ fn cmd_connector_try(args: &Args) -> Result<(), String> {
     let source = args.source.as_deref().ok_or(
         "usage: bsc data connector try --project <k> --source <u> [--base-url <url>]  (RuntimePreset on stdin)",
     )?;
-    let preset: crate::RuntimePreset =
-        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing connector JSON: {e}"))?;
+    let preset: crate::RuntimePreset = bsc_sqlite_util::read_stdin_json_one("connector JSON")?;
     preset.validate()?;
     let base = args
         .base_url
@@ -536,7 +514,7 @@ fn cmd_connector_try(args: &Args) -> Result<(), String> {
     let fetch = crate::transport::build_fetch(&base, &preset.auth, secret);
     let conn = preset.connector(preset.id.clone(), fetch);
     let result = crate::transport::run_try(&conn, 12, 20);
-    print_json(args.pretty, &result);
+    bsc_sqlite_util::print_json(&result, args.pretty);
     Ok(())
 }
 
@@ -544,11 +522,10 @@ fn cmd_connector_try(args: &Args) -> Result<(), String> {
 /// [`DataModel`] JSON: one entity per resource, fields by name with a best-effort type (#1963). A
 /// seed for the agent to refine (identities/refs left empty).
 fn cmd_connector_map(args: &Args) -> Result<(), String> {
-    let input: serde_json::Value =
-        serde_json::from_str(read_stdin()?.trim()).map_err(|e| format!("parsing input JSON: {e}"))?;
+    let input: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("input JSON")?;
     let model = crate::transport::map_to_model(&input);
     let value = serde_json::to_value(&model).map_err(|e| e.to_string())?;
-    print_json(args.pretty, &value);
+    bsc_sqlite_util::print_json(&value, args.pretty);
     Ok(())
 }
 

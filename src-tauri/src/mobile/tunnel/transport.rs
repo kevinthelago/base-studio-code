@@ -306,50 +306,52 @@ async fn replay_state(
     sink: &mut WsSink,
     tx: &mut snow::TransportState,
 ) -> Result<(), String> {
+    /// Read one `TunnelState` snapshot through `try_state`, so a missing `TunnelState` yields the
+    /// default (empty) value rather than erroring. `f` selects the specific `*_snapshot()`/getter.
+    fn snap<R: Default>(app: &AppHandle, f: impl FnOnce(&TunnelState) -> R) -> R {
+        app.try_state::<TunnelState>().map(|s| f(&s)).unwrap_or_default()
+    }
+
     // Replay current pane list + session state to the freshly-paired client.
-    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) =
-        app.try_state::<TunnelState>().map(|s| s.snapshot()).unwrap_or_default();
+    let (panes, sessions): (Vec<_>, Vec<SessionMeta>) = snap(app, |s| s.snapshot());
     send_msg(sink, tx, &ServerMsg::PaneList { panes }).await?;
     for s in &sessions {
         send_msg(sink, tx, &super::session_state_msg(s)).await?;
     }
     // Replay each pane's current PTY size so mobile renders at the desktop's width
     // before any output arrives.
-    let sizes = app.try_state::<TunnelState>().map(|s| s.pane_sizes()).unwrap_or_default();
+    let sizes = snap(app, |s| s.pane_sizes());
     for (pane_id, cols, rows) in sizes {
         send_msg(sink, tx, &ServerMsg::PaneSize { pane_id, cols, rows }).await?;
     }
 
     // Replay plan manifests so mobile can start reconciling immediately (#588).
-    let plan_manifests =
-        app.try_state::<TunnelState>().map(|s| s.plan_manifests_snapshot()).unwrap_or_default();
+    let plan_manifests = snap(app, |s| s.plan_manifests_snapshot());
     for (project_id, files) in plan_manifests {
         send_msg(sink, tx, &ServerMsg::PlanSyncManifest { project_id, files }).await?;
     }
 
     // Replay the last live planner snapshot(s) — plan_state + plan_status — so a
     // freshly-paired phone mirrors the session immediately (#934). plan_event is transient.
-    let plan_frames =
-        app.try_state::<TunnelState>().map(|s| s.plan_frames_snapshot()).unwrap_or_default();
+    let plan_frames = snap(app, |s| s.plan_frames_snapshot());
     for frame in plan_frames {
         send_msg(sink, tx, &frame).await?;
     }
 
     // Replay fleet roster (F2) — non-empty only after the fleet has launched.
-    let fleet = app.try_state::<TunnelState>().map(|s| s.fleet_snapshot()).unwrap_or_default();
+    let fleet = snap(app, |s| s.fleet_snapshot());
     if !fleet.is_empty() {
         send_msg(sink, tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
     }
 
     // Replay automation list (A2).
-    let automations =
-        app.try_state::<TunnelState>().map(|s| s.automations_snapshot()).unwrap_or_default();
+    let automations = snap(app, |s| s.automations_snapshot());
     if !automations.is_empty() {
         send_msg(sink, tx, &ServerMsg::AutomationList { automations }).await?;
     }
 
     // Replay MCP extension list (M2).
-    let mcp = app.try_state::<TunnelState>().map(|s| s.mcp_snapshot()).unwrap_or_default();
+    let mcp = snap(app, |s| s.mcp_snapshot());
     if !mcp.is_empty() {
         send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
     }

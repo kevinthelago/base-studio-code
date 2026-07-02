@@ -26,6 +26,17 @@
         std::fs::write(path, contents).unwrap();
     }
 
+    /// A fresh, unique temp PATH `<temp>/<prefix>-<tag>-<pid>-<nanos>` (NOT created on disk —
+    /// callers `create_dir_all`/remove it). The pid+nanos suffix keeps parallel test processes and
+    /// cases from colliding. `prefix` names the caller domain (e.g. `"bsc-wt"`), `tag` the case.
+    pub fn unique_dir(prefix: &str, tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("{prefix}-{tag}-{}-{nanos}", std::process::id()))
+    }
+
 /// The shared import preamble for the per-module `relocated_tests` blocks (#2077). Every one of
 /// those ~18 modules copy-pasted the identical glob dance; they now do just `use super::*;` (their
 /// own module's items) + `use crate::testutil::prelude::*;`.
@@ -39,5 +50,5 @@ pub mod prelude {
     pub(crate) use crate::project::{
         dead_code::*, files::*, hub::*, plan_db::*, plan_files::*, ui_skeleton::*,
     };
-    pub(crate) use super::{temp_home, write_file, ENV_LOCK};
+    pub(crate) use super::{temp_home, unique_dir, write_file, ENV_LOCK};
 }
