@@ -745,7 +745,7 @@ pub(crate) fn sandbox_clone_repo(key: String, repo: String, token: String) -> Re
     if !cfg!(windows) {
         return Err("The WSL2 agent sandbox is Windows-only.".into());
     }
-    let short = repo.rsplit('/').next().unwrap_or(&repo);
+    let short = crate::platform::paths::repo_short(&repo);
     let dest = format!("{}/{}", sandbox_project_path(&key), short);
     let script = format!(
         "test -d {dest}/.git && exit 0; rm -rf {dest}; git clone {url} {dest}",
@@ -768,11 +768,10 @@ pub(crate) fn sandbox_clone_repo(key: String, repo: String, token: String) -> Re
 /// OUTSIDE the hub (so the planner spec isn't an ancestor, #844). Pure — the branch/dir names match
 /// the frontend's `worktreeSlug(streamId)` so the launched pane's cwd + branch line up.
 fn sandbox_worktree_path(key: &str, repo: &str, agent_id: &str) -> String {
-    let short = repo.rsplit('/').next().unwrap_or(repo);
-    let slug = crate::platform::fsx::worktree_slug(agent_id);
     format!(
-        "/home/agent/.base-studio-code/worktrees/{}/{short}--{slug}",
+        "/home/agent/.base-studio-code/worktrees/{}/{}",
         crate::platform::fsx::sanitize_project_key(key),
+        crate::platform::paths::worktree_dir_name(repo, agent_id),
     )
 }
 
@@ -798,7 +797,7 @@ pub(crate) fn ensure_sandbox_worktree(
     if !cfg!(windows) {
         return Err("The WSL2 agent sandbox is Windows-only.".into());
     }
-    let short = repo.rsplit('/').next().unwrap_or(&repo).to_string();
+    let short = crate::platform::paths::repo_short(&repo).to_string();
     let clone = format!("{}/{short}", sandbox_project_path(&project_key));
     let wt = sandbox_worktree_path(&project_key, &repo, &agent_id);
     let slug = crate::platform::fsx::worktree_slug(&agent_id);
