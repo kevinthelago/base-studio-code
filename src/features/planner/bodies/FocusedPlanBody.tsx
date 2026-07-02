@@ -13,6 +13,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 
 export function PlanBody({ data, focus: focusProp, onFocus }: {
   data?: ProjectPaneData;
@@ -46,12 +47,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
   const hasRel = !!relGraph;
 
   if (!hasRel) {
-    return (
-      <Box className="empty-state">
-        <Box as="span" className="empty-icon">◫</Box>
-        <Text as="span">No plan yet — define the features, then Claude drafts the dependency seams</Text>
-      </Box>
-    );
+    return <EmptyState iconVariant="dashed" icon="◫" title="No plan yet — define the features, then Claude drafts the dependency seams" />;
   }
 
   const kindsUsed = relGraph ? [...new Set(edges.map((e) => e.kind))] : [];

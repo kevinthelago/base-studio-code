@@ -169,7 +169,7 @@ describe("BlueprintImportModal", () => {
     fireEvent.click(screen.getByText("Import"));
     expect(await screen.findByRole("alert")).toBeTruthy();
 
-    fireEvent.click(screen.getByLabelText("Dismiss error"));
+    fireEvent.click(screen.getByLabelText("Dismiss"));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -311,7 +311,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                     </select>
                   )}
                   <Button disabled={selected.size === 0} onClick={bulkExport}>Export</Button>
-                  <Button style={{ borderColor: tintBg("var(--danger)", 60), color: "var(--danger)" }} onClick={bulkDelete}>Delete</Button>
+                  <Button danger onClick={bulkDelete}>Delete</Button>
                 </Row>
               )}
 
