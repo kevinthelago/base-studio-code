@@ -13,7 +13,7 @@
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Stack" | "Row" | "Spacer" | "Grid"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Grid"
   // typography
   | "Text"
   // controls
@@ -79,6 +79,19 @@ const CHILDREN: PropSpec = { name: "children", type: "node", required: true, des
 
 export const UI_KIT: PrimitiveSpec[] = [
   // ---- layout ---------------------------------------------------------------
+  {
+    name: "Box", group: "layout", importPath: "@/shared/ui/layout/Box", passthrough: true,
+    description: "The generic styled container — the catch-all so features never write a raw div.",
+    props: [
+      CHILDREN,
+      { name: "as", type: "string", default: "div", description: "The rendered element (div/section/aside/span/…)." },
+      { name: "pad", type: "space", description: "Inner padding — a rung/px, or a [block, inline] pair." },
+      { name: "bg", type: "color", description: "Background color/token." },
+      { name: "border", type: "enum", values: ["true", "soft", "<color>"], description: "true → --stroke, soft → --stroke-soft, or a color → 1px solid <color>." },
+      { name: "radius", type: "enum", values: ["sm", "md", "lg"], description: "Corner radius rung (--r-*) or raw px." },
+      { name: "shadow", type: "enum", values: ["sm", "md", "lg", "xl"], description: "Elevation (--shadow-*)." },
+    ],
+  },
   {
     name: "Stack", group: "layout", importPath: "@/shared/ui/layout/Stack", passthrough: true,
     description: "Vertical flex column with a gap.",
