@@ -2,6 +2,7 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscWrite } from "@/shared/lib/core/bsc";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
@@ -58,7 +59,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
   // In-app fleet edits must reach plan.db (#1317), so the director / recovery / planning poll see
   // them and they survive a reload. `updater` gets the current fleet (or undefined) and returns the
   // new fleet — or null to no-op (no change, no persist). NOT used by the poll's READ path
-  // (`setPlanFleet`), so there is no read→write loop. plan_set_fleet does a full replace, so
+  // (`setPlanFleet`), so there is no read→write loop. `bsc plan fleet set` does a full replace, so
   // persisting the whole post-edit fleet covers add/remove/edit.
   const mutateFleet = (
     projectId: string,
@@ -67,7 +68,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
     const next = updater(get().planFleet[projectId]);
     if (next === null) return;
     set({ planFleet: setMapEntry(get().planFleet, projectId, next) });
-    fireInvoke("plan_set_fleet", { projectKey: projectId, fleet: next });
+    void bscWrite(projectId, ["plan", "fleet", "set"], next);
   };
   return ({
       configProfiles: [],

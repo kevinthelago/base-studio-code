@@ -119,13 +119,17 @@ describe("SourceBody — closes the data-dictates-structure loop (#1205) via the
     // … and the inferred source→canonical mapping list renders for confirmation.
     expect(screen.getByTestId("mapping-confirm")).toBeTruthy();
     // The model is NOT persisted yet — the human mapping gate (#1986) replaced the old auto-persist.
-    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("data_persist_model", expect.anything());
+    // Persist now routes through the `bsc` bridge (#2114): `bsc data model set --refined` (model on stdin).
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(
+      "bsc",
+      expect.objectContaining({ args: ["data", "model", "set", "--refined"] }),
+    );
 
     // Confirming the mapping persists the derived model as the canonical artifact (refined).
     fireEvent.click(screen.getByTestId("confirm-mapping"));
     await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith(
-      "data_persist_model",
-      expect.objectContaining({ projectKey: "p1", refined: true }),
+      "bsc",
+      expect.objectContaining({ projectKey: "p1", args: ["data", "model", "set", "--refined"] }),
     ));
     expect(screen.getByTestId("mapping-confirmed")).toBeTruthy();
   });
