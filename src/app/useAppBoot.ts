@@ -54,6 +54,10 @@ export function useAppBoot() {
     // and every live `bsc-skill` session share ONE library. Reconciles the code-owned packaged set
     // and seeds the db on first run; a no-op when the bridge is absent (keeps the seeded set).
     void useAppStore.getState().hydrateSkills();
+    // Persona library (#2094): hydrate from the global persona store (`bsc persona`) so the desktop
+    // Personas tab, live sessions, and the planner share ONE library. Reconciles the packaged
+    // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
+    void useAppStore.getState().hydratePersonas();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

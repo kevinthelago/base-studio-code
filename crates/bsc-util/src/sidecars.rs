@@ -66,6 +66,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "persona", context_env: None,
+        blurb: "the user persona library: agent identities (start prompt + skills + model over a role)",
+        advertise: true,
+    },
+    Sidecar {
         name: "project", context_env: None,
         blurb: "list local projects + read/set the published marker",
         advertise: true,

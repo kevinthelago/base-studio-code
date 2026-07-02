@@ -1,16 +1,23 @@
-// Personas feature store slice (#2094) — the CRUD-able agent-identity library. Composed into the app
-// store by store/index.ts and persisted (the built-ins are re-seeded + reconciled on load via
-// `reconcilePersonas`, so a new packaged persona appears and user edits survive). Behavior identity
-// only: the ROLE it references (permissions) lives in `sessionRoles.ts` and is never mutated here.
+// Personas feature store slice (#2094) — the CRUD-able agent-identity library, a WRITE-THROUGH cache
+// over the global persona store (`~/.base-studio-code/personas/`, reached via `bsc persona` — see
+// personaBridge.ts). The desktop UI, live sessions, and the planner share ONE store. On boot
+// `hydratePersonas` loads through the bridge + reconciles the packaged built-ins; every mutation below
+// pushes through. The persisted `personas` in app-state is just a fast first-paint cache; hydrate is
+// authoritative. Behavior identity only: the ROLE it references (permissions) lives in `sessionRoles.ts`.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { ModelId } from "@/app/console/lib/models";
-import { BUILTIN_PERSONAS, blankPersona, personaSlug, type Persona } from "./lib/persona";
+import { BUILTIN_PERSONAS, blankPersona, personaSlug, reconcilePersonas, type Persona } from "./lib/persona";
+import { loadPersonas, pushPersona, dropPersona } from "./lib/personaBridge";
 
 export interface PersonasSlice {
   /** The persona library — packaged built-ins (reconciled on load) + user-authored. */
   personas: Persona[];
+  /** Hydrate the library from the global persona store on boot (#2094): load via the bridge, reconcile
+   *  the packaged built-ins, and push any newly-seeded built-in back so the store has it. No-op (keeps
+   *  the seeded set) when the bridge is unreachable — tests, the web shell, or an old binary. */
+  hydratePersonas: () => Promise<void>;
   /** Create a user persona (optionally on a given role) and return its new id. */
   addPersona: (role?: SessionRole) => string;
   /** Clone any persona (incl. a built-in) into a new editable user persona; returns the new id. */
@@ -39,9 +46,22 @@ function mintPersonaId(existing: Persona[], name: string): string {
 export const createPersonasSlice: StateCreator<AppStore, [], [], PersonasSlice> = (set, get) => ({
   personas: BUILTIN_PERSONAS,
 
+  hydratePersonas: async () => {
+    const loaded = await loadPersonas();
+    if (!loaded) return; // bridge unreachable — keep the seeded built-ins
+    const reconciled = reconcilePersonas(loaded);
+    set({ personas: reconciled });
+    // Persist any built-in the store didn't have yet (first run / a new packaged persona), so the
+    // store — the source of truth — carries the full library a session/planner sees.
+    const had = new Set(loaded.map((p) => p.id));
+    for (const p of reconciled) if (!had.has(p.id)) void pushPersona(p);
+  },
+
   addPersona: (role = "reviewer") => {
     const id = mintPersonaId(get().personas, "new persona");
-    set((s) => ({ personas: [...s.personas, blankPersona(id, role)] }));
+    const persona = blankPersona(id, role);
+    set((s) => ({ personas: [...s.personas, persona] }));
+    void pushPersona(persona);
     return id;
   },
 
@@ -52,20 +72,28 @@ export const createPersonasSlice: StateCreator<AppStore, [], [], PersonasSlice> 
     const newId = mintPersonaId(get().personas, name);
     const clone: Persona = { ...src, id: newId, name, builtin: false };
     set((s) => ({ personas: [...s.personas, clone] }));
+    void pushPersona(clone);
     return newId;
   },
 
-  updatePersona: (id, patch) =>
+  updatePersona: (id, patch) => {
+    let updated: Persona | undefined;
     set((s) => ({
-      personas: s.personas.map((p) =>
-        p.id === id ? { ...p, ...patch, id: p.id, builtin: p.builtin } : p,
-      ),
-    })),
+      personas: s.personas.map((p) => {
+        if (p.id !== id) return p;
+        updated = { ...p, ...patch, id: p.id, builtin: p.builtin };
+        return updated;
+      }),
+    }));
+    if (updated) void pushPersona(updated);
+  },
 
-  removePersona: (id) =>
-    set((s) => ({
-      personas: s.personas.filter((p) => !(p.id === id && !p.builtin)),
-    })),
+  removePersona: (id) => {
+    const target = get().personas.find((p) => p.id === id);
+    if (!target || target.builtin) return; // built-ins are not deletable
+    set((s) => ({ personas: s.personas.filter((p) => p.id !== id) }));
+    void dropPersona(id);
+  },
 
   applyPersonaToPane: (paneId, personaId) => {
     const persona = get().personas.find((p) => p.id === personaId);

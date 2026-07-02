@@ -1,10 +1,33 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import { BUILTIN_PERSONAS } from "./lib/persona";
+import * as bridge from "./lib/personaBridge";
 
 describe("personas store slice (#2094)", () => {
   beforeEach(() => {
     useAppStore.setState({ personas: BUILTIN_PERSONAS });
+  });
+
+  it("hydratePersonas keeps the seeded set when the bridge is unreachable", async () => {
+    vi.spyOn(bridge, "loadPersonas").mockResolvedValueOnce(null);
+    useAppStore.setState({ personas: BUILTIN_PERSONAS });
+    await useAppStore.getState().hydratePersonas();
+    expect(useAppStore.getState().personas).toEqual(BUILTIN_PERSONAS);
+  });
+
+  it("hydratePersonas reconciles the loaded set + re-seeds a dropped built-in", async () => {
+    // The store returns only a subset (juror dropped) + a user persona.
+    const loaded = BUILTIN_PERSONAS.filter((p) => p.id !== "persona-juror").concat({
+      id: "persona-mine", name: "Mine", blurb: "", role: "reviewer" as const, startPrompt: "", skills: [],
+    });
+    vi.spyOn(bridge, "loadPersonas").mockResolvedValueOnce(loaded);
+    const push = vi.spyOn(bridge, "pushPersona").mockResolvedValue(undefined);
+    await useAppStore.getState().hydratePersonas();
+    const personas = useAppStore.getState().personas;
+    expect(personas.some((p) => p.id === "persona-juror" && p.builtin)).toBe(true); // re-seeded
+    expect(personas.some((p) => p.id === "persona-mine" && !p.builtin)).toBe(true); // user kept
+    // The re-seeded built-in (absent from the loaded set) is pushed back to the store.
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ id: "persona-juror" }));
   });
 
   it("addPersona appends an editable persona and returns its id", () => {
