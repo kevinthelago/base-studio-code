@@ -795,6 +795,7 @@ name = "bsc-data"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-sqlite-util",
  "csv",
  "duckdb",
  "keyring",

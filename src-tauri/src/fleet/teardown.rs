@@ -267,6 +267,7 @@ pub(crate) fn reclaim_worktrees(project_key: String) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::unique_dir;
     use std::fs;
 
     /// Stand up a real git clone with one commit, so `git worktree add/remove` work end to end.
@@ -285,18 +286,10 @@ mod tests {
         run(&["commit", "-q", "-m", "init"]);
     }
 
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("bsc-teardown-{tag}-{}-{nanos}", std::process::id()))
-    }
-
     /// git worktree remove drops BOTH the directory AND the owning clone's admin record.
     #[test]
     fn remove_worktree_drops_dir_and_admin_record() {
-        let base = unique_dir("rm");
+        let base = unique_dir("bsc-teardown", "rm");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("wt");
@@ -325,7 +318,7 @@ mod tests {
     /// Tearing down a MISSING worktree is a no-op success (idempotent reap).
     #[test]
     fn remove_missing_worktree_is_ok() {
-        let base = unique_dir("missing");
+        let base = unique_dir("bsc-teardown", "missing");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("never-made");
@@ -337,7 +330,7 @@ mod tests {
     /// NEVER a dirty or unmerged-with-work worktree.
     #[test]
     fn gc_reclaims_merged_and_orphans_but_keeps_dirty_and_ahead() {
-        let base = unique_dir("gc");
+        let base = unique_dir("bsc-teardown", "gc");
         let key = "projk";
         let clone = base.join("projects").join(key).join("web");
         init_clone(&clone);
@@ -389,7 +382,7 @@ mod tests {
     /// elsewhere; on Unix this asserts the symlink case.)
     #[test]
     fn junction_detach_preserves_shared_target() {
-        let base = unique_dir("junction");
+        let base = unique_dir("bsc-teardown", "junction");
         let shared = base.join("main-node_modules");
         fs::create_dir_all(shared.join(".bin")).unwrap();
         fs::write(shared.join(".bin").join("vite"), "binary").unwrap();
@@ -425,7 +418,7 @@ mod tests {
     /// exclude_build_artifacts writes target/ (etc.) to the worktree's info/exclude, idempotently.
     #[test]
     fn exclude_writes_build_dirs_to_git_exclude() {
-        let base = unique_dir("excl");
+        let base = unique_dir("bsc-teardown", "excl");
         let clone = base.join("clone");
         init_clone(&clone);
         let wt = base.join("wt");

@@ -21,6 +21,10 @@ csv = "1"
 # Shared CLI scaffold (#1762): `cli_main` (the `main` wrapper), `resolve_store_path` (--db→env→default),
 # and `emit` (the lean-TSV-vs-JSON dispatch) the `bsc-data` CLI shares with `bsc-plan` / `bsc-logs` / ….
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Shared stdin/print helpers (#2170): `read_stdin_json_one` (trim + parse one JSON object from stdin)
+# and `print_json` (compact/pretty stdout) — the rusqlite-free JSON side of the shared SQLite CLI util,
+# so `bsc data` shares the exact stdin/print behavior of `bsc plan` / `bsc skill`.
+bsc-sqlite-util = { path = "../bsc-sqlite-util" }
 # `bundled` compiles DuckDB from source (mirrors how rusqlite is bundled in
 # src-tauri) for cross-platform reliability without a system libduckdb.
 duckdb = { version = "1", features = ["bundled"], optional = true }

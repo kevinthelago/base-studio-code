@@ -154,20 +154,13 @@ pub(crate) async fn worktrees_disk_usage() -> Vec<WorktreeUsage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::unique_dir;
     use std::fs;
-
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("bsc-disk-{tag}-{}-{nanos}", std::process::id()))
-    }
 
     /// dir_size sums file bytes and does NOT follow symlinked/junctioned subdirs.
     #[test]
     fn dir_size_sums_files_and_skips_links() {
-        let base = unique_dir("size");
+        let base = unique_dir("bsc-disk", "size");
         let d = base.join("d");
         fs::create_dir_all(d.join("sub")).unwrap();
         fs::write(d.join("a.bin"), vec![0u8; 1000]).unwrap();
@@ -179,7 +172,7 @@ mod tests {
     /// worktrees_disk_usage_impl reports each worktree's size + target size (single-walk), biggest first.
     #[test]
     fn worktrees_disk_usage_reports_target_size() {
-        let base = unique_dir("usage");
+        let base = unique_dir("bsc-disk", "usage");
         let key = "proj";
         let root = base.join("worktrees").join(key);
         let wt_a = root.join("web--auth");
