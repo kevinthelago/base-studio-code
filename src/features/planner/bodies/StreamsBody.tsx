@@ -40,7 +40,7 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
         </Box>
       ) : focusedAgent ? (
         // One card for the focused stream (1:1 with its worker) — identity · scope · kickoff · config.
-        <StreamCard a={focusedAgent} agents={agents} onFlow={handlers.onFlow} onModel={handlers.onModel} />
+        <StreamCard a={focusedAgent} agents={agents} onFlow={handlers.onFlow} onModel={handlers.onModel} onPersona={handlers.onPersona} />
       ) : (
         <Text as="div" mono size={10} tone="dim" style={{ marginTop: 14, textAlign: "center", padding: "14px 0" }}>
           Select a stream in the graph to see its scope, kickoff &amp; config.

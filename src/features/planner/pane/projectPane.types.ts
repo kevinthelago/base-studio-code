@@ -67,6 +67,8 @@ export interface Agent {
   flow: Flow;
   /** Per-agent LLM model override (#…); undefined ⇒ inherits the global `defaultModel`. */
   model?: ModelId;
+  /** The persona this stream launches as (#2094) — its id; drives role/prompt/skills/model at launch. */
+  persona?: string;
   /** Per-stream integration-strategy override (#378); undefined ⇒ inherits the fleet default. */
   strategy?: IntegrationStrategy;
   ctx: number;

@@ -186,6 +186,9 @@ export interface PlanState {
   /** #378: set a stream's per-stream integration-strategy override (undefined clears
    *  it so the stream inherits the fleet default). */
   setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;
+  /** #2094: set (or clear, with null) the persona a stream launches as — resolves role/prompt/skills/
+   *  model at fleet launch. */
+  setPlanAgentStreamPersona: (projectId: string, streamId: string, personaId: string | null) => void;
   setPlanFleetMeta:      (projectId: string, recommended: number, reasoning: string, strategy?: IntegrationStrategy) => void;
   /** Per-project coordination-topology override (#…), set in the Permissions pane. Wins
    *  over the planner's fleet.json topology and survives a fleet re-poll. */

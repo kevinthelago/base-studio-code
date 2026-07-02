@@ -8,6 +8,7 @@ import { resolveStrategy } from "../lib/integrationStrategy";
 import { depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { buildStreamPrompt } from "@/store/helpers";
+import { resolveStreamPersona, personaStreamPrompt } from "../fleet/streamPersona";
 import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
 import type { Posture, Perm, Agent } from "./projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
@@ -65,10 +66,13 @@ export function buildAgents(input: BuildProjectPaneInput): Agent[] {
     // preview them (pure — the same builders fleetStartProject / write_worker_context use).
     const strategy = resolveStrategy(s.strategy, input.fleet?.strategy);
     const scope = buildWorkerScope(s, depsForRepo(input.dependencies ?? [], s.repo));
+    // #2094: a stream may launch AS a persona — its role + persona-identity kickoff drive the row +
+    // preview (matching fleetStartProject). No persona ⇒ the plain worker role + kickoff.
+    const persona = resolveStreamPersona(input.personas ?? [], s);
     return {
       id: s.id,
       name: s.name.startsWith("@") ? s.name : "@" + s.id,
-      role: "worker",
+      role: persona?.role ?? "worker",
       status: "idle",
       repo: s.repo,
       color: agentColor(i),
@@ -79,9 +83,10 @@ export function buildAgents(input: BuildProjectPaneInput): Agent[] {
       perm: derivePerm(profile, flow.push),
       flow: { autonomy: flow.autonomy, push: mapPush(flow.push), gate: flow.gate },
       model: s.model,
+      persona: s.persona,
       strategy: s.strategy,
       ctx: s.owns.length,
-      kickoff: buildStreamPrompt(s, strategy),
+      kickoff: persona ? personaStreamPrompt(persona, s, strategy) : buildStreamPrompt(s, strategy),
       scope,
       authoredPrompt: s.prompt,
     };
