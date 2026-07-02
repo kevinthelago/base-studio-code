@@ -9,6 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **UI-kit adoption sweep — tail cleanup (#2159/#2160/#2161)** — the next consistency pass over the remaining raw-HTML holdouts (the kit was already ~900 imports deep across 200 files, so this is tail cleanup, not greenfield). **#2159:** extracted a shared `SettingsPageHeader`/`SettingsSubHeader` — killing the byte-identical `<h2 className="mono">` + muted `<p>` header hand-rolled across all 6 Settings pages plus the two duplicated local `Sub` helpers — then swept styled `<h2/h3/h4/p>` onto `<Text>` and read-only mono `<pre>` blocks onto `<Code>` across settings/planner/github/tunnel/skills/mcp/automations (~37 files, lossless). **#2160:** folded the two genuinely-lossless color-mix pills (`connectorForm` ReadOnlyPill, `RelationshipInspector` Pill) onto `<Chip>`; left 6 tuned variants (radius-4/weight-600, `oklab` interpolation, dashed/transparent borders, `.role` line-height, solid fills) local, each with a documented reason. **#2161:** adopted the data + feedback primitives — `EmptyState`, `StatTile`, `FillBar`, `Card`, `StatusDot`, `Banner`/`InlineError`, and the `Button danger` prop — for their hand-rolled equivalents across planner/github/skills/settings/agents/automations (~38 files), taking each primitive's canonical look. Deliberately left: `InjectionGateBanner` (a structured 3-section panel `Banner` can't model), the planner agent `Avatar` (semantically distinct from the kit's GitHub-login `Avatar`), and every `eslint-disable`d bespoke input/button. typecheck clean, lint 0 errors throughout.
+
 ## [1.0.42] — 2026-07-02
 
 ### Added
