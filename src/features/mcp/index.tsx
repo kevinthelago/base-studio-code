@@ -10,10 +10,11 @@ import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { type CatalogItem } from "@/shared/data/mcpCatalog";
 import { HOOK_CATALOG } from "@/shared/data/hookCatalog";
 import { mcpFromCatalog, type McpServer, type McpTransport } from "./lib/mcpServers";
-import { hookFromCatalog, blankHook, type Hook } from "./lib/hooks";
+import { hookFromCatalog, blankHook, SYSTEM_HOOKS, type Hook } from "./lib/hooks";
 import {
   useGhProjects, scopeChips, DrawerBody, InstalledRow, CatalogCard,
 } from "./shared";
+import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -302,6 +303,29 @@ export function HooksView() {
     );
   }
 
+  // The always-on security floor (#1916/#2050): PreToolUse hooks the app injects into every session
+  // backend-side. Surfaced read-only ("system · always on") so the view reflects the REAL running
+  // set — they can't be toggled or removed here (they describe what runs, not user config).
+  function systemView() {
+    return (
+      <Box>
+        <SectionHeader title="System hooks" hint="the always-on security floor — injected into every session, not editable" meta={<>{SYSTEM_HOOKS.length} always on</>} />
+        <Box className="row-list">
+          {SYSTEM_HOOKS.map(h => (
+            <CardListRow
+              key={h.name}
+              lead={<Box className="health" />}
+              title={h.name}
+              badge={<Chip tone="info">{`hook · ${h.event}`}</Chip>}
+              subtitle={h.purpose}
+              trailing={<Chip title="always on — injected by the app, not user-configurable">system · always on</Chip>}
+            />
+          ))}
+        </Box>
+      </Box>
+    );
+  }
+
   function catalogView() {
     const q = search.trim().toLowerCase();
     const installedNames = new Set(hooks.map(e => e.name.toLowerCase()));
@@ -331,6 +355,8 @@ export function HooksView() {
         </Row>
         <Box className="ext-body">
           {installedView()}
+          <Box style={{ height: 20 }} />
+          {systemView()}
           <Box style={{ height: 20 }} />
           {catalogView()}
         </Box>
