@@ -1,8 +1,7 @@
 // Agents — Flow tab (#1643 split from AgentsWorkspace).
 //
-// The fleet's live work-flow: which sessions are parked on a dependency (#199) and
-// which work items are flowing through their workflow stages (#220) — each cross-
-// referenced with the permission profile the session runs under. Coord state is
+// The fleet's live work-flow: which sessions are parked on a dependency (#199) — each
+// cross-referenced with the permission profile the session runs under. Coord state is
 // rebuilt from the app-wide $BSC_COORD_LOG via read_coord_log + ingestCoordLog, so it
 // needs no store wiring. Summary + status colors are pure (./lib/flowModel).
 
@@ -24,14 +23,12 @@ import {
 } from "@/shared/lib/fleet/coordination";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { actuateWake } from "@/shared/lib/fleet/coordinatorActuate";
-import type { WorkflowRun } from "@/shared/lib/fleet/conductor";
 import type { AgentProfile } from "./lib/agentProfiles";
-import { flowSummary, depColor, stageColor } from "./lib/flowModel";
+import { flowSummary, depColor } from "./lib/flowModel";
 
 const COORD_POLL_MS = 3000;
 
 export interface FlowTabProps {
-  runs: Record<string, WorkflowRun>;
   wakePane: (paneId: string, prompt: string) => boolean;
   profileFor: (session: string) => AgentProfile | undefined;
 }
@@ -51,7 +48,7 @@ function SessionTag({ session, profile }: { session: string; profile?: AgentProf
   );
 }
 
-export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
+export function FlowTab({ wakePane, profileFor }: FlowTabProps) {
   const [views, setViews] = useState<BlockedView[]>([]);
   const [ready, setReady] = useState<Waiter[]>([]);
   const [state, setState] = useState<CoordState>(emptyCoordState());
@@ -80,7 +77,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
     }
   }, [wakePane, state]);
 
-  const { stalled, deadlocked, runEntries, idle } = flowSummary(views, ready, runs);
+  const { stalled, deadlocked, idle } = flowSummary(views, ready);
 
   return (
     <Box style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
@@ -88,7 +85,6 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
         <StatTile k="ready" v={ready.length} tone="success" sub="deps landed — wake" />
         <StatTile k="blocked" v={views.length} tone="accent" sub="parked on a dep" />
         <StatTile k="stalled / deadlocked" v={stalled + deadlocked} tone="danger" sub={<>{deadlocked} cyclic · escalate</>} />
-        <StatTile k="workflows" v={runEntries.length} sub="work items flowing" />
       </Box>
 
       {deadlocked > 0 && (
@@ -106,8 +102,7 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
 
       {idle && !err && (
         <Text as="div" className="hint" mono size={11.5} style={{ padding: "8px 2px" }}>
-          The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>;
-          workflow runs appear once a work item is started (Projects → Workflows).
+          The fleet is flowing. Parked sessions appear here when a worker runs <code>bsc-blocked --on &lt;ref&gt;</code>.
         </Text>
       )}
 
@@ -163,46 +158,6 @@ export function FlowTab({ runs, wakePane, profileFor }: FlowTabProps) {
               </Row>
             </Card>
           ))}
-        </>
-      )}
-
-      {runEntries.length > 0 && (
-        <>
-          <SectionHeader title="Workflows" hint="role-staged work items (#220) · the role each stage runs as" />
-          {runEntries.map(([id, run]) => {
-            const stages = Object.values(run.workflow.stages);
-            return (
-              <Card key={id} style={{ marginBottom: 10 }}>
-                <Row gap={10} style={{ marginBottom: 10 }}>
-                  <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>{id}</h3>
-                  <Text as="span" className="hint" size={10.5}>{run.workflow.name}</Text>
-                  <Chip style={{ color: stageColor(run.state.status), fontSize: 9.5 }}><StatusDot style={{ marginRight: 4 }} />{run.state.status}</Chip>
-                  <Spacer />
-                  {run.state.escalation && (
-                    <Text as="span" className="hint" mono size={10} tone="danger">{run.state.escalation}</Text>
-                  )}
-                </Row>
-                <Row gap={6} wrap>
-                  {stages.map((st, i) => {
-                    const current = run.state.stage === st.name;
-                    const attempts = run.state.attempts[st.name] ?? 0;
-                    return (
-                      <Box as="span" key={st.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {i > 0 && <Text as="span" mono tone="dim" size={10}>→</Text>}
-                        <Box as="span" className="mono" pad={[3, 8]} bg={current ? "var(--bg-elev)" : "transparent"} radius={5} style={{
-                          fontSize: 11,
-                          border: "1px solid " + (current ? "var(--accent)" : "var(--border-soft)"),
-                          color: current ? "var(--accent)" : "var(--fg-muted)",
-                        }}>
-                          {st.name} <Text as="span" tone="dim" size={9.5}>{st.role}</Text>{attempts > 1 ? ` ×${attempts}` : ""}
-                        </Box>
-                      </Box>
-                    );
-                  })}
-                </Row>
-              </Card>
-            );
-          })}
         </>
       )}
     </Box>

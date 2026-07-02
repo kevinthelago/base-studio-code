@@ -149,8 +149,7 @@ export interface PlanState {
    *  an existing one). Returns the new id. */
   importBlueprint: (bp: Blueprint) => string;
   // Stage-pipeline run state (#528/#529): per-project, per-pipeline run status, keyed
-  // projectKey -> stageUid -> state. Distinct from the fleet conductor's
-  // `workflowRuns` (#220). Session-only (not persisted).
+  // projectKey -> stageUid -> state. Session-only (not persisted).
   stageRuns: Record<string, Record<string, StageRunState>>;
   setStageRun: (projectKey: string, stageUid: string, state: StageRunState) => void;
   // The current UI preview per project (#531): the render-preview pipeline writes the

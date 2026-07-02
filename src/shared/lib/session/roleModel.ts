@@ -18,9 +18,9 @@ const roleCaps = overlayFile("permissions/role-capabilities.json", roleCapsEmbed
 
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
-  // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews,
-  // conductor sequences stages. All are least-privilege (read-only, no code writes).
-  | "tester" | "reviewer" | "conductor"
+  // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews.
+  // All are least-privilege (read-only, no code writes).
+  | "tester" | "reviewer"
   // Issuer (#376): intake-only — shapes user requests into issues and may open GitHub
   // issues, but never touches code or git; routing is the director's job.
   | "issuer"

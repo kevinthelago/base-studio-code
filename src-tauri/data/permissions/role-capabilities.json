@@ -7,7 +7,6 @@
     "triage":    { "role": "triage",    "github": "write", "git": "none",  "code": "none",  "net": "read", "writeGlobs": [] },
     "tester":    { "role": "tester",    "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
     "reviewer":  { "role": "reviewer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "conductor": { "role": "conductor", "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
     "issuer":    { "role": "issuer",    "github": "write", "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
     "juror":     { "role": "juror",     "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] }
   },

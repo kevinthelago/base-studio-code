@@ -5,9 +5,7 @@ import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
-import { WORKFLOW_PRESETS } from "@/shared/lib/fleet/workflow";
-import { startRun } from "@/shared/lib/fleet/conductor";
-import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, mountState } from "../helpers";
+import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -36,7 +34,7 @@ import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -146,22 +144,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         return ok;
       },
       fleetPaneStreams: {},
-      workflowRuns: {},
-      workflowStart: (presetKey, item) =>
-        set((s) => {
-          const pipeline = WORKFLOW_PRESETS[presetKey];
-          const id = item.trim();
-          if (!pipeline || !id) return {};
-          return mountState(s, id, startRun(pipeline, id).run);
-        }),
-      workflowClear: (item) =>
-        set((s) => ({ workflowRuns: deleteMapEntry(s.workflowRuns, item) })),
-      workflowMount: (item) =>
-        set((s) => {
-          const run = s.workflowRuns[item];
-          return run ? mountState(s, item, run) : {};
-        }),
-      workflowSetRuns: (runs) => set({ workflowRuns: runs }),
       projectsDrawerIssue: null,
       setProjectsDrawerIssue: (n) => set({ projectsDrawerIssue: n }),
       planningPitch: "",

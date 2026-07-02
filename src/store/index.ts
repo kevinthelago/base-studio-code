@@ -113,7 +113,6 @@ export const useAppStore = create<AppStore>()(
         paneModels:           s.paneModels,
         focusTarget:          s.focusTarget,
         fleetPaneStreams:     s.fleetPaneStreams,
-        workflowRuns:         s.workflowRuns,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
         projectKeyAlias:      s.projectKeyAlias,

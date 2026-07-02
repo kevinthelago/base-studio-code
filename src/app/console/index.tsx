@@ -9,7 +9,6 @@ import { shouldAdvanceOnReply } from "@/app/console/lib/consoleFocus";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
-import { useWorkflowConductor } from "@/shared/lib/fleet/useWorkflowConductor";
 import { useDirectorPump } from "./useDirectorPump";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
@@ -34,8 +33,6 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
   // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.
   const tokenUsage = usePaneTokenUsage();
-  // #220: the pipeline conductor — auto-advances pipeline runs as stages report.
-  useWorkflowConductor();
   // Subscribe per-slice instead of `useAppStore()`-the-whole-state, so a mutation
   // anywhere else in the store (GitHub cache, settings, planning data)
   // no longer re-renders the entire console grid — only changes to slices this
