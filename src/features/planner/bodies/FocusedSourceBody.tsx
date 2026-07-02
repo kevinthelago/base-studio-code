@@ -17,7 +17,8 @@
 // discovered object inventory.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscWrite } from "@/shared/lib/core/bsc";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { Banner } from "@/shared/ui/feedback/Banner";
@@ -137,7 +138,7 @@ export function SourceBody({ projectId, onInject }: {
     if (!ready || !pid || !mappingConfirmed) return;
     if (modelSig === persistedSig.current) return;
     persistedSig.current = modelSig;
-    fireInvoke("data_persist_model", { projectKey: pid, model, refined: true });
+    void bscWrite(pid, ["data", "model", "set", "--refined"], model);
   }, [ready, pid, mappingConfirmed, modelSig, model]);
 
   // ── actions ──

@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { useAppStore, type AutomationSuggestion } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
@@ -150,7 +150,7 @@ export function usePlanSectionPoll({ visible, projectId: effectiveProjectId, pub
             const manifest = parseDependencyManifest(legacy);
             if (manifest.dependencies.length || Object.keys(manifest.registries).length) {
               depsImportedRef.current.add(effectiveProjectId);
-              await invoke("plan_set_deps", { projectKey: effectiveProjectId, manifest });
+              await bscWrite(effectiveProjectId, ["plan", "deps", "set"], manifest);
             }
           }
         } catch { /* plan.db not created until the planner sets deps — ignore */ }

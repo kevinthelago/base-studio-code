@@ -30,6 +30,7 @@ import { resolveStrategy, strategySettings } from "@/features/planner/lib/integr
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
 import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
+import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
   "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "workflowRuns" | "workflowStart" | "workflowClear" | "workflowMount" | "workflowSetRuns" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
@@ -203,15 +204,15 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         const deltas: Record<string, string> = {};
         await Promise.all(repos.map(async (repo) => {
           try {
-            const lastRun = await invoke<number | null>("plan_triage_last_run", { projectKey, repo });
+            const lastRun = await bscJson<number | null>(projectKey, ["plan", "triage", "last", repo], null);
             const changed = lastRun != null
-              ? await invoke<PlanIssue[]>("plan_issues_changed_since", { projectKey, repo, since: lastRun })
+              ? await bscJson<PlanIssue[]>(projectKey, ["plan", "triage", "changed", repo, "--since", String(lastRun)], [])
               : [];
             deltas[repo] = renderTriageDelta(
               changed.map((c) => ({ ref: c.ref, title: c.title, status: c.status ?? "open" })),
               lastRun ?? null,
             );
-            await invoke("plan_triage_record_run", { projectKey, repo });
+            await bscJson<number>(projectKey, ["plan", "triage", "record", repo], 0);
           } catch (e) {
             console.error(`triage delta prep ${repo} failed:`, e);
           }
