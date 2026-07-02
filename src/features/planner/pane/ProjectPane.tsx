@@ -30,6 +30,7 @@ export function ProjectPane({
   projectId,
   onFlow,
   onModel,
+  onPersona,
   // focused mode: one-stage sequenced rail (#652) — the only render mode (#1061)
   focus,
   onLinkRepo,
@@ -47,6 +48,7 @@ export function ProjectPane({
   onFlow?: (streamId: string, flow: Flow) => void;
   /** Permissions stage: set a stream's per-agent LLM model (undefined ⇒ global default) (#…). */
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
   /** The sequenced-rail focused mode (#652) — the sole render path (#1061 removed the legacy
    *  staged/flat view + its hardcoded PLAN_STAGES gate). */
   focus?: {
@@ -135,7 +137,7 @@ export function ProjectPane({
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <Box className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
-            onFlow={onFlow} onModel={onModel} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
+            onFlow={onFlow} onModel={onModel} onPersona={onPersona} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} onInject={onInject} />
         </Box>
         <FocusedStageFooter stage={selected} action={focus.footer} published={focus.published} publishLabel={focus.publishLabel} onBack={focus.onBack} onPrimary={focus.onPrimary} onSkip={focus.onSkip} />

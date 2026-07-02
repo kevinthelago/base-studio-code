@@ -19,6 +19,9 @@ import type { McpServer as McpServerDef } from "@/features/mcp/lib/mcpServers";
 export interface BuildProjectPaneInput {
   fleet?: FleetPlan;
   profiles: AgentProfile[];
+  /** The persona library (#2094) — resolves a stream's `persona` reference to its role/kickoff/model
+   *  for the agent projection (the row's role + kickoff preview). */
+  personas?: import("@/features/personas").Persona[];
   issues: PlanIssue[];
   repos: string[];
   /** Full_names cloned into the project hub (clone state) — drives each repo's `cloned`. */

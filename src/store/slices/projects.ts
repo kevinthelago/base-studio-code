@@ -17,6 +17,9 @@ import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/a
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
 import { resolveDirectorDrive } from "@/features/planner/fleet/directorDrive";
+import { personaStreamPrompt } from "@/features/planner/fleet/streamPersona";
+import { roleCapability } from "@/shared/lib/session/sessionRoles";
+import { MODEL_IDS, type ModelId } from "@/app/console/lib/models";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
 import { parseIntake, changedDesignFiles, markRouted, renderDesignDelta, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "@/features/planner/lib/fileIntake";
 import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
@@ -511,6 +514,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               delete newPaneStream[key];
               if (i < count) {
                 const sess = chunk[i];
+                // #2094: a worker stream may launch AS a persona — resolve it (a live reference to the
+                // shared library) so its role/prompt/skills/model drive this pane below. Unknown/unset
+                // id ⇒ undefined ⇒ the historical plain-worker defaults.
+                const persona = sess?.persona ? s.personas.find((p) => p.id === sess.persona) : undefined;
                 if (sess === null) {
                   // Director session at the project root — sees every repo + worktree.
                   // Prefer the Rust-resolved absolute hub path (#905) so the launch never
@@ -536,6 +543,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
+                  } else if (persona) {
+                    // A persona stream gets its persona-identity kickoff (role-aware), not the
+                    // worker-only buildStreamPrompt — so a reviewer/documentor stream isn't briefed
+                    // as a code-writing worker (#2094).
+                    newPaneStartupPromptText[key] = personaStreamPrompt(persona, sess, resolveStrategy(sess.strategy, plan.strategy));
                   } else {
                     newPaneStartupPromptText[key] = buildStreamPrompt(sess, resolveStrategy(sess.strategy, plan.strategy));
                   }
@@ -560,11 +572,16 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // worker inherits the skill groups the planner picked for its stream.
                 newPaneSkills[key] = effectiveSessionSkills(
                   s.skills, projectKey, s.sessionSkillOverrides[key],
-                  new Set(expandGroups(
-                    [...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups,
-                  )),
+                  // #2094: a persona's attached skills (direct skill ids) join the stream's resolved
+                  // set alongside the expanded task-groups + session toggles.
+                  new Set([
+                    ...expandGroups([...(s.sessionSkillGroups[key] ?? []), ...(sess?.groupIds ?? [])], s.skillGroups),
+                    ...(persona?.skills ?? []),
+                  ]),
                 );
-                newPaneRoles[key] = sess === null ? "director" : "worker";
+                // #2094: a persona stream launches AS its persona's role (documentor/reviewer/…),
+                // overriding the default worker; no persona ⇒ the historical worker/director.
+                newPaneRoles[key] = sess === null ? "director" : (persona?.role ?? "worker");
                 newPaneProviders[key] = fleetHarness;
                 // #1988: when the launch is sandboxed, this pane spawns INSIDE the sealed distro —
                 // its cwd (from `paths`) is already distro-native; record the distro so pty_create
@@ -581,12 +598,17 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // worker → Autonomous (trusted) — unless the stream pins an explicit profile.
                 newPaneProfiles[key] = sess?.profile ?? roleProfileId(newPaneRoles[key]);
                 // The worker's owned paths become its role write boundary so edits in
-                // its lane auto-approve (dir/ -> dir/** so the subtree matches).
-                if (sess && sess.owns.length) newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
+                // its lane auto-approve (dir/ -> dir/** so the subtree matches). #2094: only for a
+                // code-WRITING role — a read-only persona stream (reviewer/juror/…) must NOT get a
+                // write carve-out from its owns, or the read-only floor would leak.
+                if (sess && sess.owns.length && roleCapability(newPaneRoles[key]).code === "write")
+                  newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
                 if (sess && sess.flow) newPaneFlows[key] = sess.flow;
                 // Per-agent model (#…) → the pane's `claude --model` at launch. Director (sess===null)
                 // and unset workers fall back to the global `defaultModel` (resolved at pane mount).
-                if (sess && sess.model) newPaneModels[key] = sess.model;
+                // #2094: the stream's own model wins; else its persona's model (validated as a tier).
+                const streamModel = sess?.model ?? (persona?.model && (MODEL_IDS as readonly string[]).includes(persona.model) ? persona.model as ModelId : undefined);
+                if (sess && streamModel) newPaneModels[key] = streamModel;
                 delete newDisabledPanes[key];
               } else {
                 // Empty grid cell — start disabled so it doesn't spawn an idle shell.

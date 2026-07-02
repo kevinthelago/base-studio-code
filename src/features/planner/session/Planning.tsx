@@ -89,6 +89,8 @@ export function Planning({ visible }: { visible: boolean }) {
     setPlanAgentStreamFlow, setPlanAgentStreamModel,
     addProjectRepo, fleetStartProject,
     agentProfiles,
+    personas,
+    setPlanAgentStreamPersona,
     commands, schedules,
     confirmPlanStage,
   } = useAppStore();
@@ -319,6 +321,7 @@ export function Planning({ visible }: { visible: boolean }) {
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
       profiles: agentProfiles,
+      personas,
       issues:   parseIssuesFile(sections.find(sec => sec.k === "issues")?.content ?? ""),
       repos:    publishRepos,
       sections,
@@ -335,7 +338,7 @@ export function Planning({ visible }: { visible: boolean }) {
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
   );
 
   // The planner MCP install lifecycle (#1474, usePlanMcpManagement). mcpInstallState stays here
@@ -719,6 +722,7 @@ export function Planning({ visible }: { visible: boolean }) {
                 gate: f.gate as FlowGate,
               })}
               onModel={(id, m) => setPlanAgentStreamModel(effectiveProjectId, id, m)}
+              onPersona={(id, personaId) => setPlanAgentStreamPersona(effectiveProjectId, id, personaId ?? null)}
               onLinkRepo={(repo) => addProjectRepo(effectiveProjectId, repo)}
               onDeployChange={(next) => setPlanDeployConfig(effectiveProjectId, next)}
               onTopology={(t) => setPlanFleetTopology(effectiveProjectId, t)}

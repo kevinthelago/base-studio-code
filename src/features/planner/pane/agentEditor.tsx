@@ -14,17 +14,41 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Code } from "@/shared/ui/data/Code";
+import { SelectField } from "@/shared/ui/controls/Field";
+import { useAppStore } from "@/store";
 
-export function AgentEditor({ a, onFlow, onModel }: {
+export function AgentEditor({ a, onFlow, onModel, onPersona }: {
   a: Agent;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
 }) {
+  // #2094: the persona library — a stream launches AS a persona (its role/prompt/skills/model). Read
+  // from the store so the picker lists the current library without prop-drilling.
+  const personas = useAppStore((s) => s.personas);
+  const persona = personas.find((p) => p.id === a.persona);
   const [flow, setFlow] = useState<Flow>(a.flow);
   const [model, setModel] = useState<ModelId | undefined>(a.model);
   useEffect(() => { setFlow(a.flow); setModel(a.model); }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
+      {/* Persona (#2094) — the stream's behavioral identity. Picking one drives its ROLE (overriding
+          the default worker), start prompt, skills, and model at launch. The kickoff preview below
+          updates to the persona's role-aware kickoff. */}
+      {onPersona && (
+        <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
+          <SelectField
+            label="persona"
+            hint={persona ? `launches as the ${persona.role} role · ${persona.name}` : "plain worker (the default) — writes code in its lane"}
+            value={a.persona ?? ""}
+            onChange={(v) => onPersona(a.id, v || undefined)}
+          >
+            <option value="">worker (default)</option>
+            {personas.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.role}</option>)}
+          </SelectField>
+        </Box>
+      )}
+
       {/* Kickoff preview (#2053) — the exact first message this worker gets at launch, plus its lane
           context (CLAUDE.local.md) collapsed below. Read-only: it mirrors what the launch generates. */}
       <Box pad={[10, 12]} style={{ borderTop: "1px solid var(--border-soft)" }}>
@@ -91,11 +115,12 @@ export function AgentEditor({ a, onFlow, onModel }: {
 /** The focused-stream inspector (#2053). Since a stream and its worker are 1:1, selecting a node in
  *  the Streams graph shows exactly ONE of these — the stream's identity + scope + kickoff + config —
  *  instead of a standing roster that duplicates the graph. Reuses AgentEditor for kickoff/model/flow. */
-export function StreamCard({ a, agents, onFlow, onModel }: {
+export function StreamCard({ a, agents, onFlow, onModel, onPersona }: {
   a: Agent;
   agents?: Agent[];
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
+  onPersona?: (streamId: string, personaId: string | undefined) => void;
 }) {
   return (
     <Box bg="var(--bg-canvas)" radius={6} style={{ marginTop: 14, overflow: "hidden", border: "1px solid var(--accent-dim)" }}>
@@ -125,8 +150,8 @@ export function StreamCard({ a, agents, onFlow, onModel }: {
         {a.owns.map((o) => <Box as="span" key={o} className="glob">{o}</Box>)}
         {a.issues.map((i) => <Text as="span" key={i} tone="accent">{i}</Text>)}
       </Row>
-      {/* kickoff · model · flow */}
-      <AgentEditor a={a} onFlow={onFlow} onModel={onModel} />
+      {/* persona · kickoff · model · flow */}
+      <AgentEditor a={a} onFlow={onFlow} onModel={onModel} onPersona={onPersona} />
     </Box>
   );
 }
