@@ -5,6 +5,33 @@
 // helper functions glue together and the whole rc breaks with a bash syntax error
 // (#296) — the full_bsc_rc_is_syntactically_valid_bash test guards this.
 
+/// Shared sh helper fragments (#2064): the three fragile shell fragments the `bsc-*`
+/// helpers repeated (the JSON string-field extractor ~12×, the epoch-ms timestamp
+/// fallback verbatim 4×, and the `mkdir -p` + append-line log tail ~10×) — defined ONCE
+/// here and prepended as the FIRST entry of `ALL_BSC_RC`, so every helper below calls
+/// them instead of re-inlining the fragment (a drift used to be caught only by eye):
+/// * `__bsc_jstr <field-ere>` — reads a JSON blob on stdin and prints the value of the
+///   first `"<field>": "…"` string field (the `grep -oE … | head -1 | sed -E …` core).
+///   `<field-ere>` is an ERE alternation, so `__bsc_jstr 'command|file_path|…'` works.
+/// * `__bsc_now_ms` — prints epoch-milliseconds with the portable `date +%s%3N` →
+///   `date -u +%s` × 1000 fallback (for platforms whose `date` lacks `%3N`).
+/// * `__bsc_logline <file> <printf-fmt> [args…]` — makes the file's parent dir and
+///   appends the `printf`-formatted line (the `mkdir -p "$(dirname …)"; printf … >> "$f"`
+///   tail). The format is a literal passed by the caller, so data still flows through
+///   `%s` exactly as before. Each helper keeps its own inline log-GUARD
+///   (`[ -z "$l" ] && return 0`) since a function can't `return` from its caller.
+///
+/// A raw string keeps the embedded quotes/regex readable; the mandatory trailing `"\n"`
+/// (#296) after the last function keeps the concat one-function-per-line. Because the
+/// helpers below now depend on these, a per-helper subshell test that installs a single
+/// `BSC_*_RC` fragment must also install this one (see the tests).
+pub(crate) const BSC_SHARED_RC: &str = concat!(
+    r#"__bsc_jstr() { grep -oE "\"($1)\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed -E 's/.*"([^"]*)"$/\1/'; }
+__bsc_now_ms() { n="$(date +%s%3N 2>/dev/null)"; case "$n" in ''|*[!0-9]*) n="$(( $(date -u +%s) * 1000 ))" ;; esac; printf '%s' "$n"; }
+__bsc_logline() { f="$1"; fmt="$2"; shift 2; mkdir -p "$(dirname "$f")" 2>/dev/null; printf "$fmt" "$@" >> "$f"; }"#,
+    "\n",
+);
+
 /// The `bsc` shell helper (#1877): the ONE compiled-binary helper. The app ships a single umbrella
 /// binary that dispatches every state CLI as a subcommand (`bsc plan …`, `bsc skill …`, `bsc logs …`,
 /// `bsc data …`, `bsc compliance …`, `bsc blueprint …`, `bsc project …`, `bsc files …`, `bsc mcp …`).
@@ -50,7 +77,7 @@ pub(crate) const BSC_DECISIONS_RC: &str =
 /// app-wide `$BSC_AUDIT_LOG`, tagged with `$BSC_AUDIT_PANE`. Best-effort + always exits
 /// 0 so it never blocks a tool. A raw string keeps the embedded quotes/regex readable.
 pub(crate) const BSC_AUDIT_RC: &str = concat!(
-    r#"bsc-audit() { l="${BSC_AUDIT_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; tg="$(printf '%s' "$j" | grep -oE '"(command|file_path|notebook_path|url|query|pattern|path|description)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | tr '\t\n' '  ' | cut -c1-160)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$tn" "$tg" >> "$l"; return 0; }"#,
+    r#"bsc-audit() { l="${BSC_AUDIT_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; tn="$(printf '%s' "$j" | __bsc_jstr tool_name)"; tg="$(printf '%s' "$j" | __bsc_jstr 'command|file_path|notebook_path|url|query|pattern|path|description' | tr '\t\n' '  ' | cut -c1-160)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$tn" "$tg"; return 0; }"#,
     "\n",
 );
 
@@ -74,7 +101,7 @@ pub(crate) const BSC_AUDIT_RC: &str = concat!(
 /// Claude Code always fires the hook with NO args (data arrives on stdin), so argc is a reliable
 /// discriminator. A raw string keeps the embedded quotes/regex readable.
 pub(crate) const BSC_SKILL_RC: &str = concat!(
-    r#"bsc-skill() { if [ "$#" -gt 0 ]; then b="${BSC_BIN:-}"; if [ -n "$b" ]; then "$b" skill "$@"; return $?; fi; echo "bsc-skill: library CLI unavailable (BSC_BIN unset)" >&2; return 127; fi; l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"skill_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn" >> "$l"; return 0; }"#,
+    r#"bsc-skill() { if [ "$#" -gt 0 ]; then b="${BSC_BIN:-}"; if [ -n "$b" ]; then "$b" skill "$@"; return $?; fi; echo "bsc-skill: library CLI unavailable (BSC_BIN unset)" >&2; return 127; fi; l="${BSC_SKILL_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat)"; sn="$(printf '%s' "$j" | tr '\t\n' '  ' | __bsc_jstr skill_name | cut -c1-120)"; ev="$(printf '%s' "$j" | tr '\t\n' '  ' | __bsc_jstr hook_event_name | cut -c1-120)"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$sn"; return 0; }"#,
     "\n",
 );
 
@@ -90,7 +117,7 @@ pub(crate) const BSC_SKILL_RC: &str = concat!(
 /// block still takes effect. Only USER hooks are wrapped; the security hooks (bsc-confine /
 /// bsc-audit) are never routed through here. A raw string keeps the embedded quotes readable.
 pub(crate) const BSC_HOOK_RC: &str = concat!(
-    r#"bsc-hook() { nm="$1"; cmd="$2"; j="$(cat)"; printf '%s' "$j" | sh -c "$cmd"; code=$?; l="${BSC_HOOK_LOG:-}"; if [ -n "$l" ]; then ev="$(printf '%s' "$j" | tr '\t\n' '  ' | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-60)"; [ -z "$ev" ] && ev="?"; oc="ok"; if [ "$ev" = "PreToolUse" ]; then if [ "$code" -eq 2 ]; then oc="block"; else oc="allow"; fi; fi; nm="$(printf '%s' "$nm" | tr '\t\n' '  ' | cut -c1-80)"; ts="$(date -u +%s)000"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$nm" "$oc" >> "$l"; fi; exit "$code"; }"#,
+    r#"bsc-hook() { nm="$1"; cmd="$2"; j="$(cat)"; printf '%s' "$j" | sh -c "$cmd"; code=$?; l="${BSC_HOOK_LOG:-}"; if [ -n "$l" ]; then ev="$(printf '%s' "$j" | tr '\t\n' '  ' | __bsc_jstr hook_event_name | cut -c1-60)"; [ -z "$ev" ] && ev="?"; oc="ok"; if [ "$ev" = "PreToolUse" ]; then if [ "$code" -eq 2 ]; then oc="block"; else oc="allow"; fi; fi; nm="$(printf '%s' "$nm" | tr '\t\n' '  ' | cut -c1-80)"; ts="$(date -u +%s)000"; __bsc_logline "$l" '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$ev" "$nm" "$oc"; fi; exit "$code"; }"#,
     "\n",
 );
 
@@ -106,7 +133,7 @@ pub(crate) const BSC_HOOK_RC: &str = concat!(
 /// ignored. Best-effort + always returns 0 so it never blocks a tool. A raw string keeps the
 /// embedded quotes/regex readable.
 pub(crate) const BSC_MCP_RC: &str = concat!(
-    r#"bsc-mcp() { l="${BSC_MCP_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; now="$(date +%s%3N 2>/dev/null)"; case "$now" in ''|*[!0-9]*) now="$(( $(date -u +%s) * 1000 ))" ;; esac; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; case "$tn" in mcp__*) ;; *) return 0 ;; esac; ev="$(printf '%s' "$j" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; rest="${tn#mcp__}"; server="${rest%%__*}"; tool="${rest#*__}"; d="${TMPDIR:-/tmp}/bsc-mcp"; mkdir -p "$d" 2>/dev/null; key="$(printf '%s_%s' "${BSC_AUDIT_PANE:-x}" "$tn" | tr -c 'A-Za-z0-9_-' '_' | cut -c1-150)"; if [ "$ev" = "PreToolUse" ]; then printf '%s' "$now" > "$d/$key" 2>/dev/null; return 0; fi; start="$(cat "$d/$key" 2>/dev/null)"; rm -f "$d/$key" 2>/dev/null; ms=0; case "$start" in *[0-9]*) ms=$(( now - start )) ;; esac; [ "$ms" -lt 0 ] && ms=0; oc="ok"; detail=""; if printf '%s' "$j" | grep -qE '"(is_error|isError)"[[:space:]]*:[[:space:]]*true'; then oc="fail"; detail="$(printf '%s' "$j" | grep -oE '"(text|message|error)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-100)"; [ -z "$detail" ] && detail="error"; elif printf '%s' "$j" | grep -qiE 'rate.?limit'; then oc="warn"; detail="rate-limited"; elif [ "$ms" -gt "${BSC_MCP_SLOW_MS:-2000}" ]; then oc="warn"; detail="slow"; fi; server="$(printf '%s' "$server" | cut -c1-60)"; tool="$(printf '%s' "$tool" | cut -c1-60)"; detail="$(printf '%s' "$detail" | cut -c1-120)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${BSC_AUDIT_PANE:-?}" "$server" "$tool" "$oc" "$ms" "$detail" >> "$l"; return 0; }"#,
+    r#"bsc-mcp() { l="${BSC_MCP_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; now="$(__bsc_now_ms)"; tn="$(printf '%s' "$j" | __bsc_jstr tool_name)"; case "$tn" in mcp__*) ;; *) return 0 ;; esac; ev="$(printf '%s' "$j" | __bsc_jstr hook_event_name)"; rest="${tn#mcp__}"; server="${rest%%__*}"; tool="${rest#*__}"; d="${TMPDIR:-/tmp}/bsc-mcp"; mkdir -p "$d" 2>/dev/null; key="$(printf '%s_%s' "${BSC_AUDIT_PANE:-x}" "$tn" | tr -c 'A-Za-z0-9_-' '_' | cut -c1-150)"; if [ "$ev" = "PreToolUse" ]; then printf '%s' "$now" > "$d/$key" 2>/dev/null; return 0; fi; start="$(cat "$d/$key" 2>/dev/null)"; rm -f "$d/$key" 2>/dev/null; ms=0; case "$start" in *[0-9]*) ms=$(( now - start )) ;; esac; [ "$ms" -lt 0 ] && ms=0; oc="ok"; detail=""; if printf '%s' "$j" | grep -qE '"(is_error|isError)"[[:space:]]*:[[:space:]]*true'; then oc="fail"; detail="$(printf '%s' "$j" | __bsc_jstr 'text|message|error' | cut -c1-100)"; [ -z "$detail" ] && detail="error"; elif printf '%s' "$j" | grep -qiE 'rate.?limit'; then oc="warn"; detail="rate-limited"; elif [ "$ms" -gt "${BSC_MCP_SLOW_MS:-2000}" ]; then oc="warn"; detail="slow"; fi; server="$(printf '%s' "$server" | cut -c1-60)"; tool="$(printf '%s' "$tool" | cut -c1-60)"; detail="$(printf '%s' "$detail" | cut -c1-120)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${BSC_AUDIT_PANE:-?}" "$server" "$tool" "$oc" "$ms" "$detail"; return 0; }"#,
     "\n",
 );
 
@@ -120,7 +147,7 @@ pub(crate) const BSC_MCP_RC: &str = concat!(
 /// to decode + parse. Best-effort + always exits 0 so it never blocks a stop. A raw string
 /// keeps the embedded quotes/regex readable.
 pub(crate) const BSC_TOKENS_RC: &str = concat!(
-    r#"bsc-tokens() { l="${BSC_TOKENS_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; sid="$(printf '%s' "$j" | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/' | cut -c1-120)"; tp="$(printf '%s' "$j" | grep -oE '"transcript_path"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1 | sed -E 's/^"transcript_path"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$sid" "$tp" >> "$l"; return 0; }"#,
+    r#"bsc-tokens() { l="${BSC_TOKENS_LOG:-}"; [ -z "$l" ] && return 0; j="$(cat | tr '\t\n' '  ')"; sid="$(printf '%s' "$j" | __bsc_jstr session_id | cut -c1-120)"; tp="$(printf '%s' "$j" | grep -oE '"transcript_path"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1 | sed -E 's/^"transcript_path"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')"; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$sid" "$tp"; return 0; }"#,
     "\n",
 );
 
@@ -137,7 +164,7 @@ pub(crate) const BSC_TOKENS_RC: &str = concat!(
 /// Best-effort + always exits 0 so it never blocks a prompt or a stop. A raw string keeps the
 /// embedded quotes readable.
 pub(crate) const BSC_ACTIVITY_RC: &str = concat!(
-    r#"bsc-activity() { st="$1"; cat >/dev/null 2>&1; l="${BSC_ACTIVITY_LOG:-}"; [ -z "$l" ] && return 0; case "$st" in run|idle) ;; *) return 0 ;; esac; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$st" >> "$l"; return 0; }"#,
+    r#"bsc-activity() { st="$1"; cat >/dev/null 2>&1; l="${BSC_ACTIVITY_LOG:-}"; [ -z "$l" ] && return 0; case "$st" in run|idle) ;; *) return 0 ;; esac; ts="$(__bsc_now_ms)"; __bsc_logline "$l" '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$st"; return 0; }"#,
     "\n",
 );
 
@@ -148,7 +175,7 @@ pub(crate) const BSC_ACTIVITY_RC: &str = concat!(
 /// say-so) and reaps the pane (`markPaneEnded` + `pty_kill`). Drains stdin so a piped reason can't
 /// block; best-effort + always exits 0.
 pub(crate) const BSC_DONE_RC: &str = concat!(
-    r#"bsc-done() { cat >/dev/null 2>&1; l="${BSC_DONE_LOG:-}"; [ -z "$l" ] && return 0; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" >> "$l"; return 0; }"#,
+    r#"bsc-done() { cat >/dev/null 2>&1; l="${BSC_DONE_LOG:-}"; [ -z "$l" ] && return 0; ts="$(__bsc_now_ms)"; __bsc_logline "$l" '%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}"; return 0; }"#,
     "\n",
 );
 
@@ -168,12 +195,12 @@ pub(crate) const BSC_DONE_RC: &str = concat!(
 /// visible to `bsc logs perm`/`session` and joinable to its session. Best-effort + always returns 0
 /// (a failed log must never change the hook's block verdict). `$1`=gate `$2`=target `$3`=reason.
 pub(crate) const BSC_PERM_RC: &str = concat!(
-    r#"__bsc_perm() { l="${BSC_PERM_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date +%s%3N 2>/dev/null)"; case "$ts" in ''|*[!0-9]*) ts="$(( $(date -u +%s) * 1000 ))" ;; esac; t="$(printf '%s' "$2" | tr '\t\n' '  ' | cut -c1-160)"; r="$(printf '%s' "$3" | tr '\t\n' '  ' | cut -c1-160)"; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "block" "$t" "$r" >> "$l"; return 0; }"#,
+    r#"__bsc_perm() { l="${BSC_PERM_LOG:-}"; [ -z "$l" ] && return 0; ts="$(__bsc_now_ms)"; t="$(printf '%s' "$2" | tr '\t\n' '  ' | cut -c1-160)"; r="$(printf '%s' "$3" | tr '\t\n' '  ' | cut -c1-160)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "block" "$t" "$r"; return 0; }"#,
     "\n",
 );
 
 pub(crate) const BSC_CONFINE_RC: &str = concat!(
-    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp rel; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; rel="${fp#"$root"/}"; rel="${rel#./}"; case "$rel" in .claude|.claude/*) __bsc_perm confine "$fp" "config-protection (.claude)"; echo "blocked: '$fp' is the session's .claude config — #1916 config-protection" >&2; return 2 ;; esac; case "$fp" in ..|../*|*/../*|*/..) __bsc_perm confine "$fp" "leaves the repo root"; echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) __bsc_perm confine "$fp" "outside the repo root"; echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
+    r#"bsc-confine() { local root="${BSC_REPO_ROOT:-}"; [ -z "$root" ] && return 0; local j fp rel; j="$(cat)"; fp="$(printf '%s' "$j" | __bsc_jstr 'file_path|notebook_path')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; rel="${fp#"$root"/}"; rel="${rel#./}"; case "$rel" in .claude|.claude/*) __bsc_perm confine "$fp" "config-protection (.claude)"; echo "blocked: '$fp' is the session's .claude config — #1916 config-protection" >&2; return 2 ;; esac; case "$fp" in ..|../*|*/../*|*/..) __bsc_perm confine "$fp" "leaves the repo root"; echo "blocked: '$fp' leaves the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac; case "$fp" in /*|~*|[A-Za-z]:*) case "$fp" in "$root"|"$root"/*) return 0 ;; *) __bsc_perm confine "$fp" "outside the repo root"; echo "blocked: '$fp' is outside the repo root ($root) — #158 FS confinement" >&2; return 2 ;; esac ;; esac; return 0; }"#,
     "\n",
 );
 
@@ -189,7 +216,7 @@ pub(crate) const BSC_CONFINE_RC: &str = concat!(
 /// patterns against the cwd; `return 2` (not `exit`) so it never kills a shell that sources it.
 /// Covers the AI's WRITE tools only (Read is unrestricted — the planner must read for context).
 pub(crate) const BSC_SCOPE_RC: &str = concat!(
-    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ "$globs" = "__bsc_deny_all__" ] && { __bsc_perm scope "" "code:none — no write scope"; echo "blocked: this session is code:none (no write scope) -- file writes are denied (#1916)" >&2; return 2; }; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; __bsc_perm scope "$fp" "outside the write scope"; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
+    r#"bsc-scope() { local globs="${BSC_SCOPE_GLOBS:-}"; [ "$globs" = "__bsc_deny_all__" ] && { __bsc_perm scope "" "code:none — no write scope"; echo "blocked: this session is code:none (no write scope) -- file writes are denied (#1916)" >&2; return 2; }; [ -z "$globs" ] && return 0; local root="${BSC_REPO_ROOT:-}"; local j fp g; j="$(cat)"; fp="$(printf '%s' "$j" | __bsc_jstr 'file_path|notebook_path')"; [ -z "$fp" ] && return 0; fp="${fp//\\//}"; fp="$(printf '%s' "$fp" | tr -s '/')"; [ -n "$root" ] && case "$fp" in "$root"/*) fp="${fp#"$root"/}" ;; esac; fp="${fp#./}"; set -f; for g in $globs; do case "$fp" in $g) set +f; return 0 ;; esac; done; set +f; __bsc_perm scope "$fp" "outside the write scope"; echo "blocked: '$fp' is outside this session's write scope (#1297) — allowed: $globs" >&2; return 2; }"#,
     "\n",
 );
 
@@ -208,7 +235,7 @@ pub(crate) const BSC_SCOPE_RC: &str = concat!(
 /// untrusted read (e.g. a legit API POST) is allowed; only read-THEN-exfil is denied. `return 2`
 /// (not `exit`) so it never kills the sourcing shell. A raw string keeps the quotes/regex readable.
 pub(crate) const BSC_TAINT_RC: &str = concat!(
-    r#"bsc-taint() { j="$(cat)"; tn="$(printf '%s' "$j" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; cmd="$(printf '%s' "$j" | grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"; dir="${BSC_TAINT_DIR:-${TMPDIR:-/tmp}/bsc-taint}"; mkdir -p "$dir" 2>/dev/null; mark="$dir/${BSC_AUDIT_PANE:-x}"; win="${BSC_TAINT_WINDOW:-120}"; danger=0; printf '%s' "$cmd" | grep -qE '(curl|wget).*(--data|--form|--upload-file|--post-file|--post-data|--body-data|--body-file| -d | -F | -T )' && danger=1; printf '%s' "$cmd" | grep -qE 'git[[:space:]]+push.*(--force|--force-with-lease|[[:space:]]-f([[:space:]]|$))' && danger=1; printf '%s' "$cmd" | grep -qE 'gh[[:space:]]+repo[[:space:]]+delete' && danger=1; printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])(nc|ncat)[[:space:]]' && danger=1; if [ "$danger" = 1 ] && [ -f "$mark" ]; then ts="$(cat "$mark" 2>/dev/null)"; now="$(date +%s)"; if [ -n "$ts" ] && [ $((now - ts)) -lt "$win" ]; then echo "blocked: outward/destructive command within ${win}s of reading untrusted input (possible prompt injection) -- #1167. Split it from the read, or wait out the taint window." >&2; l="${BSC_TAINT_LOG:-}"; if [ -n "$l" ]; then mkdir -p "$(dirname "$l")" 2>/dev/null; printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${BSC_AUDIT_PANE:-?}" "$cmd" >> "$l"; fi; return 2; fi; fi; if [ "$tn" = WebFetch ] || printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])(curl|wget)([^[:alnum:]_]|$)|gh[[:space:]]+(issue|pr)[[:space:]]+view'; then date +%s > "$mark" 2>/dev/null; fi; return 0; }"#,
+    r#"bsc-taint() { j="$(cat)"; tn="$(printf '%s' "$j" | __bsc_jstr tool_name)"; cmd="$(printf '%s' "$j" | __bsc_jstr command)"; dir="${BSC_TAINT_DIR:-${TMPDIR:-/tmp}/bsc-taint}"; mkdir -p "$dir" 2>/dev/null; mark="$dir/${BSC_AUDIT_PANE:-x}"; win="${BSC_TAINT_WINDOW:-120}"; danger=0; printf '%s' "$cmd" | grep -qE '(curl|wget).*(--data|--form|--upload-file|--post-file|--post-data|--body-data|--body-file| -d | -F | -T )' && danger=1; printf '%s' "$cmd" | grep -qE 'git[[:space:]]+push.*(--force|--force-with-lease|[[:space:]]-f([[:space:]]|$))' && danger=1; printf '%s' "$cmd" | grep -qE 'gh[[:space:]]+repo[[:space:]]+delete' && danger=1; printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])(nc|ncat)[[:space:]]' && danger=1; if [ "$danger" = 1 ] && [ -f "$mark" ]; then ts="$(cat "$mark" 2>/dev/null)"; now="$(date +%s)"; if [ -n "$ts" ] && [ $((now - ts)) -lt "$win" ]; then echo "blocked: outward/destructive command within ${win}s of reading untrusted input (possible prompt injection) -- #1167. Split it from the read, or wait out the taint window." >&2; l="${BSC_TAINT_LOG:-}"; if [ -n "$l" ]; then __bsc_logline "$l" '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${BSC_AUDIT_PANE:-?}" "$cmd"; fi; return 2; fi; fi; if [ "$tn" = WebFetch ] || printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])(curl|wget)([^[:alnum:]_]|$)|gh[[:space:]]+(issue|pr)[[:space:]]+view'; then date +%s > "$mark" 2>/dev/null; fi; return 0; }"#,
     "\n",
 );
 
@@ -232,8 +259,8 @@ pub(crate) const BSC_TAINT_RC: &str = concat!(
 ///   `rest[0..3]` as target/body/issueId/title.
 /// Multi-word values come through flags (not positionals), and embedded tabs/newlines
 /// are squashed to spaces so the TSV stays single-line and column-aligned.
-pub(crate) const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3" >> "$l"; }
-__bsc_coord_log() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; mkdir -p "$(dirname "$l")" 2>/dev/null; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; printf '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" >> "$l"; }
+pub(crate) const BSC_COORD_EMIT_RC: &str = r#"__bsc_coord() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "$2" "$3"; }
+__bsc_coord_log() { l="${BSC_COORD_LOG:-}"; [ -z "$l" ] && return 0; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; __bsc_logline "$l" '%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1"; }
 bsc-landed() { __bsc_coord landed "$1" ""; }
 bsc-merged() { __bsc_coord merged "$1" ""; }
 bsc-closed() { __bsc_coord closed "$1" ""; }
@@ -297,6 +324,8 @@ pub(crate) const BSC_DENY_RC: &str = concat!(
 /// never silently fall out of lockstep between the two. Each fragment already ends in a
 /// trailing newline (#296), so `.concat()` keeps every helper on its own line.
 pub(crate) const ALL_BSC_RC: &[&str] = &[
+    // The shared sh helpers (#2064) MUST come first — every `bsc-*` helper below calls them.
+    BSC_SHARED_RC,
     BSC_CHECKPOINT_RC,
     BSC_DECISIONS_RC,
     BSC_AUDIT_RC,
@@ -430,7 +459,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_COORD_EMIT_RC).unwrap();
+        // The coord emitters now call the shared __bsc_logline, so install the shared helpers too.
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_COORD_EMIT_RC)).unwrap();
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("coord.log");
 
@@ -552,6 +582,53 @@ mod tests {
     }
 
     #[test]
+    fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
+        // #2064: the shared sh fragments (__bsc_jstr / __bsc_now_ms / __bsc_logline) are defined once
+        // in BSC_SHARED_RC and prepended (first in ALL_BSC_RC). Assert the constant defines all three,
+        // ends with the mandatory trailing newline (#296), and that each runs in a fresh subshell:
+        // __bsc_jstr extracts a JSON string field, __bsc_now_ms prints epoch ms, and __bsc_logline
+        // makes the parent dir + appends a printf-formatted line.
+        let rc = super::BSC_SHARED_RC;
+        assert!(rc.contains("__bsc_jstr()"), "defines the JSON-field extractor");
+        assert!(rc.contains("__bsc_now_ms()"), "defines the epoch-ms helper");
+        assert!(rc.contains("__bsc_logline()"), "defines the mkdir+append helper");
+        assert!(rc.ends_with('\n'), "ends with a trailing newline (#296)");
+
+        use std::process::{Command, Stdio};
+        let shell = crate::platform::shell::resolve_shell();
+        let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+        if !usable {
+            eprintln!("skipping bsc_shared_rc test: no usable bash ({shell})");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bsc-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rc_file = dir.join("bsc-env.sh");
+        std::fs::write(&rc_file, super::BSC_SHARED_RC).unwrap();
+        // Nested path exercises __bsc_logline's `mkdir -p` of the file's parent.
+        let out = dir.join("nested").join("out.tsv");
+        let rc_bash = crate::to_bash_path(&rc_file.to_string_lossy());
+        let out_bash = crate::to_bash_path(&out.to_string_lossy());
+
+        let script = format!(
+            r#"j='{{"tool_name":"Bash","command":"ls"}}'; f="$(printf '%s' "$j" | __bsc_jstr tool_name)"; n="$(__bsc_now_ms)"; __bsc_logline "{out_bash}" '%s\t%s\n' "$f" "$n""#,
+        );
+        let ok = Command::new(&shell).arg("-c").arg(&script)
+            .env("BASH_ENV", &rc_bash)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status().unwrap().success();
+        assert!(ok, "the shared helpers should run in a fresh subshell");
+
+        let body = std::fs::read_to_string(&out).unwrap();
+        let fields: Vec<&str> = body.trim_end().split('\t').collect();
+        assert_eq!(fields[0], "Bash", "__bsc_jstr extracts the tool_name string field");
+        assert!(fields[1].chars().all(|c| c.is_ascii_digit()) && !fields[1].is_empty(), "__bsc_now_ms is epoch ms: {:?}", fields[1]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn bsc_rc_execs_the_one_umbrella_binary_via_bsc_bin() {
         // #1877: the eight per-CLI `bsc-*` exec helpers collapsed into ONE `bsc` function that execs
         // the unified umbrella binary in $BSC_BIN (every state CLI is now `bsc <sub>`). Pin its EXACT
@@ -662,7 +739,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_SKILL_RC).unwrap();
+        // bsc-skill's telemetry branch now uses the shared __bsc_jstr/__bsc_logline.
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_SKILL_RC)).unwrap();
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("skills.log");
 
@@ -823,7 +901,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_ACTIVITY_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_ACTIVITY_RC)).unwrap();
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("activity.log");
 
@@ -876,7 +954,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_DONE_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_DONE_RC)).unwrap();
         let log = dir.join("nested").join("done.log"); // nested ⇒ exercises mkdir -p
 
         let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
@@ -919,7 +997,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_HOOK_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_HOOK_RC)).unwrap();
         let log = dir.join("nested").join("hooks.log");
         let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let log_bash = crate::to_bash_path(&log.to_string_lossy());
@@ -979,7 +1057,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_SCOPE_RC).unwrap();
+        // bsc-scope's path extraction now uses the shared __bsc_jstr, so install the shared helpers too.
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_SCOPE_RC)).unwrap();
         let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
 
         // Fire bsc-scope as a PreToolUse hook would, with a given glob set + tool JSON on stdin.
@@ -1035,7 +1114,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_TAINT_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_TAINT_RC)).unwrap();
         let taint_dir = dir.join("marks");
         let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
         let taint_bash = crate::to_bash_path(&taint_dir.to_string_lossy());
@@ -1093,7 +1172,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_MCP_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_MCP_RC)).unwrap();
         let log = dir.join("nested").join("mcp.log");
         let tmp = dir.join("tmp");
         std::fs::create_dir_all(&tmp).unwrap();
@@ -1164,7 +1243,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let rc = dir.join("bsc-env.sh");
-        std::fs::write(&rc, super::BSC_TOKENS_RC).unwrap();
+        std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, super::BSC_TOKENS_RC)).unwrap();
         // Nested path exercises the helper's `mkdir -p` of the log's parent.
         let log = dir.join("nested").join("tokens.log");
 
