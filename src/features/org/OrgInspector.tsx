@@ -1,39 +1,46 @@
-// The org inspector (#2193) — the right panel, in one of two modes. POSITION: the selected node's
-// facets (role/clearance · responsibilities · skills · the AUTO-DERIVED communication surface).
-// RELATIONSHIP: the selected edge's archetype (changeable) + the communication forms flowing each way.
-// Ported from the Claude Design prototype onto the app's kit; reads the real store data.
+// The org inspector (#2193, config #2199) — the right panel, in one of two modes. POSITION: the node's
+// identity (a persona picker + the shared <PersonaEditor> for agent nodes, or a label for
+// resource/external) + the AUTO-DERIVED communication surface. RELATIONSHIP: the edge's archetype
+// (changeable) + the communication forms flowing each way. Reads the real store data.
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
-import { SelectField } from "@/shared/ui/controls/Field";
+import { SelectField, TextField } from "@/shared/ui/controls/Field";
+import { PersonaEditor } from "@/features/personas";
+import type { Persona } from "@/features/personas";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Org } from "./lib/org";
 import { positionDisplay, positionComms, hueColor } from "./lib/orgView";
-import { TierChips, FormChip, SectionLabel, FormLane } from "./components";
+import { FormChip, SectionLabel, FormLane } from "./components";
 import type { Selection } from "./OrgCanvas";
-import type { Persona } from "@/features/personas";
 
 interface InspectorProps {
   org: Org;
+  /** Every org — to count how many positions share a persona (the "used in N" note). */
+  orgs: Org[];
   personas: Persona[];
-  skills: { id: string; name: string }[];
   sel: Selection;
   onSelectNode: (nodeId: string) => void;
   onChangeArchetype: (relId: string, archetype: string) => void;
+  /** Point an agent position at a different persona identity. */
+  onChangePersona: (nodeId: string, personaId: string) => void;
+  /** Rename a resource/external node (or override an agent node's label). */
+  onChangeLabel: (nodeId: string, label: string) => void;
 }
 
 const PANEL: React.CSSProperties = { width: 344, minWidth: 344, borderLeft: "1px solid var(--border-soft)", overflowY: "auto" };
 const BLOCK: React.CSSProperties = { padding: "15px 17px", borderBottom: "1px solid var(--border-soft)" };
 
-export function OrgInspector({ org, personas, skills, sel, onSelectNode, onChangeArchetype }: InspectorProps) {
+export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel }: InspectorProps) {
   if (sel.type === "node") {
     const pos = org.positions.find((p) => p.nodeId === sel.id);
     if (!pos) return <Box style={PANEL} />;
     const d = positionDisplay(pos, personas);
     const persona = pos.personaId ? personas.find((p) => p.id === pos.personaId) : undefined;
     const comms = positionComms(org, pos, personas);
-    const skillNames = (persona?.skills ?? []).map((id) => skills.find((s) => s.id === id)?.name ?? id);
+    // How many positions across every org embody this same persona (edits here ripple to all of them).
+    const uses = persona ? orgs.reduce((n, o) => n + o.positions.filter((p) => p.personaId === persona.id).length, 0) : 0;
 
     return (
       <Box style={PANEL}>
@@ -50,39 +57,27 @@ export function OrgInspector({ org, personas, skills, sel, onSelectNode, onChang
               </Row>
             </Box>
           </Row>
-          {d.blurb && <Text as="p" size={12} tone="muted" style={{ lineHeight: 1.45, margin: "11px 0 0" }}>{d.blurb}</Text>}
         </Box>
 
-        {/* role / clearance */}
-        {d.role && (
+        {/* identity — a persona (agent) or a label (resource/external) */}
+        {pos.kind === "agent" ? (
           <Box style={BLOCK}>
-            <SectionLabel right={<Text as="span" mono size={9.5} tone="dim">floor: {d.role}</Text>}>Role · Clearance</SectionLabel>
-            <TierChips role={d.role} />
+            <SectionLabel right={persona && uses > 1 ? <Text as="span" mono size={9} tone="dim">shared · used in {uses}</Text> : undefined}>Persona</SectionLabel>
+            <SelectField label="" value={pos.personaId ?? ""} onChange={(v) => onChangePersona(pos.nodeId, v)}>
+              {!pos.personaId && <option value="">— pick a persona —</option>}
+              {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </SelectField>
+            {persona && (
+              <>
+                <Text as="div" size={10} tone="dim" style={{ margin: "8px 0 12px" }}>Editing the shared identity — changes reach every position that uses it.</Text>
+                <PersonaEditor persona={persona} compact />
+              </>
+            )}
           </Box>
-        )}
-
-        {/* responsibilities */}
-        {persona?.responsibilities && persona.responsibilities.length > 0 && (
+        ) : (
           <Box style={BLOCK}>
-            <SectionLabel>Responsibilities</SectionLabel>
-            <Stack gap={2}>
-              {persona.responsibilities.map((r, i) => (
-                <Row key={i} gap={8} align="start" style={{ padding: "6px 7px", borderRadius: 7, background: "var(--bg-soft)" }}>
-                  <Text as="span" tone="dim" size={11} style={{ lineHeight: 1.5, flex: "none" }}>·</Text>
-                  <Text as="span" size={12} style={{ lineHeight: 1.5 }}>{r}</Text>
-                </Row>
-              ))}
-            </Stack>
-          </Box>
-        )}
-
-        {/* skills */}
-        {skillNames.length > 0 && (
-          <Box style={BLOCK}>
-            <SectionLabel>Skills</SectionLabel>
-            <Row gap={6} wrap>
-              {skillNames.map((n, i) => <Chip key={i} color="var(--accent)">{n}</Chip>)}
-            </Row>
+            <SectionLabel>{pos.kind === "resource" ? "Resource" : "External actor"}</SectionLabel>
+            <TextField label="Label" value={pos.label ?? ""} onChange={(v) => onChangeLabel(pos.nodeId, v)} placeholder="Name" />
           </Box>
         )}
 
