@@ -20,6 +20,7 @@ import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import { useAppBoot } from "@/app/useAppBoot";
+import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
@@ -37,6 +38,7 @@ export default function App() {
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
+  useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
   const {
     activeWorkspace, setWorkspace,
