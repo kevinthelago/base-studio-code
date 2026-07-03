@@ -21,6 +21,9 @@ interface InspectorProps {
   selId: string | null;
   onSelectNode: (id: string) => void;
   onClose: () => void;
+  /** When provided (the L1 project network, #2253), the CONTRACT view offers "remove link" — the edge is
+   *  a user-drawn project relationship, so its `id` is the ProjectLink id. */
+  onRemoveEdge?: (id: string) => void;
 }
 
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
@@ -42,7 +45,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
@@ -144,6 +147,12 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose }
               ? `${from.slug} and ${to.slug} depend on each other. This back-edge closes the loop — treat as a release-ordering hazard.`
               : `${from.slug} consumes ${to.slug} over a ${meta.label.toLowerCase()}. ${e.hard ? "Hard dependency: a breaking change here blocks the consumer." : "Soft dependency: degrades gracefully."}`}
           </Text>
+
+          {onRemoveEdge && (
+            <Box style={{ marginTop: 22 }}>
+              <Button variant="ghost" onClick={() => { onRemoveEdge(e.id); onClose(); }}>✕ remove link</Button>
+            </Box>
+          )}
         </Box>
       </Box>
     );
