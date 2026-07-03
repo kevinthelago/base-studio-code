@@ -1,5 +1,5 @@
 // PersonaSummary (#2186) — the read-only identity card for the persona a stream launches as. The
-// Streams pane lets you PICK a persona (agentEditor's SelectField) but never showed WHAT you picked:
+// Streams pane lets you PICK a persona (the persona picker) but never showed WHAT you picked:
 // a persona's blurb, default model, attached skills, and start prompt were invisible behind the
 // dropdown label. This surfaces that identity so you can see exactly what the agent will BE before
 // launch. Presentational + read-only — editing a persona still happens on the Personas tab.
@@ -12,14 +12,18 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 
-export function PersonaSummary({ persona }: { persona: Persona }) {
+export function PersonaSummary({ persona, flat = false }: {
+  persona: Persona;
+  /** Drop the framed panel wrapper and render just the fields — for composing inside a card that
+   *  already supplies the frame (the Streams-pane Persona card, #2189). */
+  flat?: boolean;
+}) {
   // Resolve attached skill ids → names from the live Skills library; fall back to the raw id when a
   // referenced skill isn't in the library (a stale/planned reference) so nothing silently disappears.
   const skills = useAppStore((s) => s.skills);
   const skillNames = persona.skills.map((id) => skills.find((sk) => sk.id === id)?.name ?? id);
-  return (
-    <Box bg="var(--bg-panel)" radius={5} pad={[9, 10]} style={{ marginTop: 8, border: "1px solid var(--border-soft)" }}>
-      <Stack gap={8}>
+  const body = (
+    <Stack gap={8}>
         {persona.blurb && (
           <Text as="div" mono size={10} tone="muted" style={{ lineHeight: 1.5 }}>{persona.blurb}</Text>
         )}
@@ -58,7 +62,12 @@ export function PersonaSummary({ persona }: { persona: Persona }) {
             </Text>
           )}
         </details>
-      </Stack>
+    </Stack>
+  );
+  if (flat) return body;
+  return (
+    <Box bg="var(--bg-panel)" radius={5} pad={[9, 10]} style={{ marginTop: 8, border: "1px solid var(--border-soft)" }}>
+      {body}
     </Box>
   );
 }

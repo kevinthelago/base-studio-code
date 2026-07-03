@@ -1,7 +1,7 @@
 // Coordination controls (#817, split from FocusedBodies.tsx #1757; the per-stream roster was hoisted
 // to StreamsBody #…): the fleet-WIDE coordination topology (director / peer / hybrid) + the
-// director-drive mode. The per-stream agent rows now live directly in StreamsBody (AgentsA), so this
-// file owns ONLY the fleet-scoped controls, rendered inside a collapsible "Coordination" card. Every
+// director-drive mode. The per-stream inspector now lives directly in StreamsBody (StreamFocusCards),
+// so this file owns ONLY the fleet-scoped controls, rendered inside a collapsible "Coordination" card. Every
 // stream still auto-runs under its ROLE's profile (worker → Autonomous, director → Read-only review).
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type Topology } from "@/features/planner/relationship/relationshipGraph";
