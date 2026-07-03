@@ -44,12 +44,17 @@ export interface GraphCanvasProps {
    *  left). Same fill-your-wrapper contract as the rail. */
   inspectorResizable?: boolean;
   inspectorWidth?: number; inspectorMin?: number; inspectorMax?: number;
+  /** Fires on a genuine click on the empty canvas backdrop — not the end of a pan-drag, and not a
+   *  node press (`[data-node]`). Opt-in (e.g. to clear the selection). Edges/other selectable world
+   *  content should `stopPropagation` on their click so they don't reach this. */
+  onBackgroundClick?: () => void;
 }
 
 export function GraphCanvas({
   vp, world, toolbar, children, rail, inspector, overlays, canvasBackground, className,
   railResizable = false, railWidth = 260, railMin = 200, railMax = 460,
   inspectorResizable = false, inspectorWidth = 344, inspectorMin = 260, inspectorMax = 620,
+  onBackgroundClick,
 }: GraphCanvasProps) {
   // Pull the plain viewport values out as locals — worldTransform is a computed style object, not a
   // ref, so reading it (and the callback refs) here keeps the render free of ref-access.
@@ -75,6 +80,12 @@ export function GraphCanvas({
         ) : rail)}
         {/* The pan/zoom viewport: a raw div for the native wheel listener + backdrop mousedown. */}
         <div ref={setVp} onMouseDown={onCanvasDown}
+          onClick={onBackgroundClick ? (e) => {
+            // A genuine backdrop click — ignore the end of a pan-drag and any node press.
+            if (vp.dragMoved.current) return;
+            if ((e.target as HTMLElement).closest("[data-node]")) return;
+            onBackgroundClick();
+          } : undefined}
           style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, background: canvasBackground ?? "var(--bg)" }}>
           <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, ...worldTransform, willChange: "transform" }}>
             {children}
