@@ -7,12 +7,14 @@
 import { useEffect, useRef } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { invoke } from "@tauri-apps/api/core";
-import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
+import { bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
+import { hashString } from "@/shared/lib/core/hashString";
 import { useAppStore, type AutomationSuggestion } from "@/store";
 import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY } from "../fleet/planFleet";
 import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
+import { reconcileConfirmations, type ConfirmRow } from "../stages/confirmReconcile";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
@@ -50,6 +52,9 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   const autoAppliedRef = useRef<Record<string, string>>({});
   const startupAppliedRef = useRef<Record<string, string>>({});
   const lastBpJsonRef = useRef<string>("");
+  // Projects whose pre-#2256 app-state confirmations have already been forward-migrated into plan.db
+  // (one-time per project, so the migration doesn't re-run every 2s tick).
+  const confirmMigratedRef = useRef<Set<string>>(new Set());
 
   // Poll the section files Claude writes every 2 seconds while visible. Each
   // documented topic is its own file ({key}.md / phases.json / _skipped.md);
@@ -66,7 +71,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
       try {
         const store = useAppStore.getState();
         const saved = store.planStages[effectiveProjectId] ?? {};
-        const confirmed = new Set(store.planConfirmedStages[effectiveProjectId] ?? []);
 
         // Sandbox (#1988): a planner launched INSIDE the WSL2 cage writes plan.db + section files into
         // the distro hub. Mirror the in-distro plan.db back to the host FIRST, so the DB-owned reads
@@ -254,10 +258,35 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           // over any lingering legacy `dependencies.json`. Until then, let the file through so the
           // one-time legacy import (above) can read it.
           if (key === DEPENDENCIES_KEY && depsAppliedRef.current[effectiveProjectId]) continue;
-          if (content && content !== (saved[key] ?? "") && !confirmed.has(key)) {
+          // A confirmed stage's content is NO LONGER frozen (#2256): let a changed section through so
+          // the confirm-reconcile below can detect the change and reset just that one stage.
+          if (content && content !== (saved[key] ?? "")) {
             store.setPlanStage(effectiveProjectId, key, content);
           }
         }
+
+        // Stage confirmations (#2256) — plan.db is the durable store. Rehydrate the confirmed set on
+        // revisit, RESET just the stages whose content changed since they were confirmed (fingerprint
+        // mismatch), and forward-migrate any pre-#2256 app-state-only confirmations into plan.db once.
+        // Runs AFTER all content writes above so the live fingerprints reflect this tick's sections.
+        try {
+          const rows = await bscJson<ConfirmRow[]>(effectiveProjectId, ["plan", "confirm", "list", "--json"], []);
+          const fresh = useAppStore.getState();
+          const liveSections = fresh.planStages[effectiveProjectId] ?? {};
+          const plan = reconcileConfirmations(
+            rows, liveSections,
+            new Set(fresh.planConfirmedStages[effectiveProjectId] ?? []),
+            confirmMigratedRef.current.has(effectiveProjectId),
+          );
+          for (const k of plan.rehydrate) fresh.markStageConfirmedLocal(effectiveProjectId, k);
+          for (const k of plan.reset) fresh.unconfirmPlanStage(effectiveProjectId, k);
+          if (plan.migrate.length) {
+            confirmMigratedRef.current.add(effectiveProjectId);
+            for (const k of plan.migrate) {
+              await bscRun(effectiveProjectId, ["plan", "confirm", "add", k, hashString(liveSections[k] ?? "")]);
+            }
+          }
+        } catch { /* plan.db not created yet — ignore */ }
       } catch {
         // plans dir may not exist yet — ignore
       }

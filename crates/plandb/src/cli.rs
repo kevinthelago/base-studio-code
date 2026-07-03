@@ -199,6 +199,18 @@ USAGE:
 Prose lives in discovery/<topic>.md; these files gate on GENERATION (written, not confirmed).",
     },
     CmdDoc {
+        name: "confirm",
+        summary: "the durable stage-confirmation set (+ content fingerprints)",
+        usage: "\
+USAGE:
+  bsc plan confirm add <stage> [<fingerprint>]   # confirm a stage (records the content fingerprint)
+  bsc plan confirm remove <stage>                # unconfirm a stage (the per-stage reset)
+  bsc plan confirm list [--json]                 # the confirmed set: {stage, fingerprint} rows
+
+Durable record (#2256) of which stages the USER confirmed. The fingerprint is the stage content's
+signature at confirm time; the app resets ONE stage when its content changes (fingerprint mismatch).",
+    },
+    CmdDoc {
         name: "integration",
         summary: "DEPRECATED (#1721) → use `bsc data connector`",
         usage: "\
@@ -401,6 +413,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
         "discovery" => nouns::cmd_discovery(&args),
+        "confirm" => nouns::cmd_confirm(&args),
         "integration" => nouns::cmd_integration(&args),
         "lesson" => nouns::cmd_lesson(&args),
         "triage" => nouns::cmd_triage(&args),
@@ -515,7 +528,7 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
+            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "confirm", "integration",
             "lesson", "triage", "stage", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");

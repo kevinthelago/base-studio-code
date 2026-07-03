@@ -2,6 +2,7 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
+import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
@@ -39,7 +40,7 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -94,20 +95,40 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           planStages: setMapEntry(s.planStages, projectId, { ...(s.planStages[projectId] ?? {}), [key]: content }),
         })),
       planConfirmedStages: {},
+      // Confirm a stage. Durable in plan.db (#2256): the app-state used to be the ONLY home for
+      // confirmations, so a state reset/migration re-opened every gate on revisit — now we write
+      // through to plan.db with a FINGERPRINT of the stage's content at confirm time (the poll
+      // compares it to reset just this stage when its content later changes).
       confirmPlanStage: (projectId, key) =>
         set((s) => {
           const existing = s.planConfirmedStages[projectId] ?? [];
+          if (!existing.includes(key)) {
+            // Fire-and-forget durable write (the poll rehydrates from plan.db). Fingerprint the
+            // stage's current content so a later edit to it resets exactly this stage.
+            void bscRun(projectId, ["plan", "confirm", "add", key, hashString(s.planStages[projectId]?.[key] ?? "")]);
+          }
           if (existing.includes(key)) return {};
           return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
         }),
-      unconfirmPlanStage: (projectId, key) =>
+      // Unconfirm (the per-stage reset). Drops it from plan.db too so it doesn't rehydrate.
+      unconfirmPlanStage: (projectId, key) => {
+        void bscRun(projectId, ["plan", "confirm", "remove", key]);
         set((s) => ({
           planConfirmedStages: setMapEntry(
             s.planConfirmedStages,
             projectId,
             (s.planConfirmedStages[projectId] ?? []).filter((k) => k !== key),
           ),
-        })),
+        }));
+      },
+      // Add a confirmation to the store ONLY (no plan.db write) — used by the poll to rehydrate the
+      // durable confirmed set on revisit without echoing it straight back to plan.db.
+      markStageConfirmedLocal: (projectId, key) =>
+        set((s) => {
+          const existing = s.planConfirmedStages[projectId] ?? [];
+          if (existing.includes(key)) return {};
+          return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
+        }),
       planAuthoredBlueprint: {},
       setAuthoredBlueprint: (projectId, bp) =>
         set((s) => ({ planAuthoredBlueprint: setMapEntry(s.planAuthoredBlueprint, projectId, bp) })),
