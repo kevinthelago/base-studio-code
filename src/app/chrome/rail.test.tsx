@@ -5,7 +5,7 @@ import { Rail } from "./Rail";
 // The rail's top→bottom order is product-defined (#872); lock it so a stray
 // reorder is caught. Buttons carry the screen label as their `title`.
 const ORDER = [
-  "Console", "Planner", "Skills", "Automations", "MCP",
+  "Console", "Glance", "Planner", "Skills", "Automations", "MCP",
   "GitHub", "Security", "Settings",
 ];
 
