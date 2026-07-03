@@ -86,6 +86,19 @@ describe("reconcilePersonas (#2094)", () => {
     expect(worker.startPrompt).toContain("bsc-ask");
   });
 
+  it("a built-in inherits a newly-packaged field the persisted copy predates (no masking)", () => {
+    // worker.json is packaged with pooled:true. A copy seeded by an older app has no `pooled` key —
+    // reconcile must NOT mask the packaged value with the absent field's undefined.
+    const persisted: Persona[] = [
+      { id: "persona-worker", name: "Worker", blurb: "", role: "worker", startPrompt: "x", skills: [], builtin: true },
+    ];
+    const worker = reconcilePersonas(persisted).find((p) => p.id === "persona-worker")!;
+    expect(worker.pooled).toBe(true);
+    // an EXPLICIT user value still wins over the package
+    const off = reconcilePersonas([{ ...persisted[0], pooled: false }]).find((p) => p.id === "persona-worker")!;
+    expect(off.pooled).toBe(false);
+  });
+
   it("re-seeds a built-in the persisted set dropped", () => {
     const persisted = BUILTIN_PERSONAS.filter((p) => p.id !== "persona-juror");
     const out = reconcilePersonas(persisted);
