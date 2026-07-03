@@ -15,19 +15,21 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Chip } from "@/shared/ui/data/Chip";
 
 const MONO = "var(--mono)";
 const NPM = "#cb3837";
 const ecoColor = (eco: string) => (eco === "cargo" ? "var(--warn)" : NPM);
 
-/** A small pill. */
+/** A small dynamic-colour badge — delegates to the shared <Chip> (its `color` path) so the
+ *  translucent color-mix pill styling lives in the shared primitive, not hand-rolled here. */
 function pill(text: string, color: string, opts: { fs?: number; tint?: number } = {}) {
   const t = opts.tint ?? 86;
   return (
-    <Box as="span" pad={[2, 6]} bg={`color-mix(in oklch, ${color}, transparent ${t}%)`} radius={4} style={{
-      fontFamily: MONO, fontWeight: 600, fontSize: opts.fs ?? 8.5, color,
-      border: `1px solid color-mix(in oklch, ${color}, transparent ${t - 14}%)`, whiteSpace: "nowrap",
-    }}>{text}</Box>
+    <Chip color={color} radius={4} padding="2px 6px" fontSize={opts.fs ?? 8.5}
+      bgAlpha={t} borderAlpha={t - 14} style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+      {text}
+    </Chip>
   );
 }
 
@@ -35,12 +37,10 @@ function pill(text: string, color: string, opts: { fs?: number; tint?: number } 
 function DepRow({ d, registries }: { d: StreamDependency; registries: Record<string, DependencyRegistry> }) {
   const isPrivate = !!(d.source && registries[d.source]);
   const verColor = d.version ? "var(--fg-dim)" : "var(--warn)";
+  const ecoC = isPrivate ? "var(--violet)" : ecoColor(d.ecosystem);
   return (
     <Row align="baseline" gap={8}>
-      <Box as="span" pad={[2, 5]} bg={`color-mix(in oklch, ${isPrivate ? "var(--violet)" : ecoColor(d.ecosystem)}, transparent 84%)`} radius={4} style={{
-        flexShrink: 0, fontFamily: MONO, fontWeight: 600, fontSize: 8, color: isPrivate ? "var(--violet)" : ecoColor(d.ecosystem),
-        border: `1px solid color-mix(in oklch, ${isPrivate ? "var(--violet)" : ecoColor(d.ecosystem)}, transparent 70%)`,
-      }}>{d.ecosystem}</Box>
+      <Chip color={ecoC} radius={4} padding="2px 5px" fontSize={8} bgAlpha={84} borderAlpha={70} style={{ flexShrink: 0, fontWeight: 600 }}>{d.ecosystem}</Chip>
       <Box style={{ flex: 1, minWidth: 0 }}>
         <Text mono weight={600} size={10.5} style={{ color: "var(--fg)" }}>{d.name}</Text>
         <Text mono weight={500} size={10.5} style={{ color: verColor }}>{d.version ? `@${d.version}` : "@latest"}</Text>
