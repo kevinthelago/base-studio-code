@@ -7,16 +7,19 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { HBars } from "@/shared/ui/charts";
 import { KIND, fmtCount } from "@/shared/data/skills";
 import { deriveSkillKpis, type SkillDef } from "./lib/skills";
 import { type SkillStats } from "./lib/skillTelemetry";
 import { successColor } from "./skillStyles";
 
-export function SkillsDigest({ merged, stats, kpis, digestOpen, onToggle }: {
+export function SkillsDigest({ merged, stats, kpis, statsLoaded, digestOpen, onToggle }: {
   merged: SkillDef[];
   stats: Record<string, SkillStats>;
   kpis: ReturnType<typeof deriveSkillKpis>;
+  /** First telemetry poll has returned — false shows a loading skeleton in the leaderboard (#2245). */
+  statsLoaded: boolean;
   digestOpen: boolean;
   onToggle: () => void;
 }) {
@@ -55,7 +58,10 @@ export function SkillsDigest({ merged, stats, kpis, digestOpen, onToggle }: {
           ))}
           <Card className="skills-leaderboard" style={{ flex: 1 }}>
             <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 7 }}>Most invoked</Text>
-            {leaders.length === 0 ? (
+            {!statsLoaded && leaders.length === 0 ? (
+              // First poll pending — a chart-shaped placeholder, not a cold "no invocations" line.
+              <SkeletonChart height={110} />
+            ) : leaders.length === 0 ? (
               <Text as="div" size={11} tone="dim">No invocations yet — run the fleet to populate the leaderboard.</Text>
             ) : (
               <HBars
