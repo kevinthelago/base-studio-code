@@ -21,10 +21,12 @@ const data = {
 } as unknown as ProjectPaneData;
 
 describe("StreamsBody — graph-first unified pane (#2053)", () => {
-  it("shows the fleet-wide cards but NOT a separate Fleet roster (the graph is the roster)", () => {
+  it("shows the fleet-wide Coordination card but NOT a separate Fleet roster (the graph is the roster)", () => {
     render(<StreamsBody data={data} fleet />);
     expect(screen.getByText("Coordination")).toBeInTheDocument();
-    expect(screen.getByText("Shared dependencies")).toBeInTheDocument();
+    // Shared dependencies is no longer a fleet-wide card — it moved into the focused stream inspector
+    // (#2191), so with no node focused it isn't shown here.
+    expect(screen.queryByText("Shared dependencies")).toBeNull();
     // The old always-open "Fleet" roster card is gone — the graph is the single stream list.
     expect(screen.queryByText("Fleet")).toBeNull();
     // With no node focused, a hint invites selecting one in the graph.
