@@ -141,7 +141,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
             style={{ width: 280, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
           <Box style={{ flex: 1 }} />
-          {data.sample && <Chip color="var(--warn, #f2b155)">{drill ? "sample fleet · preview" : "sample topology · preview"}</Chip>}
+          {drill
+            ? (data.sample
+                ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
+                : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
+            : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
           {model.cyclePairs.length > 0 && (
             <Box as="button" onClick={() => { setShowCycle((v) => !v); setSel(null); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
