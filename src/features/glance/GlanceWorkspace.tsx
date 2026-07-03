@@ -23,8 +23,9 @@ import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGraph";
-import { buildGlanceData, type ProjectLite } from "./lib/glanceData";
+import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
+import { useGlanceProjects } from "./lib/useGlanceProjects";
 import "./glance.css";
 
 const GLANCE_TABS: TabItem[] = [
@@ -33,18 +34,12 @@ const GLANCE_TABS: TabItem[] = [
 ];
 
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
-  const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
-  const projects: ProjectLite[] = useMemo(
-    () => Object.entries(drafts).map(([id, d]) => ({
-      id, name: d.title,
-      // A real signal today: a project with a planned fleet reads "planning"; else idle. A "live" status
-      // (the app detected running locally/in the cloud) is a follow-up — see useNavHistory notes / detection.
-      status: (planFleet[id]?.streams.length ?? 0) > 0 ? "planning" as const : "idle" as const,
-    })),
-    [drafts, planFleet],
-  );
+  // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
+  // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
+  // is the detection follow-up.
+  const projects = useGlanceProjects();
   // L0 — the project-network graph.
   const projectData = useMemo(() => buildGlanceData(projects), [projects]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
