@@ -8,6 +8,16 @@
 // a thin renderer.
 import type { Org, Position, Relationship } from "./org";
 import type { Persona } from "@/features/personas";
+import { BUILTIN_PERSONAS } from "@/features/personas/lib/persona";
+
+/** Whether a persona runs as a pool. Uses its (hydrated) `pooled` when set; falls back to the PACKAGED
+ *  built-in when the store copy predates the field (an older-seeded built-in whose `pooled` hasn't been
+ *  re-derived yet — reconcile #2220 fixes it on the next boot, this makes the pool show WITHOUT a
+ *  restart). An explicit store `pooled:false` (a user who un-pooled a built-in) is respected. */
+const BUILTIN_POOLED = new Map(BUILTIN_PERSONAS.map((p) => [p.id, !!p.pooled]));
+function isPooled(p: Persona): boolean {
+  return p.pooled !== undefined ? p.pooled : BUILTIN_POOLED.get(p.id) ?? false;
+}
 
 export interface Pool {
   /** Synthetic node id for the collapsed group in the parent graph (`pool:<personaId>`). */
@@ -35,7 +45,7 @@ function externalSignature(org: Org, nodeId: string, memberSet: Set<string>): st
 /** Detect the homogeneous pools in an org: for each `pooled` persona with ≥2 positions, collapse them
  *  only if every member shares the same external signature. Deterministic (positions in author order). */
 export function detectPools(org: Org, personas: Persona[]): Pool[] {
-  const pooled = new Set(personas.filter((p) => p.pooled).map((p) => p.id));
+  const pooled = new Set(personas.filter(isPooled).map((p) => p.id));
   const byPersona = new Map<string, Position[]>();
   for (const p of org.positions) {
     if (p.kind === "agent" && p.personaId && pooled.has(p.personaId)) {
