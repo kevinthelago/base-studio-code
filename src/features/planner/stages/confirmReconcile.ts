@@ -52,3 +52,21 @@ export function reconcileConfirmations(
   }
   return { rehydrate, reset, migrate: [] };
 }
+
+/** One section as the focused-plan derivation sees it — key + draft/confirm state. */
+export interface SectionState {
+  k: string;
+  state: "confirmed" | "drafted" | "pending";
+}
+
+/**
+ * Stages to auto-confirm when a PUBLISHED project is reopened with NO durable confirmations yet
+ * (#2259 backfill for pre-#2256 projects): every **drafted** section (content present, not yet
+ * confirmed). A published project's discovery sections were all confirmed to reach publish, so
+ * restoring them avoids a pointless reconfirm pass on reopen. The CALLER gates this to published
+ * projects with an empty confirmed set — this pure helper just picks the drafted sections. `pending`
+ * (no content) sections are never backfilled (nothing was confirmed there).
+ */
+export function stagesToBackfill(sections: SectionState[], alreadyConfirmed: Set<string>): string[] {
+  return sections.filter((s) => s.state === "drafted" && !alreadyConfirmed.has(s.k)).map((s) => s.k);
+}
