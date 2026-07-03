@@ -8,6 +8,7 @@
 // coordination hazards. This is the DAG/graph layout in the "layout follows data structure" sense
 // (#2204): the same layered algorithm the Org designer uses, on a different domain.
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
+import { mutualPairs } from "@/shared/lib/graph/cycles";
 
 export type GRole = "infra" | "service" | "data" | "client";
 export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done";
@@ -125,17 +126,9 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
     .filter((e) => byId[e.from] && byId[e.to] && e.from !== e.to)
     .map((e, i) => ({ id: "e" + i, from: e.from, to: e.to, kind: e.kind, hard: e.kind !== "events", isCycle: false, d: "", arrow: "" }));
 
-  // Cycle detection: mutual pairs (a→b AND b→a).
-  const cyclePairs: [string, string][] = [];
-  const cycleNodeIds = new Set<string>();
-  edges.forEach((a) => edges.forEach((b) => {
-    if (a.from === b.to && a.to === b.from && a.from < a.to) {
-      a.isCycle = true; b.isCycle = true;
-      cyclePairs.push([a.from, a.to]);
-      cycleNodeIds.add(a.from); cycleNodeIds.add(a.to);
-    }
-  }));
-  const cycleEdge = new Set(edges.filter((e) => e.isCycle).map((e) => e.id));
+  // Cycle detection: mutual pairs (a→b AND b→a) — the shared graph-core primitive (#2217).
+  const { pairs: cyclePairs, edgeIds: cycleEdge, nodeIds: cycleNodeIds } = mutualPairs(edges);
+  edges.forEach((e) => { if (cycleEdge.has(e.id)) e.isCycle = true; });
 
   // Longest-path layering (skip cycle edges so the loop doesn't diverge): layer[from] = max(layer[to]+1).
   const layer: Record<string, number> = {};
