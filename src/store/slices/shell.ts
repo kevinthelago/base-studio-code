@@ -8,7 +8,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { setMapEntry } from "../updateHelpers";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -17,6 +17,11 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       pageTabOrder: {},
       setPageTabOrder: (page, order) =>
         set((s) => ({ pageTabOrder: setMapEntry(s.pageTabOrder, page, order) })),
+      activePageTab: {},
+      // Idempotent: return state unchanged when the id is already current so the
+      // no-op writes from usePageTabs's validity effect don't churn subscribers.
+      setActivePageTab: (page, id) =>
+        set((s) => (s.activePageTab[page] === id ? s : { activePageTab: setMapEntry(s.activePageTab, page, id) })),
       detachedTabIds: [],
       setTabDetached: (id, detached) =>
         set((s) => ({
