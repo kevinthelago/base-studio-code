@@ -7,6 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
+import { CardEmpty, SkeletonRows } from "./cardStates";
 
 export function OpenPRsAllRepos({ prs, loading }: {
   prs: OpenPR[];
@@ -20,8 +21,9 @@ export function OpenPRsAllRepos({ prs, loading }: {
       right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>filter by reviewer</Button>}
       headMb={10}
     >
-      {prs.length === 0 && !loading && (
-        <Box className="mono" pad={[8, 0]} style={{ fontSize: 11, color: "var(--fg-dim)"}}>No open pull requests.</Box>
+      {loading && prs.length === 0 && <SkeletonRows rows={3} h={40} />}
+      {!loading && prs.length === 0 && (
+        <CardEmpty icon="⇄" title="No open pull requests" hint="Open PRs across your repos surface here." />
       )}
       {prs.length > 0 && (
         <Box border="soft" radius={6} style={{ overflow: "hidden" }}>

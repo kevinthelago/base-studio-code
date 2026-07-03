@@ -49,13 +49,15 @@ export function GitHubSummary() {
 
         <Grid cols={6} gap={8} style={{ marginBottom: 14 }}>
           {([
-            ["repositories", String(githubRepos.length),               "all connected",                 "fg"     ],
-            ["open PRs",     loading ? "…" : String(kpiOpenPRs),       `${openPRs.filter(p => !p.draft).length} ready to review`, "accent"],
-            ["contributions · 28w", loading ? "…" : String(totalContribs), "commits · PRs · issues",      "success"],
-            ["CI passing",   loading ? "…" : kpiCIPassing != null ? `${kpiCIPassing}%` : "—", "latest run per repo", "info"],
-            ["contributors", loading ? "…" : String(kpiContribs),      "all repos",                     "muted"  ],
-            ["merged PRs",       loading ? "…" : String(totalMerged),   "last ~90 days via events",      "muted"  ],
-          ] as const).map(([k, v, sub, tone]) => (
+            // The repositories count is known immediately; every other tile shimmers until the
+            // GitHub fetch resolves (#2244) — so the KPI row keeps its shape rather than flashing "…".
+            ["repositories", String(githubRepos.length),               "all connected",                 "fg",      false  ],
+            ["open PRs",     String(kpiOpenPRs),       `${openPRs.filter(p => !p.draft).length} ready to review`, "accent",  loading],
+            ["contributions · 28w", String(totalContribs), "commits · PRs · issues",      "success", loading],
+            ["CI passing",   kpiCIPassing != null ? `${kpiCIPassing}%` : "—", "latest run per repo", "info",    loading],
+            ["contributors", String(kpiContribs),      "all repos",                     "muted",   loading],
+            ["merged PRs",       String(totalMerged),   "last ~90 days via events",      "muted",   loading],
+          ] as const).map(([k, v, sub, tone, tileLoading]) => (
             <StatTile
               key={k}
               k={k}
@@ -63,6 +65,7 @@ export function GitHubSummary() {
               sub={sub}
               tone={tone === "accent" ? "accent" : tone === "success" ? "success" : undefined}
               vStyle={tone === "info" ? { color: "var(--info)" } : undefined}
+              loading={tileLoading}
             />
           ))}
         </Grid>

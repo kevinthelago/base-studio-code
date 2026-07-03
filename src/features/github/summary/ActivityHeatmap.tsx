@@ -5,6 +5,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { heatFill } from "../heatFill";
 import { formatHeatDate } from "../lib/githubSummary";
 
@@ -59,6 +60,7 @@ export function ActivityHeatmap({
       }
       headMb={10}
     >
+      {loading ? <SkeletonChart height={H} /> : (
       <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: "block", width: "100%", overflow: "visible" }}>
         {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
           <text key={i} x={0} y={4 + i * (cell + gap) + cell / 2}
@@ -90,6 +92,7 @@ export function ActivityHeatmap({
           </g>
         )}
       </svg>
+      )}
       <Row className="mono" justify="between" align="stretch" style={{ marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
         <Text>28 weeks ago</Text><Text>today</Text>
       </Row>
