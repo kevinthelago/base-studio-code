@@ -9,6 +9,7 @@ import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { Fleet } from "./fleet/Fleet";
 import { PersonasPanel } from "@/features/personas";
+import { OrgPanel } from "@/features/org";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -82,6 +83,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {mode === "personas" && !pageOverride && (
         <Stack style={{ flex: 1, minHeight: 0 }}>
           <PersonasPanel />
+        </Stack>
+      )}
+
+      {/* Org — the persona-relationship graph (#2193). Authoring, not a live PTY, so torn-off windows
+          never force this mode. Mounts on demand. */}
+      {mode === "org" && !pageOverride && (
+        <Stack style={{ flex: 1, minHeight: 0 }}>
+          <OrgPanel />
         </Stack>
       )}
 
