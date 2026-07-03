@@ -347,6 +347,10 @@ html, body {
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
 
+/* Loading-skeleton shimmer (#2234) — the moving gradient behind the shared <Skeleton> (and the
+   blueprint-import loading rows). Promoted from `bim-shimmer` so the whole app has ONE skeleton look. */
+@keyframes skeleton-shimmer{ 0%{ background-position:-260px 0 } 100%{ background-position:260px 0 } }
+
 /* Indeterminate progress sweep — a short bar tracking left→right (source-stage scan, #source-pane). */
 @keyframes scan{ 0%{transform:translateX(-100%)} 100%{transform:translateX(320%)} }
 
