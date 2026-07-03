@@ -26,7 +26,9 @@ interface CanvasProps {
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function GlanceCanvas(p: CanvasProps) {
   const { model, focus } = p;
-  const click = (fn: () => void) => () => { if (!p.dragMoved.current) fn(); };
+  // A node/edge click: suppressed after a pan-drag, and stopPropagation so it doesn't bubble to the
+  // backdrop deselect (Glance nodes aren't [data-node]) (#2232).
+  const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (!p.dragMoved.current) fn(); };
 
   return (
     <>
