@@ -90,7 +90,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const selNodeId = sel?.type === "node" ? sel.id : null;
   const selEdgeId = sel?.type === "edge" ? sel.id : null;
-  const focus = focusSets(model, hoverNode ?? selNodeId, hoverEdge ?? selEdgeId, showCycle);
+  // Ignore a focus target that isn't in the CURRENT graph — e.g. a hover/selection left over from the
+  // project network after drilling into a fleet. Otherwise the stale id spotlights nothing and greys out
+  // every node on the new page until you mouse over one. Self-corrects on any page change (drill/back/fwd).
+  const nodeExists = (id: string | null) => !!id && model.nodes.some((n) => n.id === id);
+  const focusNode = nodeExists(hoverNode) ? hoverNode : nodeExists(selNodeId) ? selNodeId : null;
+  const focus = focusSets(model, focusNode, hoverEdge ?? selEdgeId, showCycle && model.cyclePairs.length > 0);
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
