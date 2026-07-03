@@ -7,9 +7,10 @@ import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
+import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
@@ -36,13 +37,28 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       glanceDrill: null,
       setGlanceDrill: (id) => set({ glanceDrill: id }),
 
+      // #2253 write-through cache over `bsc project link` — hydrate authoritative on boot, each mutation
+      // pushes through the bridge so agents (and a restart) see the same relationships.
       projectLinks: [],
-      addProjectLink: (from, to, kind) => set((s) => {
-        if (from === to) return {};
+      addProjectLink: (from, to, kind) => {
+        if (from === to) return;
         const id = projectLinkId(from, to, kind);
-        return s.projectLinks.some((l) => l.id === id) ? {} : { projectLinks: [...s.projectLinks, { id, from, to, kind }] };
-      }),
-      removeProjectLink: (id) => set((s) => ({ projectLinks: s.projectLinks.filter((l) => l.id !== id) })),
+        let added = false;
+        set((s) => {
+          if (s.projectLinks.some((l) => l.id === id)) return {};
+          added = true;
+          return { projectLinks: [...s.projectLinks, { id, from, to, kind }] };
+        });
+        if (added) void pushProjectLink(from, to, kind);
+      },
+      removeProjectLink: (id) => {
+        set((s) => ({ projectLinks: s.projectLinks.filter((l) => l.id !== id) }));
+        void dropProjectLink(id);
+      },
+      hydrateProjectLinks: async () => {
+        const loaded = await loadProjectLinks();
+        if (loaded) set({ projectLinks: loaded }); // bridge unreachable → keep the persisted cache
+      },
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
       activeProjectId: null,
