@@ -5,6 +5,7 @@
 // RelationshipGraphView.tsx and the authoring controls in the Structure/Permissions
 // focused panes. Mirrors the design prototype (design/bsc · model()).
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
+import { findBackEdges } from "@/shared/lib/graph/cycles";
 
 /** Fleet coordination topology. `director` = hub-and-spoke (every edge routes through
  *  the director), `peer` = mesh (every edge is a direct handoff), `hybrid` = per-edge. */
@@ -93,24 +94,8 @@ export function buildRelationshipGraph(
   const idSet = new Set(sids);
   const resolved: ResolvedEdge[] = edges.map((e) => ({ ...e, viaEff: effectiveVia(topology, e.via) }));
 
-  // ── cycle detection FIRST (DFS back-edges over ordering edges) ──
-  const adj = new Map<string, { to: string; id: string }[]>(sids.map((i) => [i, []]));
-  for (const e of resolved) {
-    if (ORDERING.has(e.kind) && idSet.has(e.from) && idSet.has(e.to)) adj.get(e.from)!.push({ to: e.to, id: e.id });
-  }
-  const color = new Map<string, 0 | 1 | 2>();
-  const cycleEdgeIds = new Set<string>();
-  let hasCycle = false;
-  const dfs = (n: string) => {
-    color.set(n, 1);
-    for (const { to, id } of adj.get(n) ?? []) {
-      const c = color.get(to) ?? 0;
-      if (c === 1) { hasCycle = true; cycleEdgeIds.add(id); }
-      else if (c === 0) dfs(to);
-    }
-    color.set(n, 2);
-  };
-  for (const i of sids) if ((color.get(i) ?? 0) === 0) dfs(i);
+  // ── cycle detection FIRST (DFS back-edges over ordering edges) — shared graph-core primitive (#2217) ──
+  const { backEdgeIds: cycleEdgeIds, hasCycle } = findBackEdges(sids, resolved.filter((e) => ORDERING.has(e.kind)));
 
   // ── layering over ordering edges, EXCLUDING back-edges (keeps it a DAG) ──
   const layEdges = resolved.filter((e) => ORDERING.has(e.kind) && !cycleEdgeIds.has(e.id) && idSet.has(e.from) && idSet.has(e.to));
