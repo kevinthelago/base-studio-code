@@ -45,6 +45,28 @@ describe("detectPools (#2199)", () => {
     expect(detectPools(hetero, personas)).toHaveLength(0);
   });
 
+  it("falls back to the packaged pooled flag when the store copy predates the field", () => {
+    // A store persona-worker seeded before `pooled` existed (no field). detectPools must still treat it
+    // as pooled from the built-in — so the pool shows without an app restart.
+    const stale: Persona[] = [
+      { id: "persona-director", name: "Director", blurb: "", role: "director", startPrompt: "", skills: [] },
+      { id: "persona-worker", name: "Worker", blurb: "", role: "worker", startPrompt: "", skills: [] }, // no `pooled`
+    ];
+    const org: Org = {
+      id: "s", name: "s",
+      positions: [
+        { nodeId: "director", kind: "agent", personaId: "persona-director" },
+        { nodeId: "w1", kind: "agent", personaId: "persona-worker" },
+        { nodeId: "w2", kind: "agent", personaId: "persona-worker" },
+      ],
+      relationships: [
+        { id: "m1", archetype: "manages", from: "director", to: "w1" },
+        { id: "m2", archetype: "manages", from: "director", to: "w2" },
+      ],
+    };
+    expect(detectPools(org, stale)).toHaveLength(1);
+  });
+
   it("ignores a non-pooled persona and single-member groups", () => {
     const notPooled = personas.map((p) => (p.id === "p-worker" ? { ...p, pooled: false } : p));
     expect(detectPools(swarm, notPooled)).toHaveLength(0);
