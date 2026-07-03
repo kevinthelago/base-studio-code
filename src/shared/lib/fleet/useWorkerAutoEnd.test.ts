@@ -105,7 +105,12 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
-    expect(invoke).not.toHaveBeenCalledWith("bsc", expect.anything());
+    // No plan.db query for this pane — the project-agnostic log polls (#2144) still fire via bsc, so
+    // narrow the assertion to the `plan list` read the "no DB query" behavior actually means.
+    expect(invoke).not.toHaveBeenCalledWith(
+      "bsc",
+      expect.objectContaining({ args: expect.arrayContaining(["plan", "list"]) }),
+    );
   });
 
   it("nudges an idle, complete, question-free worker to self-close (#1379 stage 3)", async () => {
