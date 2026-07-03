@@ -89,6 +89,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       world={{ w: model.worldW, h: model.worldH }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
       overlays={<GlanceOverlays />}
+      railResizable railWidth={266} railMin={200} railMax={420}
+      inspectorResizable inspectorWidth={340} inspectorMin={280} inspectorMax={520}
       toolbar={
         <>
           <Row gap={9} align="baseline">
@@ -114,7 +116,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         </>
       }
       rail={
-        <Stack gap={0} style={{ width: 266, minWidth: 266, background: "var(--bg-elev)", borderRight: "1px solid var(--border)", minHeight: 0 }}>
+        <Stack gap={0} style={{ flex: 1, minWidth: 0, background: "var(--bg-elev)", borderRight: "1px solid var(--border)", minHeight: 0 }}>
           <Row align="baseline" justify="between" style={{ padding: "14px 16px 10px" }}>
             <Text as="span" mono size={11} tone="dim" style={{ letterSpacing: "1.5px" }}>PROJECTS</Text>
             <Text as="span" mono size={11} tone="dim">{model.nodes.length}</Text>
@@ -150,7 +152,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           )}
         </Stack>
       }
-      inspector={<GlanceInspector model={model} selType={sel?.type ?? null} selId={sel?.id ?? null} onSelectNode={pickNode} onClose={() => setSel(null)} />}
+      inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)} /> : undefined}
     >
       <GlanceCanvas
         model={model} dragMoved={vp.dragMoved}
