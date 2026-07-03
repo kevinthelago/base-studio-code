@@ -7,6 +7,7 @@
 // (a foundational project with no deps sits at layer 0). Mutual pairs (a↔b) are CYCLES — surfaced as
 // coordination hazards. This is the DAG/graph layout in the "layout follows data structure" sense
 // (#2204): the same layered algorithm the Org designer uses, on a different domain.
+import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 
 export type GRole = "infra" | "service" | "data" | "client";
 export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done";
@@ -99,13 +100,8 @@ export function focusSets(
   showCycle: boolean,
 ): { nodes: Set<string>; edges: Set<string> } | null {
   if (activeNodeId) {
-    const nodes = new Set([activeNodeId]);
-    const edges = new Set<string>();
-    for (const e of model.edges) {
-      if (e.from === activeNodeId) { nodes.add(e.to); edges.add(e.id); }
-      if (e.to === activeNodeId) { nodes.add(e.from); edges.add(e.id); }
-    }
-    return { nodes, edges };
+    const sp = neighborSpotlight(model.edges, activeNodeId);
+    return { nodes: sp.litNodes, edges: sp.litEdges };
   }
   if (activeEdgeId) {
     const e = model.edges.find((x) => x.id === activeEdgeId);

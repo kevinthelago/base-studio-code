@@ -4,6 +4,7 @@
 // layering + cycle detection are unit-testable; the visualization lives in
 // RelationshipGraphView.tsx and the authoring controls in the Structure/Permissions
 // focused panes. Mirrors the design prototype (design/bsc · model()).
+import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 
 /** Fleet coordination topology. `director` = hub-and-spoke (every edge routes through
  *  the director), `peer` = mesh (every edge is a direct handoff), `hybrid` = per-edge. */
@@ -214,11 +215,9 @@ export function computeSpotlight(g: RelationshipGraph, focus: RelFocus): Spotlig
   const litEdges = new Set<string>();
   const litArtifacts = new Set<string>();
   if (focus.type === "agent") {
-    brightStreams.add(focus.id);
-    for (const e of g.edges) {
-      if (e.from === focus.id) { brightStreams.add(e.to); litEdges.add(e.id); }
-      if (e.to === focus.id) { brightStreams.add(e.from); litEdges.add(e.id); }
-    }
+    const sp = neighborSpotlight(g.edges, focus.id);
+    sp.litNodes.forEach((n) => brightStreams.add(n));
+    sp.litEdges.forEach((id) => litEdges.add(id));
     for (const a of g.artifacts) if (a.producer === focus.id || a.consumers.includes(focus.id)) litArtifacts.add(a.id);
   } else if (focus.type === "edge") {
     const e0 = g.edges.find((e) => e.id === focus.id);
