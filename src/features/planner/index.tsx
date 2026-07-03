@@ -7,7 +7,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
-import { Fleet } from "./fleet/Fleet";
 import { OrgPanel } from "@/features/org";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
@@ -70,12 +69,8 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       onTearOff={tearOff}
       pageOverride={pageOverride}
     >
-      {/* Fleet — live orchestration; the worker board opens a per-agent page (#499). Mounts on demand. */}
-      {mode === "fleet" && (
-        <Stack style={{ flex: 1, minHeight: 0 }}>
-          <Fleet />
-        </Stack>
-      )}
+      {/* Fleet analytics moved to Glance (#2223/#2228). The console fleet launch (fleetStartProject) is
+          unaffected — that's a separate build-tab flow, not this page mode. */}
 
       {/* Org — the persona-relationship graph (#2193); also the persona editor (the Personas tab was
           folded in here, #2199). Authoring, not a live PTY, so torn-off windows never force this mode. */}
