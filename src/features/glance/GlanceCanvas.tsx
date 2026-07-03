@@ -76,7 +76,7 @@ export function GlanceCanvas(p: CanvasProps) {
                 <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
               </Box>
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.role}</Text>
+                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.roleLabel ?? n.role}</Text>
                 <Box style={{ flex: 1 }} />
                 <Text as="span" mono size={10} weight={500} style={{ color: st.color }}>{st.label}</Text>
               </Box>

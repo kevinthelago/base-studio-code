@@ -53,9 +53,12 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
     const d = buildRealFleetData(fleet, personas);
     expect(d.sample).toBe(false);
     const byId = Object.fromEntries(d.rawNodes.map((n) => [n.id, n]));
-    expect(byId.api.role).toBe("service");   // worker → service
+    expect(byId.api.role).toBe("service");   // worker → service (colour category)
+    expect(byId.api.roleLabel).toBe("worker"); // real role carried for display
     expect(byId.qa.role).toBe("data");       // reviewer → data
+    expect(byId.qa.roleLabel).toBe("reviewer");
     expect(byId.director.role).toBe("infra");// director hub added
+    expect(byId.director.roleLabel).toBe("director");
     // director hub: each stream depends on the director
     expect(d.rawEdges).toContainEqual({ from: "api", to: "director", kind: "api" });
     // dependsOn: ui depends on api
