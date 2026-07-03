@@ -1,6 +1,7 @@
 // Glance canvas (#2206) — the transform-based project-network graph: SVG dependency edges + project
-// node cards in a pan/zoom "world" layer, with hover/select focus dimming. Viewport (pan/zoom) is owned
-// by useGraphViewport in the parent; this renders the graph. Node = project; edge = dependency contract.
+// node cards. Renders the WORLD-LAYER content (grid + edges + nodes); the pan/zoom viewport frame is
+// owned by the shared GraphCanvas template + useGraphViewport in the parent (#2208). Node = project;
+// edge = dependency contract. The fixed hint/legend overlays are GlanceOverlays (drawn over, untransformed).
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { ROLE_COLOR, STATUS_META, EDGE_META, NW, NH, type GraphModel } from "./lib/glanceGraph";
@@ -11,9 +12,7 @@ const EDGE_ROWS: [string, string, string][] = [["api contract", EDGE_META.api.co
 
 interface CanvasProps {
   model: GraphModel;
-  worldTransform: React.CSSProperties;
-  setVp: (el: HTMLDivElement | null) => void;
-  onCanvasDown: (e: React.MouseEvent) => void;
+  /** True during a pan-drag — suppresses the click that ends it (from the shared viewport). */
   dragMoved: React.MutableRefObject<boolean>;
   focus: { nodes: Set<string>; edges: Set<string> } | null;
   selNodeId: string | null;
@@ -24,70 +23,73 @@ interface CanvasProps {
   onSelectEdge: (id: string) => void;
 }
 
+/** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function GlanceCanvas(p: CanvasProps) {
   const { model, focus } = p;
   const click = (fn: () => void) => () => { if (!p.dragMoved.current) fn(); };
 
   return (
-    // eslint-disable-next-line no-restricted-syntax -- transform-pan/zoom viewport needs a DOM ref (native wheel listener) + backdrop mousedown
-    <div ref={p.setVp} onMouseDown={p.onCanvasDown}
-      style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0,
-        background: "radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)" }}>
-      <Box style={{ position: "absolute", left: 0, top: 0, width: model.worldW, height: model.worldH, ...p.worldTransform, willChange: "transform" }}>
-        {/* dotted grid */}
-        <Box style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.6,
-          backgroundImage: "radial-gradient(color-mix(in oklch, var(--fg) 12%, transparent) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+    <>
+      {/* dotted grid */}
+      <Box style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.6,
+        backgroundImage: "radial-gradient(color-mix(in oklch, var(--fg) 12%, transparent) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
 
-        {/* edges */}
-        <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
-          {model.edges.map((e) => {
-            const meta = EDGE_META[e.kind];
-            const inFocus = focus ? focus.edges.has(e.id) : true;
-            const color = e.isCycle ? "#f2555f" : meta.color;
-            const width = (e.isCycle ? 2.3 : meta.w) + (inFocus && focus ? 0.7 : 0);
-            const dash = e.isCycle ? "7 6" : meta.dash;
-            const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
-            return (
-              <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
-                <path d={e.d} stroke="transparent" strokeWidth={16} fill="none" />
-                <path d={e.d} stroke={color} strokeWidth={width} strokeDasharray={dash} fill="none" strokeLinecap="round"
-                  style={e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : undefined} />
-                <path d={e.arrow} fill={color} />
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* nodes */}
-        {model.nodes.map((n) => {
-          const role = ROLE_COLOR[n.role], st = STATUS_META[n.status];
-          const selected = p.selNodeId === n.id;
-          const inFocus = focus ? focus.nodes.has(n.id) : true;
-          const isCycle = model.cycleNodeIds.has(n.id);
-          const border = selected ? role : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+      {/* edges */}
+      <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+        {model.edges.map((e) => {
+          const meta = EDGE_META[e.kind];
+          const inFocus = focus ? focus.edges.has(e.id) : true;
+          const color = e.isCycle ? "#f2555f" : meta.color;
+          const width = (e.isCycle ? 2.3 : meta.w) + (inFocus && focus ? 0.7 : 0);
+          const dash = e.isCycle ? "7 6" : meta.dash;
+          const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
           return (
-            <Box key={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
-              style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
-                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
-              <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`, borderLeft: `3px solid ${role}`,
-                borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-                boxShadow: selected ? `0 0 0 1px ${role}, 0 10px 30px -8px ${role}` : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
-                <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Box style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, flex: "none",
-                    boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none", animation: st.pulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
-                  <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
-                </Box>
-                <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.role}</Text>
-                  <Box style={{ flex: 1 }} />
-                  <Text as="span" mono size={10} weight={500} style={{ color: st.color }}>{st.label}</Text>
-                </Box>
-              </Box>
-            </Box>
+            <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
+              <path d={e.d} stroke="transparent" strokeWidth={16} fill="none" />
+              <path d={e.d} stroke={color} strokeWidth={width} strokeDasharray={dash} fill="none" strokeLinecap="round"
+                style={e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : undefined} />
+              <path d={e.arrow} fill={color} />
+            </g>
           );
         })}
-      </Box>
+      </svg>
 
+      {/* nodes */}
+      {model.nodes.map((n) => {
+        const role = ROLE_COLOR[n.role], st = STATUS_META[n.status];
+        const selected = p.selNodeId === n.id;
+        const inFocus = focus ? focus.nodes.has(n.id) : true;
+        const isCycle = model.cycleNodeIds.has(n.id);
+        const border = selected ? role : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        return (
+          <Box key={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
+            style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
+              zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
+            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`, borderLeft: `3px solid ${role}`,
+              borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
+              boxShadow: selected ? `0 0 0 1px ${role}, 0 10px 30px -8px ${role}` : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
+              <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, flex: "none",
+                  boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none", animation: st.pulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
+                <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+              </Box>
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.role}</Text>
+                <Box style={{ flex: 1 }} />
+                <Text as="span" mono size={10} weight={500} style={{ color: st.color }}>{st.label}</Text>
+              </Box>
+            </Box>
+          </Box>
+        );
+      })}
+    </>
+  );
+}
+
+/** The fixed hint + legend overlays — drawn over the canvas, not transformed. */
+export function GlanceOverlays() {
+  return (
+    <>
       {/* hint */}
       <Box style={{ position: "absolute", left: 16, bottom: 16, pointerEvents: "none" }}>
         <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.7 }}>drag to pan · scroll to zoom<br />click node → enter · click edge → contract</Text>
@@ -119,6 +121,6 @@ export function GlanceCanvas(p: CanvasProps) {
           </Box>
         </Box>
       </Box>
-    </div>
+    </>
   );
 }
