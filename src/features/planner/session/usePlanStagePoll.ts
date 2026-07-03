@@ -14,7 +14,7 @@ import { type PlanIssue } from "../issues/planIssues";
 import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY } from "../fleet/planFleet";
 import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
-import { reconcileConfirmations, type ConfirmRow } from "../stages/confirmReconcile";
+import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stages/confirmReconcile";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
@@ -55,6 +55,8 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // Projects whose pre-#2256 app-state confirmations have already been forward-migrated into plan.db
   // (one-time per project, so the migration doesn't re-run every 2s tick).
   const confirmMigratedRef = useRef<Set<string>>(new Set());
+  // The same one-time-per-project guard for the pre-#2267 app-state skips forward-migration.
+  const skipMigratedRef = useRef<Set<string>>(new Set());
 
   // Poll the section files Claude writes every 2 seconds while visible. Each
   // documented topic is its own file ({key}.md / phases.json / _skipped.md);
@@ -285,6 +287,24 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
             for (const k of plan.migrate) {
               await bscRun(effectiveProjectId, ["plan", "confirm", "add", k, hashString(liveSections[k] ?? "")]);
             }
+          }
+        } catch { /* plan.db not created yet — ignore */ }
+
+        // Skipped stages (#2267) — same durability as confirmations, minus the fingerprint/reset (a
+        // skip is a plain decision, not content-based). Rehydrate the skipped set on revisit and
+        // forward-migrate any pre-#2267 app-state-only skips into plan.db once.
+        try {
+          const rows = await bscJson<string[]>(effectiveProjectId, ["plan", "skip", "list", "--json"], []);
+          const fresh = useAppStore.getState();
+          const plan = reconcileSkips(
+            rows,
+            new Set(fresh.planSkippedStages[effectiveProjectId] ?? []),
+            skipMigratedRef.current.has(effectiveProjectId),
+          );
+          for (const k of plan.rehydrate) fresh.markStageSkippedLocal(effectiveProjectId, k);
+          if (plan.migrate.length) {
+            skipMigratedRef.current.add(effectiveProjectId);
+            for (const k of plan.migrate) await bscRun(effectiveProjectId, ["plan", "skip", "add", k]);
           }
         } catch { /* plan.db not created yet — ignore */ }
       } catch {

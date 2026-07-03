@@ -47,6 +47,7 @@ mod lessons;
 mod mcp;
 mod repos;
 mod schema;
+mod skipped;
 mod triage;
 
 pub use assignments::{Automation, StartupScript};
