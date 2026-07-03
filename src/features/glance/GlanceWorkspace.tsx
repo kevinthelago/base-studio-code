@@ -24,6 +24,7 @@ import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { buildGlanceData, type ProjectLite } from "./lib/glanceData";
+import { buildFleetData } from "./lib/glanceFleet";
 import "./glance.css";
 
 const GLANCE_TABS: TabItem[] = [
@@ -37,8 +38,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     () => Object.entries(drafts).map(([id, d]) => ({ id, name: d.title })),
     [drafts],
   );
-  const data = useMemo(() => buildGlanceData(projects), [projects]);
-  const model = useMemo(() => buildGraph(data.rawNodes, data.rawEdges), [data]);
+  // L0 — the project-network graph.
+  const projectData = useMemo(() => buildGlanceData(projects), [projects]);
+  const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
   const page = pageOverride ?? activeId;
@@ -48,11 +50,22 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
   const [search, setSearch] = useState("");
+  // Drill (#…): clicking a project on the Network graph animates INTO that project's fleet-relationship
+  // graph — the SAME canvas, a different graph (L0 project network → L1 agent fleet). `drill` is the
+  // drilled project node id; the fleet graph is SAMPLE until a real per-project fleet feed lands.
+  const [drill, setDrill] = useState<string | null>(null);
+
+  const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
+  const fleetData = useMemo(() => (drillNode ? buildFleetData({ id: drillNode.id, name: drillNode.slug }) : null), [drillNode]);
+  const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
+  // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
+  // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
+  const data = fleetData ?? projectData;
+  const model = fleetModel ?? projectModel;
 
   const vp = useGraphViewport({ w: model.worldW, h: model.worldH });
-  // Fit when the graph changes OR the Network page (re)mounts. The canvas unmounts on a tab switch (the
-  // parent keeps the viewport state), so the fit must re-fire on return; `fit` is a stable callback, so
-  // this doesn't re-fit every render (the earlier `[model, vp]` dep did, fighting pan/zoom).
+  // Fit when the graph changes (a drill in/out swaps `model`) OR the Network page (re)mounts. `fit` is a
+  // stable callback, so this doesn't re-fit every render (the earlier `[model, vp]` dep did).
   const { fit } = vp;
   useEffect(() => {
     if (page !== "network") return;
@@ -66,6 +79,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
+  // On the L0 network a node CLICK drills into that project's fleet; inside a fleet it selects an agent.
+  const onNodeClick = (id: string) => { if (drill) pickNode(id); else { setDrill(id); setSel(null); setShowCycle(false); } };
+  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); };
 
   const q = search.trim().toLowerCase();
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
@@ -96,13 +112,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <Row gap={9} align="baseline">
             <Box style={{ width: 9, height: 9, borderRadius: "50%", background: "#4fd6a0", boxShadow: "0 0 10px #4fd6a0", alignSelf: "center" }} />
             <Text as="span" mono size={16} weight={700} style={{ letterSpacing: "-.5px" }}>glance</Text>
-            <Text as="span" mono size={11} tone="dim">project network</Text>
+            <Text as="span" mono size={11} tone="dim">{drill ? `${drillNode?.slug ?? "project"} · fleet` : "project network"}</Text>
           </Row>
+          {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
           {/* eslint-disable-next-line no-restricted-syntax -- compact search input; a full Field is overkill in the toolbar */}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
             style={{ width: 280, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
           <Box style={{ flex: 1 }} />
-          {data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>}
+          {data.sample && <Chip color="var(--warn, #f2b155)">{drill ? "sample fleet · preview" : "sample topology · preview"}</Chip>}
           {model.cyclePairs.length > 0 && (
             <Box as="button" onClick={() => { setShowCycle((v) => !v); setSel(null); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
@@ -118,7 +135,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       rail={
         <Stack gap={0} style={{ flex: 1, minWidth: 0, background: "var(--bg-elev)", borderRight: "1px solid var(--border)", minHeight: 0 }}>
           <Row align="baseline" justify="between" style={{ padding: "14px 16px 10px" }}>
-            <Text as="span" mono size={11} tone="dim" style={{ letterSpacing: "1.5px" }}>PROJECTS</Text>
+            <Text as="span" mono size={11} tone="dim" style={{ letterSpacing: "1.5px" }}>{drill ? "AGENTS" : "PROJECTS"}</Text>
             <Text as="span" mono size={11} tone="dim">{model.nodes.length}</Text>
           </Row>
           <Box style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
@@ -126,7 +143,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               const st = STATUS_META[n.status];
               const on = selNodeId === n.id || hoverNode === n.id;
               return (
-                <Row key={n.id} gap={9} align="center" onClick={() => pickNode(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
+                <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
                   style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
                   <Box style={{ width: 7, height: 7, borderRadius: "50%", background: st.color, flex: "none", boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
                   <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
@@ -154,11 +171,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       }
       inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)} /> : undefined}
     >
-      <GlanceCanvas
-        model={model} dragMoved={vp.dragMoved}
-        focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
-        onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={pickNode} onSelectEdge={pickEdge}
-      />
+      {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
+      <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>
+        <GlanceCanvas
+          model={model} dragMoved={vp.dragMoved}
+          focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
+          onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
+        />
+      </Box>
     </GraphCanvas>
       </Box>
       )}
