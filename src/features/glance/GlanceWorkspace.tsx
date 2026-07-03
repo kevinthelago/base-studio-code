@@ -26,6 +26,7 @@ import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGrap
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
 import { useGlanceProjects } from "./lib/useGlanceProjects";
+import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
 
 const GLANCE_TABS: TabItem[] = [
@@ -58,16 +59,19 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drive it (see useNavHistory).
   const drill = useAppStore((s) => s.glanceDrill);
   const setDrill = useAppStore((s) => s.setGlanceDrill);
+  // The drilled project's fleet, translated from plan.db. The store's `planFleet` only mirrors the ACTIVE
+  // project, so for any OTHER project we load its fleet straight from its own plan.db (useProjectFleet).
+  // Prefer the live store copy when it has streams so the active project never flashes sample → real.
+  const loadedFleet = useProjectFleet(drill);
+  const storeFleet = drill ? planFleet[drill] : undefined;
+  const effectiveFleet = storeFleet && storeFleet.streams.length > 0 ? storeFleet : loadedFleet;
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
-  // The drilled project's REAL fleet (plan.db is keyed by project id, so the node id resolves it); falls
-  // back to a sample fleet when a project has no planned fleet yet (e.g. the sample project topology).
-  const realFleet = drill ? planFleet[drill] : undefined;
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
-    if (realFleet && realFleet.streams.length > 0) return buildRealFleetData(realFleet, personas);
+    if (effectiveFleet && effectiveFleet.streams.length > 0) return buildRealFleetData(effectiveFleet, personas);
     return buildFleetData({ id: drillNode.id, name: drillNode.slug });
-  }, [drillNode, realFleet, personas]);
+  }, [drillNode, effectiveFleet, personas]);
   const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
   // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
   // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.

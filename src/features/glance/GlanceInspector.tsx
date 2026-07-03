@@ -69,7 +69,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose }
             </Box>
             <Box style={CARD}>
               <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>ROLE</Text>
-              <Text as="span" mono size={11} style={{ color: ROLE_COLOR[n.role], background: `color-mix(in oklch, ${ROLE_COLOR[n.role]} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${ROLE_COLOR[n.role]} 30%, transparent)`, borderRadius: 5, padding: "3px 8px" }}>{n.role}</Text>
+              <Text as="span" mono size={11} style={{ color: ROLE_COLOR[n.role], background: `color-mix(in oklch, ${ROLE_COLOR[n.role]} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${ROLE_COLOR[n.role]} 30%, transparent)`, borderRadius: 5, padding: "3px 8px" }}>{n.roleLabel ?? n.role}</Text>
             </Box>
           </Row>
 

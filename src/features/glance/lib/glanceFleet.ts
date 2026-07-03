@@ -29,12 +29,12 @@ const KIND_TO_GKIND: Record<string, GEdgeKind> = {
  *  producer (the Glance "from depends on to" convention). Returns `sample:false`. */
 export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
   const roleOf = new Map(personas.map((p) => [p.id, p.role]));
-  const rawNodes: GRawNode[] = fleet.streams.map((s) => ({
-    id: s.id,
-    slug: s.name || s.id,
-    role: gRole(s.persona ? roleOf.get(s.persona) : "worker"),
-    status: "planning",
-  }));
+  const rawNodes: GRawNode[] = fleet.streams.map((s) => {
+    // Each stream is a unique node; its ROLE comes from its persona (default worker when unset/unknown),
+    // and both the mapped colour category and the real role label ride on the node.
+    const streamRole = (s.persona ? roleOf.get(s.persona) : undefined) ?? "worker";
+    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, status: "planning" };
+  });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
   const seen = new Set<string>();
@@ -48,7 +48,7 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 
   // director hub — every stream depends on its direction (drawn as the foundational node)
   if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", status: "building" });
+    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", status: "building" });
     ids.add("director");
     for (const s of fleet.streams) add(s.id, "director", "api");
   }
@@ -74,13 +74,13 @@ function hash(s: string): number {
 export function buildFleetData(project: ProjectLite): GlanceData {
   const workers = 2 + (hash(project.id) % 3); // 2..4
   const rawNodes: GRawNode[] = [
-    { id: "director", slug: "director", role: "infra", status: "building", director: undefined },
-    { id: "reviewer", slug: "reviewer", role: "data", status: "review" },
+    { id: "director", slug: "director", role: "infra", roleLabel: "director", status: "building" },
+    { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", status: "review" },
   ];
   const rawEdges: GRawEdge[] = [];
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
-    rawNodes.push({ id, slug: `worker ${i}`, role: "service", status: hash(id + project.id) % 2 ? "building" : "idle" });
+    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", status: hash(id + project.id) % 2 ? "building" : "idle" });
     rawEdges.push({ from: id, to: "director", kind: "api" });   // worker takes direction from the director
     rawEdges.push({ from: "reviewer", to: id, kind: "data" });  // reviewer reads the worker's output
   }

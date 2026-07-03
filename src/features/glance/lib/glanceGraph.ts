@@ -24,6 +24,10 @@ export interface GRawNode {
   status: GStatus;
   /** Optional director id (for the node badge / inspector). */
   director?: string;
+  /** Display label for the role when the mapped `role` category isn't the real thing — e.g. a fleet
+   *  agent's actual session role ("worker" / "reviewer" / "director"), from its persona. The `role`
+   *  category still drives the colour; this is the text shown on the card + inspector. */
+  roleLabel?: string;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. */
 export interface GRawEdge { from: string; to: string; kind: GEdgeKind }
