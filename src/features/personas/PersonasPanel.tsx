@@ -1,62 +1,28 @@
 // Personas panel (#2094) — the CRUD surface for the agent-identity library, mounted as the Personas
 // tab of the Planner workspace. Left: the persona list (built-ins + user personas) with a "new"
-// action. Right: the editor for the selected persona — name · role (permission floor) · blurb · start
-// prompt · attached skills · default model. Built-ins are editable + clonable but not deletable; the
-// role a persona references is shown with its live capability tiers (read from sessionRoles, so the
-// floor can't drift). Behavior identity only — the ROLE gate itself is edited on the Security page.
+// action. Right: the shared <PersonaEditor> for the selected persona (name · role+tiers ·
+// responsibilities · start prompt · skills · model). Built-ins are editable + clonable but not
+// deletable. The editor is shared with the Org designer's position inspector (#2199).
 import { useState } from "react";
 import { useAppStore } from "@/store";
-import { ROLE_DEFAULTS, roleCapability, type SessionRole } from "@/shared/lib/session/sessionRoles";
-import { MODEL_IDS } from "@/app/console/lib/models";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
-import { Box } from "@/shared/ui/layout/Box";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
-import { TextField, SelectField } from "@/shared/ui/controls/Field";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
-
-const ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];
-const TIER_COLOR: Record<string, string> = {
-  none: "var(--fg-dim)", read: "var(--info)", write: "var(--accent)",
-};
-
-/** The four capability tiers of a role, as coloured pills — the permission floor a persona inherits. */
-function RoleTiers({ role }: { role: SessionRole }) {
-  const cap = roleCapability(role);
-  const tiers: [string, string][] = [
-    ["git", cap.git], ["github", cap.github], ["code", cap.code], ["net", cap.net],
-  ];
-  return (
-    <Row gap={5} wrap>
-      {tiers.map(([k, v]) => (
-        <Chip key={k} color={TIER_COLOR[v] ?? "var(--fg-dim)"}>{k} · {v}</Chip>
-      ))}
-    </Row>
-  );
-}
+import { PersonaEditor } from "./PersonaEditor";
 
 export function PersonasPanel() {
   const personas = useAppStore((s) => s.personas);
-  const skills = useAppStore((s) => s.skills);
   const addPersona = useAppStore((s) => s.addPersona);
   const clonePersona = useAppStore((s) => s.clonePersona);
-  const updatePersona = useAppStore((s) => s.updatePersona);
   const removePersona = useAppStore((s) => s.removePersona);
 
   const [selectedId, setSelectedId] = useState<string>(personas[0]?.id ?? "");
   const selected = personas.find((p) => p.id === selectedId) ?? personas[0];
-
-  const toggleSkill = (skillId: string) => {
-    if (!selected) return;
-    const has = selected.skills.includes(skillId);
-    updatePersona(selected.id, {
-      skills: has ? selected.skills.filter((s) => s !== skillId) : [...selected.skills, skillId],
-    });
-  };
 
   return (
     // The standardized list+detail Layout (#2197) owns the rail width/border/scroll + detail
@@ -92,81 +58,11 @@ export function PersonasPanel() {
             <Text as="h2" size={16} weight={600} style={{ margin: 0, flex: 1 }}>{selected.name || "Untitled persona"}</Text>
             <Button variant="ghost" onClick={() => setSelectedId(clonePersona(selected.id))}>clone</Button>
             {!selected.builtin && (
-              <ConfirmButton
-                label="delete"
-                armedLabel="delete?"
-                danger
-                onConfirm={() => { removePersona(selected.id); setSelectedId(personas[0]?.id ?? ""); }}
-              />
+              <ConfirmButton label="delete" armedLabel="delete?" danger
+                onConfirm={() => { removePersona(selected.id); setSelectedId(personas[0]?.id ?? ""); }} />
             )}
           </Row>
-
-          <TextField label="Name" value={selected.name} onChange={(v) => updatePersona(selected.id, { name: v })} />
-          <TextField label="What it does" value={selected.blurb} onChange={(v) => updatePersona(selected.id, { blurb: v })} placeholder="One line — the job this persona does" />
-
-          <Box>
-            <SelectField
-              label="Role — the permission floor (edited on Security)"
-              value={selected.role}
-              onChange={(v) => updatePersona(selected.id, { role: v as SessionRole })}
-            >
-              {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-            </SelectField>
-            <Box style={{ marginTop: 6 }}><RoleTiers role={selected.role} /></Box>
-          </Box>
-
-          <Box className="field">
-            <label>Start prompt</label>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke multi-line prompt editor; TextField is single-line */}
-            <textarea
-              className="input"
-              value={selected.startPrompt}
-              onChange={(e) => updatePersona(selected.id, { startPrompt: e.target.value })}
-              placeholder="The protocol/prose injected at launch. Empty falls back to the role's own kickoff."
-              style={{ width: "100%", minHeight: 150, resize: "vertical", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.55 }}
-            />
-          </Box>
-
-          <SelectField
-            label="Default model"
-            value={selected.model ?? ""}
-            onChange={(v) => updatePersona(selected.id, { model: v || undefined })}
-          >
-            <option value="">session default</option>
-            {MODEL_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
-            {/* Preserve a custom model id the persona already carries (e.g. a bsc-agent model not in the
-                known-tier list) so the picker never silently drops it. */}
-            {selected.model && !(MODEL_IDS as string[]).includes(selected.model) && (
-              <option value={selected.model}>{selected.model} (custom)</option>
-            )}
-          </SelectField>
-
-          <Box>
-            <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 6 }}>attached skills · {selected.skills.length}</Text>
-            {skills.length === 0 ? (
-              <Text as="div" size={11} tone="dim">No skills in the library yet — author them on the Skills page.</Text>
-            ) : (
-              <Row gap={6} wrap>
-                {skills.map((sk) => {
-                  const on = selected.skills.includes(sk.id);
-                  return (
-                    <Box
-                      as="button"
-                      key={sk.id}
-                      onClick={() => toggleSkill(sk.id)}
-                      className="mono"
-                      style={{
-                        cursor: "pointer", padding: "2px 9px", borderRadius: 99, fontSize: 10.5,
-                        color: on ? "var(--accent)" : "var(--fg-muted)",
-                        border: "1px solid " + (on ? "var(--accent)" : "var(--border)"),
-                        background: on ? "color-mix(in oklch, var(--accent), transparent 88%)" : "transparent",
-                      }}
-                    >{on ? "✓ " : ""}{sk.name}</Box>
-                  );
-                })}
-              </Row>
-            )}
-          </Box>
+          <PersonaEditor persona={selected} />
         </Stack>
       ) : (
         <Stack align="center" justify="center" style={{ flex: 1 }}>

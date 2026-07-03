@@ -1,7 +1,7 @@
 // Org canvas geometry (#2193) — pure math for the relationship graph, ported from the Claude Design
 // prototype. Kept React-free so it's unit-testable and the canvas component stays a thin renderer.
 // The graph lives in a fixed 1120×800 design space; the canvas scales it by a zoom factor.
-import type { Position, PositionKind } from "./org";
+import type { Org, Position, PositionKind } from "./org";
 
 /** The fixed design coordinate space every node's x/y is authored in. */
 export const CANVAS_W = 1120;
@@ -71,4 +71,75 @@ export function styleDash(style: string): string {
     case "resource": return "4 6";
     default: return "0"; // solid
   }
+}
+
+/** Clamp `z` to the canvas zoom range. */
+export function clampZoom(z: number, min = 0.4, max = 1.5): number {
+  return Math.max(min, Math.min(max, z));
+}
+
+// ── Auto-organize ────────────────────────────────────────────────────────────
+/** Archetypes that impose a top-down hierarchy (a parent → child flow); peers/consults are lateral and
+ *  don't drive layering. */
+const HIERARCHY_ARCHETYPES = new Set(["manages", "serves", "oversees", "stewards"]);
+
+const AUTO_COL = 230; // horizontal spacing between nodes in a layer
+const AUTO_ROW = 175; // vertical spacing between layers
+
+/** A deterministic hierarchical layered layout: layer each node by its longest path from a root (a node
+ *  with no incoming hierarchy edge), reduce edge crossings with a few barycenter passes, then place each
+ *  layer as a centered row. Returns fresh `{x,y}` per nodeId — the caller stamps them onto the org.
+ *  Pure + deterministic so "Auto organize" is a re-runnable baseline the user then hand-tunes. */
+export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
+  const ids = org.positions.map((p) => p.nodeId);
+  const parents = new Map<string, string[]>(ids.map((n) => [n, []]));
+  const children = new Map<string, string[]>(ids.map((n) => [n, []]));
+  for (const r of org.relationships) {
+    if (!HIERARCHY_ARCHETYPES.has(r.archetype)) continue;
+    if (!parents.has(r.to) || !children.has(r.from)) continue;
+    parents.get(r.to)!.push(r.from);
+    children.get(r.from)!.push(r.to);
+  }
+
+  // Longest-path layering (roots at 0), with a cycle guard.
+  const layer = new Map<string, number>();
+  const active = new Set<string>();
+  const calc = (n: string): number => {
+    const cached = layer.get(n);
+    if (cached !== undefined) return cached;
+    if (active.has(n)) return 0; // cycle — break it
+    active.add(n);
+    const ps = parents.get(n)!;
+    const l = ps.length === 0 ? 0 : Math.max(...ps.map(calc)) + 1;
+    active.delete(n);
+    layer.set(n, l);
+    return l;
+  };
+  ids.forEach(calc);
+
+  const layers = [...new Set(ids.map((n) => layer.get(n)!))].sort((a, b) => a - b);
+  const order = new Map<number, string[]>(layers.map((l) => [l, ids.filter((n) => layer.get(n) === l)]));
+  const indexIn = (l: number, n: string) => order.get(l)!.indexOf(n);
+
+  // Barycenter crossing reduction: order each node by the mean index of its neighbors in other layers.
+  for (let pass = 0; pass < 4; pass++) {
+    for (const l of layers) {
+      order.get(l)!.sort((a, b) => bary(a) - bary(b));
+    }
+  }
+  function bary(n: string): number {
+    const l = layer.get(n)!;
+    const neigh = [...parents.get(n)!, ...children.get(n)!].filter((m) => layer.get(m) !== l);
+    if (neigh.length === 0) return indexIn(l, n);
+    return neigh.reduce((s, m) => s + indexIn(layer.get(m)!, m), 0) / neigh.length;
+  }
+
+  const widest = Math.max(1, ...layers.map((l) => order.get(l)!.length));
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const l of layers) {
+    const row = order.get(l)!;
+    const startX = ((widest - row.length) * AUTO_COL) / 2 + 40;
+    row.forEach((n, i) => { out[n] = { x: Math.round(startX + i * AUTO_COL), y: 40 + l * AUTO_ROW }; });
+  }
+  return out;
 }

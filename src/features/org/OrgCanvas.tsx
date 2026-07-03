@@ -1,6 +1,8 @@
-// The org canvas (#2193) — the relationship graph: nodes (positions) + curved edges (relationships) in
-// a zoomable design-space stage, ported from the Claude Design prototype onto the app's tokens + kit.
-// Pure geometry lives in orgLayout.ts; view metadata in orgView.ts — this file is the renderer.
+// The org canvas (#2193, interactive #2199) — the relationship graph: nodes (positions) + curved edges
+// (relationships) in a pan/zoom design-space stage. The viewport (wheel-zoom + background pan) is owned
+// by usePanZoom in the parent; this component renders the graph and owns NODE-DRAG (a local preview
+// that commits to the store on drop). Pure geometry lives in orgLayout.ts, view metadata in orgView.ts.
+import { useRef, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
@@ -19,26 +21,70 @@ interface CanvasProps {
   zoom: number;
   gridOn: boolean;
   legendOn: boolean;
+  /** Connect-mode is active — a node press is a connect click, never a drag. */
+  connecting: boolean;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  onBackgroundPointerDown: (e: React.PointerEvent) => void;
+  onBackgroundPointerMove: (e: React.PointerEvent) => void;
+  onBackgroundPointerUp: (e: React.PointerEvent) => void;
   onSelectNode: (nodeId: string) => void;
   onSelectEdge: (relId: string) => void;
+  onMoveNode: (nodeId: string, x: number, y: number) => void;
 }
 
-export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelectNode, onSelectEdge }: CanvasProps) {
+const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag (vs a click)
+
+export function OrgCanvas(props: CanvasProps) {
+  const { org, personas, sel, zoom, gridOn, legendOn, connecting, canvasRef,
+    onBackgroundPointerDown, onBackgroundPointerMove, onBackgroundPointerUp,
+    onSelectNode, onSelectEdge, onMoveNode } = props;
+
   const boxes = new Map(org.positions.map((p) => [p.nodeId, nodeBox(p)]));
+  // Live node-drag preview (design-space x/y). Commits to the store on drop.
+  const [drag, setDrag] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const gesture = useRef<{ nodeId: string; sx: number; sy: number; bx: number; by: number; moved: boolean } | null>(null);
+
+  /** The x/y to render a node at — its live drag preview if being dragged, else its stored box. */
+  const at = (nodeId: string) => (drag?.nodeId === nodeId ? drag : boxes.get(nodeId)!);
+  /** The box for edge geometry, with the (possibly dragged) live position substituted in. */
+  const liveBox = (nodeId: string) => ({ ...boxes.get(nodeId)!, ...at(nodeId) });
 
   const nodeActive = (id: string): boolean => {
     if (sel.type === "node") return id === sel.id;
     const e = org.relationships.find((r) => r.id === sel.id);
     return !!e && (e.from === id || e.to === id);
   };
-  const edgeActive = (relId: string, from: string, to: string): boolean => {
-    if (sel.type === "edge") return relId === sel.id;
-    return from === sel.id || to === sel.id;
+  const edgeActive = (from: string, to: string): boolean =>
+    sel.type === "edge" ? false : from === sel.id || to === sel.id;
+
+  const onNodeDown = (nodeId: string) => (e: React.PointerEvent) => {
+    e.stopPropagation(); // don't start a background pan
+    const b = boxes.get(nodeId)!;
+    gesture.current = { nodeId, sx: e.clientX, sy: e.clientY, bx: b.x, by: b.y, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onNodeMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g || connecting) return;
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < DRAG_THRESHOLD) return;
+    g.moved = true;
+    setDrag({ nodeId: g.nodeId, x: Math.round(g.bx + (e.clientX - g.sx) / zoom), y: Math.round(g.by + (e.clientY - g.sy) / zoom) });
+  };
+  const onNodeUp = (nodeId: string) => (e: React.PointerEvent) => {
+    const g = gesture.current;
+    gesture.current = null;
+    setDrag(null);
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (g && g.moved && !connecting) onMoveNode(nodeId, Math.round(g.bx + (e.clientX - g.sx) / zoom), Math.round(g.by + (e.clientY - g.sy) / zoom));
+    else onSelectNode(nodeId); // a click (also drives connect-mode)
   };
 
   return (
-    <Box id="orgCanvas" style={{ flex: 1, position: "relative", overflow: "auto", background: "var(--bg)", minWidth: 0, display: "flex" }}>
-      <Box style={{ position: "relative", width: CANVAS_W * zoom, height: CANVAS_H * zoom, margin: "auto", flex: "none" }}>
+    // eslint-disable-next-line no-restricted-syntax -- canvas scroll container needs a DOM ref (native wheel listener + pan via scrollLeft/Top)
+    <div ref={canvasRef} id="orgCanvas"
+      onPointerDown={onBackgroundPointerDown} onPointerMove={onBackgroundPointerMove} onPointerUp={onBackgroundPointerUp}
+      style={{ flex: 1, position: "relative", overflow: "auto", background: "var(--bg)", minWidth: 0, cursor: "grab" }}>
+      <Box style={{ position: "relative", width: CANVAS_W * zoom, height: CANVAS_H * zoom, flex: "none" }}>
         <Box style={{ position: "absolute", top: 0, left: 0, width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
           {gridOn && (
             <Box style={{ position: "absolute", inset: 0, pointerEvents: "none",
@@ -56,21 +102,19 @@ export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelect
               </marker>
             </defs>
             {org.relationships.map((r) => {
-              const A = boxes.get(r.from), B = boxes.get(r.to);
               const arch = archetypeById(r.archetype);
-              if (!A || !B || !arch) return null;
-              const { d } = edgeGeometry(A, B, r.bow ?? 0);
-              const act = edgeActive(r.id, r.from, r.to);
+              if (!arch || !boxes.get(r.from) || !boxes.get(r.to)) return null;
+              const { d } = edgeGeometry(liveBox(r.from), liveBox(r.to), r.bow ?? 0);
+              const act = edgeActive(r.from, r.to);
               const isSelEdge = sel.type === "edge" && r.id === sel.id;
               const color = hueColor(arch.hue);
               return (
                 <g key={r.id}>
-                  {/* fat invisible hit target */}
                   <path d={d} fill="none" stroke="transparent" strokeWidth={18} style={{ cursor: "pointer" }} onClick={() => onSelectEdge(r.id)} />
                   <path d={d} fill="none" stroke={color} strokeWidth={isSelEdge ? 2.8 : act ? 2 : 1.7}
                     strokeDasharray={styleDash(arch.style)} strokeLinecap="round"
                     markerEnd="url(#org-ah)" markerStart={arch.bidirectional ? "url(#org-ah-s)" : undefined}
-                    opacity={act ? 1 : 0.26} style={{ cursor: "pointer", transition: "opacity .15s" }} onClick={() => onSelectEdge(r.id)} />
+                    opacity={isSelEdge || act ? 1 : 0.26} style={{ cursor: "pointer", transition: "opacity .15s" }} onClick={() => onSelectEdge(r.id)} />
                 </g>
               );
             })}
@@ -79,18 +123,18 @@ export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelect
           {/* edge labels */}
           <Box style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
             {org.relationships.map((r) => {
-              const A = boxes.get(r.from), B = boxes.get(r.to);
               const arch = archetypeById(r.archetype);
-              if (!A || !B || !arch) return null;
-              const { lx, ly } = edgeGeometry(A, B, r.bow ?? 0);
-              const act = edgeActive(r.id, r.from, r.to);
+              if (!arch || !boxes.get(r.from) || !boxes.get(r.to)) return null;
+              const { lx, ly } = edgeGeometry(liveBox(r.from), liveBox(r.to), r.bow ?? 0);
+              const act = edgeActive(r.from, r.to);
+              const isSelEdge = sel.type === "edge" && r.id === sel.id;
               const color = hueColor(arch.hue);
               return (
                 <Box key={r.id} onClick={() => onSelectEdge(r.id)}
                   style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%,-50%)",
                     display: "inline-flex", alignItems: "center", gap: 5, padding: "2.5px 8px", borderRadius: 999,
                     background: "var(--bg-elev)", border: `1px solid ${color}`, color: "var(--fg)", fontSize: 10, fontWeight: 600,
-                    whiteSpace: "nowrap", pointerEvents: "auto", cursor: "pointer", opacity: act ? 1 : 0.32, transition: "opacity .15s" }}>
+                    whiteSpace: "nowrap", pointerEvents: "auto", cursor: "pointer", opacity: isSelEdge || act ? 1 : 0.32, transition: "opacity .15s" }}>
                   <Box style={{ width: 6, height: 6, borderRadius: "50%", background: color, flex: "none" }} />
                   {arch.label}
                 </Box>
@@ -100,14 +144,17 @@ export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelect
 
           {/* nodes */}
           {org.positions.map((pos) => {
+            const xy = at(pos.nodeId);
             const box = boxes.get(pos.nodeId)!;
             const d = positionDisplay(pos, personas);
             const isSel = sel.type === "node" && sel.id === pos.nodeId;
             const dim = !nodeActive(pos.nodeId);
             return (
-              <Box key={pos.nodeId} onClick={() => onSelectNode(pos.nodeId)}
-                style={{ position: "absolute", left: box.x, top: box.y, width: box.w, height: box.h,
-                  cursor: "pointer", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: "opacity .15s" }}>
+              // eslint-disable-next-line no-restricted-syntax -- node needs the data-node marker + pointer-capture on the element for drag
+              <div key={pos.nodeId} data-node={pos.nodeId}
+                onPointerDown={onNodeDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onNodeUp(pos.nodeId)}
+                style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
+                  cursor: connecting ? "crosshair" : "grab", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none" }}>
                 {pos.kind === "agent" && (
                   <Box style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "10px 12px",
                     display: "flex", flexDirection: "column", gap: 8, borderRadius: 13, background: "var(--bg-elev)",
@@ -147,7 +194,7 @@ export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelect
                     </Row>
                   </Box>
                 )}
-              </Box>
+              </div>
             );
           })}
         </Box>
@@ -170,6 +217,6 @@ export function OrgCanvas({ org, personas, sel, zoom, gridOn, legendOn, onSelect
           ))}
         </Box>
       )}
-    </Box>
+    </div>
   );
 }
