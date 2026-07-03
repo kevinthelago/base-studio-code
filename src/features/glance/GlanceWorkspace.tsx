@@ -1,10 +1,11 @@
-// Glance workspace (#2206, epic #2205) — the workspace-level project-network map: every project a node,
-// dependencies as edges, cross-project CYCLES surfaced as coordination hazards. Toolbar (search · cycle
-// pill · zoom/fit) · sidebar (projects + hazards) · transform graph canvas · project/contract inspector.
-// Nodes are the user's REAL projects; the topology (roles/edges/status) is clearly-marked SAMPLE until a
-// real cross-project dependency model lands (epic slice 4). Clicking a project will drill to its live
-// agent network (L2, later slice) — for now it opens the inspector. The pan/zoom shell is the shared
-// GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
+// Glance workspace (#2206, epic #2205) — the workspace-level mission control. A tabbed Screen (#2223):
+// NETWORK (the project-network map: every project a node, dependencies as edges, cross-project CYCLES as
+// coordination hazards) paired with FLEET (the live orchestration analytics for the active project's
+// fleet). Network toolbar (search · cycle pill · zoom/fit) · sidebar (projects + hazards) · transform
+// graph canvas · project/contract inspector. Nodes are the user's REAL projects; the topology is
+// clearly-marked SAMPLE until a real cross-project dependency model lands (epic slice 4). Clicking a
+// project will drill to its live agent network (L2, later slice) — for now it opens the inspector. The
+// pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -13,15 +14,24 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
+import { Screen } from "@/app/chrome/Screen";
+import { type TabItem } from "@/app/chrome/TabBar";
+import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
+import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { buildGlanceData, type ProjectLite } from "./lib/glanceData";
 import "./glance.css";
 
-export function GlanceWorkspace() {
+const GLANCE_TABS: TabItem[] = [
+  { id: "network", label: "Network", hint: "projects · dependencies" },
+  { id: "fleet", label: "Fleet", hint: "agents · throughput" },
+];
+
+export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const projects: ProjectLite[] = useMemo(
     () => Object.entries(drafts).map(([id, d]) => ({ id, name: d.title })),
@@ -30,6 +40,9 @@ export function GlanceWorkspace() {
   const data = useMemo(() => buildGlanceData(projects), [projects]);
   const model = useMemo(() => buildGraph(data.rawNodes, data.rawEdges), [data]);
 
+  const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
+  const page = pageOverride ?? activeId;
+
   const [sel, setSel] = useState<{ type: "node" | "edge"; id: string } | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
@@ -37,11 +50,15 @@ export function GlanceWorkspace() {
   const [search, setSearch] = useState("");
 
   const vp = useGraphViewport({ w: model.worldW, h: model.worldH });
-  // Fit whenever the graph itself changes (project list / first mount). `fit` is a stable callback,
-  // so this fires only on a real model change — not on every render (the earlier `[model, vp]` dep
-  // re-fit every frame because `vp` is a fresh object each render, fighting pan/zoom).
+  // Fit when the graph changes OR the Network page (re)mounts. The canvas unmounts on a tab switch (the
+  // parent keeps the viewport state), so the fit must re-fire on return; `fit` is a stable callback, so
+  // this doesn't re-fit every render (the earlier `[model, vp]` dep did, fighting pan/zoom).
   const { fit } = vp;
-  useEffect(() => { const id = requestAnimationFrame(() => fit()); return () => cancelAnimationFrame(id); }, [model, fit]);
+  useEffect(() => {
+    if (page !== "network") return;
+    const id = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(id);
+  }, [model, fit, page]);
 
   const selNodeId = sel?.type === "node" ? sel.id : null;
   const selEdgeId = sel?.type === "edge" ? sel.id : null;
@@ -54,6 +71,19 @@ export function GlanceWorkspace() {
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
 
   return (
+    <Screen
+      tabs={tabs}
+      active={page}
+      onSelect={select}
+      onReorder={reorder}
+      onTearOff={tearOff}
+      pageOverride={pageOverride}
+      className="glance-workspace"
+    >
+      {page === "fleet" ? <Fleet /> : (
+      // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
+      // .screen-body is a block scroll container, so give it an explicit full-height flex column.
+      <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
     <GraphCanvas
       vp={vp}
       world={{ w: model.worldW, h: model.worldH }}
@@ -128,5 +158,8 @@ export function GlanceWorkspace() {
         onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={pickNode} onSelectEdge={pickEdge}
       />
     </GraphCanvas>
+      </Box>
+      )}
+    </Screen>
   );
 }
