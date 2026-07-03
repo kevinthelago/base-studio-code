@@ -1,11 +1,11 @@
-// Shared dependencies — the Streams pane's per-repo → per-stream dependency surface (#1429).
-//
-// When 2+ streams build the same repo, each declares its own deps and they reconcile into the repo's
-// single lock; this section shows them per stream, flags the cross-stream version-locks, and lists
-// the repo's registries. Single-owner repos are omitted (their deps stay agent-managed). Pure
-// presentational — reads the fleet streams (data.agents) + the locked manifest (dependencies +
-// registries) and computes the view via sharedRepoDependencies(). Design: design/Claude Design
-// kickoff — Streams pane/Streams Pane.dc.html §6.
+// Shared dependencies — the FOCUSED stream's slice of the per-repo → per-stream dependency surface
+// (#1429 / #2191). Formerly a fleet-wide section listing every shared repo; now scoped to the one
+// focused stream and shown inside its inspector card stack (StreamFocusCards). For the focused
+// stream it answers: is my repo shared (built by 2+ streams), with WHICH other streams, and what deps
+// do *I* declare (with the cross-stream version-locks) + the repo's registries. A single-owner repo
+// gets a one-line note (deps stay agent-managed). Pure presentational — reads the fleet streams
+// (data.agents) + the locked manifest (dependencies + registries) and computes via
+// sharedRepoDependencies(). Design: design/Streams Pane Redesign/Streams Pane.dc.html.
 
 import {
   sharedRepoDependencies, type PlanDependency, type DependencyRegistry, type StreamDependency,
@@ -31,6 +31,7 @@ function pill(text: string, color: string, opts: { fs?: number; tint?: number } 
   );
 }
 
+/** One declared dependency + the cross-stream version-lock it participates in. */
 function DepRow({ d, registries }: { d: StreamDependency; registries: Record<string, DependencyRegistry> }) {
   const isPrivate = !!(d.source && registries[d.source]);
   const verColor = d.version ? "var(--fg-dim)" : "var(--warn)";
@@ -52,116 +53,71 @@ function DepRow({ d, registries }: { d: StreamDependency; registries: Record<str
   );
 }
 
-export function SharedDependenciesSection({ agents, dependencies = [], registries = {}, onAdd }: {
+/** The focused stream's shared-dependency slice (#2191). Rendered inside the stream inspector's
+ *  "Shared dependencies" card. `a` is the focused stream; `agents` is the whole fleet (to detect which
+ *  streams share the repo); `dependencies` + `registries` are the locked manifest. */
+export function StreamSharedDeps({ a, agents = [], dependencies = [], registries = {} }: {
+  a: Agent;
   agents?: Agent[];
   dependencies?: PlanDependency[];
   registries?: Record<string, DependencyRegistry>;
-  /** Add a dep to a (repo, stream) — opens the planner-side flow. Optional. */
-  onAdd?: (repo: string, stream: string) => void;
 }) {
-  const list = agents ?? [];
-  // repo → the streams building it (from the fleet).
+  // repo → the streams building it (from the fleet), keyed the same way sharedRepoDependencies expects.
   const repoStreams: Record<string, string[]> = {};
-  for (const a of list) { if (a.repo) (repoStreams[a.repo] ??= []).push(a.id ?? a.name); }
-  const colorOf = (id: string) => list.find((a) => (a.id ?? a.name) === id)?.color ?? "var(--fg-dim)";
-  const nameOf = (id: string) => list.find((a) => (a.id ?? a.name) === id)?.name ?? id;
+  for (const s of agents) { if (s.repo) (repoStreams[s.repo] ??= []).push(s.id ?? s.name); }
+  const nameOf = (id: string) => agents.find((x) => (x.id ?? x.name) === id)?.name ?? id;
 
-  const views = sharedRepoDependencies(dependencies, registries, repoStreams);
-  const singleOwner = Object.entries(repoStreams).filter(([, s]) => s.length === 1);
+  const view = sharedRepoDependencies(dependencies, registries, repoStreams).find((v) => v.repo === a.repo);
 
-  const label = (
-    <Row justify="between" style={{ marginBottom: 11 }}>
-      <Text mono weight={600} size={9.5} tone="dim" style={{ letterSpacing: ".14em", textTransform: "uppercase" }}>Shared dependencies</Text>
-      <Text mono weight={500} size={9} tone="dim">multi-stream repos only</Text>
-    </Row>
-  );
-
-  if (views.length === 0) {
+  // Single-owner (or unbuilt) repo — nothing to reconcile; this stream owns its deps outright.
+  if (!view) {
     return (
-      <Box style={{ padding: "14px 0 20px", borderTop: "1px solid var(--border-soft)" }}>
-        {label}
-        <Row gap={7} style={{ padding: "10px 12px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7 }}>
-          <Text mono size={11} tone="dim">◴</Text>
-          <Text mono weight={500} size={9.5} tone="dim">Every repo has a single owner — nothing to pre-lock; deps stay agent-managed.</Text>
-        </Row>
-      </Box>
+      <Row gap={7} style={{ padding: "8px 10px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7 }}>
+        <Text mono size={11} tone="dim">◴</Text>
+        <Text mono weight={500} size={9.5} tone="dim">
+          {a.repo ? `${a.repo} is yours alone — its deps stay agent-managed.` : "No repo assigned to this stream."}
+        </Text>
+      </Row>
     );
   }
 
+  const me = a.id ?? a.name;
+  const others = view.streams.filter((s) => s !== me).map(nameOf);
+  const mine = view.byStream.find((g) => g.stream === me);
+
   return (
-    <Stack gap={12} style={{ padding: "14px 0 20px", borderTop: "1px solid var(--border-soft)" }}>
-      {label}
+    <Stack gap={11}>
+      {/* which repo, and who this stream shares it with */}
+      <Row gap={8} wrap align="baseline">
+        <Text mono weight={600} size={11} style={{ color: "var(--fg)" }}>{view.repo}</Text>
+        <Box as="span" pad={[2, 6]} bg="var(--bg-elev2)" border radius={4} style={{ fontFamily: MONO, fontWeight: 500, fontSize: 9, color: "var(--fg-muted)" }}>{view.streams.length} streams</Box>
+        {others.length > 0 && <Text mono weight={500} size={9.5} tone="dim">shared with {others.join(", ")}</Text>}
+      </Row>
 
-      {views.map((v) => {
-        const cloned = v.total === 0;
-        return (
-          <Box key={v.repo}>
-            <Box bg="var(--bg-elev)" border radius={9} style={{ overflow: "hidden" }}>
-              {/* repo header */}
-              <Box pad={11} style={{ borderBottom: "1px solid var(--border-soft)" }}>
-                <Row gap={8}>
-                  <Text mono weight={600} size={11.5} style={{ color: "var(--fg)" }}>{v.repo}</Text>
-                  <Box as="span" pad={[2, 6]} bg="var(--bg-elev2)" border radius={4} style={{ fontFamily: MONO, fontWeight: 500, fontSize: 9, color: "var(--fg-muted)"}}>{v.streams.length} streams</Box>
-                  <Text mono weight={500} size={9} tone="dim">→ reconcile to 1 lock</Text>
-                  <Text size={11} style={{ marginLeft: "auto", color: cloned ? "var(--warn)" : "var(--success)" }}>{cloned ? "!" : "🔒"}</Text>
-                </Row>
-                <Text as="div" weight={500} size={9.5} tone="dim" style={{ fontFamily: "var(--sans)", lineHeight: 1.45, marginTop: 6 }}>
-                  {cloned
-                    ? "Lock this repo's dependencies before the fleet runs — each stream declares its own, reconciled once so the streams sharing it never redefine them."
-                    : "Each stream declares its own deps; reconciled once so the streams sharing this repo never redefine them."}
-                </Text>
-                {/* registries */}
-                {v.registries.length > 0 && (
-                  <Row wrap gap={6} style={{ marginTop: 9 }}>
-                    <Text mono weight={600} size={8} tone="dim" style={{ letterSpacing: ".08em", textTransform: "uppercase" }}>registries</Text>
-                    {v.registries.map((g) => g.private
-                      ? <Box as="span" key={g.key}>{pill(`${g.url} · ${g.scope ?? ""} · auth ${g.auth ?? "—"}`, "var(--violet)", { tint: 86 })}</Box>
-                      : <Box as="span" key={g.key}>{pill(`${g.name} · public`, NPM, { tint: 88 })}</Box>)}
-                  </Row>
-                )}
-              </Box>
-
-              {/* per-stream */}
-              {v.byStream.map((g, i) => {
-                const c = colorOf(g.stream);
-                const last = i === v.byStream.length - 1;
-                return (
-                  <Box key={g.stream} pad={[10, 11]} style={{ borderBottom: last ? undefined : "1px solid var(--border-soft)" }}>
-                    <Row gap={7} style={{ marginBottom: g.empty ? 0 : 9 }}>
-                      <Box as="span" bg={c} radius={2} style={{ width: 7, height: 7}} />
-                      <Text mono weight={600} size={10.5} style={{ color: "var(--fg)" }}>{nameOf(g.stream)}</Text>
-                      <Text mono weight={500} size={9} tone="dim">{g.empty ? "· orchestrates" : `· declares ${g.deps.length}`}</Text>
-                      {!g.empty && (
-                        <Text mono weight={600} size={9} tone="dim" onClick={() => onAdd?.(v.repo, g.stream)} style={{ marginLeft: "auto", cursor: onAdd ? "pointer" : "default" }}>＋ add</Text>
-                      )}
-                    </Row>
-                    {g.empty ? (
-                      <Text as="div" weight={500} size={9.5} tone="dim" style={{ fontFamily: "var(--sans)", paddingLeft: 15, borderLeft: `1px solid color-mix(in oklch, ${c}, transparent 80%)` }}>
-                        No build deps — owns the reconciled lock for this repo.
-                      </Text>
-                    ) : (
-                      <Stack gap={8} style={{ paddingLeft: 15, borderLeft: `1px solid color-mix(in oklch, ${c}, transparent 80%)` }}>
-                        {g.deps.map((d, j) => <DepRow key={d.name + j} d={d} registries={registries} />)}
-                      </Stack>
-                    )}
-                  </Box>
-                );
-              })}
-            </Box>
-            <Text as="div" weight={500} size={9.5} tone="dim" style={{ fontFamily: "var(--sans)", lineHeight: 1.5, marginTop: 9, padding: "0 2px" }}>
-              Per-stream deps reconcile into the repo's single <Text mono tone="muted">package.json</Text> / <Text mono tone="muted">Cargo.toml</Text> and are inlined into every agent on the repo.
-            </Text>
-          </Box>
-        );
-      })}
-
-      {/* single-owner repos note */}
-      {singleOwner.map(([repo, streams]) => (
-        <Row key={repo} gap={7} style={{ padding: "8px 10px", background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: 7 }}>
-          <Text mono size={11} tone="dim">◴</Text>
-          <Text mono weight={500} size={9.5} tone="dim">{repo} has a single owner ({nameOf(streams[0])}) — its deps stay agent-managed.</Text>
+      {/* registries the repo's deps reference */}
+      {view.registries.length > 0 && (
+        <Row wrap gap={6} align="center">
+          <Text mono weight={600} size={8} tone="dim" style={{ letterSpacing: ".08em", textTransform: "uppercase" }}>registries</Text>
+          {view.registries.map((g) => g.private
+            ? <Box as="span" key={g.key}>{pill(`${g.url} · ${g.scope ?? ""} · auth ${g.auth ?? "—"}`, "var(--violet)", { tint: 86 })}</Box>
+            : <Box as="span" key={g.key}>{pill(`${g.name} · public`, NPM, { tint: 88 })}</Box>)}
         </Row>
-      ))}
+      )}
+
+      {/* THIS stream's declared deps (or the orchestrator/empty note) */}
+      {!mine || mine.empty ? (
+        <Text as="div" mono weight={500} size={9.5} tone="dim" style={{ lineHeight: 1.5 }}>
+          No build deps of your own — you hold the reconciled lock for this repo.
+        </Text>
+      ) : (
+        <Stack gap={8} style={{ paddingLeft: 12, borderLeft: `1px solid color-mix(in oklch, ${a.color ?? "var(--accent)"}, transparent 80%)` }}>
+          {mine.deps.map((d, j) => <DepRow key={d.name + j} d={d} registries={registries} />)}
+        </Stack>
+      )}
+
+      <Text as="div" weight={500} size={9.5} tone="dim" style={{ fontFamily: "var(--sans)", lineHeight: 1.5 }}>
+        Per-stream deps reconcile into the repo's single <Text mono tone="muted">package.json</Text> / <Text mono tone="muted">Cargo.toml</Text> and are inlined into every agent on the repo.
+      </Text>
     </Stack>
   );
 }
