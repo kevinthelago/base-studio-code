@@ -1,6 +1,7 @@
 // Org canvas geometry (#2193) — pure math for the relationship graph, ported from the Claude Design
 // prototype. Kept React-free so it's unit-testable and the canvas component stays a thin renderer.
 // The graph lives in a fixed 1120×800 design space; the canvas scales it by a zoom factor.
+import { forceSimulation, forceLink, forceManyBody, forceX, forceCollide, type SimulationNodeDatum } from "d3-force";
 import type { Org, Position, PositionKind } from "./org";
 
 /** The fixed design coordinate space every node's x/y is authored in. */
@@ -83,14 +84,27 @@ export function clampZoom(z: number, min = 0.4, max = 1.5): number {
  *  don't drive layering. */
 const HIERARCHY_ARCHETYPES = new Set(["manages", "serves", "oversees", "stewards"]);
 
-const AUTO_COL = 230; // horizontal spacing between nodes in a layer
-const AUTO_ROW = 175; // vertical spacing between layers
+const AUTO_COL = 230; // seed horizontal spacing between nodes in a layer (before force refinement)
+const AUTO_ROW = 200; // vertical gap between hierarchy layers (fixed once assigned — keeps rows clean)
 
-/** A deterministic hierarchical layered layout: layer each node by its longest path from a root (a node
- *  with no incoming hierarchy edge), reduce edge crossings with a few barycenter passes, then place each
- *  layer as a centered row. Returns fresh `{x,y}` per nodeId — the caller stamps them onto the org.
- *  Pure + deterministic so "Auto organize" is a re-runnable baseline the user then hand-tunes. */
-export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
+// Force-refinement tuning (fixed; the user never tunes these — #2199 follow-up). y is pinned per layer,
+// so the simulation only moves nodes HORIZONTALLY: repulsion spreads a crowded row, link springs pull
+// related nodes together, and a weak x-centering keeps the whole graph framed.
+const LINK_DIST = 210;   // preferred edge length (a spring rest length)
+const LINK_STR = 0.35;   // how hard edges pull (0–1) — gentle, so repulsion can still spread siblings
+const CHARGE = -1600;    // many-body repulsion (negative = push apart) — the readability "breathing room"
+const X_STR = 0.08;      // weak pull toward the horizontal center (keeps rows from drifting off-canvas)
+const COLLIDE_PAD = 16;  // extra gap enforced around each card so nothing visually overlaps
+const TICKS = 320;       // headless ticks to convergence (d3-force's seeded LCG makes this deterministic)
+// These are tuned so a typical fleet settles well inside the 1120×800 design space (the default fleet
+// lands at ~978×536) — no user knobs by design (#2199 follow-up); the graph just finds its own shape.
+
+interface LayerResult { layer: Map<string, number>; order: Map<number, string[]> }
+
+/** Assign each node a hierarchy layer (longest path from a root, cycle-guarded) and a crossing-reduced
+ *  order within its layer (barycenter passes). The shared skeleton both the seed placement and the
+ *  fixed-y force refinement build on. */
+function layerNodes(org: Org): LayerResult {
   const ids = org.positions.map((p) => p.nodeId);
   const parents = new Map<string, string[]>(ids.map((n) => [n, []]));
   const children = new Map<string, string[]>(ids.map((n) => [n, []]));
@@ -120,26 +134,65 @@ export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
   const layers = [...new Set(ids.map((n) => layer.get(n)!))].sort((a, b) => a - b);
   const order = new Map<number, string[]>(layers.map((l) => [l, ids.filter((n) => layer.get(n) === l)]));
   const indexIn = (l: number, n: string) => order.get(l)!.indexOf(n);
-
-  // Barycenter crossing reduction: order each node by the mean index of its neighbors in other layers.
-  for (let pass = 0; pass < 4; pass++) {
-    for (const l of layers) {
-      order.get(l)!.sort((a, b) => bary(a) - bary(b));
-    }
-  }
-  function bary(n: string): number {
+  const bary = (n: string): number => {
     const l = layer.get(n)!;
     const neigh = [...parents.get(n)!, ...children.get(n)!].filter((m) => layer.get(m) !== l);
     if (neigh.length === 0) return indexIn(l, n);
     return neigh.reduce((s, m) => s + indexIn(layer.get(m)!, m), 0) / neigh.length;
-  }
+  };
+  // Barycenter crossing reduction: order each node by the mean index of its neighbors in other layers.
+  for (let pass = 0; pass < 4; pass++) for (const l of layers) order.get(l)!.sort((a, b) => bary(a) - bary(b));
 
-  const widest = Math.max(1, ...layers.map((l) => order.get(l)!.length));
-  const out: Record<string, { x: number; y: number }> = {};
-  for (const l of layers) {
+  return { layer, order };
+}
+
+interface SimNode extends SimulationNodeDatum { id: string; w: number; h: number }
+
+/** A deterministic hierarchical FORCE layout (#2199): every node is pinned to its hierarchy row (so the
+ *  manager-above-reports structure stays razor-clean and same-layer nodes share an exact y), then a
+ *  d3-force pass moves nodes only HORIZONTALLY — many-body repulsion gives each node breathing room,
+ *  link springs pull related nodes together, and a weak centering keeps the graph framed. The result is
+ *  the "natural structure" the graph finds on its own, so the user never has to hand-place a node.
+ *
+ *  Deterministic: d3-force seeds a fixed LCG (not `Math.random`) and the seed positions are computed, so
+ *  re-running "Auto organize" reproduces the same layout. Returns fresh top-left `{x,y}` per nodeId. */
+export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
+  const { layer, order } = layerNodes(org);
+  const rowY = (l: number) => 60 + l * AUTO_ROW;
+
+  // Seed each node at its row (center coords), spread horizontally by its in-layer order so the force
+  // pass starts from a sane, crossing-reduced arrangement rather than a random cloud.
+  const nodes: SimNode[] = org.positions.map((p) => {
+    const l = layer.get(p.nodeId)!;
     const row = order.get(l)!;
-    const startX = ((widest - row.length) * AUTO_COL) / 2 + 40;
-    row.forEach((n, i) => { out[n] = { x: Math.round(startX + i * AUTO_COL), y: 40 + l * AUTO_ROW }; });
-  }
+    const idx = row.indexOf(p.nodeId);
+    const { w, h } = NODE_SIZE[p.kind];
+    return {
+      id: p.nodeId,
+      w, h,
+      x: CANVAS_W / 2 + (idx - (row.length - 1) / 2) * AUTO_COL,
+      y: rowY(l),
+      fy: rowY(l), // pin y to the layer row — the simulation only optimizes x
+    };
+  });
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const links = org.relationships
+    .filter((r) => byId.has(r.from) && byId.has(r.to))
+    .map((r) => ({ source: r.from, target: r.to }));
+
+  const sim = forceSimulation<SimNode>(nodes)
+    .force("link", forceLink<SimNode, { source: string; target: string }>(links).id((d) => d.id).distance(LINK_DIST).strength(LINK_STR))
+    .force("charge", forceManyBody<SimNode>().strength(CHARGE))
+    .force("x", forceX<SimNode>(CANVAS_W / 2).strength(X_STR))
+    .force("collide", forceCollide<SimNode>((d) => Math.max(d.w, d.h) / 2 + COLLIDE_PAD))
+    .stop();
+  for (let i = 0; i < TICKS; i++) sim.tick();
+
+  // Convert sim centers → top-left boxes, then shift the whole graph into a padded positive space.
+  const boxes = nodes.map((n) => ({ id: n.id, x: (n.x ?? 0) - n.w / 2, y: (n.y ?? 0) - n.h / 2 }));
+  const minX = Math.min(...boxes.map((b) => b.x));
+  const minY = Math.min(...boxes.map((b) => b.y));
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const b of boxes) out[b.id] = { x: Math.round(b.x - minX + 60), y: Math.round(b.y - minY + 48) };
   return out;
 }

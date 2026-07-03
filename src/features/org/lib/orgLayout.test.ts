@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeBox, anchor, edgeGeometry, styleDash, clampZoom, autoLayout, NODE_SIZE } from "./orgLayout";
+import { nodeBox, anchor, edgeGeometry, styleDash, clampZoom, autoLayout, NODE_SIZE, CANVAS_W, CANVAS_H } from "./orgLayout";
 import { BUILTIN_ORGS, type Org, type Position } from "./org";
 
 describe("orgLayout geometry (#2193)", () => {
@@ -78,6 +78,23 @@ describe("autoLayout (#2199)", () => {
     expect(layout.boss.y).toBeLessThan(layout.b.y);
     // The two reports share a row.
     expect(layout.a.y).toBe(layout.b.y);
+  });
+
+  it("force-refines a real fleet into a non-overlapping graph that fits the design space", () => {
+    const fleet = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
+    const layout = autoLayout(fleet);
+    const boxes = fleet.positions.map((p) => ({ ...NODE_SIZE[p.kind], ...layout[p.nodeId] }));
+    // The collision force guarantees breathing room — no two cards overlap.
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        const overlap = a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        expect(overlap).toBe(false);
+      }
+    }
+    // The whole graph settles inside the 1120×800 design space (repulsion tuned to fit, not to overflow).
+    expect(Math.max(...boxes.map((b) => b.x + b.w))).toBeLessThanOrEqual(CANVAS_W);
+    expect(Math.max(...boxes.map((b) => b.y + b.h))).toBeLessThanOrEqual(CANVAS_H);
   });
 
   it("does not choke on a cycle", () => {

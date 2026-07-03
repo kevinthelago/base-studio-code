@@ -11,7 +11,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, type Org } from "./lib/org";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
 import { positionDisplay, hueColor } from "./lib/orgView";
-import { TierChips } from "./components";
+import { Chip } from "@/shared/ui/data/Chip";
 import type { Persona } from "@/features/personas";
 
 export interface Selection { type: "node" | "edge"; id: string }
@@ -162,11 +162,13 @@ export function OrgCanvas(props: CanvasProps) {
                   <Box style={{ width: 27, height: 27, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 13, color: isSel ? "#fff" : "var(--accent)", background: isSel ? "var(--accent)" : "color-mix(in oklch, var(--accent) 14%, transparent)", flex: "none" }}>{d.glyph}</Box>
                   <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Text as="div" weight={600} size={13.5} style={{ lineHeight: 1.15 }}>{d.name}</Text>
+                    <Row gap={6} align="center">
+                      <Text as="span" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
+                      {d.role && <Chip color="var(--accent)" style={{ flex: "none" }}>{d.role}</Chip>}
+                    </Row>
                     <Text as="div" size={10.5} tone="muted" style={{ lineHeight: 1.3, marginTop: 2 }}>{d.blurb}</Text>
                   </Box>
                 </Row>
-                {d.role && <TierChips role={d.role} />}
               </Box>
             )}
             {pos.kind === "resource" && (
