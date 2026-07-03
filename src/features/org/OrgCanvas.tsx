@@ -95,8 +95,14 @@ export function OrgCanvas(props: CanvasProps) {
   /** The box for edge geometry, with the (possibly dragged) live position substituted in. */
   const liveBox = (nodeId: string) => ({ ...boxes.get(nodeId)!, ...at(nodeId) });
 
-  /** An edge click, suppressed if a background pan-drag just ended over it. */
-  const edgeClick = (relId: string) => () => { if (!dragMoved.current) onSelectEdge(relId); };
+  /** An edge click, suppressed if a background pan-drag just ended over it. stopPropagation so it
+   *  doesn't bubble to the canvas backdrop's deselect handler (#2230). */
+  const edgeClick = (relId: string) => (e: React.MouseEvent) => { e.stopPropagation(); if (!dragMoved.current) onSelectEdge(relId); };
+
+  // Whether something is actually selected. The empty sentinel {type:"node", id:""} means "nothing
+  // focused" (a background-click deselect, or a pool drill) — then the whole graph renders at full
+  // opacity rather than dimming everything (#2230).
+  const focused = !(sel.type === "node" && sel.id === "");
 
   const nodeActive = (id: string): boolean => {
     if (sel.type === "node") return id === sel.id;
@@ -158,7 +164,7 @@ export function OrgCanvas(props: CanvasProps) {
               <path d={d} fill="none" stroke={color} strokeWidth={isSelEdge ? 2.8 : act ? 2 : 1.7}
                 strokeDasharray={styleDash(arch.style)} strokeLinecap="round"
                 markerEnd="url(#org-ah)" markerStart={arch.bidirectional ? "url(#org-ah-s)" : undefined}
-                opacity={isSelEdge || act ? 1 : 0.26} style={{ cursor: "pointer", transition: "opacity .15s" }} onClick={edgeClick(r.id)} />
+                opacity={!focused ? 1 : (isSelEdge || act ? 1 : 0.26)} style={{ cursor: "pointer", transition: "opacity .15s" }} onClick={edgeClick(r.id)} />
             </g>
           );
         })}
@@ -178,7 +184,7 @@ export function OrgCanvas(props: CanvasProps) {
               style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%,-50%)",
                 display: "inline-flex", alignItems: "center", gap: 5, padding: "2.5px 8px", borderRadius: 999,
                 background: "var(--bg-elev)", border: `1px solid ${color}`, color: "var(--fg)", fontSize: 10, fontWeight: 600,
-                whiteSpace: "nowrap", pointerEvents: "auto", cursor: "pointer", opacity: isSelEdge || act ? 1 : 0.32, transition: "opacity .15s" }}>
+                whiteSpace: "nowrap", pointerEvents: "auto", cursor: "pointer", opacity: !focused ? 1 : (isSelEdge || act ? 1 : 0.32), transition: "opacity .15s" }}>
               <Box style={{ width: 6, height: 6, borderRadius: "50%", background: color, flex: "none" }} />
               {arch.label}
             </Box>
@@ -192,7 +198,7 @@ export function OrgCanvas(props: CanvasProps) {
         const box = boxes.get(pos.nodeId)!;
         const d = positionDisplay(pos, personas);
         const isSel = sel.type === "node" && sel.id === pos.nodeId;
-        const dim = !nodeActive(pos.nodeId);
+        const dim = focused && !nodeActive(pos.nodeId);
         const pool = poolInfo?.[pos.nodeId];
 
         // A pool: a stacked card (offset shadow cards behind + a ×N badge). A press drills into the
