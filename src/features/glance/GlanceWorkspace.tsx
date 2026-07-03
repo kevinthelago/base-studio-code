@@ -24,7 +24,7 @@ import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { buildGlanceData, type ProjectLite } from "./lib/glanceData";
-import { buildFleetData } from "./lib/glanceFleet";
+import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
 import "./glance.css";
 
 const GLANCE_TABS: TabItem[] = [
@@ -34,6 +34,8 @@ const GLANCE_TABS: TabItem[] = [
 
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const drafts = useAppStore((s) => s.localDraftProjects);
+  const planFleet = useAppStore((s) => s.planFleet);
+  const personas = useAppStore((s) => s.personas);
   const projects: ProjectLite[] = useMemo(
     () => Object.entries(drafts).map(([id, d]) => ({ id, name: d.title })),
     [drafts],
@@ -56,7 +58,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [drill, setDrill] = useState<string | null>(null);
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
-  const fleetData = useMemo(() => (drillNode ? buildFleetData({ id: drillNode.id, name: drillNode.slug }) : null), [drillNode]);
+  // The drilled project's REAL fleet (plan.db is keyed by project id, so the node id resolves it); falls
+  // back to a sample fleet when a project has no planned fleet yet (e.g. the sample project topology).
+  const realFleet = drill ? planFleet[drill] : undefined;
+  const fleetData = useMemo(() => {
+    if (!drillNode) return null;
+    if (realFleet && realFleet.streams.length > 0) return buildRealFleetData(realFleet, personas);
+    return buildFleetData({ id: drillNode.id, name: drillNode.slug });
+  }, [drillNode, realFleet, personas]);
   const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
   // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
   // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
