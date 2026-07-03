@@ -53,6 +53,26 @@ export function reconcileConfirmations(
   return { rehydrate, reset, migrate: [] };
 }
 
+export interface SkipReconcile {
+  /** Durably-skipped stages missing from the store — restore them (rehydrate on revisit). */
+  rehydrate: string[];
+  /** Store skips with no plan.db row yet — forward-migrate them into plan.db (one-time). */
+  migrate: string[];
+}
+
+/**
+ * Decide the skipped-stage reconciliation for one poll tick (#2267). Simpler than confirmations: a
+ * skip is a plain decision (no fingerprint / reset-on-change), so plan.db just needs to be the durable
+ * mirror. When plan.db has NO rows but the store does and this project hasn't been migrated → forward-
+ * migrate the store's skips into plan.db; otherwise restore any durable skip missing from the store.
+ */
+export function reconcileSkips(rows: string[], storeSkipped: Set<string>, migrated: boolean): SkipReconcile {
+  if (rows.length === 0 && storeSkipped.size > 0 && !migrated) {
+    return { rehydrate: [], migrate: [...storeSkipped] };
+  }
+  return { rehydrate: rows.filter((s) => !storeSkipped.has(s)), migrate: [] };
+}
+
 /** One section as the focused-plan derivation sees it — key + draft/confirm state. */
 export interface SectionState {
   k: string;
