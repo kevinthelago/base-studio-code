@@ -5,8 +5,9 @@
 // (rail tooltip + the "you are here" titlebar). Previously the rail's NAV array and App's titlebar
 // switch each hardcoded the names independently. (#nav-pass; Screen → Workspace rename #1879)
 
-import { TerminalSquare, Zap, Server, GitPullRequest, FolderKanban, ShieldCheck, Sparkles, Settings, Network } from "lucide-react";
+import { TerminalSquare, Zap, Server, FolderKanban, ShieldCheck, Sparkles, Settings, Network } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Github } from "@/shared/ui/icons";
 
 /** Every top-level Workspace key (a rail destination). The store's `activeWorkspace` is one of these. */
 export type Workspace = "console" | "glance" | "automation" | "mcp" | "github" | "projects" | "skills" | "agents" | "settings";
@@ -27,7 +28,7 @@ export const WORKSPACES: WorkspaceMeta[] = [
   { key: "skills",     label: "Skills",      Icon: Sparkles },
   { key: "automation", label: "Automations", Icon: Zap },
   { key: "mcp",        label: "MCP",         Icon: Server },
-  { key: "github",     label: "GitHub",      Icon: GitPullRequest },
+  { key: "github",     label: "GitHub",      Icon: Github },
   { key: "agents",     label: "Security",    Icon: ShieldCheck },
   { key: "settings",   label: "Settings",    Icon: Settings },
 ];
