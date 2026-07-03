@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { nodeBox, anchor, edgeGeometry, styleDash, NODE_SIZE } from "./orgLayout";
-import type { Position } from "./org";
+import { nodeBox, anchor, edgeGeometry, styleDash, clampZoom, autoLayout, NODE_SIZE } from "./orgLayout";
+import { BUILTIN_ORGS, type Org, type Position } from "./org";
 
 describe("orgLayout geometry (#2193)", () => {
   it("nodeBox uses the position's x/y + the size for its kind", () => {
@@ -41,5 +41,55 @@ describe("orgLayout geometry (#2193)", () => {
     expect(styleDash("dashed")).toBe("7 5");
     expect(styleDash("gated")).toBe("3 5");
     expect(styleDash("dotted")).toBe("1 6");
+  });
+
+  it("clampZoom bounds the zoom range", () => {
+    expect(clampZoom(0.1)).toBe(0.4);
+    expect(clampZoom(9)).toBe(1.5);
+    expect(clampZoom(0.8)).toBe(0.8);
+  });
+});
+
+describe("autoLayout (#2199)", () => {
+  it("places every node with a fresh x/y, deterministically", () => {
+    const fleet = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
+    const a = autoLayout(fleet);
+    const b = autoLayout(fleet);
+    expect(Object.keys(a).sort()).toEqual(fleet.positions.map((p) => p.nodeId).sort());
+    expect(a).toEqual(b); // deterministic — a re-runnable baseline
+    // every coordinate is a finite number
+    expect(Object.values(a).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+  });
+
+  it("layers a manager above the reports it manages", () => {
+    const org: Org = {
+      id: "x", name: "x",
+      positions: [
+        { nodeId: "boss", kind: "agent" }, { nodeId: "a", kind: "agent" }, { nodeId: "b", kind: "agent" },
+      ],
+      relationships: [
+        { id: "e1", archetype: "manages", from: "boss", to: "a" },
+        { id: "e2", archetype: "manages", from: "boss", to: "b" },
+      ],
+    };
+    const layout = autoLayout(org);
+    // The boss sits on a higher (smaller-y) row than its reports.
+    expect(layout.boss.y).toBeLessThan(layout.a.y);
+    expect(layout.boss.y).toBeLessThan(layout.b.y);
+    // The two reports share a row.
+    expect(layout.a.y).toBe(layout.b.y);
+  });
+
+  it("does not choke on a cycle", () => {
+    const org: Org = {
+      id: "c", name: "c",
+      positions: [{ nodeId: "a", kind: "agent" }, { nodeId: "b", kind: "agent" }],
+      relationships: [
+        { id: "e1", archetype: "manages", from: "a", to: "b" },
+        { id: "e2", archetype: "manages", from: "b", to: "a" },
+      ],
+    };
+    expect(() => autoLayout(org)).not.toThrow();
+    expect(Object.keys(autoLayout(org))).toHaveLength(2);
   });
 });
