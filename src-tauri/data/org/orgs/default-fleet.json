@@ -1,0 +1,26 @@
+{
+  "id": "org-default-fleet",
+  "order": 1,
+  "name": "Default fleet",
+  "blurb": "The standard director-led build fleet: a manager coordinating engineers, with intake, review, and audit.",
+  "positions": [
+    { "nodeId": "director",  "kind": "agent",    "personaId": "persona-director", "x": 400, "y": 60 },
+    { "nodeId": "commons",   "kind": "resource",                                  "label": "Commons",  "x": 660, "y": 60 },
+    { "nodeId": "worker-a",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer A", "x": 220, "y": 250 },
+    { "nodeId": "worker-b",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer B", "x": 420, "y": 250 },
+    { "nodeId": "intake",    "kind": "agent",    "personaId": "persona-issuer",   "x": 640, "y": 250 },
+    { "nodeId": "reviewer",  "kind": "agent",    "personaId": "persona-reviewer", "x": 120, "y": 440 },
+    { "nodeId": "auditor",   "kind": "agent",    "personaId": "persona-juror",    "label": "Auditor",  "x": 420, "y": 440 },
+    { "nodeId": "customer",  "kind": "external",                                  "label": "Customer", "x": 840, "y": 250 }
+  ],
+  "relationships": [
+    { "id": "r-mgr-a",   "archetype": "manages",  "from": "director", "to": "worker-a" },
+    { "id": "r-mgr-b",   "archetype": "manages",  "from": "director", "to": "worker-b" },
+    { "id": "r-mgr-in",  "archetype": "manages",  "from": "director", "to": "intake" },
+    { "id": "r-peers",   "archetype": "peers",    "from": "worker-a", "to": "worker-b" },
+    { "id": "r-rev-a",   "archetype": "oversees", "from": "reviewer", "to": "worker-a" },
+    { "id": "r-aud-b",   "archetype": "oversees", "from": "auditor",  "to": "worker-b" },
+    { "id": "r-serves",  "archetype": "serves",   "from": "intake",   "to": "customer" },
+    { "id": "r-steward", "archetype": "stewards", "from": "director", "to": "commons" }
+  ]
+}

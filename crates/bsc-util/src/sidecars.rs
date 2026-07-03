@@ -71,6 +71,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "org", context_env: None,
+        blurb: "the user org library: the persona-relationship graph (positions wired by relationships)",
+        advertise: true,
+    },
+    Sidecar {
         name: "project", context_env: None,
         blurb: "list local projects + read/set the published marker",
         advertise: true,
@@ -137,7 +142,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "data", "skill", "logs", "compliance", "blueprint", "persona", "project", "files"],
+            ["plan", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }

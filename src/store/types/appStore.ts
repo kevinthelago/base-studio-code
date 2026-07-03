@@ -11,6 +11,7 @@
 //  - Skills library/groups      → SkillsSlice    (@/features/skills/store)
 import type { McpSlice } from "@/features/mcp/store";
 import type { PersonasSlice } from "@/features/personas/store";
+import type { OrgSlice } from "@/features/org/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { AutomationsSlice } from "@/features/automations/store";
 import type { GithubSlice } from "@/features/github/store";
@@ -25,6 +26,7 @@ import type { SessionState } from "./session";
 export interface AppStore
   extends SkillsSlice,
     PersonasSlice,
+    OrgSlice,
     McpSlice,
     AutomationsSlice,
     GithubSlice,
