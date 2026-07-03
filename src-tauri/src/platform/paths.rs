@@ -46,6 +46,13 @@ pub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key).join("plan.db")
 }
 
+/// The project hub's per-project SQLite **runtime-fault store**: `projects/<key>/error.db` (#2260).
+/// Scoped at a live session by `$BSC_ERROR_DB`, cwd-derived exactly like `plan_db_path` — so the whole
+/// fleet (director at the hub, workers in worktrees beneath it) shares one error.db per project.
+pub(crate) fn error_db_path(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("error.db")
+}
+
 /// The project's canonical DuckDB **data store**: `~/.base-studio-code/data/<key>.duckdb` — the Data
 /// Model + PlatformScan the planner reads via `bsc data` (#1446). Pure path construction (no `mkdir`);
 /// callers that write create the parent themselves. Sanitizes the key (idempotent on a cwd-derived key).
@@ -187,6 +194,8 @@ mod relocated_tests {
         assert_eq!(skills_db(), bsc_base_dir().join("skills.db"));
         assert_eq!(perf_db(), bsc_base_dir().join("perf.db"));
         assert_eq!(data_db_path("k"), bsc_base_dir().join("data").join("k.duckdb"));
+        // The runtime-fault store sits beside plan.db in the hub (#2260).
+        assert_eq!(error_db_path("k"), project_dir("k").join("error.db"));
     }
 
     #[test]
