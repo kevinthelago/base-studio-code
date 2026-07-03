@@ -159,6 +159,7 @@ export const useAppStore = create<AppStore>()(
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
         orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint

@@ -71,4 +71,27 @@ describe("org store slice (#2193)", () => {
     useAppStore.getState().removeRelationship(id, "e1");
     expect(useAppStore.getState().orgs.find((o) => o.id === id)!.relationships).toHaveLength(0);
   });
+
+  it("updateRelationship changes an edge's archetype (#2199 inspector)", () => {
+    vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
+    const id = useAppStore.getState().cloneOrg("org-default-fleet");
+    useAppStore.getState().updateRelationship(id, "r-mgr-a", { archetype: "oversees" });
+    const rel = useAppStore.getState().orgs.find((o) => o.id === id)!.relationships.find((r) => r.id === "r-mgr-a")!;
+    expect(rel.archetype).toBe("oversees");
+    expect(rel.id).toBe("r-mgr-a"); // id is preserved
+  });
+
+  it("updatePosition repoints a position's persona + moves it (#2199 drag/picker)", () => {
+    vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
+    const id = useAppStore.getState().cloneOrg("org-default-fleet");
+    useAppStore.getState().updatePosition(id, "worker-a", { personaId: "persona-reviewer", x: 12, y: 34 });
+    const pos = useAppStore.getState().orgs.find((o) => o.id === id)!.positions.find((p) => p.nodeId === "worker-a")!;
+    expect(pos.personaId).toBe("persona-reviewer");
+    expect(pos).toMatchObject({ x: 12, y: 34, nodeId: "worker-a" });
+  });
+
+  it("setOrgZoom remembers a per-org zoom (#2199 view state)", () => {
+    useAppStore.getState().setOrgZoom("org-default-fleet", 0.85);
+    expect(useAppStore.getState().orgZoom["org-default-fleet"]).toBe(0.85);
+  });
 });

@@ -14,6 +14,10 @@ import { loadOrgs, pushOrg, dropOrg } from "./lib/orgBridge";
 export interface OrgSlice {
   /** The org library — packaged built-ins (reconciled on load) + user-authored. */
   orgs: Org[];
+  /** Last canvas zoom per org id (view state, persisted) so reopening an org restores its framing. */
+  orgZoom: Record<string, number>;
+  /** Remember an org's canvas zoom. */
+  setOrgZoom: (orgId: string, zoom: number) => void;
   /** Hydrate the library from the global org store on boot (#2193): load via the bridge, reconcile the
    *  packaged built-ins, and push any newly-seeded built-in back so the store has it. No-op (keeps the
    *  seeded set) when the bridge is unreachable — tests, the web shell, or an old binary. */
@@ -66,6 +70,9 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
 
   return {
     orgs: BUILTIN_ORGS,
+    orgZoom: {},
+
+    setOrgZoom: (orgId, zoom) => set((s) => ({ orgZoom: { ...s.orgZoom, [orgId]: zoom } })),
 
     hydrateOrgs: async () => {
       const loaded = await loadOrgs();

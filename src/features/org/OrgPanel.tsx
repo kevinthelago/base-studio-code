@@ -1,9 +1,8 @@
-// Org designer (#2193) — the persona-relationship graph, mounted as the Org tab of the Planner
-// workspace. Toolbar (org switch + relationship palette + zoom) · left rail (positions by department) ·
-// canvas (the graph) · inspector (position/relationship). Ported from the Claude Design prototype onto
-// the app's shared kit + tokens, driven by the real `org`/`persona`/`skill` stores. Pure model +
-// geometry live in lib/*; canvas + inspector are their own components.
-import { useEffect, useState } from "react";
+// Org designer (#2193, interactive #2199) — the persona-relationship graph, mounted as the Org tab of
+// the Planner workspace. Toolbar (org switch · relationship palette · auto-organize/fit/zoom) · left
+// rail (positions by department) · canvas (pan/zoom/node-drag) · inspector (position identity /
+// relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -14,7 +13,8 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { OrgCanvas, type Selection } from "./OrgCanvas";
 import { OrgInspector } from "./OrgInspector";
 import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
-import { CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { autoLayout } from "./lib/orgLayout";
+import { usePanZoom } from "./lib/usePanZoom";
 import { positionDisplay, hueColor } from "./lib/orgView";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept). */
@@ -23,33 +23,39 @@ const DEPT_ORDER = ["Leadership", "Engineering", "Quality", "Support", "Team", "
 export function OrgPanel() {
   const orgs = useAppStore((s) => s.orgs);
   const personas = useAppStore((s) => s.personas);
-  const skills = useAppStore((s) => s.skills);
   const addOrg = useAppStore((s) => s.addOrg);
+  const updateOrg = useAppStore((s) => s.updateOrg);
   const addRelationship = useAppStore((s) => s.addRelationship);
   const updateRelationship = useAppStore((s) => s.updateRelationship);
+  const addPosition = useAppStore((s) => s.addPosition);
+  const updatePosition = useAppStore((s) => s.updatePosition);
+  const setOrgZoom = useAppStore((s) => s.setOrgZoom);
 
   const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
+  const savedZoom = useAppStore((s) => s.orgZoom[orgId]);
   const [sel, setSel] = useState<Selection>({ type: "node", id: org?.positions[0]?.nodeId ?? "" });
-  const [zoom, setZoom] = useState(0.62);
   // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
   const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
 
-  // Fit-to-viewport on mount + resize (the canvas lives in a fixed design space; zoom scales it).
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const { zoom, setZoom, zoomBy, fit, onBackgroundPointerDown, onBackgroundPointerMove, onBackgroundPointerUp } =
+    usePanZoom(canvasRef, { initial: savedZoom ?? 0.62 });
+
+  // Restore this org's saved zoom (or fit) when the org changes.
   useEffect(() => {
-    const fit = () => {
-      const el = document.getElementById("orgCanvas");
-      if (!el) return;
-      const z = Math.max(0.4, Math.min(1.15, Math.min((el.clientWidth - 40) / CANVAS_W, (el.clientHeight - 40) / CANVAS_H)));
-      setZoom(+z.toFixed(3));
-    };
-    fit();
-    const el = document.getElementById("orgCanvas");
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (savedZoom) setZoom(savedZoom);
+    else fit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  // Persist zoom, debounced so a wheel-zoom gesture doesn't spam the store.
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => setOrgZoom(orgId, zoom), 400);
+    return () => clearTimeout(saveTimer.current);
+  }, [zoom, orgId, setOrgZoom]);
 
   if (!org) {
     return (
@@ -74,6 +80,17 @@ export function OrgPanel() {
       return;
     }
     setSel({ type: "node", id: nodeId });
+  };
+
+  const addNode = () => {
+    const nodeId = `pos-${Date.now().toString(36)}`;
+    addPosition(org.id, { nodeId, kind: "agent", personaId: personas[0]?.id, x: 480, y: 320 });
+    setSel({ type: "node", id: nodeId });
+  };
+
+  const autoOrganize = () => {
+    const layout = autoLayout(org);
+    updateOrg(org.id, { positions: org.positions.map((p) => ({ ...p, ...layout[p.nodeId] })) });
   };
 
   // Left rail: positions grouped by department, in canonical order.
@@ -119,10 +136,12 @@ export function OrgPanel() {
           </Row>
         </Row>
         <Box style={{ flex: 1 }} />
+        <Button variant="ghost" onClick={autoOrganize}>⤢ Auto organize</Button>
+        <Button variant="ghost" onClick={fit}>Fit</Button>
         <Row gap={2} align="center" style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-          <IconButton aria-label="zoom out" onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))}>−</IconButton>
+          <IconButton aria-label="zoom out" onClick={() => zoomBy(1 / 1.1)}>−</IconButton>
           <Text as="span" mono size={11} style={{ minWidth: 46, textAlign: "center" }}>{Math.round(zoom * 100)}%</Text>
-          <IconButton aria-label="zoom in" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))}>+</IconButton>
+          <IconButton aria-label="zoom in" onClick={() => zoomBy(1.1)}>+</IconButton>
         </Row>
       </Row>
 
@@ -132,7 +151,7 @@ export function OrgPanel() {
         <Stack gap={0} style={{ width: 260, minWidth: 260, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
           <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
             <Text as="span" className="ulabel" tone="dim" size={9.5}>Positions</Text>
-            <Text as="span" size={11} weight={500} style={{ color: "var(--accent)" }}>＋ new</Text>
+            <Button variant="ghost" onClick={addNode}>＋ new</Button>
           </Row>
           <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
             {depts.map((dept) => (
@@ -157,9 +176,21 @@ export function OrgPanel() {
           </Box>
         </Stack>
 
-        <OrgCanvas org={org} personas={personas} sel={sel} zoom={zoom} gridOn legendOn onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })} />
+        <OrgCanvas
+          org={org} personas={personas} sel={sel} zoom={zoom} gridOn legendOn connecting={!!connect}
+          canvasRef={canvasRef}
+          onBackgroundPointerDown={onBackgroundPointerDown} onBackgroundPointerMove={onBackgroundPointerMove} onBackgroundPointerUp={onBackgroundPointerUp}
+          onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
+          onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
+        />
 
-        <OrgInspector org={org} personas={personas} skills={skills} sel={sel} onSelectNode={(id) => setSel({ type: "node", id })} onChangeArchetype={(relId, a) => updateRelationship(org.id, relId, { archetype: a })} />
+        <OrgInspector
+          org={org} orgs={orgs} personas={personas} sel={sel}
+          onSelectNode={(id) => setSel({ type: "node", id })}
+          onChangeArchetype={(relId, a) => updateRelationship(org.id, relId, { archetype: a })}
+          onChangePersona={(nodeId, personaId) => updatePosition(org.id, nodeId, { personaId })}
+          onChangeLabel={(nodeId, label) => updatePosition(org.id, nodeId, { label })}
+        />
       </Row>
     </Stack>
   );
