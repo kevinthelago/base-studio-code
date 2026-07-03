@@ -4,6 +4,7 @@
 import { useState, useCallback, type ReactNode, type CSSProperties } from "react";
 import type { ChartTip } from "./Charts";
 import { loginColor } from "@/shared/lib/core/format";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 
 /** Compact number formatter (e.g. 1234 → "1.2k", 12000 → "12k"). */
 export function fmt(n: number): string {
@@ -17,18 +18,24 @@ interface StatCardProps {
   sub?: ReactNode;
   tone?: StatTone;
   delta?: { dir: "up" | "down" | "flat"; text: string };
+  /** Render the value (and sub) as shimmer placeholders while the metric's source loads (#2234). */
+  loading?: boolean;
 }
-export function StatCard({ k, v, sub, tone, delta }: StatCardProps) {
+export function StatCard({ k, v, sub, tone, delta, loading }: StatCardProps) {
   const color =
     tone === "accent" ? "var(--accent)" : tone === "info" ? "var(--info)" :
     tone === "success" ? "var(--success)" : tone === "danger" ? "var(--danger)" : "var(--fg)";
   return (
     <div className="card statcard">
       <div className="k">{k}</div>
-      <div className="v" style={{ color }}>{v}</div>
+      {loading
+        ? <div className="v"><Skeleton h={20} w={56} radius={5} style={{ margin: "3px 0" }} /></div>
+        : <div className="v" style={{ color }}>{v}</div>}
       <div className="sub">
-        {delta && <span className={`delta ${delta.dir}`}>{delta.dir === "up" ? "▲" : delta.dir === "down" ? "▼" : "■"} {delta.text}</span>}
-        {sub}
+        {loading ? <Skeleton h={9} w={72} radius={4} /> : (<>
+          {delta && <span className={`delta ${delta.dir}`}>{delta.dir === "up" ? "▲" : delta.dir === "down" ? "▼" : "■"} {delta.text}</span>}
+          {sub}
+        </>)}
       </div>
     </div>
   );
