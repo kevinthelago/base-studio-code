@@ -22,6 +22,7 @@ import { useFleetGithub, type FleetGithub } from "./useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
 import { CostEnergy } from "./CostEnergy";
 import { FleetHealth } from "./FleetHealth";
+import { FleetLessons } from "./FleetLessons";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
 
@@ -256,8 +257,9 @@ export function Fleet() {
           </Stack>
           <Stack gap={14} style={{ minWidth: 0 }}>
             <FleetStatus counts={counts} total={kpis.total} />
-            <MergeQueue gh={gh} />
             <CostEnergy workers={workers} />
+            <FleetLessons />
+            <MergeQueue gh={gh} />
           </Stack>
         </Grid>
       </Box>
