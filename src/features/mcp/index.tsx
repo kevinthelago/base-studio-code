@@ -18,6 +18,7 @@ import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { Button } from "@/shared/ui/controls/Button";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { Row } from "@/shared/ui/layout/Row";
@@ -85,8 +86,10 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
       return <Text as="span" className="hint" mono size={10}>{s === "building" ? "building…" : "updating…"}</Text>;
+    // While the version check (or an initial download) is in flight, a small inline shimmer is a
+    // cleaner loading cue than a "checking…" label (#2246).
     if (s === undefined || s === "checking" || s === "downloading")
-      return <Text as="span" className="hint" mono size={10}>checking…</Text>;
+      return <Skeleton w={54} h={14} radius={4} style={{ display: "inline-block" }} />;
     const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
     return (
       <Button variant="ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}
