@@ -7,6 +7,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { FillBar } from "@/shared/ui/data/FillBar";
 import { Text } from "@/shared/ui/typography/Text";
 import type { Contributor } from "../lib/githubSummary";
+import { CardEmpty, SkeletonRows } from "./cardStates";
 
 export function ContributorsCard({ contributors, loading }: {
   contributors: Contributor[];
@@ -20,10 +21,9 @@ export function ContributorsCard({ contributors, loading }: {
       hint={loading ? "loading…" : contributors.length > 0 ? `${contributors.length} contributors · all repos` : "no data"}
       headMb={10}
     >
-      {contributors.length === 0 && !loading && (
-        <Text mono size={11} tone="dim" as="div" style={{ padding: "4px 0" }}>
-          No contributor data yet — GitHub is computing stats.
-        </Text>
+      {loading && contributors.length === 0 && <SkeletonRows rows={4} h={22} />}
+      {!loading && contributors.length === 0 && (
+        <CardEmpty icon="◍" title="No contributor data yet" hint="GitHub is still computing contributor stats." />
       )}
       <Stack gap={8}>
         {contributors.map(p => (

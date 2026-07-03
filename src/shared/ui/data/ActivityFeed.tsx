@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { timeAgo } from "@/shared/lib/core/format";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 
 /** One row of the activity feed — the normalized shape shared by the github cross-repo feed and the
  *  planner cross-project feed. */
@@ -34,11 +36,15 @@ export function ActivityFeed({ items, hint, loading, tone, right, actionWidth = 
         <span className="hint">{hint}</span>
         {right != null && <><div style={{ flex: 1 }} />{right}</>}
       </div>
-      {items.length === 0 && !loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>No recent activity.</div>
+      {loading && items.length === 0 && (
+        // Shimmer rows while the feed's source loads (#2234) — keeps the card's shape, not a blank body.
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={40} radius={6} />)}
+        </div>
       )}
-      {loading && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", padding: "8px 0" }}>Loading…</div>
+      {!loading && items.length === 0 && (
+        <EmptyState size="sm" iconVariant="dashed" icon="◔" title="No recent activity"
+          description="Recent events across your repos surface here." style={{ padding: "20px 12px" }} />
       )}
       {items.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 1, borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
