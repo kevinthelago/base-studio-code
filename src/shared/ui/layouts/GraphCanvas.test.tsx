@@ -83,6 +83,30 @@ describe("GraphCanvas (#2208)", () => {
     );
     expect(container.querySelectorAll(".resize-x")).toHaveLength(0);
   });
+
+  // #2230 — clicking the empty backdrop clears the selection.
+  it("fires onBackgroundClick on a genuine backdrop click, but not on a node press or after a pan", () => {
+    const onBackgroundClick = vi.fn();
+    const vp = fakeVp();
+    render(
+      <GraphCanvas vp={vp} world={{ w: 10, h: 10 }} toolbar={null} onBackgroundClick={onBackgroundClick}>
+        <span>WORLD</span>
+        <span data-node="n1">NODE</span>
+      </GraphCanvas>,
+    );
+    // A click on empty world content (not a [data-node]) → fires.
+    fireEvent.click(screen.getByText("WORLD"));
+    expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+
+    // A click on a [data-node] element (a node press) → ignored.
+    fireEvent.click(screen.getByText("NODE"));
+    expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+
+    // The click that ends a pan-drag (dragMoved) → ignored.
+    vp.dragMoved.current = true;
+    fireEvent.click(screen.getByText("WORLD"));
+    expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ZoomControls (#2208)", () => {
