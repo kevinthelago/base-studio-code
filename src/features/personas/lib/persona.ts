@@ -33,6 +33,11 @@ export interface Persona {
   responsibilities?: string[];
   /** Default model id for this persona (empty = the session/global default). */
   model?: string;
+  /** This identity is meant to run as a POOL of interchangeable instances (#2199) — a swarm of N agents
+   *  doing the same job. In the Org designer, a set of positions on a pooled persona that share the same
+   *  external relationships collapses into ONE stacked card (drill in to see the members). Purely a
+   *  designer/consolidation hint today; the fleet still launches N real agents. Optional — unset = 1:1. */
+  pooled?: boolean;
   /** A packaged persona: seeded from code, restored on refresh. Can be cloned + edited (edits persist
    *  as an overlay) but not deleted; user-authored personas have `builtin` unset. */
   builtin?: boolean;

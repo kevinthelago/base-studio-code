@@ -10,8 +10,9 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, type Org } from "./lib/org";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
-import { positionDisplay, hueColor } from "./lib/orgView";
+import { positionDisplay, hueColor, type PositionDisplay } from "./lib/orgView";
 import { Chip } from "@/shared/ui/data/Chip";
+import type { Pool } from "./lib/orgPools";
 import type { Persona } from "@/features/personas";
 
 export interface Selection { type: "node" | "edge"; id: string }
@@ -27,22 +28,67 @@ interface CanvasProps {
   connecting: boolean;
   /** True during a background pan-drag — suppresses the edge click that ends it. */
   dragMoved: React.MutableRefObject<boolean>;
+  /** Synthetic pool nodes (a collapsed swarm) keyed by nodeId — rendered as stacked cards that drill in
+   *  instead of select/drag. Empty inside a pool's own sub-graph. */
+  poolInfo?: Record<string, Pool>;
   onSelectNode: (nodeId: string) => void;
   onSelectEdge: (relId: string) => void;
   onMoveNode: (nodeId: string, x: number, y: number) => void;
+  /** Enter a pool's own graph (clicking its stacked card). */
+  onDrillPool?: (poolNodeId: string) => void;
 }
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag (vs a click)
 
+/** The agent card face (glyph · name + role pill · blurb) — shared by a normal agent node and the top
+ *  card of a pool's stack. */
+function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
+  return (
+    <Box style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "10px 12px",
+      display: "flex", flexDirection: "column", gap: 8, borderRadius: 13, background: "var(--bg-elev)",
+      border: `1px solid ${isSel ? "var(--accent)" : "var(--border)"}`,
+      boxShadow: isSel ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 3px 12px rgba(0,0,0,.3)" }}>
+      <Row gap={9} align="start">
+        <Box style={{ width: 27, height: 27, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 13, color: isSel ? "#fff" : "var(--accent)", background: isSel ? "var(--accent)" : "color-mix(in oklch, var(--accent) 14%, transparent)", flex: "none" }}>{d.glyph}</Box>
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Row gap={6} align="center">
+            <Text as="span" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
+            {d.role && <Chip color="var(--accent)" style={{ flex: "none" }}>{d.role}</Chip>}
+          </Row>
+          <Text as="div" size={10.5} tone="muted" style={{ lineHeight: 1.3, marginTop: 2 }}>{d.blurb}</Text>
+        </Box>
+      </Row>
+    </Box>
+  );
+}
+
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function OrgCanvas(props: CanvasProps) {
-  const { org, personas, sel, scale, gridOn, connecting, dragMoved,
-    onSelectNode, onSelectEdge, onMoveNode } = props;
+  const { org, personas, sel, scale, gridOn, connecting, dragMoved, poolInfo,
+    onSelectNode, onSelectEdge, onMoveNode, onDrillPool } = props;
 
   const boxes = new Map(org.positions.map((p) => [p.nodeId, nodeBox(p)]));
   // Live node-drag preview (design-space x/y). Commits to the store on drop.
   const [drag, setDrag] = useState<{ nodeId: string; x: number; y: number } | null>(null);
   const gesture = useRef<{ nodeId: string; sx: number; sy: number; bx: number; by: number; moved: boolean } | null>(null);
+  // A pool card's press is a drill (a click), never a drag — its own tiny gesture tracks click-vs-drag.
+  const poolGesture = useRef<{ sx: number; sy: number; moved: boolean } | null>(null);
+  const onPoolDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    poolGesture.current = { sx: e.clientX, sy: e.clientY, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onPoolMove = (e: React.PointerEvent) => {
+    const g = poolGesture.current;
+    if (g && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > DRAG_THRESHOLD) g.moved = true;
+  };
+  const onPoolUp = (poolNodeId: string) => (e: React.PointerEvent) => {
+    const g = poolGesture.current;
+    poolGesture.current = null;
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (g && !g.moved) onDrillPool?.(poolNodeId);
+  };
 
   /** The x/y to render a node at — its live drag preview if being dragged, else its stored box. */
   const at = (nodeId: string) => (drag?.nodeId === nodeId ? drag : boxes.get(nodeId)!);
@@ -147,30 +193,36 @@ export function OrgCanvas(props: CanvasProps) {
         const d = positionDisplay(pos, personas);
         const isSel = sel.type === "node" && sel.id === pos.nodeId;
         const dim = !nodeActive(pos.nodeId);
+        const pool = poolInfo?.[pos.nodeId];
+
+        // A pool: a stacked card (offset shadow cards behind + a ×N badge). A press drills into the
+        // pool's own graph rather than selecting/dragging.
+        if (pool) {
+          return (
+            // eslint-disable-next-line no-restricted-syntax -- data-node marks it as owning its own press gesture (no background pan)
+            <div key={pos.nodeId} data-node={pos.nodeId}
+              onPointerDown={onPoolDown} onPointerMove={onPoolMove} onPointerUp={onPoolUp(pos.nodeId)}
+              style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
+                cursor: "pointer", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: "opacity .15s", touchAction: "none" }}>
+              {/* stacked shadow cards behind the face — the "N of them" cue */}
+              <Box style={{ position: "absolute", inset: 0, transform: "translate(11px,11px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.45 }} />
+              <Box style={{ position: "absolute", inset: 0, transform: "translate(6px,6px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.7 }} />
+              <Box style={{ position: "relative", width: "100%", height: "100%" }}><AgentFace d={d} isSel={isSel} /></Box>
+              {/* ×N badge + a drill hint */}
+              <Box style={{ position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11,
+                background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,.35)" }}>×{pool.count}</Box>
+              <Text as="div" mono size={8.5} tone="dim" style={{ position: "absolute", left: 0, right: 0, bottom: -14, textAlign: "center", pointerEvents: "none" }}>click to open pool</Text>
+            </div>
+          );
+        }
+
         return (
           // eslint-disable-next-line no-restricted-syntax -- node needs the data-node marker + pointer-capture on the element for drag
           <div key={pos.nodeId} data-node={pos.nodeId}
             onPointerDown={onNodeDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onNodeUp(pos.nodeId)}
             style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
               cursor: connecting ? "crosshair" : "grab", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none" }}>
-            {pos.kind === "agent" && (
-              <Box style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "10px 12px",
-                display: "flex", flexDirection: "column", gap: 8, borderRadius: 13, background: "var(--bg-elev)",
-                border: `1px solid ${isSel ? "var(--accent)" : "var(--border)"}`,
-                boxShadow: isSel ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 3px 12px rgba(0,0,0,.3)" }}>
-                <Row gap={9} align="start">
-                  <Box style={{ width: 27, height: 27, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 13, color: isSel ? "#fff" : "var(--accent)", background: isSel ? "var(--accent)" : "color-mix(in oklch, var(--accent) 14%, transparent)", flex: "none" }}>{d.glyph}</Box>
-                  <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Row gap={6} align="center">
-                      <Text as="span" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
-                      {d.role && <Chip color="var(--accent)" style={{ flex: "none" }}>{d.role}</Chip>}
-                    </Row>
-                    <Text as="div" size={10.5} tone="muted" style={{ lineHeight: 1.3, marginTop: 2 }}>{d.blurb}</Text>
-                  </Box>
-                </Row>
-              </Box>
-            )}
+            {pos.kind === "agent" && <AgentFace d={d} isSel={isSel} />}
             {pos.kind === "resource" && (
               <Box style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "11px 13px", display: "flex", flexDirection: "column", justifyContent: "center",
                 clipPath: "polygon(12% 0,88% 0,100% 50%,88% 100%,12% 100%,0 50%)",
