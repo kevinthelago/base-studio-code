@@ -189,6 +189,8 @@ export const useAppStore = create<AppStore>()(
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
         // Personas was folded into Org (#2199) — a last-mode of "personas" now opens Org.
         if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "org";
+        // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
+        if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
