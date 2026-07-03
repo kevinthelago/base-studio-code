@@ -99,6 +99,15 @@ export function blankPersona(id: string, role: SessionRole = "reviewer"): Person
   return { id, name: "New persona", blurb: "", role, startPrompt: "", skills: [] };
 }
 
+/** Keep only the keys of a persisted persona that carry a real value — so a copy seeded by an OLDER app
+ *  (which never wrote a newly-packaged field like `pooled`) doesn't MASK the built-in's value for it. An
+ *  absent field comes across as `undefined`; without this, `{...base, ...saved}` would overwrite
+ *  `base.pooled` with that `undefined`. Real values (incl. `false`/`""`) are kept, so genuine user edits
+ *  still win. */
+function definedFields(p: Persona): Partial<Persona> {
+  return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as Partial<Persona>;
+}
+
 /** Merge the packaged built-ins with the persisted set: every built-in is present (re-seeded if the
  *  persisted copy dropped it), user edits to a built-in are preserved, and user-authored personas are
  *  kept. Keyed by id; built-in identity is restored so a stale persisted `builtin:false` can't turn a
@@ -110,12 +119,14 @@ export function reconcilePersonas(persisted: Persona[]): Persona[] {
     byId.delete(base.id);
     if (!saved) return base;
     // Keep user edits (name/blurb/prompt/skills/model) but force builtin identity + role-reference.
-    // An EMPTY saved `startPrompt` inherits the packaged prose rather than clobbering it — this is the
+    // `definedFields` means a field the persisted copy never had (a newly-packaged facet like `pooled`)
+    // inherits the built-in rather than being masked by an absent-value `undefined`.
+    // An EMPTY saved `startPrompt` also inherits the packaged prose rather than clobbering it — the
     // upgrade path: a built-in seeded empty by an older app (worker/director) picks up its newly-wired
     // protocol prose, and since an empty prompt already falls back to the role kickoff downstream,
     // "clearing" a built-in's prompt was never meaningful anyway.
     return {
-      ...base, ...saved, id: base.id, builtin: true,
+      ...base, ...definedFields(saved), id: base.id, builtin: true,
       startPrompt: saved.startPrompt?.trim() ? saved.startPrompt : base.startPrompt,
     };
   });
