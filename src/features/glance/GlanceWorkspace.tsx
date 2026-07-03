@@ -54,8 +54,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [search, setSearch] = useState("");
   // Drill (#…): clicking a project on the Network graph animates INTO that project's fleet-relationship
   // graph — the SAME canvas, a different graph (L0 project network → L1 agent fleet). `drill` is the
-  // drilled project node id; the fleet graph is SAMPLE until a real per-project fleet feed lands.
-  const [drill, setDrill] = useState<string | null>(null);
+  // drilled project node id, held in the STORE so the app-wide nav history (mouse back/forward) can
+  // drive it (see useNavHistory).
+  const drill = useAppStore((s) => s.glanceDrill);
+  const setDrill = useAppStore((s) => s.setGlanceDrill);
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
   // The drilled project's REAL fleet (plan.db is keyed by project id, so the node id resolves it); falls

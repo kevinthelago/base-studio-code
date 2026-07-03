@@ -7,6 +7,11 @@ export interface ProjectsState {
   // Projects (transient)
   projectsPageMode: "projects" | "org";
   setProjectsPageMode: (v: "projects" | "org") => void;
+  // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
+  // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
+  // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
+  glanceDrill: string | null;
+  setGlanceDrill: (id: string | null) => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
