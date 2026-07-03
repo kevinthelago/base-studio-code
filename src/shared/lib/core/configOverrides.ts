@@ -49,6 +49,15 @@ export function overlayFile<T>(rel: string, embedded: T): T {
   return tryParse<T>(content) ?? embedded;
 }
 
+/** Overlay a single RAW (non-JSON) `@data` file — e.g. a markdown prompt/protocol imported with
+ *  `?raw`: the config-dir copy's text verbatim if present, else the embedded default. The raw analogue
+ *  of {@link overlayFile} (no parse), giving markdown surfaces the same edit-without-rebuild parity the
+ *  Rust `load_str` gives them backend-side. */
+export function overlayRaw(rel: string, embedded: string): string {
+  const content = overrides[rel];
+  return content === undefined ? embedded : content;
+}
+
 /** Test-only: reset the primed state so a spec can re-prime with a fresh mock. */
 export function resetConfigOverridesForTest(): void {
   overrides = {};
