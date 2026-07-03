@@ -9,6 +9,7 @@
 // (#2204): the same layered algorithm the Org designer uses, on a different domain.
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 import { mutualPairs } from "@/shared/lib/graph/cycles";
+import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
 export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done";
@@ -74,20 +75,10 @@ const COLGAP = 252, ROWGAP = 102;
 /** Bezier path + arrowhead between two node boxes (F depends on T). Cycle back-edges bow to separate the
  *  two directions. Ported from the spec's edgeGeom. */
 export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean): { d: string; arrow: string } {
-  const fRight = F.x < T.x;
-  const fx = F.x + (fRight ? NW : 0), fy = F.y + NH / 2;
-  const tLeftPort = T.x >= F.x;
-  const tx = T.x + (tLeftPort ? 0 : NW), ty = T.y + NH / 2;
-  const k = Math.max(46, Math.abs(tx - fx) * 0.5);
+  // The shared graph line-type (#2222) — perimeter-anchor (replaces the old side-port routing). Cycle
+  // back-edges bow apart (deterministic sign by id order) so the two directions of a↔b don't overlap.
   const bow = isCycle ? (F.id < T.id ? -46 : 46) : 0;
-  const c1x = fx + (fRight ? k : -k), c2x = tx + (tLeftPort ? -k : k);
-  const c1y = fy + bow, c2y = ty + bow;
-  const d = `M ${fx} ${fy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
-  const ang = Math.atan2(ty - c2y, tx - c2x);
-  const AL = 9, AW = 5.2;
-  const bx = tx - Math.cos(ang) * AL, by = ty - Math.sin(ang) * AL;
-  const nx = -Math.sin(ang), ny = Math.cos(ang);
-  const arrow = `M ${tx} ${ty} L ${bx + nx * AW} ${by + ny * AW} L ${bx - nx * AW} ${by - ny * AW} Z`;
+  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, { bow });
   return { d, arrow };
 }
 
