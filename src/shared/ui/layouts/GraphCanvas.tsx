@@ -14,6 +14,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import type { GraphViewport } from "./useGraphViewport";
 
 export interface GraphCanvasProps {
@@ -35,14 +36,28 @@ export interface GraphCanvasProps {
   canvasBackground?: string;
   /** Extra class on the root (a page scoping hook). */
   className?: string;
+  /** Make the left rail drag-resizable (a `.resize-x` splitter, like MasterDetail #2209). When set, the
+   *  rail node should FILL its wrapper (GraphCanvas owns the width) — don't give it a fixed width. */
+  railResizable?: boolean;
+  railWidth?: number; railMin?: number; railMax?: number;
+  /** Make the right inspector drag-resizable (splitter on its LEFT edge — it grows as the pointer moves
+   *  left). Same fill-your-wrapper contract as the rail. */
+  inspectorResizable?: boolean;
+  inspectorWidth?: number; inspectorMin?: number; inspectorMax?: number;
 }
 
 export function GraphCanvas({
   vp, world, toolbar, children, rail, inspector, overlays, canvasBackground, className,
+  railResizable = false, railWidth = 260, railMin = 200, railMax = 460,
+  inspectorResizable = false, inspectorWidth = 344, inspectorMin = 260, inspectorMax = 620,
 }: GraphCanvasProps) {
   // Pull the plain viewport values out as locals — worldTransform is a computed style object, not a
   // ref, so reading it (and the callback refs) here keeps the render free of ref-access.
   const { setVp, onCanvasDown, worldTransform } = vp;
+  // Hooks always run (rules of hooks); the live size only drives a column when that side is resizable.
+  const railDrag = useDragResize({ initial: railWidth, min: railMin, max: railMax, axis: "x" });
+  const inspDrag = useDragResize({ initial: inspectorWidth, min: inspectorMin, max: inspectorMax, axis: "x", invert: true });
+  const paneBox = (size: number): CSSProperties => ({ flex: `0 0 ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
   return (
     <Stack gap={0} className={className} style={{ flex: 1, minHeight: 0 }}>
       {/* ── toolbar ── */}
@@ -50,9 +65,14 @@ export function GraphCanvas({
         {toolbar}
       </Row>
 
-      {/* ── body: rail · canvas · inspector ── */}
+      {/* ── body: rail · canvas · inspector (rail/inspector optionally drag-resizable) ── */}
       <Row gap={0} align="stretch" style={{ flex: 1, minHeight: 0 }}>
-        {rail}
+        {rail && (railResizable ? (
+          <>
+            <Box style={paneBox(railDrag.size)}>{rail}</Box>
+            <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
+          </>
+        ) : rail)}
         {/* The pan/zoom viewport: a raw div for the native wheel listener + backdrop mousedown. */}
         <div ref={setVp} onMouseDown={onCanvasDown}
           style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, background: canvasBackground ?? "var(--bg)" }}>
@@ -61,7 +81,12 @@ export function GraphCanvas({
           </Box>
           {overlays}
         </div>
-        {inspector}
+        {inspector && (inspectorResizable ? (
+          <>
+            <Box className="resize-x" {...inspDrag.handleProps} title="Drag to resize" />
+            <Box style={paneBox(inspDrag.size)}>{inspector}</Box>
+          </>
+        ) : inspector)}
       </Row>
     </Stack>
   );

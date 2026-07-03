@@ -4,18 +4,19 @@ import { PROJECT_MODES } from "./projectModes";
 // #548 / #1876: the Projects page modes — formerly the `ProjectsPageModeStrip`, now the data behind
 // the shared <Screen> tab bar (`PROJECT_MODES`, rendered in features/planner/index.tsx).
 describe("Projects page modes (#548, #1876)", () => {
-  it("offers Projects · Fleet · Personas · Org in that order", () => {
+  it("offers Projects · Fleet · Org in that order", () => {
     // The Data Models page was archived with the data-platform panes (5def26b7, v1.0.5 prep).
-    // Org (#2193) is the persona-relationship graph, added after Personas.
-    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Fleet", "Personas", "Org"]);
+    // Personas (#2094) was folded into Org (#2199) — a persona is edited in the Org inspector.
+    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Fleet", "Org"]);
   });
 
-  it("does not include the retired Blueprints / Summary / Data Models modes", () => {
+  it("does not include the retired Blueprints / Summary / Data Models / Personas modes", () => {
     // Blueprints folded into the Planner tab's blueprint rail; Summary moved to the GitHub screen;
-    // Data Models archived with the data-platform panes (5def26b7).
+    // Data Models archived with the data-platform panes (5def26b7); Personas folded into Org (#2199).
     const labels = PROJECT_MODES.map((m) => m.label);
     expect(labels).not.toContain("Blueprints");
     expect(labels).not.toContain("Summary");
     expect(labels).not.toContain("Data Models");
+    expect(labels).not.toContain("Personas");
   });
 });
