@@ -7,16 +7,28 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import type { CiRow } from "../lib/githubSummary";
+import { CardEmpty, SkeletonRows } from "./cardStates";
 
 export function CIHealthCard({ matrix, loading }: {
   matrix: CiRow[];
   loading: boolean;
 }) {
+  if (loading && matrix.length === 0) {
+    return (
+      <Card style={{ padding: "14px 16px" }} title="CI health" hint="last 7 days · all branches" headMb={10}>
+        <SkeletonRows rows={4} h={14} />
+      </Card>
+    );
+  }
+  if (matrix.length === 0) {
+    return (
+      <Card style={{ padding: "14px 16px" }} title="CI health" hint="last 7 days · all branches" headMb={10}>
+        <CardEmpty icon="◉" title="No CI runs found" hint="Workflow runs across your repos surface here." />
+      </Card>
+    );
+  }
   return (
     <Card style={{ padding: "14px 16px" }} title="CI health" hint="last 7 days · all branches" headMb={10}>
-      {matrix.length === 0 && !loading && (
-        <Text mono size="sm" tone="dim" as="div" style={{ padding: "4px 0" }}>No CI runs found.</Text>
-      )}
       <Stack gap={6}>
         {matrix.map(({ name, days }) => (
           <Grid key={name} cols="80px 1fr 28px" gap={8} align="center">

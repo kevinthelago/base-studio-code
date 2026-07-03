@@ -4,7 +4,8 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty } from "./cardStates";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
@@ -26,8 +27,13 @@ export function ReposGrid({ repos, loading }: {
       right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>}
       headMb={10}
     >
-      {repos.length === 0 && !loading && (
-        <EmptyState iconVariant="dashed" icon="⎇" title="No repositories connected." />
+      {loading && repos.length === 0 && (
+        <Grid cols={2} gap="sm">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={92} radius={10} />)}
+        </Grid>
+      )}
+      {!loading && repos.length === 0 && (
+        <CardEmpty icon="⎇" title="No repositories connected" hint="Connect repositories to see them here." />
       )}
       <Grid cols={2} gap="sm">
         {repos.map(r => (
