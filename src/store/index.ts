@@ -9,6 +9,8 @@ import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
+import { createOrgSlice } from "@/features/org/store";
+import { reconcileOrgs } from "@/features/org/lib/org";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -46,6 +48,7 @@ export const useAppStore = create<AppStore>()(
       ...createSkillsSlice(set, get, store),
       ...createMcpSlice(set, get, store),
       ...createPersonasSlice(set, get, store),
+      ...createOrgSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -155,6 +158,7 @@ export const useAppStore = create<AppStore>()(
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
+        orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
@@ -192,6 +196,9 @@ export const useAppStore = create<AppStore>()(
         // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
         // code-owned-template discipline as the blueprints refresh below.
         if (state?.personas) state.personas = reconcilePersonas(state.personas);
+        // Same discipline for the org library (#2193): re-seed dropped built-ins, restore built-in
+        // identity, keep user edits + user-authored orgs.
+        if (state?.orgs) state.orgs = reconcileOrgs(state.orgs);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }

@@ -1,0 +1,20 @@
+[
+  { "id": "manages",  "label": "Manages",  "style": "solid",    "hue": 210, "fromLabel": "manager",  "toLabel": "report",
+    "forward": ["directive", "decision", "review"], "backward": ["escalation", "report"],
+    "blurb": "Manager → report: assigns, decides, and reviews down; receives escalations and status up." },
+  { "id": "serves",   "label": "Serves",   "style": "dashed",   "hue": 160, "fromLabel": "provider", "toLabel": "requester",
+    "forward": ["report"], "backward": ["request"],
+    "blurb": "Provider → requester: receives requests as tickets and reports resolution back. The requester may be an external actor." },
+  { "id": "oversees", "label": "Oversees", "style": "gated",    "hue": 45,  "fromLabel": "reviewer", "toLabel": "subject",
+    "forward": ["review"], "backward": ["handoff"],
+    "blurb": "Reviewer → subject: the subject submits an artifact; the reviewer returns an independent verdict that may gate progression." },
+  { "id": "consults", "label": "Consults", "style": "dotted",   "hue": 280, "fromLabel": "asker",    "toLabel": "expert",
+    "forward": ["consult"], "backward": ["consult"],
+    "blurb": "Asker ↔ expert: a lateral advisory dialogue; the expert's opinion is non-binding." },
+  { "id": "peers",    "label": "Peers",    "style": "dotted",   "hue": 190, "fromLabel": "peer",     "toLabel": "peer",
+    "forward": ["handoff", "report"], "backward": ["handoff", "report"],
+    "blurb": "Peer ↔ peer: lateral coordination against shared contracts (planning-time seams, not runtime blocking)." },
+  { "id": "stewards", "label": "Stewards", "style": "resource", "hue": 20,  "fromLabel": "owner",    "toLabel": "resource",
+    "forward": ["directive"], "backward": ["request"],
+    "blurb": "Owner → resource: the steward is the only position that changes the shared resource; others request changes through it." }
+]
