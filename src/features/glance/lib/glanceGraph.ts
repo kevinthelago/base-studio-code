@@ -75,10 +75,12 @@ const COLGAP = 252, ROWGAP = 102;
 /** Bezier path + arrowhead between two node boxes (F depends on T). Cycle back-edges bow to separate the
  *  two directions. Ported from the spec's edgeGeom. */
 export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean): { d: string; arrow: string } {
-  // The shared graph line-type (#2222) — perimeter-anchor (replaces the old side-port routing). Cycle
-  // back-edges bow apart (deterministic sign by id order) so the two directions of a↔b don't overlap.
+  // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance is a layered left→right
+  // DAG, so edges leave the right edge / enter the left at the vertical middle for a clean columnar flow
+  // (the perimeter-anchor router read messy here). Cycle back-edges bow apart (deterministic sign by id
+  // order) so the two directions of a↔b don't overlap.
   const bow = isCycle ? (F.id < T.id ? -46 : 46) : 0;
-  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, { bow });
+  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, { bow, routing: "ports" });
   return { d, arrow };
 }
 
