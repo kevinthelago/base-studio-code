@@ -20,7 +20,7 @@ describe("IssueDrawer", () => {
     render(<IssueDrawer issue={issue} onClose={() => {}} />);
     expect(screen.getByText("#99")).toBeTruthy();
     expect(screen.getByText("Design the drawer")).toBeTruthy();
-    expect(screen.getByText(/open/)).toBeTruthy();
+    expect(screen.getByText(/●\s*open/)).toBeTruthy();  // the state chip specifically (not the "open on github"/"open in pane" buttons)
     expect(screen.getByText("v1.0.5")).toBeTruthy();
     expect(screen.getByText(/A longer body describing the work\./)).toBeTruthy();
     expect(screen.getByText("@octocat")).toBeTruthy();

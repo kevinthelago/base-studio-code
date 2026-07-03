@@ -162,8 +162,10 @@ describe("ProjectPane focused mode (#652)", () => {
         flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
     ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus(permsPhase)} />);
-    // the stream renders as an agent row (no more "No agents yet" stub)
-    expect(screen.getByText("@auth")).toBeInTheDocument();
+    // #2189/#2190: the graph is the roster. Focus the stream node → its inspector card opens (the
+    // card shows the persona pairing, "Worker (default)", not the raw @name).
+    fireEvent.click(screen.getAllByText("auth")[0]);
+    expect(screen.getByText("Worker (default)")).toBeInTheDocument();
   });
 
   it("Streams: picks a per-agent model and clears it back to the global default (#…/#1914)", () => {
@@ -176,7 +178,9 @@ describe("ProjectPane focused mode (#652)", () => {
         flow: { autonomy: "checkpoint", push: "auto-PR", gate: "soft" }, ctx: 1 },
     ], repos: [], structure: [], phaseStructure: [], context: [], issues: [] } as unknown as Parameters<typeof ProjectPane>[0]["data"];
     render(<ProjectPane data={data} focus={baseFocus(permsPhase)} onModel={onModel} />);
-    // The first agent's editor is open by default → its model segmented control is visible.
+    // Focus the stream node, then expand its (collapsed) "Model & flow" card to reach the model Seg.
+    fireEvent.click(screen.getAllByText("auth")[0]);
+    fireEvent.click(screen.getByText("Model & flow"));
     fireEvent.click(screen.getByText("opus"));
     expect(onModel).toHaveBeenCalledWith("auth", "opus-4.5"); // tier → ModelId
     fireEvent.click(screen.getByText("default"));

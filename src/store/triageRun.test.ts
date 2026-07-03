@@ -17,7 +17,9 @@ describe("prepareTriageRun (#1004)", () => {
   // The triage markers now route through the `bsc` bridge (#2114): the reads are `bsc plan triage
   // last|changed|record`, dispatched via `invoke("bsc", { projectKey, args })` and JSON-parsed from
   // stdout by bscJson (so the mock returns a JSON STRING, "" for a void verb).
-  const triageArgs = (args: unknown): string[] => (args as { args?: string[] }).args ?? [];
+  // Null-safe: the store's async rehydrate migration fires background `invoke`s that can settle during
+  // teardown with undefined args — don't throw on those.
+  const triageArgs = (args: unknown): string[] => (args as { args?: string[] } | undefined)?.args ?? [];
 
   it("first run (no marker) → empty lead, never queries changed-since, stamps a marker", async () => {
     mockInvoke.mockImplementation(async (_cmd, args) =>
