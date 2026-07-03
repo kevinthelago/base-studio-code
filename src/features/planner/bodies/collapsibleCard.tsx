@@ -10,11 +10,14 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 
-export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = false, children }: {
+export function CollapsibleCard({ title, hint, icon, iconTone, right, tone, defaultOpen = false, children }: {
   title: string;
   hint?: string;
   /** A small leading glyph (e.g. "◎"). */
   icon?: string;
+  /** Colour for the icon glyph only, leaving the border soft — for accenting a card (e.g. the
+   *  hero Kickoff card) without tinting its frame. Falls back to `tone`, then the dim default. */
+  iconTone?: string;
   /** Right-aligned control/summary in the header row. */
   right?: React.ReactNode;
   /** Border accent color; defaults to the soft border. */
@@ -35,7 +38,7 @@ export function CollapsibleCard({ title, hint, icon, right, tone, defaultOpen = 
         {icon && (
           <Box as="span" radius={6} bg="var(--bg-elev)" border="soft" style={{
             width: 20, height: 20, flex: "0 0 20px", display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: MONO, fontSize: 11, color: tone ?? "var(--fg-dim)",
+            fontFamily: MONO, fontSize: 11, color: iconTone ?? tone ?? "var(--fg-dim)",
           }}>{icon}</Box>
         )}
         <Text as="span" size={13} weight={600} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{title}</Text>
