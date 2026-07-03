@@ -2,15 +2,15 @@
 // from the user's projects; the TOPOLOGY (roles · edge kinds · dependencies · status) is clearly-marked
 // SAMPLE until a real cross-project dependency model exists (epic #2205, slice 4). Isolated here so
 // wiring real edges later is a drop-in — the page + graph core never change.
-import type { GRawNode, GRawEdge, GRole, GEdgeKind } from "./glanceGraph";
+import type { GRawNode, GRawEdge, GRole, GStatus } from "./glanceGraph";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
-/** A minimal project as the adapter needs it (id + display name). */
-export interface ProjectLite { id: string; name: string }
+/** A minimal project as the adapter needs it — id + display name, plus optional real role/status the
+ *  caller has resolved (e.g. a live-running detection, or "planning" once a fleet exists). */
+export interface ProjectLite { id: string; name: string; role?: GRole; status?: GStatus }
 
 const ROLES: GRole[] = ["infra", "service", "data", "client"];
-const KINDS: GEdgeKind[] = ["api", "data", "events"];
 
 /** Stable small hash of a string → non-negative int (deterministic role/status assignment). */
 function hash(s: string): number {
@@ -64,36 +64,19 @@ export const SAMPLE_GRAPH: GlanceData = {
   ],
 };
 
-/** Build the Glance graph data from the real project list. With ≥3 real projects we render THEM as the
- *  nodes (role derived, status idle — the live status overlay is a follow-up) wired by a deterministic
- *  SAMPLE dependency chain (marked sample); otherwise we fall back to {@link SAMPLE_GRAPH} so the page
- *  is never empty and the full experience is demonstrable. */
+/** Build the Glance graph from the REAL project list: every project a node (its resolved role/status, or
+ *  a derived role + idle). Cross-project dependency EDGES are NOT fabricated — there's no real
+ *  project-relationship model yet (#…, the follow-up), so real projects render as an un-wired grid rather
+ *  than inventing a fake topology. Only when there are ZERO projects do we fall back to {@link
+ *  SAMPLE_GRAPH} so a brand-new user still sees the full experience (clearly marked `sample`). */
 export function buildGlanceData(projects: ProjectLite[]): GlanceData {
-  if (projects.length < 3) return SAMPLE_GRAPH;
+  if (projects.length === 0) return SAMPLE_GRAPH;
 
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,
-    role: ROLES[hash(p.id) % ROLES.length],
-    status: "idle",
+    role: p.role ?? ROLES[hash(p.id) % ROLES.length],
+    status: p.status ?? "idle",
   }));
-
-  // A deterministic sample DAG: each project depends on ~1–2 earlier ones (by hash), so the layout has
-  // depth without inventing real relationships. Plus one forced mutual pair to demonstrate cycle
-  // hazards. All clearly sample.
-  const rawEdges: GRawEdge[] = [];
-  for (let i = 1; i < rawNodes.length; i++) {
-    const a = rawNodes[i];
-    const t1 = rawNodes[hash(a.id + "1") % i];
-    rawEdges.push({ from: a.id, to: t1.id, kind: KINDS[hash(a.id) % KINDS.length] });
-    if (i > 2 && hash(a.id + "2") % 3 === 0) {
-      const t2 = rawNodes[hash(a.id + "2") % i];
-      if (t2.id !== t1.id) rawEdges.push({ from: a.id, to: t2.id, kind: KINDS[hash(a.id + "k") % KINDS.length] });
-    }
-  }
-  // Force a mutual pair (cycle) between the first two projects so the hazard UI is exercised.
-  rawEdges.push({ from: rawNodes[0].id, to: rawNodes[1].id, kind: "data" });
-  rawEdges.push({ from: rawNodes[1].id, to: rawNodes[0].id, kind: "data" });
-
-  return { rawNodes, rawEdges, sample: true };
+  return { rawNodes, rawEdges: [], sample: false };
 }
