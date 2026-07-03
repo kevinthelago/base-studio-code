@@ -15,6 +15,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Code } from "@/shared/ui/data/Code";
 import { SelectField } from "@/shared/ui/controls/Field";
+import { PersonaSummary } from "@/features/personas";
 import { useAppStore } from "@/store";
 
 export function AgentEditor({ a, onFlow, onModel, onPersona }: {
@@ -46,6 +47,9 @@ export function AgentEditor({ a, onFlow, onModel, onPersona }: {
             <option value="">worker (default)</option>
             {personas.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.role}</option>)}
           </SelectField>
+          {/* #2186 — show WHAT the picked persona is (blurb · model · skills · start prompt), not just
+              its name in the dropdown. Only renders when a persona is actually assigned. */}
+          {persona && <PersonaSummary persona={persona} />}
         </Box>
       )}
 
