@@ -1,14 +1,13 @@
-// The unified "Streams" stage (#1392 / #1914 / #2053) — ONE cohesive pane built AROUND the
+// The unified "Streams" stage (#1392 / #1914 / #2053 / #2189) — ONE cohesive pane built AROUND the
 // dependency graph. The graph IS the fleet: every node is a stream, and because a stream and its
-// worker are 1:1, selecting a node opens exactly ONE inspector card below it (identity · scope ·
-// kickoff · config) — no separate roster stacked under the graph duplicating the same streams.
-// Fleet-wide controls (Coordination, Shared dependencies) sit below as secondary collapsible cards.
-// (Replaced the graph + always-open Fleet-roster + Coordination-card stack, which listed each stream
-// twice.)
+// worker are 1:1, selecting a node opens its inspector below — a stack of collapsible cards
+// (Persona · Kickoff · Scope · Model & flow, #2189) rather than one dense card. Fleet-wide controls
+// (Coordination, Shared dependencies) sit below as secondary collapsible cards. (Replaced the graph +
+// always-open Fleet-roster + Coordination-card stack, which listed each stream twice.)
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type RelFocus, type Topology } from "@/features/planner/relationship/relationshipGraph";
-import { StreamCard } from "@/features/planner/pane/agentEditor";
+import { StreamFocusCards } from "./StreamFocusCards";
 import { PlanBody } from "./FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
 import { SharedDependenciesSection } from "./SharedDependencies";
@@ -39,11 +38,12 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
           <Box as="span">No fleet yet — plan the work streams first</Box>
         </Box>
       ) : focusedAgent ? (
-        // One card for the focused stream (1:1 with its worker) — identity · scope · kickoff · config.
-        <StreamCard a={focusedAgent} agents={agents} onFlow={handlers.onFlow} onModel={handlers.onModel} onPersona={handlers.onPersona} />
+        // The focused stream (1:1 with its worker) as a collapsible-card stack — persona · kickoff ·
+        // scope · model & flow.
+        <StreamFocusCards a={focusedAgent} onFlow={handlers.onFlow} onModel={handlers.onModel} onPersona={handlers.onPersona} />
       ) : (
         <Text as="div" mono size={10} tone="dim" style={{ marginTop: 14, textAlign: "center", padding: "14px 0" }}>
-          Select a stream in the graph to see its scope, kickoff &amp; config.
+          Select a stream in the graph to see its persona, kickoff &amp; config.
         </Text>
       ))}
 
