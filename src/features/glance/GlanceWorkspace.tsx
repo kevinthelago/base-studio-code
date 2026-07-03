@@ -37,8 +37,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
   const projects: ProjectLite[] = useMemo(
-    () => Object.entries(drafts).map(([id, d]) => ({ id, name: d.title })),
-    [drafts],
+    () => Object.entries(drafts).map(([id, d]) => ({
+      id, name: d.title,
+      // A real signal today: a project with a planned fleet reads "planning"; else idle. A "live" status
+      // (the app detected running locally/in the cloud) is a follow-up — see useNavHistory notes / detection.
+      status: (planFleet[id]?.streams.length ?? 0) > 0 ? "planning" as const : "idle" as const,
+    })),
+    [drafts, planFleet],
   );
   // L0 — the project-network graph.
   const projectData = useMemo(() => buildGlanceData(projects), [projects]);

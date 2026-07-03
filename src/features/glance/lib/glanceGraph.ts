@@ -12,7 +12,7 @@ import { mutualPairs } from "@/shared/lib/graph/cycles";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
-export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done";
+export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done" | "live";
 export type GEdgeKind = "api" | "data" | "events";
 
 /** A project node as supplied by the data adapter (before layout). */
@@ -60,6 +60,8 @@ export const STATUS_META: Record<GStatus, { label: string; color: string; pulse:
   review: { label: "in review", color: "#f2b155", pulse: false },
   blocked: { label: "blocked", color: "#f2555f", pulse: true },
   done: { label: "shipped", color: "#3f7d63", pulse: false },
+  // The app itself is detected RUNNING (a local dev server or a cloud deployment) — a bright pulsing green.
+  live: { label: "live", color: "#3fe08f", pulse: true },
 };
 /** Edge kind → label · colour · dash · default line width · the contract "surface" blurb. */
 export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: string; w: number; surface: string }> = {
@@ -122,6 +124,16 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   // Cycle detection: mutual pairs (a→b AND b→a) — the shared graph-core primitive (#2217).
   const { pairs: cyclePairs, edgeIds: cycleEdge, nodeIds: cycleNodeIds } = mutualPairs(edges);
   edges.forEach((e) => { if (cycleEdge.has(e.id)) e.isCycle = true; });
+
+  // No dependency edges (real projects before a cross-project relationship model exists, #…): a plain
+  // GRID so the cards read as a network of peers instead of stacking in one column. Skip the layering.
+  if (edges.length === 0) {
+    const cols = Math.max(1, Math.round(Math.sqrt(nodes.length)));
+    nodes.forEach((n, i) => { n.layer = 0; n.x = 70 + (i % cols) * COLGAP; n.y = 70 + Math.floor(i / cols) * ROWGAP; });
+    let mX = 0, mY = 0;
+    nodes.forEach((n) => { mX = Math.max(mX, n.x); mY = Math.max(mY, n.y); });
+    return { nodes, edges, cyclePairs, cycleNodeIds, worldW: mX + NW + 80, worldH: mY + NH + 90 };
+  }
 
   // Longest-path layering (skip cycle edges so the loop doesn't diverge): layer[from] = max(layer[to]+1).
   const layer: Record<string, number> = {};
