@@ -9,6 +9,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Externalized the built-in personas + wired the fleet protocol prose (#2185)** — the persona library was the last packaged config surface still hardcoded in frontend TS (`features/personas/lib/persona.ts`), out of step with the #2027/#2047 config-externalization every other surface (blueprints/skills/roles/stages/taxonomies) already follows. Moved the nine built-ins to one JSON file per persona under `src-tauri/data/personas/`, loaded via `import.meta.glob("@data/personas/*.json")` + `overlayGlob` — so the packaged set is now editable without a rebuild (config-dir overlay) and rides the export/import config bundle. The **worker/director** personas (previously empty placeholder prompts) now resolve their real protocol prose from the shared `@data/fleet/{worker,director}-protocol.md` (imported `?raw`, config-dir-overlaid via a new `overlayRaw`), a single source of truth shared with the fleet's `CLAUDE.local.md` — no duplication. `reconcilePersonas` gained an empty→base start-prompt fallback so an install seeded by an older app picks up the newly-wired prose, and boot hydrate converges the store on that drift.
+- **Easier persona config (#2185)** — the Personas panel's "Default model" field became a pick-from-list select backed by `@data/console/models.json` (session-default + the known tiers), preserving any custom model id the persona already carries instead of asking the user to type an exact model string.
+
 ## [1.0.43] — 2026-07-02
 
 ### Changed
