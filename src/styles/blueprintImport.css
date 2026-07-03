@@ -3,5 +3,6 @@
 @keyframes bim-pop { from { transform: translateY(12px) scale(.985); } to { transform: none; } }
 @keyframes bim-row { from { transform: translateY(7px); } to { transform: none; } }
 @keyframes bim-spin { to { transform: rotate(360deg); } }
-@keyframes bim-shimmer { 0% { background-position: -260px 0; } 100% { background-position: 260px 0; } }
+/* bim-shimmer promoted to the shared `skeleton-shimmer` (tokens.css) — the shimmer style atom moved to
+   shared/ui/feedback/Skeleton so the whole app has one skeleton look (#2234). */
 @keyframes bim-toast { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
