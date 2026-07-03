@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileConfirmations, type ConfirmRow } from "./confirmReconcile";
+import { reconcileConfirmations, stagesToBackfill, type ConfirmRow, type SectionState } from "./confirmReconcile";
 import { hashString } from "@/shared/lib/core/hashString";
 
 const row = (stage: string, content: string): ConfirmRow => ({ stage, fingerprint: hashString(content) });
@@ -51,5 +51,30 @@ describe("reconcileConfirmations (#2256)", () => {
   it("no-ops cleanly when both plan.db and the store are empty (fresh legacy project)", () => {
     const r = reconcileConfirmations([], {}, new Set(), false);
     expect(r).toEqual({ rehydrate: [], reset: [], migrate: [] });
+  });
+});
+
+describe("stagesToBackfill (#2259)", () => {
+  const secs = (o: Record<string, SectionState["state"]>): SectionState[] =>
+    Object.entries(o).map(([k, state]) => ({ k, state }));
+
+  it("backfills every drafted section (a published project's authored sections)", () => {
+    const s = secs({ goal: "drafted", scope: "drafted", stack: "drafted" });
+    expect(stagesToBackfill(s, new Set()).sort()).toEqual(["goal", "scope", "stack"]);
+  });
+
+  it("skips pending (no-content) sections — nothing was confirmed there", () => {
+    const s = secs({ goal: "drafted", api: "pending", security: "pending" });
+    expect(stagesToBackfill(s, new Set())).toEqual(["goal"]);
+  });
+
+  it("skips sections already confirmed (idempotent restore)", () => {
+    const s = secs({ goal: "drafted", scope: "drafted" });
+    expect(stagesToBackfill(s, new Set(["goal"]))).toEqual(["scope"]);
+  });
+
+  it("returns nothing before any section content has loaded", () => {
+    expect(stagesToBackfill(secs({ goal: "pending" }), new Set())).toEqual([]);
+    expect(stagesToBackfill([], new Set())).toEqual([]);
   });
 });

@@ -26,6 +26,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { clampIndex } from "../stages/focusedPlan";
+import { stagesToBackfill } from "../stages/confirmReconcile";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
@@ -248,6 +249,23 @@ export function Planning({ visible }: { visible: boolean }) {
     const fleet = parseFleetFile(raw);
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
+
+  // Backfill durable confirmations for an already-published project (#2259). A project published
+  // BEFORE #2256 has no plan.db confirmations to rehydrate, so it would ask to reconfirm every stage
+  // once. Since a published project's discovery sections were all confirmed to reach publish, restore
+  // them ONCE: for a published/existing project with no confirmations yet, confirm every drafted
+  // section (write-through to plan.db, so it's durable thereafter). Guarded per project; skipped the
+  // moment any confirmation exists (durable) and never runs for an unpublished draft.
+  const backfilledRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isExisting || backfilledRef.current.has(effectiveProjectId)) return;
+    // Any existing confirmation means this project is already durable — don't backfill.
+    if (confirmedSet.size > 0) { backfilledRef.current.add(effectiveProjectId); return; }
+    const toConfirm = stagesToBackfill(sections, confirmedSet);
+    if (toConfirm.length === 0) return; // sections not loaded yet — wait for a later poll tick
+    backfilledRef.current.add(effectiveProjectId);
+    for (const k of toConfirm) confirmPlanStage(effectiveProjectId, k);
+  }, [isExisting, effectiveProjectId, confirmedSet, sections, confirmPlanStage]);
 
 
   // Title + derived GitHub object graph that the structure card renders and the
