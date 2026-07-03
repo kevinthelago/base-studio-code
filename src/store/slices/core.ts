@@ -6,9 +6,10 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
 import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
+import { projectLinkId } from "@/features/glance/lib/projectLinks";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
@@ -34,6 +35,14 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       glanceDrill: null,
       setGlanceDrill: (id) => set({ glanceDrill: id }),
+
+      projectLinks: [],
+      addProjectLink: (from, to, kind) => set((s) => {
+        if (from === to) return {};
+        const id = projectLinkId(from, to, kind);
+        return s.projectLinks.some((l) => l.id === id) ? {} : { projectLinks: [...s.projectLinks, { id, from, to, kind }] };
+      }),
+      removeProjectLink: (id) => set((s) => ({ projectLinks: s.projectLinks.filter((l) => l.id !== id) })),
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
       activeProjectId: null,

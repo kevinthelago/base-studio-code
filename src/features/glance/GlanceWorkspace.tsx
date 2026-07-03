@@ -22,7 +22,7 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
-import { buildGraph, focusSets, STATUS_META, ROLE_COLOR } from "./lib/glanceGraph";
+import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
 import { useGlanceProjects } from "./lib/useGlanceProjects";
@@ -41,8 +41,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
   const projects = useGlanceProjects();
-  // L0 — the project-network graph.
-  const projectData = useMemo(() => buildGlanceData(projects), [projects]);
+  const projectLinks = useAppStore((s) => s.projectLinks);
+  const addProjectLink = useAppStore((s) => s.addProjectLink);
+  const removeProjectLink = useAppStore((s) => s.removeProjectLink);
+  // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
+  const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
@@ -53,6 +56,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
   const [search, setSearch] = useState("");
+  // Connect-mode (#2253): a chosen edge kind + the pending source project; two node clicks draw a link.
+  const [connect, setConnect] = useState<{ kind: GEdgeKind; from: string | null } | null>(null);
   // Drill (#…): clicking a project on the Network graph animates INTO that project's fleet-relationship
   // graph — the SAME canvas, a different graph (L0 project network → L1 agent fleet). `drill` is the
   // drilled project node id, held in the STORE so the app-wide nav history (mouse back/forward) can
@@ -99,8 +104,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
-  // On the L0 network a node CLICK drills into that project's fleet; inside a fleet it selects an agent.
-  const onNodeClick = (id: string) => { if (drill) pickNode(id); else { setDrill(id); setSel(null); setShowCycle(false); } };
+  // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
+  // fleet a click selects an agent.
+  const onNodeClick = (id: string) => {
+    if (!drill && connect) {
+      if (!connect.from) { setConnect({ ...connect, from: id }); return; }
+      if (connect.from !== id) addProjectLink(connect.from, id, connect.kind);
+      setConnect(null);
+      return;
+    }
+    if (drill) pickNode(id); else { setDrill(id); setSel(null); setShowCycle(false); }
+  };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); };
 
   const q = search.trim().toLowerCase();
@@ -139,7 +153,23 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
           {/* eslint-disable-next-line no-restricted-syntax -- compact search input; a full Field is overkill in the toolbar */}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
-            style={{ width: 280, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
+            style={{ width: 240, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
+          {/* connect-mode palette (#2253) — pick a kind, then click source → target to draw a project link */}
+          {!drill && (
+            <Row gap={8} align="center" style={{ minWidth: 0 }}>
+              <Text as="span" className="ulabel" tone="dim" size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "connect"}</Text>
+              <Row gap={6}>
+                {(["api", "data", "events"] as GEdgeKind[]).map((k) => (
+                  <Box as="button" key={k} onClick={() => setConnect(connect?.kind === k ? null : { kind: k, from: null })}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
+                      color: "var(--fg-muted)", background: connect?.kind === k ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
+                      border: `1px solid ${connect?.kind === k ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <Box style={{ width: 8, height: 8, borderRadius: "50%", background: EDGE_META[k].color, flex: "none" }} />{EDGE_META[k].label}
+                  </Box>
+                ))}
+              </Row>
+            </Row>
+          )}
           <Box style={{ flex: 1 }} />
           {drill
             ? (data.sample
@@ -195,7 +225,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           )}
         </Stack>
       }
-      inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)} /> : undefined}
+      inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)}
+        onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
       <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>

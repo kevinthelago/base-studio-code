@@ -1,6 +1,8 @@
 // Projects domain — page mode/view, active-project meta, drafts, startup-prompt + reference-context
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
+import type { ProjectLink } from "@/features/glance/lib/projectLinks";
+import type { GEdgeKind } from "@/features/glance/lib/glanceGraph";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
@@ -12,6 +14,11 @@ export interface ProjectsState {
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
   glanceDrill: string | null;
   setGlanceDrill: (id: string | null) => void;
+  // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network,
+  // persisted. `addProjectLink` is idempotent (deterministic id). Migrates to the `bsc project` store later.
+  projectLinks: ProjectLink[];
+  addProjectLink: (from: string, to: string, kind: GEdgeKind) => void;
+  removeProjectLink: (id: string) => void;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";

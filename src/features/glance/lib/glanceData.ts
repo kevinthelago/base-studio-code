@@ -3,6 +3,7 @@
 // SAMPLE until a real cross-project dependency model exists (epic #2205, slice 4). Isolated here so
 // wiring real edges later is a drop-in — the page + graph core never change.
 import type { GRawNode, GRawEdge, GRole, GStatus } from "./glanceGraph";
+import type { ProjectLink } from "./projectLinks";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
@@ -69,7 +70,7 @@ export const SAMPLE_GRAPH: GlanceData = {
  *  project-relationship model yet (#…, the follow-up), so real projects render as an un-wired grid rather
  *  than inventing a fake topology. Only when there are ZERO projects do we fall back to {@link
  *  SAMPLE_GRAPH} so a brand-new user still sees the full experience (clearly marked `sample`). */
-export function buildGlanceData(projects: ProjectLite[]): GlanceData {
+export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = []): GlanceData {
   if (projects.length === 0) return SAMPLE_GRAPH;
 
   const rawNodes: GRawNode[] = projects.map((p) => ({
@@ -78,5 +79,11 @@ export function buildGlanceData(projects: ProjectLite[]): GlanceData {
     role: p.role ?? ROLES[hash(p.id) % ROLES.length],
     status: p.status ?? "idle",
   }));
-  return { rawNodes, rawEdges: [], sample: false };
+  // The user-drawn project relationships (#2253) — the real edges, filtered to links between two nodes
+  // that still exist. No fabricated topology; an un-wired project is simply an isolated node.
+  const ids = new Set(rawNodes.map((n) => n.id));
+  const rawEdges: GRawEdge[] = links
+    .filter((l) => ids.has(l.from) && ids.has(l.to))
+    .map((l) => ({ id: l.id, from: l.from, to: l.to, kind: l.kind }));
+  return { rawNodes, rawEdges, sample: false };
 }

@@ -118,6 +118,7 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
+        projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         projectKeyAlias:      s.projectKeyAlias,
         issueLinks:           s.issueLinks,
         achievements:         s.achievements,

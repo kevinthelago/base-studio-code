@@ -29,8 +29,9 @@ export interface GRawNode {
    *  category still drives the colour; this is the text shown on the card + inspector. */
   roleLabel?: string;
 }
-/** A dependency edge: `from` depends on `to`, over a contract of `kind`. */
-export interface GRawEdge { from: string; to: string; kind: GEdgeKind }
+/** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
+ *  user-drawn project link carries its own; sample/derived edges fall back to a positional id). */
+export interface GRawEdge { from: string; to: string; kind: GEdgeKind; id?: string }
 
 export interface GNode extends GRawNode { slug: string; layer: number; x: number; y: number }
 export interface GEdge {
@@ -123,7 +124,7 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
 
   const edges: GEdge[] = rawEdges
     .filter((e) => byId[e.from] && byId[e.to] && e.from !== e.to)
-    .map((e, i) => ({ id: "e" + i, from: e.from, to: e.to, kind: e.kind, hard: e.kind !== "events", isCycle: false, d: "", arrow: "" }));
+    .map((e, i) => ({ id: e.id ?? "e" + i, from: e.from, to: e.to, kind: e.kind, hard: e.kind !== "events", isCycle: false, d: "", arrow: "" }));
 
   // Cycle detection: mutual pairs (a→b AND b→a) — the shared graph-core primitive (#2217).
   const { pairs: cyclePairs, edgeIds: cycleEdge, nodeIds: cycleNodeIds } = mutualPairs(edges);
