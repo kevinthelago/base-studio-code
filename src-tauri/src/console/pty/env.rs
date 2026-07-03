@@ -32,6 +32,14 @@ fn plan_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     Some(crate::plan_db_path(&key.to_string_lossy()))
 }
 
+/// The project hub's `error.db` (the runtime-fault store, #2260) for a session under a project hub —
+/// same key derivation as [`plan_db_for_cwd`], so the whole fleet shares one error.db per project.
+/// None for a non-project session.
+fn error_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    let key = project_key_from_cwd(cwd)?;
+    Some(crate::error_db_path(&key.to_string_lossy()))
+}
+
 /// The project's per-project DuckDB **data store** (`~/.base-studio-code/data/<key>.duckdb`) for a
 /// session under a project hub — the Data Model + PlatformScan the planner reads via `bsc data`
 /// (#1446). Same key derivation as [`plan_db_for_cwd`]; None for a non-project session.
@@ -197,6 +205,12 @@ pub(super) fn wire_bsc_env(
     // console in some repo) get no BSC_PLAN_DB and never call `bsc plan`.
     if let Some(db) = plan_db_for_cwd(cwd) {
         cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
+    }
+    // bsc errors (#2260): point this session at its project's runtime-fault store. $BSC_ERROR_DB is the
+    // error.db the `bsc errors` subcommand reads/writes — cwd-derived exactly like BSC_PLAN_DB, so the
+    // whole fleet shares one error.db per project; a non-project session gets none and never calls it.
+    if let Some(db) = error_db_for_cwd(cwd) {
+        cmd.env("BSC_ERROR_DB", to_bash_path(&db.to_string_lossy()));
     }
     // bsc skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group authored
     // anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB is the shared

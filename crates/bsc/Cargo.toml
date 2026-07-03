@@ -31,6 +31,7 @@ bsc-org = { path = "../bsc-org" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
 plandb = { path = "../plandb" }
+errordb = { path = "../errordb" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each
