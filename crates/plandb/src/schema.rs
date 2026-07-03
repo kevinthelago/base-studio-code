@@ -20,6 +20,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "startup",
     "blueprint",
     "discovery",
+    "confirmed_stages",
     "triage_runs",
 ];
 
@@ -112,6 +113,11 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          CREATE TABLE IF NOT EXISTS discovery (
             topic       TEXT PRIMARY KEY,
             position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS confirmed_stages (
+            stage       TEXT PRIMARY KEY,
+            fingerprint TEXT NOT NULL DEFAULT '',
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS triage_runs (

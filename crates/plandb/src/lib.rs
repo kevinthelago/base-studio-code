@@ -37,6 +37,7 @@ pub mod cli;
 
 mod assignments;
 mod blueprint;
+mod confirmed;
 mod deploy;
 mod discovery;
 mod features;
