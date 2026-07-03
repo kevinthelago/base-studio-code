@@ -20,6 +20,7 @@ import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "./useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
+import { CostEnergy } from "./CostEnergy";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
 
@@ -196,18 +197,6 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
   );
 }
 
-/** Tokens/spend still need per-session accounting (#416) — honest note, no fake numbers. */
-function SpendNote() {
-  return (
-    <Card>
-      <CardHead title="Tokens & spend" hint="not measured yet" />
-      <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6 }}>
-        Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
-      </Text>
-    </Card>
-  );
-}
-
 export function Fleet() {
   const activeProjectName = useAppStore(s => s.activeProjectName);
   const { workers, kpis, counts, hasFleet } = useFleetLive();
@@ -266,7 +255,7 @@ export function Fleet() {
           <Stack gap={14} style={{ minWidth: 0 }}>
             <FleetStatus counts={counts} total={kpis.total} />
             <MergeQueue gh={gh} />
-            <SpendNote />
+            <CostEnergy workers={workers} />
           </Stack>
         </Grid>
       </Box>
