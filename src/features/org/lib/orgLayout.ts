@@ -2,6 +2,7 @@
 // prototype. Kept React-free so it's unit-testable and the canvas component stays a thin renderer.
 // The graph lives in a fixed 1120×800 design space; the canvas scales it by a zoom factor.
 import { forceSimulation, forceLink, forceManyBody, forceX, forceCollide, type SimulationNodeDatum } from "d3-force";
+import { graphEdge } from "@/shared/lib/graph/edgePath";
 import type { Org, Position, PositionKind } from "./org";
 
 /** The fixed design coordinate space every node's x/y is authored in. */
@@ -45,22 +46,10 @@ export interface EdgeGeometry {
 /** The bezier path + label point between two boxes, bowed by `bow` px off the straight line so parallel
  *  edges fan apart. The end is pulled back 9px to leave room for the arrowhead. Ported from `_geom`. */
 export function edgeGeometry(A: Box, B: Box, bow = 0): EdgeGeometry {
-  const acx = A.x + A.w / 2, acy = A.y + A.h / 2, bcx = B.x + B.w / 2, bcy = B.y + B.h / 2;
-  const [p1x, p1y] = anchor(A, bcx, bcy);
-  let [p2x, p2y] = anchor(B, acx, acy);
-  const dx0 = p2x - p1x, dy0 = p2y - p1y, L = Math.hypot(dx0, dy0) || 1;
-  p2x -= (dx0 / L) * 9;
-  p2y -= (dy0 / L) * 9;
-  const dx = p2x - p1x, dy = p2y - p1y;
-  const nx = -dy / L, ny = dx / L;
-  const c1x = p1x + dx * 0.35 + nx * bow, c1y = p1y + dy * 0.35 + ny * bow;
-  const c2x = p1x + dx * 0.65 + nx * bow, c2y = p1y + dy * 0.65 + ny * bow;
-  const f = (v: number) => Math.round(v * 10) / 10;
-  const d = `M ${f(p1x)} ${f(p1y)} C ${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(p2x)} ${f(p2y)}`;
-  // The cubic's midpoint (t=0.5) via the Bernstein weights (1/8, 3/8, 3/8, 1/8).
-  const lx = 0.125 * p1x + 0.375 * c1x + 0.375 * c2x + 0.125 * p2x;
-  const ly = 0.125 * p1y + 0.375 * c1y + 0.375 * c2y + 0.125 * p2y;
-  return { d, lx, ly };
+  // The shared graph line-type (#2222); Org keeps its own arrowhead markers, so it only takes the
+  // curve + the label midpoint. Byte-identical to the previous inline geometry.
+  const { d, labelX, labelY } = graphEdge(A, B, { bow });
+  return { d, lx: labelX, ly: labelY };
 }
 
 /** SVG dash-array for an archetype line style. */
