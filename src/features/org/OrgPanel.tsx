@@ -162,7 +162,7 @@ export function OrgPanel() {
                 <Button variant="ghost" onClick={exitPool}>← back</Button>
               </>
             ) : (
-              <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions</Text>
+              <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
             )}
           </Row>
           <Box style={{ width: 1, height: 22, background: "var(--border)" }} />

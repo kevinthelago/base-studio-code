@@ -1,11 +1,10 @@
-// Org pools (#2199) — consolidating a swarm of agents that share one `pooled` persona into ONE stacked
-// node so large graphs stay readable. A POOL is any ≥2 positions on the same `pooled` persona (see
-// Persona.pooled). Collapsing AGGREGATES their relationships: the pool node inherits the UNION of the
-// members' external edges (deduped by from|to|archetype), and edges among members (a peer mesh) are
-// internal and hidden until you drill in. So Fleet Alpha's Engineer A + Engineer B collapse into
-// "Engineer ×2" even though A is overseen by the reviewer and B by the auditor — the pool shows BOTH
-// oversight edges, and drilling in reveals which engineer each reaches. Pure model (React-free) so it's
-// unit-testable and the canvas stays a thin renderer.
+// Org pools (#2199) — consolidating a swarm of INTERCHANGEABLE agents into ONE stacked node so large
+// graphs stay readable. A POOL is ≥2 positions on the same `pooled` persona (see Persona.pooled) that are
+// HOMOGENEOUS: every member has the identical EXTERNAL relationship signature (same archetype+direction
+// to the same outside counterparts). Edges among members (a peer mesh) are internal and don't break
+// homogeneity — they show on drill-in. So Fleet Alpha's Engineer A + Engineer B do NOT collapse (A is
+// overseen by the reviewer, B by the juror/auditor — different signatures); a director + N identical
+// build workers (Build Swarm) DOES. Pure model (React-free) so it's unit-testable, canvas stays thin.
 import type { Org, Position, Relationship } from "./org";
 import type { Persona } from "@/features/personas";
 import { BUILTIN_PERSONAS } from "@/features/personas/lib/persona";
@@ -30,9 +29,22 @@ export interface Pool {
   count: number;
 }
 
-/** Detect the pools in an org: every `pooled` persona placed ≥2 times collapses into one pool node. Edge
- *  differences between members don't matter — `collapseOrg` aggregates them and the drill-in shows the
- *  per-instance detail. Deterministic (positions in author order). */
+/** The external relationship signature of a position: every edge to a node OUTSIDE `memberSet`, as a
+ *  sorted `dir|archetype|counterpart` string. Members with equal signatures are interchangeable; edges
+ *  among members (a peer mesh) are excluded. */
+function externalSignature(org: Org, nodeId: string, memberSet: Set<string>): string {
+  const parts: string[] = [];
+  for (const r of org.relationships) {
+    if (r.from === nodeId && !memberSet.has(r.to)) parts.push(`out|${r.archetype}|${r.to}`);
+    else if (r.to === nodeId && !memberSet.has(r.from)) parts.push(`in|${r.archetype}|${r.from}`);
+  }
+  return parts.sort().join("~");
+}
+
+/** Detect the HOMOGENEOUS pools: for each `pooled` persona placed ≥2×, collapse ONLY when every member
+ *  shares the same external relationship signature (truly interchangeable). Heterogeneous same-persona
+ *  positions — e.g. Fleet Alpha's two engineers, overseen by different reviewers — stay distinct.
+ *  Deterministic (positions in author order). */
 export function detectPools(org: Org, personas: Persona[]): Pool[] {
   const pooled = new Set(personas.filter(isPooled).map((p) => p.id));
   const byPersona = new Map<string, Position[]>();
@@ -44,6 +56,9 @@ export function detectPools(org: Org, personas: Persona[]): Pool[] {
   const pools: Pool[] = [];
   for (const [personaId, members] of byPersona) {
     if (members.length < 2) continue;
+    const memberSet = new Set(members.map((m) => m.nodeId));
+    const sig0 = externalSignature(org, members[0].nodeId, memberSet);
+    if (!members.every((m) => externalSignature(org, m.nodeId, memberSet) === sig0)) continue; // heterogeneous
     pools.push({ nodeId: `pool:${personaId}`, personaId, memberNodeIds: members.map((m) => m.nodeId), count: members.length });
   }
   return pools;
