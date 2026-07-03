@@ -9,7 +9,8 @@ export {
   positionDisplay, positionComms, tierChips, formColor, formArrow, hueColor, ROLE_META,
   type PositionDisplay, type CommSummary,
 } from "./lib/orgView";
-export { nodeBox, edgeGeometry, anchor, NODE_SIZE, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+export { nodeBox, edgeGeometry, anchor, autoLayout, clampZoom, NODE_SIZE, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+export { usePanZoom } from "./lib/usePanZoom";
 export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
