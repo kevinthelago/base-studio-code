@@ -35,20 +35,15 @@ describe("detectPools (#2199)", () => {
     expect(pools[0].memberNodeIds.sort()).toEqual(["w1", "w2", "w3"]);
   });
 
-  it("collapses same-persona positions even with DIFFERENT relationships, aggregating their edges", () => {
-    // w1 is overseen by a reviewer, w2/w3 are not — heterogeneous, but they still collapse; the pool
-    // inherits the UNION of the members' external edges (like Fleet Alpha's A→reviewer, B→auditor).
+  it("does NOT collapse when members have different external relationships (homogeneous-only)", () => {
+    // w1 overseen by a reviewer, w2/w3 not → heterogeneous external signatures, so they stay distinct
+    // (this is the Fleet-Alpha case: Engineer A→reviewer, Engineer B→auditor).
     const hetero: Org = {
       ...swarm,
       positions: [...swarm.positions, { nodeId: "reviewer", kind: "agent", personaId: "p-reviewer", x: 0, y: 0 }],
       relationships: [...swarm.relationships, { id: "ov", archetype: "oversees", from: "reviewer", to: "w1" }],
     };
-    const pools = detectPools(hetero, personas);
-    expect(pools).toHaveLength(1);
-    expect(pools[0].count).toBe(3);
-    const { org } = collapseOrg(hetero, pools);
-    const toPool = org.relationships.filter((r) => r.to === "pool:p-worker").map((r) => `${r.from}:${r.archetype}`).sort();
-    expect(toPool).toEqual(["director:manages", "reviewer:oversees"]); // union of both members' inbound edges
+    expect(detectPools(hetero, personas)).toHaveLength(0);
   });
 
   it("falls back to the packaged pooled flag when the store copy predates the field", () => {
