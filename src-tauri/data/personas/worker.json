@@ -6,6 +6,7 @@
   "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
   "startPrompt": "",
   "protocolFile": "fleet/worker-protocol.md",
+  "pooled": true,
   "skills": [],
   "responsibilities": [
     "Implement one assigned issue to spec in your own worktree",

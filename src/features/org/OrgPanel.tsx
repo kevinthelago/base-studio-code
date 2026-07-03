@@ -16,7 +16,9 @@ import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
 import { OrgInspector } from "./OrgInspector";
 import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
 import { autoLayout, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
+import "./org.css";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept). */
 const DEPT_ORDER = ["Leadership", "Engineering", "Quality", "Support", "Team", "Resource", "External"];
@@ -38,6 +40,8 @@ export function OrgPanel() {
   const [sel, setSel] = useState<Selection>({ type: "node", id: org?.positions[0]?.nodeId ?? "" });
   // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
   const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
+  // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph).
+  const [drill, setDrill] = useState<string | null>(null);
 
   const vp = useGraphViewport({ w: CANVAS_W, h: CANVAS_H }, { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5 });
   const scale = vp.view.scale;
@@ -48,6 +52,15 @@ export function OrgPanel() {
     else vp.fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  // Re-fit when drilling into / out of a pool (skip the very first run so it doesn't clobber the
+  // org-change zoom restore above).
+  const drilledOnce = useRef(false);
+  useEffect(() => {
+    if (!drilledOnce.current) { drilledOnce.current = true; return; }
+    vp.fit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drill]);
 
   // Persist zoom, debounced so a wheel-zoom gesture doesn't spam the store.
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -98,6 +111,19 @@ export function OrgPanel() {
     updateOrg(org.id, { positions: org.positions.map((p) => ({ ...p, ...layout[p.nodeId] })) });
   };
 
+  // Pools (#2199): homogeneous swarms of a `pooled` persona collapse to one stacked card. The canvas
+  // shows either the COLLAPSED parent graph, or — when a pool is open — that pool's OWN sub-graph.
+  const pools = detectPools(org, personas);
+  const activePool: Pool | null = drill ? pools.find((p) => p.nodeId === drill) ?? null : null;
+  const collapsed = collapseOrg(org, pools);
+  const view = activePool
+    ? { org: poolSubgraph(org, activePool), poolInfo: {} as Record<string, Pool> }
+    : collapsed;
+  const activePoolName = activePool ? positionDisplay({ nodeId: activePool.nodeId, kind: "agent", personaId: activePool.personaId }, personas).name : "";
+
+  const onDrillPool = (poolNodeId: string) => { setDrill(poolNodeId); setSel({ type: "node", id: "" }); };
+  const exitPool = () => { setDrill(null); setSel({ type: "node", id: "" }); };
+
   // Left rail: positions grouped by department, in canonical order.
   const byDept = new Map<string, typeof org.positions>();
   for (const p of org.positions) {
@@ -120,14 +146,22 @@ export function OrgPanel() {
             <Box style={{ width: 22, height: 22, borderRadius: 6, background: "var(--bg-soft)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)" }}>◆</Box>
             {orgs.length > 1 ? (
               // eslint-disable-next-line no-restricted-syntax -- compact inline org switch; a full Field is overkill in the toolbar
-              <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setSel({ type: "node", id: orgs.find((o) => o.id === e.target.value)!.positions[0]?.nodeId ?? "" }); }}
+              <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setDrill(null); setSel({ type: "node", id: orgs.find((o) => o.id === e.target.value)!.positions[0]?.nodeId ?? "" }); }}
                 className="input" style={{ fontWeight: 600, fontSize: 14, background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}>
                 {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             ) : (
               <Text as="span" weight={600} size={14}>{org.name}</Text>
             )}
-            <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions</Text>
+            {activePool ? (
+              <>
+                <Text as="span" tone="dim" style={{ margin: "0 1px" }}>▸</Text>
+                <Text as="span" mono size={11} weight={600}>{activePoolName} pool · ×{activePool.count}</Text>
+                <Button variant="ghost" onClick={exitPool}>← back</Button>
+              </>
+            ) : (
+              <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions</Text>
+            )}
           </Row>
           <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
           <Row gap={10} align="center" style={{ minWidth: 0 }}>
@@ -188,12 +222,16 @@ export function OrgPanel() {
         />
       }
     >
-      <OrgCanvas
-        org={org} personas={personas} sel={sel} scale={scale} gridOn connecting={!!connect}
-        dragMoved={vp.dragMoved}
-        onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
-        onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
-      />
+      {/* keyed so drilling in/out remounts + replays the transition animation (org.css) */}
+      <Box key={drill ?? "__root__"} className="org-drill-anim" style={{ position: "absolute", inset: 0 }}>
+        <OrgCanvas
+          org={view.org} personas={personas} sel={sel} scale={scale} gridOn connecting={!!connect}
+          dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
+          onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
+          onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
+          onDrillPool={onDrillPool}
+        />
+      </Box>
     </GraphCanvas>
   );
 }
