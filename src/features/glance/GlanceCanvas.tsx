@@ -62,14 +62,14 @@ export function GlanceCanvas(p: CanvasProps) {
         const selected = p.selNodeId === n.id;
         const inFocus = focus ? focus.nodes.has(n.id) : true;
         const isCycle = model.cycleNodeIds.has(n.id);
-        const border = selected ? role : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        const border = selected ? "var(--accent)" : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
         return (
           <Box key={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
               zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
-            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`, borderLeft: `3px solid ${role}`,
+            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-              boxShadow: selected ? `0 0 0 1px ${role}, 0 10px 30px -8px ${role}` : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
+              boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
               <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Box style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, flex: "none",
                   boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none", animation: st.pulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
