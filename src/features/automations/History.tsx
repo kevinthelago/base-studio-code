@@ -1,8 +1,8 @@
 import { useAppStore } from "@/store";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { RunStatus } from "./lib/scheduler";
 import { fmtStamp } from "./format";
 
@@ -46,11 +46,15 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
     </Box>
   );
 
+  // The runs are read straight from the store (instant, no async load), so there's no loading skeleton
+  // here — a compact empty state replaces the bare "No runs yet" text when nothing has run (#2247).
   if (rows.length === 0) {
     return (
-      <Row justify="center" className="mono" style={{ flex: 1, color: "var(--fg-dim)", fontSize: 12 }}>
-        No runs yet — armed automations record their runs here.
-      </Row>
+      <EmptyState
+        icon="◷" iconVariant="dashed"
+        title="No runs yet"
+        description="Armed automations record every run here — when it fired, its target, and the outcome."
+      />
     );
   }
 
