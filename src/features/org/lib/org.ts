@@ -49,6 +49,8 @@ export interface RelationshipArchetype {
   forward: string[];
   /** Form ids flowing to → from. */
   backward: string[];
+  /** A symmetric relationship (peer/consult) — the canvas draws a double-headed arrow. */
+  bidirectional?: boolean;
   blurb: string;
 }
 
@@ -77,6 +79,8 @@ export interface Relationship {
   archetype: string;
   from: string;
   to: string;
+  /** Optional curvature (px) for the canvas edge, to fan parallel edges apart. */
+  bow?: number;
 }
 
 /** An org — a named composition of positions wired by relationships (like a blueprint composes stages).

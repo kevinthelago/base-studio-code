@@ -35,6 +35,8 @@ export interface OrgSlice {
   removePosition: (orgId: string, nodeId: string) => void;
   /** Add a relationship edge to an org. */
   addRelationship: (orgId: string, relationship: Relationship) => void;
+  /** Patch a relationship (e.g. change its archetype) by id. */
+  updateRelationship: (orgId: string, relationshipId: string, patch: Partial<Omit<Relationship, "id">>) => void;
   /** Remove a relationship by id. */
   removeRelationship: (orgId: string, relationshipId: string) => void;
 }
@@ -123,6 +125,12 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
 
     addRelationship: (orgId, relationship) =>
       mutate(orgId, (o) => ({ ...o, relationships: [...o.relationships, relationship] })),
+
+    updateRelationship: (orgId, relationshipId, patch) =>
+      mutate(orgId, (o) => ({
+        ...o,
+        relationships: o.relationships.map((r) => (r.id === relationshipId ? { ...r, ...patch, id: r.id } : r)),
+      })),
 
     removeRelationship: (orgId, relationshipId) =>
       mutate(orgId, (o) => ({ ...o, relationships: o.relationships.filter((r) => r.id !== relationshipId) })),
