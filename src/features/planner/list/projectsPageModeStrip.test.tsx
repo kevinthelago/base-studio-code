@@ -4,9 +4,10 @@ import { PROJECT_MODES } from "./projectModes";
 // #548 / #1876: the Projects page modes — formerly the `ProjectsPageModeStrip`, now the data behind
 // the shared <Screen> tab bar (`PROJECT_MODES`, rendered in features/planner/index.tsx).
 describe("Projects page modes (#548, #1876)", () => {
-  it("offers Planner · Fleet in that order", () => {
+  it("offers Projects · Fleet · Personas · Org in that order", () => {
     // The Data Models page was archived with the data-platform panes (5def26b7, v1.0.5 prep).
-    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Fleet", "Personas"]);
+    // Org (#2193) is the persona-relationship graph, added after Personas.
+    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Fleet", "Personas", "Org"]);
   });
 
   it("does not include the retired Blueprints / Summary / Data Models modes", () => {

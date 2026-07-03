@@ -6,5 +6,10 @@
   "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
   "startPrompt": "",
   "protocolFile": "fleet/worker-protocol.md",
-  "skills": []
+  "skills": [],
+  "responsibilities": [
+    "Implement one assigned issue to spec in your own worktree",
+    "Open a PR and keep working through your owned issues",
+    "Escalate blockers to the director; never merge or close your own PR"
+  ]
 }

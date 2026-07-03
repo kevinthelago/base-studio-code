@@ -1,0 +1,17 @@
+[package]
+name = "bsc-org"
+version = "0.1.0"
+edition = "2021"
+description = "User org store (file CRUD over ~/.base-studio-code/orgs/) for base-studio-code (#2193) — the persona-relationship graph: positions connected by relationship archetypes that expand into communication forms. A thin org-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's org bridge and the session-facing `bsc org` CLI."
+
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_org` crate name.
+[lib]
+name = "bsc_org"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
+# org-specific nouns + lean `list` fields via a CliSpec.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
+bsc-cli-util = { path = "../bsc-cli-util" }

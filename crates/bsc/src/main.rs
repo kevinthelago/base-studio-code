@@ -17,6 +17,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("compliance", "compliance standards corpus"),
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
+    ("org", "user org store: persona-relationship graph (positions + relationships)"),
     ("logs", "unified logs + perf + cost (read-only)"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
@@ -48,6 +49,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        "org" => bsc_org::cli::run(rest, "bsc org"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         #[cfg(feature = "data")]

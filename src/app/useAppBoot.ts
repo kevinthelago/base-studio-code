@@ -58,6 +58,10 @@ export function useAppBoot() {
     // Personas tab, live sessions, and the planner share ONE library. Reconciles the packaged
     // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
     void useAppStore.getState().hydratePersonas();
+    // Org library (#2193): hydrate the persona-relationship graph from the global org store (`bsc org`)
+    // so the desktop Org tab, live sessions, and the planner share ONE library. Reconciles the packaged
+    // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
+    void useAppStore.getState().hydrateOrgs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

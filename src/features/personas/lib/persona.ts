@@ -27,6 +27,10 @@ export interface Persona {
   startPrompt: string;
   /** Attached skill ids (the Skills library, #636) written into the session's .claude/skills/. */
   skills: string[];
+  /** The position's charter — what it is accountable for (#2193). One facet of the org abstraction,
+   *  orthogonal to skills (capability) and role (permission); optional, so pre-#2193 personas are
+   *  unaffected. Feeds the generated start prompt + the Org designer's position inspector. */
+  responsibilities?: string[];
   /** Default model id for this persona (empty = the session/global default). */
   model?: string;
   /** A packaged persona: seeded from code, restored on refresh. Can be cloned + edited (edits persist
