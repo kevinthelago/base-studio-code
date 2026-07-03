@@ -12,6 +12,7 @@ export const SettingsWorkspace    = lazy(() => import("@/features/settings").the
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
 export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
 export const AgentsWorkspace      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsWorkspace })));
+export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {
