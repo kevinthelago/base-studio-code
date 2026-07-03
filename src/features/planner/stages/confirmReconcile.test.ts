@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileConfirmations, stagesToBackfill, type ConfirmRow, type SectionState } from "./confirmReconcile";
+import { reconcileConfirmations, reconcileSkips, stagesToBackfill, type ConfirmRow, type SectionState } from "./confirmReconcile";
 import { hashString } from "@/shared/lib/core/hashString";
 
 const row = (stage: string, content: string): ConfirmRow => ({ stage, fingerprint: hashString(content) });
@@ -76,5 +76,32 @@ describe("stagesToBackfill (#2259)", () => {
   it("returns nothing before any section content has loaded", () => {
     expect(stagesToBackfill(secs({ goal: "pending" }), new Set())).toEqual([]);
     expect(stagesToBackfill([], new Set())).toEqual([]);
+  });
+});
+
+describe("reconcileSkips (#2267)", () => {
+  it("rehydrates durable skips missing from the store", () => {
+    const r = reconcileSkips(["api", "security"], new Set(), false);
+    expect(r.rehydrate.sort()).toEqual(["api", "security"]);
+    expect(r.migrate).toEqual([]);
+  });
+
+  it("does not re-rehydrate a skip already in the store", () => {
+    const r = reconcileSkips(["api"], new Set(["api"]), false);
+    expect(r.rehydrate).toEqual([]);
+  });
+
+  it("forward-migrates app-state-only skips when plan.db has none", () => {
+    const r = reconcileSkips([], new Set(["api", "security"]), false);
+    expect(r.migrate.sort()).toEqual(["api", "security"]);
+    expect(r.rehydrate).toEqual([]);
+  });
+
+  it("does not re-migrate once migrated (guard)", () => {
+    expect(reconcileSkips([], new Set(["api"]), true).migrate).toEqual([]);
+  });
+
+  it("no-ops cleanly when plan.db and the store are both empty", () => {
+    expect(reconcileSkips([], new Set(), false)).toEqual({ rehydrate: [], migrate: [] });
   });
 });
