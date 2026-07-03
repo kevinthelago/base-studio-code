@@ -84,7 +84,12 @@ export function OrgPanel() {
 
   const addNode = () => {
     const nodeId = `pos-${Date.now().toString(36)}`;
-    addPosition(org.id, { nodeId, kind: "agent", personaId: personas[0]?.id, x: 480, y: 320 });
+    // Drop the new node into clear space below the current graph so it never lands on top of another;
+    // the user can then wire it up and hit "Auto organize" to let the layout re-settle everything.
+    const maxY = org.positions.reduce((m, p) => Math.max(m, p.y ?? 0), 0);
+    const x = 60 + (org.positions.length % 4) * 220;
+    const y = org.positions.length ? maxY + 150 : 48;
+    addPosition(org.id, { nodeId, kind: "agent", personaId: personas[0]?.id, x, y });
     setSel({ type: "node", id: nodeId });
   };
 

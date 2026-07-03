@@ -4,14 +4,14 @@
   "name": "Fleet Alpha",
   "blurb": "The standard director-led build fleet: a manager coordinating engineers, with intake, review, and audit.",
   "positions": [
-    { "nodeId": "director",  "kind": "agent",    "personaId": "persona-director", "x": 466, "y": 44 },
-    { "nodeId": "worker-a",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer A", "x": 816, "y": 200 },
-    { "nodeId": "worker-b",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer B", "x": 816, "y": 436 },
-    { "nodeId": "reviewer",  "kind": "agent",    "personaId": "persona-reviewer", "x": 462, "y": 298 },
-    { "nodeId": "auditor",   "kind": "agent",    "personaId": "persona-juror",    "label": "Auditor",  "x": 462, "y": 522 },
-    { "nodeId": "intake",    "kind": "agent",    "personaId": "persona-issuer",   "x": 244, "y": 330 },
-    { "nodeId": "commons",   "kind": "resource",                                  "label": "Commons",  "x": 244, "y": 548 },
-    { "nodeId": "customer",  "kind": "external",                                  "label": "Customer", "x": 24,  "y": 340 }
+    { "nodeId": "director",  "kind": "agent",    "personaId": "persona-director", "x": 393, "y": 48 },
+    { "nodeId": "worker-a",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer A", "x": 60,  "y": 248 },
+    { "nodeId": "worker-b",  "kind": "agent",    "personaId": "persona-worker",   "label": "Engineer B", "x": 692, "y": 248 },
+    { "nodeId": "reviewer",  "kind": "agent",    "personaId": "persona-reviewer", "x": 171, "y": 48 },
+    { "nodeId": "auditor",   "kind": "agent",    "personaId": "persona-juror",    "label": "Auditor",  "x": 788, "y": 48 },
+    { "nodeId": "intake",    "kind": "agent",    "personaId": "persona-issuer",   "x": 282, "y": 248 },
+    { "nodeId": "commons",   "kind": "resource",                                  "label": "Commons",  "x": 504, "y": 255 },
+    { "nodeId": "customer",  "kind": "external",                                  "label": "Customer", "x": 424, "y": 456 }
   ],
   "relationships": [
     { "id": "r-mgr-a",   "archetype": "manages",  "from": "director", "to": "worker-a", "bow": -22 },
