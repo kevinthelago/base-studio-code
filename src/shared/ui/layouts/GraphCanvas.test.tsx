@@ -60,6 +60,29 @@ describe("GraphCanvas (#2208)", () => {
     expect(screen.queryByText("RAIL")).toBeNull();
     expect(screen.queryByText("INSPECTOR")).toBeNull();
   });
+
+  it("renders drag-resize splitters when the rail/inspector are resizable", () => {
+    const { container } = render(
+      <GraphCanvas
+        vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null}
+        rail={<span>RAIL</span>} inspector={<span>INSPECTOR</span>}
+        railResizable inspectorResizable
+      >
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    // one splitter after the rail + one before the inspector
+    expect(container.querySelectorAll(".resize-x")).toHaveLength(2);
+  });
+
+  it("has no splitters when the sides are fixed-width (default)", () => {
+    const { container } = render(
+      <GraphCanvas vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null} rail={<span>RAIL</span>}>
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    expect(container.querySelectorAll(".resize-x")).toHaveLength(0);
+  });
 });
 
 describe("ZoomControls (#2208)", () => {

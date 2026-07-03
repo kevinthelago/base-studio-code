@@ -8,7 +8,6 @@ import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { Fleet } from "./fleet/Fleet";
-import { PersonasPanel } from "@/features/personas";
 import { OrgPanel } from "@/features/org";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
@@ -78,16 +77,8 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
         </Stack>
       )}
 
-      {/* Personas — the CRUD-able agent-identity library (#2094). Mounts on demand. Torn-off section
-          windows never force this mode (it's authoring, not a live PTY). */}
-      {mode === "personas" && !pageOverride && (
-        <Stack style={{ flex: 1, minHeight: 0 }}>
-          <PersonasPanel />
-        </Stack>
-      )}
-
-      {/* Org — the persona-relationship graph (#2193). Authoring, not a live PTY, so torn-off windows
-          never force this mode. Mounts on demand. */}
+      {/* Org — the persona-relationship graph (#2193); also the persona editor (the Personas tab was
+          folded in here, #2199). Authoring, not a live PTY, so torn-off windows never force this mode. */}
       {mode === "org" && !pageOverride && (
         <Stack style={{ flex: 1, minHeight: 0 }}>
           <OrgPanel />

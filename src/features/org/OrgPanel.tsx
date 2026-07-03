@@ -140,6 +140,8 @@ export function OrgPanel() {
       vp={vp}
       world={{ w: CANVAS_W, h: CANVAS_H }}
       overlays={<OrgLegend />}
+      railResizable railWidth={260} railMin={200} railMax={420}
+      inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}
       toolbar={
         <>
           <Row gap={9} align="center">
@@ -184,7 +186,7 @@ export function OrgPanel() {
         </>
       }
       rail={
-        <Stack gap={0} style={{ width: 260, minWidth: 260, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
+        <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
           <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
             <Text as="span" className="ulabel" tone="dim" size={9.5}>Positions</Text>
             <Button variant="ghost" onClick={addNode}>＋ new</Button>

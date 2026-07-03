@@ -29,7 +29,8 @@ interface InspectorProps {
   onChangeLabel: (nodeId: string, label: string) => void;
 }
 
-const PANEL: React.CSSProperties = { width: 344, minWidth: 344, borderLeft: "1px solid var(--border-soft)", overflowY: "auto" };
+// Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
+const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, borderLeft: "1px solid var(--border-soft)", overflowY: "auto" };
 const BLOCK: React.CSSProperties = { padding: "15px 17px", borderBottom: "1px solid var(--border-soft)" };
 
 export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel }: InspectorProps) {
