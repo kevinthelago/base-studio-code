@@ -1,0 +1,4 @@
+/* Glance (#2206) — the few keyframes the project-network canvas needs (inline styles can't declare
+   @keyframes). Scoped by animation-name; no global element rules. */
+@keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
+@keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
