@@ -16,6 +16,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TextField, SelectField } from "@/shared/ui/controls/Field";
+import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import type { Persona } from "./lib/persona";
 
 const ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];
@@ -100,6 +101,15 @@ export function PersonaEditor({ persona, compact = false }: { persona: Persona; 
         {MODEL_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
         {persona.model && !(MODEL_IDS as string[]).includes(persona.model) && <option value={persona.model}>{persona.model} (custom)</option>}
       </SelectField>
+
+      {/* pooled — a swarm of interchangeable instances; collapses to one stacked card in the Org designer */}
+      <Row gap={9} align="start" onClick={() => updatePersona(persona.id, { pooled: !persona.pooled })} style={{ cursor: "pointer" }}>
+        <Box style={{ marginTop: 1 }}><Checkbox checked={!!persona.pooled} aria-label="pooled persona" /></Box>
+        <Box style={{ minWidth: 0 }}>
+          <Text as="div" size={12.5} weight={500}>Pooled — a swarm of interchangeable instances</Text>
+          <Text as="div" size={10.5} tone="dim" style={{ marginTop: 2 }}>Identical instances of this persona collapse into one stacked card in the Org designer; drill in to see the pool.</Text>
+        </Box>
+      </Row>
 
       <Box>
         <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 6 }}>attached skills · {persona.skills.length}</Text>

@@ -1,0 +1,22 @@
+{
+  "id": "org-swarm",
+  "order": 2,
+  "name": "Build Swarm",
+  "blurb": "A director driving a pool of interchangeable build workers — the homogeneous pool collapses to one stacked card; drill in to see the swarm.",
+  "positions": [
+    { "nodeId": "director", "kind": "agent", "personaId": "persona-director", "x": 470, "y": 60 },
+    { "nodeId": "w1", "kind": "agent", "personaId": "persona-worker", "label": "Worker 1", "x": 100, "y": 360 },
+    { "nodeId": "w2", "kind": "agent", "personaId": "persona-worker", "label": "Worker 2", "x": 360, "y": 360 },
+    { "nodeId": "w3", "kind": "agent", "personaId": "persona-worker", "label": "Worker 3", "x": 620, "y": 360 },
+    { "nodeId": "w4", "kind": "agent", "personaId": "persona-worker", "label": "Worker 4", "x": 880, "y": 360 }
+  ],
+  "relationships": [
+    { "id": "s-mgr-1", "archetype": "manages", "from": "director", "to": "w1" },
+    { "id": "s-mgr-2", "archetype": "manages", "from": "director", "to": "w2" },
+    { "id": "s-mgr-3", "archetype": "manages", "from": "director", "to": "w3" },
+    { "id": "s-mgr-4", "archetype": "manages", "from": "director", "to": "w4" },
+    { "id": "s-peer-12", "archetype": "peers", "from": "w1", "to": "w2", "bow": -28 },
+    { "id": "s-peer-23", "archetype": "peers", "from": "w2", "to": "w3", "bow": -28 },
+    { "id": "s-peer-34", "archetype": "peers", "from": "w3", "to": "w4", "bow": -28 }
+  ]
+}

@@ -29,7 +29,7 @@ export async function loadPersonas(): Promise<Persona[] | null> {
       .map((p) => ({
         id: p.id, name: p.name ?? "Untitled", blurb: p.blurb ?? "",
         role: p.role ?? "reviewer", startPrompt: p.startPrompt ?? "", skills: p.skills ?? [],
-        model: p.model, builtin: p.builtin,
+        responsibilities: p.responsibilities, model: p.model, pooled: p.pooled, builtin: p.builtin,
       }));
   } catch {
     return null;
