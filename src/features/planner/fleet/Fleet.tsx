@@ -21,6 +21,7 @@ import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "./useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
 import { CostEnergy } from "./CostEnergy";
+import { FleetHealth } from "./FleetHealth";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
 
@@ -249,6 +250,7 @@ export function Fleet() {
         <Grid cols="1.6fr 1fr" gap={14}>
           <Stack gap={14} style={{ minWidth: 0 }}>
             <WorkerBoard workers={workers} onOpen={setSelected} />
+            <FleetHealth workers={workers} />
             <Throughput gh={gh} />
             <TimeToLand gh={gh} />
           </Stack>
