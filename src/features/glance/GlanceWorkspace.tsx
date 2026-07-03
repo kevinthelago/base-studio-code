@@ -118,6 +118,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       overlays={<GlanceOverlays />}
       railResizable railWidth={266} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={340} inspectorMin={280} inspectorMax={520}
+      // Click the empty canvas → clear the selection + any cycle highlight (#2232).
+      onBackgroundClick={() => { setSel(null); setShowCycle(false); }}
       toolbar={
         <>
           <Row gap={9} align="baseline">
