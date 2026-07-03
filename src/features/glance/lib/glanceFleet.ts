@@ -3,8 +3,62 @@
 // wired by coordination edges), so the drill reads as one recursive graph zooming in. The topology is a
 // deterministic SAMPLE per project until a real per-project fleet-plan feed lands (mirrors glanceData's
 // sample project topology) — isolated here so wiring the real fleet later is a drop-in.
-import type { GRawNode, GRawEdge } from "./glanceGraph";
+import type { GRawNode, GRawEdge, GRole, GEdgeKind } from "./glanceGraph";
 import type { GlanceData, ProjectLite } from "./glanceData";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
+import type { Persona } from "@/features/personas";
+
+/** Session-role → Glance node-role palette: the director/planner are the infra hub, workers are
+ *  services, the quality roles (reviewer/tester/juror) are data, intake roles are clients. */
+const ROLE_TO_GROLE: Record<string, GRole> = {
+  director: "infra", planner: "infra",
+  worker: "service",
+  reviewer: "data", tester: "data", juror: "data",
+  issuer: "client", triage: "client",
+};
+const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
+
+/** Fleet coordination edge kind → Glance edge kind (contract "surface"). */
+const KIND_TO_GKIND: Record<string, GEdgeKind> = {
+  handoff: "api", blocking: "data", sequence: "api", review: "data", notify: "events", shared: "events", mutex: "data",
+};
+
+/** Build a project's REAL fleet as a Glance graph from its {@link FleetPlan}: streams → nodes (role via
+ *  their persona), an optional director hub, and the typed coordination edges + plain `dependsOn` → the
+ *  dependency edges. Direction: a fleet edge runs producer→consumer, so the CONSUMER depends on the
+ *  producer (the Glance "from depends on to" convention). Returns `sample:false`. */
+export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
+  const roleOf = new Map(personas.map((p) => [p.id, p.role]));
+  const rawNodes: GRawNode[] = fleet.streams.map((s) => ({
+    id: s.id,
+    slug: s.name || s.id,
+    role: gRole(s.persona ? roleOf.get(s.persona) : "worker"),
+    status: "planning",
+  }));
+  const ids = new Set(rawNodes.map((n) => n.id));
+  const rawEdges: GRawEdge[] = [];
+  const seen = new Set<string>();
+  const add = (from: string, to: string, kind: GEdgeKind) => {
+    if (from === to || !ids.has(from) || !ids.has(to)) return;
+    const k = `${from}|${to}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    rawEdges.push({ from, to, kind });
+  };
+
+  // director hub — every stream depends on its direction (drawn as the foundational node)
+  if (fleet.director?.enabled && !ids.has("director")) {
+    rawNodes.push({ id: "director", slug: "director", role: "infra", status: "building" });
+    ids.add("director");
+    for (const s of fleet.streams) add(s.id, "director", "api");
+  }
+  // typed relationship edges — producer→consumer becomes consumer-depends-on-producer
+  for (const e of fleet.edges ?? []) add(e.to, e.from, KIND_TO_GKIND[e.kind] ?? "api");
+  // plain dependsOn sequencing
+  for (const s of fleet.streams) for (const dep of s.dependsOn) add(s.id, dep, "api");
+
+  return { rawNodes, rawEdges, sample: false };
+}
 
 /** Stable small hash → non-negative int (deterministic worker count / status). */
 function hash(s: string): number {
