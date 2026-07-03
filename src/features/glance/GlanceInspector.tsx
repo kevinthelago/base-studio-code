@@ -9,7 +9,8 @@ import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { ROLE_COLOR, STATUS_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
 
-const PANEL: React.CSSProperties = { width: 340, flex: "none", background: "var(--bg-elev)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", zIndex: 15 };
+// Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
+const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, background: "var(--bg-elev)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", zIndex: 15 };
 const CARD: React.CSSProperties = { flex: 1, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" };
 const LABEL = (t: string) => <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", margin: "20px 0 9px" }}>{t}</Text>;
 const CYCLE_BG = "rgba(242,85,95,.08)", CYCLE_BD = "rgba(242,85,95,.28)";
