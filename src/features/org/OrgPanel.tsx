@@ -142,6 +142,8 @@ export function OrgPanel() {
       overlays={<OrgLegend />}
       railResizable railWidth={260} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}
+      // Click the empty canvas → clear the selection (the empty sentinel; inspector empties, no dimming).
+      onBackgroundClick={() => setSel({ type: "node", id: "" })}
       toolbar={
         <>
           <Row gap={9} align="center">
