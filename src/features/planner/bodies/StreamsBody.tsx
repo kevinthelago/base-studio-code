@@ -2,15 +2,15 @@
 // dependency graph. The graph IS the fleet: every node is a stream, and because a stream and its
 // worker are 1:1, selecting a node opens its inspector below — a stack of collapsible cards
 // (Persona · Kickoff · Scope · Model & flow, #2189) rather than one dense card. Fleet-wide controls
-// (Coordination, Shared dependencies) sit below as secondary collapsible cards. (Replaced the graph +
-// always-open Fleet-roster + Coordination-card stack, which listed each stream twice.)
+// Coordination sits below as a secondary collapsible card; the focused stream's shared-dependency
+// slice now lives inside its inspector (#2191). (Replaced the graph + always-open Fleet-roster +
+// Coordination-card stack, which listed each stream twice.)
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
 import { type RelFocus, type Topology } from "@/features/planner/relationship/relationshipGraph";
 import { StreamFocusCards } from "./StreamFocusCards";
 import { PlanBody } from "./FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
-import { SharedDependenciesSection } from "./SharedDependencies";
 import { CollapsibleCard } from "./collapsibleCard";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -39,8 +39,16 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
         </Box>
       ) : focusedAgent ? (
         // The focused stream (1:1 with its worker) as a collapsible-card stack — persona · kickoff ·
-        // scope · model & flow.
-        <StreamFocusCards a={focusedAgent} onFlow={handlers.onFlow} onModel={handlers.onModel} onPersona={handlers.onPersona} />
+        // scope · shared deps · model & flow.
+        <StreamFocusCards
+          a={focusedAgent}
+          agents={agents}
+          dependencies={data?.dependencies}
+          registries={data?.registries}
+          onFlow={handlers.onFlow}
+          onModel={handlers.onModel}
+          onPersona={handlers.onPersona}
+        />
       ) : (
         <Text as="div" mono size={10} tone="dim" style={{ marginTop: 14, textAlign: "center", padding: "14px 0" }}>
           Select a stream in the graph to see its persona, kickoff &amp; config.
@@ -49,12 +57,10 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
 
       {fleet && agents.length > 0 && (
         <Stack gap={10} style={{ marginTop: 14 }}>
-          {/* Fleet-wide controls — secondary to the graph, collapsible. */}
+          {/* Fleet-wide controls — secondary to the graph, collapsible. (Shared dependencies moved
+              into the focused stream's inspector, #2191.) */}
           <CollapsibleCard title="Coordination" icon="◎" hint={topology}>
             <CoordinationControls data={data} onTopology={handlers.onTopology} onDirectorDrive={handlers.onDirectorDrive} />
-          </CollapsibleCard>
-          <CollapsibleCard title="Shared dependencies" icon="⇄" hint="repos 2+ streams build">
-            <SharedDependenciesSection agents={data?.agents} dependencies={data?.dependencies} registries={data?.registries} />
           </CollapsibleCard>
         </Stack>
       )}

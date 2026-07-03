@@ -8,6 +8,8 @@ import { useState } from "react";
 import type { Flow, Agent } from "@/features/planner/pane/projectPaneData";
 import { type ModelId, modelTier, tierToModelId } from "@/app/console/lib/models";
 import { CollapsibleCard } from "./collapsibleCard";
+import { StreamSharedDeps } from "./SharedDependencies";
+import type { PlanDependency, DependencyRegistry } from "@/features/planner/issues/dependencies";
 import { RoleChip, Seg } from "@/features/planner/pane/focusedPrimitives";
 import { PersonaSummary } from "@/features/personas";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -19,8 +21,12 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { useAppStore } from "@/store";
 
-export function StreamFocusCards({ a, onFlow, onModel, onPersona }: {
+export function StreamFocusCards({ a, agents, dependencies, registries, onFlow, onModel, onPersona }: {
   a: Agent;
+  /** The whole fleet — used to compute the focused stream's shared-dependency slice (#2191). */
+  agents?: Agent[];
+  dependencies?: PlanDependency[];
+  registries?: Record<string, DependencyRegistry>;
   onFlow?: (streamId: string, flow: Flow) => void;
   onModel?: (streamId: string, model: ModelId | undefined) => void;
   onPersona?: (streamId: string, personaId: string | undefined) => void;
@@ -105,6 +111,14 @@ export function StreamFocusCards({ a, onFlow, onModel, onPersona }: {
           {a.issues.map((i) => <Text as="span" key={i} tone="accent">{i}</Text>)}
         </Row>
       </CollapsibleCard>
+
+      {/* SHARED DEPENDENCIES — this stream's slice: is its repo shared, with whom, and the deps it
+          declares. Only meaningful with a fleet of 2+ streams (sharing is impossible with one). */}
+      {(agents?.length ?? 0) >= 2 && (
+        <CollapsibleCard title="Shared dependencies" icon="⇄">
+          <StreamSharedDeps a={a} agents={agents} dependencies={dependencies} registries={registries} />
+        </CollapsibleCard>
+      )}
 
       {/* MODEL & FLOW — the per-stream launch knobs. */}
       <CollapsibleCard

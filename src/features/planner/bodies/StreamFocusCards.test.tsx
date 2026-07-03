@@ -82,4 +82,13 @@ describe("StreamFocusCards (#2189)", () => {
     fireEvent.click(screen.getByText("checkpoint"));
     expect(onFlow).toHaveBeenCalledWith("api", expect.objectContaining({ autonomy: "checkpoint" }));
   });
+
+  it("adds a Shared dependencies card only with a fleet of 2+ streams (#2191)", () => {
+    // Single stream → sharing is impossible → no card.
+    const { rerender } = render(<StreamFocusCards a={agent()} agents={[agent()]} />);
+    expect(screen.queryByText("Shared dependencies")).toBeNull();
+    // 2+ streams → the card appears (its body computes this stream's slice).
+    rerender(<StreamFocusCards a={agent()} agents={[agent(), agent({ id: "ui", name: "@ui" })]} />);
+    expect(screen.getByText("Shared dependencies")).toBeInTheDocument();
+  });
 });
