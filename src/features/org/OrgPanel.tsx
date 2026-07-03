@@ -1,155 +1,166 @@
-// Org panel (#2193) — the substrate view of the persona-relationship graph, mounted as the Org tab of
-// the Planner workspace. Left: the org list (built-ins + user orgs). Right: the selected org's
-// positions, each with its AUTO-DERIVED communication surface (the generate-from-facets payoff), plus
-// the relationship list. This is a functional list-based view; the rich draggable canvas designer
-// lands separately and replaces the body here — the store/bridge/vocabulary underneath are the durable
-// substrate it plugs into.
-import { useState } from "react";
+// Org designer (#2193) — the persona-relationship graph, mounted as the Org tab of the Planner
+// workspace. Toolbar (org switch + relationship palette + zoom) · left rail (positions by department) ·
+// canvas (the graph) · inspector (position/relationship). Ported from the Claude Design prototype onto
+// the app's shared kit + tokens, driven by the real `org`/`persona`/`skill` stores. Pure model +
+// geometry live in lib/*; canvas + inspector are their own components.
+import { useEffect, useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
-import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
-import { Card } from "@/shared/ui/data/Card";
-import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
-import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
-import {
-  archetypeById, deriveCommunication, type Org, type Position,
-} from "./lib/org";
-import type { Persona } from "@/features/personas";
+import { IconButton } from "@/shared/ui/controls/IconButton";
+import { OrgCanvas, type Selection } from "./OrgCanvas";
+import { OrgInspector } from "./OrgInspector";
+import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
+import { CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { positionDisplay, hueColor } from "./lib/orgView";
 
-/** The display name for a position node: explicit label, else its persona's name, else the node id. */
-function positionName(pos: Position, personas: Persona[]): string {
-  if (pos.label) return pos.label;
-  if (pos.personaId) return personas.find((p) => p.id === pos.personaId)?.name ?? pos.personaId;
-  return pos.nodeId;
-}
-
-/** One position card: its name + kind + the forms flowing in/out, derived from the org's edges. */
-function PositionCard({ org, pos, personas }: { org: Org; pos: Position; personas: Persona[] }) {
-  const comms = deriveCommunication(org, pos.nodeId);
-  const out = comms.filter((c) => c.dir === "out");
-  const incoming = comms.filter((c) => c.dir === "in");
-  return (
-    <Card style={{ padding: "10px 12px" }}>
-      <Row align="center" gap={7}>
-        <Text as="div" weight={600} size={12.5} style={{ flex: 1, minWidth: 0 }}>{positionName(pos, personas)}</Text>
-        <Chip style={{ color: "var(--fg-dim)" }}>{pos.kind}</Chip>
-      </Row>
-      <Stack gap={4} style={{ marginTop: 8 }}>
-        <CommLane label="sends" edges={out} personas={personas} org={org} />
-        <CommLane label="receives" edges={incoming} personas={personas} org={org} />
-      </Stack>
-    </Card>
-  );
-}
-
-function CommLane(
-  { label, edges, personas, org }:
-  { label: string; edges: ReturnType<typeof deriveCommunication>; personas: Persona[]; org: Org },
-) {
-  if (edges.length === 0) return <Text as="div" size={10} tone="dim">{label}: —</Text>;
-  return (
-    <Box>
-      <Text as="div" className="ulabel" tone="dim" size={9}>{label}</Text>
-      <Row gap={5} wrap style={{ marginTop: 3 }}>
-        {edges.map((e, i) => {
-          const other = org.positions.find((p) => p.nodeId === e.withNode);
-          const otherName = other ? positionName(other, personas) : e.withNode;
-          return (
-            <Chip key={`${e.form.id}-${e.withNode}-${i}`} color={e.form.authority ? "var(--accent)" : "var(--info)"}>
-              {e.form.label} {e.dir === "out" ? "→" : "←"} {otherName}{e.form.blocks ? " ⚡" : ""}
-            </Chip>
-          );
-        })}
-      </Row>
-    </Box>
-  );
-}
+/** Department display order in the left rail (positionDisplay assigns each a dept). */
+const DEPT_ORDER = ["Leadership", "Engineering", "Quality", "Support", "Team", "Resource", "External"];
 
 export function OrgPanel() {
   const orgs = useAppStore((s) => s.orgs);
   const personas = useAppStore((s) => s.personas);
+  const skills = useAppStore((s) => s.skills);
   const addOrg = useAppStore((s) => s.addOrg);
-  const cloneOrg = useAppStore((s) => s.cloneOrg);
-  const removeOrg = useAppStore((s) => s.removeOrg);
+  const addRelationship = useAppStore((s) => s.addRelationship);
+  const updateRelationship = useAppStore((s) => s.updateRelationship);
 
-  const [selectedId, setSelectedId] = useState<string>(orgs[0]?.id ?? "");
-  const selected = orgs.find((o) => o.id === selectedId) ?? orgs[0];
+  const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
+  const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
+  const [sel, setSel] = useState<Selection>({ type: "node", id: org?.positions[0]?.nodeId ?? "" });
+  const [zoom, setZoom] = useState(0.62);
+  // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
+  const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
+
+  // Fit-to-viewport on mount + resize (the canvas lives in a fixed design space; zoom scales it).
+  useEffect(() => {
+    const fit = () => {
+      const el = document.getElementById("orgCanvas");
+      if (!el) return;
+      const z = Math.max(0.4, Math.min(1.15, Math.min((el.clientWidth - 40) / CANVAS_W, (el.clientHeight - 40) / CANVAS_H)));
+      setZoom(+z.toFixed(3));
+    };
+    fit();
+    const el = document.getElementById("orgCanvas");
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [orgId]);
+
+  if (!org) {
+    return (
+      <Stack align="center" justify="center" style={{ flex: 1 }}>
+        <Text tone="dim">No org yet.</Text>
+        <Button onClick={() => setOrgId(addOrg())}>+ new org</Button>
+      </Stack>
+    );
+  }
+
+  const onSelectNode = (nodeId: string) => {
+    if (connect) {
+      if (!connect.from) { setConnect({ ...connect, from: nodeId }); return; }
+      if (connect.from !== nodeId) {
+        const id = `rel-${connect.from}-${nodeId}-${connect.archetype}`;
+        if (!org.relationships.some((r) => r.id === id)) {
+          addRelationship(org.id, { id, archetype: connect.archetype, from: connect.from, to: nodeId });
+        }
+        setSel({ type: "edge", id });
+      }
+      setConnect(null);
+      return;
+    }
+    setSel({ type: "node", id: nodeId });
+  };
+
+  // Left rail: positions grouped by department, in canonical order.
+  const byDept = new Map<string, typeof org.positions>();
+  for (const p of org.positions) {
+    const dept = positionDisplay(p, personas).dept;
+    (byDept.get(dept) ?? byDept.set(dept, []).get(dept)!).push(p);
+  }
+  const depts = [...byDept.keys()].sort((a, b) => {
+    const ia = DEPT_ORDER.indexOf(a), ib = DEPT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
 
   return (
-    <Row align="stretch" gap={0} style={{ flex: 1, minHeight: 0 }}>
-      {/* ── List rail ── */}
-      <Stack gap={8} style={{ width: 240, minWidth: 240, padding: 14, overflowY: "auto", borderRight: "1px solid var(--border-soft)" }}>
-        <Row align="center" gap={8}>
-          <Text as="div" className="ulabel" tone="dim" style={{ flex: 1 }}>orgs · {orgs.length}</Text>
-          <Button variant="ghost" onClick={() => setSelectedId(addOrg())}>+ new</Button>
+    <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+      {/* ── toolbar ── */}
+      <Row gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
+        <Row gap={9} align="center">
+          <Box style={{ width: 22, height: 22, borderRadius: 6, background: "var(--bg-soft)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)" }}>◆</Box>
+          {orgs.length > 1 ? (
+            // eslint-disable-next-line no-restricted-syntax -- compact inline org switch; a full Field is overkill in the toolbar
+            <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setSel({ type: "node", id: orgs.find((o) => o.id === e.target.value)!.positions[0]?.nodeId ?? "" }); }}
+              className="input" style={{ fontWeight: 600, fontSize: 14, background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}>
+              {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          ) : (
+            <Text as="span" weight={600} size={14}>{org.name}</Text>
+          )}
+          <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions</Text>
         </Row>
-        {orgs.map((o) => (
-          <Card
-            key={o.id}
-            interactive
-            tone={o.id === selected?.id ? "var(--accent)" : undefined}
-            onClick={() => setSelectedId(o.id)}
-            style={{ padding: "9px 11px", cursor: "pointer" }}
-          >
-            <Row align="center" gap={7}>
-              <Text as="div" weight={600} size={12.5} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</Text>
-              {o.builtin && <Chip style={{ color: "var(--fg-dim)" }}>built-in</Chip>}
-            </Row>
-            <Text as="div" mono size={9.5} tone="dim" style={{ marginTop: 2 }}>{o.positions.length} positions · {o.relationships.length} links</Text>
-          </Card>
-        ))}
-      </Stack>
-
-      {/* ── Body ── */}
-      {selected ? (
-        <Stack gap={16} style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto" }}>
-          <Row align="baseline" gap={10}>
-            <Text as="h2" size={16} weight={600} style={{ margin: 0, flex: 1 }}>{selected.name}</Text>
-            <Button variant="ghost" onClick={() => setSelectedId(cloneOrg(selected.id))}>clone</Button>
-            {!selected.builtin && (
-              <ConfirmButton label="delete" armedLabel="delete?" danger
-                onConfirm={() => { removeOrg(selected.id); setSelectedId(orgs[0]?.id ?? ""); }} />
-            )}
+        <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
+        <Row gap={10} align="center" style={{ minWidth: 0 }}>
+          <Text as="span" className="ulabel" tone="dim" size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "Click to connect"}</Text>
+          <Row gap={6}>
+            {RELATIONSHIP_ARCHETYPES.map((a) => (
+              <Box as="button" key={a.id} onClick={() => setConnect(connect?.archetype === a.id ? null : { archetype: a.id, from: null })}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
+                  color: "var(--fg-muted)", background: connect?.archetype === a.id ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
+                  border: `1px solid ${connect?.archetype === a.id ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: hueColor(a.hue), flex: "none" }} />{a.label}
+              </Box>
+            ))}
           </Row>
-          {selected.blurb && <Text as="div" size={11.5} tone="muted">{selected.blurb}</Text>}
+        </Row>
+        <Box style={{ flex: 1 }} />
+        <Row gap={2} align="center" style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
+          <IconButton aria-label="zoom out" onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))}>−</IconButton>
+          <Text as="span" mono size={11} style={{ minWidth: 46, textAlign: "center" }}>{Math.round(zoom * 100)}%</Text>
+          <IconButton aria-label="zoom in" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))}>+</IconButton>
+        </Row>
+      </Row>
 
-          <Box>
-            <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 8 }}>positions · communication (auto-derived)</Text>
-            <Grid cols={2} gap={10}>
-              {selected.positions.map((p) => (
-                <PositionCard key={p.nodeId} org={selected} pos={p} personas={personas} />
-              ))}
-            </Grid>
-          </Box>
-
-          <Box>
-            <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 8 }}>relationships · {selected.relationships.length}</Text>
-            <Stack gap={5}>
-              {selected.relationships.map((r) => {
-                const arch = archetypeById(r.archetype);
-                const from = selected.positions.find((p) => p.nodeId === r.from);
-                const to = selected.positions.find((p) => p.nodeId === r.to);
-                return (
-                  <Row key={r.id} gap={8} align="center">
-                    <Chip color={arch ? `oklch(0.7 0.12 ${arch.hue})` : "var(--fg-dim)"}>{arch?.label ?? r.archetype}</Chip>
-                    <Text as="div" mono size={11}>
-                      {from ? positionName(from, personas) : r.from} → {to ? positionName(to, personas) : r.to}
-                    </Text>
-                  </Row>
-                );
-              })}
-            </Stack>
+      {/* ── body ── */}
+      <Row gap={0} align="stretch" style={{ flex: 1, minHeight: 0 }}>
+        {/* left rail */}
+        <Stack gap={0} style={{ width: 260, minWidth: 260, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
+          <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
+            <Text as="span" className="ulabel" tone="dim" size={9.5}>Positions</Text>
+            <Text as="span" size={11} weight={500} style={{ color: "var(--accent)" }}>＋ new</Text>
+          </Row>
+          <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
+            {depts.map((dept) => (
+              <Box key={dept}>
+                <Text as="div" size={9} tone="dim" style={{ margin: "10px 6px 5px", letterSpacing: ".11em", textTransform: "uppercase", fontWeight: 600 }}>{dept}</Text>
+                {byDept.get(dept)!.map((p) => {
+                  const d = positionDisplay(p, personas);
+                  const on = sel.type === "node" && sel.id === p.nodeId;
+                  return (
+                    <Row key={p.nodeId} gap={9} align="center" onClick={() => onSelectNode(p.nodeId)}
+                      style={{ padding: "7px 9px", borderRadius: 8, cursor: "pointer",
+                        background: on ? "color-mix(in oklch, var(--accent) 10%, transparent)" : "transparent",
+                        border: `1px solid ${on ? "var(--accent)" : "transparent"}` }}>
+                      <Box style={{ width: 20, height: 20, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--accent)", background: "var(--bg-soft)", flex: "none" }}>{d.glyph}</Box>
+                      <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
+                      {d.role && <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text>}
+                    </Row>
+                  );
+                })}
+              </Box>
+            ))}
           </Box>
         </Stack>
-      ) : (
-        <Stack align="center" justify="center" style={{ flex: 1 }}>
-          <Text tone="dim">Select or create an org.</Text>
-        </Stack>
-      )}
-    </Row>
+
+        <OrgCanvas org={org} personas={personas} sel={sel} zoom={zoom} gridOn legendOn onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })} />
+
+        <OrgInspector org={org} personas={personas} skills={skills} sel={sel} onSelectNode={(id) => setSel({ type: "node", id })} onChangeArchetype={(relId, a) => updateRelationship(org.id, relId, { archetype: a })} />
+      </Row>
+    </Stack>
   );
 }
