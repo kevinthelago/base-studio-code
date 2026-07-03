@@ -85,6 +85,103 @@ pub fn list_projects() -> Vec<Project> {
     out
 }
 
+// ── Project relationships (#2253) — the edges of the Glance L1 network ──────────────────────────────
+//
+// A GLOBAL, cross-project link store (not scoped to one hub): `~/.base-studio-code/project-links.json`,
+// a flat JSON array of `{ id, from, to, kind }`. `from` (consumer) depends on / consumes `to` (provider)
+// over a contract of `kind` (api | data | events). The desktop Glance UI draws these; an agent reads
+// them via `bsc project link list --json` to learn "what does my project consume". The id is derived so
+// adding the same edge twice is idempotent.
+
+/// The edge kinds a link may carry (the Glance contract surfaces).
+pub const LINK_KINDS: [&str; 3] = ["api", "data", "events"];
+
+/// One project→project relationship.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectLink {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub kind: String,
+}
+
+/// The global links file: `~/.base-studio-code/project-links.json`. `None` when no home dir resolves.
+pub fn links_path() -> Option<PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("project-links.json"))
+}
+
+/// Deterministic id for a link, so adding the same edge twice is idempotent (matches the frontend).
+pub fn link_id(from: &str, to: &str, kind: &str) -> String {
+    format!("{from}>{to}:{kind}")
+}
+
+fn link_from_json(v: &serde_json::Value) -> Option<ProjectLink> {
+    Some(ProjectLink {
+        id: v.get("id")?.as_str()?.to_string(),
+        from: v.get("from")?.as_str()?.to_string(),
+        to: v.get("to")?.as_str()?.to_string(),
+        kind: v.get("kind")?.as_str()?.to_string(),
+    })
+}
+
+fn link_to_json(l: &ProjectLink) -> serde_json::Value {
+    serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind })
+}
+
+/// Load every project link. Empty when the file is missing/unreadable/malformed (never errors — a
+/// fresh install simply has no links).
+pub fn load_links() -> Vec<ProjectLink> {
+    let Some(path) = links_path() else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    arr.iter().filter_map(link_from_json).collect()
+}
+
+fn save_links(links: &[ProjectLink]) -> Result<(), String> {
+    let path = links_path().ok_or("save_links: no home dir ($HOME / $USERPROFILE unset)")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("save_links: {e}"))?;
+    }
+    let arr: Vec<serde_json::Value> = links.iter().map(link_to_json).collect();
+    let json = serde_json::to_string(&arr).map_err(|e| format!("save_links: {e}"))?;
+    std::fs::write(&path, json).map_err(|e| format!("save_links: {e}"))
+}
+
+/// Add a link (idempotent by id). Rejects an empty endpoint, a self-loop, or an unknown kind. Returns
+/// the link id.
+pub fn add_link(from: &str, to: &str, kind: &str) -> Result<String, String> {
+    let (from, to, kind) = (from.trim(), to.trim(), kind.trim());
+    if from.is_empty() || to.is_empty() {
+        return Err("add_link: empty from/to".into());
+    }
+    if from == to {
+        return Err("add_link: a project can't link to itself".into());
+    }
+    if !LINK_KINDS.contains(&kind) {
+        return Err(format!("add_link: unknown kind '{kind}' (want one of {LINK_KINDS:?})"));
+    }
+    let id = link_id(from, to, kind);
+    let mut links = load_links();
+    if !links.iter().any(|l| l.id == id) {
+        links.push(ProjectLink { id: id.clone(), from: from.into(), to: to.into(), kind: kind.into() });
+        save_links(&links)?;
+    }
+    Ok(id)
+}
+
+/// Remove a link by id (no-op when absent).
+pub fn remove_link(id: &str) -> Result<(), String> {
+    let mut links = load_links();
+    let before = links.len();
+    links.retain(|l| l.id != id);
+    if links.len() != before {
+        save_links(&links)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +261,32 @@ mod tests {
             // projects/ never created → an empty list, not an error.
             assert!(list_projects().is_empty());
             assert!(!is_published("whatever"));
+        });
+    }
+
+    #[test]
+    fn links_add_dedup_reject_and_remove() {
+        with_home(|_home| {
+            assert!(load_links().is_empty(), "fresh install has no links");
+
+            let id = add_link("a", "b", "api").unwrap();
+            assert_eq!(id, "a>b:api");
+            add_link("a", "b", "api").unwrap(); // idempotent
+            assert_eq!(load_links().len(), 1);
+
+            add_link("a", "b", "data").unwrap(); // different kind = a distinct link
+            assert_eq!(load_links().len(), 2);
+
+            assert!(add_link("a", "a", "api").is_err(), "no self-loop");
+            assert!(add_link("a", "b", "nope").is_err(), "unknown kind rejected");
+            assert!(add_link("", "b", "api").is_err(), "empty endpoint rejected");
+
+            remove_link("a>b:api").unwrap();
+            let links = load_links();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].kind, "data");
+            remove_link("missing").unwrap(); // no-op, not an error
+            assert_eq!(load_links().len(), 1);
         });
     }
 }

@@ -8,7 +8,7 @@
 //!   bsc project published help  # detailed help for ONE command
 //!   bsc project <cmd> help      # same, after any command
 
-use crate::{is_published, list_projects, mark_published};
+use crate::{add_link, is_published, list_projects, load_links, mark_published, remove_link};
 use bsc_cli_util::CmdDoc;
 
 const TAGLINE: &str =
@@ -37,6 +37,19 @@ USAGE:
 
 Published-ness is the in-place .published marker under the project hub (#922) — setting it never
 moves the hub directory. For a single project's plan + prose, use `bsc plan` instead.",
+    },
+    CmdDoc {
+        name: "link",
+        summary: "list / add / remove project relationships (the Glance network edges, #2253)",
+        usage: "\
+USAGE:
+  bsc project link list [--json]              # every project relationship
+  bsc project link add <from> <to> <kind>     # add from->to over api|data|events (idempotent; prints the id)
+  bsc project link remove <id>                # remove by id (id is \"<from>><to>:<kind>\")
+
+A link records that project <from> depends on / consumes project <to> over a contract of <kind>
+(api | data | events). Global (not tied to one plan.db); stored in ~/.base-studio-code/project-links.json.
+Agents read `link list --json` to learn what their project consumes.",
     },
 ];
 
@@ -74,6 +87,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match cmd.as_str() {
         "list" => cmd_list(&args),
         "published" => cmd_published(&args, prog),
+        "link" => cmd_link(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -132,6 +146,50 @@ fn cmd_published(args: &Args, prog: &str) -> Result<(), String> {
     }
 }
 
+/// `link list|add|remove` — the project-relationship edges (#2253). Defaults to `list`.
+fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("list");
+    match sub {
+        "list" => {
+            let links = load_links();
+            if args.json {
+                let arr: Vec<serde_json::Value> = links
+                    .iter()
+                    .map(|l| serde_json::json!({ "id": l.id, "from": l.from, "to": l.to, "kind": l.kind }))
+                    .collect();
+                println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
+            } else if links.is_empty() {
+                println!("(no project links)");
+            } else {
+                for l in &links {
+                    println!("{}\t{} -> {} ({})", l.id, l.from, l.to, l.kind);
+                }
+            }
+            Ok(())
+        }
+        "add" => {
+            let from = args.positional.get(2).ok_or("usage: bsc project link add <from> <to> <kind>")?;
+            let to = args.positional.get(3).ok_or("usage: bsc project link add <from> <to> <kind>")?;
+            let kind = args.positional.get(4).ok_or("usage: bsc project link add <from> <to> <kind>")?;
+            let id = add_link(from, to, kind)?;
+            println!("{id}");
+            Ok(())
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc project link remove <id>")?;
+            remove_link(id)?;
+            if !args.json {
+                println!("removed {id}");
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "unknown link command '{other}'\n\n{}",
+            bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "link")
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +217,11 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc project", TAGLINE, COMMANDS);
         assert!(ov.contains("list"));
         assert!(ov.contains("published"));
+        assert!(ov.contains("link"));
+        // The link command's help drills into its add/remove subcommands.
+        let link = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "link");
+        assert!(link.contains("bsc project link"));
+        assert!(link.contains("add"));
         // Per-command help shows that one command's detail (incl. its subcommands).
         let one = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "published");
         assert!(one.contains("bsc project published"));

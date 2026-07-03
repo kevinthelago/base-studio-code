@@ -62,6 +62,10 @@ export function useAppBoot() {
     // so the desktop Org tab, live sessions, and the planner share ONE library. Reconciles the packaged
     // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
     void useAppStore.getState().hydrateOrgs();
+    // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
+    // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
+    // is absent (keeps the persisted cache).
+    void useAppStore.getState().hydrateProjectLinks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

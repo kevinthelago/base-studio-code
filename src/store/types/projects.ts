@@ -14,11 +14,16 @@ export interface ProjectsState {
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
   glanceDrill: string | null;
   setGlanceDrill: (id: string | null) => void;
-  // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network,
-  // persisted. `addProjectLink` is idempotent (deterministic id). Migrates to the `bsc project` store later.
+  // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network.
+  // A write-through cache over the global `bsc project link` store (agent-reachable): `addProjectLink`
+  // (idempotent, deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks`
+  // loads authoritative on boot; the persisted copy is a fast-first-paint fallback.
   projectLinks: ProjectLink[];
   addProjectLink: (from: string, to: string, kind: GEdgeKind) => void;
   removeProjectLink: (id: string) => void;
+  /** Hydrate the links from the global `bsc project link` store on boot (write-through cache). No-op when
+   *  the bridge is unreachable (keeps the persisted cache). */
+  hydrateProjectLinks: () => Promise<void>;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
