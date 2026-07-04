@@ -123,6 +123,7 @@ export const useAppStore = create<AppStore>()(
         localDraftProjects:   s.localDraftProjects,
         projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         projectKeyAlias:      s.projectKeyAlias,
+        autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
         issueLinks:           s.issueLinks,
         achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,

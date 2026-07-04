@@ -119,6 +119,13 @@ export interface ProjectsState {
   // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
   projectKeyAlias: Record<string, string>;
   setProjectKeyAlias: (nodeId: string, key: string) => void;
+  // Per-project AUTO-TRIAGE toggle (#2265). When ON, the fault-fix loop (useFaultTriage) routes a fix
+  // for a new unresolved runtime fault (errordb, #2260) into the project's director via bsc-issue →
+  // bsc-assign; when OFF (the default) faults are surfaced (the Glance node badge) but never
+  // auto-dispatched. Keyed by the project's plan key (the same key the errordb/plan.db resolve under).
+  autoTriage: Record<string, boolean>;
+  /** Flip a project's auto-triage toggle (persisted). Default (absent) is OFF = surface-only. */
+  setAutoTriage: (projectKey: string, on: boolean) => void;
   // project key -> structure node id -> linked GitHub issue (#393).
   issueLinks: Record<string, Record<string, { number: number; url: string }>>;
   // Merge links for a project (idempotent upsert; never drops existing entries).
