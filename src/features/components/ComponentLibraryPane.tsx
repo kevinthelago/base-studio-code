@@ -14,6 +14,7 @@ import { Code } from "@/shared/ui/data/Code";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Text } from "@/shared/ui/typography/Text";
 import { ROLE_COLOR, matchesQuery, resolveComposes, resolveUsedBy, type ComponentRecord, type Role } from "./lib/model";
+import { componentRules, ruleMessage } from "./lib/rules";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import "./componentLibraryPane.css";
 
@@ -38,7 +39,7 @@ export function ComponentLibraryPane() {
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   const [theme, setTheme] = useState<PreviewTheme>("dark");
   const [viewport, setViewport] = useState<"sm" | "md" | "lg">("md");
-  const [tab, setTab] = useState<"props" | "usage" | "composes" | "source">("props");
+  const [tab, setTab] = useState<"props" | "usage" | "composes" | "rules" | "source">("props");
   const [genPrompt, setGenPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genVariants, setGenVariants] = useState<Record<string, string[]>>({});
@@ -97,6 +98,7 @@ export function ComponentLibraryPane() {
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
   const composes = sel ? resolveComposes(sel, components) : [];
   const usedBy = sel ? resolveUsedBy(sel, components) : [];
+  const rules = sel ? componentRules(sel) : [];
 
   return (
     // eslint-disable-next-line no-restricted-syntax -- DOM ref for the ResizeObserver that drives the narrow/wide layout
@@ -173,8 +175,8 @@ export function ComponentLibraryPane() {
 
             {/* tabs */}
             <Box className="clib-tabs" role="tablist">
-              {(["props", "usage", "composes", "source"] as const).map((tb) => {
-                const count = tb === "props" ? sel.props.length : tb === "composes" ? composes.length + usedBy.length : null;
+              {(["props", "usage", "composes", "rules", "source"] as const).map((tb) => {
+                const count = tb === "props" ? sel.props.length : tb === "composes" ? composes.length + usedBy.length : tb === "rules" ? rules.length : null;
                 return (
                   <Box as="button" key={tb} role="tab" aria-selected={tab === tb} className={`clib-tab${tab === tb ? " on" : ""}`} onClick={() => setTab(tb)}>
                     {tb}{count != null && <Box as="span" className="clib-tab-count">{count}</Box>}
@@ -256,6 +258,33 @@ export function ComponentLibraryPane() {
                     ) : <Text mono tone="dim" size={11}>A leaf primitive — composes nothing.</Text>}
                   </Box>
                 </Box>
+              )}
+
+              {tab === "rules" && (
+                rules.length ? (
+                  <Box style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                    <Text mono tone="dim" size="xxs" as="div" style={{ textTransform: "uppercase", letterSpacing: ".07em" }}>
+                      lint rules an app using this kit auto-fires
+                    </Text>
+                    {rules.map((r) => (
+                      <Box key={r.id} pad="sm" border="soft" radius="md" bg="var(--bg-canvas)">
+                        <Box style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 5 }}>
+                          <Chip color={r.derived ? "var(--info)" : "var(--accent)"}>{r.derived ? "derived" : "authored"}</Chip>
+                          <Text mono size={11.5}>
+                            {r.kind === "forbid-element" ? `<${r.target}>` : `"${r.target}"`}
+                          </Text>
+                          <Text mono tone="dim" size={11}>→</Text>
+                          <Text mono size={11.5} tone="accent">{r.use}</Text>
+                        </Box>
+                        <Text size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>{ruleMessage(r)}</Text>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Text mono tone="dim" size={11.5} as="div" style={{ padding: "8px 10px" }}>
+                    No lint rules yet — set a `wraps` hint or author a rule to enforce this component.
+                  </Text>
+                )
               )}
 
               {tab === "source" && (

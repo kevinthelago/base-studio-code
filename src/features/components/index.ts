@@ -8,6 +8,6 @@ export {
 export { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 // Kit lint rules → eslint preset (#2279) — the generator the planner bakes into a generated app.
 export {
-  deriveRules, mergeRules, kitRules, ruleMessage, toEslintRules, toEslintPreset, ESCAPE_HATCH,
+  deriveRules, mergeRules, kitRules, componentRules, ruleMessage, toEslintRules, toEslintPreset, ESCAPE_HATCH,
   type EslintRulesConfig,
 } from "./lib/rules";
