@@ -26,6 +26,8 @@ export interface Kit {
   stack: string;
   /** The kit's dot color (a CSS color; the seed uses app tokens). */
   dot: string;
+  /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
+  builtin?: boolean;
 }
 
 /** One proven component in a kit — the record the library stores and the pane renders. */
@@ -49,6 +51,8 @@ export interface ComponentRecord {
   src: string;
   /** Representative source text. */
   srcText: string;
+  /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
+  builtin?: boolean;
 }
 
 /** Role → accent color, mapped to app design tokens (not the prototype's raw palette). */
