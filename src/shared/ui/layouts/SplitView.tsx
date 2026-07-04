@@ -40,12 +40,14 @@ export interface SplitViewProps {
   secondaryStyle?: CSSProperties;
   /** Extra class on the root (a page scoping hook). */
   className?: string;
+  /** Escape hatch for a deliberate root override (e.g. a top divider seam). */
+  style?: CSSProperties;
 }
 
 export function SplitView({
   primary, secondary, orientation = "horizontal", resizable = true,
   secondarySize = 340, secondaryMin = 200, secondaryMax = 640,
-  toolbar, divider = true, primaryStyle, secondaryStyle, className,
+  toolbar, divider = true, primaryStyle, secondaryStyle, className, style,
 }: SplitViewProps) {
   const horizontal = orientation === "horizontal";
   // The secondary sits AFTER the splitter, so it grows as the pointer moves back toward the primary
@@ -86,7 +88,7 @@ export function SplitView({
 
   // Fills the <Screen> body; the toolbar (if any) sits above the split, matching MasterDetail.
   return (
-    <Stack gap={0} className={className} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+    <Stack gap={0} className={className} style={{ flex: 1, minHeight: 0, overflow: "hidden", ...style }}>
       {toolbar}
       {body}
     </Stack>
