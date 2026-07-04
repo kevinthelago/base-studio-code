@@ -27,12 +27,14 @@ describe("test_ui stage (#2274)", () => {
     expect(testui.optional).toBe(true); // never blocks plan completion
   });
 
-  it("FocusedStageBody renders the Component Library pane for a test_ui stage", () => {
+  it("FocusedStageBody renders the Planner Components pane for a test_ui stage (#2314)", () => {
     const stage: Stage = {
       key: "test_ui", name: "Test UI", glyph: "◫", blurb: "", gate: "",
       index: 0, total: 1, status: "active", fraction: 0,
     };
     render(<FocusedStageBody stage={stage} />);
-    expect(screen.getByTestId("clib-pane")).toBeTruthy();
+    // The Planner Components pane's Components ⇄ Full UI toggle is its signature.
+    expect(screen.getByText("▤ Components")).toBeTruthy();
+    expect(screen.getByText("▦ Full UI")).toBeTruthy();
   });
 });
