@@ -6,6 +6,7 @@
 // focused panes. Mirrors the design prototype (design/bsc · model()).
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 import { findBackEdges } from "@/shared/lib/graph/cycles";
+import { layerDag } from "@/shared/lib/graph/layers";
 
 /** Fleet coordination topology. `director` = hub-and-spoke (every edge routes through
  *  the director), `peer` = mesh (every edge is a direct handoff), `hybrid` = per-edge. */
@@ -82,7 +83,8 @@ export function effectiveVia(topology: Topology, via: Via): Via {
 /**
  * Build the relationship graph from the fleet's streams, declared artifacts, and edges,
  * under a coordination topology. Detects ordering cycles (DFS back-edges) and assigns
- * topological layers (Kahn, excluding back-edges so a cycle can't explode the layout).
+ * topological layers (shared longest-path layerer, excluding back-edges so a cycle can't
+ * explode the layout).
  */
 export function buildRelationshipGraph(
   streams: RelStream[],
@@ -91,31 +93,13 @@ export function buildRelationshipGraph(
   topology: Topology,
 ): RelationshipGraph {
   const sids = streams.map((s) => s.id);
-  const idSet = new Set(sids);
   const resolved: ResolvedEdge[] = edges.map((e) => ({ ...e, viaEff: effectiveVia(topology, e.via) }));
 
   // ── cycle detection FIRST (DFS back-edges over ordering edges) — shared graph-core primitive (#2217) ──
   const { backEdgeIds: cycleEdgeIds, hasCycle } = findBackEdges(sids, resolved.filter((e) => ORDERING.has(e.kind)));
 
-  // ── layering over ordering edges, EXCLUDING back-edges (keeps it a DAG) ──
-  const layEdges = resolved.filter((e) => ORDERING.has(e.kind) && !cycleEdgeIds.has(e.id) && idSet.has(e.from) && idSet.has(e.to));
-  const incoming = new Map<string, number>(sids.map((i) => [i, 0]));
-  for (const e of layEdges) incoming.set(e.to, (incoming.get(e.to) ?? 0) + 1);
-  const layerOf: Record<string, number> = {};
-  const q: string[] = [];
-  for (const i of sids) if ((incoming.get(i) ?? 0) === 0) { layerOf[i] = 0; q.push(i); }
-  let head = 0, guard = 0;
-  while (head < q.length && guard++ < 5000) {
-    const cur = q[head++];
-    const cl = layerOf[cur] ?? 0;
-    for (const e of layEdges) {
-      if (e.from === cur) {
-        const ex = layerOf[e.to] ?? -1;
-        if (cl + 1 > ex) { layerOf[e.to] = cl + 1; q.push(e.to); }
-      }
-    }
-  }
-  for (const i of sids) if (layerOf[i] == null) layerOf[i] = 0;
+  // ── layering over ordering edges, EXCLUDING back-edges (keeps it a DAG) — shared layerer (#2214) ──
+  const layerOf = layerDag(sids, resolved.filter((e) => ORDERING.has(e.kind)), cycleEdgeIds);
 
   return { streams, artifacts, edges: resolved, sids, layerOf, hasCycle, cycleEdgeIds };
 }

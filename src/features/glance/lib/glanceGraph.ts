@@ -9,6 +9,7 @@
 // (#2204): the same layered algorithm the Org designer uses, on a different domain.
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 import { mutualPairs } from "@/shared/lib/graph/cycles";
+import { layerDag } from "@/shared/lib/graph/layers";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
@@ -140,17 +141,12 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
     return { nodes, edges, cyclePairs, cycleNodeIds, worldW: mX + NW + 80, worldH: mY + NH + 90 };
   }
 
-  // Longest-path layering (skip cycle edges so the loop doesn't diverge): layer[from] = max(layer[to]+1).
-  const layer: Record<string, number> = {};
-  nodes.forEach((n) => (layer[n.id] = 0));
-  for (let iter = 0; iter < nodes.length + 2; iter++) {
-    let changed = false;
-    edges.forEach((e) => {
-      if (cycleEdge.has(e.id)) return;
-      if (layer[e.from] < layer[e.to] + 1) { layer[e.from] = layer[e.to] + 1; changed = true; }
-    });
-    if (!changed) break;
-  }
+  // Longest-path layering via the shared layerer (#2214). Glance is a DEPENDS-ON DAG (from depends on
+  // to → the dependency `to` must sit at a LOWER layer), so we hand `layerDag` the edges REVERSED — its
+  // "from → deeper" convention then puts each dependency below its dependent. Cycle (mutual-pair) edges
+  // are excluded so the loop can't diverge.
+  const reversed = edges.map((e) => ({ id: e.id, from: e.to, to: e.from }));
+  const layer = layerDag(nodes.map((n) => n.id), reversed, cycleEdge);
   nodes.forEach((n) => (n.layer = layer[n.id]));
 
   // Group by layer + barycenter ordering to cut crossings.
