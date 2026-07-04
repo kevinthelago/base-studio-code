@@ -14,6 +14,10 @@ import { Stack } from "./layout/Stack";
 import { Row } from "./layout/Row";
 import { Spacer } from "./layout/Spacer";
 import { Grid } from "./layout/Grid";
+import { SectionHeader } from "./layout/SectionHeader";
+import { SectionLabel } from "./layout/SectionLabel";
+import { Dialog } from "./overlay/Dialog";
+import { ModalScrim } from "./overlay/ModalScrim";
 import { Text } from "./typography/Text";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
@@ -21,15 +25,25 @@ import { Checkbox } from "./controls/Checkbox";
 import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
 import { TextField, SelectField } from "./controls/Field";
+import { BackButton } from "./controls/BackButton";
+import { ColorSwatch } from "./controls/ColorSwatch";
+import { ConfirmButton } from "./controls/ConfirmButton";
 import { Card } from "./data/Card";
 import { Chip } from "./data/Chip";
 import { StatTile } from "./data/StatTile";
 import { FillBar } from "./data/FillBar";
 import { Code } from "./data/Code";
+import { Avatar } from "./data/Avatar";
+import { IconBox } from "./data/IconBox";
+import { CardListRow } from "./data/CardListRow";
+import { DataTableRow } from "./data/DataTableRow";
+import { StatCard } from "./charts/primitives";
+import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars } from "./charts/Charts";
 import { Banner } from "./feedback/Banner";
 import { InlineError } from "./feedback/InlineError";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
+import { Skeleton } from "./feedback/Skeleton";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,11 +52,14 @@ type AnyComponent = ComponentType<any>;
 /** name → component for every primitive in the manifest. The `Record<PrimitiveName>` type enforces
  *  exhaustive, in-sync coverage at compile time. */
 export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
-  Box, Stack, Row, Spacer, Grid,
+  Box, Stack, Row, Spacer, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim,
   Text,
   Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, SelectField,
+  BackButton, ColorSwatch, ConfirmButton,
   Card, Chip, StatTile, FillBar, Code,
-  Banner, InlineError, EmptyState, StatusDot,
+  Avatar, IconBox, CardListRow, DataTableRow,
+  StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
+  Banner, InlineError, EmptyState, StatusDot, Skeleton,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

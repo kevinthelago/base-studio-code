@@ -28,6 +28,7 @@ export type { SessionRole, AccessTier, RoleCapability } from "./roleModel";
 export {
   ROLE_DEFAULTS,
   PLANNER_WRITE_GLOBS,
+  DOC_GLOBS,
   DB_OWNED_PLAN_FILES,
   DEP_MANIFEST_FILES,
   roleCapability,

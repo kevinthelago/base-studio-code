@@ -6,12 +6,12 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     const ids = BUILTIN_PERSONAS.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);           // no dup ids
     expect(BUILTIN_PERSONAS.every((p) => p.builtin)).toBe(true);
-    expect(BUILTIN_PERSONAS.some((p) => p.id === "persona-documentor" && p.role === "reviewer")).toBe(true);
+    expect(BUILTIN_PERSONAS.some((p) => p.id === "persona-documentor" && p.role === "documentor")).toBe(true);
   });
 
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
-    // The nine packaged personas are all present, one per role (+ documentor).
+    // The nine packaged personas are all present, one per role (documentor now its own role, #1555).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
       "persona-tester", "persona-issuer", "persona-juror", "persona-documentor",
