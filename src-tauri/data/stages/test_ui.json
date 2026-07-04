@@ -1,0 +1,13 @@
+{
+  "name": "Test UI",
+  "glyph": "◫",
+  "gate": "component kit reviewed",
+  "deps": [
+    "features"
+  ],
+  "optional": true,
+  "blurb": "Browse and iterate the project's proven-component kit — preview variants, read the API, and generate new ones.",
+  "prompt": "The Component Library pane is open for this project. It shows the proven-component kit(s) the app is built from — for each component: a live preview, its variants, props/API, what it composes (and is composed by), and its source. Use this stage to review which components the planned features need, spot the gaps still to design, and generate new variants where the kit falls short. This is an app-driven surface: help the user reason about the UI kit and keep it consistent, but do NOT write component code here — the fleet builds against the kit later.",
+  "icon": "grid_view",
+  "hue": 265
+}
