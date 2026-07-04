@@ -759,6 +759,7 @@ dependencies = [
  "bsc-org",
  "bsc-persona",
  "bsc-project",
+ "bsc-todo",
  "bsc-util",
  "compliance",
  "errordb",
@@ -776,6 +777,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-files",
  "bsc-llm",
+ "bsc-todo",
  "bsc-util",
  "glob",
  "regex",
@@ -887,6 +889,19 @@ name = "bsc-sqlite-util"
 version = "0.1.0"
 dependencies = [
  "bsc-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-todo"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "plandb",
  "rusqlite",
  "serde",
  "serde_json",

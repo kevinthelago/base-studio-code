@@ -12,6 +12,7 @@ mod hook;
 /// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).
 const COMMANDS: &[(&str, &str)] = &[
     ("plan", "per-project plan store: issues, features, fleet, sections"),
+    ("todo", "two-scope agent todo store: feature checklist + global runbook"),
     ("errors", "per-project runtime-fault store: fingerprinted errors + alerts"),
     ("project", "cross-project hub: list local projects + the .published marker"),
     ("skill", "global skills + task-groups store"),
@@ -46,6 +47,7 @@ fn top_help() -> String {
 fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
+        "todo" => bsc_todo::cli::run(rest, "bsc todo"),
         "errors" => errordb::cli::run(rest, "bsc errors"),
         "project" => bsc_project::cli::run(rest, "bsc project"),
         "skill" => skilldb::cli::run(rest, "bsc skill"),
