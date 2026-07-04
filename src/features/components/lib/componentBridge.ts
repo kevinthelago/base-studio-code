@@ -36,6 +36,8 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         src: c.src ?? "",
         srcText: c.srcText ?? "",
         builtin: c.builtin,
+        wraps: c.wraps,
+        rules: c.rules,
       }));
   } catch {
     return null;
