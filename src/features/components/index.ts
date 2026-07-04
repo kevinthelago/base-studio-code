@@ -1,6 +1,7 @@
 // Public API of the components feature (#2269) — the proven-component library, its condensed planner
 // pane (Kickoff design), and the full-page Design Studio workspace (#2308).
 export { ComponentLibraryPane } from "./ComponentLibraryPane";
+export { PlannerComponentsPane } from "./PlannerComponentsPane";
 export { DesignStudio } from "./DesignStudio";
 export { createComponentsSlice, type ComponentsSlice } from "./store";
 export {
