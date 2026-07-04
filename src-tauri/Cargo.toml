@@ -93,9 +93,6 @@ errordb = { path = "../crates/errordb" }
 tiny_http = "0.12"
 # Mobile-tunnel wire contract + Noise crypto (#1919) — desktop tunnel glue (state/transport/commands) depends on it.
 bsc-tunnel = { path = "../crates/bsc-tunnel" }
-# Per-project runtime-fault store (#2258/#2260) — shared with the `bsc errors` agent CLI. The PTY-tap
-# fallback (#2264, observability/pty_faults) records text-scraped faults into a project's error.db via it.
-errordb = { path = "../crates/errordb" }
 
 # Cross-project hub lifecycle (#1720) — shared with the `bsc-project` session CLI. The
 # published-marker helpers (`mark_published`/`is_published`/`published_marker`) delegate here so
