@@ -37,22 +37,24 @@ describe("demo load/clear store actions (#2272)", () => {
     personas: [{ id: "real" }] as never, blueprints: [] as never,
   }));
 
-  it("loadDemoState overlays the demo AND backs up the pre-demo state", () => {
+  it("loadDemoState MERGES the demo onto existing state AND backs up the pre-demo state (#2288)", () => {
     useAppStore.getState().loadDemoState({ personas: [{ id: "demo-a" }, { id: "demo-b" }] as never });
     const s = useAppStore.getState();
     expect(s.demoActive).toBe(true);
-    expect(s.personas.map((p) => p.id)).toEqual(["demo-a", "demo-b"]); // demo applied
+    // The built-in/real persona is PRESERVED (merge, not replace); demo personas appended.
+    expect(s.personas.map((p) => p.id)).toEqual(["real", "demo-a", "demo-b"]);
     expect(s.demoBackup?.personas?.map((p: { id: string }) => p.id)).toEqual(["real"]); // real stashed
   });
 
-  it("clearDemoState restores exactly the pre-demo state", () => {
+  it("clearDemoState restores exactly the pre-demo state (drops the demo's additions)", () => {
     const store = useAppStore.getState();
     store.loadDemoState({ personas: [{ id: "demo" }] as never });
+    expect(useAppStore.getState().personas.map((p) => p.id)).toEqual(["real", "demo"]); // merged
     useAppStore.getState().clearDemoState();
     const s = useAppStore.getState();
     expect(s.demoActive).toBe(false);
     expect(s.demoBackup).toBeNull();
-    expect(s.personas.map((p) => p.id)).toEqual(["real"]); // restored
+    expect(s.personas.map((p) => p.id)).toEqual(["real"]); // restored — demo addition removed
   });
 
   it("a second load keeps the ORIGINAL backup (doesn't stash the demo as the backup)", () => {

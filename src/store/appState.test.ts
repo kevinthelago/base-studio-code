@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEMOABLE_KEYS, pickDemoable, snapshotAppState, isDemoableKey } from "./appState";
+import { DEMOABLE_KEYS, pickDemoable, snapshotAppState, isDemoableKey, mergeSnapshotInto } from "./appState";
 
 describe("app-state snapshot (#2272)", () => {
   it("snapshots only the demoable keys from a full-ish state", () => {
@@ -46,6 +46,29 @@ describe("app-state snapshot (#2272)", () => {
 
   it("skips keys that are present but undefined", () => {
     expect(pickDemoable({ blueprints: undefined, skills: [] })).toEqual({ skills: [] });
+  });
+
+  it("mergeSnapshotInto augments arrays by id, objects by key, and preserves built-ins (#2288)", () => {
+    const state = {
+      personas: [{ id: "director", builtin: true }, { id: "worker", builtin: true }],
+      planFleet: { real: { streams: [] } },
+      activeBlueprintId: "default",
+    };
+    const patch = mergeSnapshotInto(state, {
+      personas: [{ id: "worker", builtin: true, edited: true }, { id: "demo-billing" }] as never,
+      planFleet: { demoproj: { streams: [{ id: "s" }] } } as never,
+      activeBlueprintId: "demo-bp" as never,
+    });
+    // Built-in "director" preserved; "worker" overridden by the incoming same-id; "demo-billing" added.
+    expect((patch.personas as { id: string }[]).map((p) => p.id)).toEqual(["director", "worker", "demo-billing"]);
+    expect((patch.personas as { edited?: boolean }[])[1].edited).toBe(true); // incoming won on the id collision
+    // Map merges by key — real fleet kept, demo fleet added.
+    expect(Object.keys(patch.planFleet as object).sort()).toEqual(["demoproj", "real"]);
+    expect(patch.activeBlueprintId).toBe("demo-bp"); // scalar replaced
+  });
+
+  it("mergeSnapshotInto skips keys the snapshot doesn't set", () => {
+    expect(mergeSnapshotInto({ personas: [{ id: "a" }] }, { blueprints: [] as never })).toEqual({ blueprints: [] });
   });
 
   it("isDemoableKey reflects the allowlist", () => {
