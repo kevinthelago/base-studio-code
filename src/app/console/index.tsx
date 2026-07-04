@@ -10,6 +10,7 @@ import type { ViewKey } from "@/app/console/panes/viewDefs";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
 import { useDirectorPump } from "./useDirectorPump";
+import { useFaultTriage } from "./useFaultTriage";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -29,6 +30,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   // #199: the always-on coordinator — auto-wakes ready parked panes when enabled.
   // Mounted here because ConsoleWorkspace stays mounted across every screen (#187).
   useCoordinator();
+  useFaultTriage(); // #2265 — poll runtime faults; route a deduped, rate-limited fix per the auto-triage toggle
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
   // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
   // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.
