@@ -37,7 +37,7 @@ describe("blueprintShare (#598)", () => {
   });
 
   it("rejects a non-blueprint manifest and malformed payloads", () => {
-    expect(manifestToBlueprint(wrapExtension("pipeline", "p", "n", "1", {})).ok).toBe(false);
+    expect(manifestToBlueprint(wrapExtension("skill", "s", "n", "1", {})).ok).toBe(false);
     expect(coerceBlueprint(null)).toBeNull();
     expect(coerceBlueprint({ id: "x", name: "y", sections: [] })).toBeNull(); // no valid sections
     expect(coerceBlueprint({ id: "x", name: "y", sections: [{ name: "no key" }] })).toBeNull();

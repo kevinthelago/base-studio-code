@@ -13,7 +13,7 @@ describe("extension manifest envelope (#598)", () => {
   });
 
   it("carries supplied meta (author / capabilities / integrity)", () => {
-    const m = wrapExtension("pipeline", "p1", "P", "2.1.0", {}, {
+    const m = wrapExtension("skill", "s1", "S", "2.1.0", {}, {
       author: "kev", capabilities: ["render", "read-signals"], integrity: "sha256:abc",
     });
     expect(m.author).toBe("kev");
