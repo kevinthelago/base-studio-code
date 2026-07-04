@@ -1,0 +1,71 @@
+{
+  "order": 1,
+  "kit": { "id": "examples", "name": "examples", "stack": "demo · multi-stack", "dot": "var(--state-wait)", "builtin": true },
+  "components": [
+    {
+      "id": "personaspanel", "name": "PersonasPanel", "kitId": "examples", "role": "page", "version": "0.7.0", "used": 3,
+      "tags": ["screen", "library"], "variants": ["default"], "composes": ["Card", "Chip", "Button", "TextField", "SegmentedControl"],
+      "props": [],
+      "whenUse": ["The full CRUD surface for the persona library.", "Mounted as a planner-workspace tab or pane."],
+      "whenNot": ["Picking a persona inline — use a compact dropdown.", "Read-only display — pass a lighter view."],
+      "src": "features/personas/PersonasPanel.tsx",
+      "srcText": "export function PersonasPanel() {\n  const personas = useAppStore((s) => s.personas);\n  const [id, setId] = useState(personas[0]?.id);\n  // list rail + editor — reads/writes the GLOBAL store via the bsc bridge\n  return <Row><List .../><Editor .../></Row>;\n}",
+      "builtin": true
+    },
+    {
+      "id": "personaservice", "name": "PersonaService", "kitId": "examples", "role": "service", "version": "1.1.0", "used": 12,
+      "tags": ["store", "bridge", "kotlin"], "variants": ["default"], "composes": [],
+      "props": [
+        { "name": "list()", "type": "List<Persona>", "req": true, "desc": "All personas from the global store." },
+        { "name": "set(p)", "type": "Persona", "req": true, "desc": "Upsert; written verbatim (no schema)." },
+        { "name": "remove(id)", "type": "Unit", "req": true, "desc": "Delete a user persona." }
+      ],
+      "whenUse": ["Reading/writing the shared persona store.", "Behind the `bsc persona` CLI verbs."],
+      "whenNot": ["Per-project data — services here are global.", "UI state — that belongs in the store slice."],
+      "src": "store/PersonaService.kt",
+      "srcText": "@Service\nclass PersonaService(private val store: JsonStore) {\n  fun list(): List<Persona> = store.readAll(\"personas\")\n  fun set(p: Persona) = store.write(\"personas/${p.id}\", p)\n  fun remove(id: String) = store.delete(\"personas/$id\")\n}",
+      "builtin": true
+    },
+    {
+      "id": "bscbridge", "name": "BscBridge", "kitId": "examples", "role": "service", "version": "2.0.0", "used": 51,
+      "tags": ["cli", "bridge", "kotlin"], "variants": ["default"], "composes": [],
+      "props": [
+        { "name": "run(argv)", "type": "String", "req": true, "desc": "Invoke a `bsc` subcommand, capture stdout." },
+        { "name": "write(argv, body)", "type": "Unit", "req": true, "desc": "Invoke with a JSON body on stdin." },
+        { "name": "projectKey", "type": "String?", "req": false, "desc": "null = a global store (personas, components)." }
+      ],
+      "whenUse": ["The single choke-point for every `bsc …` call.", "Global stores (projectKey = null)."],
+      "whenNot": ["Direct Tauri commands — everything goes via bsc.", "Streaming output — this captures once."],
+      "src": "core/BscBridge.kt",
+      "srcText": "@Service\nclass BscBridge {\n  fun run(argv: List<String>, projectKey: String? = null): String =\n    exec(listOf(\"bsc\") + keyArgs(projectKey) + argv).stdout\n  fun write(argv: List<String>, body: Any) =\n    exec(listOf(\"bsc\") + argv, stdin = json(body))\n}",
+      "builtin": true
+    },
+    {
+      "id": "commandrouter", "name": "CommandRouter", "kitId": "examples", "role": "service", "version": "1.4.0", "used": 33,
+      "tags": ["ipc", "rust"], "variants": ["default"], "composes": [],
+      "props": [
+        { "name": "register(name, h)", "type": "()", "req": true, "desc": "Bind an IPC command to a handler." },
+        { "name": "dispatch(msg)", "type": "Result<Value>", "req": true, "desc": "Route a frontend invoke to its handler." }
+      ],
+      "whenUse": ["Wiring frontend invoke() calls to Rust handlers.", "One registry for all IPC commands."],
+      "whenNot": ["Global store access — that goes through bsc.", "Long-running streams — use an event channel."],
+      "src": "src-tauri/src/router.rs",
+      "srcText": "pub struct CommandRouter { handlers: HashMap<String, Handler> }\nimpl CommandRouter {\n  pub fn register(&mut self, name: &str, h: Handler) {\n    self.handlers.insert(name.into(), h);\n  }\n}",
+      "builtin": true
+    },
+    {
+      "id": "fswatcher", "name": "FsWatcher", "kitId": "examples", "role": "service", "version": "0.6.0", "used": 8,
+      "tags": ["fs", "events", "rust"], "variants": ["default"], "composes": [],
+      "props": [
+        { "name": "watch(path)", "type": "()", "req": true, "desc": "Start watching a path recursively." },
+        { "name": "on_change", "type": "Fn(Event)", "req": true, "desc": "Debounced change callback." },
+        { "name": "stop()", "type": "()", "req": false, "desc": "Tear down the watcher." }
+      ],
+      "whenUse": ["Reacting to on-disk changes (store / repo).", "Emitting debounced fs events to the frontend."],
+      "whenNot": ["Polling on an interval — prefer native events.", "One-shot reads — just read the file."],
+      "src": "src-tauri/src/fs_watcher.rs",
+      "srcText": "pub fn watch(path: &Path, on_change: impl Fn(Event)) -> Result<()> {\n  let mut w = notify::recommended_watcher(move |ev| on_change(ev))?;\n  w.watch(path, RecursiveMode::Recursive)?;\n  Ok(())\n}",
+      "builtin": true
+    }
+  ]
+}
