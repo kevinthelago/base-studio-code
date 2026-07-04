@@ -12,3 +12,10 @@ src-tauri/data/planner/github-commands.md   text eol=lf
 src-tauri/data/planner/github-repo-item.md  text eol=lf
 src-tauri/data/planner/linked-repo-item.md  text eol=lf
 src-tauri/data/planner/automations-empty.md text eol=lf
+
+# Externalized bsc-* shell rc fragments (#2092) + the bsc-defer directive (#2145), embedded via
+# include_dir! (config::load_str) and concatenated into the session bsc-env.sh. MUST be LF: a CRLF
+# checkout would embed `\r` into sourced bash (breaking the #296 one-function-per-line glue) and drift
+# the assembled body from the rustc-normalized string literals these fragments replaced.
+src-tauri/data/shell/*.sh          text eol=lf
+src-tauri/data/fleet/*.md          text eol=lf
