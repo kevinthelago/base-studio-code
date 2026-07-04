@@ -64,10 +64,10 @@ describe("personas store slice (#2094)", () => {
 
   it("applyPersonaToPane stamps role + start prompt + model and marks perms stale", () => {
     useAppStore.setState({ paneRoles: {}, paneModels: {}, paneStartupPromptText: {}, panePermsStale: {} });
-    // Documentor: role reviewer + a real start prompt, no model override.
+    // Documentor: the real `documentor` role (#1555) + a real start prompt, no model override.
     useAppStore.getState().applyPersonaToPane("t0p0", "persona-documentor");
     const st = useAppStore.getState();
-    expect(st.paneRoles["t0p0"]).toBe("reviewer");
+    expect(st.paneRoles["t0p0"]).toBe("documentor");
     expect(st.paneStartupPromptText["t0p0"]).toMatch(/documentor/i);
     expect(st.panePermsStale["t0p0"]).toBe(true);
     expect(st.paneModels["t0p0"]).toBeUndefined();   // documentor has no model override
