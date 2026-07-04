@@ -6,9 +6,9 @@
 import type { ComponentRecord, Kit, PropSpec } from "./model";
 
 export const SEED_KITS: Kit[] = [
-  { id: "react-ui", name: "react-ui", stack: "React · TypeScript", dot: "var(--info)" },
-  { id: "spring-kotlin", name: "spring-kotlin", stack: "Spring · Kotlin", dot: "var(--success)" },
-  { id: "tauri-rust", name: "tauri-rust", stack: "Tauri · Rust", dot: "var(--state-wait)" },
+  { id: "react-ui", name: "react-ui", stack: "React · TypeScript", dot: "var(--info)", builtin: true },
+  { id: "spring-kotlin", name: "spring-kotlin", stack: "Spring · Kotlin", dot: "var(--success)", builtin: true },
+  { id: "tauri-rust", name: "tauri-rust", stack: "Tauri · Rust", dot: "var(--state-wait)", builtin: true },
 ];
 
 const p = (name: string, type: string, req: boolean, desc: string): PropSpec => ({ name, type, req, desc });
@@ -196,4 +196,19 @@ const RAW: Omit<ComponentRecord, "id">[] = [
   },
 ];
 
-export const SEED_COMPONENTS: ComponentRecord[] = RAW.map((c) => ({ ...c, id: c.name.toLowerCase() }));
+export const SEED_COMPONENTS: ComponentRecord[] = RAW.map((c) => ({ ...c, id: c.name.toLowerCase(), builtin: true }));
+
+/** Reconcile the store's loaded components with the packaged built-ins: the store wins for records it
+ *  has (so a user edit to a built-in is preserved), and any built-in the store LACKS is re-added — the
+ *  same seed-and-keep pattern as personas/orgs. `hydrateComponents` re-pushes the re-added built-ins so
+ *  the store converges. */
+export function reconcileComponents(loaded: ComponentRecord[]): ComponentRecord[] {
+  const have = new Set(loaded.map((c) => c.id));
+  return [...loaded, ...SEED_COMPONENTS.filter((b) => !have.has(b.id))];
+}
+
+/** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). */
+export function reconcileKits(loaded: Kit[]): Kit[] {
+  const have = new Set(loaded.map((k) => k.id));
+  return [...loaded, ...SEED_KITS.filter((b) => !have.has(b.id))];
+}

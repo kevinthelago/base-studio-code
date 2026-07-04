@@ -745,6 +745,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-blueprint",
  "bsc-cli-util",
+ "bsc-component",
  "bsc-data",
  "bsc-files",
  "bsc-org",
@@ -789,6 +790,14 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-component"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
 ]
 
 [[package]]
