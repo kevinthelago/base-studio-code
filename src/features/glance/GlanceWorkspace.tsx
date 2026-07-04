@@ -160,7 +160,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       toolbar={
         <>
           <Row gap={9} align="baseline">
-            <Box style={{ width: 9, height: 9, borderRadius: "50%", background: "#4fd6a0", boxShadow: "0 0 10px #4fd6a0", alignSelf: "center" }} />
             <Text as="span" mono size={16} weight={700} style={{ letterSpacing: "-.5px" }}>glance</Text>
             <Text as="span" mono size={11} tone="dim">{drill ? `${drillNode?.slug ?? "project"} · fleet` : "project network"}</Text>
           </Row>
