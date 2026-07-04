@@ -69,3 +69,36 @@ export function snapshotAppState(state: Partial<Pick<AppStore, DemoableKey>>): A
 export function isDemoableKey(key: string): key is DemoableKey {
   return DEMOABLE_SET.has(key);
 }
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Dedupe-union two arrays by each item's `id` (or the item itself for primitives); `inc` wins on a
+ *  collision. Keeps existing order, then appends genuinely-new incoming items. */
+function mergeArrayById(cur: unknown[], inc: unknown[]): unknown[] {
+  const keyOf = (x: unknown) => (x && typeof x === "object" && "id" in x ? (x as { id: unknown }).id : x);
+  const map = new Map<unknown, unknown>();
+  for (const x of cur) map.set(keyOf(x), x);
+  for (const x of inc) map.set(keyOf(x), x); // incoming overrides a same-id/-value item
+  return [...map.values()];
+}
+
+/**
+ * Merge a snapshot INTO current `state` (an additive load) — the partial to `set()`. Per demoable key:
+ * arrays union by `id` (incoming wins), plain objects shallow-merge by key (incoming wins), scalars
+ * replace. So loading a demo AUGMENTS the built-in libraries (personas/orgs/blueprints) + your data
+ * instead of clobbering them (#2288). Unknown/undefined incoming keys are skipped. `state` is read-only.
+ */
+export function mergeSnapshotInto(state: Record<string, unknown>, snapshot: AppStateSnapshot): AppStateSnapshot {
+  const inc = snapshot as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of DEMOABLE_KEYS) {
+    if (!(k in inc) || inc[k] === undefined) continue;
+    const incoming = inc[k];
+    const current = state[k];
+    if (Array.isArray(incoming) && Array.isArray(current)) out[k] = mergeArrayById(current, incoming);
+    else if (isPlainObject(incoming) && isPlainObject(current)) out[k] = { ...current, ...incoming };
+    else out[k] = incoming;
+  }
+  return out as AppStateSnapshot;
+}
