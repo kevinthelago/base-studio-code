@@ -55,6 +55,12 @@ export function kitRules(components: ComponentRecord[]): KitRule[] {
   return mergeRules(deriveRules(components), authored);
 }
 
+/** The rules a SINGLE component contributes/enforces — its derived `wraps` rule (if any) merged with
+ *  its author-declared `rules`. Drives the pane's per-component Rules tab. */
+export function componentRules(component: ComponentRecord): KitRule[] {
+  return mergeRules(deriveRules([component]), component.rules ?? []);
+}
+
 /** The eslint `rules` fragment a kit's ruleset compiles to (only the rules that have entries appear). */
 export interface EslintRulesConfig {
   "no-restricted-syntax"?: unknown[];
