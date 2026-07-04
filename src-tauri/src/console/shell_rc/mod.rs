@@ -8,7 +8,7 @@
 /// Shared sh helper fragments (#2064): the three fragile shell fragments the `bsc-*`
 /// helpers repeated (the JSON string-field extractor ~12×, the epoch-ms timestamp
 /// fallback verbatim 4×, and the `mkdir -p` + append-line log tail ~10×) — defined ONCE
-/// here and prepended as the FIRST entry of `ALL_BSC_RC`, so every helper below calls
+/// here and prepended as the FIRST entry of `all_bsc_rc()`, so every helper below calls
 /// them instead of re-inlining the fragment (a drift used to be caught only by eye):
 /// * `__bsc_jstr <field-ere>` — reads a JSON blob on stdin and prints the value of the
 ///   first `"<field>": "…"` string field (the `grep -oE … | head -1 | sed -E …` core).
@@ -277,10 +277,21 @@ bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ];
 /// If it has already been re-prompted once (`stop_hook_active`), it allows the stop;
 /// otherwise it returns a `block` decision that pushes the worker to keep going or defer
 /// a real question to the director via `bsc-ask` -- never to sit waiting on the user.
-pub(crate) const BSC_DEFER_RC: &str = concat!(
-    r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":"Do not stop. Drive every owned issue to its open PR yourself: implement it, run the full local gate, then -- under the default auto-pr policy -- push your branch and open a PR to develop, pipe the issue into bsc-landed, and immediately pick up your next owned issue. The DIRECTOR reviews, merges, and closes your PR; never run gh pr merge or gh pr close on it yourself, and never wait on the user, on CI, or on the director. Keep going until EVERY owned issue has its work pushed and its PR open with the gate green. THEN, when nothing remains, do NOT end -- enter MAINTENANCE: pipe a one-line standing note into bsc-maintain (it parks you alive and ready) and stay available; the director will dispatch new or regressed work in your lane and resume you. For a decision you genuinely cannot make yourself, pipe a one-line question into bsc-ask so the director answers and resumes you."}'; }"#,
-    "\n",
-);
+///
+/// The DIRECTIVE prose (the block `reason`) is externalized to `data/fleet/defer-directive.md`
+/// (#2145, epic #2027 tail) — config-dir-overridable + in the export bundle — while the Stop-hook
+/// shell wrapper stays here as code. The fragment keeps its trailing newline (#296); the directive is
+/// JSON-string-embedded (`"` and `\` are escaped) and MUST be a single line without a raw `'`.
+pub(crate) fn bsc_defer_rc() -> String {
+    let directive = crate::platform::config::load_str("fleet/defer-directive.md");
+    let directive = directive.trim().replace('\\', "\\\\").replace('"', "\\\""); // backslash first
+    let mut s = String::new();
+    s.push_str(r#"bsc-defer() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":""#);
+    s.push_str(&directive);
+    s.push_str(r#""}'; }"#);
+    s.push('\n');
+    s
+}
 
 /// `bsc-fleet` (#734): the director's roster view. Reads `fleet.roster.tsv` (written at fleet
 /// launch into the project hub -- the director's cwd) and joins it with `coord.log` to print
@@ -317,40 +328,42 @@ pub(crate) const BSC_DENY_RC: &str = concat!(
     "\n",
 );
 
-/// The ordered list of every `BSC_*_RC` fragment, in the EXACT sequence the rc file
-/// concatenates them. This is the single source of truth for the concat order: the rc
-/// writer (`wire_bsc_env`) and the `full_bsc_rc_is_syntactically_valid_bash` syntax
-/// guard both derive from it, so a new helper (or a reorder) lands in one place and can
-/// never silently fall out of lockstep between the two. Each fragment already ends in a
-/// trailing newline (#296), so `.concat()` keeps every helper on its own line.
-pub(crate) const ALL_BSC_RC: &[&str] = &[
-    // The shared sh helpers (#2064) MUST come first — every `bsc-*` helper below calls them.
-    BSC_SHARED_RC,
-    BSC_CHECKPOINT_RC,
-    BSC_DECISIONS_RC,
-    BSC_AUDIT_RC,
-    BSC_SKILL_RC,
-    BSC_HOOK_RC,
-    BSC_MCP_RC,
-    BSC_TOKENS_RC,
-    BSC_ACTIVITY_RC,
-    BSC_DONE_RC,
-    BSC_PERM_RC,
-    BSC_CONFINE_RC,
-    BSC_SCOPE_RC,
-    BSC_DENY_RC,
-    BSC_TAINT_RC,
-    BSC_COORD_EMIT_RC,
-    BSC_DEFER_RC,
-    BSC_FLEET_RC,
-    BSC_RC,
-    BSC_LEARNED_RC,
-];
+/// Every `bsc-*` rc fragment, in the EXACT sequence the rc file concatenates them. This is the single
+/// source of truth for the concat order: the rc writer (`wire_bsc_env` → `bsc_rc_body`) and the
+/// `full_bsc_rc_is_syntactically_valid_bash` syntax guard both derive from it, so a new helper (or a
+/// reorder) lands in one place and can never silently fall out of lockstep. All fragments are
+/// compile-time constants EXCEPT `bsc_defer_rc()`, whose directive prose is config-loaded (#2145). Each
+/// fragment already ends in a trailing newline (#296), so `.concat()` keeps every helper on its own line.
+pub(crate) fn all_bsc_rc() -> Vec<String> {
+    vec![
+        // The shared sh helpers (#2064) MUST come first — every `bsc-*` helper below calls them.
+        BSC_SHARED_RC.to_string(),
+        BSC_CHECKPOINT_RC.to_string(),
+        BSC_DECISIONS_RC.to_string(),
+        BSC_AUDIT_RC.to_string(),
+        BSC_SKILL_RC.to_string(),
+        BSC_HOOK_RC.to_string(),
+        BSC_MCP_RC.to_string(),
+        BSC_TOKENS_RC.to_string(),
+        BSC_ACTIVITY_RC.to_string(),
+        BSC_DONE_RC.to_string(),
+        BSC_PERM_RC.to_string(),
+        BSC_CONFINE_RC.to_string(),
+        BSC_SCOPE_RC.to_string(),
+        BSC_DENY_RC.to_string(),
+        BSC_TAINT_RC.to_string(),
+        BSC_COORD_EMIT_RC.to_string(),
+        bsc_defer_rc(),
+        BSC_FLEET_RC.to_string(),
+        BSC_RC.to_string(),
+        BSC_LEARNED_RC.to_string(),
+    ]
+}
 
 /// The full bsc-* rc body that `pty_create` writes to `bsc-env.sh` — every fragment in
-/// `ALL_BSC_RC` concatenated in order. Byte-identical to the old inline `format!`.
+/// `all_bsc_rc()` concatenated in order. Byte-identical to the old inline `format!`.
 pub(crate) fn bsc_rc_body() -> String {
-    ALL_BSC_RC.concat()
+    all_bsc_rc().concat()
 }
 
 #[cfg(test)]
