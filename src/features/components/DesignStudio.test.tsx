@@ -58,6 +58,17 @@ describe("DesignStudio (#2308)", () => {
     expect(gen.disabled).toBe(false);
   });
 
+  it("applies the motion classes (#2344) — preview/rail enter in Library, edges flow in Graph", () => {
+    const { container } = render(<DesignStudio />);
+    // Library view: the keyed preview re-enters, the center drills in, rail rows stagger in.
+    expect(container.querySelector(".ds-preview-enter")).toBeTruthy();
+    expect(container.querySelector(".ds-center.ds-view-enter")).toBeTruthy();
+    expect(container.querySelector(".ds-comprow-enter")).toBeTruthy();
+    // Graph view: composition edges carry the flowing class.
+    fireEvent.click(screen.getByText("⬡ Graph"));
+    expect(container.querySelector("path.ds-edge")).toBeTruthy();
+  });
+
   it("the inspector shows the composes graph for a component that has dependencies", () => {
     render(<DesignStudio />);
     // EmptyState composes Button + Card — its inspector renders the "depends on" composes graph.
