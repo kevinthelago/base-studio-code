@@ -19,8 +19,11 @@ describe("positionDisplay (#2193)", () => {
   });
 
   it("gives resource/external nodes their own dept + glyph, no role", () => {
-    expect(positionDisplay({ nodeId: "c", kind: "external", label: "Customer" }, personas))
-      .toMatchObject({ name: "Customer", dept: "External", role: undefined });
+    const ext = positionDisplay({ nodeId: "c", kind: "external", label: "Customer" }, personas);
+    expect(ext.name).toBe("Customer");
+    expect(ext.dept).toBe("External");
+    expect(ext.glyph).toBe("◍");   // its own kind glyph, not a role glyph
+    expect(ext.role).toBeUndefined(); // non-agent nodes carry no role tag
     expect(positionDisplay({ nodeId: "r", kind: "resource", label: "Commons" }, personas).dept).toBe("Resource");
   });
 });
