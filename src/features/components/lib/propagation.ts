@@ -51,6 +51,12 @@ export function changeId(kitId: string, component: string, to: string | undefine
   return `${kitId}:${component}:${to ?? ""}:${cls}`;
 }
 
+/** A consumer-index edge id — one edge per (project, kit). Byte-identical to the Rust `usage_id`
+ *  (`crates/bsc-component/src/usage.rs`) so the frontend and `bsc component usage` agree. */
+export function kitUsageId(projectKey: string, kitId: string): string {
+  return `${projectKey}>${kitId}`;
+}
+
 /** Classify a before→after component diff (author-declared class overrides this, see {@link makeChange}).
  *  Breaking wins: a prop removed, a prop that became required, or a prop whose type changed, or a variant
  *  removed. Additive: a new prop or variant. Otherwise a fix. */

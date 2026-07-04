@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import * as bridge from "./lib/componentBridge";
+import * as usageBridge from "./lib/kitUsageBridge";
 
 describe("components store slice (#2281)", () => {
   beforeEach(() => {
@@ -39,5 +40,42 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().components.some((c) => c.id === "my-widget")).toBe(true);
     expect(pushC).not.toHaveBeenCalledWith(expect.objectContaining({ id: "my-widget" }));
     expect(pushK).not.toHaveBeenCalled(); // every kit already present → nothing to re-seed
+  });
+});
+
+describe("kit-usage consumer index slice (#2277)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ kitUsage: [] });
+    vi.restoreAllMocks();
+  });
+
+  it("addKitUsage appends, dedups by (project, kit), and pushes through the bridge once", () => {
+    const push = vi.spyOn(usageBridge, "pushKitUsage").mockResolvedValue(undefined);
+    useAppStore.getState().addKitUsage("proj-a", "react-ui");
+    useAppStore.getState().addKitUsage("proj-a", "react-ui"); // duplicate → no-op
+    useAppStore.getState().addKitUsage("", "react-ui"); // empty → rejected
+    expect(useAppStore.getState().kitUsage).toEqual([{ projectKey: "proj-a", kitId: "react-ui" }]);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith("proj-a", "react-ui");
+  });
+
+  it("removeKitUsage drops the edge and pushes the removal by its deterministic id", () => {
+    vi.spyOn(usageBridge, "pushKitUsage").mockResolvedValue(undefined);
+    const drop = vi.spyOn(usageBridge, "dropKitUsage").mockResolvedValue(undefined);
+    useAppStore.getState().addKitUsage("proj-a", "react-ui");
+    useAppStore.getState().removeKitUsage("proj-a", "react-ui");
+    expect(useAppStore.getState().kitUsage).toHaveLength(0);
+    expect(drop).toHaveBeenCalledWith("proj-a>react-ui"); // matches the Rust usage_id
+  });
+
+  it("hydrateKitUsage replaces from the bridge, but keeps the cache when unreachable", async () => {
+    useAppStore.setState({ kitUsage: [{ projectKey: "cached", kitId: "react-ui" }] });
+    vi.spyOn(usageBridge, "loadKitUsage").mockResolvedValueOnce(null); // unreachable → keep
+    await useAppStore.getState().hydrateKitUsage();
+    expect(useAppStore.getState().kitUsage).toEqual([{ projectKey: "cached", kitId: "react-ui" }]);
+    const loaded = [{ projectKey: "m", kitId: "spring-kotlin" }];
+    vi.spyOn(usageBridge, "loadKitUsage").mockResolvedValueOnce(loaded);
+    await useAppStore.getState().hydrateKitUsage();
+    expect(useAppStore.getState().kitUsage).toEqual(loaded);
   });
 });
