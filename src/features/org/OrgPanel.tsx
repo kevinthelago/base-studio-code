@@ -37,7 +37,8 @@ export function OrgPanel() {
   const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
   const savedZoom = useAppStore((s) => s.orgZoom[orgId]);
-  const [sel, setSel] = useState<Selection>({ type: "node", id: org?.positions[0]?.nodeId ?? "" });
+  // Open with nothing selected (the empty sentinel — inspector empty, no dimming; see onBackgroundClick).
+  const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
   // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
   const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
   // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph).
@@ -150,7 +151,7 @@ export function OrgPanel() {
             <Box style={{ width: 22, height: 22, borderRadius: 6, background: "var(--bg-soft)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)" }}>◆</Box>
             {orgs.length > 1 ? (
               // eslint-disable-next-line no-restricted-syntax -- compact inline org switch; a full Field is overkill in the toolbar
-              <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setDrill(null); setSel({ type: "node", id: orgs.find((o) => o.id === e.target.value)!.positions[0]?.nodeId ?? "" }); }}
+              <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setDrill(null); setSel({ type: "node", id: "" }); }}
                 className="input" style={{ fontWeight: 600, fontSize: 14, background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}>
                 {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
