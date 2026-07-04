@@ -36,14 +36,14 @@ describe("ComponentLibraryPane (#2269)", () => {
 
   it("the Usage tab shows the when-to-use / when-not guidance", () => {
     render(<ComponentLibraryPane />);
-    fireEvent.click(screen.getByRole("button", { name: "usage" }));
+    fireEvent.click(screen.getByRole("tab", { name: /usage/ }));
     expect(screen.getByText("When to use")).toBeTruthy();
     expect(screen.getByText("When not to")).toBeTruthy();
   });
 
   it("the Rules tab shows the component's derived lint rule (#2279)", () => {
     render(<ComponentLibraryPane />); // Button is selected first; it wraps "button"
-    fireEvent.click(screen.getByRole("button", { name: /rules/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /rules/ }));
     // The derived anti-duplication rule: use <Button> not a raw <button>, with the escape hatch.
     expect(screen.getByText(/Use the kit's <Button> instead of a raw <button>/)).toBeTruthy();
     expect(screen.getByText("derived")).toBeTruthy();
@@ -52,7 +52,8 @@ describe("ComponentLibraryPane (#2269)", () => {
   it("search filters the picker to matches", () => {
     render(<ComponentLibraryPane />);
     fireEvent.change(screen.getByLabelText("Search components"), { target: { value: "field" } });
-    expect(screen.getByText("Field")).toBeTruthy();
+    // "Field" now appears both in the filtered picker AND in the auto-selected detail heading.
+    expect(screen.getAllByText("Field").length).toBeGreaterThan(0);
     expect(screen.queryByText("StatusDot")).toBeNull();
     expect(screen.getByText("1 / 10")).toBeTruthy(); // 1 match of 10 react-ui components
   });
