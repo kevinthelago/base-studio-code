@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildGraph, focusSets, type GRawNode, type GRawEdge } from "./glanceGraph";
-import { buildGlanceData, SAMPLE_GRAPH } from "./glanceData";
+import { buildGlanceData } from "./glanceData";
 
 const NODES: GRawNode[] = [
   { id: "core", role: "infra", status: "done" },
@@ -74,18 +74,28 @@ describe("focusSets (#2206)", () => {
   });
 });
 
-describe("buildGlanceData (#2206)", () => {
-  it("falls back to the sample graph when there are too few real projects", () => {
-    expect(buildGlanceData([]).rawNodes).toEqual(SAMPLE_GRAPH.rawNodes);
-    expect(buildGlanceData([{ id: "a", name: "A" }, { id: "b", name: "B" }]).sample).toBe(true);
+describe("buildGlanceData (#2206 / #2253 / #2272)", () => {
+  it("returns an EMPTY, non-sample graph when there are no projects — a real empty state, not the mock (#2272)", () => {
+    const d = buildGlanceData([]);
+    expect(d.rawNodes).toEqual([]);
+    expect(d.rawEdges).toEqual([]);
+    expect(d.sample).toBe(false);
   });
-  it("uses real projects as nodes when there are enough, with a sample (cycle-containing) topology", () => {
+  it("uses real projects as nodes (derived role, idle status) and NEVER fabricates a topology", () => {
     const projects = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, name: `Project ${i}` }));
     const data = buildGlanceData(projects);
     expect(data.rawNodes.map((n) => n.id).sort()).toEqual(projects.map((p) => p.id).sort());
     expect(data.rawNodes.every((n) => n.slug?.startsWith("Project"))).toBe(true);
-    expect(data.sample).toBe(true);
-    // the forced mutual pair produces a detectable cycle
-    expect(buildGraph(data.rawNodes, data.rawEdges).cyclePairs.length).toBeGreaterThan(0);
+    expect(data.sample).toBe(false);
+    expect(data.rawEdges).toEqual([]); // no links passed → no edges (no invented dependencies)
+  });
+  it("renders only the user-drawn links as edges, filtered to links between existing nodes (#2253)", () => {
+    const projects = [{ id: "a", name: "A" }, { id: "b", name: "B" }];
+    const data = buildGlanceData(projects, [
+      { id: "l1", from: "a", to: "b", kind: "api" },
+      { id: "l2", from: "a", to: "gone", kind: "data" }, // dangling target → dropped
+    ]);
+    expect(data.rawEdges.map((e) => e.id)).toEqual(["l1"]);
+    expect(data.sample).toBe(false);
   });
 });

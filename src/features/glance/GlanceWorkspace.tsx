@@ -14,6 +14,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -41,6 +42,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
   const projects = useGlanceProjects();
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const addProjectLink = useAppStore((s) => s.addProjectLink);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -119,6 +121,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const q = search.trim().toLowerCase();
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
+  // A brand-new / unseeded app has no projects → show a REAL empty state instead of the old mock graph
+  // (#2272). Only on the (un-drilled) project network — you can't drill without projects.
+  const networkEmpty = !drill && projectModel.nodes.length === 0;
 
   return (
     <Screen
@@ -130,7 +135,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       pageOverride={pageOverride}
       className="glance-workspace"
     >
-      {page === "fleet" ? <Fleet /> : (
+      {page === "fleet" ? <Fleet /> : networkEmpty ? (
+      <Box style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <EmptyState
+          icon="◍" iconVariant="dashed"
+          title="No project network yet"
+          description="Projects you create show up here as a network you can wire together — dependencies, contracts, and cross-project cycles. Create one in Projects, or load a demo from Settings → General → Demo app-state to see it come alive."
+          actions={<Button onClick={() => setWorkspace("projects")}>Go to Projects</Button>}
+        />
+      </Box>
+      ) : (
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
       // .screen-body is a block scroll container, so give it an explicit full-height flex column.
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
