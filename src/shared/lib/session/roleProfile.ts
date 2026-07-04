@@ -11,7 +11,11 @@ import type { SessionRole } from "./sessionRoles";
 export const DEFAULT_PROFILE_ID = "pf_sandbox";
 
 /** Each session role's default profile id. Worker → Autonomous (trusted); director + the
- *  read-only coordination / observer roles → Read-only review; planner → its application role. */
+ *  read-only coordination / observer roles → Read-only review; planner → its application role.
+ *  Documentor (#1555) → Autonomous too: like the worker it must actually WRITE (its DOC_GLOBS prose
+ *  docs), so it needs a write-permitting profile — the read-only profile's whole-tool write deny would
+ *  mask the role gate's DOC_GLOBS carve-out (deny > allow). The role gate + the bsc-scope hook confine
+ *  those writes to DOC_GLOBS, exactly as the worker's writes are confined to its owned lane. */
 const ROLE_PROFILE: Record<SessionRole, string> = {
   worker: "pf_auto",
   director: "pf_review",
@@ -20,6 +24,7 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   reviewer: "pf_review",
   issuer: "pf_review",
   juror: "pf_review",
+  documentor: "pf_auto",
   planner: "sys_planner",
 };
 

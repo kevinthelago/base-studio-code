@@ -5,7 +5,7 @@
 // streams; a persona stream gets THIS kickoff instead, so a read-only reviewer/documentor stream isn't
 // handed the worker's "own your globs, open a PR" prose.
 import type { Persona } from "@/features/personas";
-import { roleCapability } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, hasScopedWriteCarveOut } from "@/shared/lib/session/sessionRoles";
 import { resolveFlow } from "./agentFlow";
 import { flowKickoffText } from "./flowKickoff";
 import { strategySettings, DEFAULT_STRATEGY, type IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
@@ -16,11 +16,13 @@ export function resolveStreamPersona(personas: Persona[], stream: AgentStream): 
   return stream.persona ? personas.find((p) => p.id === stream.persona) : undefined;
 }
 
-/** Whether a role may write code or push — drives whether the kickoff carries the worker autonomy/push
- *  prose or the read-only "report, don't commit" instruction. */
+/** Whether a role may write files or push — drives whether the kickoff carries the worker autonomy/push
+ *  prose or the read-only "report, don't commit" instruction. Includes the scoped-write carve-out
+ *  (#851/#1555) so a documentor (code:"none" + DOC_GLOBS) is briefed to WRITE its docs and open a
+ *  flow-governed docs PR, not treated as a read-only reviewer. */
 function roleWrites(role: Persona["role"]): boolean {
   const cap = roleCapability(role);
-  return cap.code === "write" || cap.git === "write";
+  return cap.code === "write" || cap.git === "write" || hasScopedWriteCarveOut(cap);
 }
 
 /**
