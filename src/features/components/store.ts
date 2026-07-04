@@ -7,8 +7,8 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
-import type { KitConsumer } from "./lib/propagation";
-import { kitUsageId } from "./lib/propagation";
+import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
+import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
 import { loadComponents, loadKits, pushComponent, pushKit } from "./lib/componentBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
@@ -31,9 +31,20 @@ export interface ComponentsSlice {
   addKitUsage: (projectKey: string, kitId: string) => void;
   /** Remove a project→kit consumer edge; pushes the removal through the bridge. */
   removeKitUsage: (projectKey: string, kitId: string) => void;
+
+  /** Upsert a component (the change ORIGIN, #2277): write it through to the store AND — when it EDITS an
+   *  existing component — emit a classified {@link KitChange} (prop/variant diff), fan it out over the
+   *  consumer index (`kitUsage`), and queue the resulting `kitDispatches`. An author-declared class
+   *  overrides the derived one. Adding a brand-new component is not a "change" (no diff to fan out). */
+  setComponent: (component: ComponentRecord, changeOverride?: Partial<Pick<KitChange, "class" | "summary" | "migration">>) => void;
+  /** The pending fan-out — the planned per-consumer dispatches a kit change produced (notify-only by
+   *  default; issue/assign only for breaking + opted-in consumers). Drained by the delivery slice. */
+  kitDispatches: Dispatch[];
+  /** Dismiss a queued dispatch (once delivered / acknowledged), keyed by (projectKey, change.id). */
+  dismissKitDispatch: (projectKey: string, changeId: string) => void;
 }
 
-export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set) => ({
+export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set, get) => ({
   components: SEED_COMPONENTS,
   kits: SEED_KITS,
 
@@ -74,4 +85,27 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     set((s) => ({ kitUsage: s.kitUsage.filter((u) => !(u.projectKey === projectKey && u.kitId === kitId)) }));
     void dropKitUsage(kitUsageId(projectKey, kitId));
   },
+
+  kitDispatches: [],
+
+  setComponent: (component, changeOverride) => {
+    const before = get().components.find((c) => c.id === component.id);
+    set((s) => ({
+      components: s.components.some((c) => c.id === component.id)
+        ? s.components.map((c) => (c.id === component.id ? component : c))
+        : [...s.components, component],
+    }));
+    void pushComponent(component);
+    if (!before) return; // a brand-new component isn't a change to fan out
+    const dispatches = planPropagation(makeChange(component, before, changeOverride), get().kitUsage);
+    if (!dispatches.length) return;
+    set((s) => {
+      const seen = new Set(s.kitDispatches.map(dispatchKey));
+      const fresh = dispatches.filter((d) => !seen.has(dispatchKey(d)));
+      return fresh.length ? { kitDispatches: [...s.kitDispatches, ...fresh] } : {};
+    });
+  },
+
+  dismissKitDispatch: (projectKey, changeId) =>
+    set((s) => ({ kitDispatches: s.kitDispatches.filter((d) => !(d.projectKey === projectKey && d.change.id === changeId)) })),
 });
