@@ -9,6 +9,8 @@ import {
   type GhMilestone,
 } from "./roadmapGantt";
 import { StatCard } from "@/shared/ui/charts";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -87,11 +89,13 @@ export function Roadmap() {
   const totalIssues = totalOpen + totalClosed;
   const velocity = totalIssues > 0 ? (totalClosed / Math.max(todayWeek, 1)).toFixed(1) : "—";
 
+  // Skeleton the stat values only on the FIRST load (keep them during a refetch). #2248.
+  const isLoading = loading && milestones.length === 0;
   const stats = [
-    { k: "open issues",   v: loading ? "…" : String(totalOpen),   sub: `of ${totalIssues} total`,  tone: "accent"  },
-    { k: "milestones",    v: loading ? "…" : String(filtered.length), sub: `${filtered.filter(m => m.state === "closed").length} closed`, tone: "info" },
-    { k: "velocity",      v: loading ? "…" : `${velocity}/wk`,     sub: "issues closed per week",   tone: "success" },
-    { k: "repo",          v: effectiveRepo.split("/")[1] || "—",    sub: effectiveRepo || "no repo", tone: "fg"      },
+    { k: "open issues",   v: String(totalOpen),           sub: `of ${totalIssues} total`,  tone: "accent"  },
+    { k: "milestones",    v: String(filtered.length),     sub: `${filtered.filter(m => m.state === "closed").length} closed`, tone: "info" },
+    { k: "velocity",      v: `${velocity}/wk`,            sub: "issues closed per week",   tone: "success" },
+    { k: "repo",          v: effectiveRepo.split("/")[1] || "—", sub: effectiveRepo || "no repo", tone: "fg" },
   ] as const;
 
   return (
@@ -104,7 +108,7 @@ export function Roadmap() {
           {/* Stat cards */}
           <Grid cols={4} gap={10} style={{ marginBottom: 18 }}>
             {stats.map(({ k, v, sub, tone }) => (
-              <StatCard key={k} k={k} v={v} sub={sub} tone={tone} />
+              <StatCard key={k} k={k} v={v} sub={sub} tone={tone} loading={isLoading && k !== "repo"} />
             ))}
           </Grid>
 
@@ -145,10 +149,13 @@ export function Roadmap() {
               })()}
             </Row>
 
+            {loading && rows.length === 0 && <SkeletonChart height={160} />}
+
             {!loading && rows.length === 0 && (
-              <Text as="div" mono size={11} tone="dim" style={{ padding: "20px 0" }}>
-                No milestones found for {effectiveRepo || "this project"}.
-              </Text>
+              <EmptyState size="sm" iconVariant="dashed" icon="○"
+                title="No milestones yet"
+                description={`No milestones found for ${effectiveRepo || "this project"}.`}
+                style={{ padding: "22px 12px" }} />
             )}
 
             {rows.length > 0 && (
