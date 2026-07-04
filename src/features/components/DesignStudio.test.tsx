@@ -14,7 +14,8 @@ describe("DesignStudio (#2308)", () => {
     render(<DesignStudio />);
     expect(screen.getByText("Design Studio")).toBeTruthy();          // toolbar title
     for (const k of SEED_KITS) expect(screen.getAllByText(k.name).length).toBeGreaterThan(0); // chip + rail head
-    expect(screen.getByText("Button.tsx")).toBeTruthy();             // Library tab bar names the selection
+    const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+    expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // Library tab bar names the selection
   });
 
   it("selecting a component from the rail updates the Library view + inspector", () => {
@@ -26,9 +27,9 @@ describe("DesignStudio (#2308)", () => {
   it("switching kits re-scopes the rail and selects the kit's first component", () => {
     render(<DesignStudio />);
     // The kit chip in the toolbar (first match; the rail head is the second) switches the active kit.
-    fireEvent.click(screen.getAllByText("spring-kotlin")[0].closest("button")!);
-    const springFirst = SEED_COMPONENTS.find((c) => c.kitId === "spring-kotlin")!;
-    expect(screen.getByText(`${springFirst.name}.tsx`)).toBeTruthy();
+    fireEvent.click(screen.getAllByText("examples")[0].closest("button")!);
+    const examplesFirst = SEED_COMPONENTS.find((c) => c.kitId === "examples")!;
+    expect(screen.getByText(`${examplesFirst.name}.tsx`)).toBeTruthy();
   });
 
   it("toggles from the Library view to the composition Graph view", () => {
@@ -59,9 +60,9 @@ describe("DesignStudio (#2308)", () => {
 
   it("the inspector shows the composes graph for a component that has dependencies", () => {
     render(<DesignStudio />);
-    // Dialog composes other components — its inspector renders the "depends on" composes graph.
-    fireEvent.click(screen.getAllByText("Dialog")[0].closest("button")!);
-    expect(screen.getByText("Dialog.tsx")).toBeTruthy();   // selection followed
-    expect(screen.getByText("depends on ↓")).toBeTruthy(); // inspector-only composes section
+    // EmptyState composes Button + Card — its inspector renders the "depends on" composes graph.
+    fireEvent.click(screen.getAllByText("EmptyState")[0].closest("button")!);
+    expect(screen.getByText("EmptyState.tsx")).toBeTruthy(); // selection followed
+    expect(screen.getByText("depends on ↓")).toBeTruthy();   // inspector-only composes section
   });
 });

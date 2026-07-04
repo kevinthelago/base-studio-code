@@ -9,10 +9,10 @@ describe("kit lint rules → eslint preset (#2279)", () => {
   it("derives a forbid-element rule from each component's `wraps` hint", () => {
     const rules = deriveRules(reactUi);
     const byTarget = Object.fromEntries(rules.map((r) => [r.target, r]));
-    // Button wraps "button", Field wraps "input" — the dogfooded anti-duplication rules.
+    // Button wraps "button", TextField wraps "input" — the dogfooded anti-duplication rules.
     expect(byTarget.button?.use).toBe("Button");
     expect(byTarget.button?.derived).toBe(true);
-    expect(byTarget.input?.use).toBe("Field");
+    expect(byTarget.input?.use).toBe("TextField");
     expect(rules.every((r) => r.kind === "forbid-element")).toBe(true); // wraps only derives element rules
   });
 
