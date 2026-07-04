@@ -38,6 +38,13 @@ const MAX_BODY: usize = 64 * 1024;
 const RATE_WINDOW_MS: i64 = 10_000;
 const RATE_CAP: u32 = 200;
 
+/// Liveness window (ms) — a project is `live` while its last heartbeat is within this window (#2263).
+/// The app shim heartbeats on a short interval (~15s); a 45s window tolerates two briefly-missed beats
+/// (the "small grace" the acceptance criteria call for) so a hiccup doesn't flap the node to "down".
+/// A previously-live project silent past this window is deemed **down** (→ one synthesized "app down"
+/// fault). The single named constant the derivation reads.
+const LIVENESS_WINDOW_MS: i64 = 45_000;
+
 /// Epoch-milliseconds, matching the `errordb`/perf convention so a collector-stamped `ts` sorts
 /// alongside a `bsc errors add`-stamped one.
 fn now_ms() -> i64 {
@@ -114,6 +121,47 @@ impl Outcome {
     }
 }
 
+/// One project's liveness record (#2263). Tracks the last heartbeat plus a one-shot latch so the
+/// live→down transition synthesizes **exactly one** "app down" fault per silence.
+#[derive(Default)]
+struct LivenessRecord {
+    /// Last-heartbeat epoch-ms. A project only appears in the map once it has heartbeated, so an entry
+    /// means it WAS live — the precondition for an "app down" alert.
+    last_hb: i64,
+    /// True once the "app down" fault has been recorded for the CURRENT silence. Reset by the next
+    /// heartbeat, so a project that recovers and later goes silent again alerts afresh — but a silent
+    /// project never re-records on every sweep.
+    down_alerted: bool,
+}
+
+/// The live/down disposition of one project at a point in time — the pure result of last-heartbeat vs
+/// the window. `PartialEq` so it's directly assertable in tests.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Liveness {
+    Live,
+    Down,
+}
+
+/// Pure liveness derivation (#2263): `live` iff the last heartbeat is within `window_ms` of `now`. The
+/// single source of truth the sweep + the Tauri surface both read — testable without any clock/socket.
+fn liveness_of(last_hb: i64, now: i64, window_ms: i64) -> Liveness {
+    if now.saturating_sub(last_hb) <= window_ms {
+        Liveness::Live
+    } else {
+        Liveness::Down
+    }
+}
+
+/// One project's liveness as the Glance status producer reads it (#2263). camelCase — Tauri does NOT
+/// rename return values, only args (#tauri-return-value-casing).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectLiveness {
+    pub project_key: String,
+    /// `true` = heartbeating within the window (Glance shows the pulsing `live` status).
+    pub live: bool,
+}
+
 /// One project's fixed-window rate counter (drop-with-count).
 #[derive(Default)]
 struct RateWindow {
@@ -131,8 +179,8 @@ struct Shared {
     port: AtomicU16,
     /// project_key → ingest token. Minted on demand ([`CollectorState::ensure_token`]).
     tokens: Mutex<HashMap<String, String>>,
-    /// project_key → last-heartbeat epoch-ms (slice-4 liveness; #2263).
-    liveness: Mutex<HashMap<String, i64>>,
+    /// project_key → liveness record (last-heartbeat + one-shot down-alert latch; #2263).
+    liveness: Mutex<HashMap<String, LivenessRecord>>,
     /// project_key → rate window.
     rate: Mutex<HashMap<String, RateWindow>>,
 }
@@ -211,11 +259,33 @@ impl CollectorState {
         token
     }
 
-    /// The last time a heartbeat arrived for `project_key` (epoch-ms), or `None`. For the slice-4
-    /// Glance liveness/"app down" derivation (#2263).
-    #[allow(dead_code)] // consumed by #2263
-    pub fn last_heartbeat(&self, project_key: &str) -> Option<i64> {
-        lock(&self.shared.liveness).get(project_key).copied()
+    /// Evaluate every tracked project's liveness at `now`, synthesize a **one-shot** "app down" fault for
+    /// any project that has just crossed live→down, and return the current live/down snapshot for the
+    /// Glance status producer (#2263). Poll-driven — the frontend `project_liveness` command drives this,
+    /// so down-detection needs no background timer. `open_store` resolves each project's error.db (prod:
+    /// `Store::open(&error_db_path(k))`; tests inject a temp/in-memory store), so the whole path is
+    /// testable without a socket or the real home dir.
+    pub fn sweep(
+        &self,
+        now: i64,
+        open_store: impl Fn(&str) -> rusqlite::Result<Store>,
+    ) -> Vec<ProjectLiveness> {
+        let mut map = lock(&self.shared.liveness);
+        let mut out = Vec::with_capacity(map.len());
+        for (key, rec) in map.iter_mut() {
+            let live = liveness_of(rec.last_hb, now, LIVENESS_WINDOW_MS) == Liveness::Live;
+            if live {
+                // Recovered — clear the latch so a FUTURE silence alerts again.
+                rec.down_alerted = false;
+            } else if !rec.down_alerted {
+                // First sweep of this silence for a project that WAS live (an entry only exists after a
+                // heartbeat): record exactly one "app down" fault, then latch it off.
+                record_app_down(key, rec.last_hb, now, &open_store);
+                rec.down_alerted = true;
+            }
+            out.push(ProjectLiveness { project_key: key.clone(), live });
+        }
+        out
     }
 
     /// Bind the loopback receiver and spawn its accept loop on a background thread. Idempotent enough
@@ -272,6 +342,39 @@ fn read_or_mint_token(path: &std::path::Path) -> String {
     }
     let _ = std::fs::write(path, &minted);
     minted
+}
+
+/// Synthesize the "app down" fault for a project that went silent (#2263) — the same shape as
+/// `bsc errors add fatal "app down"`, landing in the project's own error.db so it surfaces alongside its
+/// runtime faults. `last_hb` (when it was last seen) rides along as event context. Best-effort: a store
+/// that can't be opened/written is logged, not fatal — the liveness snapshot still reports `down`.
+fn record_app_down(
+    project_key: &str,
+    last_hb: i64,
+    now: i64,
+    open_store: &impl Fn(&str) -> rusqlite::Result<Store>,
+) {
+    let store = match open_store(project_key) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("[collector] cannot open error.db for {project_key} to record 'app down': {e}");
+            return;
+        }
+    };
+    let input = FaultInput {
+        stage: String::new(), // → errordb default ("runtime")
+        level: "fatal".into(),
+        title: "app down".into(),
+        stack: None,
+        source_hint: None,
+        release: None,
+        context: Some(format!("no heartbeat for {}ms (last seen {last_hb})", now.saturating_sub(last_hb))),
+        ts: now,
+    };
+    match store.record(&input) {
+        Ok(_) => log::info!("[collector] {project_key} went silent → recorded 'app down'"),
+        Err(e) => log::warn!("[collector] cannot record 'app down' for {project_key}: {e}"),
+    }
 }
 
 /// The blocking accept loop (own thread). Reads each request body under the size cap, runs the pure
@@ -351,7 +454,10 @@ fn ingest(
     let ts = env.ts.unwrap_or_else(now_ms);
     match env.kind.as_str() {
         "heartbeat" => {
-            lock(&shared.liveness).insert(env.project_key.clone(), ts);
+            let mut map = lock(&shared.liveness);
+            let rec = map.entry(env.project_key.clone()).or_default();
+            rec.last_hb = ts;
+            rec.down_alerted = false; // a fresh beat clears any pending down-alert latch (app is back up)
             Outcome::Heartbeat
         }
         // Empty `type` defaults to a fault (the common case).
@@ -406,6 +512,15 @@ fn stringify_context(v: serde_json::Value) -> String {
 #[tauri::command]
 pub fn collector_info(project_key: String, state: tauri::State<CollectorState>) -> CollectorInfo {
     CollectorInfo { ingest_port: state.port(), token: state.ensure_token(&project_key) }
+}
+
+/// The live/down snapshot for every heartbeating project, for the Glance `"live"` status producer
+/// (#2263). Polling this ALSO drives down-detection: a project that has just gone silent past the
+/// window records its one-shot "app down" fault as a side effect of the sweep. Return value is
+/// camelCase (`projectKey`, `live`).
+#[tauri::command]
+pub fn project_liveness(state: tauri::State<CollectorState>) -> Vec<ProjectLiveness> {
+    state.sweep(now_ms(), |k| Store::open(&error_db_path(k)))
 }
 
 #[cfg(test)]
@@ -505,7 +620,7 @@ mod tests {
         // A heartbeat must never open a store — a panicking opener proves the store path isn't taken.
         let out = ingest(&shared, &hb, |_| panic!("heartbeat must not open a store"));
         assert_eq!(out, Outcome::Heartbeat);
-        assert_eq!(lock(&shared.liveness).get("proj").copied(), Some(4242));
+        assert_eq!(lock(&shared.liveness).get("proj").map(|r| r.last_hb), Some(4242));
     }
 
     #[test]
@@ -560,5 +675,95 @@ mod tests {
     fn stringify_context_keeps_a_bare_string_and_json_encodes_the_rest() {
         assert_eq!(stringify_context(serde_json::json!("hello")), "hello");
         assert_eq!(stringify_context(serde_json::json!({"a": 1})), r#"{"a":1}"#);
+    }
+
+    // ── liveness / "app down" (#2263) ──────────────────────────────────────────
+
+    #[test]
+    fn liveness_of_is_within_window_inclusive() {
+        // Fresh + on the boundary ⇒ live; one ms past the window ⇒ down.
+        assert_eq!(liveness_of(1000, 1000, LIVENESS_WINDOW_MS), Liveness::Live);
+        assert_eq!(liveness_of(1000, 1000 + LIVENESS_WINDOW_MS, LIVENESS_WINDOW_MS), Liveness::Live);
+        assert_eq!(liveness_of(1000, 1000 + LIVENESS_WINDOW_MS + 1, LIVENESS_WINDOW_MS), Liveness::Down);
+    }
+
+    /// Seed a `CollectorState` with one heartbeated project at `last_hb`.
+    fn state_beating(project: &str, last_hb: i64) -> CollectorState {
+        let state = CollectorState::new();
+        lock(&state.shared.liveness)
+            .insert(project.into(), LivenessRecord { last_hb, down_alerted: false });
+        state
+    }
+
+    #[test]
+    fn sweep_reports_live_within_window_and_records_no_fault() {
+        let state = state_beating("proj", 10_000);
+        // now within the window ⇒ live; a panicking opener proves the fault path isn't taken.
+        let snap = state.sweep(10_000 + LIVENESS_WINDOW_MS, |_| panic!("live must not open a store"));
+        assert_eq!(snap, vec![ProjectLiveness { project_key: "proj".into(), live: true }]);
+    }
+
+    #[test]
+    fn live_to_down_transition_records_exactly_one_app_down_fault() {
+        // A temp-file db so re-opening in each sweep and again for the assertion see the same rows (an
+        // in-memory Store can't be shared across handles — each open is a distinct empty db).
+        let dir = std::env::temp_dir().join(format!("bsc-liveness-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("error.db");
+
+        let state = state_beating("proj", 0);
+        let now = LIVENESS_WINDOW_MS + 1; // just past the window ⇒ down
+
+        // First sweep: crosses live→down ⇒ records the "app down" fault + reports down.
+        let db1 = db.clone();
+        let snap = state.sweep(now, move |_| Store::open(&db1));
+        assert_eq!(snap, vec![ProjectLiveness { project_key: "proj".into(), live: false }]);
+
+        // Second + third sweeps while still silent: still down, but NO additional fault (latched).
+        let db2 = db.clone();
+        let _ = state.sweep(now + 1, move |_| Store::open(&db2));
+        let db3 = db.clone();
+        let _ = state.sweep(now + 2, move |_| Store::open(&db3));
+
+        let opened = Store::open(&db).unwrap();
+        let faults = opened.list(&errordb::Filter::default()).unwrap();
+        assert_eq!(faults.len(), 1, "exactly one 'app down' fault across repeated down sweeps");
+        assert_eq!(faults[0].title, "app down");
+        assert_eq!(faults[0].level, "fatal");
+        assert_eq!(faults[0].count, 1, "recorded once — the latch prevents per-sweep re-recording");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_fresh_heartbeat_clears_the_latch_so_a_later_silence_alerts_again() {
+        let dir = std::env::temp_dir().join(format!("bsc-liveness-recover-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("error.db");
+
+        let shared = Arc::new(Shared::default());
+        shared.tokens.lock().unwrap().insert("proj".into(), "tok".into());
+        let state = CollectorState { shared: Arc::clone(&shared) };
+
+        // Down once (latched).
+        lock(&state.shared.liveness).insert("proj".into(), LivenessRecord { last_hb: 0, down_alerted: false });
+        let db1 = db.clone();
+        state.sweep(LIVENESS_WINDOW_MS + 1, move |_| Store::open(&db1));
+
+        // A new heartbeat brings it back up and clears the latch.
+        let hb = serde_json::to_vec(&serde_json::json!({
+            "type": "heartbeat", "project_key": "proj", "token": "tok", "ts": 1_000_000
+        }))
+        .unwrap();
+        assert_eq!(ingest(&shared, &hb, |_| panic!("heartbeat must not open a store")), Outcome::Heartbeat);
+
+        // Silent again, well past the window ⇒ a SECOND "app down" fault (count bumps to 2 on the same fp).
+        let db2 = db.clone();
+        state.sweep(1_000_000 + LIVENESS_WINDOW_MS + 1, move |_| Store::open(&db2));
+
+        let opened = Store::open(&db).unwrap();
+        let faults = opened.list(&errordb::Filter::default()).unwrap();
+        assert_eq!(faults.len(), 1, "same fingerprint");
+        assert_eq!(faults[0].count, 2, "two distinct live→down transitions each recorded once");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

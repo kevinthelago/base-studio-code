@@ -13,12 +13,14 @@
 //   2. DEDUP GAP. Drafts were keyed by their stable id but published by `alias ?? sanitize(title)`; when
 //      the alias was absent the two keys differed and the SAME project became TWO nodes. The merge now
 //      resolves an un-aliased published project onto its matching draft via a sanitize(title)→stableId map.
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { usePoll } from "@/shared/hooks/usePoll";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { GRole, GStatus } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 
@@ -78,10 +80,57 @@ export function mergeGlanceProjects(
   return [...byKey.values()];
 }
 
+/** One project's liveness as the `project_liveness` Tauri command reports it (#2263, camelCase). */
+interface ProjectLiveness { projectKey: string; live: boolean }
+
+/** How often to poll backend liveness (ms). Comfortably below the backend's 45s window so a project
+ *  going silent surfaces (and its "app down" alert records) within ~one interval. */
+const LIVENESS_POLL_MS = 10_000;
+
+/**
+ * Overlay backend liveness onto the merged node set (#2263): a project whose key is in `liveKeys`
+ * resolves to the `"live"` (pulsing) status; every other project keeps its merged status (so liveness
+ * lapsing naturally RESETS to the prior status on the next poll). Additive + pure — the merge itself is
+ * untouched, so a parallel fault-health change (#2265) to `mergeGlanceProjects` merges cleanly.
+ */
+export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<string>): ProjectLite[] {
+  if (liveKeys.size === 0) return projects;
+  return projects.map((p) => (liveKeys.has(p.id) ? { ...p, status: "live" as GStatus } : p));
+}
+
+/** Poll the backend for the set of currently-live project keys (#2263). Polling also DRIVES backend
+ *  down-detection: the sweep records an "app down" fault for any project that has just gone silent. */
+export function useProjectLiveness(enabled = true): ReadonlySet<string> {
+  const [liveKeys, setLiveKeys] = useState<ReadonlySet<string>>(() => new Set());
+  usePoll(
+    async (isCancelled) => {
+      if (!enabled) return;
+      const rows = await safeInvoke<ProjectLiveness[]>("project_liveness", undefined, []);
+      if (isCancelled()) return;
+      // Tolerate a null/non-array return (no collector, a stubbed invoke) — no live keys, no throw.
+      const list = Array.isArray(rows) ? rows : [];
+      const next = new Set(list.filter((r) => r.live).map((r) => r.projectKey));
+      // Only replace the set when membership actually changed, so a steady state doesn't churn renders.
+      setLiveKeys((prev) => (sameKeys(prev, next) ? prev : next));
+    },
+    LIVENESS_POLL_MS,
+    [enabled],
+  );
+  return liveKeys;
+}
+
+/** Two key sets are equal iff same size and every member shared. */
+function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const k of a) if (!b.has(k)) return false;
+  return true;
+}
+
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
   const projectKeyAlias = useAppStore((s) => s.projectKeyAlias);
+  const liveKeys = useProjectLiveness(enabled);
 
   const published = useGithubQuery<GhProject[]>(
     (token) => invoke<{ viewer?: { projectsV2?: { nodes: GhProject[] } } }>("github_graphql", { token, query: PROJECTS_QUERY, variables: null })
@@ -98,7 +147,8 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const effectivePublished = published.data ?? publishedCache ?? NO_PUBLISHED;
 
   return useMemo(
-    () => mergeGlanceProjects(drafts, planFleet, projectKeyAlias, effectivePublished),
-    [drafts, planFleet, projectKeyAlias, effectivePublished],
+    // Merge first (drafts + published), then overlay live heartbeats as the `"live"` status (#2263).
+    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, projectKeyAlias, effectivePublished), liveKeys),
+    [drafts, planFleet, projectKeyAlias, effectivePublished, liveKeys],
   );
 }
