@@ -79,6 +79,21 @@ Feature scope only. Reads the plan.db issue <ref> and creates one pending step p
 criterion (in order), plus one trailing step naming the files the issue owns. Idempotent (re-seeding
 de-dupes). Prints the ids. Requires $BSC_PLAN_DB (a project session).",
     },
+    CmdDoc {
+        name: "seed-refs",
+        summary: "materialize a cleanup checklist from a file's cross-file impact map",
+        usage: "\
+USAGE:
+  bsc todo seed-refs <path> [symbol] [--feature <ref>] [--root <dir>] [--pretty]
+
+Feature scope only. Runs the `bsc files refs` impact/delete finder on <path> (optionally narrowed to
+<symbol>) and creates one pending step per hit — each importer, symbol usage, and CSS style link with
+its `path:line`, plus the same-basename sibling files (the \"probably dies with it\" set). So a delete
+or refactor becomes a checklist instead of improvised grep passes. The scan is HEURISTIC and may
+over-report (the safe bias for a deletion-impact tool). Root: --root, else $BSC_REPO_ROOT, else the
+cwd. Feature key: --feature, else $BSC_TODO_FEATURE, else <path>. Idempotent (de-dupes). Prints the
+ids. Requires $BSC_PLAN_DB (a project session).",
+    },
 ];
 
 /// Parsed global flags + leftover positional args (verb + operands).
@@ -92,6 +107,8 @@ struct Args {
     open: bool,
     /// Indent the JSON output; `--json` is an accepted no-op (output is always JSON).
     pretty: bool,
+    /// `--root <dir>`: the tree root for `seed-refs` (else `$BSC_REPO_ROOT`, else the cwd).
+    root: Option<String>,
     positional: Vec<String>,
 }
 
@@ -102,6 +119,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         feature: None,
         open: false,
         pretty: false,
+        root: None,
         positional: Vec::new(),
     };
     let mut it = raw.into_iter();
@@ -110,6 +128,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--scope" => a.scope = it.next().ok_or("--scope needs feature|global")?,
             "--feature" => a.feature = Some(it.next().ok_or("--feature needs a ref")?),
+            "--root" => a.root = Some(it.next().ok_or("--root needs a dir")?),
             "--open" => a.open = true,
             "--pretty" => a.pretty = true,
             "--json" => {}
@@ -150,6 +169,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "done" => cmd_done(&args),
         "remove" => cmd_remove(&args),
         "seed-feature" => cmd_seed_feature(&args),
+        "seed-refs" => cmd_seed_refs(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -246,6 +266,61 @@ fn cmd_seed_feature(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// Flatten a [`bsc_files::Refs`] impact map into one checkable feature-todo line per hit — the
+/// composition at the heart of #2331 (epic #1871). Each entry is intent-named + carries the `path:line`
+/// so a weak model deleting/refactoring a file works a checklist, not a guess: sibling files (the
+/// "probably dies with it" set, whole-file — no line), importers to fix, symbol usages to update, and
+/// CSS style links to reconcile. Pure (no I/O) so it's directly unit-testable; the caller seeds the
+/// texts into plan.db (which de-dupes). Ordered stable (siblings → importers → usages → style) so a
+/// re-seed is deterministic.
+fn refs_to_todo_texts(refs: &bsc_files::Refs) -> Vec<String> {
+    let mut out = Vec::new();
+    for p in &refs.siblings.files {
+        out.push(format!("remove/update sibling {p}"));
+    }
+    for p in &refs.siblings.tests {
+        out.push(format!("remove/update test {p}"));
+    }
+    for h in &refs.importers {
+        out.push(format!("fix import at {}:{}", h.path, h.line));
+    }
+    for h in &refs.symbol_usages {
+        out.push(format!("update usage at {}:{}", h.path, h.line));
+    }
+    for h in &refs.style_links {
+        out.push(format!("update style link at {}:{}", h.path, h.line));
+    }
+    out
+}
+
+fn cmd_seed_refs(a: &Args) -> Result<(), String> {
+    if a.scope == "global" {
+        return Err("seed-refs is a feature-scope command (it seeds the project's plan.db list)".into());
+    }
+    let path = a.positional.get(1).ok_or("usage: bsc todo seed-refs <path> [symbol]")?;
+    let symbol = a.positional.get(2).map(String::as_str);
+    // Root: --root, else $BSC_REPO_ROOT (set for every project session), else the cwd.
+    let root = a
+        .root
+        .clone()
+        .or_else(|| std::env::var("BSC_REPO_ROOT").ok().filter(|s| !s.trim().is_empty()))
+        .unwrap_or_else(|| ".".to_string());
+    let refs = bsc_files::refs(std::path::Path::new(&root), path, symbol)?;
+
+    // Feature key: --feature / $BSC_TODO_FEATURE, else the queried path (so a cleanup list is grouped
+    // under the file being changed).
+    let key = feature_key(a);
+    let feature = if key.is_empty() { path.clone() } else { key };
+
+    let store = open_feature(a)?;
+    let mut ids = Vec::new();
+    for text in refs_to_todo_texts(&refs) {
+        ids.push(store.todo_add(&feature, &text).map_err(|e| e.to_string())?);
+    }
+    print_json(&ids, a.pretty);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,9 +357,81 @@ mod tests {
     }
 
     #[test]
+    fn seed_refs_parses_path_symbol_and_root() {
+        // #2331: `seed-refs <path> [symbol]` keeps both as positional; --root is captured. `seed-refs
+        // help` routes to the per-command detail (which flags the heuristic nature).
+        let a = parse_args(vec![
+            "seed-refs".into(),
+            "Foo.tsx".into(),
+            "handleClick".into(),
+            "--root".into(),
+            "/repo".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.positional, vec!["seed-refs", "Foo.tsx", "handleClick"]);
+        assert_eq!(a.root.as_deref(), Some("/repo"));
+        // Optional symbol: path only.
+        let b = parse_args(vec!["seed-refs".into(), "Foo.tsx".into()]).unwrap();
+        assert_eq!(b.positional, vec!["seed-refs", "Foo.tsx"]);
+        // Help detail documents the heuristic scan.
+        assert!(bsc_cli_util::help_for("bsc todo", TAGLINE, COMMANDS, "seed-refs").contains("HEURISTIC"));
+    }
+
+    #[test]
+    fn refs_to_todo_texts_covers_every_group_with_path_line() {
+        // The flattening (#2331): one checkable line per hit, each carrying its `path:line` (except the
+        // whole-file siblings). Ordered siblings → importers → usages → style for a deterministic re-seed.
+        let refs = bsc_files::Refs {
+            path: "Foo.tsx".into(),
+            symbol: Some("handleClick".into()),
+            siblings: bsc_files::Siblings {
+                files: vec!["Foo.module.css".into()],
+                tests: vec!["Foo.test.tsx".into()],
+            },
+            importers: vec![bsc_files::Hit { path: "Bar.tsx".into(), line: 3, text: String::new() }],
+            symbol_usages: vec![bsc_files::Hit { path: "Bar.tsx".into(), line: 9, text: String::new() }],
+            style_links: vec![bsc_files::Hit { path: "tokens.css".into(), line: 42, text: String::new() }],
+        };
+        let texts = refs_to_todo_texts(&refs);
+        assert_eq!(
+            texts,
+            vec![
+                "remove/update sibling Foo.module.css",
+                "remove/update test Foo.test.tsx",
+                "fix import at Bar.tsx:3",
+                "update usage at Bar.tsx:9",
+                "update style link at tokens.css:42",
+            ]
+        );
+    }
+
+    #[test]
+    fn seed_refs_over_a_fixture_tree_finds_the_importer_line() {
+        // End-to-end (#2331): run the real `bsc_files::refs` over a tiny tree and confirm the flattened
+        // checklist points at the importer's actual line — the worklist a weak model would check off.
+        let root = std::env::temp_dir().join(format!("bsc-seedrefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Foo.tsx"), "export function Foo() { return null; }\n").unwrap();
+        std::fs::write(root.join("Foo.module.css"), ".foo { color: red; }\n").unwrap();
+        std::fs::write(root.join("Bar.tsx"), "import { Foo } from './Foo';\nexport const Bar = () => Foo();\n").unwrap();
+
+        let refs = bsc_files::refs(&root, "Foo.tsx", None).unwrap();
+        let texts = refs_to_todo_texts(&refs);
+        // The sibling stylesheet is flagged for cleanup…
+        assert!(texts.iter().any(|t| t.contains("Foo.module.css")), "siblings include the stylesheet: {texts:?}");
+        // …and Bar.tsx's import is a fix-at-line item (the import is on line 1).
+        assert!(
+            texts.iter().any(|t| t == "fix import at Bar.tsx:1"),
+            "importer line captured: {texts:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn help_overview_lists_every_verb_and_unknown_command_shows_the_menu() {
         let ov = bsc_cli_util::help_overview("bsc todo", TAGLINE, COMMANDS);
-        for c in ["add", "list", "next", "done", "remove", "seed-feature"] {
+        for c in ["add", "list", "next", "done", "remove", "seed-feature", "seed-refs"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // seed-feature's detail explains the feature-scope requirement.

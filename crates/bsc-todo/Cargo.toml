@@ -17,6 +17,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # The feature-scope store + the shared `Todo` type + the connection-level todo helpers (#1872): the
 # global sibling store here REUSES them over its own db, and `bsc todo --scope feature` opens plan.db.
 plandb = { path = "../plandb" }
+# The cross-file impact/delete finder (#1873): `bsc todo seed-refs` runs `bsc_files::refs` and turns
+# its impact map into a feature checklist (#2331). Type + logic dep only — no cycle (bsc-files is a
+# leaf file tool that knows nothing of the todo store).
+bsc-files = { path = "../bsc-files" }
 # Shared SQLite connection plumbing (open + busy_timeout) the global store shares with plandb/skilldb.
 bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): help dispatch + `resolve_store_path` (--db→env→default) + `emit`.
