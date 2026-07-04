@@ -79,3 +79,56 @@ describe("kit-usage consumer index slice (#2277)", () => {
     expect(useAppStore.getState().kitUsage).toEqual(loaded);
   });
 });
+
+describe("component change origin → propagation (#2277)", () => {
+  const button = SEED_COMPONENTS.find((c) => c.name === "Button")!;
+  beforeEach(() => {
+    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [] });
+    vi.restoreAllMocks();
+  });
+
+  it("setComponent write-throughs the edit and upserts it", () => {
+    const push = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    const edited = { ...button, version: "2.3.1" };
+    useAppStore.getState().setComponent(edited);
+    expect(useAppStore.getState().components.find((c) => c.id === button.id)!.version).toBe("2.3.1");
+    expect(push).toHaveBeenCalledWith(edited);
+  });
+
+  it("a breaking edit fans out to an opted-in dormant consumer as an issue", () => {
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    useAppStore.getState().setComponent({ ...button, version: "3.0.0", props: button.props.filter((p) => p.name !== "size") });
+    const d = useAppStore.getState().kitDispatches;
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ projectKey: "app-a", kind: "issue" });
+    expect(d[0].change.class).toBe("breaking");
+  });
+
+  it("an additive edit is notify-only, even for an opted-in live consumer", () => {
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: true }] });
+    useAppStore.getState().setComponent({ ...button, version: "2.4.0", variants: [...button.variants, "loading"] });
+    expect(useAppStore.getState().kitDispatches.every((x) => x.kind === "notify")).toBe(true);
+  });
+
+  it("a brand-new component is not a change (no dispatch)", () => {
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    useAppStore.getState().setComponent({ ...button, id: "brand-new", name: "BrandNew" });
+    expect(useAppStore.getState().kitDispatches).toHaveLength(0);
+  });
+
+  it("the same change re-emitted dedups; dismiss drops the queued dispatch", () => {
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    const breaking = { ...button, version: "3.0.0", props: button.props.filter((p) => p.name !== "size") };
+    useAppStore.getState().setComponent(breaking);
+    useAppStore.setState({ components: SEED_COMPONENTS }); // reset the component so the SAME transition repeats
+    useAppStore.getState().setComponent(breaking);
+    expect(useAppStore.getState().kitDispatches).toHaveLength(1); // deduped by (projectKey, change.id)
+    const { change } = useAppStore.getState().kitDispatches[0];
+    useAppStore.getState().dismissKitDispatch("app-a", change.id);
+    expect(useAppStore.getState().kitDispatches).toHaveLength(0);
+  });
+});
