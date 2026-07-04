@@ -61,10 +61,12 @@ describe("SkillsWorkspace — library at scale (#skills-groups)", () => {
     expect(container.querySelectorAll(ROW).length).toBe(2);
   });
 
-  it("switches to the Runs view and shows the empty state with no usage log", () => {
+  it("switches to the Runs view and shows the empty state with no usage log", async () => {
     const { container } = render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Runs"));
-    expect(screen.getByText("No runs yet")).toBeTruthy();
+    // The empty state renders only after the first telemetry poll returns (#2245) — until then a
+    // loading skeleton stands in, so wait for the poll to settle.
+    expect(await screen.findByText("No runs yet")).toBeTruthy();
     expect(container.querySelectorAll(ROW).length).toBe(0);
   });
 

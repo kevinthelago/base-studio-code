@@ -17,11 +17,13 @@ describe("GitHub mode strip", () => {
 });
 
 describe("Projects modes (#1876)", () => {
-  it("no longer offers Summary — Projects + Fleet + Personas (#2094 label swap)", () => {
+  it("no longer offers Summary — Projects + Org (Fleet→Glance #2228, Personas→Org #2199)", () => {
     const labels = PROJECT_MODES.map((m) => m.label);
     expect(labels).not.toContain("Summary");
     expect(labels).toContain("Projects");
-    expect(labels).toContain("Fleet");
-    expect(labels).toContain("Personas");
+    // Personas was folded into Org (#2199); Fleet analytics into Glance (#2223/#2228).
+    expect(labels).toContain("Org");
+    expect(labels).not.toContain("Fleet");
+    expect(labels).not.toContain("Personas");
   });
 });

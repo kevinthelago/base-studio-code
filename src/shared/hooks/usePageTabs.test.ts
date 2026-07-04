@@ -42,9 +42,9 @@ describe("usePageTabs — persisted active page (#2254)", () => {
     expect(useAppStore.getState().activePageTab.k).toBeUndefined();
   });
 
-  it("persists the selected page to the store", () => {
+  it("persists the selected page to the store", async () => {
     const { result } = renderHook(() => usePageTabs("k", DEFS));
-    act(() => result.current.select("c"));
+    await act(async () => { result.current.select("c"); });
     expect(result.current.activeId).toBe("c");
     expect(useAppStore.getState().activePageTab.k).toBe("c");
   });
@@ -55,10 +55,10 @@ describe("usePageTabs — persisted active page (#2254)", () => {
     expect(result.current.activeId).toBe("b");
   });
 
-  it("namespaces the memory per pageKey", () => {
+  it("namespaces the memory per pageKey", async () => {
     const { result: r1 } = renderHook(() => usePageTabs("one", DEFS));
     const { result: r2 } = renderHook(() => usePageTabs("two", DEFS));
-    act(() => r1.current.select("c"));
+    await act(async () => { r1.current.select("c"); });
     expect(r1.current.activeId).toBe("c");
     expect(r2.current.activeId).toBe("a"); // untouched — different page
   });
@@ -70,11 +70,11 @@ describe("usePageTabs — persisted active page (#2254)", () => {
     expect(useAppStore.getState().activePageTab.k).toBe("a"); // self-healed + re-persisted
   });
 
-  it("leaves the store alone in controlled mode", () => {
+  it("leaves the store alone in controlled mode", async () => {
     let active = "b";
     const setActive = (id: string) => { active = id; };
     const { result } = renderHook(() => usePageTabs("k", DEFS, { activeId: active, setActive }));
-    act(() => result.current.select("c"));
+    await act(async () => { result.current.select("c"); });
     expect(active).toBe("c");
     expect(useAppStore.getState().activePageTab.k).toBeUndefined(); // never touched
   });
