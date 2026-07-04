@@ -8,6 +8,7 @@
 // pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
+import { demoSnapshot } from "@/store/demoSnapshot";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -44,6 +45,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // is the detection follow-up.
   const projectsBase = useGlanceProjects();
   const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const loadDemoState = useAppStore((s) => s.loadDemoState);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const addProjectLink = useAppStore((s) => s.addProjectLink);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -151,8 +153,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         <EmptyState
           icon="◍" iconVariant="dashed"
           title="No project network yet"
-          description="Projects you create show up here as a network you can wire together — dependencies, contracts, and cross-project cycles. Create one in Projects, or load a demo from Settings → General → Demo app-state to see it come alive."
-          actions={<Button onClick={() => setWorkspace("projects")}>Go to Projects</Button>}
+          description="Projects you create show up here as a network you can wire together — dependencies, contracts, and cross-project cycles. Create one in Projects, or load the demo to see a whole platform — projects, fleets, and the libraries — come alive."
+          actions={
+            <>
+              <Button onClick={() => setWorkspace("projects")}>Go to Projects</Button>
+              <Button variant="ghost" onClick={() => loadDemoState(demoSnapshot())}>Load demo</Button>
+            </>
+          }
         />
       </Box>
       ) : (
