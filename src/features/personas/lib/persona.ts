@@ -83,10 +83,11 @@ export function makeBuiltinPersonas(): Persona[] {
     }));
 }
 
-/** The packaged personas — one per current role (+ documentor), so the tab is populated + honest on
- *  day one. `documentor` introduces a NEW behavioral identity WITHOUT a new role: it sits on the same
- *  read-only floor as `reviewer` but writes docs via its prompt + skills. The worker/director carry the
- *  real fleet protocol prose (resolved from `@data/fleet/*-protocol.md`); the rest are short seeds. */
+/** The packaged personas — one per role, so the tab is populated + honest on day one. `documentor`
+ *  (#1555) is the identity for the `documentor` role: read-only on git/GitHub with a DOC_GLOBS write
+ *  carve-out, so it reconciles prose docs after a change lands but can never touch code. The
+ *  worker/director carry the real fleet protocol prose (resolved from `@data/fleet/*-protocol.md`);
+ *  the rest are short seeds. */
 export const BUILTIN_PERSONAS: Persona[] = makeBuiltinPersonas();
 
 /** Slugify a persona name into an id fragment (user personas mint `persona-<slug>-<n>` in the store). */
