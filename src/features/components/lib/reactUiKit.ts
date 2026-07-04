@@ -229,6 +229,48 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["A shape-matched loading placeholder while content loads.", "The loading state a content component renders for itself (#2302)."],
     whenNot: ["An empty (no-data) state — use EmptyState.", "An error — use InlineError / Banner."],
   },
+
+  // ── charts (#2305 slice 3 remainder) ──
+  Bars: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["Comparing a value across a small set of categories.", "A discrete, labelled distribution (per-day, per-stream counts)."],
+    whenNot: ["A trend over continuous time — use LineArea/Spark.", "Parts of a whole — use Donut."],
+  },
+  HBars: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["Ranking categories with long labels (labels read left-to-right).", "A leaderboard or top-N breakdown."],
+    whenNot: ["Many categories that scroll — use a table.", "A time series — use LineArea."],
+  },
+  StackedDayBars: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["A per-day total split into composition segments (a stacked column per day).", "Daily volume with a status/category breakdown."],
+    whenNot: ["A single continuous line — use LineArea.", "One category only — use Bars."],
+  },
+  Spark: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["A tiny inline trend beside a metric (no axes).", "A dense row/tile where a full chart won't fit."],
+    whenNot: ["A chart the user must read precisely — use LineArea with axes.", "Category comparison — use Bars."],
+  },
+  LineArea: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["A trend over continuous time, with the area emphasizing magnitude.", "A single series where the shape matters more than exact points."],
+    whenNot: ["Comparing discrete categories — use Bars.", "A tiny inline glyph — use Spark."],
+  },
+  Donut: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["Parts of a whole at a glance (a few large segments).", "A single proportion with a centered value."],
+    whenNot: ["Many small slices (hard to compare) — use HBars.", "A trend — use LineArea."],
+  },
+  Legend: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["Keying a chart's colors to their meaning.", "A compact color↔label index beside a graph."],
+    whenNot: ["A clickable filter — use SegmentedControl / Chips.", "Status on one item — use StatusDot."],
+  },
+  Swimlane: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["Per-lane activity across a shared horizontal axis (streams over time).", "A timeline where each row is an independent track."],
+    whenNot: ["A single aggregate series — use LineArea.", "Category totals — use Bars."],
+  },
 };
 
 /** A manifest prop's type rendered as a short human/TS-ish string for the props table. */

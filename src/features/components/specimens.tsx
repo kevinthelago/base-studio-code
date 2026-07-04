@@ -24,9 +24,39 @@ export function previewTokens(theme: PreviewTheme): Tok {
 
 const mono = "var(--mono)";
 
+/** A single shimmering skeleton block, sandbox-themed — rides the app's ONE `skeleton-shimmer` keyframe
+ *  via `.ds-skel` (reduced-motion aware), so the Studio's loading state uses the same motion vocabulary
+ *  as every Skeleton elsewhere. */
+function skel(w: number | string, h: number | string, r: number, t: Tok): ReactNode {
+  return <div className="ds-skel" style={{ width: w, height: h, borderRadius: r, background: `linear-gradient(90deg, ${t.elev} 0%, ${t.borderSoft} 50%, ${t.elev} 100%)`, backgroundSize: "260px 100%" }} />;
+}
+
+/** The `loading` variant of a component — a shape-matched skeleton (#2302), so the Design Studio previews
+ *  the loading state, not just content. */
+function loadingSpecimen(comp: ComponentRecord, t: Tok): ReactNode {
+  switch (comp.name) {
+    case "Chip": return skel(72, 22, 99, t);
+    case "Text": return <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 220 }}>{skel("100%", 11, 5, t)}{skel("100%", 11, 5, t)}{skel("60%", 11, 5, t)}</div>;
+    case "TextField": case "Field": case "SelectField": return <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>{skel(90, 9, 4, t)}{skel("100%", 30, 6, t)}</div>;
+    case "FillBar": return skel(220, 7, 99, t);
+    case "Code": return <div style={{ width: 260, borderRadius: 8, border: `1px solid ${t.borderSoft}`, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>{skel("70%", 8, 4, t)}{skel("90%", 8, 4, t)}{skel("45%", 8, 4, t)}</div>;
+    case "Card": case "StatCard": case "StatTile": return (
+      <div style={{ width: 250, borderRadius: 10, border: `1px solid ${t.borderSoft}`, overflow: "hidden" }}>
+        {skel("100%", 54, 0, t)}
+        <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {skel("55%", 11, 5, t)}{skel("100%", 9, 5, t)}{skel("80%", 9, 5, t)}
+          <div style={{ marginTop: 6 }}>{skel(70, 24, 6, t)}</div>
+        </div>
+      </div>
+    );
+    default: return <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 220 }}>{skel("100%", 12, 6, t)}{skel("100%", 12, 6, t)}{skel("60%", 12, 6, t)}</div>;
+  }
+}
+
 /** Render a specimen for `comp` in a `variant` on the `theme` sandbox. */
 export function renderSpecimen(comp: ComponentRecord, variant: string, theme: PreviewTheme): ReactNode {
   const t = previewTokens(theme);
+  if (variant === "loading") return loadingSpecimen(comp, t);
   switch (comp.name) {
     case "Button": {
       const base: CSSProperties = { height: 30, padding: "0 16px", borderRadius: 6, fontFamily: mono, fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid transparent", cursor: "default" };

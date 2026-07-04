@@ -1933,11 +1933,12 @@
       "id": "linearea",
       "name": "LineArea",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -1981,8 +1982,14 @@
           "desc": "Format a y value for the axis + tooltip."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "A trend over continuous time, with the area emphasizing magnitude.",
+        "A single series where the shape matters more than exact points."
+      ],
+      "whenNot": [
+        "Comparing discrete categories — use Bars.",
+        "A tiny inline glyph — use Spark."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { LineArea } from \"@/shared/ui/charts/Charts\";\n\n<LineArea series={…} labels={…} />",
       "builtin": true
@@ -1991,11 +1998,12 @@
       "id": "bars",
       "name": "Bars",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2033,8 +2041,14 @@
           "desc": "Format a y value for the axis + tooltip."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "Comparing a value across a small set of categories.",
+        "A discrete, labelled distribution (per-day, per-stream counts)."
+      ],
+      "whenNot": [
+        "A trend over continuous time — use LineArea/Spark.",
+        "Parts of a whole — use Donut."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { Bars } from \"@/shared/ui/charts/Charts\";\n\n<Bars groups={…} labels={…} />",
       "builtin": true
@@ -2043,11 +2057,12 @@
       "id": "donut",
       "name": "Donut",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2073,8 +2088,14 @@
           "desc": "Ring thickness in px."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "Parts of a whole at a glance (a few large segments).",
+        "A single proportion with a centered value."
+      ],
+      "whenNot": [
+        "Many small slices (hard to compare) — use HBars.",
+        "A trend — use LineArea."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { Donut } from \"@/shared/ui/charts/Charts\";\n\n<Donut slices={…} />",
       "builtin": true
@@ -2083,11 +2104,12 @@
       "id": "hbars",
       "name": "HBars",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2113,8 +2135,14 @@
           "desc": "Fixed bar max (else the largest row value)."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "Ranking categories with long labels (labels read left-to-right).",
+        "A leaderboard or top-N breakdown."
+      ],
+      "whenNot": [
+        "Many categories that scroll — use a table.",
+        "A time series — use LineArea."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { HBars } from \"@/shared/ui/charts/Charts\";\n\n<HBars rows={…} />",
       "builtin": true
@@ -2123,11 +2151,12 @@
       "id": "swimlane",
       "name": "Swimlane",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2159,8 +2188,14 @@
           "desc": "SwimMark[] — { t, label } vertical time markers."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "Per-lane activity across a shared horizontal axis (streams over time).",
+        "A timeline where each row is an independent track."
+      ],
+      "whenNot": [
+        "A single aggregate series — use LineArea.",
+        "Category totals — use Bars."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { Swimlane } from \"@/shared/ui/charts/Charts\";\n\n<Swimlane lanes={…} events={…} />",
       "builtin": true
@@ -2169,11 +2204,12 @@
       "id": "spark",
       "name": "Spark",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2217,8 +2253,14 @@
           "desc": "Show a dot at the last point."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "A tiny inline trend beside a metric (no axes).",
+        "A dense row/tile where a full chart won't fit."
+      ],
+      "whenNot": [
+        "A chart the user must read precisely — use LineArea with axes.",
+        "Category comparison — use Bars."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { Spark } from \"@/shared/ui/charts/Charts\";\n\n<Spark data={…} color={…} />",
       "builtin": true
@@ -2227,11 +2269,12 @@
       "id": "legend",
       "name": "Legend",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2245,8 +2288,14 @@
           "desc": "LegendItem[] — { color, label, value? }."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "Keying a chart's colors to their meaning.",
+        "A compact color↔label index beside a graph."
+      ],
+      "whenNot": [
+        "A clickable filter — use SegmentedControl / Chips.",
+        "Status on one item — use StatusDot."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { Legend } from \"@/shared/ui/charts/Charts\";\n\n<Legend items={…} />",
       "builtin": true
@@ -2255,11 +2304,12 @@
       "id": "stackeddaybars",
       "name": "StackedDayBars",
       "kitId": "react-ui",
-      "role": "primitive",
+      "role": "composite",
       "version": "1.0.0",
       "used": 0,
       "tags": [
-        "data"
+        "chart",
+        "data-viz"
       ],
       "variants": [
         "default"
@@ -2309,8 +2359,14 @@
           "desc": "Lower series color."
         }
       ],
-      "whenUse": [],
-      "whenNot": [],
+      "whenUse": [
+        "A per-day total split into composition segments (a stacked column per day).",
+        "Daily volume with a status/category breakdown."
+      ],
+      "whenNot": [
+        "A single continuous line — use LineArea.",
+        "One category only — use Bars."
+      ],
       "src": "shared/ui/charts/Charts.tsx",
       "srcText": "import { StackedDayBars } from \"@/shared/ui/charts/Charts\";\n\n<StackedDayBars data={…} title={…} subtitle={…} upperLabel={…} lowerLabel={…} />",
       "builtin": true
