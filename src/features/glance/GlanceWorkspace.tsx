@@ -27,6 +27,7 @@ import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, type GEdgeKi
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
 import { useGlanceProjects } from "./lib/useGlanceProjects";
+import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
 
@@ -41,11 +42,21 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
-  const projects = useGlanceProjects();
+  const projectsBase = useGlanceProjects();
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const addProjectLink = useAppStore((s) => s.addProjectLink);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
+  // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
+  const autoTriage = useAppStore((s) => s.autoTriage);
+  const setAutoTriage = useAppStore((s) => s.setAutoTriage);
+  // FAULT-health (#2265): unresolved runtime-fault count per project (from `bsc errors`), merged onto
+  // each node so its card shows a fault badge. Orthogonal to the liveness status (#2263).
+  const faultCounts = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
+  const projects = useMemo(
+    () => projectsBase.map((p) => ({ ...p, faults: faultCounts[p.id] })),
+    [projectsBase, faultCounts],
+  );
   // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
   const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
@@ -216,6 +227,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
                   <Box style={{ width: 7, height: 7, borderRadius: "50%", background: st.color, flex: "none", boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
                   <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+                  {(n.faults ?? 0) > 0 && (
+                    <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
+                      style={{ flex: "none", color: "#fff", background: "#f2555f", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
+                      {(n.faults ?? 0) > 99 ? "99+" : n.faults}
+                    </Text>
+                  )}
                   <Box style={{ width: 8, height: 3, borderRadius: 2, background: ROLE_COLOR[n.role], flex: "none" }} />
                 </Row>
               );
@@ -239,7 +256,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         </Stack>
       }
       inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)}
-        onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined} /> : undefined}
+        onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined}
+        autoTriageOn={!drill && sel.type === "node" ? !!autoTriage[sel.id] : undefined}
+        onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
       <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>
