@@ -41,6 +41,14 @@ describe("ComponentLibraryPane (#2269)", () => {
     expect(screen.getByText("When not to")).toBeTruthy();
   });
 
+  it("the Rules tab shows the component's derived lint rule (#2279)", () => {
+    render(<ComponentLibraryPane />); // Button is selected first; it wraps "button"
+    fireEvent.click(screen.getByRole("button", { name: /rules/ }));
+    // The derived anti-duplication rule: use <Button> not a raw <button>, with the escape hatch.
+    expect(screen.getByText(/Use the kit's <Button> instead of a raw <button>/)).toBeTruthy();
+    expect(screen.getByText("derived")).toBeTruthy();
+  });
+
   it("search filters the picker to matches", () => {
     render(<ComponentLibraryPane />);
     fireEvent.change(screen.getByLabelText("Search components"), { target: { value: "field" } });
