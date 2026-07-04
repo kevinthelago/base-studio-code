@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import { type AppStore, DEFAULT_PERF_CONFIG, DEFAULT_LOG_CONFIG } from "../types";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { setMapEntry } from "../updateHelpers";
-import { pickDemoable } from "../appState";
+import { pickDemoable, mergeSnapshotInto } from "../appState";
 
 type ShellSlice = Pick<AppStore,
   "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
@@ -70,13 +70,15 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
         });
       },
 
-      // Demo app-state (#2272). Loading overlays the demoable slices and stashes the pre-demo values
-      // (once — a re-load keeps the ORIGINAL backup); clearing restores them so empty → empty.
+      // Demo app-state (#2272). Loading MERGES the demo onto the demoable slices (additive — arrays
+      // union by id, objects by key; #2288) so it augments the built-in libraries instead of wiping
+      // them, and stashes the pre-demo values (once — a re-load keeps the ORIGINAL backup); clearing
+      // restores them exactly (removing the demo's additions).
       demoActive: false,
       demoBackup: null,
       loadDemoState: (snapshot) =>
         set((s) => ({
-          ...pickDemoable(snapshot),
+          ...mergeSnapshotInto(s as unknown as Record<string, unknown>, snapshot),
           demoActive: true,
           demoBackup: s.demoActive ? s.demoBackup : pickDemoable(s),
         })),
