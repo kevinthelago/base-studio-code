@@ -260,6 +260,10 @@ pub(crate) fn pty_create(
     // #1988: when set, run this session INSIDE the named sealed WSL2 distro (the model-agnostic
     // sandbox). None ⇒ the normal host shell — every existing caller, unchanged.
     wsl_distro: Option<String>,
+    // #1994: when set (alongside `wsl_distro`), run the distro session as this per-agent Linux USER —
+    // its private mode-700 home isolates it from co-located agents (raw Bash can't cross Unix perms).
+    // Derive + provision it first via `ensure_sandbox_user`. None ⇒ the distro's default `agent` user.
+    wsl_user: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -284,9 +288,16 @@ pub(crate) fn pty_create(
     // which LLM drives the session. Everything distro-specific below is guarded on this, so a None
     // session (every current caller) takes the exact original path.
     let into_sandbox = wsl_distro.as_deref().filter(|d| !d.is_empty()).map(str::to_string);
+    // #1994: the per-agent Linux user to run the distro session as (its private 700 home isolates it
+    // from co-located agents). Only meaningful alongside a distro; empty → None → the distro default.
+    let into_sandbox_user = into_sandbox
+        .as_ref()
+        .and(wsl_user.as_deref().filter(|u| !u.is_empty()).map(str::to_string));
     let mut cmd = if let Some(distro) = into_sandbox.as_deref() {
         let mut c = CommandBuilder::new("wsl.exe");
-        for a in ["-d", distro, "--", "bash", "-i"] {
+        // `-d <distro>` [`-u <user>`] `-- bash -i` — the user arg makes the session run as its own
+        // isolated Linux user when one was provisioned (#1994), else the distro's default user (#1988).
+        for a in crate::platform::shell::wsl_interactive_args(distro, into_sandbox_user.as_deref()) {
             c.arg(a);
         }
         c
@@ -310,6 +321,12 @@ pub(crate) fn pty_create(
     // launches, and a no-op when the config is already valid.
     harness.prepare_config();
 
+    // #1994: a per-agent sandbox session with no explicit cwd starts in its OWN private (mode-700)
+    // home, not the distro's shared default `~` — so isolation holds even for a bare launch.
+    let cwd = match into_sandbox_user.as_deref() {
+        Some(user) if cwd.is_empty() => crate::session::sandbox::agent_home(user),
+        _ => cwd,
+    };
     // Resolve the session's working directory (#367/#979/#1819/#1988): normalize a git-bash drive
     // path back to native, detect a missing/empty cwd (both logged loudly, never a silent home
     // fallback), and pick the effective start dir. All the `into_sandbox` cwd re-tests live in the

@@ -80,6 +80,23 @@ pub(crate) fn wsl_invocation(distro: &str, cwd: &str, command: &str) -> (String,
     ("wsl.exe".to_string(), args)
 }
 
+/// The `wsl.exe` arg vector that spawns an INTERACTIVE distro shell (`pty_create`'s sandbox path,
+/// #1988/#1994): `-d <distro>` [`-u <user>`] `-- bash -i`. When `user` is `Some`, the session runs as
+/// that per-agent Linux user — its private mode-`700` home isolates it from co-located agents (#1994)
+/// — overriding the distro's non-root default. `None` keeps the pre-#1994 behavior (the distro default
+/// user). Pure, so the with/without-user recipe is unit-tested without WSL present.
+pub(crate) fn wsl_interactive_args(distro: &str, user: Option<&str>) -> Vec<String> {
+    let mut args = vec!["-d".to_string(), distro.to_string()];
+    if let Some(u) = user.filter(|u| !u.is_empty()) {
+        args.push("-u".to_string());
+        args.push(u.to_string());
+    }
+    args.push("--".to_string());
+    args.push("bash".to_string());
+    args.push("-i".to_string());
+    args
+}
+
 /// The interactive-shell init line for a session running INSIDE the sealed WSL2 distro (#1988).
 /// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch). The host env
 /// does NOT traverse the wsl boundary, so this exports `env` (the session env — e.g. bsc-agent's
@@ -168,6 +185,25 @@ mod relocated_tests {
         assert_eq!(to_native_path("/usr/local/bin"), "/usr/local/bin");
         assert_eq!(to_native_path("C:/already/native"), "C:/already/native");
     }
+    #[test]
+    fn wsl_interactive_args_adds_run_as_user_only_when_present() {
+        // #1988 default path: no user ⇒ the distro's default (agent) user.
+        assert_eq!(
+            wsl_interactive_args("bsc-agent-sandbox", None),
+            vec!["-d", "bsc-agent-sandbox", "--", "bash", "-i"],
+        );
+        // #1994: a per-agent user ⇒ `-u <user>` selects the isolated Linux user.
+        assert_eq!(
+            wsl_interactive_args("bsc-agent-sandbox", Some("bsc-api-1a2b3c4d")),
+            vec!["-d", "bsc-agent-sandbox", "-u", "bsc-api-1a2b3c4d", "--", "bash", "-i"],
+        );
+        // An empty user string is treated as absent (no dangling `-u`).
+        assert_eq!(
+            wsl_interactive_args("d", Some("")),
+            vec!["-d", "d", "--", "bash", "-i"],
+        );
+    }
+
     #[test]
     fn ansi_c_quote_wraps_plain_text() {
         assert_eq!(bash_ansi_c_quote("triage the issues"), "$'triage the issues'");
