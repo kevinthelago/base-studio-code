@@ -53,6 +53,17 @@ describe("SplitView (#2197)", () => {
     const primBox = screen.getByText("PRIMARY").parentElement as HTMLElement;
     expect(primBox.style.borderRight).toBe("");
   });
+
+  it("merges a root style escape hatch (e.g. a top divider seam)", () => {
+    const { container } = render(
+      <SplitView style={{ borderTop: "1px solid var(--border-soft)" }}
+        primary={<span>PRIMARY</span>} secondary={<span>SECONDARY</span>} />,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.borderTop).toBe("1px solid var(--border-soft)");
+    // The template's own frame styles survive the merge.
+    expect(root.style.overflow).toBe("hidden");
+  });
 });
 
 describe("SplitView — resizable secondary (inverted drag)", () => {
