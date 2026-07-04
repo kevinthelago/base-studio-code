@@ -6,10 +6,11 @@
 /** Bump only on a breaking envelope change; an app refuses a NEWER manifest it can't read. */
 export const MANIFEST_VERSION = 1;
 
-/** Distributable kinds. `blueprint` ships today; the rest are reserved. (The legacy code-bearing
- *  `pipeline` kind was removed in #2271 — a dead concept.) */
-export type ExtensionKind = "blueprint" | "mcp" | "skill";
-const KINDS: ExtensionKind[] = ["blueprint", "mcp", "skill"];
+/** Distributable kinds. `blueprint` (shared today) and `app-state` (#2272 — the app-wide demo/state
+ *  snapshot) are live; `mcp`/`skill` are reserved. (The legacy code-bearing `pipeline` kind was
+ *  removed in #2271 — a dead concept.) */
+export type ExtensionKind = "blueprint" | "mcp" | "skill" | "app-state";
+const KINDS: ExtensionKind[] = ["blueprint", "mcp", "skill", "app-state"];
 
 /** Capabilities a code-bearing extension may request (declared + user-approved at
  *  install, enforced by the sandbox). Reserved for future code-bearing kinds; the
