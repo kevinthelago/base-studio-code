@@ -1,18 +1,19 @@
 // Extension manifest envelope (#598) — the single wrapper every distributable thing
-// ships in: blueprints today, pipelines / MCP / skills later. One envelope means one
+// ships in: blueprints today, MCP / skills / app-state later. One envelope means one
 // install / validate / store path regardless of kind. Pure (no React/Tauri) so it's
-// shared by the importer, the share-code path, and (later) the gist + sandbox layers.
+// shared by the importer, the share-code path, and (later) the gist layer.
 
 /** Bump only on a breaking envelope change; an app refuses a NEWER manifest it can't read. */
 export const MANIFEST_VERSION = 1;
 
-/** Distributable kinds. `blueprint` ships in M1; the rest are reserved. */
-export type ExtensionKind = "blueprint" | "pipeline" | "mcp" | "skill";
-const KINDS: ExtensionKind[] = ["blueprint", "pipeline", "mcp", "skill"];
+/** Distributable kinds. `blueprint` ships today; the rest are reserved. (The legacy code-bearing
+ *  `pipeline` kind was removed in #2271 — a dead concept.) */
+export type ExtensionKind = "blueprint" | "mcp" | "skill";
+const KINDS: ExtensionKind[] = ["blueprint", "mcp", "skill"];
 
 /** Capabilities a code-bearing extension may request (declared + user-approved at
- *  install, enforced by the sandbox). Reserved for tier-2 pipelines (M3); data-only
- *  kinds like blueprints declare none. */
+ *  install, enforced by the sandbox). Reserved for future code-bearing kinds; the
+ *  current data-only kinds (blueprint/mcp/skill) declare none. */
 export type Capability = "read-signals" | "write-files" | "render" | "network";
 
 /** The wire/file/share-code envelope. `payload` is the kind-specific object. */
@@ -31,8 +32,8 @@ export interface ExtensionManifest<P = unknown> {
   minAppVersion?: string;
   /** Requested capabilities — empty/absent for data-only kinds. */
   capabilities?: Capability[];
-  /** sha256 of a code bundle, recorded at install so silent gist edits can't slip in
-   *  (M3). Absent for data-only kinds. */
+  /** Optional content hash (e.g. sha256), recorded at install so silent gist edits can't slip in.
+   *  Absent unless the producer sets it. */
   integrity?: string;
   payload: P;
 }
