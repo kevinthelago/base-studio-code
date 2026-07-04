@@ -30,7 +30,9 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     // The documentor ships DOC_GLOBS by default (its prose-doc carve-out, #1555) — the only non-planner
     // role that launches with a write boundary, and strictly markdown/docs (no code extensions).
     expect(DOC_GLOBS).toBe(ROLE_DEFAULTS.documentor.writeGlobs); // same array — derived, not duplicated
-    expect(DOC_GLOBS).toEqual(["*.md", "**/*.md", "docs/**", "README*", "**/README*", "CHANGELOG*"]);
+    // No `docs/**`: that would grant code files under docs/ (e.g. docs/gen.ts) — the boundary is
+    // markdown/prose only (#2326). `**/*.md` already covers every markdown file, incl. docs/*.md.
+    expect(DOC_GLOBS).toEqual(["*.md", "**/*.md", "README*", "**/README*", "CHANGELOG*"]);
     for (const c of Object.values(ROLE_DEFAULTS)) {
       if (c.role !== "planner" && c.role !== "documentor") expect(c.writeGlobs).toEqual([]);
     }
