@@ -1,0 +1,21 @@
+[package]
+name = "bsc-component"
+version = "0.1.0"
+edition = "2021"
+description = "Component-library store (file CRUD over ~/.base-studio-code/components + kits) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc component` CLI."
+
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_component` crate name.
+[lib]
+name = "bsc_component"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the two
+# component/kit CliSpecs + a dispatcher.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The `eslint-preset` generator reads each stored component's JSON + emits the eslint config (#2279).
+serde_json = "1"
+# The `usage` consumer-index store (#2277) resolves ~/.base-studio-code (bsc_base_dir).
+bsc-util = { path = "../bsc-util" }

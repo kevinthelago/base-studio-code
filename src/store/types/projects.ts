@@ -2,7 +2,7 @@
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
-import type { GEdgeKind } from "@/features/glance/lib/glanceGraph";
+import type { GEdgeKind, GRole, GStatus } from "@/features/glance/lib/glanceGraph";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
@@ -46,8 +46,11 @@ export interface ProjectsState {
    *  after that change, or the legacy title-derived key for grandfathered drafts. The record's
    *  `title` is display-only: renaming edits it in place (`updateDraftProject`) and never moves
    *  the on-disk hub, and two same-titled drafts get distinct keys. */
-  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
-  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  /** `role`/`status` (#2284) are OPTIONAL Glance-node hints: when set they give the project's node its
+   *  curated colour/state on the Glance network (`infra/service/data/client` · `building/blocked/…`),
+   *  else `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own coloring. */
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }) => void;
   /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
