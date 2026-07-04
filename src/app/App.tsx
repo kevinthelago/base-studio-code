@@ -24,7 +24,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, DesignWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -133,6 +133,11 @@ export default function App() {
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
             {activeWorkspace === "skills"     && <SkillsWorkspace />}
+            {/* Design Studio — the Component Library pane fills its container (height:100%),
+                so give it a flex-fill wrapper like the other self-measuring surfaces (#2303). */}
+            {activeWorkspace === "design"     && (
+              <Box style={{ flex: 1, minHeight: 0, display: "flex" }}><DesignWorkspace /></Box>
+            )}
             {activeWorkspace === "agents"     && <AgentsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
