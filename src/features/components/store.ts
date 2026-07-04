@@ -7,8 +7,11 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
+import type { KitConsumer } from "./lib/propagation";
+import { kitUsageId } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
 import { loadComponents, loadKits, pushComponent, pushKit } from "./lib/componentBridge";
+import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
 
 export interface ComponentsSlice {
   /** The proven-component library — the typed seed until the global store lands, then its contents. */
@@ -18,6 +21,16 @@ export interface ComponentsSlice {
   /** Hydrate the library from the global `bsc component` store on boot. No-op (keeps the seed) when the
    *  bridge is unreachable. */
   hydrateComponents: () => Promise<void>;
+
+  /** The consumer index (#2277) — which projects use which kit; the edges a kit CHANGE fans out over.
+   *  A write-through cache over the global `bsc component usage` store. */
+  kitUsage: KitConsumer[];
+  /** Hydrate the consumer index on boot (no-op keeping the persisted cache when unreachable). */
+  hydrateKitUsage: () => Promise<void>;
+  /** Record that a project uses a kit (idempotent by (projectKey, kitId)); pushes through the bridge. */
+  addKitUsage: (projectKey: string, kitId: string) => void;
+  /** Remove a project→kit consumer edge; pushes the removal through the bridge. */
+  removeKitUsage: (projectKey: string, kitId: string) => void;
 }
 
 export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set) => ({
@@ -37,5 +50,28 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     for (const c of components) if (c.builtin && !haveC.has(c.id)) void pushComponent(c);
     const haveK = new Set((loadedK ?? []).map((k) => k.id));
     for (const k of kits) if (k.builtin && !haveK.has(k.id)) void pushKit(k);
+  },
+
+  kitUsage: [],
+
+  hydrateKitUsage: async () => {
+    const loaded = await loadKitUsage();
+    if (loaded) set({ kitUsage: loaded }); // bridge unreachable → keep the persisted cache
+  },
+
+  addKitUsage: (projectKey, kitId) => {
+    if (!projectKey || !kitId) return;
+    let added = false;
+    set((s) => {
+      if (s.kitUsage.some((u) => u.projectKey === projectKey && u.kitId === kitId)) return {};
+      added = true;
+      return { kitUsage: [...s.kitUsage, { projectKey, kitId }] };
+    });
+    if (added) void pushKitUsage(projectKey, kitId);
+  },
+
+  removeKitUsage: (projectKey, kitId) => {
+    set((s) => ({ kitUsage: s.kitUsage.filter((u) => !(u.projectKey === projectKey && u.kitId === kitId)) }));
+    void dropKitUsage(kitUsageId(projectKey, kitId));
   },
 });

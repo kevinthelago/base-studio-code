@@ -168,6 +168,7 @@ export const useAppStore = create<AppStore>()(
         orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
+        kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
