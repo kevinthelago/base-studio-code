@@ -1,6 +1,6 @@
 // Design Studio (#2308) — the full-page component workbench, the standalone Rail workspace body (#2303).
-// An IDE-style page over the SAME global component library the planner's condensed `ComponentLibraryPane`
-// (the Kickoff design) browses: a toolbar (kit switcher · search · Library/Graph toggle · ＋Kit/＋Component),
+// An IDE-style page over the SAME global component library the planner's condensed `PlannerComponentsPane`
+// (#2314) browses: a toolbar (kit switcher · search · Library/Graph toggle · ＋Kit/＋Component),
 // a resizable kits→components tree rail, a center that flips between a LIBRARY view (live preview +
 // variant/theme/viewport switchers + Source/Props/Usage tabs + a generate-variants design bar) and a
 // composition GRAPH view, and a resizable inspector (props/API · variants · composes · guidance).

@@ -14,8 +14,8 @@ export const SkillsWorkspace      = lazy(() => import("@/features/skills").then(
 export const AgentsWorkspace      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsWorkspace })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
 // Design Studio (#2303 workspace, #2308 page): the full-page component workbench — its own toolbar,
-// resizable kits→components rail, Library/Graph center, and inspector. Distinct from the condensed
-// `ComponentLibraryPane` (the Kickoff design) that lives in the planner's `test_ui` stage.
+// resizable kits→components rail, Library/Graph center, and inspector. Distinct from the planner's
+// condensed `PlannerComponentsPane` (#2314) that lives in the `test_ui` stage.
 export const DesignWorkspace      = lazy(() => import("@/features/components").then((m) => ({ default: m.DesignStudio })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
