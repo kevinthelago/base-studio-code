@@ -1,0 +1,19 @@
+# cargo-audit configuration (read by the Security-audit workflow's `cargo audit` job).
+#
+# Scoped ignore for the two quick-xml 0.39.4 DoS advisories. These are transitive
+# with no upgrade path and no real exploit surface here:
+#   - Chain: base-studio-code -> tauri -> plist 1.9.0 -> quick-xml 0.39.4
+#   - plist 1.9.0 (latest) pins `quick-xml = "^0.39.2"`; the fix lands in quick-xml
+#     >=0.41, an API-breaking bump plist can't take, so neither `cargo update` nor a
+#     `[patch]` reaches it without breaking the tauri build.
+#   - Both are DoS-only via untrusted XML. plist parses the app's OWN bundle
+#     Info.plist at build time (not attacker-controlled runtime input), so neither
+#     DoS is reachable here.
+#
+# Scoped to EXACTLY these two IDs — any other real vulnerability still fails the audit.
+# Revisit + drop these ignores when tauri/plist ship a quick-xml 0.41 bump.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0194", # quick-xml: quadratic run time checking a start tag for duplicate attribute names
+    "RUSTSEC-2026-0195", # quick-xml: unbounded namespace-declaration allocation (memory-exhaustion DoS)
+]
