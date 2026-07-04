@@ -46,6 +46,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "todo", context_env: None,
+        blurb: "your todo list: `--scope feature` (this issue's steps, plan.db) or `--scope global` (the workflow runbook); check items off with `todo done <id>`",
+        advertise: true,
+    },
+    Sidecar {
         name: "data", context_env: Some("BSC_DATA_DB"),
         blurb: "the Data Model + Platform Behavior Summary + entity tables; REST connectors",
         advertise: true,
@@ -153,7 +158,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
+            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }
