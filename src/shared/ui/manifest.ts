@@ -13,15 +13,19 @@
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim"
   // typography
   | "Text"
   // controls
   | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "SelectField"
+  | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
+  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow"
+  // data · charts (analytics primitives)
+  | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
-  | "Banner" | "InlineError" | "EmptyState" | "StatusDot";
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback";
 
@@ -120,6 +124,47 @@ export const UI_KIT: PrimitiveSpec[] = [
       INLINE("grid"),
     ],
   },
+  {
+    name: "SectionHeader", group: "layout", importPath: "@/shared/ui/layout/SectionHeader",
+    description: "The one uppercase section-title row — `title · hint · spacer · meta|right`.",
+    props: [
+      { name: "title", type: "node", required: true, description: "Section title (uppercase h3)." },
+      { name: "hint", type: "node", description: "Dimmed inline sub-text after the title." },
+      { name: "meta", type: "node", description: "Right-aligned dim mono text (e.g. a count)." },
+      { name: "right", type: "node", description: "Right-aligned raw content (input/button) — overrides meta." },
+      { name: "titleStyle", type: "style", description: "Inline style for the title element." },
+    ],
+  },
+  {
+    name: "SectionLabel", group: "layout", importPath: "@/shared/ui/layout/SectionLabel",
+    description: "The uppercase mono micro-label — a dim/muted section/kv caption.",
+    props: [
+      CHILDREN,
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles)." },
+      { name: "tone", type: "enum", values: ["dim", "muted"], default: "dim", description: "Label color." },
+    ],
+  },
+  {
+    name: "Dialog", group: "layout", importPath: "@/shared/ui/overlay/Dialog",
+    description: "The standard modal dialog card (built on ModalScrim) — title, body, right-aligned actions.",
+    props: [
+      { name: "title", type: "string", required: true, description: "Dialog heading." },
+      { name: "children", type: "node", required: true, description: "Body content." },
+      { name: "actions", type: "node", required: true, description: "Footer action buttons (right-aligned)." },
+      { name: "onDismiss", type: "function", required: true, description: "Escape / scrim-click dismiss handler." },
+      { name: "danger", type: "boolean", description: "Red heading + border for a destructive confirm." },
+    ],
+  },
+  {
+    name: "ModalScrim", group: "layout", importPath: "@/shared/ui/overlay/ModalScrim",
+    description: "The one centered-modal overlay — a full-screen scrim that flex-centers its card, with Escape + overlay-click dismiss.",
+    props: [
+      { name: "children", type: "node", required: true, description: "The centered modal card." },
+      { name: "onDismiss", type: "function", description: "Escape / scrim-click dismiss; omit to make it non-dismissable." },
+      { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Center the card, or top-align it for tall scrolling modals." },
+      { name: "blur", type: "boolean", default: false, description: "Add a backdrop blur." },
+    ],
+  },
   // ---- typography -----------------------------------------------------------
   {
     name: "Text", group: "typography", importPath: "@/shared/ui/typography/Text", passthrough: true,
@@ -210,6 +255,40 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "hint", type: "node", description: "Sub-label hint." },
     ],
   },
+  {
+    name: "BackButton", group: "controls", importPath: "@/shared/ui/controls/BackButton",
+    description: "The one canonical back control — always the chevron_left glyph, as a boxed icon or a chevron + text label.",
+    props: [
+      { name: "onClick", type: "function", required: true, description: "Click handler." },
+      { name: "aria-label", type: "string", required: true, description: "Screen-reader label — required (the bare chevron has no text)." },
+      { name: "variant", type: "enum", values: ["icon", "text"], default: "text", description: "Boxed 30×30 chevron (icon) vs chevron + text label (text)." },
+      { name: "label", type: "string", description: "Text-variant label after the chevron (ignored for icon)." },
+      { name: "disabled", type: "boolean", description: "Disable the button." },
+      { name: "size", type: "number", description: "Chevron size in px (default 18 icon / 14 text)." },
+      { name: "title", type: "string", description: "Native tooltip." },
+    ],
+  },
+  {
+    name: "ColorSwatch", group: "controls", importPath: "@/shared/ui/controls/ColorSwatch",
+    description: "The small rounded color square used as a category / profile / legend indicator.",
+    props: [
+      { name: "color", type: "color", required: true, description: "Fill color — any CSS color incl. var()/color-mix()." },
+      { name: "size", type: "number", default: 9, description: "Square side in px." },
+      { name: "radius", type: "number", default: 2, description: "Corner radius in px." },
+    ],
+  },
+  {
+    name: "ConfirmButton", group: "controls", importPath: "@/shared/ui/controls/ConfirmButton",
+    description: "A two-step confirm button — the first click arms it (turns red), the second within the same focus fires; blur disarms.",
+    props: [
+      { name: "label", type: "string", required: true, description: "Resting label." },
+      { name: "armedLabel", type: "string", required: true, description: "Label shown once armed (after the first click)." },
+      { name: "onConfirm", type: "function", required: true, description: "Fired on the confirming second click." },
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "Control size — md (reset cards) or sm (inline row actions)." },
+      { name: "disabled", type: "boolean", default: false, description: "Disable + dim the button." },
+      { name: "danger", type: "boolean", default: true, description: "Red (destructive) styling when armed." },
+    ],
+  },
   // ---- data -----------------------------------------------------------------
   {
     name: "Card", group: "data", importPath: "@/shared/ui/data/Card",
@@ -272,6 +351,158 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "loading", type: "boolean", description: "Render the block loading — shimmer lines inside the frame (#2302)." },
     ],
   },
+  {
+    name: "Avatar", group: "data", importPath: "@/shared/ui/data/Avatar",
+    description: "A round GitHub user avatar — the login's initial on a login-hashed color.",
+    props: [
+      { name: "login", type: "string", required: true, description: "GitHub login — its initial on a login-hashed color." },
+      { name: "size", type: "number", default: 20, description: "Diameter in px." },
+      { name: "palette", type: "boolean", default: false, description: "Use the discrete assignee-stack palette instead of the continuous login hue." },
+      { name: "bordered", type: "boolean", default: false, description: "1.5px canvas ring so overlapping avatars read as separate disks." },
+      { name: "ml", type: "number", description: "Left margin — negative for overlapping assignee stacks." },
+      { name: "fontScale", type: "number", default: 0.5, description: "Initial font size as a fraction of size." },
+    ],
+  },
+  {
+    name: "IconBox", group: "data", importPath: "@/shared/ui/data/IconBox",
+    description: "A centered fixed-size icon/glyph square — the dedup'd tile behind the planner modal + card glyphs.",
+    props: [
+      CHILDREN,
+      { name: "size", type: "number", default: 30, description: "Square side in px." },
+      { name: "radius", type: "number", default: 7, description: "Corner radius in px." },
+      { name: "background", type: "color", description: "Background color." },
+      { name: "color", type: "color", description: "Foreground color." },
+      { name: "fontSize", type: "number", description: "Glyph font size in px." },
+      { name: "fontWeight", type: "number", default: 700, description: "Glyph font weight." },
+      { name: "border", type: "string", description: "Full border shorthand (e.g. 1px solid …)." },
+    ],
+  },
+  {
+    name: "CardListRow", group: "data", importPath: "@/shared/ui/data/CardListRow",
+    description: "The selectable card-list row — `[lead · title+badge / subtitle · trailing]`; the card archetype of the row vocabulary (#1865).",
+    props: [
+      { name: "title", type: "node", required: true, description: "Primary label." },
+      { name: "lead", type: "node", description: "18px lead column — a status dot, icon, or avatar." },
+      { name: "badge", type: "node", description: "A pill next to the title (left of the spacer)." },
+      { name: "titleAside", type: "node", description: "Right-aligned element on the title line." },
+      { name: "subtitle", type: "node", description: "Secondary line under the title." },
+      { name: "body", type: "node", description: "Full-width rich content below the header line." },
+      { name: "trailing", type: "node", description: "Trailing (auto-width) column — chips, counts, controls." },
+      { name: "selected", type: "boolean", description: "Selection highlight." },
+      { name: "off", type: "boolean", description: "Dimmed/disabled look." },
+      { name: "variant", type: "enum", values: ["card", "grouped"], default: "card", description: "Bordered card vs borderless top-separated group row." },
+      { name: "accent", type: "color", description: "Left-rail accent color shown when selected." },
+      { name: "onClick", type: "function", description: "Click handler (adds a clickable affordance)." },
+    ],
+  },
+  {
+    name: "DataTableRow", group: "data", importPath: "@/shared/ui/data/DataTableRow",
+    description: "One columnar row of a data table — the columnar archetype of the row vocabulary (#1865; sibling: CardListRow).",
+    props: [
+      { name: "template", type: "string", required: true, description: "grid-template-columns — share with the DataTableHeader so cells align under labels." },
+      { name: "children", type: "node", required: true, description: "Cell content, one node per column." },
+      { name: "index", type: "number", description: "Row index — odd rows get a zebra-stripe when provided." },
+      { name: "selected", type: "boolean", description: "Selection highlight." },
+      { name: "off", type: "boolean", description: "Dimmed/disabled look." },
+      { name: "onClick", type: "function", description: "Click handler." },
+      { name: "height", type: "number", default: 37, description: "Fixed row height in px." },
+    ],
+  },
+  // ---- data · charts (analytics primitives, #399) ---------------------------
+  {
+    name: "StatCard", group: "data", importPath: "@/shared/ui/charts/primitives",
+    description: "An analytics KPI card — label, big value, sub-line, optional trend delta.",
+    props: [
+      { name: "k", type: "string", required: true, description: "The stat label." },
+      { name: "v", type: "node", required: true, description: "The stat value." },
+      { name: "sub", type: "node", description: "A sub-line under the value." },
+      { name: "tone", type: "enum", values: ["fg", "accent", "info", "success", "danger"], default: "fg", description: "Value color tone." },
+      { name: "loading", type: "boolean", description: "Render value + sub as shimmer placeholders while the metric loads (#2234)." },
+    ],
+  },
+  {
+    name: "LineArea", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A multi-series SVG line / area chart with optional hover tooltips.",
+    props: [
+      { name: "series", type: "array", required: true, description: "LineSeries[] — { name, color, data:number[], width?, dash?, dots?, fill?, dotR? }." },
+      { name: "labels", type: "array", required: true, description: "X-axis labels (string[]), one per data point." },
+      { name: "height", type: "number", default: 150, description: "Chart height in px." },
+      { name: "yMax", type: "number", description: "Fixed y-axis max (else derived from the data)." },
+      { name: "area", type: "boolean", default: true, description: "Fill the area under each series." },
+      { name: "fmtY", type: "function", description: "Format a y value for the axis + tooltip." },
+    ],
+  },
+  {
+    name: "Bars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A grouped or stacked SVG bar chart with optional hover tooltips.",
+    props: [
+      { name: "groups", type: "array", required: true, description: "BarGroup[] — { name, color, data:number[] }." },
+      { name: "labels", type: "array", required: true, description: "X-axis labels (string[]), one per bucket." },
+      { name: "height", type: "number", default: 130, description: "Chart height in px." },
+      { name: "stacked", type: "boolean", default: false, description: "Stack the groups instead of clustering them." },
+      { name: "fmtY", type: "function", description: "Format a y value for the axis + tooltip." },
+    ],
+  },
+  {
+    name: "Donut", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A donut / gauge ring chart with an optional center label.",
+    props: [
+      { name: "slices", type: "array", required: true, description: "DonutSlice[] — { name, value, color }." },
+      { name: "size", type: "number", default: 132, description: "Diameter in px." },
+      { name: "thickness", type: "number", default: 16, description: "Ring thickness in px." },
+    ],
+  },
+  {
+    name: "HBars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A ranked list of horizontal meter bars (label · meter · value).",
+    props: [
+      { name: "rows", type: "array", required: true, description: "HBarRow[] — { label, value, color?, strong?, icon?, tag? }." },
+      { name: "fmtV", type: "function", description: "Format a row value." },
+      { name: "max", type: "number", description: "Fixed bar max (else the largest row value)." },
+    ],
+  },
+  {
+    name: "Swimlane", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A swimlane / activity timeline — points + spans across labeled lanes, with optional time markers.",
+    props: [
+      { name: "lanes", type: "array", required: true, description: "SwimLane[] — { name, color? }." },
+      { name: "events", type: "array", required: true, description: "SwimEvent[] — { lane, t0, t1?, color, label, r? } (t in 0–1)." },
+      { name: "height", type: "number", default: 26, description: "Lane height in px." },
+      { name: "marks", type: "array", description: "SwimMark[] — { t, label } vertical time markers." },
+    ],
+  },
+  {
+    name: "Spark", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A tiny inline sparkline for a numeric series.",
+    props: [
+      { name: "data", type: "array", required: true, description: "The numeric series (number[]) — needs ≥2 points." },
+      { name: "color", type: "color", required: true, description: "Line / fill color." },
+      { name: "w", type: "number", default: 70, description: "Width in px." },
+      { name: "h", type: "number", default: 20, description: "Height in px." },
+      { name: "fill", type: "boolean", default: true, description: "Fill under the line." },
+      { name: "dot", type: "boolean", default: true, description: "Show a dot at the last point." },
+    ],
+  },
+  {
+    name: "Legend", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A swatch + label (+ optional value) legend row for a chart.",
+    props: [
+      { name: "items", type: "array", required: true, description: "LegendItem[] — { color, label, value? }." },
+    ],
+  },
+  {
+    name: "StackedDayBars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A panel-wrapped two-series stacked bar chart over a run of days (the shared over-time card).",
+    props: [
+      { name: "data", type: "array", required: true, description: "StackedDay[] — { day, upper, lower }." },
+      { name: "title", type: "string", required: true, description: "Card title." },
+      { name: "subtitle", type: "string", required: true, description: "Card subtitle." },
+      { name: "upperLabel", type: "string", required: true, description: "Legend label for the upper (top) series." },
+      { name: "lowerLabel", type: "string", required: true, description: "Legend label for the lower (baseline) series." },
+      { name: "upperColor", type: "color", default: "var(--accent)", description: "Upper series color." },
+      { name: "lowerColor", type: "color", default: "var(--danger)", description: "Lower series color." },
+    ],
+  },
   // ---- feedback -------------------------------------------------------------
   {
     name: "Banner", group: "feedback", importPath: "@/shared/ui/feedback/Banner",
@@ -319,6 +550,15 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "size", type: "number", default: 6, description: "Diameter in px." },
       { name: "pulse", type: "boolean", default: false, description: "Pulse animation." },
       { name: "title", type: "string", description: "Native tooltip." },
+    ],
+  },
+  {
+    name: "Skeleton", group: "feedback", importPath: "@/shared/ui/feedback/Skeleton",
+    description: "The shared loading placeholder — a shimmering block that holds a card's layout while data loads (#2234).",
+    props: [
+      { name: "w", type: "number", default: "100%", description: "Width — a px number or a CSS length string." },
+      { name: "h", type: "number", default: 12, description: "Height — a px number or a CSS length string." },
+      { name: "radius", type: "number", default: 6, description: "Corner radius in px." },
     ],
   },
 ];
