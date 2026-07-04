@@ -37,6 +37,10 @@ export interface ComponentsSlice {
    *  consumer index (`kitUsage`), and queue the resulting `kitDispatches`. An author-declared class
    *  overrides the derived one. Adding a brand-new component is not a "change" (no diff to fan out). */
   setComponent: (component: ComponentRecord, changeOverride?: Partial<Pick<KitChange, "class" | "summary" | "migration">>) => void;
+  /** Import a whole kit + its components (from a gist / share code, #2305 slice 1c) as a USER kit:
+   *  collision-safe (a colliding kit or component id is freshly minted so a packaged built-in can never
+   *  be clobbered), write-through to the `bsc component` store. Returns the (possibly re-id'd) kit. */
+  importKit: (kit: Kit, components: ComponentRecord[]) => Kit;
   /** The pending fan-out — the planned per-consumer dispatches a kit change produced (notify-only by
    *  default; issue/assign only for breaking + opted-in consumers). Drained by the delivery slice. */
   kitDispatches: Dispatch[];
@@ -104,6 +108,27 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
       const fresh = dispatches.filter((d) => !seen.has(dispatchKey(d)));
       return fresh.length ? { kitDispatches: [...s.kitDispatches, ...fresh] } : {};
     });
+  },
+
+  importKit: (kit, components) => {
+    const freshId = (base: string, taken: Set<string>): string => {
+      if (!taken.has(base)) return base;
+      let n = 2;
+      while (taken.has(`${base}-${n}`)) n++;
+      return `${base}-${n}`;
+    };
+    const kitId = freshId(kit.id, new Set(get().kits.map((k) => k.id)));
+    const newKit: Kit = { ...kit, id: kitId, builtin: false };
+    const compIds = new Set(get().components.map((c) => c.id));
+    const newComps: ComponentRecord[] = components.map((c) => {
+      const id = freshId(c.id, compIds);
+      compIds.add(id);
+      return { ...c, id, kitId, builtin: false };
+    });
+    set((s) => ({ kits: [...s.kits, newKit], components: [...s.components, ...newComps] }));
+    void pushKit(newKit);
+    for (const c of newComps) void pushComponent(c);
+    return newKit;
   },
 
   dismissKitDispatch: (projectKey, changeId) =>
