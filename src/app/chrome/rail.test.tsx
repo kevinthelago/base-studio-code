@@ -5,7 +5,7 @@ import { Rail } from "./Rail";
 // The rail's top→bottom order is product-defined (#872); lock it so a stray
 // reorder is caught. Buttons carry the screen label as their `title`.
 const ORDER = [
-  "Console", "Glance", "Planner", "Skills", "Automations", "MCP",
+  "Console", "Glance", "Planner", "Skills", "Design Studio", "Automations", "MCP",
   "GitHub", "Security", "Settings",
 ];
 
@@ -23,6 +23,15 @@ describe("Rail", () => {
     expect(security).toBeTruthy();
     fireEvent.click(security);
     expect(onNavigate).toHaveBeenCalledWith("agents");
+  });
+
+  it("exposes Design Studio and navigates by its 'design' key (#2303)", () => {
+    const onNavigate = vi.fn();
+    const { container } = render(<Rail active="console" onNavigate={onNavigate} />);
+    const design = container.querySelector('.rail button[title="Design Studio"]') as HTMLElement;
+    expect(design).toBeTruthy();
+    fireEvent.click(design);
+    expect(onNavigate).toHaveBeenCalledWith("design");
   });
 
   it("marks the active screen", () => {
