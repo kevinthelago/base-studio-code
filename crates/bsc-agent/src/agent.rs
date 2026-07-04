@@ -204,6 +204,19 @@ pub(crate) fn compact_messages(
     (out, true)
 }
 
+/// Build a turn's system prompt (#1872): the fixed agent preamble ([`AGENT_INSTRUCTIONS`]) + the
+/// caller's `system` + (when present) the re-rendered active todo checklist. The checklist lands
+/// HERE, in `system` — never in `messages` — which is precisely why [`compact_messages`] can never
+/// elide it: it's regenerated from the store every turn rather than carried in the conversation. A
+/// blank/empty todo block is omitted so the prompt stays clean when there's nothing to inject. Pure →
+/// unit-tested.
+fn compose_turn_system(system: &str, todos: Option<&str>) -> String {
+    match todos {
+        Some(block) if !block.trim().is_empty() => format!("{AGENT_INSTRUCTIONS}\n\n{system}\n\n{block}"),
+        _ => format!("{AGENT_INSTRUCTIONS}\n\n{system}"),
+    }
+}
+
 /// Run the agent loop: build a [`Turn`] from the conversation + tools, ask the
 /// provider, and while it returns tool calls, execute them, append the results, and
 /// continue — until the provider answers with no tool calls (final text) or the
@@ -245,7 +258,6 @@ pub async fn run_agent<P: LlmProvider>(
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(200_000);
-    let system_tokens = estimate_tokens(&format!("{AGENT_INSTRUCTIONS}\n\n{system}"));
     let mut announced_compaction = false;
 
     // Outer loop = one iteration per USER turn. One-shot (non-interactive) runs it exactly once; in
@@ -253,6 +265,14 @@ pub async fn run_agent<P: LlmProvider>(
     loop {
         let mut answered = false;
         for step in 0..max_steps {
+            // Re-render the active todo checklist (#1872) from the store EVERY turn and fold its open
+            // items into the system prompt. This is what keeps a weak model on-plan across the
+            // compaction below: the checklist rides in `system`, NEVER in `messages`, so `compact_messages`
+            // (which only touches `messages`) can't elide it — it's regenerated from the DB each turn.
+            // Best-effort + gated to `bsc-agent` sessions (this IS bsc-agent; Claude Code has its own).
+            let todos_block = bsc_todo::render_active_from_env();
+            let turn_system = compose_turn_system(system, todos_block.as_deref());
+            let system_tokens = estimate_tokens(&turn_system);
             // Compact older turns to fit the model's context window (#1831) — a clone for THIS request;
             // the persisted `messages` keep the full history (a later `--continue` loses nothing it
             // wouldn't have had to drop anyway).
@@ -263,10 +283,7 @@ pub async fn run_agent<P: LlmProvider>(
                 announced_compaction = true;
             }
             let turn = Turn {
-                system: format!(
-                    "{AGENT_INSTRUCTIONS}\n\n{}",
-                    system
-                ),
+                system: turn_system,
                 messages: turn_messages,
                 tools: tool_defs.clone(),
                 model: model.to_string(),
@@ -516,6 +533,40 @@ mod tests {
         // Fits the usable budget after compaction.
         let after: usize = 100 + out.iter().map(msg_tokens).sum::<usize>();
         assert!(after <= 500, "compacted to within usable budget, got {after}");
+    }
+
+    #[test]
+    fn compose_turn_system_injects_the_checklist_and_it_survives_compaction() {
+        // #1872: the active todo checklist is folded into `system`, so the model always sees it — and
+        // because it's in `system` and NOT in `messages`, `compact_messages` (which only touches
+        // `messages`) can never elide it. This test proves both halves.
+        let checklist = "# Your active checklist\n- [ ] todo-abc  Write the DDL\n- [ ] todo-def  Wire migrate";
+
+        // Injected: the composed system carries the caller prompt AND the checklist AND the preamble.
+        let sys = compose_turn_system("PROJECT CONTEXT", Some(checklist));
+        assert!(sys.contains("PROJECT CONTEXT"));
+        assert!(sys.contains("todo-abc") && sys.contains("Write the DDL"));
+        assert!(sys.contains(AGENT_INSTRUCTIONS), "the preamble is always present");
+
+        // A None / blank block is omitted (prompt stays clean).
+        assert!(!compose_turn_system("PC", None).contains("checklist"));
+        assert!(!compose_turn_system("PC", Some("   ")).contains("checklist"));
+
+        // Survives compaction: elide a long conversation, then confirm the checklist is STILL present
+        // in the re-composed system for the next turn (it was never in `messages`).
+        let mut msgs = vec![Msg::User("TASK".into())];
+        for _ in 0..10 {
+            msgs.push(Msg::Assistant { text: String::new(), tool_calls: vec![] });
+            msgs.push(Msg::User("x".repeat(400)));
+        }
+        msgs.push(Msg::User("LATEST".into()));
+        let (compacted, did) = compact_messages(estimate_tokens(&sys), msgs, 600, 100);
+        assert!(did, "the middle was elided");
+        // The checklist text is nowhere in the (compacted) message stream — it lives in `system`.
+        let in_messages = compacted.iter().any(|m| matches!(m, Msg::User(s) if s.contains("todo-abc")));
+        assert!(!in_messages, "the checklist is never carried in messages");
+        // Re-composing the next turn's system still surfaces it — the compaction couldn't touch it.
+        assert!(compose_turn_system("PROJECT CONTEXT", Some(checklist)).contains("todo-abc"));
     }
 
     /// The injected instructions must teach a local model the thing it kept getting wrong: a CLI like

@@ -387,7 +387,7 @@ mod tests {
         let names: Vec<&str> = clis.iter().map(|c| c.name).collect();
         assert_eq!(
             names,
-            vec!["plan", "errors", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
+            vec!["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
             "lists every advertised subcommand, in order, once $BSC_BIN is staged",
         );
 
