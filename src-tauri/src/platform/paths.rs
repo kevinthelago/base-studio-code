@@ -53,6 +53,23 @@ pub(crate) fn error_db_path(project_key: &str) -> std::path::PathBuf {
     project_dir(project_key).join("error.db")
 }
 
+/// The project's **durable ingest token** file: `projects/<key>/ingest-token` (#2262). A per-project
+/// secret the runtime-fault collector validates; it lives in the hub next to `error.db` so a shim baked
+/// into a generated app at generation keeps validating across desktop restarts (the old in-memory mint
+/// did not). Read-or-mint by `CollectorState::ensure_token`; read (for `$BSC_INGEST_TOKEN`) by the
+/// session env wiring.
+pub(crate) fn ingest_token_path(project_key: &str) -> std::path::PathBuf {
+    project_dir(project_key).join("ingest-token")
+}
+
+/// The app-wide **ingest port** file: `~/.base-studio-code/ingest.port` (#2262). The runtime-fault
+/// collector binds an OS-assigned loopback port at boot and writes it here, so the session env wiring
+/// (which has no handle to the collector state) can surface it as `$BSC_INGEST_PORT` without threading
+/// the state through. Refreshed each boot; absent/`0` ⇒ the collector isn't listening.
+pub(crate) fn ingest_port_file() -> std::path::PathBuf {
+    bsc_base_dir().join("ingest.port")
+}
+
 /// The project's canonical DuckDB **data store**: `~/.base-studio-code/data/<key>.duckdb` — the Data
 /// Model + PlatformScan the planner reads via `bsc data` (#1446). Pure path construction (no `mkdir`);
 /// callers that write create the parent themselves. Sanitizes the key (idempotent on a cwd-derived key).
