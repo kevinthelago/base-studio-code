@@ -1,0 +1,99 @@
+/* Component Library pane (#2269) — the condensed, self-measuring design-system pane. One responsive
+   column; the `[data-narrow]` attribute (set by a ResizeObserver) flips the picker + compose graph
+   to their narrow layouts. Structure + reused visuals live here; token-driven dynamic bits stay inline. */
+
+.clib-pane {
+  display: flex; flex-direction: column; height: 100%; width: 100%;
+  background: var(--bg-panel); color: var(--fg); overflow: hidden;
+}
+
+/* ── head: kit pills · search · picker ── */
+.clib-head {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+}
+.clib-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.clib-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  height: 28px; padding: 0 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--bg-elev2); color: var(--fg-muted);
+  font-family: var(--mono); font-size: 11.5px; cursor: pointer; white-space: nowrap;
+}
+.clib-pill.on { border-color: var(--accent-dim); background: var(--accent-soft); color: var(--accent); }
+.clib-dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
+
+.clib-search {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); background: var(--bg-canvas); border: 1px solid var(--border);
+}
+.clib-search input {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
+  color: var(--fg); font-family: var(--mono); font-size: 12px;
+}
+
+.clib-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.clib-pane[data-narrow="true"] .clib-picker { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; }
+.clib-chip {
+  display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; min-width: 138px;
+  padding: 9px 12px; border-radius: var(--r-md); border: 1px solid var(--border);
+  background: var(--bg-elev); cursor: pointer; text-align: left;
+}
+.clib-chip.on { border-color: var(--accent-dim); background: var(--accent-soft); }
+
+/* ── body: selected component ── */
+.clib-body { flex: 1; min-height: 0; overflow-y: auto; }
+.clib-detail { padding: 16px 16px 20px; }
+.clib-detail-head { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+
+.clib-preview { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--bg-canvas); }
+.clib-preview-controls {
+  display: flex; flex-direction: column; gap: 8px; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); background: var(--bg-elev);
+}
+.clib-preview-surface {
+  display: flex; align-items: center; justify-content: center; padding: 26px 16px; min-height: 190px;
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--fg), transparent 92%) 1px, transparent 0);
+  background-size: 16px 16px;
+}
+.clib-preview-frame { max-width: 100%; display: flex; align-items: center; justify-content: center; transition: max-width .2s; }
+
+/* ── tabs ── */
+.clib-tabs { display: flex; gap: 2px; margin-top: 16px; border-bottom: 1px solid var(--border); }
+.clib-tab {
+  height: 34px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: transparent; color: var(--fg-dim); font-family: var(--mono); font-size: 11.5px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+}
+.clib-tab.on { border-bottom-color: var(--accent); color: var(--fg); font-weight: 600; }
+.clib-tab-count { font-size: 9px; padding: 0 5px; border-radius: 8px; background: var(--bg-elev2); color: var(--fg-muted); }
+.clib-tabpanel { padding-top: 14px; }
+
+.clib-proprow {
+  display: grid; grid-template-columns: minmax(90px, 1.1fr) minmax(80px, 1fr) 2.4fr;
+  gap: 10px; align-items: start; padding: 8px 10px; border-radius: var(--r-sm);
+}
+.clib-proprow.alt { background: var(--bg-elev); }
+
+.clib-graph { display: flex; align-items: center; gap: 16px; }
+.clib-pane[data-narrow="true"] .clib-graph { flex-direction: column; align-items: stretch; }
+.clib-rel {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-elev);
+  color: var(--fg); font-family: var(--mono); font-size: 11px; cursor: pointer;
+}
+.clib-rel.disabled { cursor: default; opacity: .6; }
+
+/* ── generate bar ── */
+.clib-genbar { flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--bg-elev); position: relative; overflow: hidden; }
+.clib-genbar-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.clib-genbar input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 11px; border-radius: var(--r-sm);
+  background: var(--bg-canvas); border: 1px solid var(--border);
+  color: var(--fg); font-family: var(--mono); font-size: 12px; outline: none;
+}
+.clib-scan { position: absolute; top: 0; left: 0; height: 2px; width: 30%; background: var(--accent); animation: clib-scan 1s linear infinite; }
+@keyframes clib-scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+
+.clib-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.clib-scroll::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 99px; }
+.clib-scroll::-webkit-scrollbar-track { background: transparent; }
