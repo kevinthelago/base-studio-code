@@ -11,6 +11,7 @@
 
 import type { CSSProperties, ReactNode, ElementType } from "react";
 import { fontSize, toneColor, type TextSize, type Tone } from "./type";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 
 export interface TextProps {
   children?: ReactNode;
@@ -24,15 +25,22 @@ export interface TextProps {
   weight?: CSSProperties["fontWeight"];
   /** The rendered element (default `"span"`; e.g. div/p/label/h1–h4). */
   as?: ElementType;
+  /** Render LOADING (#2302): an inline shimmer line the height of the text. `loadingWidth` sets px width. */
+  loading?: boolean;
+  loadingWidth?: number | string;
   className?: string;
   style?: CSSProperties;
   /** Any other prop passes through to the rendered element. */
   [key: string]: unknown;
 }
 
-export function Text({ children, size, tone, mono, weight, as: As = "span", className, style, ...rest }: TextProps) {
+export function Text({ children, size, tone, mono, weight, as: As = "span", loading, loadingWidth, className, style, ...rest }: TextProps) {
   const fs = fontSize(size);
   const color = toneColor(tone);
+  if (loading) {
+    const h = typeof fs === "number" ? Math.round(fs) : 11;
+    return <Skeleton w={loadingWidth ?? 72} h={h} radius={4} style={{ display: "inline-block", verticalAlign: "middle", ...style }} />;
+  }
   return (
     <As
       className={mono ? `${className ?? ""} mono`.trim() : className}

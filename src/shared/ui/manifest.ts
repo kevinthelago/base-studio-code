@@ -131,6 +131,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "mono", type: "boolean", description: "Apply the mono (JetBrains Mono) utility class." },
       { name: "weight", type: "number", description: "Font weight — a number (500/600) or CSS keyword." },
       { name: "as", type: "string", default: "span", description: "The rendered element (span/div/p/label/h1–h4…)." },
+      { name: "loading", type: "boolean", description: "Render the text loading — an inline shimmer line the height of the text (#2302)." },
     ],
   },
   // ---- controls -------------------------------------------------------------
@@ -195,6 +196,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
       { name: "trailing", type: "node", description: "Right-aligned control in the label row." },
+      { name: "loading", type: "boolean", description: "Render the field loading — keep the label, skeleton the input (#2302)." },
     ],
   },
   {
@@ -222,6 +224,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "interactive", type: "boolean", description: "Hover/press affordance." },
       { name: "pad", type: "enum", values: ["sm"], description: "Compact padding." },
       { name: "onClick", type: "function", description: "Click handler (implies interactive)." },
+      { name: "loading", type: "boolean", description: "Render the card loading — a skeleton body the shape of its content (#2302)." },
     ],
   },
   {
@@ -233,6 +236,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "color", type: "color", description: "Custom color (overrides tone)." },
       { name: "dot", type: "boolean", description: "Show a leading status dot." },
       { name: "size", type: "enum", values: ["xs", "sm", "md"], default: "sm", description: "Chip size." },
+      { name: "loading", type: "boolean", description: "Render the chip loading — a shimmer pill (#2302)." },
     ],
   },
   {
@@ -254,6 +258,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "track", type: "color", default: "var(--bg-elev2)", description: "Track (background) color." },
       { name: "height", type: "number", default: 8, description: "Bar height in px." },
       { name: "rounded", type: "boolean", default: true, description: "Round the ends." },
+      { name: "loading", type: "boolean", description: "Render the bar loading — an indeterminate shimmer track (#2302)." },
     ],
   },
   {
@@ -264,6 +269,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "maxHeight", type: "number", default: 150, description: "Max scroll height in px." },
       { name: "wrap", type: "boolean", default: true, description: "Soft-wrap long lines vs a horizontal scroll." },
       { name: "tone", type: "enum", values: ["dim", "muted", "accent", "danger", "success"], default: "muted", description: "Foreground color tone." },
+      { name: "loading", type: "boolean", description: "Render the block loading — shimmer lines inside the frame (#2302)." },
     ],
   },
   // ---- feedback -------------------------------------------------------------

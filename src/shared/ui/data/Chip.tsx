@@ -10,6 +10,7 @@
 // Those stay local to their feature.
 
 import type { ReactNode, CSSProperties } from "react";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import "./chip.css";
 
 const MONO = "var(--mono)";
@@ -37,8 +38,13 @@ export function Chip({
   radius = 99,
   fontSize,
   alignSelf,
+  loading,
+  loadingWidth,
 }: {
   children: ReactNode;
+  /** Render the chip LOADING (#2302): a shimmer pill the shape of a chip. `loadingWidth` sets its px width. */
+  loading?: boolean;
+  loadingWidth?: number;
   /** Semantic tone (class-based). Ignored when `color` is set. */
   tone?: ChipTone;
   /** An explicit colour — renders the inline color-mix pill (dynamic colours). Overrides `tone`. */
@@ -59,6 +65,10 @@ export function Chip({
   fontSize?: number;
   alignSelf?: "flex-start" | "center" | "flex-end" | "stretch";
 }) {
+  if (loading) {
+    const h = size === "md" ? 18 : size === "xs" ? 15 : 17;
+    return <Skeleton w={loadingWidth ?? 48} h={h} radius={radius} style={{ display: "inline-block", verticalAlign: "middle", alignSelf, ...style }} />;
+  }
   if (color) {
     return (
       <span title={title} className={className} style={{
