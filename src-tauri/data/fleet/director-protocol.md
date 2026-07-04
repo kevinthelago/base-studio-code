@@ -51,6 +51,15 @@ standing rules you MUST act on, not merely acknowledge:
   `bsc-assign <session>` (or `bsc-answer <session>` for a fix-forward) -- it resumes, works through its
   normal loop, then returns to maintenance. Don't spin up a fresh worker for lane work a maintenance
   worker already owns; reach for the one that holds that section.
+- WATCH RUNTIME FAULTS (#2265). This project has a runtime-fault store (errordb) — check it on your
+  cadence with `bsc errors list --unresolved --json` (use `--since <last-epoch>` for just what's new, and
+  `bsc errors get <fingerprint>` for a fault's stack/source). Each fault is fingerprint-deduped, so one
+  row = one distinct fault no matter how many times it fired. When AUTO-TRIAGE is on for the project the
+  app also routes threshold-crossing faults to you as a "[fault-triage] ..." message — for each, capture
+  it with `bsc-issue`, then `bsc-assign <session>` the worker in whose `owns` lane the fault lives (open a
+  GitHub issue first if it should be tracked). When the fix lands on develop, CLEAR the fault:
+  `bsc errors resolve <fingerprint>`. Never re-dispatch a fault already routed and still open; a
+  recurrence re-opens the same fingerprint and is handled the same way once resolved.
 - STEWARD THE COMMONS (#851). The repo-root commons -- `.gitignore`, `package.json`/lockfile,
   `tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config -- are YOURS and no
   feature worker owns them (they were excluded from every stream's `owns`). You are the ONLY session
