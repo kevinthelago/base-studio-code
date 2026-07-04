@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ROLE_DEFAULTS, roleCapability, roleWriteRules, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { ROLE_DEFAULTS, roleCapability, roleWriteRules, hasScopedWriteCarveOut, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
 import { PROFILES, APP_ROLES, type AgentProfile } from "./agentProfiles";
 
@@ -23,6 +23,9 @@ describe("role → profile consistency (sessionRoles ↔ roleProfile)", () => {
   it("no code:'none' role's profile auto-allows the file-write tools", () => {
     for (const role of ROLES) {
       if (ROLE_DEFAULTS[role].code !== "none") continue;
+      // A scoped carve-out role (documentor's DOC_GLOBS) intentionally allows writes, hard-limited to
+      // its globs by the bsc-scope hook — its profile allow is by design, not an escalation (#2326).
+      if (hasScopedWriteCarveOut(roleCapability(role))) continue;
       const p = profileFor(role)!;
       expect(p.tools.edit, `${role}: code:none profile must not allow edit`).not.toBe("allow");
       expect(p.tools.write, `${role}: code:none profile must not allow write`).not.toBe("allow");
@@ -34,6 +37,9 @@ describe("role → profile consistency (sessionRoles ↔ roleProfile)", () => {
     // outright for every code:none role (no commons carve-out), and Claude precedence is deny > allow.
     for (const role of ROLES) {
       if (ROLE_DEFAULTS[role].code !== "none") continue;
+      // Carve-out roles (documentor) lift the whole-tool deny so their per-glob doc allows aren't
+      // masked; the bsc-scope hook is their backstop instead. Every OTHER code:none role keeps the deny.
+      if (hasScopedWriteCarveOut(roleCapability(role))) continue;
       const deny = roleWriteRules(roleCapability(role)).deny;
       for (const t of WRITE_TOOLS) {
         expect(deny, `${role}: role gate must deny ${t}`).toContain(t);

@@ -33,8 +33,10 @@ describe("AgentRolesCard", () => {
 
   it("surfaces each role's default profile", () => {
     render(<AgentRolesCard />);
-    expect(screen.getByText(roleProfileId("planner"))).toBeInTheDocument();
-    expect(screen.getByText(roleProfileId("worker"))).toBeInTheDocument();
+    // A profile id can back several roles (e.g. worker + documentor both use pf_auto), so it may
+    // appear more than once — assert presence, not uniqueness.
+    expect(screen.getAllByText(roleProfileId("planner")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(roleProfileId("worker")).length).toBeGreaterThan(0);
   });
 
   it("expands a role's denied commands on demand", () => {
