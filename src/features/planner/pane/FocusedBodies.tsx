@@ -103,7 +103,7 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       // The Planner Components pane (#2314): the project-scoped lens on the proven-component library —
       // a Components ⇄ Full UI toggle (inspect one component with pull-into-plan / open-in-studio
       // hand-offs, or the whole app assembled from the kit). Reads the global library from the store,
-      // so it needs no stage data. (Supersedes the condensed ComponentLibraryPane here.)
+      // so it needs no stage data.
       return <PlannerComponentsPane />;
     // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
     case "purpose":
