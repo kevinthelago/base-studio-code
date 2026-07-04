@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/bsc", "crates/bsc-util", "crates/bsc-sqlite-util", "crates/data", "crates/plandb", "crates/skilldb", "crates/llm", "crates/bsc-agent", "crates/mcp-rpc", "crates/research", "crates/compliance", "crates/logs", "crates/bsc-json-store", "crates/bsc-blueprint", "crates/bsc-persona", "crates/bsc-org", "crates/bsc-component", "crates/bsc-project", "crates/bsc-files", "crates/bsc-cli-util", "crates/bsc-tunnel"]
+members = ["src-tauri", "crates/bsc", "crates/bsc-util", "crates/bsc-sqlite-util", "crates/data", "crates/plandb", "crates/errordb", "crates/skilldb", "crates/llm", "crates/bsc-agent", "crates/mcp-rpc", "crates/research", "crates/compliance", "crates/logs", "crates/bsc-json-store", "crates/bsc-blueprint", "crates/bsc-persona", "crates/bsc-org", "crates/bsc-component", "crates/bsc-project", "crates/bsc-files", "crates/bsc-cli-util", "crates/bsc-tunnel"]
 resolver = "2"
 
 # Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).
