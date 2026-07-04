@@ -15,3 +15,5 @@ name = "bsc_component"
 bsc-json-store = { path = "../bsc-json-store" }
 # Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The `eslint-preset` generator reads each stored component's JSON + emits the eslint config (#2279).
+serde_json = "1"
