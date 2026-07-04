@@ -13,6 +13,9 @@ export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then
 export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
 export const AgentsWorkspace      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsWorkspace })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
+// Design Studio (#2303): the Component Library pane, promoted to a first-class Rail destination — it
+// stands alone (reads the global `bsc component` store), so the workspace is just the pane itself.
+export const DesignWorkspace      = lazy(() => import("@/features/components").then((m) => ({ default: m.ComponentLibraryPane })));
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {
