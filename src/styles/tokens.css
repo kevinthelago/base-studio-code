@@ -330,6 +330,11 @@ html, body {
   background:transparent; transition:background .12s; touch-action:none;
 }
 .resize-x:hover,.resize-x:active{ background:var(--accent-dim); }
+.resize-y{
+  flex:0 0 5px; align-self:stretch; cursor:row-resize;
+  background:transparent; transition:background .12s; touch-action:none;
+}
+.resize-y:hover,.resize-y:active{ background:var(--accent-dim); }
 
 /* ===== console grid ===== */
 .console-grid{
