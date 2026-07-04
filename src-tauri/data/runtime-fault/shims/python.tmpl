@@ -1,0 +1,53 @@
+# base-studio-code runtime-fault shim (#2262) — LOCAL environment. Gives the fleet eyes on this
+# running app: reports uncaught exceptions + a liveness heartbeat to the bsc localhost collector.
+# Generated at planning time; endpoint/key/token/release are baked in below. Best-effort — telemetry
+# never raises into your app. Import this module once at startup (`import bsc_faults`). See this app's
+# CLAUDE.md ("Runtime instrumentation") for what this is and why.
+import json
+import sys
+import threading
+import time
+import traceback
+import urllib.request
+
+_ENDPOINT = "http://127.0.0.1:{{INGEST_PORT}}/ingest"
+_PROJECT_KEY = "{{PROJECT_KEY}}"
+_TOKEN = "{{INGEST_TOKEN}}"
+_RELEASE = "{{RELEASE}}"
+_HEARTBEAT_SECONDS = {{HEARTBEAT_SECONDS}}
+
+
+def _send(body):
+    try:
+        body.update(project_key=_PROJECT_KEY, token=_TOKEN, release=_RELEASE, ts=int(time.time() * 1000))
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(_ENDPOINT, data=data, headers={"content-type": "application/json"})
+        urllib.request.urlopen(req, timeout=2).close()  # noqa: S310 — loopback only
+    except Exception:
+        pass  # telemetry must never crash the app (collector may be down)
+
+
+def report_fault(level, message, stack=None, context=None):
+    _send({
+        "type": "fault",
+        "level": level or "error",
+        "message": str(message)[:500],
+        "stack": (str(stack)[:8000] if stack else None),
+        "context": context,
+    })
+
+
+def _excepthook(exc_type, exc, tb):
+    report_fault("fatal", exc, "".join(traceback.format_exception(exc_type, exc, tb)))
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+def _heartbeat_loop():
+    while True:
+        _send({"type": "heartbeat"})
+        time.sleep(_HEARTBEAT_SECONDS)
+
+
+sys.excepthook = _excepthook
+_send({"type": "heartbeat"})  # one immediately, so the app flips to "live" at once
+threading.Thread(target=_heartbeat_loop, daemon=True).start()

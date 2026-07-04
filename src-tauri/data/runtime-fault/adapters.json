@@ -1,0 +1,52 @@
+{
+  "_comment": "Per-environment runtime-fault instrumentation adapters (#2262, epic #2258). Every app the planner generates ships ALREADY INSTRUMENTED for its target environment: the Deployment stage bakes in the fault shim + the environment's transport config. `local` is implemented (the shim POSTs the OTLP-log envelope to the bsc localhost collector, #2261); the cloud adapters are declared-but-PLANNED seams so the coverage gap is explicit, never a silent omission. Single source of truth — the frontend reads it via overlayFile('runtime-fault/adapters.json'); the Deployment-stage directive references it. The envelope shape the shim MUST emit is the Rust `Envelope` in src-tauri/src/observability/collector.rs.",
+  "heartbeatSeconds": 30,
+  "envelope": {
+    "endpoint": "POST http://127.0.0.1:{{INGEST_PORT}}/ingest",
+    "contentType": "application/json",
+    "fields": {
+      "type": "\"fault\" (default) | \"heartbeat\"",
+      "project_key": "the app's bsc project key — baked at generation",
+      "token": "the per-project ingest token — baked at generation",
+      "release": "commit/build id — baked at generation",
+      "ts": "occurrence time, epoch ms (optional; collector defaults to receive time)",
+      "level": "\"warn\" | \"error\" | \"fatal\" (fault only)",
+      "message": "the fault title/summary (fault only — REQUIRED for a fault)",
+      "stack": "the stack trace (fault only)",
+      "context": "free-form structured JSON (fault only)"
+    }
+  },
+  "adapters": {
+    "local": {
+      "status": "implemented",
+      "label": "Local (dev loop)",
+      "transport": "localhost-post",
+      "description": "Same machine as base-studio-code: the shim POSTs the fault/heartbeat envelope to the localhost collector at 127.0.0.1:<ingestPort> with the project's ingest token. No NAT, no relay — this is where ~all the near-term value is.",
+      "shims": { "js": "js", "ts": "js", "python": "python", "rust": "rust", "go": "go" }
+    },
+    "aws": {
+      "status": "planned",
+      "label": "AWS (CloudWatch)",
+      "transport": "otlp-exporter",
+      "description": "The app can't reach localhost. AWS has a dedicated service (CloudWatch Logs / embedded metric format), so this adapter configures the app's OpenTelemetry exporter rather than a localhost POST. Cloud follow-up (#2258 — cloud transport parked behind this seam)."
+    },
+    "vercel": {
+      "status": "planned",
+      "label": "Vercel",
+      "transport": "otlp-exporter",
+      "description": "Serverless functions + edge: wire the platform's log drain / an OTel exporter to a bsc pull-connector. Cloud follow-up (#2258)."
+    },
+    "fly": {
+      "status": "planned",
+      "label": "Fly.io",
+      "transport": "otlp-exporter",
+      "description": "Long-lived machines behind NAT: OTel exporter → bsc pull-connector or the Noise relay fan-in. Cloud follow-up (#2258)."
+    },
+    "docker": {
+      "status": "planned",
+      "label": "Docker",
+      "transport": "localhost-post",
+      "description": "A container on the dev host can reach the collector via the host gateway (host.docker.internal); the same localhost-post shim applies once the endpoint resolves to the host. Follow-up (#2258)."
+    }
+  }
+}

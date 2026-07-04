@@ -212,6 +212,26 @@ pub(super) fn wire_bsc_env(
     if let Some(db) = error_db_for_cwd(cwd) {
         cmd.env("BSC_ERROR_DB", to_bash_path(&db.to_string_lossy()));
     }
+    // Runtime-fault instrumentation (#2262): surface the durable per-project ingest token + the
+    // collector's loopback port so a session that (re)generates the fault shim can bake them in. The
+    // token lives in the hub (read-only here — minted at generation via `collector_info`); the port is
+    // written by the collector at boot. Both optional: absent until a project is generated / the
+    // collector is up, so a non-project session (or a pre-generation one) simply gets neither. NATIVE
+    // values (a bare port + hex token the shim substitutes), not bash paths.
+    if let Some(key) = project_key_from_cwd(cwd) {
+        if let Ok(tok) = std::fs::read_to_string(crate::ingest_token_path(&key.to_string_lossy())) {
+            let tok = tok.trim();
+            if !tok.is_empty() {
+                cmd.env("BSC_INGEST_TOKEN", tok);
+            }
+        }
+    }
+    if let Ok(port) = std::fs::read_to_string(crate::ingest_port_file()) {
+        let port = port.trim();
+        if !port.is_empty() && port != "0" {
+            cmd.env("BSC_INGEST_PORT", port);
+        }
+    }
     // bsc skill (#1338, B-global): point EVERY session at the one GLOBAL skills.db so a group authored
     // anywhere is reachable + resolvable from any live session's own shell. $BSC_SKILL_DB is the shared
     // store the `bsc skill` subcommand reads/writes (a no-arg `bsc-skill` fire stays the #406 telemetry
