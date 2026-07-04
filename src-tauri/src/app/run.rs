@@ -227,6 +227,7 @@ pub fn run() {
             session::sandbox::sync_sandbox_plan_db,
             session::sandbox::sandbox_clone_repo,
             session::sandbox::ensure_sandbox_worktree,
+            session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
