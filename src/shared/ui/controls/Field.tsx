@@ -1,4 +1,5 @@
 import type { ReactNode, InputHTMLAttributes } from "react";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 
 /**
  * The shared form-field family (#1891) over the `.field` / `.input` CSS in `tokens.css` — the
@@ -32,18 +33,24 @@ export type TextFieldProps = {
   trailing?: ReactNode;
   value: string;
   onChange: (value: string) => void;
+  /** Render LOADING (#2302): keep the label, replace the input with a skeleton the input's shape. */
+  loading?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">;
 
 /** A labelled `.input` text field (the `.field` stack). All native `<input>` attrs pass through. */
-export function TextField({ label, hint, trailing, value, onChange, className, ...rest }: TextFieldProps) {
+export function TextField({ label, hint, trailing, value, onChange, loading, className, ...rest }: TextFieldProps) {
   return (
     <Field label={label} hint={hint} trailing={trailing}>
-      <input
-        className={className ? `input ${className}` : "input"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        {...rest}
-      />
+      {loading ? (
+        <Skeleton h={33} radius={7} />
+      ) : (
+        <input
+          className={className ? `input ${className}` : "input"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...rest}
+        />
+      )}
     </Field>
   );
 }
