@@ -31,7 +31,13 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     const byKey = new Map<string, ProjectLite>();
     // Drafts first; a published project on the same plan key overrides it below.
     for (const [id, d] of Object.entries(drafts)) {
-      byKey.set(id, { id, name: d.title, status: (planFleet[id]?.streams.length ?? 0) > 0 ? "planning" : "idle" });
+      // A draft may DECLARE its Glance role/status (#2284); else derive (role in buildGlanceData; status
+      // from whether it has a planned fleet). A declared value wins so a demo/tagged project keeps its
+      // curated coloring.
+      byKey.set(id, {
+        id, name: d.title, role: d.role,
+        status: d.status ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "planning" : "idle"),
+      });
     }
     for (const p of published.data ?? []) {
       // The plan key: the publish alias if set, else the title-derived key — the key `planFleet` + the
