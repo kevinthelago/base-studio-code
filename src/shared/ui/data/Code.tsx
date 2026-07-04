@@ -10,9 +10,13 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { toneColor, type Tone } from "../typography/type";
+import { SkeletonText } from "@/shared/ui/feedback/Skeleton";
 
 export interface CodeProps {
   children?: ReactNode;
+  /** Render LOADING (#2302): shimmer lines inside the code frame. `loadingLines` tunes the count (default 4). */
+  loading?: boolean;
+  loadingLines?: number;
   /** Max scroll height in px before the block scrolls (default 150). */
   maxHeight?: number;
   /** Soft-wrap long lines (`pre-wrap`, default) vs a horizontal scroll (`pre`). */
@@ -23,7 +27,7 @@ export interface CodeProps {
   style?: CSSProperties;
 }
 
-export function Code({ children, maxHeight = 150, wrap = true, tone = "muted", className, style }: CodeProps) {
+export function Code({ children, loading, loadingLines = 4, maxHeight = 150, wrap = true, tone = "muted", className, style }: CodeProps) {
   return (
     <pre
       className={className}
@@ -44,7 +48,7 @@ export function Code({ children, maxHeight = 150, wrap = true, tone = "muted", c
         ...style,
       }}
     >
-      {children}
+      {loading ? <SkeletonText lines={loadingLines} lineH={9} /> : children}
     </pre>
   );
 }
