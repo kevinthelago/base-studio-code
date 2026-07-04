@@ -9,6 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useAppStore } from "@/store";
 import { loadDemoFromGist, saveDemoToGist } from "@/store/appStateGist";
+import { demoSnapshot } from "@/store/demoSnapshot";
 
 // Load / save a "demoable" app-state as a typed gist (#2272). A demo overlays the demoable store
 // slices (projects, the Glance graph, the libraries, plans/fleets, automations) so the app looks
@@ -17,6 +18,7 @@ import { loadDemoFromGist, saveDemoToGist } from "@/store/appStateGist";
 export function DemoStateCard() {
   const demoActive = useAppStore((s) => s.demoActive);
   const clearDemoState = useAppStore((s) => s.clearDemoState);
+  const loadDemoState = useAppStore((s) => s.loadDemoState);
   const githubToken = useAppStore((s) => s.githubToken);
 
   const [url, setUrl] = useState("");
@@ -37,6 +39,11 @@ export function DemoStateCard() {
       if (res.ok) { flash("ok", `Loaded demo "${res.name}". Clear it to return to your own state.`); setUrl(""); }
       else flash("err", res.error);
     } finally { setBusy(false); }
+  };
+
+  const loadBundled = () => {
+    loadDemoState(demoSnapshot());
+    flash("ok", "Loaded the bundled demo world. Clear it to return to your own state.");
   };
 
   const doSave = async () => {
@@ -66,15 +73,21 @@ export function DemoStateCard() {
       )}
 
       <Row gap={8} wrap style={{ alignItems: "center" }}>
+        <Button onClick={loadBundled} disabled={busy}>Load bundled demo</Button>
+        <Text as="span" tone="dim" size={11}>the curated Northwind platform — no gist needed</Text>
+        {demoActive && <Box style={{ flex: 1 }} />}
+        {demoActive && <Button variant="ghost" onClick={() => clearDemoState()} disabled={busy}>Clear demo</Button>}
+      </Row>
+
+      <Row gap={8} wrap style={{ alignItems: "center" }}>
         <Box style={{ flex: 1, minWidth: 200 }}>
           <TextField
             value={url} onChange={setUrl}
-            placeholder="gist URL or id…" aria-label="Demo gist URL or id"
+            placeholder="…or load from a gist URL or id" aria-label="Demo gist URL or id"
             onKeyDown={(e) => { if (e.key === "Enter") void doLoad(); }}
           />
         </Box>
-        <Button onClick={() => void doLoad()} disabled={busy || !url.trim()}>Load demo</Button>
-        {demoActive && <Button variant="ghost" onClick={() => clearDemoState()} disabled={busy}>Clear demo</Button>}
+        <Button variant="ghost" onClick={() => void doLoad()} disabled={busy || !url.trim()}>Load from gist</Button>
       </Row>
 
       <Row gap={10} wrap style={{ alignItems: "center" }}>

@@ -29,6 +29,10 @@ export interface GRawNode {
    *  agent's actual session role ("worker" / "reviewer" / "director"), from its persona. The `role`
    *  category still drives the colour; this is the text shown on the card + inspector. */
   roleLabel?: string;
+  /** Unresolved runtime-fault count for the project (#2265), from `bsc errors` — drives the node's
+   *  fault badge / health tint. Optional + orthogonal to `status` (liveness, #2263), so the two merge
+   *  cleanly; absent/0 ⇒ no badge. */
+  faults?: number;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
  *  user-drawn project link carries its own; sample/derived edges fall back to a positional id). */

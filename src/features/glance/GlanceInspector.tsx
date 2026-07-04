@@ -7,7 +7,10 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Toggle } from "@/shared/ui/controls/Toggle";
 import { ROLE_COLOR, STATUS_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
+
+const FAULT_COLOR = "#f2555f";
 
 // Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
 const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, background: "var(--bg-elev)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", zIndex: 15 };
@@ -24,6 +27,11 @@ interface InspectorProps {
   /** When provided (the L1 project network, #2253), the CONTRACT view offers "remove link" — the edge is
    *  a user-drawn project relationship, so its `id` is the ProjectLink id. */
   onRemoveEdge?: (id: string) => void;
+  /** The selected project's auto-triage toggle state (#2265). Undefined ⇒ don't render the control
+   *  (a drilled fleet node, or an edge). */
+  autoTriageOn?: boolean;
+  /** Flip the selected project's auto-triage toggle (#2265). */
+  onToggleAutoTriage?: (on: boolean) => void;
 }
 
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
@@ -45,11 +53,12 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
     const st = STATUS_META[n.status];
+    const faults = n.faults ?? 0;
     const deps = model.edges.filter((e) => e.from === n.id);
     const rdeps = model.edges.filter((e) => e.to === n.id);
     const inCycle = model.cycleNodeIds.has(n.id);
@@ -81,6 +90,33 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
               <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
             </Row>
+          )}
+
+          {/* FAULT-health (#2265): unresolved runtime faults + the per-project auto-triage toggle. Only
+              shown on the project network (onToggleAutoTriage supplied) — a drilled fleet node has neither. */}
+          {onToggleAutoTriage && (
+            <>
+              {LABEL("RUNTIME FAULTS")}
+              <Box style={{ background: faults > 0 ? "rgba(242,85,95,.08)" : "var(--bg-soft)", border: `1px solid ${faults > 0 ? "rgba(242,85,95,.28)" : "var(--border)"}`, borderRadius: 8, padding: "11px 12px" }}>
+                <Row gap={9} align="center">
+                  {faults > 0
+                    ? <Text as="span" style={{ color: FAULT_COLOR, flex: "none" }}>●</Text>
+                    : <Text as="span" tone="dim" style={{ flex: "none" }}>○</Text>}
+                  <Text as="span" mono size={13} weight={600} style={{ color: faults > 0 ? "#f3a4a9" : "var(--fg-muted)" }}>
+                    {faults > 0 ? `${faults} unresolved` : "no open faults"}
+                  </Text>
+                </Row>
+                <Row justify="between" align="center" style={{ marginTop: 11 }}>
+                  <Box style={{ minWidth: 0 }}>
+                    <Text as="div" mono size={11} weight={500}>auto-triage</Text>
+                    <Text as="div" size={10.5} tone="dim" style={{ lineHeight: 1.4, marginTop: 2 }}>
+                      {autoTriageOn ? "routes a fix into the director" : "surface-only — no auto-dispatch"}
+                    </Text>
+                  </Box>
+                  <Toggle on={!!autoTriageOn} size="sm" onClick={() => onToggleAutoTriage(!autoTriageOn)} role="switch" ariaChecked={!!autoTriageOn} />
+                </Row>
+              </Box>
+            </>
           )}
 
           {LABEL("AGENTS")}

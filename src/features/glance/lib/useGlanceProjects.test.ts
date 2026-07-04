@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
+import type { ProjectLite } from "./glanceData";
 import { useAppStore } from "@/store";
 
 /** A GhProject with the fields the merge reads; the rest filled so the cast is honest. */
@@ -71,6 +72,61 @@ describe("mergeGlanceProjects — draft/published dedup (#2339)", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("p-abc123");
     expect(merged[0].status).toBe("done");
+  });
+});
+
+describe("applyLiveness — heartbeat → 'live' status (#2263)", () => {
+  const projects: ProjectLite[] = [
+    { id: "a", name: "A", status: "planning" },
+    { id: "b", name: "B", status: "done" },
+    { id: "c", name: "C", status: "idle" },
+  ];
+
+  it("maps a live-keyed project to the 'live' status and leaves the rest untouched", () => {
+    const out = applyLiveness(projects, new Set(["a", "b"]));
+    expect(out.find((p) => p.id === "a")?.status).toBe("live"); // was planning → live
+    expect(out.find((p) => p.id === "b")?.status).toBe("live"); // even a shipped app can be running
+    expect(out.find((p) => p.id === "c")?.status).toBe("idle"); // not live → keeps merged status
+  });
+
+  it("returns the input untouched when nothing is live (liveness lapsed ⇒ prior status intact)", () => {
+    const out = applyLiveness(projects, new Set());
+    expect(out).toEqual(projects);
+    expect(out.find((p) => p.id === "a")?.status).toBe("planning");
+  });
+});
+
+describe("useGlanceProjects — status producer wires 'live' from project_liveness (#2263)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" });
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("resolves a heartbeating draft to the 'live' status", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1 } },
+    });
+    // The liveness command reports the draft live; every other command is inert.
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "project_liveness" ? [{ projectKey: "billing-svc", live: true }] : null,
+    );
+
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.find((p) => p.id === "billing-svc")?.status).toBe("live"));
+  });
+
+  it("leaves the derived status when the command reports the project NOT live", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1 } },
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "project_liveness" ? [{ projectKey: "billing-svc", live: false }] : null,
+    );
+
+    const { result } = renderHook(() => useGlanceProjects());
+    // Give the poll a tick; the status must stay the derived "idle" (no fleet), never flip to live.
+    await waitFor(() => expect(result.current.length).toBe(1));
+    expect(result.current[0].status).toBe("idle");
   });
 });
 
