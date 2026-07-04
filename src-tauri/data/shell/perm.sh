@@ -1,0 +1,1 @@
+__bsc_perm() { l="${BSC_PERM_LOG:-}"; [ -z "$l" ] && return 0; ts="$(__bsc_now_ms)"; t="$(printf '%s' "$2" | tr '\t\n' '  ' | cut -c1-160)"; r="$(printf '%s' "$3" | tr '\t\n' '  ' | cut -c1-160)"; __bsc_logline "$l" '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "${BSC_AUDIT_PANE:-?}" "$1" "block" "$t" "$r"; return 0; }

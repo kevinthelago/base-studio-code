@@ -1,0 +1,1 @@
+bsc() { if [ -n "${BSC_BIN:-}" ] && [ ! -s "$BSC_BIN" ]; then echo "bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'" >&2; return 127; fi; "${BSC_BIN:-bsc}" "$@"; }
