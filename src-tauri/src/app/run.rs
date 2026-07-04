@@ -171,6 +171,7 @@ pub fn run() {
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_set_app_runner,
             bsc::bsc,
             app::dialog::pick_directory,
             app::dialog::pick_save_file,
