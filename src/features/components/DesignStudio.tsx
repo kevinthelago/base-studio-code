@@ -10,6 +10,7 @@
 // the planner Kickoff pane is untouched. Data comes from the global store via the `bsc component` bridge.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
+import { KitShareModal } from "./KitShareModal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -62,6 +63,7 @@ export function DesignStudio() {
   const [genVariants, setGenVariants] = useState<Record<string, string[]>>({});
   const [candidates, setCandidates] = useState<string[] | null>(null);
   const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
+  const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   const insp = useDragResize({ initial: 322, min: 240, max: 460, axis: "x", invert: true });
@@ -179,10 +181,19 @@ export function DesignStudio() {
           ]}
         />
         <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
-          <Box as="button" className="ds-act" title="Add a new kit"><Text as="span" tone="dim">＋</Text> Kit</Box>
+          <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
         </Box>
       </Box>
+
+      {shareOpen && (
+        <KitShareModal
+          kit={kit ?? null}
+          components={kitComps}
+          onClose={() => setShareOpen(false)}
+          onImported={(k) => selectKit(k.id)}
+        />
+      )}
 
       {/* ── body ── */}
       <Box className="ds-body">
