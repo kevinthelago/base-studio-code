@@ -17,11 +17,15 @@ describe("ActivityFeed", () => {
   });
 
   it("shows the empty state only when not loading and there are no items", () => {
-    const { rerender } = render(<ActivityFeed items={[]} hint="h" loading={false} tone={{}} />);
-    expect(screen.getByText("No recent activity.")).toBeInTheDocument();
+    const { container, rerender } = render(<ActivityFeed items={[]} hint="h" loading={false} tone={{}} />);
+    // The empty state now renders via <EmptyState> (title has no trailing period).
+    expect(screen.getByText("No recent activity")).toBeInTheDocument();
     rerender(<ActivityFeed items={[]} hint="h" loading={true} tone={{}} />);
-    expect(screen.queryByText("No recent activity.")).not.toBeInTheDocument();
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByText("No recent activity")).not.toBeInTheDocument();
+    // Loading now renders shimmer skeleton rows (#2234) rather than a "Loading…" label.
+    const shimmers = Array.from(container.querySelectorAll<HTMLElement>('[aria-hidden="true"]'))
+      .filter(el => (el.getAttribute("style") ?? "").includes("skeleton-shimmer"));
+    expect(shimmers.length).toBeGreaterThan(0);
   });
 
   it("renders the optional right-slot control", () => {

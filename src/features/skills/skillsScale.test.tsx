@@ -65,10 +65,12 @@ describe("SkillsWorkspace — KPI leaderboard digest", () => {
     expect(screen.getByText("Never run")).toBeTruthy();
   });
 
-  it("with no invocations the expanded leaderboard shows an empty hint", () => {
+  it("with no invocations the expanded leaderboard shows an empty hint", async () => {
     render(<SkillsWorkspace />);
     fireEvent.click(screen.getByText("Fleet digest · 7d"));
-    expect(screen.getByText(/No invocations yet/)).toBeTruthy();
+    // The empty hint renders only after the first telemetry poll returns (#2245) — until then a
+    // chart-shaped skeleton stands in, so wait for the poll to settle.
+    expect(await screen.findByText(/No invocations yet/)).toBeTruthy();
   });
 });
 
