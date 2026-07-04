@@ -1,0 +1,76 @@
+// base-studio-code runtime-fault shim (#2262) — LOCAL environment. Gives the fleet eyes on this
+// running app: reports panics + a liveness heartbeat to the bsc localhost collector. Generated at
+// planning time; endpoint/key/token/release are baked in below. Best-effort — telemetry never
+// panics into your app. Call `bscfaults.Init()` once at the top of main; wrap goroutines you want
+// covered with `defer bscfaults.Recover()`. Uses only the standard library. See this app's CLAUDE.md
+// ("Runtime instrumentation") for what this is and why.
+package bscfaults
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"runtime/debug"
+	"time"
+)
+
+const (
+	ingestEndpoint   = "http://127.0.0.1:{{INGEST_PORT}}/ingest"
+	projectKey       = "{{PROJECT_KEY}}"
+	ingestToken      = "{{INGEST_TOKEN}}"
+	release          = "{{RELEASE}}"
+	heartbeatSeconds = {{HEARTBEAT_SECONDS}}
+)
+
+var client = &http.Client{Timeout: 2 * time.Second}
+
+func send(body map[string]interface{}) {
+	defer func() { _ = recover() }() // telemetry must never crash the app
+	body["project_key"] = projectKey
+	body["token"] = ingestToken
+	body["release"] = release
+	body["ts"] = time.Now().UnixMilli()
+	data, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+	resp, err := client.Post(ingestEndpoint, "application/json", bytes.NewReader(data))
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+}
+
+// ReportFault sends an explicit fault (a failing health check, a threshold breach).
+func ReportFault(level, message, stack string) {
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	send(map[string]interface{}{"type": "fault", "level": level, "message": message, "stack": stack})
+}
+
+// Recover reports a panic as a fatal fault, then re-panics. Use as `defer bscfaults.Recover()`.
+func Recover() {
+	if r := recover(); r != nil {
+		ReportFault("fatal", toString(r), string(debug.Stack()))
+		panic(r)
+	}
+}
+
+func toString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// Init starts the heartbeat loop and reports one heartbeat immediately. Pair with a top-level
+// `defer bscfaults.Recover()` in main to catch the main-goroutine panic.
+func Init() {
+	send(map[string]interface{}{"type": "heartbeat"}) // one immediately → flips the app to "live"
+	go func() {
+		for range time.Tick(heartbeatSeconds * time.Second) {
+			send(map[string]interface{}{"type": "heartbeat"})
+		}
+	}()
+}
