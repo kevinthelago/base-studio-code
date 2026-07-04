@@ -91,6 +91,15 @@ pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<Worksp
     }
     let planning_dir = project_dir(&project_key);
 
+    // Runtime-fault instrumentation (#2262, epic #2258): mint + persist the durable per-project ingest
+    // token at GENERATION so it exists before any session launches. The session env wiring then exports
+    // it as `$BSC_INGEST_TOKEN` (console/pty/env.rs), the planner bakes it into the app's fault shim at
+    // the Deployment stage, and the localhost collector validates a running app's fault/heartbeat POST
+    // against this same durable file. Idempotent — an existing token is reused (a baked shim keeps
+    // validating across re-setup + desktop restarts). Best-effort: token minting must never fail hub
+    // setup, so a write error is swallowed (the shim simply lacks a token until the next generation).
+    let _ = crate::observability::collector::mint_ingest_token(&project_key);
+
     for dir in &[
         planning_dir.join(".claude"),
         planning_dir.join("prompts"),
@@ -327,6 +336,19 @@ mod tests {
         for f in ["CLAUDE.md", "automations.md", "github_context.md", "context_signature.txt"] {
             assert!(hub.join(f).exists(), "expected {f} in the hub");
         }
+        // Runtime-fault instrumentation (#2262): generation mints the durable per-project ingest token
+        // into the hub, so it exists before any session launches ($BSC_INGEST_TOKEN) and the collector
+        // can validate the running app's fault/heartbeat POST against it.
+        let token_path = crate::ingest_token_path("p-demo");
+        assert!(token_path.exists(), "expected the durable ingest token minted at generation");
+        let token = std::fs::read_to_string(&token_path).unwrap();
+        let token = token.trim();
+        assert_eq!(token.len(), 32, "32 hex chars");
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()), "hex token");
+        // Re-running setup reuses the SAME token (idempotent — a baked shim keeps validating).
+        super::setup_workspaces_inner(base()).unwrap();
+        assert_eq!(std::fs::read_to_string(&token_path).unwrap().trim(), token, "token is stable across re-setup");
+
         // A blank project_key is still refused (would scatter the hub across `projects/`).
         let empty = super::SetupWorkspacesArgs { project_key: String::new(), ..base() };
         match super::setup_workspaces_inner(empty) {

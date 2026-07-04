@@ -186,6 +186,23 @@ struct Shared {
 }
 
 impl Shared {
+    /// Resolve the project's expected ingest token: the in-process cache first, else the durable
+    /// on-disk token via `load` (warming the cache on a hit). This is the "cache over the token file"
+    /// model [`CollectorState::ensure_token`] documents, applied on the **receive** path — so a token
+    /// minted at generation (or on a prior boot) validates without a prior `ensure_token` call in THIS
+    /// process (the in-memory map is empty after a restart). `load` is injected so the decision stays
+    /// testable without the real project hub (production reads [`ingest_token_path`]; tests pass a
+    /// closure). `None` ⇒ no token anywhere ⇒ an unknown project.
+    fn token_for(&self, project_key: &str, load: impl Fn(&str) -> Option<String>) -> Option<String> {
+        let mut map = lock(&self.tokens);
+        if let Some(tok) = map.get(project_key) {
+            return Some(tok.clone());
+        }
+        let tok = load(project_key)?;
+        map.insert(project_key.to_string(), tok.clone());
+        Some(tok)
+    }
+
     /// Charge one envelope against the project's window; `false` = over the cap (dropped).
     fn allow(&self, project_key: &str) -> bool {
         let now = now_ms();
@@ -319,6 +336,28 @@ impl CollectorState {
     }
 }
 
+/// Mint (or reuse) and persist the durable per-project ingest token, returning it. Called at
+/// **generation** (`setup_workspaces`, #2262) so the token exists on disk *before* any session
+/// launches: the session env wiring exports it as `$BSC_INGEST_TOKEN`, and the localhost collector
+/// validates a running app's fault/heartbeat POST against this same durable file. Idempotent — an
+/// existing token is reused, never rotated (a baked shim keeps validating). Thin wrapper over
+/// [`read_or_mint_token`] at the canonical [`ingest_token_path`] so the generation seam needn't spell
+/// the path or a `CollectorState` handle.
+pub(crate) fn mint_ingest_token(project_key: &str) -> String {
+    read_or_mint_token(&ingest_token_path(project_key))
+}
+
+/// Read the durable ingest token at `path` for the receiver's cache-miss fallback — the trimmed
+/// contents when the file exists and is non-empty, else `None` (⇒ unknown project). Unlike
+/// [`read_or_mint_token`] this NEVER mints/writes: an ingest for a project with no token file is an
+/// *unknown project*, not a silent new registration. This is what makes the receiver honor the
+/// "cache over the token file" model across a desktop restart (the in-memory map starts empty).
+fn read_token_file(path: &std::path::Path) -> Option<String> {
+    let s = std::fs::read_to_string(path).ok()?;
+    let s = s.trim();
+    (!s.is_empty()).then(|| s.to_string())
+}
+
 /// A random 128-bit token as 32 lowercase hex chars (mirrors the tunnel's PSK minting).
 fn mint_token() -> String {
     let bytes: [u8; 16] = rand::random();
@@ -386,7 +425,12 @@ fn serve(shared: &Shared, server: tiny_http::Server) {
             Outcome::BadRequest
         } else {
             match read_body(&mut req) {
-                Ok(body) => ingest(shared, &body, |k| Store::open(&error_db_path(k))),
+                Ok(body) => ingest(
+                    shared,
+                    &body,
+                    |k| Store::open(&error_db_path(k)),
+                    |k| read_token_file(&ingest_token_path(k)),
+                ),
                 Err(o) => o,
             }
         };
@@ -420,12 +464,15 @@ fn read_body(req: &mut tiny_http::Request) -> Result<Vec<u8>, Outcome> {
 }
 
 /// The pure parse → validate → attribute → record decision. `open_store` resolves the project's
-/// [`Store`] (production: `Store::open(&error_db_path(key))`; tests inject a temp/in-memory store), so
-/// the whole path is testable without a socket, the real home dir, or Tauri.
+/// [`Store`] (production: `Store::open(&error_db_path(key))`; tests inject a temp/in-memory store) and
+/// `load_token` resolves the project's durable ingest token on a cache miss (production:
+/// `read_token_file(&ingest_token_path(key))`; tests inject/`|_| None`), so the whole path is testable
+/// without a socket, the real home dir, or Tauri.
 fn ingest(
     shared: &Shared,
     body: &[u8],
     open_store: impl Fn(&str) -> rusqlite::Result<Store>,
+    load_token: impl Fn(&str) -> Option<String>,
 ) -> Outcome {
     if body.len() > MAX_BODY {
         return Outcome::TooLarge;
@@ -438,10 +485,11 @@ fn ingest(
         return Outcome::BadRequest;
     }
     // Attribution + auth: an unknown project has no minted token (404); a present project with an
-    // absent/mismatched token is unauthorized (401). Constant-time-ish compare isn't warranted on
-    // loopback, but the empty-token guard keeps a token-less envelope from ever matching.
-    let expected = lock(&shared.tokens).get(&env.project_key).cloned();
-    let Some(expected) = expected else {
+    // absent/mismatched token is unauthorized (401). The token is resolved cache-over-file, so a
+    // project minted at generation validates even on a fresh boot (empty in-memory map). Constant-
+    // time-ish compare isn't warranted on loopback, but the empty-token guard keeps a token-less
+    // envelope from ever matching.
+    let Some(expected) = shared.token_for(&env.project_key, &load_token) else {
         return Outcome::UnknownProject;
     };
     if env.token.is_empty() || env.token != expected {
@@ -556,7 +604,7 @@ mod tests {
         let shared = shared_with("proj", "tok");
 
         let db_for = db.clone();
-        let outcome = ingest(&shared, &fault_body("proj", "tok", "kaboom"), move |_| Store::open(&db_for));
+        let outcome = ingest(&shared, &fault_body("proj", "tok", "kaboom"), move |_| Store::open(&db_for), |_| None);
         assert!(matches!(outcome, Outcome::Recorded(_)), "got {outcome:?}");
 
         // Re-open and confirm exactly one fingerprinted fault with the right title/level landed.
@@ -572,42 +620,90 @@ mod tests {
     #[test]
     fn absent_or_wrong_token_is_unauthorized() {
         let shared = shared_with("proj", "right");
-        let bad = ingest(&shared, &fault_body("proj", "wrong", "x"), |_| Store::open_in_memory());
+        let bad = ingest(&shared, &fault_body("proj", "wrong", "x"), |_| Store::open_in_memory(), |_| None);
         assert_eq!(bad, Outcome::Unauthorized);
-        let empty = ingest(&shared, &fault_body("proj", "", "x"), |_| Store::open_in_memory());
+        let empty = ingest(&shared, &fault_body("proj", "", "x"), |_| Store::open_in_memory(), |_| None);
         assert_eq!(empty, Outcome::Unauthorized);
     }
 
     #[test]
     fn unknown_project_is_rejected() {
         let shared = shared_with("known", "tok");
-        let out = ingest(&shared, &fault_body("stranger", "tok", "x"), |_| Store::open_in_memory());
+        let out = ingest(&shared, &fault_body("stranger", "tok", "x"), |_| Store::open_in_memory(), |_| None);
         assert_eq!(out, Outcome::UnknownProject);
+    }
+
+    #[test]
+    fn ingest_validates_a_generated_token_via_the_durable_file_on_a_cache_miss() {
+        // #2262: a project's token is minted at GENERATION (to its hub file) but the in-memory tokens
+        // map starts EMPTY every boot. The receiver must resolve the durable token from disk on a cache
+        // miss and validate against it — else every app POST would 404 until a `collector_info` call
+        // happened to warm the cache. `load_token` stands in for the on-disk read here.
+        let shared = Shared::default(); // nothing warmed this "boot"
+        let ok = ingest(
+            &shared,
+            &fault_body("proj", "tok", "kaboom"),
+            |_| Store::open_in_memory(),
+            |k| (k == "proj").then(|| "tok".to_string()),
+        );
+        assert!(matches!(ok, Outcome::Recorded(_)), "durable-token fault should record, got {ok:?}");
+        // The hit warms the per-process cache so a later envelope skips the disk read.
+        assert_eq!(lock(&shared.tokens).get("proj").map(String::as_str), Some("tok"), "cache warmed on hit");
+
+        // A mismatched envelope token vs the durable file ⇒ unauthorized (not a silent accept).
+        let shared2 = Shared::default();
+        let bad = ingest(
+            &shared2,
+            &fault_body("proj", "wrong", "x"),
+            |_| Store::open_in_memory(),
+            |k| (k == "proj").then(|| "tok".to_string()),
+        );
+        assert_eq!(bad, Outcome::Unauthorized);
+
+        // No durable token anywhere (never generated) ⇒ still an unknown project.
+        let shared3 = Shared::default();
+        let none = ingest(&shared3, &fault_body("ghost", "tok", "x"), |_| Store::open_in_memory(), |_| None);
+        assert_eq!(none, Outcome::UnknownProject);
+    }
+
+    #[test]
+    fn read_token_file_reads_nonempty_trimmed_else_none() {
+        // The durable-file fallback: a present, non-empty token (trimmed) validates; an absent or
+        // blank file is NOT a registration (⇒ None ⇒ unknown project), and it never mints/writes.
+        let dir = std::env::temp_dir().join(format!("bsc-token-file-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ingest-token");
+        assert_eq!(read_token_file(&path), None, "absent ⇒ None");
+        std::fs::write(&path, "  deadbeefcafe  \n").unwrap();
+        assert_eq!(read_token_file(&path).as_deref(), Some("deadbeefcafe"), "present ⇒ trimmed value");
+        std::fs::write(&path, "   \n").unwrap();
+        assert_eq!(read_token_file(&path), None, "blank ⇒ None (not a registration)");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn malformed_json_and_missing_message_are_bad_requests() {
         let shared = shared_with("proj", "tok");
-        assert_eq!(ingest(&shared, b"not json", |_| Store::open_in_memory()), Outcome::BadRequest);
+        assert_eq!(ingest(&shared, b"not json", |_| Store::open_in_memory(), |_| None), Outcome::BadRequest);
         // Valid JSON, valid auth, but no message on a fault.
         let no_msg = serde_json::to_vec(&serde_json::json!({
             "type": "fault", "project_key": "proj", "token": "tok"
         }))
         .unwrap();
-        assert_eq!(ingest(&shared, &no_msg, |_| Store::open_in_memory()), Outcome::BadRequest);
+        assert_eq!(ingest(&shared, &no_msg, |_| Store::open_in_memory(), |_| None), Outcome::BadRequest);
         // Empty project_key.
         let no_proj = serde_json::to_vec(&serde_json::json!({
             "project_key": "", "token": "tok", "message": "x"
         }))
         .unwrap();
-        assert_eq!(ingest(&shared, &no_proj, |_| Store::open_in_memory()), Outcome::BadRequest);
+        assert_eq!(ingest(&shared, &no_proj, |_| Store::open_in_memory(), |_| None), Outcome::BadRequest);
     }
 
     #[test]
     fn oversized_body_is_rejected_without_parsing() {
         let shared = shared_with("proj", "tok");
         let big = vec![b'a'; MAX_BODY + 1];
-        assert_eq!(ingest(&shared, &big, |_| Store::open_in_memory()), Outcome::TooLarge);
+        assert_eq!(ingest(&shared, &big, |_| Store::open_in_memory(), |_| None), Outcome::TooLarge);
     }
 
     #[test]
@@ -618,7 +714,7 @@ mod tests {
         }))
         .unwrap();
         // A heartbeat must never open a store — a panicking opener proves the store path isn't taken.
-        let out = ingest(&shared, &hb, |_| panic!("heartbeat must not open a store"));
+        let out = ingest(&shared, &hb, |_| panic!("heartbeat must not open a store"), |_| None);
         assert_eq!(out, Outcome::Heartbeat);
         assert_eq!(lock(&shared.liveness).get("proj").map(|r| r.last_hb), Some(4242));
     }
@@ -630,7 +726,7 @@ mod tests {
             "project_key": "proj", "token": "tok", "message": "no type field"
         }))
         .unwrap();
-        let out = ingest(&shared, &body, |_| Store::open_in_memory());
+        let out = ingest(&shared, &body, |_| Store::open_in_memory(), |_| None);
         assert!(matches!(out, Outcome::Recorded(_)), "got {out:?}");
     }
 
@@ -639,11 +735,11 @@ mod tests {
         let shared = shared_with("proj", "tok");
         // Fill the window to the cap — every one is accepted.
         for _ in 0..RATE_CAP {
-            let out = ingest(&shared, &fault_body("proj", "tok", "flood"), |_| Store::open_in_memory());
+            let out = ingest(&shared, &fault_body("proj", "tok", "flood"), |_| Store::open_in_memory(), |_| None);
             assert!(matches!(out, Outcome::Recorded(_)));
         }
         // The next one is dropped (429), and the drop is counted.
-        let dropped = ingest(&shared, &fault_body("proj", "tok", "flood"), |_| Store::open_in_memory());
+        let dropped = ingest(&shared, &fault_body("proj", "tok", "flood"), |_| Store::open_in_memory(), |_| None);
         assert_eq!(dropped, Outcome::RateLimited);
         assert_eq!(lock(&shared.rate).get("proj").map(|w| w.dropped), Some(1));
     }
@@ -754,7 +850,7 @@ mod tests {
             "type": "heartbeat", "project_key": "proj", "token": "tok", "ts": 1_000_000
         }))
         .unwrap();
-        assert_eq!(ingest(&shared, &hb, |_| panic!("heartbeat must not open a store")), Outcome::Heartbeat);
+        assert_eq!(ingest(&shared, &hb, |_| panic!("heartbeat must not open a store"), |_| None), Outcome::Heartbeat);
 
         // Silent again, well past the window ⇒ a SECOND "app down" fault (count bumps to 2 on the same fp).
         let db2 = db.clone();
