@@ -536,6 +536,7 @@ dependencies = [
  "bsc-project",
  "bsc-tunnel",
  "bsc-util",
+ "errordb",
  "futures-util",
  "include_dir",
  "jsonwebtoken",
