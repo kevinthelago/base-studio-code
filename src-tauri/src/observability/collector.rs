@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error_db_path;
+use crate::{error_db_path, ingest_port_file, ingest_token_path};
 use errordb::{FaultInput, Store};
 
 /// Reject a body larger than this before parsing (bytes). A fault envelope with a stack is a few KB;
@@ -196,11 +196,19 @@ impl CollectorState {
         self.shared.port.load(Ordering::SeqCst)
     }
 
-    /// Get (minting on first ask) the project's ingest token. A random 32-hex-char secret; stable for
-    /// the process lifetime so the generated app can bake it once. In-memory by design for this slice.
+    /// Get (minting + persisting on first ask) the project's ingest token — a random 32-hex-char secret
+    /// the generated app bakes in once at generation. DURABLE (#2262): backed by [`ingest_token_path`]
+    /// in the project hub (next to `error.db`), so a baked token keeps validating across desktop
+    /// restarts (the previous in-memory-only mint did not). The `tokens` map is a per-process cache
+    /// over that file.
     pub fn ensure_token(&self, project_key: &str) -> String {
         let mut map = lock(&self.shared.tokens);
-        map.entry(project_key.to_string()).or_insert_with(mint_token).clone()
+        if let Some(tok) = map.get(project_key) {
+            return tok.clone();
+        }
+        let token = read_or_mint_token(&ingest_token_path(project_key));
+        map.insert(project_key.to_string(), token.clone());
+        token
     }
 
     /// The last time a heartbeat arrived for `project_key` (epoch-ms), or `None`. For the slice-4
@@ -221,11 +229,17 @@ impl CollectorState {
             Ok(s) => s,
             Err(e) => {
                 log::error!("[collector] could not bind loopback fault-ingest receiver: {e}");
+                // Clear any stale port from a previous boot so the session wiring doesn't export a
+                // dead $BSC_INGEST_PORT (#2262).
+                let _ = std::fs::remove_file(ingest_port_file());
                 return;
             }
         };
         let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(0);
         shared.port.store(port, Ordering::SeqCst);
+        // Surface the OS-assigned port so the session env wiring can export $BSC_INGEST_PORT without a
+        // handle to this state (#2262). Refreshed each boot.
+        let _ = std::fs::write(ingest_port_file(), port.to_string());
         log::info!("[collector] fault-ingest receiver on http://127.0.0.1:{port}/ingest");
         std::thread::Builder::new()
             .name("fault-collector".into())
@@ -239,6 +253,25 @@ impl CollectorState {
 fn mint_token() -> String {
     let bytes: [u8; 16] = rand::random();
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Read the durable ingest token at `path`, or mint + persist a fresh one there (creating the parent
+/// dir). The file-backed core of [`CollectorState::ensure_token`] (#2262) — pure over an explicit path
+/// so the durability is testable without touching the real project hub. A best-effort write failure
+/// still returns a usable (in-memory) token for the session; only cross-restart stability is lost.
+fn read_or_mint_token(path: &std::path::Path) -> String {
+    if let Ok(existing) = std::fs::read_to_string(path) {
+        let existing = existing.trim();
+        if !existing.is_empty() {
+            return existing.to_string();
+        }
+    }
+    let minted = mint_token();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, &minted);
+    minted
 }
 
 /// The blocking accept loop (own thread). Reads each request body under the size cap, runs the pure
@@ -501,14 +534,26 @@ mod tests {
     }
 
     #[test]
-    fn ensure_token_is_stable_and_mints_hex() {
-        let st = CollectorState::new();
-        let a = st.ensure_token("proj");
-        let b = st.ensure_token("proj");
-        assert_eq!(a, b, "same project → same token");
-        assert_eq!(a.len(), 32);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(st.ensure_token("other"), a, "distinct projects → distinct tokens");
+    fn read_or_mint_token_mints_hex_and_is_durable() {
+        // #2262: the ingest token is minted once (32 hex chars) and PERSISTS to its hub file, so a
+        // token baked into a generated app keeps validating across desktop restarts (the previous
+        // in-memory-only mint did not). Pure over an explicit path (tempdir) so it never touches the
+        // real project hub — CollectorState::ensure_token is a thin per-process cache over this.
+        let dir = std::env::temp_dir().join(format!("bsc-ingest-token-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("ingest-token"); // nested ⇒ exercises the parent mkdir
+
+        let first = read_or_mint_token(&path);
+        assert_eq!(first.len(), 32, "32 hex chars");
+        assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), first, "persisted to the file");
+
+        // A second read returns the SAME token (durable across a simulated restart).
+        assert_eq!(read_or_mint_token(&path), first, "stable — reads the persisted token");
+        // A different path mints a DISTINCT token (distinct projects → distinct tokens).
+        assert_ne!(read_or_mint_token(&dir.join("other-token")), first);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

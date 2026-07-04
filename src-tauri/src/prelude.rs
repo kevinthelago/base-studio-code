@@ -6,9 +6,10 @@
 //! via the glob.
 
 pub(crate) use crate::platform::paths::{
-    bsc_base_dir, data_db_path, discovery_dir_for, error_db_path, home_dir, is_published, legacy_draft_dir,
-    nearest_existing_ancestor, parse_worktree_dir_name, perf_db, plan_db_path, plan_dir_for,
-    project_dir, projects_root, repo_dir, skills_db, worktree_dir_name, worktrees_dir,
+    bsc_base_dir, data_db_path, discovery_dir_for, error_db_path, home_dir, ingest_port_file,
+    ingest_token_path, is_published, legacy_draft_dir, nearest_existing_ancestor, parse_worktree_dir_name,
+    perf_db, plan_db_path, plan_dir_for, project_dir, projects_root, repo_dir, skills_db,
+    worktree_dir_name, worktrees_dir,
 };
 pub(crate) use crate::platform::git::{git_exclude, git_lines, git_ok, git_output, git_run};
 pub(crate) use crate::platform::process::{

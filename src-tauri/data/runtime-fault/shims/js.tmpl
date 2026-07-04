@@ -1,0 +1,60 @@
+// base-studio-code runtime-fault shim (#2262) — LOCAL environment. Gives the fleet eyes on this
+// running app: reports uncaught errors / unhandled rejections + a liveness heartbeat to the bsc
+// localhost collector. Generated at planning time; the endpoint, project key, ingest token, and
+// release are baked in below. Best-effort — telemetry never throws into your app. See this app's
+// CLAUDE.md ("Runtime instrumentation") for what this is and why.
+(function () {
+  var ENDPOINT = "http://127.0.0.1:{{INGEST_PORT}}/ingest";
+  var PROJECT_KEY = "{{PROJECT_KEY}}";
+  var TOKEN = "{{INGEST_TOKEN}}";
+  var RELEASE = "{{RELEASE}}";
+  var HEARTBEAT_MS = {{HEARTBEAT_MS}};
+
+  function send(body) {
+    try {
+      body.project_key = PROJECT_KEY;
+      body.token = TOKEN;
+      body.release = RELEASE;
+      body.ts = Date.now();
+      if (typeof fetch !== "function") return; // Node <18 without a fetch polyfill — skip silently.
+      fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        keepalive: true
+      }).catch(function () {}); // swallow — the collector may be down; never surface to the app
+    } catch (e) { /* telemetry must never crash the app */ }
+  }
+
+  // Report an explicit fault. Exposed as globalThis.bscReportFault for manual alerts
+  // (a failing health check, a threshold breach) beyond the automatic hooks below.
+  function reportFault(level, message, stack, context) {
+    send({
+      type: "fault",
+      level: level || "error",
+      message: String(message == null ? "error" : message).slice(0, 500),
+      stack: stack ? String(stack).slice(0, 8000) : undefined,
+      context: context
+    });
+  }
+
+  if (typeof process !== "undefined" && typeof process.on === "function") {
+    process.on("uncaughtException", function (e) { reportFault("fatal", e && e.message, e && e.stack); });
+    process.on("unhandledRejection", function (e) { reportFault("error", (e && e.message) || "unhandledRejection", e && e.stack); });
+  }
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("error", function (ev) { reportFault("error", ev.message, ev.error && ev.error.stack); });
+    window.addEventListener("unhandledrejection", function (ev) {
+      reportFault("error", "unhandledRejection", ev.reason && ev.reason.stack, { reason: String(ev.reason) });
+    });
+  }
+
+  send({ type: "heartbeat" }); // one immediately, so the app flips to "live" at once
+  var timer = setInterval(function () { send({ type: "heartbeat" }); }, HEARTBEAT_MS);
+  if (timer && typeof timer.unref === "function") timer.unref(); // don't keep the process alive
+
+  try {
+    var g = typeof globalThis !== "undefined" ? globalThis : this;
+    if (g) g.bscReportFault = reportFault;
+  } catch (e) { /* no global to attach to */ }
+})();

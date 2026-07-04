@@ -1,0 +1,68 @@
+// base-studio-code runtime-fault shim (#2262) — LOCAL environment. Gives the fleet eyes on this
+// running app: reports panics + a liveness heartbeat to the bsc localhost collector. Generated at
+// planning time; endpoint/key/token/release are baked in below. Best-effort — telemetry never
+// unwinds into your app. Call `bsc_faults::init()` once at the top of `main`. Uses only std +
+// a blocking HTTP POST via a raw TCP write (no extra deps). See this app's CLAUDE.md
+// ("Runtime instrumentation") for what this is and why.
+use std::io::Write;
+use std::net::TcpStream;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const INGEST_PORT: u16 = {{INGEST_PORT}};
+const PROJECT_KEY: &str = "{{PROJECT_KEY}}";
+const TOKEN: &str = "{{INGEST_TOKEN}}";
+const RELEASE: &str = "{{RELEASE}}";
+const HEARTBEAT_SECONDS: u64 = {{HEARTBEAT_SECONDS}};
+
+fn now_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+}
+
+fn esc(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+}
+
+fn send(json_body: &str) {
+    // Best-effort loopback POST; any failure is swallowed so telemetry never affects the app.
+    let addr = format!("127.0.0.1:{INGEST_PORT}");
+    if let Ok(mut stream) = TcpStream::connect(&addr) {
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+        let req = format!(
+            "POST /ingest HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            json_body.len(),
+            json_body
+        );
+        let _ = stream.write_all(req.as_bytes());
+    }
+}
+
+/// Report an explicit fault (a failing health check, a threshold breach) beyond the panic hook.
+pub fn report_fault(level: &str, message: &str, stack: &str) {
+    let body = format!(
+        "{{\"type\":\"fault\",\"project_key\":\"{}\",\"token\":\"{}\",\"release\":\"{}\",\"ts\":{},\"level\":\"{}\",\"message\":\"{}\",\"stack\":\"{}\"}}",
+        esc(PROJECT_KEY), esc(TOKEN), esc(RELEASE), now_ms(), esc(level), esc(&message[..message.len().min(500)]), esc(stack)
+    );
+    send(&body);
+}
+
+fn heartbeat() {
+    let body = format!(
+        "{{\"type\":\"heartbeat\",\"project_key\":\"{}\",\"token\":\"{}\",\"release\":\"{}\",\"ts\":{}}}",
+        esc(PROJECT_KEY), esc(TOKEN), esc(RELEASE), now_ms()
+    );
+    send(&body);
+}
+
+/// Install the panic hook + start the heartbeat thread. Call once at startup.
+pub fn init() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        report_fault("fatal", &info.to_string(), "");
+        prev(info);
+    }));
+    heartbeat(); // one immediately, so the app flips to "live" at once
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_secs(HEARTBEAT_SECONDS));
+        heartbeat();
+    });
+}
