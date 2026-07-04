@@ -5,7 +5,7 @@ use crate::{app, extensions, fleet, planner, session};
 use crate::console::{bsc, discovery, ledger, pty};
 use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
-use crate::observability::{self, logs, perf, tokens};
+use crate::observability::{self, collector, logs, perf, tokens};
 use crate::platform::docstore;
 use crate::project;
 use crate::sources::{credentials, data, oauth as source_oauth};
@@ -92,6 +92,9 @@ pub fn run() {
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
+        // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
+        // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
+        .manage(collector::CollectorState::new())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
@@ -142,6 +145,10 @@ pub fn run() {
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
+            // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
+            // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
+            // unavailable) rather than aborting startup.
+            app.state::<collector::CollectorState>().start();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -270,6 +277,7 @@ pub fn run() {
             project::hub::project_dir_path,
             project::hub::repo_dir_path,
             observability::logs::append_coord_woke,
+            observability::collector::collector_info,
             git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
