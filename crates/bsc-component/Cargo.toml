@@ -17,3 +17,5 @@ bsc-json-store = { path = "../bsc-json-store" }
 bsc-cli-util = { path = "../bsc-cli-util" }
 # The `eslint-preset` generator reads each stored component's JSON + emits the eslint config (#2279).
 serde_json = "1"
+# The `usage` consumer-index store (#2277) resolves ~/.base-studio-code (bsc_base_dir).
+bsc-util = { path = "../bsc-util" }

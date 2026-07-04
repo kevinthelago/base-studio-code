@@ -14,3 +14,4 @@
 //! store's records.
 
 pub mod cli;
+pub mod usage;

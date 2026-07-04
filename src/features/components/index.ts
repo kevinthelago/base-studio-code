@@ -13,6 +13,6 @@ export {
 } from "./lib/rules";
 // Kit-change propagation (#2277) — the fan-out decision spine (classify → plan dispatch to consumers).
 export {
-  classifyChange, makeChange, changeId, planPropagation, dedupeDispatches, dispatchKey,
+  classifyChange, makeChange, changeId, kitUsageId, planPropagation, dedupeDispatches, dispatchKey,
   type KitChange, type ChangeClass, type KitConsumer, type Dispatch, type DispatchKind,
 } from "./lib/propagation";

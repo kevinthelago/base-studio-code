@@ -85,6 +85,19 @@ plus each component's authored `rules` (`no-restricted-imports`). --kit scopes t
 component). Every message carries the escape hatch. The planner writes this into the app's eslint config
 + ensures CI and the worker gate run `lint`.",
     },
+    CmdDoc {
+        name: "usage",
+        summary: "the consumer index — which projects use which kit (#2277)",
+        usage: "\
+USAGE:
+  bsc component usage list [--json]              # every (projectKey, kitId) consumer edge
+  bsc component usage add <projectKey> <kitId>   # record that a project uses a kit (idempotent; prints the id)
+  bsc component usage remove <id>                # remove an edge by id (id is \"<projectKey>><kitId>\")
+
+The consumer index a kit CHANGE fans out over (#2277): who to notify when a component in the kit
+changes. A flat edge store at ~/.base-studio-code/kit-usage.json (like `bsc project link`). Recorded at
+planning (a project seeded from a kit-bearing blueprint uses that kit).",
+    },
 ];
 
 const KIT_COMMANDS: &[CmdDoc] = &[
@@ -152,6 +165,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_eslint_preset(&args[1..])
+            }
+        }
+        // `usage` is the consumer index (kit_usage) — a flat edge store, not a per-record CRUD (#2277).
+        Some("usage") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "usage"));
+                Ok(())
+            } else {
+                cmd_usage(&args[1..], prog)
             }
         }
         _ => bsc_json_store::cli::run(args, prog, &COMPONENT_SPEC),
@@ -283,6 +305,50 @@ fn eslint_preset(components: &[&serde_json::Value]) -> serde_json::Value {
     json!({ "rules": Value::Object(rules) })
 }
 
+/// `usage list|add|remove` — the kit-usage consumer index (#2277). Defaults to `list`. A flat edge
+/// store (crate::usage), not a per-record CRUD, so it's handled here rather than via the shared store CLI.
+fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
+    let json = args.iter().any(|a| a == "--json");
+    let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
+    match positional.first().copied().unwrap_or("list") {
+        "list" => {
+            let edges = crate::usage::load();
+            if json {
+                let arr: Vec<serde_json::Value> = edges
+                    .iter()
+                    .map(|u| serde_json::json!({ "id": u.id, "projectKey": u.project_key, "kitId": u.kit_id }))
+                    .collect();
+                println!("{}", serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into()));
+            } else if edges.is_empty() {
+                println!("(no kit usage)");
+            } else {
+                for u in &edges {
+                    println!("{}\t{} uses {}", u.id, u.project_key, u.kit_id);
+                }
+            }
+            Ok(())
+        }
+        "add" => {
+            let project_key = positional.get(1).ok_or("usage: bsc component usage add <projectKey> <kitId>")?;
+            let kit_id = positional.get(2).ok_or("usage: bsc component usage add <projectKey> <kitId>")?;
+            println!("{}", crate::usage::add(project_key, kit_id)?);
+            Ok(())
+        }
+        "remove" => {
+            let id = positional.get(1).ok_or("usage: bsc component usage remove <id>")?;
+            crate::usage::remove(id)?;
+            if !json {
+                println!("removed {id}");
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "unknown usage command '{other}'\n\n{}",
+            bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "usage")
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +434,13 @@ mod tests {
     #[test]
     fn empty_component_set_yields_an_empty_rules_object() {
         assert_eq!(eslint_preset(&[]), serde_json::json!({ "rules": {} }));
+    }
+
+    #[test]
+    fn component_help_lists_the_usage_command() {
+        let ov = bsc_cli_util::help_overview("bsc component", TAGLINE, COMPONENT_COMMANDS);
+        assert!(ov.contains("usage"));
+        let d = bsc_cli_util::help_for("bsc component", TAGLINE, COMPONENT_COMMANDS, "usage");
+        assert!(d.contains("bsc component usage add") && d.contains("consumer index"));
     }
 }

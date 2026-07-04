@@ -66,6 +66,10 @@ export function useAppBoot() {
     // store so the planner's test_ui pane + (later) the Design Studio share ONE library. A no-op that
     // keeps the typed seed when the bridge is unreachable (which is every build until the store lands).
     void useAppStore.getState().hydrateComponents();
+    // Kit-usage consumer index (#2277): hydrate which projects use which kit from the global
+    // `bsc component usage` store — the edges a kit change fans out over. No-op keeping the cache when
+    // the bridge is absent.
+    void useAppStore.getState().hydrateKitUsage();
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).
