@@ -6,9 +6,6 @@ import { UI_KIT } from "@/shared/ui/manifest";
 
 const byName = (name: string) => REACT_UI_COMPONENTS.find((c) => c.name === name);
 
-/** The chart primitives whose rich guidance is a follow-up (#2305 slice 3 remainder). */
-const CHART_PRIMS = new Set(["LineArea", "Bars", "Donut", "HBars", "Swimlane", "Spark", "Legend", "StackedDayBars"]);
-
 describe("react-ui kit generated from the manifest (#2305)", () => {
   it("covers exactly the registered primitives — no drift, no missing, no extra", () => {
     const kit = new Set(REACT_UI_COMPONENTS.map((c) => c.name));
@@ -63,9 +60,8 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(byName("Box")!.srcText).toContain('import { Box } from "@/shared/ui/layout/Box"');
   });
 
-  it("authors when-to-use / when-not guidance for every non-chart primitive (#2305 slice 3)", () => {
+  it("authors when-to-use / when-not guidance for EVERY primitive incl. charts (#2305)", () => {
     for (const c of REACT_UI_COMPONENTS) {
-      if (CHART_PRIMS.has(c.name)) continue; // chart guidance is a follow-up
       expect(c.whenUse.length, `${c.name} missing whenUse guidance`).toBeGreaterThan(0);
       expect(c.whenNot.length, `${c.name} missing whenNot guidance`).toBeGreaterThan(0);
     }
