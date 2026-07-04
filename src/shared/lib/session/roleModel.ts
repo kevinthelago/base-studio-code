@@ -16,6 +16,23 @@ import { overlayFile } from "@/shared/lib/core/configOverrides";
 // The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
 const roleCaps = overlayFile("permissions/role-capabilities.json", roleCapsEmbedded);
 
+// Floor-merge on the EMBEDDED sets (#2325). `overlayFile` FULLY REPLACES the file with the config-dir
+// copy, so a STALE override — seeded on a first run BEFORE the shipped default gained a role/list — would
+// silently drop it. When code then reads that role at module load (e.g. `DOC_GLOBS =
+// ROLE_DEFAULTS.documentor.writeGlobs`, #1555), the missing role is `undefined` and it throws
+// `TypeError reading writeGlobs`, taking down the WHOLE UI. Basing every field on the embedded default
+// guarantees each `SessionRole` (and each list) the code knows about is always present; the overlay
+// still customizes/adds entries on top.
+const roleDefaultsMerged = mergeRoleDefaults(roleCapsEmbedded.roleDefaults, roleCaps.roleDefaults);
+
+/** Floor-merge role-default tables (#2325): `embedded` is the base (every shipped role), `overlaid` (the
+ *  config-dir copy) customizes/adds on top. Exported so the regression test can prove a stale override
+ *  MISSING a role still yields that role from the embedded floor (rather than `undefined` → the
+ *  module-load `TypeError reading writeGlobs` that took down the UI). */
+export function mergeRoleDefaults<T>(embedded: Record<string, T>, overlaid: Record<string, T>): Record<string, T> {
+  return { ...embedded, ...overlaid };
+}
+
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
   // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews.
@@ -72,16 +89,16 @@ export interface RoleCapability {
 // - DEP_MANIFEST_FILES (#1111) — dependency manifests + lockfiles a WORKER must not hand-edit (a new
 //   dep routes through the director). {@link roleWriteRules} denies the Edit/Write TOOLS on these
 //   even inside the worker's owned globs; `npm install` / `cargo build` via Bash still regenerate them.
-export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleCaps.roleDefaults as Record<SessionRole, RoleCapability>;
-export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner.writeGlobs;
-export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles;
-export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles;
+export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleDefaultsMerged as Record<SessionRole, RoleCapability>;
+export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner?.writeGlobs ?? [];
+export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles ?? roleCapsEmbedded.dbOwnedPlanFiles;
+export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles ?? roleCapsEmbedded.depManifestFiles;
 // DOC_GLOBS (#1555) — the prose-documentation paths the DOCUMENTOR may write: top-level and nested
 // markdown, the `docs/` tree, and README/CHANGELOG variants (incl. extension-less / .rst). Derived
 // from the documentor role so the list lives once. Path-granular by design (see the boundary note in
 // {@link hasScopedWriteCarveOut}): it grants markdown + docs and NOTHING with a code extension, so a
 // documentor can reconcile structural/architectural docs but never edit `src/*.ts` / `*.rs` source.
-export const DOC_GLOBS: string[] = ROLE_DEFAULTS.documentor.writeGlobs;
+export const DOC_GLOBS: string[] = ROLE_DEFAULTS.documentor?.writeGlobs ?? [];
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
 export function roleCapability(role: SessionRole, override: Partial<RoleCapability> = {}): RoleCapability {
