@@ -2,6 +2,7 @@
 // and perf + log config. Split from store/types (#1634).
 import type { PerfConfig } from "./perf";
 import type { LogConfig } from "./log";
+import type { AppStateSnapshot } from "../appState";
 
 /** App-chrome slice of {@link AppStore}. */
 export interface ShellState {
@@ -53,4 +54,16 @@ export interface ShellState {
   // Log management (#1060)
   logConfig: LogConfig;
   setLogConfig: (config: LogConfig) => void;
+
+  // Demo app-state (#2272) — a loaded demo overlays the demoable store slices; the pre-demo values
+  // are stashed in `demoBackup` so clearing restores exactly what was there (empty → empty). Both
+  // persist so a demo survives restart and stays clearable.
+  /** Whether a demo app-state is currently loaded over the user's real state. */
+  demoActive: boolean;
+  /** The demoable slice values captured just before the demo was loaded (null when no demo active). */
+  demoBackup: AppStateSnapshot | null;
+  /** Overlay a demo snapshot onto the store, backing up the current demoable state first (once). */
+  loadDemoState: (snapshot: AppStateSnapshot) => void;
+  /** Restore the pre-demo state (no-op when no demo is active). */
+  clearDemoState: () => void;
 }
