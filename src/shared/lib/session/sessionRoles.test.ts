@@ -3,6 +3,7 @@ import {
   ROLE_DEFAULTS,
   type SessionRole,
   PLANNER_WRITE_GLOBS,
+  DOC_GLOBS,
   DB_OWNED_PLAN_FILES,
   DEP_MANIFEST_FILES,
   roleCapability,
@@ -403,12 +404,87 @@ describe("director commons carve-out (#851)", () => {
     expect(p.write_globs).toEqual(COMMONS);
   });
 
-  it("the carve-out is director-only — a code:none triage/tester handed globs stays write-denied", () => {
+  it("the carve-out is director/documentor-only — a code:none triage/tester handed globs stays write-denied", () => {
     for (const role of ["triage", "tester", "reviewer"] as const) {
       const cap = roleCapability(role, { writeGlobs: COMMONS });
       expect(hasScopedWriteCarveOut(cap)).toBe(false);
       expect(roleWriteRules(cap).deny).toEqual(WRITE_TOOLS);
       expect(canWritePath(cap, ".gitignore")).toBe(false);
     }
+  });
+});
+
+// #1555 — the documentor's prose-doc write carve-out: it keeps code:"none" (no feature-code writes)
+// yet ships DOC_GLOBS BY DEFAULT, so it may write EXACTLY the prose docs (markdown + docs tree) and
+// nothing else. It reads git/GitHub, mutates neither (push/PR are flow-governed), and is hard-blocked
+// on every code path — mirroring the #851 director carve-out but active as-launched.
+describe("documentor prose-doc carve-out (#1555)", () => {
+  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const documentor = ROLE_DEFAULTS.documentor;
+
+  it("is a code:none role that reads git/GitHub and mutates neither", () => {
+    expect(documentor.git).toBe("read");
+    expect(documentor.github).toBe("read");
+    expect(documentor.code).toBe("none");
+    expect(documentor.net).toBe("read");
+    // git/gh mutations are denied by default; the flow lifts push/PR (like a worker, #304).
+    expect(checkCommand(documentor, "git commit -m x").allowed).toBe(false);
+    expect(checkCommand(documentor, "git push").allowed).toBe(false);
+    expect(checkCommand(documentor, "gh pr merge 5").allowed).toBe(false);
+    expect(checkCommand(documentor, "git status").allowed).toBe(true);
+    expect(checkCommand(documentor, "gh pr view 5").allowed).toBe(true);
+  });
+
+  it("has an ACTIVE carve-out as launched — it ships DOC_GLOBS by default (no assignment needed)", () => {
+    expect(documentor.writeGlobs).toEqual(DOC_GLOBS);
+    expect(documentor.writeGlobs.length).toBeGreaterThan(0);
+    expect(hasScopedWriteCarveOut(documentor)).toBe(true); // unlike the director, active without an assignment
+  });
+
+  it("MAY write prose-doc paths — markdown (top-level + nested), the docs tree, README/CHANGELOG", () => {
+    for (const p of [
+      "README.md", "CHANGELOG.md", "CLAUDE.md", "docs/architecture.md", "docs/adr/0001-x.md",
+      "src/features/planner/README.md", "packages/api/CHANGELOG.md",
+    ]) {
+      expect(canWritePath(documentor, p)).toBe(true);
+    }
+  });
+
+  it("is HARD-BLOCKED writing any source/code path — the least-privilege boundary holds", () => {
+    for (const p of [
+      "src/App.tsx", "src/auth/login.ts", "crates/kb/src/lib.rs", "src-tauri/src/main.rs",
+      "package.json", "Cargo.toml", ".claude/settings.json", "docs/gen.ts",
+    ]) {
+      expect(canWritePath(documentor, p)).toBe(false);
+    }
+  });
+
+  it("roleWriteRules auto-approves the DOC_GLOBS (allow, no whole-tool deny) so doc writes don't prompt", () => {
+    const rules = roleWriteRules(documentor);
+    // The whole-tool deny is lifted (deny > allow would otherwise mask the per-glob allows).
+    expect(rules.deny).toEqual([]);
+    for (const g of DOC_GLOBS) {
+      expect(rules.allow).toContain(`Edit(${g})`);
+      expect(rules.allow).toContain(`Write(${g})`);
+    }
+    expect(rules.allow).toHaveLength(DOC_GLOBS.length * WRITE_TOOLS.length);
+  });
+
+  it("scopeWriteGlobs hard-limits the documentor's writes to DOC_GLOBS (bsc-scope hook), no assignment needed", () => {
+    expect(scopeWriteGlobs("documentor", [])).toEqual(DOC_GLOBS);
+  });
+
+  it("bscAgentPerms keeps the documentor's write tools scoped to DOC_GLOBS (carve-out active)", () => {
+    const p = bscAgentPerms(documentor);
+    expect(p.deny_tools).toEqual([]); // write_file/edit_file NOT denied — carve-out active
+    expect(p.write_globs).toEqual(DOC_GLOBS);
+    // git/gh writes stay denied unless the flow grants push/PR.
+    expect(p.deny_bash).toContain("git push");
+    expect(p.deny_bash).toContain("gh pr create");
+    expect(bscAgentPerms(documentor, ["git push", "gh pr create"]).deny_bash).not.toContain("gh pr create");
+  });
+
+  it("does not spawn its own sub-agents restriction — only workers deny Task; documentor keeps it", () => {
+    expect(roleDeniedTools(documentor)).toEqual([]);
   });
 });
