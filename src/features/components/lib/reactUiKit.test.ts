@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
 import { SEED_COMPONENTS, SEED_KITS } from "./seed";
+import { componentRules } from "./rules";
 import { UI_KIT } from "@/shared/ui/manifest";
 
 const byName = (name: string) => REACT_UI_COMPONENTS.find((c) => c.name === name);
+
+/** The chart primitives whose rich guidance is a follow-up (#2305 slice 3 remainder). */
+const CHART_PRIMS = new Set(["LineArea", "Bars", "Donut", "HBars", "Swimlane", "Spark", "Legend", "StackedDayBars"]);
 
 describe("react-ui kit generated from the manifest (#2305)", () => {
   it("covers exactly the registered primitives — no drift, no missing, no extra", () => {
@@ -57,6 +61,35 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(button.props.find((p) => p.name === "variant")?.type).toContain('"primary"');
     // A component without an authored srcText gets a generated usage stub.
     expect(byName("Box")!.srcText).toContain('import { Box } from "@/shared/ui/layout/Box"');
+  });
+
+  it("authors when-to-use / when-not guidance for every non-chart primitive (#2305 slice 3)", () => {
+    for (const c of REACT_UI_COMPONENTS) {
+      if (CHART_PRIMS.has(c.name)) continue; // chart guidance is a follow-up
+      expect(c.whenUse.length, `${c.name} missing whenUse guidance`).toBeGreaterThan(0);
+      expect(c.whenNot.length, `${c.name} missing whenNot guidance`).toBeGreaterThan(0);
+    }
+  });
+
+  it("derives an anti-duplication lint rule from each primitive that wraps a raw element", () => {
+    // The kit dogfoods its own no-raw-element rule: Box→div, Text→span, Button→button, etc.
+    const wrapsRule = (name: string, target: string) => {
+      const rules = componentRules(byName(name)!);
+      const r = rules.find((x) => x.kind === "forbid-element" && x.target === target);
+      expect(r, `${name} should derive a forbid-<${target}> rule`).toBeTruthy();
+      expect(r!.use).toBe(name);
+    };
+    wrapsRule("Box", "div");
+    wrapsRule("Text", "span");
+    wrapsRule("Button", "button");
+    wrapsRule("TextField", "input");
+    wrapsRule("SelectField", "select");
+  });
+
+  it("records real composition edges from the overlay", () => {
+    expect(byName("Dialog")!.composes).toEqual(expect.arrayContaining(["ModalScrim", "Card"]));
+    expect(byName("ConfirmButton")!.composes).toContain("Button");
+    expect(byName("StatCard")!.composes).toEqual(expect.arrayContaining(["Card", "StatTile"]));
   });
 
   it("keeps the demos in a separate `examples` kit", () => {

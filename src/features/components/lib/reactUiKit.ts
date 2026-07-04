@@ -79,6 +79,156 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["A list / view with nothing in it yet.", "An onboarding / connect prompt with a CTA."],
     whenNot: ["A transient loading state — use a skeleton.", "An error — use InlineError / Banner."],
   },
+
+  // ── layout ──
+  Box: {
+    tags: ["layout", "container"], wraps: "div",
+    whenUse: ["The generic styled container — any div you'd otherwise write raw.", "Applying token padding / bg / border / radius / shadow."],
+    whenNot: ["A flex row or column — use Row / Stack.", "Text — use Text."],
+  },
+  Stack: {
+    tags: ["layout"],
+    whenUse: ["Stacking children vertically with a consistent gap.", "A form or a labelled list column."],
+    whenNot: ["A horizontal cluster — use Row.", "A 2-D layout with tracks — use Grid."],
+  },
+  Row: {
+    tags: ["layout"], composes: ["Spacer"],
+    whenUse: ["Laying items in a horizontal line with a gap.", "A header / toolbar cluster (pair with Spacer to push trailing items)."],
+    whenNot: ["A vertical column — use Stack.", "Aligned tabular data — use Grid."],
+  },
+  Spacer: {
+    tags: ["layout"],
+    whenUse: ["Pushing trailing items to the far edge of a Row (greedy flex:1).", "A fixed rigid gap between two specific items."],
+    whenNot: ["Even spacing between many children — use the parent's gap.", "Inner padding — use pad."],
+  },
+  Grid: {
+    tags: ["layout"],
+    whenUse: ["A 2-D layout with explicit column / row tracks.", "A responsive card or tile grid."],
+    whenNot: ["A single row or column — use Row / Stack.", "One-off positioning — use Box."],
+  },
+  SectionHeader: {
+    tags: ["layout", "chrome"],
+    whenUse: ["A titled section heading with an optional trailing control.", "The head of a settings or card group."],
+    whenNot: ["A page title — that's screen chrome.", "A bare eyebrow label — use SectionLabel."],
+  },
+  SectionLabel: {
+    tags: ["layout", "chrome"],
+    whenUse: ["A small uppercase eyebrow labelling a group.", "A field-group or list-section caption."],
+    whenNot: ["A full heading with actions — use SectionHeader.", "Body copy — use Text."],
+  },
+  Dialog: {
+    role: "composite", tags: ["overlay"], composes: ["ModalScrim", "Card"],
+    whenUse: ["A focused, blocking task (confirm or short form).", "Content that must be dismissed before continuing."],
+    whenNot: ["Non-blocking info — use a Banner / toast.", "A large multi-step flow — use a page / stage."],
+  },
+  ModalScrim: {
+    tags: ["overlay"],
+    whenUse: ["The dimmed, click-to-dismiss backdrop behind a modal surface.", "Trapping focus under a Dialog."],
+    whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog."],
+  },
+
+  // ── typography ──
+  Text: {
+    tags: ["typography"], wraps: "span",
+    whenUse: ["Any text — sized by rung, semantically toned, mono or not.", "Labels, values, and body copy."],
+    whenNot: ["A raw string in a slot that already styles its text.", "An interactive label — pair it with a control."],
+  },
+
+  // ── controls ──
+  IconButton: {
+    tags: ["control"],
+    whenUse: ["A compact glyph-only action (close, more, expand).", "A dense toolbar where a text label won't fit."],
+    whenNot: ["A labelled action — use Button.", "A persistent on/off state — use Toggle."],
+  },
+  Checkbox: {
+    tags: ["control", "form"],
+    whenUse: ["A single boolean in a form or list row.", "Multi-select where each item is independently on/off."],
+    whenNot: ["A prominent on/off switch — use Toggle.", "Mutually-exclusive options — use SegmentedControl."],
+  },
+  Toggle: {
+    tags: ["control", "form"],
+    whenUse: ["An immediate on/off switch (a setting that applies at once).", "A prominent binary state."],
+    whenNot: ["A form value submitted later — use Checkbox.", "More than two states — use SegmentedControl."],
+  },
+  SelectField: {
+    tags: ["control", "form"], wraps: "select",
+    whenUse: ["Choosing one option from a longer fixed list (>4).", "A labelled dropdown inside a form."],
+    whenNot: ["2–4 options — use SegmentedControl.", "Free text — use TextField."],
+  },
+  BackButton: {
+    tags: ["control", "nav"],
+    whenUse: ["Returning to the previous view within a screen.", "A detail → list back affordance."],
+    whenNot: ["App-level navigation — use the Rail.", "A generic action — use Button."],
+  },
+  ColorSwatch: {
+    tags: ["control"],
+    whenUse: ["Picking or displaying a color / token value.", "A keyed color in a legend or settings row."],
+    whenNot: ["A live status color — use StatusDot.", "A category label — use Chip."],
+  },
+  ConfirmButton: {
+    tags: ["control"], composes: ["Button"],
+    whenUse: ["A destructive action that needs an in-place two-step confirm.", "Delete / reset where a Dialog is too heavy."],
+    whenNot: ["A safe, single-step action — use Button.", "A blocking decision with context — use Dialog."],
+  },
+
+  // ── data ──
+  StatTile: {
+    tags: ["data", "metric"],
+    whenUse: ["A single key / value metric with an optional sub-line.", "A compact KPI in a row of stats."],
+    whenNot: ["A trend over time — use a chart.", "A large headline number — use Text."],
+  },
+  FillBar: {
+    tags: ["data", "metric"],
+    whenUse: ["A horizontal progress / proportion bar (0–1 fraction).", "A budget or usage meter."],
+    whenNot: ["A precise value — pair it with a label.", "A time series — use a chart."],
+  },
+  Code: {
+    tags: ["data"],
+    whenUse: ["A read-only, scrollable monospace code / prompt block.", "Showing a command, config, or source snippet."],
+    whenNot: ["Editable code — use an editor.", "Inline mono text — use Text mono."],
+  },
+  Avatar: {
+    tags: ["data", "identity"],
+    whenUse: ["A person / agent identity glyph or initials.", "A compact author or owner marker in a row."],
+    whenNot: ["A live status indicator — use StatusDot.", "A category tag — use Chip."],
+  },
+  IconBox: {
+    tags: ["data"],
+    whenUse: ["A framed icon tile — a leading glyph on a surface.", "The icon slot of a card or empty state."],
+    whenNot: ["A clickable icon — use IconButton.", "A bare inline glyph — use Text."],
+  },
+  CardListRow: {
+    role: "composite", tags: ["data", "list"], composes: ["Card"],
+    whenUse: ["A selectable row in a card-style list.", "A master-list item with a leading glyph + trailing meta."],
+    whenNot: ["A dense table row — use DataTableRow.", "A standalone card — use Card."],
+  },
+  DataTableRow: {
+    tags: ["data", "table"],
+    whenUse: ["A row in a dense, column-aligned data table.", "Tabular records with fixed columns."],
+    whenNot: ["A card-style list — use CardListRow.", "A single metric — use StatTile."],
+  },
+  StatCard: {
+    role: "composite", tags: ["data", "metric"], composes: ["Card", "StatTile"],
+    whenUse: ["A framed metric card — label, value, optional trend.", "A dashboard KPI tile."],
+    whenNot: ["A bare inline stat — use StatTile.", "A full chart — use a chart primitive."],
+  },
+
+  // ── feedback ──
+  Banner: {
+    tags: ["feedback", "status"],
+    whenUse: ["An inline or full-width status message with a tone.", "A dismissible notice above content."],
+    whenNot: ["A blocking decision — use Dialog.", "A short inline error — use InlineError."],
+  },
+  InlineError: {
+    tags: ["feedback"],
+    whenUse: ["A short static error string on a danger wash.", "A field- or section-level failure note."],
+    whenNot: ["A dismissible page notice — use Banner.", "A blocking error — use Dialog."],
+  },
+  Skeleton: {
+    tags: ["feedback", "loading"],
+    whenUse: ["A shape-matched loading placeholder while content loads.", "The loading state a content component renders for itself (#2302)."],
+    whenNot: ["An empty (no-data) state — use EmptyState.", "An error — use InlineError / Banner."],
+  },
 };
 
 /** A manifest prop's type rendered as a short human/TS-ish string for the props table. */
