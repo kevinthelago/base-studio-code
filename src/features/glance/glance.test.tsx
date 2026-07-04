@@ -10,9 +10,11 @@ describe("GlanceWorkspace (tabbed, #2223)", () => {
     expect(screen.getByText("Fleet")).toBeTruthy();
   });
 
-  it("opens the Network graph by default (the projects rail is present)", () => {
+  it("opens the Network page by default, showing a REAL empty state when there are no projects (#2272)", () => {
     render(<GlanceWorkspace />);
-    expect(screen.getByText("PROJECTS")).toBeTruthy();
+    // With no projects, the Network page renders a real empty state — NOT the old sample/mock graph.
+    expect(screen.getByText("No project network yet")).toBeTruthy();
+    expect(screen.queryByText("PROJECTS")).toBeNull(); // the projects rail only shows once there are projects
   });
 
   it("renders only the active page body (Fleet is not mounted on the Network tab)", () => {
