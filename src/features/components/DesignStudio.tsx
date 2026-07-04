@@ -218,7 +218,7 @@ export function DesignStudio() {
                   {open && (
                     <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
                       {rows.map((c) => (
-                        <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
+                        <Box as="button" key={c.id} className={`ds-comprow ds-comprow-enter${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
                           <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: ROLE_COLOR[c.role], flex: "none", boxShadow: `0 0 0 3px ${glow(ROLE_COLOR[c.role])}` }} />
                           <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
                           <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
@@ -236,8 +236,8 @@ export function DesignStudio() {
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
 
-        {/* center */}
-        <Box className="ds-col ds-center">
+        {/* center — keyed on the active view so flipping Library ⇄ Graph remounts it → the incoming view drills in (#2344) */}
+        <Box key={view} className="ds-col ds-center ds-view-enter">
           {view === "graph"
             ? <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
             : <LibraryView
@@ -310,7 +310,8 @@ function LibraryView(p: LibProps) {
             </Box>
           ) : (
             <Box className="ds-frame">
-              <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
+              {/* keyed on the selected component id so React remounts it → the specimen re-enters (fadeup) instead of hard-cutting (#2344) */}
+              <Box key={sel.id} className="ds-preview-enter" style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
             </Box>
           )}
           <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
@@ -451,7 +452,7 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
               const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
               if (!a || !b) return null;
               const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2, mx = (x1 + x2) / 2;
-              return <path key={e.id} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} stroke="var(--border-strong, #3a434d)" strokeWidth={1.5} fill="none" markerEnd="url(#ds-ah)" />;
+              return <path key={e.id} className="ds-edge" d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} stroke="var(--border-strong, #3a434d)" strokeWidth={1.5} fill="none" markerEnd="url(#ds-ah)" />;
             })}
           </svg>
           {comps.map((c) => {
