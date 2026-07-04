@@ -63,6 +63,7 @@ export function GlanceCanvas(p: CanvasProps) {
         const inFocus = focus ? focus.nodes.has(n.id) : true;
         const isCycle = model.cycleNodeIds.has(n.id);
         const border = selected ? "var(--accent)" : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        const faults = n.faults ?? 0; // #2265: unresolved runtime-fault count → corner badge
         return (
           <Box key={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
@@ -81,6 +82,17 @@ export function GlanceCanvas(p: CanvasProps) {
                 <Text as="span" mono size={10} weight={500} style={{ color: st.color }}>{st.label}</Text>
               </Box>
             </Box>
+            {/* FAULT badge (#2265): unresolved runtime faults, top-right corner. Orthogonal to the
+                liveness status dot (#2263), so it never fights the status/role coloring. */}
+            {faults > 0 && (
+              <Box title={`${faults} unresolved runtime fault${faults === 1 ? "" : "s"}`}
+                style={{ position: "absolute", top: -7, right: -7, minWidth: 18, height: 18, padding: "0 5px",
+                  display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9,
+                  background: "#f2555f", color: "#fff", fontFamily: "var(--mono)", fontSize: 10.5, fontWeight: 700,
+                  border: "1.5px solid var(--bg-elev)", boxShadow: "0 0 8px rgba(242,85,95,.55)", zIndex: 7 }}>
+                {faults > 99 ? "99+" : faults}
+              </Box>
+            )}
           </Box>
         );
       })}

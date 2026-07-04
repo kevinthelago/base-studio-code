@@ -9,7 +9,7 @@ export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample
 
 /** A minimal project as the adapter needs it — id + display name, plus optional real role/status the
  *  caller has resolved (e.g. a live-running detection, or "planning" once a fleet exists). */
-export interface ProjectLite { id: string; name: string; role?: GRole; status?: GStatus }
+export interface ProjectLite { id: string; name: string; role?: GRole; status?: GStatus; faults?: number }
 
 const ROLES: GRole[] = ["infra", "service", "data", "client"];
 
@@ -75,6 +75,7 @@ export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = 
     slug: p.name || p.id,
     role: p.role ?? ROLES[hash(p.id) % ROLES.length],
     status: p.status ?? "idle",
+    faults: p.faults, // #2265: unresolved runtime-fault count → node fault badge
   }));
   // The user-drawn project relationships (#2253) — the real edges, filtered to links between two nodes
   // that still exist. No fabricated topology; an un-wired project is simply an isolated node.
