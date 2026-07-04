@@ -533,6 +533,29 @@ pub(crate) fn pty_kill(
     Ok(())
 }
 
+/// Mark (or un-mark) a pane as "running the app" for the best-effort runtime-fault PTY tap (#2264).
+/// When enabled, the PTY emitter scans this pane's output for stack traces / panics / `ERROR` lines
+/// and records them (source `pty-tap`) in `project_key`'s `error.db`. Off by default per pane — every
+/// ordinary terminal stays untapped. `project_key` is the pane's owning project (from the store's
+/// pane→project binding); it's required to enable and ignored when disabling.
+#[tauri::command]
+pub(crate) fn pty_set_app_runner(
+    pane_id: String,
+    enabled: bool,
+    project_key: Option<String>,
+) -> Result<(), String> {
+    use crate::observability::pty_faults;
+    if enabled {
+        let key = project_key.filter(|k| !k.is_empty()).ok_or_else(|| {
+            "pty_set_app_runner: enabling the fault tap needs a non-empty project_key".to_string()
+        })?;
+        pty_faults::mark_app_runner(&pane_id, &key);
+    } else {
+        pty_faults::clear_app_runner(&pane_id);
+    }
+    Ok(())
+}
+
 // ── Tunnel ⇄ PTY bridge (#242b) ─────────────────────────────────────────────────
 
 /// Write mobile keystrokes into a pane's PTY. Called from the tunnel's relay client

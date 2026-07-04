@@ -5,6 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 pub mod collector;
 pub mod logs;
 pub mod perf;
+pub mod pty_faults;
 pub mod tokens;
 
 /// Lock a `Mutex`, recovering the guard from a poisoned lock (a panic while another holder had
