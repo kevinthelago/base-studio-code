@@ -152,7 +152,6 @@ export function DesignStudio() {
       {/* ── toolbar ── */}
       <Box className="ds-toolbar">
         <Box style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          <Box className="ds-logo">◆</Box>
           <Text weight={600} size={13.5} style={{ letterSpacing: "-.01em" }}>Design Studio</Text>
         </Box>
         <Box className="ds-sep" />
