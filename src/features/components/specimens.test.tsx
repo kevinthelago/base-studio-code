@@ -6,6 +6,17 @@ import { SEED_COMPONENTS } from "./lib/seed";
 const reactUi = SEED_COMPONENTS.filter((c) => c.kitId === "react-ui");
 
 describe("component specimens (#2305 slice 3b)", () => {
+  it("renders a shimmer skeleton for the `loading` variant, riding the app's motion keyframe (#2302)", () => {
+    for (const name of ["Card", "Chip", "Text", "FillBar", "Code"]) {
+      const c = reactUi.find((x) => x.name === name)!;
+      const { container, unmount } = render(<>{renderSpecimen(c, "loading", "dark")}</>);
+      // `.ds-skel` carries the shared `skeleton-shimmer` keyframe (designStudio.css) + the reduced-motion
+      // opt-out, so the loading state uses the app's ONE motion vocabulary rather than a bespoke shimmer.
+      expect(container.querySelector(".ds-skel"), `${name} loading specimen has a .ds-skel shimmer`).toBeTruthy();
+      unmount();
+    }
+  });
+
   it("every react-ui primitive has a bespoke specimen (never the fallback placeholder)", () => {
     for (const c of reactUi) {
       const { container, unmount } = render(<>{renderSpecimen(c, c.variants[0] ?? "default", "dark")}</>);
