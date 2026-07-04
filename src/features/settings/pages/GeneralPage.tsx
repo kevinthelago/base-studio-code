@@ -9,6 +9,7 @@ import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
 import { ConfigBundleCard } from "../cards/ConfigBundleCard";
+import { DemoStateCard } from "../cards/DemoStateCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
@@ -27,6 +28,7 @@ export function GeneralPage() {
 
       <Sub>Configuration</Sub>
       <ConfigBundleCard />
+      <DemoStateCard />
 
       <Sub>Required dependencies</Sub>
       <p style={{ color: "var(--fg-muted)", margin: "0 0 -4px", fontSize: 12, lineHeight: 1.55 }}>

@@ -1,0 +1,14 @@
+{
+  "name": "Test UI",
+  "glyph": "◫",
+  "gate": "component kit reviewed",
+  "deps": [
+    "features"
+  ],
+  "optional": true,
+  "blurb": "Browse and iterate the project's proven-component kit — preview variants, read the API, and generate new ones.",
+  "prompt": "The Component Library pane is open for this project. It shows the proven-component kit(s) the app is built from — for each component: a live preview, its variants, props/API, what it composes (and is composed by), and its source. Use this stage to review which components the planned features need, spot the gaps still to design, and generate new variants where the kit falls short. This is an app-driven surface: help the user reason about the UI kit and keep it consistent, but do NOT write component code here — the fleet builds against the kit later.\n\n**Bake the kit's lint enforcement into the app** so the rules auto-fire during the build. Run `bsc component eslint-preset --kit <kitId>` to emit the kit's eslint config (`no-restricted-syntax`/`no-restricted-imports` derived from each component — e.g. \"use <Button> not a raw <button>\"), and author the app's eslint config to EXTEND that preset (write it as a shared preset the app's `eslint.config.*` references). Then ensure the app's CI workflow AND each worker's gate run `lint`, so an agent that hand-rolls a component the kit already provides is auto-flagged and pointed at the kit component. Every rule carries an escape hatch for a justified exception.",
+  "directive": "**Test UI** — the app builds on a proven-component kit. Review which components the planned features need and spot the gaps to design, then BAKE the kit's lint enforcement into the generated app: run `bsc component eslint-preset --kit <kit>` to emit the kit's eslint config, author the app's eslint config to EXTEND it, and ensure the app's CI + each worker's gate run `lint` — so an agent can't quietly re-invent a component the kit already provides (each rule keeps an escape hatch). Do not write component code in this stage.",
+  "icon": "grid_view",
+  "hue": 265
+}

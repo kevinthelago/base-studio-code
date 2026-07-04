@@ -28,6 +28,7 @@ compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-org = { path = "../bsc-org" }
+bsc-component = { path = "../bsc-component" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
 plandb = { path = "../plandb" }

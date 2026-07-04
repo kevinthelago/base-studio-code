@@ -20,9 +20,9 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
-/** The packaged SAMPLE project network — the spec's example. Shown when the user has too few real
- *  projects to make an interesting graph, so the full experience (roles · edge kinds · a dependency
- *  CYCLE · hazards) is always demonstrable. Marked `sample`. */
+/** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE ·
+ *  hazards). No longer an auto-fallback for an empty app (#2272 — an unseeded Glance shows a REAL empty
+ *  state, not the mock); kept as the seed of the curated app-state DEMO (#2272 slice 4). Marked `sample`. */
 export const SAMPLE_GRAPH: GlanceData = {
   sample: true,
   rawNodes: [
@@ -66,13 +66,10 @@ export const SAMPLE_GRAPH: GlanceData = {
 };
 
 /** Build the Glance graph from the REAL project list: every project a node (its resolved role/status, or
- *  a derived role + idle). Cross-project dependency EDGES are NOT fabricated — there's no real
- *  project-relationship model yet (#…, the follow-up), so real projects render as an un-wired grid rather
- *  than inventing a fake topology. Only when there are ZERO projects do we fall back to {@link
- *  SAMPLE_GRAPH} so a brand-new user still sees the full experience (clearly marked `sample`). */
+ *  a derived role + idle). Cross-project dependency EDGES are NOT fabricated — the only edges are the
+ *  user-drawn relationships (#2253), so an un-wired project is simply an isolated node. Zero projects
+ *  yields an EMPTY graph (`sample: false`) — the workspace renders a real empty state (#2272), no mock. */
 export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = []): GlanceData {
-  if (projects.length === 0) return SAMPLE_GRAPH;
-
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,

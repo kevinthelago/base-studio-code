@@ -10,6 +10,7 @@ import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { createOrgSlice } from "@/features/org/store";
+import { createComponentsSlice } from "@/features/components/store";
 import { reconcileOrgs } from "@/features/org/lib/org";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
@@ -49,6 +50,7 @@ export const useAppStore = create<AppStore>()(
       ...createMcpSlice(set, get, store),
       ...createPersonasSlice(set, get, store),
       ...createOrgSlice(set, get, store),
+      ...createComponentsSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -161,7 +163,12 @@ export const useAppStore = create<AppStore>()(
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
         orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
+        demoBackup:            s.demoBackup,
         orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
+        components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
+        kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
+        kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
