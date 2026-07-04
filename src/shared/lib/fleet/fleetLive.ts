@@ -125,6 +125,7 @@ export interface FleetKpis {
   active: number;       // running
   needAttention: number; // blocked | asking | waiting
   idle: number;
+  maintenance: number;  // parked & ready — finished every owned issue, standing by (#1957)
 }
 export function deriveFleetKpis(workers: LiveWorker[]): FleetKpis {
   const is = (s: WorkerStatus) => workers.filter(w => w.status === s).length;
@@ -133,5 +134,6 @@ export function deriveFleetKpis(workers: LiveWorker[]): FleetKpis {
     active: is("running"),
     needAttention: is("blocked") + is("asking") + is("waiting"),
     idle: is("idle"),
+    maintenance: is("maintenance"),
   };
 }

@@ -5,6 +5,7 @@ import { useAppStore } from "@/store";
 import {
   statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis,
 } from "@/shared/lib/fleet/fleetLive";
+import { STATUS } from "@/shared/data/fleet";
 import { emptyCoordState, type CoordState } from "@/shared/lib/fleet/coordination";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 
@@ -14,6 +15,23 @@ function stream(p: Partial<AgentStream> = {}): AgentStream {
 function coord(p: Partial<CoordState> = {}): CoordState {
   return { ...emptyCoordState(), ...p };
 }
+
+describe("STATUS display map", () => {
+  it("maps every worker status to a label + color, incl. the calm maintenance treatment (#1957)", () => {
+    // The board/donut/per-agent header all read STATUS[status] for the badge label + color and
+    // the `.wd.<status>` dot class. A parked worker must have its own calm entry (not fall through).
+    for (const s of ["running", "asking", "blocked", "waiting", "idle", "maintenance", "done"] as const) {
+      expect(STATUS[s].label).toBeTruthy();
+      expect(STATUS[s].color).toBeTruthy();
+    }
+    // Maintenance reads as a distinct "maintenance" badge in a calm teal — deliberately not an
+    // alarming danger/accent tone (a finished worker parked & ready, not a problem).
+    expect(STATUS.maintenance.label).toBe("maintenance");
+    expect(STATUS.maintenance.color).toBe("oklch(0.75 0.10 195)");
+    expect(STATUS.maintenance.color).not.toBe(STATUS.blocked.color);
+    expect(STATUS.maintenance.color).not.toBe(STATUS.running.color);
+  });
+});
 
 describe("fleetLive mappers", () => {
   it("statusForPane: coordination wins over raw run/idle", () => {
@@ -65,7 +83,21 @@ describe("fleetLive mappers", () => {
       tabs: [{ paneIds: ["proj:a", "proj:b", "proj:c"] }], disabledPanes: {}, profiles: [],
     });
     expect(statusCounts(workers)).toEqual({ running: 2, blocked: 1 });
-    expect(deriveFleetKpis(workers)).toEqual({ total: 3, active: 2, needAttention: 1, idle: 0 });
+    expect(deriveFleetKpis(workers)).toEqual({ total: 3, active: 2, needAttention: 1, idle: 0, maintenance: 0 });
+  });
+
+  it("deriveFleetKpis surfaces a parked (maintenance) worker (#1957)", () => {
+    // A finished worker parked in maintenance is neither running, need-attention, nor idle —
+    // it must land in its own `maintenance` (parked & ready) count so it isn't invisible.
+    const workers = buildLiveWorkers({
+      fleetPaneStreams: { "proj:a": stream({ name: "a" }), "proj:b": stream({ name: "b" }) },
+      paneStatus: { "proj:a": "run", "proj:b": "idle" },
+      coord: coord({ maintaining: [{ session: "proj:b", note: "owned issues complete", at: 0 }] }),
+      tabs: [{ paneIds: ["proj:a", "proj:b"] }], disabledPanes: {}, profiles: [],
+    });
+    expect(workers.find(w => w.name === "b")!.status).toBe("maintenance");
+    expect(statusCounts(workers)).toEqual({ running: 1, maintenance: 1 });
+    expect(deriveFleetKpis(workers)).toEqual({ total: 2, active: 1, needAttention: 0, idle: 0, maintenance: 1 });
   });
 });
 
