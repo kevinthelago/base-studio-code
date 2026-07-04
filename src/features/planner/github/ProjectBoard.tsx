@@ -6,6 +6,10 @@ import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
 import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
 import { Row } from "@/shared/ui/layout/Row";
+import { Box } from "@/shared/ui/layout/Box";
+import { Stack } from "@/shared/ui/layout/Stack";
+import { Skeleton, SkeletonText } from "@/shared/ui/feedback/Skeleton";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { GhLabel } from "@/shared/lib/github/types";
 import { BOARD_QUERY } from "./projectBoard.query";
 import type { GhUser, BoardIssue, BoardColumn } from "./projectBoard.types";
@@ -13,6 +17,22 @@ import { Column } from "./Column";
 import { IssueDrawer } from "./IssueDrawer";
 
 // ── Board ─────────────────────────────────────────────────────────────────────
+
+/** A loading placeholder shaped like a board Column — a header + a few issue-card skeletons (#2248). */
+function SkeletonColumn() {
+  return (
+    <Box style={{ flex: "0 0 280px", width: 280, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+      <Skeleton w="55%" h={12} style={{ marginBottom: 12 }} />
+      <Stack gap={8}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Box key={i} style={{ background: "var(--bg-soft)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10 }}>
+            <SkeletonText lines={2} lineH={9} />
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
 
 export function ProjectBoard() {
   const { projectsDrawerIssue, setProjectsDrawerIssue, setActiveProjectRepos } = useAppStore();
@@ -78,33 +98,33 @@ export function ProjectBoard() {
     <>
       <ProjectsHeader project={project} />
       <section style={{ flex: 1, padding: "14px 16px", overflow: "hidden", background: "var(--bg-canvas)", position: "relative" }}>
-        {loading && (
-          <Row align="center" justify="center" className="mono" style={{
-            position: "absolute", inset: 0,
-            background: "var(--bg-canvas)", zIndex: 5,
-            fontSize: 12, color: "var(--fg-dim)",
-          }}>
-            Loading board…
-          </Row>
-        )}
-
         <QueryBanner error={error} style={{ margin: 8 }} />
 
-        {/* Board columns */}
+        {/* Board columns — always present; skeleton columns while loading, a real empty state when the
+            board has no items, else the live columns (#2248). No page-wide blank overlay. */}
         <Row gap={10} align="stretch" style={{
           height: "100%", overflow: "auto",
           opacity: drawerOpen ? 0.35 : 1,
           pointerEvents: drawerOpen ? "none" : undefined,
           transition: "opacity 0.15s",
         }}>
-          {columns.map(col => (
-            <Column
-              key={col.id}
-              col={col}
-              issues={byColumn[col.id] ?? []}
-              onIssueClick={setProjectsDrawerIssue}
-            />
-          ))}
+          {loading && allItems.length === 0
+            ? Array.from({ length: 4 }).map((_, i) => <SkeletonColumn key={i} />)
+            : allItems.length === 0
+              ? (
+                <Box style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <EmptyState iconVariant="dashed" icon="▦" title="No board items yet"
+                    description="Publish this project's plan to GitHub to populate the board with milestones and issues." />
+                </Box>
+              )
+              : columns.map(col => (
+                <Column
+                  key={col.id}
+                  col={col}
+                  issues={byColumn[col.id] ?? []}
+                  onIssueClick={setProjectsDrawerIssue}
+                />
+              ))}
         </Row>
 
         {/* Drawer overlay */}
