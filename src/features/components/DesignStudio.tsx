@@ -300,7 +300,7 @@ function LibraryView(p: LibProps) {
             </Box>
           ) : (
             <Box className="ds-frame">
-              <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease" }}>{p.previewEl}</Box>
+              <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
             </Box>
           )}
           <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
