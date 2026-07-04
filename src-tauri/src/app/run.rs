@@ -279,6 +279,7 @@ pub fn run() {
             project::hub::repo_dir_path,
             observability::logs::append_coord_woke,
             observability::collector::collector_info,
+            observability::collector::project_liveness,
             git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
