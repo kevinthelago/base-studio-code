@@ -30,6 +30,30 @@ export interface Kit {
   builtin?: boolean;
 }
 
+/** A config-level lint rule a kit ships (#2279) — each maps to a stock eslint rule (NO custom AST
+ *  plugin), so a kit's enforcement is authorable as data and the generated app just extends the emitted
+ *  preset. Custom AST-rule plugins + non-eslint linters are a follow-up. */
+export type KitRuleKind =
+  /** → `no-restricted-syntax`: forbid a raw JSX intrinsic (`button`), point to the kit component. */
+  | "forbid-element"
+  /** → `no-restricted-imports`: forbid a module specifier, point to the kit component. */
+  | "forbid-import";
+
+export interface KitRule {
+  id: string;
+  kind: KitRuleKind;
+  /** What's forbidden: the JSX element name (`"button"`) or the module specifier (`"@mui/material"`). */
+  target: string;
+  /** The kit component to use instead (`"Button"`). */
+  use: string;
+  /** Override the default message; the default already names `use` + the escape hatch. */
+  message?: string;
+  /** The component this rule protects (drives the pane's Rules tab). */
+  componentId?: string;
+  /** Auto-derived from the kit vs author-declared. */
+  derived?: boolean;
+}
+
 /** One proven component in a kit — the record the library stores and the pane renders. */
 export interface ComponentRecord {
   id: string;
@@ -53,6 +77,12 @@ export interface ComponentRecord {
   srcText: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that
+   *  derives the flagship anti-duplication lint rule ("use <Name> not a raw <wraps>"). Absent ⇒ none. */
+  wraps?: string;
+  /** Author-declared lint rules this component contributes to its kit's preset (in addition to the
+   *  ones derived from `wraps`). Absent ⇒ none. */
+  rules?: KitRule[];
 }
 
 /** Role → accent color, mapped to app design tokens (not the prototype's raw palette). */

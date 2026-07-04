@@ -17,7 +17,7 @@ const p = (name: string, type: string, req: boolean, desc: string): PropSpec => 
 const RAW: Omit<ComponentRecord, "id">[] = [
   {
     name: "Button", kitId: "react-ui", role: "primitive", version: "2.3.0", used: 214, tags: ["control", "form"],
-    variants: ["primary", "ghost", "danger", "sm"], composes: [], src: "shared/ui/controls/Button.tsx",
+    variants: ["primary", "ghost", "danger", "sm"], composes: [], src: "shared/ui/controls/Button.tsx", wraps: "button",
     props: [
       p("variant", '"primary"|"ghost"|"danger"', false, "Visual style. Defaults to secondary."),
       p("size", '"sm"|"md"', false, "Control height."),
@@ -48,7 +48,7 @@ const RAW: Omit<ComponentRecord, "id">[] = [
   },
   {
     name: "Field", kitId: "react-ui", role: "primitive", version: "1.2.0", used: 97, tags: ["form", "input"],
-    variants: ["default", "error", "disabled"], composes: [], src: "shared/ui/controls/Field.tsx",
+    variants: ["default", "error", "disabled"], composes: [], src: "shared/ui/controls/Field.tsx", wraps: "input",
     props: [
       p("label", "ReactNode", true, "Field label above the input."),
       p("value", "string", true, "Controlled value."),
