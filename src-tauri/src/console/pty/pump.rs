@@ -86,6 +86,11 @@ pub(super) fn spawn_emitter(
                 if let Some(ts) = &tunnel_state {
                     ts.broadcast_output(&pane_id, &data);
                 }
+                // Best-effort runtime-fault side-tap (#2264): scan this batch for stack traces / panics
+                // / ERROR lines when the pane is marked an app-runner. Additive — it only BORROWS the
+                // bytes here (before the move into `app.emit`), so the WebView/tunnel stream is
+                // byte-for-byte unchanged; a no-op (one atomic load) when no pane is tapped.
+                crate::observability::pty_faults::observe(&pane_id, &data);
                 let _ = app.emit(&evt, data);
                 win_emits += 1;
                 last_emit = Instant::now();
@@ -102,6 +107,8 @@ pub(super) fn spawn_emitter(
                 win_emits = 0;
             }
         }
+        // Drop the pane's fault tap if it had one (#2264) — no-op for the common untapped pane.
+        crate::observability::pty_faults::on_pane_exit(&pane_id);
         let _ = app.emit(&format!("pty_exit_{}", pane_id), ());
         log::info!("pty[{pane_id}] session ended ({total} bytes)");
     });
