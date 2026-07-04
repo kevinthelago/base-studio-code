@@ -163,6 +163,8 @@ export const useAppStore = create<AppStore>()(
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
         orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
+        demoBackup:            s.demoBackup,
         orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
