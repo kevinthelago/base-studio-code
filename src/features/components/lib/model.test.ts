@@ -19,16 +19,16 @@ describe("component model helpers (#2269)", () => {
     const resolved = resolveComposes(seg, SEED_COMPONENTS);
     expect(resolved.map((r) => r.name)).toEqual(["Button"]);
     expect(resolved[0].comp?.name).toBe("Button");
-    // Toolbar composes IconButton, which is NOT a seeded component → undefined (renders non-clickable).
-    const toolbar = byName("Toolbar");
-    expect(resolveComposes(toolbar, SEED_COMPONENTS)[0].comp).toBeUndefined();
+    // A dependency name not in the kit resolves to undefined (renders non-clickable).
+    const orphan = { ...seg, composes: ["Nonexistent"] };
+    expect(resolveComposes(orphan, SEED_COMPONENTS)[0].comp).toBeUndefined();
   });
 
   it("resolveUsedBy finds the components that compose the target", () => {
-    const button = byName("Button"); // composed by SegmentedControl + EmptyState + Dialog + PersonasPanel
+    const button = byName("Button"); // composed by SegmentedControl + EmptyState + PersonasPanel
     const users = resolveUsedBy(button, SEED_COMPONENTS).map((c) => c.name);
     expect(users).toContain("SegmentedControl");
-    expect(users).toContain("Dialog");
+    expect(users).toContain("EmptyState");
     // A leaf that nothing composes.
     expect(resolveUsedBy(byName("FsWatcher"), SEED_COMPONENTS)).toEqual([]);
   });
