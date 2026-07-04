@@ -216,6 +216,19 @@ fn full_bsc_rc_is_syntactically_valid_bash() {
 }
 
 #[test]
+fn bsc_defer_rc_embeds_the_externalized_directive() {
+    // #2145: the bsc-defer directive prose moved out of an inline const into the config-loaded
+    // data/fleet/defer-directive.md. Assert the assembled fragment still (a) carries the directive
+    // text, (b) keeps the JSON block-reason shape, and (c) ends with the mandatory trailing newline
+    // (#296) so it doesn't glue onto the next helper in the concatenated rc.
+    let frag = super::bsc_defer_rc();
+    assert!(frag.contains("Do not stop."), "defer fragment lost the directive prose");
+    assert!(frag.contains("enter MAINTENANCE"), "defer fragment lost the maintenance clause");
+    assert!(frag.contains(r#"{"decision":"block","reason":""#), "defer fragment lost the block-reason JSON shape");
+    assert!(frag.ends_with('\n'), "defer fragment must end with a trailing newline (#296)");
+}
+
+#[test]
 fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
     // #2064: the shared sh fragments (__bsc_jstr / __bsc_now_ms / __bsc_logline) are defined once
     // in BSC_SHARED_RC and prepended (first in ALL_BSC_RC). Assert the constant defines all three,
