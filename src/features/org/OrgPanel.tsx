@@ -141,12 +141,17 @@ export function OrgPanel() {
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
   });
 
+  // Nothing is selected while `sel.id` is the empty sentinel — the inspector column is HIDDEN then
+  // (don't render an empty panel), and it appears only once a node/edge is actually selected.
+  const hasSel = sel.id !== "";
+
   return (
     <>
     <GraphCanvas
       vp={vp}
       world={{ w: CANVAS_W, h: CANVAS_H }}
       overlays={<OrgLegend />}
+      grid
       railResizable railWidth={260} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}
       // Click the empty canvas → clear the selection (the empty sentinel; inspector empties, no dimming).
@@ -223,7 +228,7 @@ export function OrgPanel() {
           </Box>
         </Stack>
       }
-      inspector={
+      inspector={hasSel ? (
         <OrgInspector
           org={org} orgs={orgs} personas={personas} sel={sel}
           onSelectNode={(id) => setSel({ type: "node", id })}
@@ -233,12 +238,12 @@ export function OrgPanel() {
           onDeletePosition={(nodeId) => { removePosition(org.id, nodeId); setSel({ type: "node", id: "" }); }}
           onDeleteRelationship={(relId) => { removeRelationship(org.id, relId); setSel({ type: "node", id: "" }); }}
         />
-      }
+      ) : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the transition animation (org.css) */}
       <Box key={drill ?? "__root__"} className="org-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <OrgCanvas
-          org={view.org} personas={personas} sel={sel} scale={scale} gridOn connecting={!!connect}
+          org={view.org} personas={personas} sel={sel} scale={scale} connecting={!!connect}
           dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
           onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}

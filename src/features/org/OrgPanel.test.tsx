@@ -23,4 +23,15 @@ describe("OrgPanel initial selection (#2333)", () => {
     // Still nothing selected after the switch.
     expect(screen.queryByText("Persona")).toBeNull();
   });
+
+  it("hides the inspector panel until a node is selected, then shows it", () => {
+    render(<OrgPanel />);
+    // Open state: nothing selected → the inspector column is not rendered at all (no OrgInspector
+    // content). Previously the empty panel showed regardless of selection.
+    expect(screen.queryByText("Persona")).toBeNull();
+    // Adding a position selects it → the inspector appears (its 'Persona' section renders for the
+    // new agent node).
+    fireEvent.click(screen.getByText("＋ new"));
+    expect(screen.getByText("Persona")).toBeTruthy();
+  });
 });
