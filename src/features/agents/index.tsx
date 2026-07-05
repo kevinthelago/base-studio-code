@@ -30,6 +30,11 @@ import "./agents.css";
 export { ProfileSelect } from "./AssignmentsTab";
 export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
 
+// #1545: public API for cross-feature consumers (planner, app/console).
+export { type AgentProfile, type Tier, type ToolKey, PROFILES } from "./lib/agentProfiles";
+export { resolveProfileSettings } from "./lib/profileEnforcement";
+export { parseAuditLog, type AuditRecord } from "./lib/auditLog";
+
 export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
   const [actDecision, setActDecision] = useState<DecFilter>("all");

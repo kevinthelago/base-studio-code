@@ -87,3 +87,8 @@ export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string }
 // Re-exported feature surface — this index is the automations feature's public API barrel (#1309).
 export { AutomationsStatus } from "./AutomationsStatus";
 export { useScheduler } from "./useScheduler";
+
+// #1545: public API for cross-feature consumers (tunnel).
+export { type Automation, type AutomationWhen } from "./lib/scheduler";
+export { isValidCron } from "./lib/cron";
+export { dispatchAutomation } from "./lib/dispatch";

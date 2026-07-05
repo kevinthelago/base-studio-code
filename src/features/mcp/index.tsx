@@ -29,6 +29,18 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { TextField } from "@/shared/ui/controls/Field";
 import "./mcp.css";
 
+// #1545: public API for cross-feature consumers (planner, automations, app/console, store).
+// Re-export the exact lib symbols other features reach for so Phase 2 can target the barrel.
+export {
+  type McpServer, type McpTransport, BUILTIN_MCP_SERVERS, resolveMcpServers,
+  mcpFromCatalog, resolveAllInstalledMcp, toBscAgentMcp,
+} from "./lib/mcpServers";
+export { catalogLink, resolveMcpInstallDir, repoNameFromLink, mcpRepoName } from "./lib/mcpInstall";
+export { toSessionPayloads, mcpAllowRules } from "./lib/sessionConfig";
+export { resolveHooks, type Hook } from "./lib/hooks";
+export { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "./lib/hookTelemetry";
+export { migrateLegacyExtensions } from "./lib/migrateExtensions";
+
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // MCP servers screen — the Rail "MCP" page. Owns the install/version machinery (download, build,
 // update-check) that only servers have. Reads/mutates the store's `mcpServers` slice; every drawer
