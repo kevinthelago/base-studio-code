@@ -58,15 +58,15 @@ describe("DesignStudio (#2308)", () => {
     expect(gen.disabled).toBe(false);
   });
 
-  it("applies the motion classes (#2344) — preview/rail enter in Library, edges flow in Graph", () => {
+  it("carries NO decorative motion classes — the #2344 animation pass was removed (un-animated until the design system lands)", () => {
     const { container } = render(<DesignStudio />);
-    // Library view: the keyed preview re-enters, the center drills in, rail rows stagger in.
-    expect(container.querySelector(".ds-preview-enter")).toBeTruthy();
-    expect(container.querySelector(".ds-center.ds-view-enter")).toBeTruthy();
-    expect(container.querySelector(".ds-comprow-enter")).toBeTruthy();
-    // Graph view: composition edges carry the flowing class.
+    // Library view: no keyed enter/drill/stagger classes.
+    expect(container.querySelector(".ds-preview-enter")).toBeNull();
+    expect(container.querySelector(".ds-view-enter")).toBeNull();
+    expect(container.querySelector(".ds-comprow-enter")).toBeNull();
+    // Graph view: composition edges are plain (no flowing class).
     fireEvent.click(screen.getByText("⬡ Graph"));
-    expect(container.querySelector("path.ds-edge")).toBeTruthy();
+    expect(container.querySelector("path.ds-edge")).toBeNull();
   });
 
   it("the inspector shows the composes graph for a component that has dependencies", () => {
