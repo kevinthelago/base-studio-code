@@ -96,6 +96,11 @@ export interface ConsoleState {
   // Applied to the --accent / --accent-dim CSS tokens at the document root.
   accent: string;
   setAccent: (id: string) => void;
+  // Kit theme id (#1852 Phase 3; persisted; configured in Settings → Appearance). A theme is a map
+  // of semantic component-token overrides (--card-*/--btn-*/--field-*/--chip-*) applied to :root at
+  // boot (like the accent). "default" = the base look. Registry: src/shared/ui/kit/theme.ts.
+  kitTheme: string;
+  setKitTheme: (id: string) => void;
   // Custom keyboard shortcut overrides (#771): rebindable-shortcut id → chord
   // string (e.g. "Ctrl+Shift+KeyC"). Only overrides are stored; useHotkeys falls
   // back to DEFAULT_BINDINGS for any id absent here. Persisted; edited in
