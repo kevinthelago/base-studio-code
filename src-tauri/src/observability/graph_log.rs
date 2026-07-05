@@ -25,8 +25,6 @@ use logs::scope::{normalize_scope, ScopeConfig, ScopeLevel};
 use serde::Serialize;
 use tauri::State;
 
-use crate::bsc_base_dir;
-
 /// The audit baseline: every record at or below `Debug` is written to the FILE sink unconditionally
 /// (`Trace` is dropped — a rich audit without the trace firehose; #1389 decision). `log::Level as u8`
 /// gives Error=1 … Debug=4, so a record's `rank <= FILE_RANK` means "persist it".
