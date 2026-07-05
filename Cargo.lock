@@ -760,6 +760,7 @@ dependencies = [
  "bsc-persona",
  "bsc-project",
  "bsc-todo",
+ "bsc-ui",
  "bsc-util",
  "compliance",
  "errordb",
@@ -914,6 +915,14 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "snow",
+]
+
+[[package]]
+name = "bsc-ui"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "serde_json",
 ]
 
 [[package]]

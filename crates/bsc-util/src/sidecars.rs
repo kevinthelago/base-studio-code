@@ -91,6 +91,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "ui", context_env: None,
+        blurb: "the UI spec SDK: the KitNode contract (`ui schema`) an AI emits UI as data against, and `ui validate` to check a spec",
+        advertise: true,
+    },
+    Sidecar {
         name: "project", context_env: None,
         blurb: "list local projects + read/set the published marker",
         advertise: true,
@@ -158,7 +163,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
+            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "ui", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }
