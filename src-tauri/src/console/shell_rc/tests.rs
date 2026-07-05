@@ -113,7 +113,51 @@ fn bsc_coord_emit_rc_defines_issuer_helpers() {
     let rc = frag("coord-emit.sh");
     assert!(rc.contains("bsc-issue()"), "rc must define bsc-issue");
     assert!(rc.contains("bsc-assign()"), "rc must define bsc-assign");
+    assert!(rc.contains("bsc-brief()"), "rc must define bsc-brief (#2377 planner→director/issuer)");
     assert!(rc.contains("__bsc_coord_log()"), "rc must define the multi-column log helper");
+}
+
+#[test]
+fn bsc_brief_emits_tab_aligned_coord_line() {
+    // bsc-brief (#2377): the PLANNER's runtime voice — a coordination write only (append one
+    // tab-separated line to $BSC_COORD_LOG), no code/git escalation. Its columns must match
+    // what coordination.ts parseCoordLine expects:
+    //   brief: ts \t pane \t brief \t target \t body \t ref?
+    // The target is $1, the optional ref comes via --ref, and the body is read from stdin.
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    with_rc_subshell("brief", frag("coord-emit.sh"), |RcSub { shell, dir, rc_bash }| {
+    let log = dir.join("coord.log");
+    let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+    let run = |cmd: &str, body: &str| {
+        let mut child = Command::new(&shell)
+            .arg("-c").arg(cmd)
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_COORD_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t0p0")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let _ = child.stdin.take().unwrap().write_all(body.as_bytes());
+        assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
+    };
+    run("bsc-brief director --ref #77", "scope grew: add CSV export");
+    run("bsc-brief issuer", "no ref carried");
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 2, "expected one line per emitter, got: {text:?}");
+
+    let withref: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(withref[1], "t0p0", "pane column");
+    assert_eq!(&withref[2..], &["brief", "director", "scope grew: add CSV export", "#77"]);
+
+    let noref: Vec<&str> = lines[1].split('\t').collect();
+    assert_eq!(&noref[2..], &["brief", "issuer", "no ref carried", ""]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+    });
 }
 
 #[test]

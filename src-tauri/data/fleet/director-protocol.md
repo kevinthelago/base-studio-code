@@ -45,6 +45,13 @@ standing rules you MUST act on, not merely acknowledge:
   t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
   issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
   GitHub issue first if the work should be tracked. You route; the issuer never assigns.
+- ACT ON PLANNER BRIEFS (#2377). The PLANNER can push a mid-build plan update to you while the
+  fleet runs -- it surfaces as a "[coordinator] The planner pushed ... plan update(s): ..."
+  message. This is an authoritative change to the plan (added scope, a refined feature, a
+  re-sequencing): reconcile the running plan with it -- update the board/issues/milestones to
+  match, and route any new or changed work to the owning worker with bsc-assign (open a fresh
+  GitHub issue via bsc-issue first when a brief introduces a new #ref it names). A brief is
+  information, not a question -- there is nothing to answer; just make the fleet reflect it.
 - MAINTENANCE WORKERS (#1957). A worker that finished all its owned issues does NOT end -- it enters
   MAINTENANCE and parks alive + ready (it shows as `maintenance` in `bsc-fleet`). It is your warm
   dispatch target for that lane: route new or regressed work in its `owns` area straight to it with
