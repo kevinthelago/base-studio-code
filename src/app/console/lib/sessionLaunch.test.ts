@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
@@ -87,6 +88,45 @@ describe("buildAgentEnv", () => {
       expect(Array.isArray(JSON.parse(e.BSC_AGENT_MCP!))).toBe(true);
     });
   });
+
+  describe("aider provider (#1172)", () => {
+    it("injects the provider's API key env alongside GH_TOKEN", () => {
+      const e = buildAgentEnv(mkStore({ llmProvider: "anthropic", claudeApiKey: "ant" }), "p", "aider", "ghp_x")!;
+      expect(e.ANTHROPIC_API_KEY).toBe("ant");
+      expect(e.GH_TOKEN).toBe("ghp_x"); // an aider worker can still push + open its PR
+    });
+
+    it("maps an openai config to OPENAI_API_KEY", () => {
+      const e = buildAgentEnv(mkStore({ llmProvider: "openai", llmModel: "gpt-4o", openaiKey: "sk" }), "p", "aider", "")!;
+      expect(e.OPENAI_API_KEY).toBe("sk");
+    });
+
+    it("does NOT inject bsc-agent env for an aider pane", () => {
+      const e = buildAgentEnv(mkStore({ claudeApiKey: "ant" }), "p", "aider", "");
+      expect(e?.BSC_AGENT_PROVIDER).toBeUndefined();
+    });
+  });
+});
+
+describe("providerLaunchConfig (#1172)", () => {
+  it("returns undefined for a non-aider provider", () => {
+    const ollama = { id: "ollama", buildLaunchCmd: () => "ollama run x" } as unknown as typeof aiderProvider;
+    expect(providerLaunchConfig(mkStore(), "p", ollama, "go")).toBeUndefined();
+  });
+
+  it("builds the aider config: resolved LLM, prompt, and a worker's CLAUDE.local.md scope", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, llmProvider: "anthropic", claudeApiKey: "k" });
+    const cfg = providerLaunchConfig(s, "p", aiderProvider, "kickoff")!;
+    expect(cfg.llm?.provider).toBe("anthropic");
+    expect(cfg.startupPrompt).toBe("kickoff");
+    expect(cfg.readFiles).toEqual(["CLAUDE.local.md"]);
+  });
+
+  it("omits readFiles for a non-worker pane and drops a blank prompt", () => {
+    const cfg = providerLaunchConfig(mkStore(), "p", aiderProvider, "   ")!;
+    expect(cfg.readFiles).toBeUndefined();
+    expect(cfg.startupPrompt).toBeUndefined();
+  });
 });
 
 describe("buildSessionSettings", () => {
@@ -157,6 +197,14 @@ describe("resolveEffectiveInitCmd", () => {
   it("launches a non-claude provider via its own command, unless an explicit initCmd is given", () => {
     expect(resolveEffectiveInitCmd(mkStore(), "p", false, undefined, undefined, provider)).toBe("ollama run x");
     expect(resolveEffectiveInitCmd(mkStore(), "p", false, "custom", undefined, provider)).toBe("custom");
+  });
+
+  it("builds the full aider command from the pane config — model, worker scope, fleet-safe git, task (#1172)", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, llmProvider: "anthropic", claudeApiKey: "k" });
+    const cmd = resolveEffectiveInitCmd(s, "p", false, undefined, "do it", aiderProvider);
+    expect(cmd).toBe(
+      "aider --no-auto-commits --no-dirty-commits --model 'anthropic/claude-sonnet-4-6' --read 'CLAUDE.local.md' --message 'do it'",
+    );
   });
 
   it("honors an explicit initCmd for a claude pane", () => {
