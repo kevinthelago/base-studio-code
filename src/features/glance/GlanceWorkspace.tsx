@@ -24,6 +24,8 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
+import { GlanceChatDock } from "./GlanceChatDock";
+import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
@@ -40,6 +42,9 @@ const GLANCE_TABS: TabItem[] = [
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
+  // The launched fleet (paneId → stream, keyed by the identity id `<key>:<stream>`, #1176). An agent
+  // node is LIVE — and its real PTY stream openable in the dock — iff its identity pane id is here.
+  const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
   // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
@@ -67,6 +72,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const page = pageOverride ?? activeId;
 
   const [sel, setSel] = useState<{ type: "node" | "edge"; id: string } | null>(null);
+  // The drilled agent whose live PTY stream is open in the bottom dock (#2369). Null = closed.
+  const [chatNode, setChatNode] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
@@ -130,7 +137,15 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     if (drill) pickNode(id); else { setDrill(id); setSel(null); setShowCycle(false); }
   };
-  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); };
+  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); };
+
+  // The agent stream dock (#2369). A node is LIVE — its real PTY openable — iff its identity pane id
+  // (`<project>:<stream>`) is in the launched fleet. The dock only opens for a drilled, live agent.
+  const isLiveAgent = (nodeId: string) => !!drill && !!fleetPaneStreams[fleetPaneId(drill, nodeId)];
+  // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
+  // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
+  const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
+  const chatMeta = chatPaneId ? model.nodes.find((n) => n.id === chatNode) : null;
 
   const q = search.trim().toLowerCase();
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
@@ -166,6 +181,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
       // .screen-body is a block scroll container, so give it an explicit full-height flex column.
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
     <GraphCanvas
       vp={vp}
       world={{ w: model.worldW, h: model.worldH }}
@@ -265,7 +281,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)}
         onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined}
         autoTriageOn={!drill && sel.type === "node" ? !!autoTriage[sel.id] : undefined}
-        onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined} /> : undefined}
+        onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined}
+        // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
+        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
       <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>
@@ -276,6 +294,15 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         />
       </Box>
     </GraphCanvas>
+      </Box>
+      {chatPaneId && (
+        <GlanceChatDock
+          paneId={chatPaneId}
+          name={chatMeta?.slug ?? "agent"}
+          role={chatMeta?.roleLabel}
+          onClose={() => setChatNode(null)}
+        />
+      )}
       </Box>
       )}
     </Screen>
