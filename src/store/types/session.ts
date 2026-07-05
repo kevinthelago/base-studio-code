@@ -42,6 +42,11 @@ export interface SessionState {
    *  so it's a scratch/verification shell until project files are relocated into the distro. */
   sandboxConsoles: boolean;
   setSandboxConsoles: (v: boolean) => void;
+  /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
+   *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
+   *  and a console-active workspace falls back to Glance (derived in App). */
+  showConsolePage: boolean;
+  setShowConsolePage: (v: boolean) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
