@@ -77,44 +77,15 @@
 .ds-rel { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 2px 0; cursor: pointer; text-align: left; color: var(--accent); font-size: 11.5px; font-family: var(--mono); }
 .ds-rel:hover { opacity: .8; }
 
-/* ── motion (#2344) — mirrors the app's restrained vocabulary, no new dialect:
- *   ds-fadeup  ← pcp-fadeup (opacity + translateY(6px) → none)
- *   ds-drill   ← glance-drill / org-drill-in (opacity + translateY(10px) scale(.99) → none)
- *   ds-dashmove ← glance-dashmove (stroke-dashoffset flow on graph edges)
- * Same ~150–250ms ease-out durations. Every rule is disabled under prefers-reduced-motion. */
-@keyframes ds-fadeup { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes ds-drill { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
-@keyframes ds-dashmove { to { stroke-dashoffset: -20; } }
+/* The decorative motion pass (#2344 — preview/view/row/edge enters) was REMOVED: the Design Studio
+   was the only animated page; a motion vocabulary is deferred until the design system is in place.
+   The functional loading indicators stay (ds-spin/ds-pulse above + ds-skel below). */
 
-/* 1 · preview settles in when the selected component changes (keyed remount) */
-.ds-preview-enter { animation: ds-fadeup .2s ease-out; }
-/* 2 · Library ⇄ Graph flip — the incoming view drills in (keyed on the active view) */
-.ds-view-enter { animation: ds-drill .26s ease-out both; transform-origin: center; }
-/* 3 · rail rows populate with a short, CAPPED stagger (first 8 rows; the rest enter together) */
-.ds-comprow-enter { animation: ds-fadeup .2s ease-out both; }
-.ds-comprow-enter:nth-child(1) { animation-delay: 0ms; }
-.ds-comprow-enter:nth-child(2) { animation-delay: 18ms; }
-.ds-comprow-enter:nth-child(3) { animation-delay: 36ms; }
-.ds-comprow-enter:nth-child(4) { animation-delay: 54ms; }
-.ds-comprow-enter:nth-child(5) { animation-delay: 72ms; }
-.ds-comprow-enter:nth-child(6) { animation-delay: 90ms; }
-.ds-comprow-enter:nth-child(7) { animation-delay: 108ms; }
-.ds-comprow-enter:nth-child(8) { animation-delay: 126ms; }
-/* 5 · composition-graph edges flow like the Glance/Org edges */
-.ds-edge { stroke-dasharray: 5 5; animation: ds-dashmove 1.1s linear infinite; }
-/* 6 · generated-candidate strip fades up on appear */
-.ds-candstrip { animation: ds-fadeup .25s ease-out; }
-
-/* 4 · tab underline eases instead of jumping (the app's .12–.15s toggle pattern) */
-.ds-tab { transition: color .15s, border-bottom-color .15s; }
-/* 7 · loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
+/* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
    keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
    every Skeleton elsewhere; the gradient colors are inline (the preview's dark/light sandbox). */
 .ds-skel { animation: skeleton-shimmer 1.1s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ds-preview-enter, .ds-view-enter, .ds-comprow-enter, .ds-candstrip { animation: none; }
-  .ds-comprow-enter:nth-child(-n+8) { animation-delay: 0ms; }
-  .ds-edge, .ds-skel { animation: none; stroke-dasharray: none; }
-  .ds-tab { transition: none; }
+  .ds-skel { animation: none; }
 }
