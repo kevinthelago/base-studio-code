@@ -13,12 +13,12 @@ import type { Hook } from "@/features/mcp/lib/hooks";
  * recreating them.
  */
 
-// xterm doesn't initialize cleanly in jsdom (term.open needs real DOM
-// measurements). Stub TerminalView so the screen renders without spinning up a
-// terminal per pane — we're testing the screen's mount/visibility behavior,
-// not xterm itself.
-vi.mock("./TerminalView", () => ({
-  TerminalView: ({ paneId, visible }: { paneId: string; visible: boolean }) =>
+// Since #2378 the grid cell renders a <TerminalSlot> (the app-level TerminalHost owns the real
+// <TerminalView>); stub the slot so the screen renders without a host/xterm — we're testing the screen's
+// mount/visibility behavior, not the terminal itself. The slot receives the same paneId + visible props the
+// cell used to pass the terminal, so these assertions are unchanged.
+vi.mock("@/app/console/terminal/TerminalSlot", () => ({
+  TerminalSlot: ({ paneId, visible }: { paneId: string; visible: boolean }) =>
     <div data-testid={`term-${paneId}`} data-visible={String(visible)} />,
 }));
 

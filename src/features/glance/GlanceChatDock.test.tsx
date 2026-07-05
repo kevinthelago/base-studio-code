@@ -3,10 +3,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { GlanceChatDock } from "./GlanceChatDock";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 
-// xterm doesn't init in jsdom (term.open needs real DOM measurements), and the Logs tab polls `bsc` —
-// so stub both to test the dock SHELL (header · tab switching · close · terminal mount/visibility · chat input).
-vi.mock("@/app/console/panes/views/TerminalView", () => ({
-  TerminalView: ({ paneId, visible }: { paneId: string; visible: boolean }) => (
+// Since #2378 the dock renders a <TerminalSlot> (the app-level TerminalHost owns the real terminal) — stub
+// it to test the dock SHELL (header · tab switching · close · terminal mount/visibility · chat input). Its
+// visibility prop is what the dock controls, so the same data-pane/data-visible assertions hold.
+vi.mock("@/app/console/terminal/TerminalSlot", () => ({
+  TerminalSlot: ({ paneId, visible }: { paneId: string; visible: boolean }) => (
     <div data-testid="terminal" data-pane={paneId} data-visible={visible} />
   ),
 }));
