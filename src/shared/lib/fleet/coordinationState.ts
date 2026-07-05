@@ -18,7 +18,7 @@ import type {
 } from "./coordination.types";
 
 export function emptyCoordState(): CoordState {
-  return { latches: {}, waiters: [], waiting: [], asking: [], issues: [], maintaining: [] };
+  return { latches: {}, waiters: [], waiting: [], asking: [], issues: [], maintaining: [], briefs: [] };
 }
 
 /** Canonical string key for a ref -- the `bsc-blocked --on <token>` wire form too. */
@@ -90,6 +90,7 @@ export function registerWaiter(s: CoordState, w: Waiter): { state: CoordState; r
     asking: s.asking,
     issues: s.issues,
     maintaining: s.maintaining,
+    briefs: s.briefs,
   };
   return { state, ready };
 }
@@ -106,10 +107,10 @@ export function satisfy(
   at: number,
 ): { state: CoordState; woken: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "satisfied" as const, source, at } };
-  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining };
+  const probe: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining, briefs: s.briefs };
   const woken = s.waiters.filter((w) => isReady(probe, w));
   const wokenIds = new Set(woken.map((w) => w.session));
-  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining }, woken };
+  return { state: { latches, waiters: s.waiters.filter((w) => !wokenIds.has(w.session)), waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining, briefs: s.briefs }, woken };
 }
 
 /**
@@ -124,6 +125,6 @@ export function fail(
   at: number,
 ): { state: CoordState; stalled: Waiter[] } {
   const latches = { ...s.latches, [refKey(ref)]: { state: "failed" as const, reason, at } };
-  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining };
+  const next: CoordState = { latches, waiters: s.waiters, waiting: s.waiting, asking: s.asking, issues: s.issues, maintaining: s.maintaining, briefs: s.briefs };
   return { state: next, stalled: stalledWaiters(next, ref) };
 }
