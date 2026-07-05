@@ -15,6 +15,8 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { TextField } from "@/shared/ui/controls/Field";
+import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
 import { GlanceSessionLog } from "./GlanceSessionLog";
 
@@ -29,6 +31,17 @@ export function GlanceChatDock({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<DockTab>("stream");
+  const [draft, setDraft] = useState("");
+
+  // Send a chat message to the agent: write it to its PTY + Enter, exactly as the fleet's steer/answer
+  // does (fireInvoke pty_write). The PTY echoes it back into the stream above, so the terminal IS the
+  // chat history — this input is just an explicit "type here" affordance over it.
+  const send = () => {
+    const text = draft.trim();
+    if (!text) return;
+    fireInvoke("pty_write", { paneId, data: text + "\r" }, console.error);
+    setDraft("");
+  };
 
   return (
     <Box style={{
@@ -56,7 +69,22 @@ export function GlanceChatDock({
         {/* The terminal stays MOUNTED across tab switches (only hidden) so its PTY is never torn down;
             `visible` gates its render/fit exactly like a background console pane. */}
         <Box style={{ position: "absolute", inset: 0, display: tab === "stream" ? "flex" : "none", flexDirection: "column" }}>
-          <TerminalView paneId={paneId} visible={tab === "stream"} focused={tab === "stream"} />
+          {/* The live PTY stream = the chat history. Not auto-focused, so the chat input below is the
+              default target; click into the terminal to interact with its TUI directly. */}
+          <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <TerminalView paneId={paneId} visible={tab === "stream"} focused={false} />
+          </Box>
+          <Row gap="sm" align="center" style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", flex: "none" }}>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <TextField
+                value={draft}
+                onChange={setDraft}
+                placeholder="Message the agent — Enter to send"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              />
+            </Box>
+            <Button size="sm" variant="primary" onClick={send} disabled={!draft.trim()}>Send</Button>
+          </Row>
         </Box>
         {tab === "logs" && (
           <Box style={{ position: "absolute", inset: 0 }}>
