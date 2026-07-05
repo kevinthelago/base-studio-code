@@ -25,6 +25,23 @@ pub fn contract() -> Value {
     serde_json::from_str(CONTRACT_JSON).expect("embedded kit-nodes.json is valid JSON")
 }
 
+/// The kit THEME registry (#1852 Phase 3), embedded from the same source of truth the frontend reads
+/// via `@data/ui/themes.json`. A theme is a map of semantic-token overrides; `bsc ui theme` serves it.
+pub const THEMES_JSON: &str = include_str!("../../../src-tauri/data/ui/themes.json");
+
+/// Every built-in theme (the `themes` array), parsed. Empty on a malformed file (guarded by a test).
+pub fn themes() -> Vec<Value> {
+    serde_json::from_str::<Value>(THEMES_JSON)
+        .ok()
+        .and_then(|v| v.get("themes").and_then(Value::as_array).cloned())
+        .unwrap_or_default()
+}
+
+/// One theme by id, or `None`.
+pub fn theme_by_id(id: &str) -> Option<Value> {
+    themes().into_iter().find(|t| t.get("id").and_then(Value::as_str) == Some(id))
+}
+
 /// Structurally validate a KitNode tree against the contract — the EXACT rules the frontend
 /// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
 /// human-readable errors (empty = valid).
@@ -123,6 +140,18 @@ mod tests {
                     assert!(fields.contains(&f.as_str()), "{kind}.enums {f} is an allowed field");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn themes_registry_loads_with_default() {
+        let ts = themes();
+        assert!(ts.len() > 1, "several built-in themes");
+        assert!(theme_by_id("default").is_some(), "the default theme exists");
+        assert!(theme_by_id("nope").is_none());
+        for t in &ts {
+            assert!(t.get("id").and_then(Value::as_str).is_some(), "each theme has an id");
+            assert!(t.get("vars").and_then(Value::as_object).is_some(), "each theme has a vars map");
         }
     }
 

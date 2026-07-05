@@ -4,7 +4,7 @@
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   border-radius: 99px; font-family: var(--mono); line-height: 1.6; white-space: nowrap;
-  background: var(--bg-elev2); color: var(--fg-muted); border: 1px solid var(--border-soft);
+  background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--chip-border);
 }
 .chip-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: 0 0 5px; }
 

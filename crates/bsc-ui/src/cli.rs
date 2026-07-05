@@ -38,6 +38,19 @@ Structurally validates the spec against the contract (kind known · required pre
 passes here renders there. Prints `ok` (exit 0) when valid, else one error per line (exit 1). How an
 agent checks a UI spec it authored before handing it off.",
     },
+    CmdDoc {
+        name: "theme",
+        summary: "the kit THEME registry — list themes or get one (#1852 Phase 3)",
+        usage: "\
+USAGE:
+  bsc ui theme list [--pretty]     # every theme's { id, label, description }
+  bsc ui theme get <id> [--pretty] # one theme verbatim (id, label, description, vars), or null
+
+A theme is a map of semantic component-token overrides (--card-*/--btn-*/--field-*/--chip-*) applied
+globally (:root) or scoped to a subtree — restyling every card/button/field/chip without touching a
+spec's structure. This is the SDK's THEME axis (style × theme × spec); the same registry the desktop
+theme picker reads.",
+    },
 ];
 
 /// The `ui` subcommand entrypoint: `args` is everything after `bsc ui`; `prog` is the display name for
@@ -49,6 +62,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("schema") => cmd_schema(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),
+        Some("theme") => cmd_theme(&args[1..]),
         Some(other) => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
         None => {
             print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS));
@@ -91,14 +105,46 @@ fn cmd_validate(args: &[String]) -> Result<(), String> {
     }
 }
 
+fn cmd_theme(args: &[String]) -> Result<(), String> {
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
+    let emit = |v: &serde_json::Value| -> Result<(), String> {
+        let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
+        println!("{}", s.map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    match positional.first().copied().unwrap_or("list") {
+        "list" => {
+            let list: Vec<serde_json::Value> = crate::themes()
+                .iter()
+                .map(|t| serde_json::json!({ "id": t.get("id"), "label": t.get("label"), "description": t.get("description") }))
+                .collect();
+            emit(&serde_json::Value::Array(list))
+        }
+        "get" => {
+            let id = positional.get(1).ok_or("usage: bsc ui theme get <id>")?;
+            emit(&crate::theme_by_id(id).unwrap_or(serde_json::Value::Null))
+        }
+        other => Err(format!("unknown theme command '{other}' — want: list | get <id>")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn help_overview_lists_both_commands() {
+    fn help_overview_lists_the_commands() {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
-        assert!(ov.contains("schema") && ov.contains("validate"));
+        assert!(ov.contains("schema") && ov.contains("validate") && ov.contains("theme"));
+    }
+
+    #[test]
+    fn theme_list_and_get_round_trip() {
+        assert!(run(vec!["theme".into(), "list".into()], "bsc ui").is_ok());
+        assert!(run(vec!["theme".into(), "get".into(), "default".into()], "bsc ui").is_ok());
+        // `get` with no id is a usage error.
+        assert!(run(vec!["theme".into(), "get".into()], "bsc ui").is_err());
     }
 
     #[test]
