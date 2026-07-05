@@ -7,6 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
+import { getProvider } from "@/app/console/lib/providers";
 import { useAppStore } from "@/store";
 
 // Re-exported so existing `import { type ModelId } from "./PaneMenu"` call sites keep working
@@ -22,8 +23,13 @@ const PROV_COLOR: Record<string, string> = {
   gemini: "var(--prov-google)", google: "var(--prov-google)",
   local: "var(--prov-local)", ollama: "var(--prov-local)",
 };
-const harnessOf = (provider?: string) =>
-  !provider || provider === "claude" || provider === "anthropic" ? "Claude Code" : "bsc-agent";
+const harnessOf = (provider?: string) => {
+  if (!provider || provider === "claude" || provider === "anthropic") return "Claude Code";
+  if (provider === "bsc-agent") return "bsc-agent";
+  // A provider that launches its OWN CLI (Aider #1172, Gemini, Codex, Ollama, …) is labeled by its
+  // display name rather than mislabeled "bsc-agent"; an unregistered id falls back to bsc-agent.
+  return getProvider(provider)?.displayName ?? "bsc-agent";
+};
 
 interface PaneMenuProps {
   agent: string;
@@ -69,6 +75,9 @@ export function PaneMenu({
   const personas = useAppStore((s) => s.personas);
   const provColor = PROV_COLOR[provider ?? "claude"] ?? "var(--prov-local)";
   const harness = harnessOf(provider);
+  // Provider caveats (#1172): a limited provider (e.g. Aider — no permission gate, no MCP, limited
+  // telemetry) flags its gaps here so the picker never silently degrades the app's security model.
+  const limitations = provider ? getProvider(provider)?.limitations : undefined;
   // The highlighted row reflects what's ACTUALLY running when known (#1181), else the
   // configured model. Selecting a different row still sets the model for the next launch.
   const selected = runningModel ?? model;
@@ -106,6 +115,15 @@ export function PaneMenu({
             {running ? "running" : "idle"}
           </Text>
         </Row>
+        {/* Provider limitations (#1172): surfaced under the harness label when the selected provider
+            has caveats (Aider) — the app flags them rather than silently applying a degraded model. */}
+        {limitations && limitations.length > 0 && (
+          <Stack gap={2} style={{ marginTop: 6 }}>
+            {limitations.map((l) => (
+              <Text key={l} as="div" size={9} tone="dim" style={{ lineHeight: 1.35 }}>⚠ {l}</Text>
+            ))}
+          </Stack>
+        )}
       </Box>
 
       {/* Model */}

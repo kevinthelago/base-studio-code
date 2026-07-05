@@ -105,3 +105,39 @@ export function bscAgentEnv(cfg: LlmConfig): Record<string, string> {
   if (cfg.baseUrl) e.BSC_AGENT_BASE_URL = cfg.baseUrl;
   return e;
 }
+
+/** Map an {@link LlmConfig} to Aider's `--model` selector (#1172). Aider (via litellm) namespaces
+ *  models by provider — `anthropic/…`, `gemini/…` — takes OpenAI models bare, and reaches a
+ *  local / OpenAI-compatible endpoint through the `openai/…` prefix (paired with `OPENAI_API_BASE`,
+ *  see {@link aiderEnv}). A model already carrying a `provider/` prefix is passed through untouched. */
+export function aiderModelArg(cfg: LlmConfig): string {
+  const m = cfg.model.trim();
+  if (m.includes("/")) return m;
+  switch (cfg.provider) {
+    case "anthropic": return `anthropic/${m}`;
+    case "gemini":    return `gemini/${m}`;
+    case "openai":    return m;
+    case "local":
+    case "ollama":    return `openai/${m}`;
+  }
+}
+
+/** The environment an Aider session needs to reach the configured LLM (#1172): the provider's API key
+ *  under the variable Aider/litellm reads (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`),
+ *  plus an `OPENAI_API_BASE` for a local / OpenAI-compatible endpoint. A local server needs no real
+ *  key, so a placeholder satisfies the OpenAI client's non-empty check. Mirrors {@link bscAgentEnv}. */
+export function aiderEnv(cfg: LlmConfig): Record<string, string> {
+  const e: Record<string, string> = {};
+  switch (cfg.provider) {
+    case "anthropic": if (cfg.apiKey) e.ANTHROPIC_API_KEY = cfg.apiKey; break;
+    case "openai":    if (cfg.apiKey) e.OPENAI_API_KEY = cfg.apiKey; break;
+    case "gemini":    if (cfg.apiKey) e.GEMINI_API_KEY = cfg.apiKey; break;
+    case "local":
+    case "ollama":
+      if (cfg.baseUrl) e.OPENAI_API_BASE = cfg.baseUrl;
+      // A keyless local server still needs a non-empty OPENAI_API_KEY for the client to init.
+      e.OPENAI_API_KEY = cfg.apiKey || "sk-local-none";
+      break;
+  }
+  return e;
+}
