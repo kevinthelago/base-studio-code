@@ -8,11 +8,11 @@ import { CLEAR_INPUT_BYTES } from "@/app/console/lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "@/app/console/lib/paneSelect";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { paneCountForLayout } from "@/app/console/lib/paneStatus";
-import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
+import { SCREEN_HOTKEYS } from "@/features/settings";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "@/features/settings/lib/keybindings";
+} from "@/features/settings";
 import { VIEW_ORDER } from "@/app/console/panes/viewDefs";
 
 function keyToTermBytes(e: KeyboardEvent): string | null {

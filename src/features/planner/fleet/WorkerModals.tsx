@@ -8,7 +8,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import type { StatusMeta } from "@/shared/data/fleet";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
+import type { AgentProfile } from "@/features/agents";
 import { Modal } from "./WorkerDetailModal";
 import type { WorkerModal } from "./workerDetail.helpers";
 

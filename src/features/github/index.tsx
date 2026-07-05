@@ -10,11 +10,7 @@ import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { GitHubEmpty } from "./Empty";
 import { GitHubSummary } from "./GitHubSummary";
-import { ProjectsSummary } from "@/features/planner/list/ProjectsSummary";
-import { ProjectBoard } from "@/features/planner/github/ProjectBoard";
-import { Roadmap } from "@/features/planner/github/Roadmap";
-import { Issues } from "@/features/planner/github/Issues";
-import { Insights } from "@/features/planner/github/Insights";
+import { ProjectsSummary, ProjectBoard, Roadmap, Issues, Insights } from "@/features/planner";
 import { Pulse } from "./Pulse";
 
 const GITHUB_TABS: TabItem[] = [

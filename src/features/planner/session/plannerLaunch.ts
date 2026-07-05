@@ -16,8 +16,7 @@
 
 import { resolveLlmConfig, bscAgentEnv, effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { roleCapability, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
-import { resolveAllInstalledMcp, toBscAgentMcp } from "@/features/mcp/lib/mcpServers";
-import { toSessionPayloads } from "@/features/mcp/lib/sessionConfig";
+import { resolveAllInstalledMcp, toBscAgentMcp, toSessionPayloads } from "@/features/mcp";
 import type { AppStore } from "@/store/types";
 
 /** The harness-dependent fields of the planner's `pty_create` call. */

@@ -21,9 +21,9 @@ import {
 } from "@/shared/lib/fleet/coordination";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import { usePoll } from "@/shared/hooks/usePoll";
-import type { SessionMeta } from "@/features/tunnel/lib/tunnel";
+import type { SessionMeta } from "@/features/tunnel";
 import { injectWake } from "@/shared/lib/fleet/coordinatorActuate";
-import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel/lib/tunnelClient";
+import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel";
 import { log } from "@/shared/lib/core/log";
 
 const POLL_MS = 1000;  // snappy: a director answer should wake the worker within ~1s

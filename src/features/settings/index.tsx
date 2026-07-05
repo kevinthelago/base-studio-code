@@ -11,6 +11,15 @@ import { SkillsPage as SkillsSettingsPage } from "./pages/SkillsPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { McpPage } from "./pages/McpPage";
 
+// #1545: public API for the app shell — appearance tokens + the keybinding/hotkey model the shell's
+// boot + hotkey hooks consume (through this barrel, not settings internals).
+export { accentVars } from "./lib/appearance";
+export { SCREEN_HOTKEYS } from "./lib/shortcuts";
+export {
+  matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
+  type RebindableId,
+} from "./lib/keybindings";
+
 // The settings sections — the SINGLE source for the nav, the known-section guard, and the rendered
 // Page, so the three can't drift. Grouped by app area (mirrors the rail). Each section's body is a
 // Page (the L3 content the Settings Workspace shows one at a time; see docs/frontend-structure.md).
