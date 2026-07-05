@@ -221,6 +221,11 @@ export interface Blueprint {
   /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
    *  each section's own `mcp`. Server NAMES (the portable ref). */
   mcp?: string[];
+  /** The component KIT (#2277) an app seeded from this blueprint is built on — a `bsc component` kit id
+   *  (e.g. `"react-ui"`). Recording it makes every project seeded here a CONSUMER of that kit, so a kit
+   *  change fans out to it (the `kit_usage` consumer index self-fills at planning). Absent ⇒ the blueprint
+   *  isn't tied to a shared kit (an authoring blueprint, or one that operates on a repo's own UI). */
+  kit?: string;
   /** Fleet policy (#1854 Phase b) — the DEFAULT per-stream profile + flow the planner instantiates
    *  when it generates this project type's fleet. A composed sub-model; see {@link FleetPolicy}.
    *  Absent ⇒ today's launch-time defaults apply (byte-identical). */

@@ -40,5 +40,6 @@
       "key": "skills",
       "optional": true
     }
-  ]
+  ],
+  "kit": "react-ui"
 }
