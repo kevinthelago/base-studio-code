@@ -408,6 +408,80 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
       return <div style={{ display: "flex", flexDirection: "column", gap: 9, width: 240 }}>{bar("60%")}{bar("100%")}{bar("85%")}</div>;
     }
 
+    // ── layouts (page-skeleton templates, #2197) — schematic mocks of the page frame ──
+    case "MasterDetail": {
+      const resizable = variant === "resizable";
+      const row = (active?: boolean) => <div style={{ height: 9, borderRadius: 3, marginBottom: 6, background: active ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${active ? "var(--accent)" : t.borderSoft}` }} />;
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+            <span style={{ width: 40, height: 7, borderRadius: 3, background: t.dim }} /><span style={{ flex: 1 }} />
+            <span style={{ width: 22, height: 8, borderRadius: 3, background: "var(--accent)" }} />
+          </div>
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <div style={{ width: 92, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 8, overflow: "hidden" }}>{row(true)}{row()}{row()}{row()}</div>
+            {resizable && <div style={{ width: 3, flex: "none", background: "var(--accent)", opacity: 0.5 }} />}
+            <div style={{ flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+              <span style={{ width: "55%", height: 10, borderRadius: 4, background: t.fg, opacity: 0.8 }} />
+              {["100%", "90%", "72%"].map((w) => <span key={w} style={{ width: w, height: 7, borderRadius: 3, background: t.elev }} />)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    case "SplitView": {
+      const vertical = variant === "vertical";
+      const label = (txt: string) => <span style={{ fontFamily: mono, fontSize: 9.5, color: t.dim, textTransform: "uppercase", letterSpacing: ".08em" }}>{txt}</span>;
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, display: "flex", flexDirection: vertical ? "column" : "row" }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{label("primary")}</div>
+          <div style={{ ...(vertical ? { height: 3, width: "100%" } : { width: 3 }), flex: "none", background: "var(--accent)", opacity: 0.5 }} />
+          <div style={{ ...(vertical ? { flex: "0 0 46px" } : { flex: "0 0 96px" }), background: t.panel, display: "flex", alignItems: "center", justifyContent: "center" }}>{label("secondary")}</div>
+        </div>
+      );
+    }
+    case "GraphCanvas": {
+      const withRail = variant === "with-rail";
+      const node = (x: number, y: number, on?: boolean) => <div style={{ position: "absolute", left: x, top: y, width: 46, height: 24, borderRadius: 6, background: on ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${on ? "var(--accent)" : t.border}` }} />;
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+            <span style={{ width: 34, height: 7, borderRadius: 3, background: t.dim }} /><span style={{ flex: 1 }} />
+            <span style={{ display: "flex", gap: 3 }}>{["−", "%", "+"].map((g) => <span key={g} style={{ width: 14, height: 12, borderRadius: 3, background: t.bg, border: `1px solid ${t.borderSoft}`, fontFamily: mono, fontSize: 8, color: t.muted, display: "flex", alignItems: "center", justifyContent: "center" }}>{g}</span>)}</span>
+          </div>
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            {withRail && <div style={{ width: 58, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, display: "flex", flexDirection: "column", gap: 5 }}>{[0, 1, 2].map((i) => <span key={i} style={{ height: 8, borderRadius: 3, background: t.elev }} />)}</div>}
+            <div style={{ flex: 1, position: "relative", overflow: "hidden", backgroundImage: `radial-gradient(${t.borderSoft} 1px, transparent 1px)`, backgroundSize: "12px 12px" }}>
+              <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                <path d="M33,34 C82,34 92,74 141,74" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M33,34 C70,34 80,104 121,104" stroke={t.border} strokeWidth={1.5} fill="none" />
+              </svg>
+              {node(10, 22, true)}{node(118, 62)}{node(98, 92)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    case "PaneGrid": {
+      const [cols, rows] = variant === "1×3" ? [3, 1] : [2, 2];
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, padding: 8, display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 6 }}>
+          {Array.from({ length: cols * rows }).map((_, i) => (
+            <div key={i} style={{ borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ height: 11, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 5px", gap: 3 }}>
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: i === 0 ? "var(--accent)" : t.dim }} />
+                <span style={{ width: 20, height: 4, borderRadius: 2, background: t.dim }} />
+              </div>
+              <div style={{ flex: 1, padding: 5, display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ width: "80%", height: 4, borderRadius: 2, background: t.elev }} />
+                <span style={{ width: "60%", height: 4, borderRadius: 2, background: t.elev }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     default:
       return (
         <div style={{ width: "min(320px, 100%)", height: 128, borderRadius: 10, border: `1px dashed ${t.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: `repeating-linear-gradient(135deg, transparent 0 9px, color-mix(in oklch, ${t.fg}, transparent 93%) 9px 10px)` }}>

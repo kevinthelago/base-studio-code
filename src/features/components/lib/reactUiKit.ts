@@ -15,6 +15,7 @@ export const REACT_UI_KIT_ID = "react-ui";
 /** Default architectural role by manifest group (the overlay may override per component). */
 const GROUP_ROLE: Record<PrimitiveGroup, Role> = {
   layout: "layout", typography: "primitive", controls: "primitive", data: "primitive", feedback: "primitive",
+  layouts: "layout",
 };
 
 /** Kit metadata the manifest doesn't encode, keyed by component name. Ported from the #2269 seed for
@@ -270,6 +271,36 @@ const GUIDANCE: Record<string, Guidance> = {
     role: "composite", tags: ["chart", "data-viz"],
     whenUse: ["Per-lane activity across a shared horizontal axis (streams over time).", "A timeline where each row is an independent track."],
     whenNot: ["A single aggregate series — use LineArea.", "Category totals — use Bars."],
+  },
+
+  // ── layouts (page-skeleton templates, #2197) ──
+  MasterDetail: {
+    version: "1.0.0", tags: ["layout", "page", "list-detail"], composes: ["Box", "Row", "Stack"],
+    variants: ["default", "resizable"],
+    whenUse: ["A list/nav rail beside a detail view (Personas · Skills · MCP · GitHub · Security · Settings).", "Any master→detail page where selecting a rail row drives the detail column."],
+    whenNot: ["A free pan/zoom graph — use GraphCanvas.", "A two-pane split with no fixed list rail — use SplitView."],
+    srcText: 'import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>',
+  },
+  SplitView: {
+    version: "1.0.0", tags: ["layout", "page", "split"], composes: ["Box", "Row", "Stack"],
+    variants: ["horizontal", "vertical"],
+    whenUse: ["A resizable two-pane split (the planner session's terminal + inspector).", "A main content area beside a fixed, draggable side panel."],
+    whenNot: ["A fixed-width list rail + detail — use MasterDetail.", "A grid of many equal panes — use PaneGrid."],
+    srcText: 'import { SplitView } from "@/shared/ui/layouts/SplitView";\n\n<SplitView\n  primary={<Terminal/>}\n  secondary={<Inspector/>}\n/>',
+  },
+  GraphCanvas: {
+    version: "1.0.0", tags: ["layout", "page", "graph"], composes: ["Box", "Row", "Stack", "IconButton"],
+    variants: ["default", "with-rail"],
+    whenUse: ["A pan/zoom graph workspace (Streams graph · Org designer · Glance).", "Any node/edge canvas needing viewport wiring + an optional rail/inspector."],
+    whenNot: ["A static list or form — use MasterDetail.", "A CSS grid of equal panes — use PaneGrid."],
+    srcText: 'import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";\nimport { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>',
+  },
+  PaneGrid: {
+    version: "1.0.0", tags: ["layout", "page", "grid"], composes: ["Box"],
+    variants: ["2×2", "1×3"],
+    whenUse: ["A CSS grid of N equal panes (the Console tab grid).", "A dashboard of equally-weighted tiles kept alive across tab switches (hidden)."],
+    whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
+    srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
   },
 };
 

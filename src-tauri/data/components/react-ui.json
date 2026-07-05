@@ -2679,6 +2679,337 @@
       "src": "shared/ui/feedback/Skeleton.tsx",
       "srcText": "import { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\n\n<Skeleton />",
       "builtin": true
+    },
+    {
+      "id": "masterdetail",
+      "name": "MasterDetail",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "list-detail"
+      ],
+      "variants": [
+        "default",
+        "resizable"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "rail",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The master column — the list/nav rail."
+        },
+        {
+          "name": "detail",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The detail column — the selected item's editor/view."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional full-width toolbar/header above both columns."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Fixed rail width in px (the starting width when resizable)."
+        },
+        {
+          "name": "railPad",
+          "type": "Space",
+          "req": false,
+          "desc": "Rail inner padding — a rung/px or [block, inline] pair."
+        },
+        {
+          "name": "detailPad",
+          "type": "Space",
+          "req": false,
+          "desc": "Detail inner padding — a rung/px or [block, inline] pair."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Opt into a drag-resizable rail (a .resize-x splitter), bounded by railMin/railMax."
+        }
+      ],
+      "whenUse": [
+        "A list/nav rail beside a detail view (Personas · Skills · MCP · GitHub · Security · Settings).",
+        "Any master→detail page where selecting a rail row drives the detail column."
+      ],
+      "whenNot": [
+        "A free pan/zoom graph — use GraphCanvas.",
+        "A two-pane split with no fixed list rail — use SplitView."
+      ],
+      "src": "shared/ui/layouts/MasterDetail.tsx",
+      "srcText": "import { MasterDetail } from \"@/shared/ui/layouts/MasterDetail\";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>",
+      "builtin": true
+    },
+    {
+      "id": "splitview",
+      "name": "SplitView",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "split"
+      ],
+      "variants": [
+        "horizontal",
+        "vertical"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "primary",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The flexing pane — fills the remaining space (terminal, editor, main content)."
+        },
+        {
+          "name": "secondary",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The fixed-size, drag-resizable trailing pane (inspector, sidebar, detail)."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional full-width toolbar/header above the split."
+        },
+        {
+          "name": "orientation",
+          "type": "\"horizontal\" | \"vertical\"",
+          "req": false,
+          "desc": "horizontal → side by side; vertical → primary above secondary."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Draw the drag splitter (opt out for a fixed secondary), bounded by secondaryMin/secondaryMax."
+        },
+        {
+          "name": "secondarySize",
+          "type": "number",
+          "req": false,
+          "desc": "Secondary size in px (width when horizontal, height when vertical) — the starting size."
+        },
+        {
+          "name": "divider",
+          "type": "boolean",
+          "req": false,
+          "desc": "Draw the 1px divider border between the two panes."
+        }
+      ],
+      "whenUse": [
+        "A resizable two-pane split (the planner session's terminal + inspector).",
+        "A main content area beside a fixed, draggable side panel."
+      ],
+      "whenNot": [
+        "A fixed-width list rail + detail — use MasterDetail.",
+        "A grid of many equal panes — use PaneGrid."
+      ],
+      "src": "shared/ui/layouts/SplitView.tsx",
+      "srcText": "import { SplitView } from \"@/shared/ui/layouts/SplitView\";\n\n<SplitView\n  primary={<Terminal/>}\n  secondary={<Inspector/>}\n/>",
+      "builtin": true
+    },
+    {
+      "id": "graphcanvas",
+      "name": "GraphCanvas",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "graph"
+      ],
+      "variants": [
+        "default",
+        "with-rail"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "vp",
+          "type": "object",
+          "req": true,
+          "desc": "The viewport created by the page's useGraphViewport()."
+        },
+        {
+          "name": "world",
+          "type": "object",
+          "req": true,
+          "desc": "World (design-space) size { w, h } — drives the world layer's box."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Full toolbar content (search + palette + <ZoomControls vp={vp}/> + fit)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "World-layer content: grid, SVG edges, node cards — positioned in world coords."
+        },
+        {
+          "name": "rail",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional left rail/sidebar (feature-styled full node)."
+        },
+        {
+          "name": "inspector",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional inspector column on the right (feature-styled full node)."
+        },
+        {
+          "name": "overlays",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)."
+        },
+        {
+          "name": "grid",
+          "type": "boolean",
+          "req": false,
+          "desc": "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan."
+        },
+        {
+          "name": "gridSize",
+          "type": "number",
+          "req": false,
+          "desc": "Grid tile size in world px (scaled by zoom on screen)."
+        },
+        {
+          "name": "railResizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Make the left rail drag-resizable (a .resize-x splitter)."
+        },
+        {
+          "name": "inspectorResizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Make the right inspector drag-resizable (splitter on its left edge)."
+        },
+        {
+          "name": "onBackgroundClick",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires on a genuine click on the empty canvas backdrop (not a pan-drag end, not a node press)."
+        }
+      ],
+      "whenUse": [
+        "A pan/zoom graph workspace (Streams graph · Org designer · Glance).",
+        "Any node/edge canvas needing viewport wiring + an optional rail/inspector."
+      ],
+      "whenNot": [
+        "A static list or form — use MasterDetail.",
+        "A CSS grid of equal panes — use PaneGrid."
+      ],
+      "src": "shared/ui/layouts/GraphCanvas.tsx",
+      "srcText": "import { GraphCanvas, ZoomControls } from \"@/shared/ui/layouts/GraphCanvas\";\nimport { useGraphViewport } from \"@/shared/ui/layouts/useGraphViewport\";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>",
+      "builtin": true
+    },
+    {
+      "id": "panegrid",
+      "name": "PaneGrid",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "grid"
+      ],
+      "variants": [
+        "2×2",
+        "1×3"
+      ],
+      "composes": [
+        "Box"
+      ],
+      "props": [
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The pane cells — N children laid across the grid tracks (cols × rows)."
+        },
+        {
+          "name": "cols",
+          "type": "number",
+          "req": true,
+          "desc": "Column track count → repeat(cols, 1fr). Clamped to ≥ 1."
+        },
+        {
+          "name": "rows",
+          "type": "number",
+          "req": true,
+          "desc": "Row track count → repeat(rows, 1fr). Clamped to ≥ 1."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "req": false,
+          "desc": "Gap between cells in px."
+        },
+        {
+          "name": "pad",
+          "type": "number",
+          "req": false,
+          "desc": "Grid inner padding in px."
+        },
+        {
+          "name": "hidden",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)."
+        }
+      ],
+      "whenUse": [
+        "A CSS grid of N equal panes (the Console tab grid).",
+        "A dashboard of equally-weighted tiles kept alive across tab switches (hidden)."
+      ],
+      "whenNot": [
+        "A single list+detail split — use MasterDetail.",
+        "A pan/zoom graph — use GraphCanvas."
+      ],
+      "src": "shared/ui/layouts/PaneGrid.tsx",
+      "srcText": "import { PaneGrid } from \"@/shared/ui/layouts/PaneGrid\";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>",
+      "builtin": true
     }
   ]
 }
