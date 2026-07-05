@@ -46,7 +46,13 @@ jobs:
 
       # Builds the frontend (tauri.conf beforeBuildCommand → `npm run build`) then the Windows
       # bundle (targets: "all" → NSIS `.exe` + WiX `.msi`).
+      # BSC_STAGE_TOOLCHAIN=1 (#1277): stage-sidecar (run by beforeBuildCommand with the target triple
+      # set) fetches+verifies+extracts `gh` + PortableGit into the beside-the-exe layout first.
+      # Best-effort — a miss only warns; shipping the staged files still needs the deferred
+      # externalBin/resources wiring (#1277, see scripts/stage-sidecar.mjs).
       - name: Build Windows bundle
+        env:
+          BSC_STAGE_TOOLCHAIN: '1'
         run: npm run tauri -- build
 
       - name: Upload Windows installers to the release
