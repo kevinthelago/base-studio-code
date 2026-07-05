@@ -184,7 +184,7 @@ fn compose_path(
         return None; // nothing bundled → don't touch PATH (byte-identical to inheriting it)
     }
     let mut parts: Vec<String> = Vec::new();
-    let mut push = |s: String, parts: &mut Vec<String>| {
+    let push = |s: String, parts: &mut Vec<String>| {
         if !s.is_empty() && !parts.iter().any(|p| p == &s) {
             parts.push(s);
         }
