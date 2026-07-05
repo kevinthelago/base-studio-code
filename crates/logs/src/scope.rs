@@ -8,7 +8,7 @@
 //! targets we already emit.
 //!
 //! This module owns the config type, the matching + cascade, and the JSON persistence — all
-//! **Tauri-free + pure** so the desktop `GraphLogger` (`observability::graph_log`) and the `bsc log`
+//! **Tauri-free + pure** so the desktop `GraphLogger` (`observability::graph_log`) and the `bsc logs scope`
 //! CLI ([`run_cli`]) share ONE policy. The security property lives one layer up (the file sink is
 //! unconditional); this module only ever decides what the CONSOLE view shows.
 
@@ -107,7 +107,7 @@ impl Default for ScopeConfig {
     }
 }
 
-/// Normalize a user-supplied scope token to a tree key. A control surface (`bsc log set fleet …`, the
+/// Normalize a user-supplied scope token to a tree key. A control surface (`bsc logs scope set fleet …`, the
 /// `log_set_scope` command) accepts the app-subsystem shorthand; this expands it to a real target
 /// prefix:
 /// - `""` / `root` / `all` / `*` → the global root (`""`, governs deps too);
@@ -206,9 +206,9 @@ impl ScopeConfig {
     }
 }
 
-// ── The `bsc log` control CLI (#1389 surface 1) ──────────────────────────────────────────────────
+// ── The `bsc logs scope` control CLI (#1389 surface 1) ──────────────────────────────────────────────────
 //
-// `bsc log set <scope> <level|off>` · `bsc log list` · `bsc log reset` — the terminal/agent surface
+// `bsc logs scope set <scope> <level|off>` · `bsc logs scope list` · `bsc logs scope reset` — the terminal/agent surface
 // that toggles CONSOLE scopes live from a running session (#1325's bsc-*-over-shared-state pattern).
 // It writes the shared `log-scopes.json`; the desktop `GraphLogger`'s external-write poll reloads it
 // within ~2s, so an agent can quiet or light up a subsystem mid-debug with no restart.
@@ -218,7 +218,7 @@ use bsc_cli_util::{resolve_store_path, CmdDoc};
 const TAGLINE: &str =
     "toggle CONSOLE log scopes at runtime (the file/audit log is always kept, #1389)";
 
-/// The env override (and the `bsc log` reader) for the scope-config file path. Mirrors the store-CLI
+/// The env override (and the `bsc logs scope` reader) for the scope-config file path. Mirrors the store-CLI
 /// `--flag` → `$ENV` → default precedence via `resolve_store_path`.
 pub const SCOPES_ENV: &str = "BSC_LOG_SCOPES";
 
@@ -238,7 +238,7 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "the current scope graph (prefix → console level), the default",
         usage: "\
 USAGE:
-  bsc log list [--json]
+  bsc logs scope list [--json]
 
 Print every scope key and its console policy. The FILE/audit log is unaffected by any of these —
 they only gate what the console (stdout / devtools) VIEW shows.",
@@ -248,28 +248,28 @@ they only gate what the console (stdout / devtools) VIEW shows.",
         summary: "set a scope's console level (or off)",
         usage: "\
 USAGE:
-  bsc log set <scope> <level>
+  bsc logs scope set <scope> <level>
 
 <scope>  an app subsystem by bare name (fleet, console::pty, github, planner, frontend::planner, …)
          or `root`/`all` for the global floor. Cascades to the whole subtree.
 <level>  off | error | warn | info | debug | trace   (off silences the CONSOLE only; the file log
          still records everything).
 
-  bsc log set fleet off            # quiet the whole fleet subtree in the console
-  bsc log set console::pty debug   # light up one module while debugging",
+  bsc logs scope set fleet off            # quiet the whole fleet subtree in the console
+  bsc logs scope set console::pty debug   # light up one module while debugging",
     },
     CmdDoc {
         name: "reset",
         summary: "restore the built-in defaults (root=warn, app=info)",
         usage: "\
 USAGE:
-  bsc log reset
+  bsc logs scope reset
 
 Restore the default graph: the global root shows warn (deps stay quiet) and the app crate shows info.",
     },
 ];
 
-/// `bsc log <cmd>` entrypoint: `args` is everything after `bsc log`; `prog` is the display name for
+/// `bsc logs scope <cmd>` entrypoint: `args` is everything after `bsc logs scope`; `prog` is the display name for
 /// help/errors. Writes/reads the shared `log-scopes.json` (`--file <path>` / `$BSC_LOG_SCOPES` /
 /// default). Help is resolved before touching the file.
 pub fn run_cli(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -312,8 +312,8 @@ pub fn run_cli(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
         }
         "set" => {
-            let scope = positional.get(1).cloned().ok_or("usage: bsc log set <scope> <level>")?;
-            let level_raw = positional.get(2).cloned().ok_or("usage: bsc log set <scope> <level>")?;
+            let scope = positional.get(1).cloned().ok_or("usage: bsc logs scope set <scope> <level>")?;
+            let level_raw = positional.get(2).cloned().ok_or("usage: bsc logs scope set <scope> <level>")?;
             let level = ScopeLevel::parse(&level_raw)
                 .ok_or_else(|| format!("unknown level '{level_raw}' (off|error|warn|info|debug|trace)"))?;
             let mut cfg = ScopeConfig::load(&path);
@@ -483,7 +483,7 @@ mod tests {
         let go = |args: Vec<&str>| {
             let mut v: Vec<String> = args.into_iter().map(String::from).collect();
             v.extend(["--file".into(), f.clone()]);
-            run_cli(v, "bsc log")
+            run_cli(v, "bsc logs scope")
         };
         // set writes the file with the normalized key.
         assert!(go(vec!["set", "fleet", "off"]).is_ok());
@@ -495,7 +495,7 @@ mod tests {
         assert!(go(vec!["reset"]).is_ok());
         assert_eq!(ScopeConfig::load(&path), ScopeConfig::default());
         // Help works without touching the file (and unknown verb errors).
-        assert!(run_cli(vec!["help".into()], "bsc log").is_ok());
+        assert!(run_cli(vec!["help".into()], "bsc logs scope").is_ok());
         assert!(go(vec!["frobnicate"]).is_err());
         let _ = std::fs::remove_file(&path);
     }

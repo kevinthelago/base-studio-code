@@ -22,8 +22,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("org", "user org store: persona-relationship graph (positions + relationships)"),
     ("component", "component library: proven components in technology-scoped kits"),
     ("ui", "UI spec SDK: the KitNode contract (schema) + validate a spec (#1852)"),
-    ("logs", "unified logs + perf + cost (read-only)"),
-    ("log", "toggle CONSOLE log scopes at runtime (file/audit log always kept)"),
+    ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
@@ -60,7 +59,6 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "component" => bsc_component::cli::run(rest, "bsc component"),
         "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
-        "log" => logs::scope::run_cli(rest, "bsc log"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
