@@ -21,6 +21,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
     ("org", "user org store: persona-relationship graph (positions + relationships)"),
     ("component", "component library: proven components in technology-scoped kits"),
+    ("ui", "UI spec SDK: the KitNode contract (schema) + validate a spec (#1852)"),
     ("logs", "unified logs + perf + cost (read-only)"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
@@ -56,6 +57,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
         "org" => bsc_org::cli::run(rest, "bsc org"),
         "component" => bsc_component::cli::run(rest, "bsc component"),
+        "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         #[cfg(feature = "data")]
