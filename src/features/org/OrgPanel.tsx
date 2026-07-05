@@ -14,6 +14,7 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
 import { OrgInspector } from "./OrgInspector";
+import { OrgContextMenu } from "./OrgContextMenu";
 import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
 import { autoLayout, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
@@ -41,6 +42,8 @@ export function OrgPanel() {
   const savedZoom = useAppStore((s) => s.orgZoom[orgId]);
   // Open with nothing selected (the empty sentinel — inspector empty, no dimming; see onBackgroundClick).
   const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
+  // Right-click context menu (#2385): the cursor position + the target it was opened on.
+  const [menu, setMenu] = useState<{ x: number; y: number; target: Selection } | null>(null);
   // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
   const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
   // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph).
@@ -139,6 +142,7 @@ export function OrgPanel() {
   });
 
   return (
+    <>
     <GraphCanvas
       vp={vp}
       world={{ w: CANVAS_W, h: CANVAS_H }}
@@ -239,8 +243,22 @@ export function OrgPanel() {
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
           onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
           onDrillPool={onDrillPool}
+          onContext={(target, e) => { setSel(target); setMenu({ x: e.clientX, y: e.clientY, target }); }}
         />
       </Box>
     </GraphCanvas>
+    {menu && (
+      <OrgContextMenu
+        x={menu.x} y={menu.y}
+        deleteLabel={menu.target.type === "node" ? "Delete position" : "Delete relationship"}
+        onDelete={() => {
+          if (menu.target.type === "node") removePosition(org.id, menu.target.id);
+          else removeRelationship(org.id, menu.target.id);
+          setSel({ type: "node", id: "" });
+        }}
+        onClose={() => setMenu(null)}
+      />
+    )}
+    </>
   );
 }
