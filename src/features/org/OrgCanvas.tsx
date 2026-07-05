@@ -23,7 +23,6 @@ interface CanvasProps {
   sel: Selection;
   /** Current viewport scale — converts a client-pixel drag delta into design-space. */
   scale: number;
-  gridOn: boolean;
   /** Connect-mode is active — a node press is a connect click, never a drag. */
   connecting: boolean;
   /** True during a background pan-drag — suppresses the edge click that ends it. */
@@ -67,7 +66,7 @@ function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
 
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function OrgCanvas(props: CanvasProps) {
-  const { org, personas, sel, scale, gridOn, connecting, dragMoved, poolInfo,
+  const { org, personas, sel, scale, connecting, dragMoved, poolInfo,
     onSelectNode, onSelectEdge, onMoveNode, onDrillPool, onContext } = props;
   /** Right-click a node/edge → open the context menu at the cursor (delete). */
   const context = (s: Selection) => (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onContext?.(s, e); };
@@ -140,10 +139,8 @@ export function OrgCanvas(props: CanvasProps) {
 
   return (
     <>
-      {gridOn && (
-        <Box style={{ position: "absolute", inset: 0, pointerEvents: "none",
-          backgroundImage: "radial-gradient(color-mix(in oklch, var(--fg) 8%, transparent) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
-      )}
+      {/* The dotted graph-paper backdrop is owned by the shared GraphCanvas (an infinite viewport grid),
+          so it fills the whole canvas instead of stopping at the world box this content overflows. */}
 
       {/* edges */}
       <svg viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} style={{ position: "absolute", left: 0, top: 0, width: CANVAS_W, height: CANVAS_H, overflow: "visible" }}>
