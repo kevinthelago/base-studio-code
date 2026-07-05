@@ -26,6 +26,34 @@ export interface SubStep {
   loop?: SubStepLoop;
 }
 
+// ── Dynamic-blueprint additions (#1854 Phase a) ──────────────────────────────
+// The first slice of the dynamic-blueprints epic: a stage can adapt its prompt to the DRIVING
+// MODEL and can carry ARCHETYPE SEED CONTENT. Both are optional and additive — a stage without
+// them behaves exactly as before (its single `prompt`, no seed).
+
+/** A model CAPABILITY tier — the axis model-variant prompts key on (#1854 Phase a). Deliberately
+ *  keyed by *capability*, not by a vendor model id, because blueprints are WAN-distributable and
+ *  must not couple to a specific model/provider (they run on any {@link LlmProvider} via the
+ *  bsc-agent "run on any model" track, #1078):
+ *   - `frontier` — top frontier models (Claude Opus/Sonnet, GPT-4-class). The default open-ended
+ *     prompt (the base `prompt`) is already written for this tier, so an explicit variant is only
+ *     needed to override it.
+ *   - `standard` — mid-capability hosted models (Haiku-class, smaller hosted models).
+ *   - `local`    — weak local models. The headline payoff: a tight, schema-shaped, more-explicit
+ *     directive prompt that lets a weak model plan reliably.
+ *  A tier with no variant defined falls back to the base `prompt` (see {@link resolveStagePrompt}). */
+export type ModelCapabilityTier = "frontier" | "standard" | "local";
+
+/** Archetype seed content for a stage (#1854 Phase a) — starter content the stage can offer when it
+ *  opens (e.g. a "twitter clone" archetype → a starter feature set for the Features stage). Additive:
+ *  a stage with no `seed` behaves as today. Seeds; the planner + user still shape the final artifact. */
+export interface StageSeed {
+  /** The archetype this seed represents (a descriptive slug, e.g. "twitter-clone"). */
+  archetype?: string;
+  /** The starter content, as markdown — offered as an injectable option when the stage is active. */
+  content: string;
+}
+
 // ── Sections (the canonical planning stages) ─────────────────────────────────
 
 /** One discovery-checklist dimension. The editor-presentation fields (`icon`/`hue`/`blurb`)
@@ -55,6 +83,15 @@ export interface SectionDef {
   deps: string[];
   blurb: string;
   prompt: string;
+  /** Model-variant prompts (#1854 Phase a) — per {@link ModelCapabilityTier} overrides of `prompt`,
+   *  so a stage adapts its instructions to the DRIVING model (a tight, schema-shaped prompt for a
+   *  weak `local` model alongside the open-ended default). Absent tier ⇒ the base `prompt` is used
+   *  (resolved via {@link resolveStagePrompt}); the whole field absent ⇒ today's single-prompt
+   *  behavior. Reference-by-tier; unknown tiers are simply ignored. */
+  promptVariants?: Partial<Record<ModelCapabilityTier, string>>;
+  /** Archetype seed content (#1854 Phase a) — starter content this stage offers when active (e.g. a
+   *  starter feature set for a known archetype). Absent ⇒ no seed (today's behavior). */
+  seed?: StageSeed;
   /** UI stage only (#604): the self-contained instruction the file-intake "Route" action injects
    *  into the planner to read the staged design files and route each to the right repo. Carried as
    *  stage DATA (like `prompt`) so it isn't hardcoded in the frontend. Absent ⇒ no route prompt. */

@@ -226,7 +226,7 @@ export function Fleet() {
             <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Fleet</Text>
             <Text as="div" size={12} tone="muted" style={{ marginTop: 4 }}>
               {hasFleet
-                ? <>{activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention</>
+                ? <>{activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention{kpis.maintenance > 0 ? ` · ${kpis.maintenance} parked` : ""}</>
                 : "No fleet running — launch one from a project's plan to populate these panels."}
             </Text>
           </Box>

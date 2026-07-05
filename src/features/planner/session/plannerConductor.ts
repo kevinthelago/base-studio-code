@@ -4,7 +4,8 @@
 // through the items one by one as each completes. This file is the pure decision ("what to
 // inject next"); the wiring (pty_write + idle timing + the injected-once guard + building the
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
-import type { BlueprintStage } from "../stages/blueprints";
+import type { BlueprintStage, ModelCapabilityTier } from "../stages/blueprints";
+import { resolveStagePrompt, stageSeed } from "../stages/blueprints";
 
 export interface StagePrompt {
   /** Human label for the picker row (the stage name, or a substep's label/key). */
@@ -16,12 +17,17 @@ export interface StagePrompt {
 /**
  * The injectable prompts for a stage, surfaced in the focused pane's "?" helper so the USER can
  * pick what to inject (the app no longer auto-injects). The stage's own overview prompt comes
- * first, then each substep's prompt in order. Prompts that are empty/whitespace are skipped.
+ * first (adapted to the driving model's capability `tier` via {@link resolveStagePrompt}, #1854
+ * Phase a), then — when the stage carries archetype seed content (`section.seed`) — a "seed"
+ * row, then each substep's prompt in order. Prompts that are empty/whitespace are skipped.
  */
-export function stagePrompts(section: BlueprintStage | undefined): StagePrompt[] {
+export function stagePrompts(section: BlueprintStage | undefined, tier?: ModelCapabilityTier): StagePrompt[] {
   if (!section) return [];
   const out: StagePrompt[] = [];
-  if (section.prompt?.trim()) out.push({ label: `${section.name} — overview`, text: section.prompt });
+  const overview = resolveStagePrompt(section, tier);
+  if (overview.trim()) out.push({ label: `${section.name} — overview`, text: overview });
+  const seed = stageSeed(section);
+  if (seed) out.push({ label: `${section.name} — seed starter content`, text: seed.content });
   for (const sub of section.substeps ?? []) {
     if (sub.prompt?.trim()) out.push({ label: sub.label || sub.key, text: sub.prompt });
   }
@@ -63,11 +69,14 @@ export function nextInjection(
   section: BlueprintStage | undefined,
   injected: Set<string>,
   state: ConductorState,
+  tier?: ModelCapabilityTier,
 ): Injection | null {
   if (!section) return null;
 
   const stageId = `${section.key}:_stage`;
-  if (!injected.has(stageId)) return { id: stageId, prompt: section.prompt };
+  // The stage-orientation prompt adapts to the driving model's capability tier (#1854 Phase a);
+  // absent a tier/variant this resolves to the base `prompt` — today's behavior.
+  if (!injected.has(stageId)) return { id: stageId, prompt: resolveStagePrompt(section, tier) };
 
   for (const sub of section.substeps ?? []) {
     if (sub.loop) {
