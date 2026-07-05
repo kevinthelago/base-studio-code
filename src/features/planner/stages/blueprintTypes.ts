@@ -6,6 +6,7 @@
 
 import { type ClassificationSignals } from "./classification";
 import { type StageGate, type Requirement } from "./stageGate";
+import { type AgentFlow } from "../fleet/agentFlow";
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
@@ -176,6 +177,28 @@ export interface BlueprintGist {
   updatedAt?: string;
 }
 
+/** Fleet POLICY a blueprint declares (#1854 Phase b) — the default per-stream {@link AgentProfile}
+ *  and {@link AgentFlow} the planner instantiates when it generates this project type's fleet. A
+ *  COMPOSED typed sub-model (epic discipline #1: not N flat top-level fields), carrying only the
+ *  *recipe/policy* — the DEFAULTS — while the concrete per-stream config stays planner-GENERATED
+ *  per-project (discipline #2: static template vs generation policy). Resolution precedence is
+ *  stream-declared → this policy → the hard launch-time default (see `resolveStreamProfile` /
+ *  `resolveStreamFlow` in `../fleet/fleetPolicy`). Both fields optional ⇒ when unset, today's
+ *  launch-time defaults apply, byte-for-byte.
+ *
+ *  Trust boundary (discipline #3): a blueprint only *seeds* the launch default here — the role
+ *  gate (#219) still caps the session. The request-vs-cap permission POSTURE is Phase (c), out of
+ *  scope for this sub-model. */
+export interface FleetPolicy {
+  /** Default {@link AgentProfile} id for a WORKER stream that doesn't pin its own `profile` (#289).
+   *  A reference-by-id; an unknown id just falls through to the role default at launch. Applies to
+   *  worker streams only — never the director, which keeps its role's read-only review profile. */
+  profile?: string;
+  /** Default {@link AgentFlow} (autonomy + push + trigger + gate) for a stream that doesn't declare
+   *  its own `flow` (#297). Absent ⇒ the launch path applies {@link DEFAULT_FLOW}. */
+  flow?: AgentFlow;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -198,6 +221,10 @@ export interface Blueprint {
   /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
    *  each section's own `mcp`. Server NAMES (the portable ref). */
   mcp?: string[];
+  /** Fleet policy (#1854 Phase b) — the DEFAULT per-stream profile + flow the planner instantiates
+   *  when it generates this project type's fleet. A composed sub-model; see {@link FleetPolicy}.
+   *  Absent ⇒ today's launch-time defaults apply (byte-identical). */
+  fleetPolicy?: FleetPolicy;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
