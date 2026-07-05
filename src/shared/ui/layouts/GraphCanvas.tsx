@@ -32,6 +32,14 @@ export interface GraphCanvasProps {
   inspector?: ReactNode;
   /** Fixed overlays drawn over the canvas but NOT transformed (hints, legends). */
   overlays?: ReactNode;
+  /** Dotted graph-paper backdrop. An INFINITE grid on the viewport (not the world box), so it always
+   *  fills the visible area and never stops at the world edge, while its dot spacing tracks zoom and
+   *  its origin tracks pan — i.e. it reads as world-aligned graph paper under the whole graph. */
+  grid?: boolean;
+  /** Grid tile size in world px (scaled by zoom on screen). Default 24. */
+  gridSize?: number;
+  /** Grid dot color. Default a faint `--fg` mix. */
+  gridColor?: string;
   /** Escape hatch for the canvas backdrop. Default var(--bg). */
   canvasBackground?: string;
   /** Extra class on the root (a page scoping hook). */
@@ -51,14 +59,25 @@ export interface GraphCanvasProps {
 }
 
 export function GraphCanvas({
-  vp, world, toolbar, children, rail, inspector, overlays, canvasBackground, className,
+  vp, world, toolbar, children, rail, inspector, overlays,
+  grid = false, gridSize = 24, gridColor = "color-mix(in oklch, var(--fg) 8%, transparent)",
+  canvasBackground, className,
   railResizable = false, railWidth = 260, railMin = 200, railMax = 460,
   inspectorResizable = false, inspectorWidth = 344, inspectorMin = 260, inspectorMax = 620,
   onBackgroundClick,
 }: GraphCanvasProps) {
   // Pull the plain viewport values out as locals — worldTransform is a computed style object, not a
   // ref, so reading it (and the callback refs) here keeps the render free of ref-access.
-  const { setVp, onCanvasDown, worldTransform } = vp;
+  const { setVp, onCanvasDown, worldTransform, view } = vp;
+  // The infinite grid lives on the viewport (untransformed) so it fills the whole visible area: the
+  // dot SPACING scales with zoom (`gridSize * scale`) and the origin follows the pan (`tx,ty`), so it
+  // stays aligned to world coords without ever stopping at the world box the content overflows.
+  const gridStyle: CSSProperties | undefined = grid ? {
+    position: "absolute", inset: 0, pointerEvents: "none",
+    backgroundImage: `radial-gradient(${gridColor} 1px, transparent 1px)`,
+    backgroundSize: `${gridSize * view.scale}px ${gridSize * view.scale}px`,
+    backgroundPosition: `${view.tx}px ${view.ty}px`,
+  } : undefined;
   // Hooks always run (rules of hooks); the live size only drives a column when that side is resizable.
   const railDrag = useDragResize({ initial: railWidth, min: railMin, max: railMax, axis: "x" });
   const inspDrag = useDragResize({ initial: inspectorWidth, min: inspectorMin, max: inspectorMax, axis: "x", invert: true });
@@ -87,6 +106,7 @@ export function GraphCanvas({
             onBackgroundClick();
           } : undefined}
           style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, background: canvasBackground ?? "var(--bg)" }}>
+          {gridStyle && <div style={gridStyle} />}
           <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, ...worldTransform, willChange: "transform" }}>
             {children}
           </Box>
