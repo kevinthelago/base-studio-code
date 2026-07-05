@@ -4,8 +4,8 @@ import {
   stageStatus, incompleteStages, planStagesComplete, currentStage, confirmedSignal, skippedSignal,
   isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, stageDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
-  dedupeSections,
-  STAGE_DEFS, type BlueprintStage, type Blueprint,
+  dedupeSections, resolveStagePrompt, stageSeed,
+  STAGE_DEFS, type BlueprintStage, type Blueprint, type SectionDef,
 } from "./blueprints";
 import { SKILLS } from "@/shared/data/skills";
 import { PLAN_STAGES, buildPlanStageState } from "./planStages";
@@ -151,6 +151,75 @@ describe("blueprints — seed library", () => {
     expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpStagesReady: true, bpValid: true });
   });
 
+});
+
+// #1854 Phase (a): a stage can carry model-variant prompts (adapt the prompt to the driving model's
+// capability tier) + archetype seed content. Both are additive — absent ⇒ today's single-prompt,
+// no-seed behavior.
+describe("dynamic blueprints — model-variant prompts (#1854a)", () => {
+  const base: Pick<SectionDef, "prompt" | "promptVariants"> = {
+    prompt: "Open-ended: design the feature set with the user.",
+    promptVariants: {
+      local: "Tight: list EXACTLY 5 features as `- name: one-line` and nothing else.",
+    },
+  };
+
+  it("returns the base prompt when no tier is given (today's behavior)", () => {
+    expect(resolveStagePrompt(base)).toBe(base.prompt);
+  });
+
+  it("returns the base prompt for a tier that has no variant (direct fallback, no cascade)", () => {
+    // `standard` isn't defined and `frontier`'s prompt IS the base → both fall back to `prompt`.
+    expect(resolveStagePrompt(base, "standard")).toBe(base.prompt);
+    expect(resolveStagePrompt(base, "frontier")).toBe(base.prompt);
+  });
+
+  it("picks the tier's variant when one is defined (the weak-local-model payoff)", () => {
+    expect(resolveStagePrompt(base, "local")).toBe(base.promptVariants!.local);
+  });
+
+  it("falls back to the base prompt when the variant is empty/whitespace", () => {
+    const blankLocal = { prompt: "P", promptVariants: { local: "   " } } as Pick<SectionDef, "prompt" | "promptVariants">;
+    expect(resolveStagePrompt(blankLocal, "local")).toBe("P");
+  });
+
+  it("a stage with no promptVariants resolves to its base prompt for every tier", () => {
+    const plain = { prompt: "just the one prompt" } as Pick<SectionDef, "prompt" | "promptVariants">;
+    for (const tier of ["frontier", "standard", "local"] as const) {
+      expect(resolveStagePrompt(plain, tier)).toBe("just the one prompt");
+    }
+  });
+
+  it("returns '' for a missing section", () => {
+    expect(resolveStagePrompt(undefined)).toBe("");
+    expect(resolveStagePrompt(undefined, "local")).toBe("");
+  });
+
+  it("every built-in stage still resolves its plain prompt unchanged (additive, no regressions)", () => {
+    for (const [key, def] of Object.entries(STAGE_DEFS)) {
+      expect(resolveStagePrompt(def), `stage '${key}' base`).toBe(def.prompt);
+      // No built-in stage declares variants yet — so a tiered resolve is identical.
+      expect(resolveStagePrompt(def, "local"), `stage '${key}' local`).toBe(def.prompt);
+    }
+  });
+});
+
+describe("dynamic blueprints — archetype seed content (#1854a)", () => {
+  it("returns the seed when the stage carries non-empty content", () => {
+    const seeded = { seed: { archetype: "twitter-clone", content: "- Post a tweet\n- Follow a user" } } as Pick<SectionDef, "seed">;
+    expect(stageSeed(seeded)?.archetype).toBe("twitter-clone");
+    expect(stageSeed(seeded)?.content).toContain("Post a tweet");
+  });
+
+  it("treats an empty/whitespace or absent seed as none", () => {
+    expect(stageSeed({ seed: { content: "   " } } as Pick<SectionDef, "seed">)).toBeUndefined();
+    expect(stageSeed({} as Pick<SectionDef, "seed">)).toBeUndefined();
+    expect(stageSeed(undefined)).toBeUndefined();
+  });
+
+  it("no built-in stage carries a seed yet (additive default)", () => {
+    for (const def of Object.values(STAGE_DEFS)) expect(stageSeed(def)).toBeUndefined();
+  });
 });
 
 describe("blueprints — computeStatus (dependency locks)", () => {
