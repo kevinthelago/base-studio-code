@@ -16,6 +16,7 @@ import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";
 import { PaneAt } from "./PaneAt";
 
 function resolvePaneName(
@@ -283,18 +284,18 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
         // moment the user switches back.
         const isFullscreenInTab = isActiveTab && fullscreenPaneIdx >= 0 && fullscreenPaneIdx < tPaneCount;
         return (
-          // eslint-disable-next-line no-restricted-syntax -- conditional-display grid (toggles grid/none per active tab)
-          <div
+          // The shared PaneGrid template (#2197): `hidden` keeps a background tab's grid mounted
+          // (display:none) so its xterm/PTY listeners survive the switch; a fullscreened pane
+          // collapses this tab's grid to 1×1 while the other cells hide themselves.
+          <PaneGrid
             key={ti}
             className="console-grid"
-            style={{
-              display: isActiveTab ? "grid" : "none",
-              gridTemplateColumns: isFullscreenInTab ? "1fr" : `repeat(${tcols || 1}, 1fr)`,
-              gridTemplateRows:    isFullscreenInTab ? "1fr" : `repeat(${trows || 1}, 1fr)`,
-            }}
+            hidden={!isActiveTab}
+            cols={isFullscreenInTab ? 1 : (tcols || 1)}
+            rows={isFullscreenInTab ? 1 : (trows || 1)}
           >
             {Array.from({ length: tPaneCount }, (_, i) => renderPane(ti, i, isFullscreenInTab))}
-          </div>
+          </PaneGrid>
         );
       })}
     </Stack>
