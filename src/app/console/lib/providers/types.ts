@@ -1,3 +1,5 @@
+import type { FirstRunInstall } from "./providers/claudeInstall";
+
 export interface ProviderLaunchConfig {
   /** Optional model name, used by providers that accept a model arg (e.g. Ollama). */
   model?: string;
@@ -23,4 +25,10 @@ export interface ConsoleProvider {
    * baking) are engaged. Absent/false → bare shell launch without Claude-specific wiring.
    */
   isClaude?: boolean;
+  /**
+   * For a proprietary CLI we install-on-first-run rather than bundle (#1277 — Claude Code): the
+   * consented `npm i -g` descriptor a first-run flow uses when `prereqProbe` reports the CLI absent.
+   * Absent for bundled/self-contained providers (e.g. `bsc-agent`).
+   */
+  firstRunInstall?: FirstRunInstall;
 }

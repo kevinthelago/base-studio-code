@@ -18,6 +18,10 @@ pub(crate) const PREFLIGHT_MARK: &str = "BSC_PREREQ";
 /// shell, run `-lc <script>` in `cwd` under `no_window`, and only differ in the script and how
 /// the stdout is parsed. On spawn failure logs a warning tagged `label` and returns an empty
 /// string, so callers degrade to an all-missing result rather than erroring.
+///
+/// The env is built with [`session_env`], so a BUNDLED host toolchain (#1277) is folded into `PATH`
+/// exactly as it is for a real session — meaning `command -v gh`/`git` here reflect the SAME tools an
+/// agent will resolve, and the readiness/diagnostics surfaces stop warning about a tool we now ship.
 fn run_probe_shell(
     label: &str,
     script: &str,
@@ -178,7 +182,10 @@ pub(crate) fn interpret_preflight(stdout: &str, git_bash: GitBashProbe) -> Vec<P
 pub(crate) fn detect_git_bash() -> GitBashProbe {
     #[cfg(windows)]
     {
-        match crate::platform::shell::find_git_bash() {
+        // #1277: a BUNDLED PortableGit bash counts as found — the app ships it, so Diagnostics must
+        // not warn about a missing Git Bash when we now supply one. Prefer the bundled copy (what
+        // `resolve_shell` also picks), then the system Git Bash.
+        match crate::platform::shell::bundled_git_bash().or_else(crate::platform::shell::find_git_bash) {
             Some(p) => GitBashProbe::Found(p),
             None => GitBashProbe::Missing,
         }
