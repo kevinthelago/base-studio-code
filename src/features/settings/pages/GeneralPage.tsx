@@ -4,6 +4,7 @@ import { SessionsBehaviorCard } from "../cards/SessionsBehaviorCard";
 import { TerminalFontSizeCard } from "../cards/TerminalFontSizeCard";
 import { AccentColorCard } from "../cards/AccentColorCard";
 import { ThemeCard } from "../cards/ThemeCard";
+import { KitThemeCard } from "../cards/KitThemeCard";
 import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
@@ -43,6 +44,7 @@ export function GeneralPage() {
       <TerminalFontSizeCard />
       <AccentColorCard />
       <ThemeCard />
+      <KitThemeCard />
 
       <Sub>Keyboard</Sub>
       <KeyboardCard />

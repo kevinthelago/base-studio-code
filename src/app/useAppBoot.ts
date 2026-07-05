@@ -5,6 +5,7 @@ import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings/lib/appearance";
+import { applyThemeToRoot } from "@/shared/ui/kit/theme";
 
 /** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't
  *  load the cold-start window (#1033). Metrics during boot have no diagnostic value. */
@@ -17,6 +18,7 @@ const METRICS_GRACE_MS = 5000;
  */
 export function useAppBoot() {
   const accent = useAppStore((s) => s.accent);
+  const kitTheme = useAppStore((s) => s.kitTheme);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
 
@@ -29,6 +31,11 @@ export function useAppBoot() {
     root.style.setProperty("--accent", a);
     root.style.setProperty("--accent-dim", accentDim);
   }, [accent]);
+
+  // Apply the chosen kit theme (#1852 Phase 3) to the semantic component tokens at the document root,
+  // live on change and after rehydrate. A theme sets --card-*/--btn-*/--field-*/--chip-* overrides;
+  // switching clears the prior theme's set first, so `default` restores the stylesheet look.
+  useEffect(() => { applyThemeToRoot(kitTheme); }, [kitTheme]);
 
   // Startup timing trace (#perf): mark the gate commit, then the first paint of the
   // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
