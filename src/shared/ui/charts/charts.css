@@ -38,6 +38,8 @@
 .wd.waiting { background: var(--info); }
 .wd.asking { background: oklch(0.7 0.12 290); }
 .wd.done { background: var(--success); }
+/* maintenance (#1957): a finished worker parked & ready — calm teal, deliberately NOT pulsing (it idles cheaply, distinct from a running worker). */
+.wd.maintenance { background: oklch(0.75 0.10 195); }
 @keyframes chartPulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
 
 /* chart hover tooltip */
