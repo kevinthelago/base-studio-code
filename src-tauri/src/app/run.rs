@@ -267,6 +267,7 @@ pub fn run() {
             tunnel::tunnel_automation_ran,
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
+            tunnel::tunnel_set_hook_telemetry,
             fleet::inspect::read_worktree_changes,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,

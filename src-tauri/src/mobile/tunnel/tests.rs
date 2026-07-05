@@ -211,6 +211,42 @@ fn shared_fixture_matches_serde() {
         serde_json::to_value(ServerMsg::PaneList { panes }).unwrap(),
         s["pane_list"]
     );
+
+    // hook_telemetry (M3 / #937): read-only projection — deserialize the summary, then
+    // re-serialize the frame to compare against the fixture byte-shape.
+    let telemetry: HookTelemetryFrame =
+        serde_json::from_value(s["hook_telemetry"]["telemetry"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(ServerMsg::HookTelemetry { telemetry }).unwrap(),
+        s["hook_telemetry"]
+    );
+}
+
+/// Round-trip the hook-telemetry frame (M3 / #937) through serde: encode → decode → compare.
+/// Guards the camelCase field renames (`allowRate`, `perHook`) and the nested day/hook DTOs.
+#[test]
+fn hook_telemetry_frame_round_trips() {
+    let frame = HookTelemetryFrame {
+        total: 6,
+        blocks: 1,
+        allows: 4,
+        allow_rate: 80,
+        daily: vec![
+            HookDayBucket { day: "2026-05-28".into(), allows: 2, blocks: 0 },
+            HookDayBucket { day: "2026-05-29".into(), allows: 3, blocks: 1 },
+        ],
+        per_hook: vec![
+            HookCountFrame { hook: "bsc-deny".into(), event: "PreToolUse".into(), fires: 5 },
+            HookCountFrame { hook: "bsc-audit".into(), event: "PostToolUse".into(), fires: 1 },
+        ],
+    };
+    let json = serde_json::to_value(&frame).unwrap();
+    // camelCase renames land on the wire.
+    assert_eq!(json["allowRate"], 80);
+    assert!(json["perHook"].is_array());
+    assert!(json.get("allow_rate").is_none());
+    let back: HookTelemetryFrame = serde_json::from_value(json).unwrap();
+    assert_eq!(back, frame);
 }
 
 // ── #928 / T1b: Noise IK byte-level match against the shared cross-repo vector ──

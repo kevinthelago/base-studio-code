@@ -185,3 +185,38 @@ export interface McpExtFrame {
  *  Replayed on connect. */
 export const tunnelSetMcpState = (extensions: McpExtFrame[]): Promise<void> =>
   invoke("tunnel_set_mcp_state", { extensions });
+
+// ── M3: hook telemetry (#937) ─────────────────────────────────────────────────
+
+/** One day's allow/block counts. Mirrors Rust `HookDayBucket` / TS `DayBucket`. */
+export interface HookDayBucket {
+  /** Local YYYY-MM-DD. */
+  day: string;
+  allows: number;
+  blocks: number;
+}
+
+/** Fires for one hook. Mirrors Rust `HookCountFrame` / TS `HookCount`. */
+export interface HookCountFrame {
+  hook: string;
+  /** PreToolUse | PostToolUse | Stop | … */
+  event: string;
+  fires: number;
+}
+
+/** Wire shape for the aggregated hook-fire telemetry. Mirrors Rust `HookTelemetryFrame`,
+ *  itself a projection of `HookAnalytics` (src/features/mcp/lib/hookTelemetry.ts). */
+export interface HookTelemetryFrame {
+  total: number;
+  blocks: number;
+  allows: number;
+  /** allows / (allows + blocks), 0–100. */
+  allowRate: number;
+  daily: HookDayBucket[];
+  perHook: HookCountFrame[];
+}
+
+/** Push the aggregated hook-fire telemetry summary to connected mobile clients. Read-only
+ *  on mobile — there is no inbound counterpart. Replayed on connect. */
+export const tunnelSetHookTelemetry = (telemetry: HookTelemetryFrame): Promise<void> =>
+  invoke("tunnel_set_hook_telemetry", { telemetry });

@@ -112,6 +112,52 @@ pub struct McpExtFrame {
     pub url: Option<String>,
 }
 
+// ── Hook telemetry (M3, #937) ────────────────────────────────────────────────────
+// A read-only projection of the desktop's aggregated hook-fire analytics. The desktop
+// parses + aggregates `~/.base-studio-code/hooks.log` frontend-side (aggregateHookTelemetry
+// in src/features/mcp/lib/hookTelemetry.ts) and pushes the summary; mobile only displays it.
+// There is NO inbound control frame — mobile can see the counts but cannot influence hooks.
+
+/// One day's allow/block counts in the hook-telemetry projection. Mirrors TS `DayBucket`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HookDayBucket {
+    /// Local `YYYY-MM-DD`.
+    pub day: String,
+    /// PreToolUse allows + non-gating fires ("allow" / "ok") that day.
+    pub allows: u32,
+    /// PreToolUse denials ("block") that day.
+    pub blocks: u32,
+}
+
+/// Fires per hook in the projection. Mirrors TS `HookCount`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HookCountFrame {
+    pub hook: String,
+    /// The event the hook fires on: `PreToolUse` | `PostToolUse` | `Stop` | …
+    pub event: String,
+    pub fires: u32,
+}
+
+/// Read-only aggregated hook-fire telemetry pushed to mobile (M3). Mirrors the TS
+/// `HookAnalytics` shape (src/features/mcp/lib/hookTelemetry.ts): totals + the allow-rate,
+/// the per-day allow/block series, and the per-hook fire counts. Read-only on mobile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookTelemetryFrame {
+    /// Total fires in the window.
+    pub total: u32,
+    /// PreToolUse fires denied (`outcome == "block"`).
+    pub blocks: u32,
+    /// PreToolUse fires allowed (`outcome == "allow"`).
+    pub allows: u32,
+    /// `allows / (allows + blocks)`, 0–100; 100 when there were no PreToolUse decisions.
+    pub allow_rate: u32,
+    /// Per-day allow vs block counts, oldest→newest (stable window length).
+    pub daily: Vec<HookDayBucket>,
+    /// Fires per hook, descending.
+    pub per_hook: Vec<HookCountFrame>,
+}
+
 /// Messages the desktop sends to the mobile client. Tagged by snake_case `type`.
 /// `AuthOk` / `PaneOutput` are emitted by the relay transport (#242b); the rest are
 /// emitted now by the metadata-push commands.
@@ -218,6 +264,13 @@ pub enum ServerMsg {
     /// and re-pushed whenever the Extensions store changes.
     McpList {
         extensions: Vec<McpExtFrame>,
+    },
+    // ── Hook telemetry (M3 / #937) ──────────────────────────────────────────
+    /// Read-only aggregated hook-fire telemetry. Replayed on connect (last push) and
+    /// re-pushed whenever the desktop refreshes the analytics. Read-only on mobile —
+    /// there is no inbound counterpart.
+    HookTelemetry {
+        telemetry: HookTelemetryFrame,
     },
     // ── Live planning session (PT1 / #934 / #986) ───────────────────────────
     /// Full live planner snapshot. Replayed on connect (the last per-projectId payload), so a
