@@ -44,27 +44,45 @@ pub type LogState = MutexConfig<LogConfig>;
 
 // ── Stream registry ─────────────────────────────────────────────────────────────
 
-/// Text-log streams: `(key, filename under ~/.base-studio-code/, label)`. These are the cappable,
-/// raw-viewable, exportable logs.
-const TSV_STREAMS: &[(&str, &str, &str)] = &[
-    ("coord", "coord.log", "Coordination events"),
-    ("audit", "audit.log", "Tool-attempt audit"),
-    ("skills", "skills.log", "Skill usage"),
-    ("hooks", "hooks.log", "Hook fires"),
-    ("mcp", "mcp.log", "MCP calls"),
-    ("tokens", "tokens.log", "Token & cost accounting"),
-];
+// The managed text-log streams are the SAME per-pane TSVs the pty env-writer stages and the unified
+// `bsc logs` reader parses — `bsc_util::LOG_STREAMS`, the ONE source of truth for stream keys +
+// filenames (#1847). This module no longer keeps its own `(key, file)` table, which had drifted out
+// of sync (it was missing `activity`/`done`/`perm`, so those growing logs were neither listed, capped,
+// clearable, nor viewable here). The engine that PARSES these streams lives in `crates/logs` and is
+// reached from the frontend via `bsc logs …` over the `bsc` bridge (#2144); this module owns only the
+// file-management face — inventory, size cap, clear, export, and the raw viewer (which also serves the
+// Tauri-owned `app` log). Labels are a UI concern kept here, keyed by the registry's canonical key.
+
+/// The human label for a managed stream, keyed by the `bsc_util::LOG_STREAMS` canonical key (plus the
+/// two module-owned pseudo-streams `app` / `perf`). Unknown keys fall back to the key itself.
+fn label_for(key: &str) -> &'static str {
+    match key {
+        "tool" => "Tool-attempt audit",
+        "skill" => "Skill usage",
+        "mcp" => "MCP calls",
+        "hook" => "Hook fires",
+        "activity" => "Turn activity",
+        "done" => "Worker self-close",
+        "coord" => "Coordination events",
+        "perm" => "Permission denials",
+        "tokens" => "Token & cost accounting",
+        "app" => "Application log",
+        "perf" => "Performance database",
+        _ => "Log stream",
+    }
+}
 
 /// Resolve a stream key to its on-disk path. The app log lives in Tauri's log dir; `perf.db` and
-/// the TSVs live under `~/.base-studio-code/`. Returns `None` for unknown/excluded keys.
+/// the TSVs live under `~/.base-studio-code/`. The TSV filenames come from the shared
+/// `bsc_util::LOG_STREAMS` registry. Returns `None` for unknown/excluded keys.
 fn stream_path(app: &tauri::AppHandle, stream: &str) -> Option<PathBuf> {
     match stream {
         "app" => app.path().app_log_dir().ok().map(|d| d.join("base-studio-code.log")),
         "perf" => Some(crate::perf_db()),
-        other => TSV_STREAMS
+        other => bsc_util::LOG_STREAMS
             .iter()
-            .find(|(k, _, _)| *k == other)
-            .map(|(_, f, _)| bsc_base_dir().join(f)),
+            .find(|s| s.key == other)
+            .map(|s| bsc_base_dir().join(s.filename)),
     }
 }
 
@@ -95,7 +113,8 @@ fn mtime_ms(path: &Path) -> i64 {
         .unwrap_or(0)
 }
 
-fn info(app: &tauri::AppHandle, stream: &str, label: &str) -> LogFileInfo {
+fn info(app: &tauri::AppHandle, stream: &str) -> LogFileInfo {
+    let label = label_for(stream);
     let path = stream_path(app, stream);
     let (size, mtime, exists, path_str) = match &path {
         Some(p) if p.exists() => (
@@ -157,11 +176,12 @@ pub fn cap_log(path: &Path, cfg: &LogConfig) -> bool {
     }
 }
 
-/// Cap every text TSV stream under `base_dir` per `cfg`. The app log is rotated by
-/// `tauri-plugin-log`, so it is left to the plugin.
+/// Cap every managed text TSV stream (the shared `bsc_util::LOG_STREAMS` registry) under `base_dir`
+/// per `cfg`. The app log is rotated by `tauri-plugin-log`, so it is left to the plugin; `perf.db` is
+/// binary state pruned by the perf sampler, not here.
 pub fn cap_logs(base_dir: &Path, cfg: &LogConfig) {
-    for (_, f, _) in TSV_STREAMS {
-        let p = base_dir.join(f);
+    for s in bsc_util::LOG_STREAMS {
+        let p = base_dir.join(s.filename);
         if p.exists() {
             cap_log(&p, cfg);
         }
@@ -170,14 +190,15 @@ pub fn cap_logs(base_dir: &Path, cfg: &LogConfig) {
 
 // ── Tauri commands ──────────────────────────────────────────────────────────────
 
-/// Every managed stream's path/size/mtime: the app log, the six TSVs, and `perf.db`.
+/// Every managed stream's path/size/mtime: the app log, every `bsc_util::LOG_STREAMS` per-pane TSV,
+/// and `perf.db`.
 #[tauri::command]
 pub fn list_log_files(app: tauri::AppHandle) -> Vec<LogFileInfo> {
-    let mut out = vec![info(&app, "app", "Application log")];
-    for (k, _, label) in TSV_STREAMS {
-        out.push(info(&app, k, label));
+    let mut out = vec![info(&app, "app")];
+    for s in bsc_util::LOG_STREAMS {
+        out.push(info(&app, s.key));
     }
-    out.push(info(&app, "perf", "Performance database"));
+    out.push(info(&app, "perf"));
     out
 }
 
@@ -380,13 +401,30 @@ mod tests {
     }
 
     #[test]
-    fn stream_registry_covers_six_tsvs_and_excludes_plan() {
-        let keys: Vec<&str> = TSV_STREAMS.iter().map(|(k, _, _)| *k).collect();
-        assert_eq!(keys, ["coord", "audit", "skills", "hooks", "mcp", "tokens"]);
-        assert!(is_text("audit") && is_text("app"), "text streams are viewable");
-        assert!(!is_text("perf"), "perf.db is binary state");
-        // plan.db is deliberately not a managed stream.
+    fn managed_streams_derive_from_shared_registry_and_exclude_plan() {
+        // The managed text streams ARE the shared `bsc_util::LOG_STREAMS` — one source of truth, no
+        // drift. Every per-pane TSV (incl. activity/done/perm, which the old hand-kept table dropped)
+        // is now inventoried, capped, clearable, and viewable.
+        let keys: Vec<&str> = bsc_util::LOG_STREAMS.iter().map(|s| s.key).collect();
+        for k in ["tool", "skill", "mcp", "hook", "activity", "done", "coord", "perm", "tokens"] {
+            assert!(keys.contains(&k), "registry covers {k}");
+        }
+        // plan.db is project STATE, deliberately not a managed log stream.
         assert!(!keys.contains(&"plan"));
+        assert!(is_text("tool") && is_text("app"), "text streams are viewable");
+        assert!(!is_text("perf"), "perf.db is binary state");
+    }
+
+    #[test]
+    fn label_for_covers_every_managed_key_and_falls_back() {
+        // Every registry key + the two module-owned pseudo-streams resolve to a non-fallback label,
+        // so the inventory never shows the placeholder for a real stream.
+        for s in bsc_util::LOG_STREAMS {
+            assert_ne!(label_for(s.key), "Log stream", "{} has a real label", s.key);
+        }
+        assert_eq!(label_for("app"), "Application log");
+        assert_eq!(label_for("perf"), "Performance database");
+        assert_eq!(label_for("nonexistent"), "Log stream", "unknown key falls back");
     }
 
     #[test]
