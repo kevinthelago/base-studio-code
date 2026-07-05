@@ -62,6 +62,7 @@ export const useAppStore = create<AppStore>()(
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
+        kitTheme:        s.kitTheme,
         keybindings:     s.keybindings,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
