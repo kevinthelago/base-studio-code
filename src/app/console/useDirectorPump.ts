@@ -21,6 +21,7 @@ import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
+  briefKey, pendingBriefPrompt,
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "@/features/planner/fleet/directorDrive";
 
@@ -44,10 +45,11 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
     const now = Date.now();
     const statuses = paneStatusesRef.current ?? {};
 
-    // Pending unanswered questions, re-derived from the whole log (restart-safe).
+    // Pending unanswered questions + planner briefs, re-derived from the whole log
+    // (restart-safe). Both surface state-based (not edge events) and are guarded once-per-pane.
     const { lines, state } = res;
     const pendingAsks = state.asking;
-    const pendingKeys = new Set(pendingAsks.map(askKey));
+    const pendingKeys = new Set([...pendingAsks.map(askKey), ...state.briefs.map(briefKey)]);
     for (const k of [...surfaced.current]) {
       const bar = k.indexOf("|");
       if (bar >= 0 && !pendingKeys.has(k.slice(bar + 1))) surfaced.current.delete(k);
@@ -67,6 +69,18 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           for (const a of fresh) surfaced.current.add(paneId + "|" + askKey(a));
           inFlight.current.add(paneId);
           void injectPrompt(paneId, pendingAskPrompt(fresh))
+            .catch(() => {})
+            .finally(() => inFlight.current.delete(paneId));
+          continue; // one injection per pane per tick
+        }
+
+        // 1b) Deliver the planner's mid-build briefs (#2377) the same must-not-drop way — the
+        // director reconciles the running plan and routes any carried ref onward via bsc-assign.
+        const freshBriefs = state.briefs.filter((b) => !surfaced.current.has(paneId + "|" + briefKey(b)));
+        if (freshBriefs.length > 0) {
+          for (const b of freshBriefs) surfaced.current.add(paneId + "|" + briefKey(b));
+          inFlight.current.add(paneId);
+          void injectPrompt(paneId, pendingBriefPrompt(freshBriefs))
             .catch(() => {})
             .finally(() => inFlight.current.delete(paneId));
           continue; // one injection per pane per tick

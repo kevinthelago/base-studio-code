@@ -46,7 +46,9 @@
 //  * taint.sh     — bsc-taint (#1167): tainted-turn gate; return 2 on outward/destructive Bash within
 //                   $BSC_TAINT_WINDOW of ingesting untrusted input (WebFetch / curl / gh issue|pr view).
 //  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/issue/
-//                   assign (#199/#376): the coordination emitters to $BSC_COORD_LOG.
+//                   assign/brief (#199/#376/#2377): the coordination emitters to $BSC_COORD_LOG.
+//                   bsc-brief is the PLANNER's runtime voice (planner→director/issuer); a coordination
+//                   write only — no code/git escalation of the plan-only role gate.
 //  * (defer)      — bsc-defer (#369/#2145): Stop-hook; keeps a worker going or defers to the director.
 //  * fleet.sh     — bsc-fleet (#734): the director's roster view (joins fleet.roster.tsv + coord.log).
 //  * bsc.sh       — bsc (#1877): the ONE umbrella-binary dispatcher; execs $BSC_BIN (bsc plan|skill|…).
