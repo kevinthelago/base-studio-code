@@ -7,8 +7,8 @@
 // result and offers the in-session add path. Heuristic + idempotent — re-running over the same plan
 // yields the same set, and an integration already in play never re-appears as a gap.
 
-import type { McpServer } from "@/features/mcp/lib/mcpServers";
-import { resolveMcpServers, mcpFromCatalog } from "@/features/mcp/lib/mcpServers";
+import type { McpServer } from "@/features/mcp";
+import { resolveMcpServers, mcpFromCatalog } from "@/features/mcp";
 import { connector, type DeclaredSource } from "./sourceConfig";
 
 export type IntegrationKind = "mcp" | "connector" | "credential";

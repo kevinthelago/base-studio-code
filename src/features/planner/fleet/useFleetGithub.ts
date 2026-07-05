@@ -8,8 +8,8 @@ import {
   mapThroughput, mapMergeQueue, mapTimeToLand, deriveThroughputKpis,
   type ThroughputSlice, type MergeQueueRow, type FleetThroughputKpis,
   type GhIssueItem, type GhStatusState,
-} from "@/features/github/lib/fleetGithub";
-import type { GhPull } from "@/features/github/lib/repoPulseLive";
+} from "@/shared/lib/github/fleetGithub";
+import type { GhPull } from "@/shared/lib/github/repoPulseLive";
 
 const WINDOW_DAYS = 14;
 /** Cap on open PRs we fetch a CI status for (one call each). */

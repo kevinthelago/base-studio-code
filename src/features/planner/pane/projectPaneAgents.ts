@@ -2,14 +2,14 @@
 // ProjectPane `Agent` cards (posture, kickoff preview, lane scope). Extracted from
 // projectPaneData (#2151); pure, no logic changes.
 
-import type { Tier, ToolKey } from "@/features/agents/lib/agentProfiles";
+import type { Tier, ToolKey } from "@/features/agents";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveStrategy } from "../lib/integrationStrategy";
 import { depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { buildStreamPrompt } from "@/store/helpers";
 import { resolveStreamPersona, personaStreamPrompt } from "../fleet/streamPersona";
-import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
+import type { AgentProfile } from "@/features/agents";
 import type { Posture, Perm, Agent } from "./projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 

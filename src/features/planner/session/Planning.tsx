@@ -8,7 +8,7 @@ import {
   ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForTopic, groupTopics,
 } from "../stages/planTopics";
 import { FLEET_KEY, parseFleetFile } from "../fleet/planFleet";
-import { resolveSkills } from "@/features/skills/lib/skills";
+import { resolveSkills } from "@/features/skills";
 import { parseFeaturesFile, featuresSummary, featureDependencyCycle } from "../issues/featureList";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";

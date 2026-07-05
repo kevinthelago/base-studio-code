@@ -12,6 +12,28 @@ import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 
+// #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
+// components reaches the gist manifest/publish helpers (included for barrel completeness).
+export type { CanonicalFile } from "./lib/plannerCore";
+export {
+  validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
+  type ExtensionManifest, type ValidateResult,
+} from "./lib/gist/manifest";
+export { installFromGist, publishGist } from "./lib/gist/gist";
+// #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
+// no longer reaches into github); the app's director pump + console launch reach planner fleet logic
+// (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
+export { ProjectsSummary } from "./list/ProjectsSummary";
+export { ProjectBoard } from "./github/ProjectBoard";
+export { Roadmap } from "./github/Roadmap";
+export { Issues } from "./github/Issues";
+export { Insights } from "./github/Insights";
+export { flowPermissionRules, flowGrantedPushCommands } from "./fleet/flowPermissions";
+export {
+  decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
+  briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
+} from "./fleet/directorDrive";
+
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
   useProjectScan();

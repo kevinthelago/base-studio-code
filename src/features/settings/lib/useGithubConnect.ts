@@ -17,7 +17,7 @@ import {
   runDeviceFlow,
   type DeviceStartInfo,
   type DevicePollResult,
-} from "@/features/github/lib/githubDeviceFlow";
+} from "@/shared/lib/github/githubDeviceFlow";
 
 /** Mirror of the backend `DeviceStart` struct (`github_device_start`). */
 export type DeviceStart = DeviceStartInfo;

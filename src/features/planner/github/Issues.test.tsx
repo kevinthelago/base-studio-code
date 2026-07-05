@@ -3,7 +3,7 @@
 // rows — instead of the old plain "Loading issues…" / bare-text empty lines.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { GithubQuery } from "@/features/github/lib/useGithubQuery";
+import type { GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 
 vi.mock("../list/ProjectsHeader", () => ({ ProjectsHeader: () => null }));

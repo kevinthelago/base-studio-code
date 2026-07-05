@@ -359,3 +359,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 // Re-exported feature surface — this index is the skills feature's public API barrel (#1309).
 export { SkillsStatus } from "./SkillsStatus";
 export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkillsModal";
+
+// #1545: public API for cross-feature consumers (planner, app/console).
+export {
+  type SkillDef, skillFromPayload, resolveSkills, effectiveSessionSkills,
+  expandGroups, toSkillCfgs,
+} from "./lib/skills";
+export { loadPendingLessons, lessonTitle, type Lesson } from "./lib/lessons";

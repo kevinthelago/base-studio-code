@@ -12,7 +12,7 @@
 
 // The desktop's canonical per-pane status (#435), the input this module maps FROM.
 import type { PaneStatus as DesktopPaneStatus } from "@/app/console/lib/paneStatus";
-import type { CanonicalFile } from "@/features/planner/lib/plannerCore";
+import type { CanonicalFile } from "@/features/planner";
 
 /** Pane status as the mobile client models it (`PaneStatus`) — a distinct wire
  *  vocabulary the desktop's `DesktopPaneStatus` is mapped into by `mapStatus`. */

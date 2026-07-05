@@ -130,8 +130,12 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
   convention: [`docs/frontend-structure.md`](docs/frontend-structure.md).
 - **A feature owns everything it needs:** `features/<x>/` holds the UI, a `lib/` of pure (React-free)
   domain logic, a `store.ts` (its Zustand slice + slice interface), colocated tests, and an `index.ts`
-  barrel that is the feature's public API. Import a feature's UI via `@/features/<x>`; import its pure
-  domain directly via `@/features/<x>/lib/...` (so non-UI modules never pull in React).
+  barrel that is the feature's public API. **Cross-feature, import ONLY the barrel `@/features/<x>`** —
+  never a deep internal path (`@/features/<x>/lib/*`, its components) — so a feature can refactor its
+  internals freely. Need a symbol another feature reaches for? Re-export it from that feature's `index.ts`.
+  Deep `@/features/<x>/lib/...` paths are for **intra-feature** imports only. `import type` across
+  features stays allowed. Enforced by a per-feature `no-restricted-imports` lint rule (#1545) mirroring
+  the `shared/` boundary (#1626); full convention: [`docs/frontend-structure.md`](docs/frontend-structure.md).
 - **Path alias:** use `@/…` (→ `src/…`), never deep `../../..` relatives, so moves don't churn importers.
   (tsconfig `paths` + vite/vitest `resolve.alias`.)
 - **app/ vs features/ vs shared/:** the shell (`app/`) knows every feature and composes them; features

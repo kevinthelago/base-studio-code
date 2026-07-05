@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { githubRequest } from "@/shared/lib/github/github";
-import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
+import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProject, QueryBanner } from "./useActiveProjectGithub";
 import {

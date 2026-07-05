@@ -12,7 +12,7 @@ import { useCoordinator } from "./useCoordinator";
 import { useDirectorPump } from "./useDirectorPump";
 import { useFaultTriage } from "./useFaultTriage";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
-import { useCiWatcher } from "@/features/github/lib/useCiWatcher";
+import { useCiWatcher } from "@/shared/lib/github/useCiWatcher";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
