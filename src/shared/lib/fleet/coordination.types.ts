@@ -47,6 +47,31 @@ export interface CoordState {
    *  instead of ending — the director routes new/regressed lane work to them via `bsc-assign`.
    *  Cleared when the worker is dispatched (assign/answer) or resumes (woke). */
   maintaining: MaintainingSession[];
+  /** Mid-build plan updates the PLANNER pushed to a running director/issuer (#2377) — the
+   *  planner's runtime voice into the fleet, beyond the one-shot kickoff/plan.db handoff.
+   *  Appended (never auto-cleared); the director reconciles the plan and routes any carried
+   *  `ref` onward via `bsc-assign`. */
+  briefs: ReceivedBrief[];
+}
+
+/** A structured plan update the planner streamed to a running director/issuer (#2377). The
+ *  planner is plan-only, so a brief is a COORDINATION write (append to `coord.log`), never a
+ *  code/git write — the first runtime consumer of the planner→{director,issuer} org edge.
+ *  Modelled like {@link PendingIssue}/{@link AssignedWork}. */
+export interface ReceivedBrief {
+  /** Stable key (`<from>@<at>`) — dedupes a replayed log + keys the surfaced-once guard. */
+  id: string;
+  /** The originating session (the planner's pane id / "planner"). */
+  from: string;
+  /** The intended audience — `"director"`, `"issuer"`, or a specific session id. */
+  target: string;
+  /** The brief prose (a plan change, added scope, a re-sequencing directive). */
+  body: string;
+  /** Optional structured ref the director can act on onward (a new/updated `#issue`,
+   *  a `contract:`, a `file:`) — e.g. route it to the owning worker via `bsc-assign`. */
+  ref?: CoordRef;
+  /** When pushed (ms epoch). */
+  at: number;
 }
 
 /** A shaped issue the issuer captured, awaiting the director's `bsc-assign` (#376). The
@@ -137,6 +162,8 @@ export type CoordEvent =
   | { type: "assign"; session: string; target: string; body: string; issueId?: string; title?: string; at: number }
   // Maintenance mode (#1957): a finished worker parks alive + ready instead of ending.
   | { type: "maintain"; session: string; note?: string; at: number }
+  // Planner brief (#2377): the planner streams a mid-build plan update to a director/issuer.
+  | { type: "brief"; from: string; target: string; body: string; ref?: CoordRef; id: string; at: number }
   // Verification jury (#394): a juror reports a structured verdict on a landing; the
   // foreman tallies them and, on reject, drives the existing revert+ping reflex.
   | { type: "verdict"; juror: string; target: string; verdict: JuryVerdict; reason?: string; relevant?: boolean; at: number };

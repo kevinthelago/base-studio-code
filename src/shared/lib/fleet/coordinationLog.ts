@@ -66,6 +66,16 @@ export function parseCoordLine(line: string): CoordEvent | null {
     }
     case "maintain":
       return { type: "maintain", session, note: rest[0]?.trim() || undefined, at };
+    case "brief": {
+      // payload = <target> \t <body> \t <ref?>. The `session` column is the emitter (the
+      // planner's pane). `from` mirrors it; `id` (`<from>@<at>`) dedupes a replayed log.
+      const target = (rest[0] ?? "").trim();
+      if (!target) return null;
+      const body = rest[1] ?? "";
+      if (!body.trim()) return null;
+      const ref = parseRef(rest[2] ?? "") ?? undefined;
+      return { type: "brief", from: session, target, body, ref, id: `${session}@${at}`, at };
+    }
     case "verdict": {
       // payload = <target> \t <pass|reject> \t <reason?> \t <relevant?>; the juror is the session column.
       const target = (rest[0] ?? "").trim();
@@ -112,7 +122,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
     case "woke": {
       // `maintaining` is carried (not cleared): once a worker enters maintenance it STAYS a
       // maintenance worker across dispatches — auto-end permanently skips it (that IS the mode).
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -182,6 +192,17 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
         state: { ...s, maintaining, waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session) },
         woken: [], ready: false, stalled: [], answered: [], assigned: [],
       };
+    }
+    case "brief": {
+      // The planner pushed a mid-build plan update to the director/issuer (#2377). Append it
+      // to the received-briefs list (dedup by id so a replayed log doesn't double it). Unlike
+      // an ask/issue there is no consuming event that clears it — it's a standing record; the
+      // director's surfacing is guarded once-per-pane by the pump, not by removal here.
+      const briefs = [
+        ...s.briefs.filter((b) => b.id !== e.id),
+        { id: e.id, from: e.from, target: e.target, body: e.body, ref: e.ref, at: e.at },
+      ];
+      return { state: { ...s, briefs }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "verdict":
       // Verdicts don't move the latch/waiter state — the foreman tallies them off the

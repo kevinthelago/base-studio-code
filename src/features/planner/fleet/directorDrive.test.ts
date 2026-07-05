@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeDirectorDrive, resolveDirectorDrive, decideDirectorAction,
   eventDirectorPrompt, DEFAULT_DIRECTOR_DRIVE, askKey, pendingAskPrompt,
+  briefKey, pendingBriefPrompt,
 } from "./directorDrive";
 
 const TS = "2026-06-01T00:00:00Z";
@@ -139,5 +140,24 @@ describe("director Q&A surfacing (#369, state-based)", () => {
     expect(p).toContain("bsc-answer w1");
     expect(p).toContain("bsc-answer w2");
     expect(p).toMatch(/awaiting your answer/);
+  });
+});
+
+describe("planner brief surfacing (#2377, state-based)", () => {
+  it("briefKey is stable per planner + timestamp", () => {
+    expect(briefKey({ from: "planner", at: 7 })).toBe("planner@7");
+  });
+
+  it("pendingBriefPrompt surfaces each plan update, names a carried ref, and routes onward via bsc-assign", () => {
+    const p = pendingBriefPrompt([
+      { id: "planner@1", from: "planner", target: "director", body: "add CSV export", at: 1 },
+      { id: "planner@2", from: "planner", target: "director", body: "re-sequence auth", ref: { kind: "issue", number: 77 }, at: 2 },
+    ]);
+    expect(p).toContain("add CSV export");
+    expect(p).toContain("re-sequence auth");
+    expect(p).toContain("#77");                 // the carried ref is named
+    expect(p).toContain("bsc-assign");          // director routes the work onward
+    expect(p).toMatch(/plan update/);
+    expect(p).toMatch(/Do not ask the user/);
   });
 });

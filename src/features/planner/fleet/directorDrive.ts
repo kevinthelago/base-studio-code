@@ -3,7 +3,7 @@
 // kickoff, idles forever; this config + the runtime pump (useDirectorPump) decide when to
 // re-prompt it so it actually reviews/merges worker PRs and resolves coordination events.
 // Pure + unit-tested; mirrors agentFlow.ts (the per-stream flow config pattern).
-import { parseCoordLine, type CoordEvent, type CoordRef, type AskingSession } from "@/shared/lib/fleet/coordination";
+import { parseCoordLine, type CoordEvent, type CoordRef, type AskingSession, type ReceivedBrief } from "@/shared/lib/fleet/coordination";
 
 /**
  * - `event`     -- re-prompt the director whenever workers post new coordination events
@@ -95,6 +95,25 @@ export function pendingAskPrompt(asks: AskingSession[]): string {
     .map((a) => `${a.session} asks: "${a.question}" (answer with bsc-answer ${a.session})`)
     .join("; ");
   return `[coordinator] ${asks.length} worker question(s) awaiting your answer: ${list}. For each, pipe your one-line answer into bsc-answer <session> on stdin; that resumes the worker automatically. Do not leave them parked, and do not ask the user yourself.`;
+}
+
+/** Stable key for a received brief (planner + when), so the pump surfaces each brief once. */
+export function briefKey(b: { from: string; at: number }): string {
+  return `${b.from}@${b.at}`;
+}
+
+/**
+ * Prompt that surfaces the planner's mid-build plan updates to the director (#2377). Driven
+ * by the live `briefs` table (state), not edge events, so a brief is delivered even if it was
+ * logged before the pump saw the director or across an app restart — the same restart-safe,
+ * must-not-drop posture as {@link pendingAskPrompt}. Each brief may carry a `ref` (a new/
+ * updated #issue, contract, or file) the director routes onward via `bsc-assign`. Single line.
+ */
+export function pendingBriefPrompt(briefs: ReceivedBrief[]): string {
+  const list = briefs
+    .map((b) => `"${b.body}"${b.ref ? ` [${refLabel(b.ref)}]` : ""}`)
+    .join("; ");
+  return `[coordinator] The planner pushed ${briefs.length} mid-build plan update(s): ${list}. Reconcile the running plan with each: update the board/issues to match, and route any new or changed work to the owning worker with bsc-assign (open a fresh issue via bsc-issue first when a brief introduces a new #ref). Do not ask the user.`;
 }
 
 /** Coordination events the director should act on (worker-originated asks). Its own
