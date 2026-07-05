@@ -1,0 +1,8 @@
+TODO(#1277): The upstream GitHub CLI (`gh`) MIT license text goes here, verbatim,
+including its copyright line, before `gh` is actually bundled.
+
+Source: https://github.com/cli/cli/blob/trunk/LICENSE
+Pinned version: see GH_VERSION in scripts/stage-sidecar.mjs.
+
+This is a placeholder — do not treat it as the license. It must be replaced with the
+real MIT text for the pinned version at bundling time (deferred half of #1277).
