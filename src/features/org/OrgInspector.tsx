@@ -8,6 +8,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SelectField, TextField } from "@/shared/ui/controls/Field";
+import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
 import { PersonaEditor } from "@/features/personas";
 import type { Persona } from "@/features/personas";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Org } from "./lib/org";
@@ -27,13 +28,17 @@ interface InspectorProps {
   onChangePersona: (nodeId: string, personaId: string) => void;
   /** Rename a resource/external node (or override an agent node's label). */
   onChangeLabel: (nodeId: string, label: string) => void;
+  /** Delete a position (node) + every relationship touching it (manual override, #2383/#2382). */
+  onDeletePosition: (nodeId: string) => void;
+  /** Delete a relationship (edge). */
+  onDeleteRelationship: (relId: string) => void;
 }
 
 // Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
 const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, borderLeft: "1px solid var(--border-soft)", overflowY: "auto" };
 const BLOCK: React.CSSProperties = { padding: "15px 17px", borderBottom: "1px solid var(--border-soft)" };
 
-export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel }: InspectorProps) {
+export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel, onDeletePosition, onDeleteRelationship }: InspectorProps) {
   if (sel.type === "node") {
     const pos = org.positions.find((p) => p.nodeId === sel.id);
     if (!pos) return <Box style={PANEL} />;
@@ -105,6 +110,13 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
             </Stack>
           )}
         </Box>
+
+        {/* Manual override (#2383): delete this node + its relationships. Interim until the agent owns
+            every mutation (#2382 — UI as read-only). */}
+        <Box style={{ padding: "0 17px 20px" }}>
+          <ConfirmButton size="sm" label="Delete position" armedLabel="Confirm — removes its links"
+            onConfirm={() => onDeletePosition(pos.nodeId)} />
+        </Box>
       </Box>
     );
   }
@@ -142,6 +154,12 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
         <FormLane from={aLabel} to={bLabel} forms={fwd} hue={arch?.hue ?? 0} />
         <FormLane from={bLabel} to={aLabel} forms={back} hue={arch?.hue ?? 0} />
       </Stack>
+
+      {/* Manual override (#2383): delete this relationship edge. */}
+      <Box style={{ padding: "0 17px 20px" }}>
+        <ConfirmButton size="sm" label="Delete relationship" armedLabel="Confirm delete"
+          onConfirm={() => onDeleteRelationship(rel.id)} />
+      </Box>
     </Box>
   );
 }
