@@ -32,6 +32,8 @@ export function OrgPanel() {
   const updateRelationship = useAppStore((s) => s.updateRelationship);
   const addPosition = useAppStore((s) => s.addPosition);
   const updatePosition = useAppStore((s) => s.updatePosition);
+  const removePosition = useAppStore((s) => s.removePosition);
+  const removeRelationship = useAppStore((s) => s.removeRelationship);
   const setOrgZoom = useAppStore((s) => s.setOrgZoom);
 
   const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
@@ -224,6 +226,8 @@ export function OrgPanel() {
           onChangeArchetype={(relId, a) => updateRelationship(org.id, relId, { archetype: a })}
           onChangePersona={(nodeId, personaId) => updatePosition(org.id, nodeId, { personaId })}
           onChangeLabel={(nodeId, label) => updatePosition(org.id, nodeId, { label })}
+          onDeletePosition={(nodeId) => { removePosition(org.id, nodeId); setSel({ type: "node", id: "" }); }}
+          onDeleteRelationship={(relId) => { removeRelationship(org.id, relId); setSel({ type: "node", id: "" }); }}
         />
       }
     >
