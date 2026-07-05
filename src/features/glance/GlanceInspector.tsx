@@ -32,6 +32,9 @@ interface InspectorProps {
   autoTriageOn?: boolean;
   /** Flip the selected project's auto-triage toggle (#2265). */
   onToggleAutoTriage?: (on: boolean) => void;
+  /** Open the selected agent's REAL PTY stream in the dock (#2369). Provided only for a drilled, LIVE
+   *  agent node — its presence is what renders the "Open stream" action. */
+  onOpenStream?: (nodeId: string) => void;
 }
 
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
@@ -53,7 +56,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, onOpenStream }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
@@ -129,6 +132,11 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {LABEL("DEPENDED ON BY")}
           {rdeps.length === 0 ? <Text as="div" mono size={11} tone="dim">— leaf, nothing depends on it</Text>
             : rdeps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.from)!} kind={kindOf(e.kind, e.isCycle)} color={colorOf(e.kind, e.isCycle)} onClick={() => onSelectNode(e.from)} />)}
+
+          {/* Open the agent's REAL live PTY stream in the dock (#2369) — only for a live drilled agent. */}
+          {onOpenStream && (
+            <Button variant="primary" onClick={() => onOpenStream(selId)} style={{ width: "100%", marginTop: 18 }}>Open stream ↗</Button>
+          )}
         </Box>
       </Box>
     );

@@ -22,7 +22,7 @@ import {
   summarizeStory,
   type LogSessionRow,
   type SessionStory,
-} from "../lib/sessionLog";
+} from "@/shared/lib/logs/sessionLog";
 
 /** A picker row: role + total activity + cost, click to drill in. */
 function SessionPicker({
