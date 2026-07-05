@@ -20,7 +20,8 @@ import { roleCapability } from "@/shared/lib/session/sessionRoles";
 import { MODEL_IDS, type ModelId } from "@/app/console/lib/models";
 import { applyCommonsGate } from "@/features/planner/fleet/commonsGate";
 import { parseIntake, changedDesignFiles, markRouted, renderDesignDelta, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "@/features/planner/lib/fileIntake";
-import { STAGE_DEFS } from "@/features/planner/stages/blueprints";
+import { STAGE_DEFS, DEFAULT_BLUEPRINT_ID } from "@/features/planner/stages/blueprints";
+import { resolveStreamFlow, resolveStreamProfile } from "@/features/planner/fleet/fleetPolicy";
 import { commonsGlobsForStack, stackTagsFromSection } from "@/shared/lib/session/commons";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
@@ -387,6 +388,13 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             ? commonsGlobsForStack(stackTagsFromSection(s.planStages[projectKey]?.stack ?? ""))
             : [];
           const plan = commonsGlobs.length ? applyCommonsGate(fleet, commonsGlobs) : fleet;
+          // #1854 Phase b: the seeding blueprint's fleet POLICY — the DEFAULT per-stream profile +
+          // flow this project type declares. Resolved from the project's blueprint (keyed like
+          // planStages, above); absent policy ⇒ today's launch defaults apply byte-for-byte. A
+          // stream's own profile/flow still wins over the policy (see the resolvers below).
+          const fleetPolicy = s.blueprints.find(
+            (b) => b.id === (s.projectBlueprintId[projectKey] ?? DEFAULT_BLUEPRINT_ID),
+          )?.fleetPolicy;
           const newPaneDirectorDrive     = { ...s.paneDirectorDrive };
           const newPaneDirectorMode      = { ...s.paneDirectorMode };
           const newPaneStream            = { ...s.paneStream };
@@ -583,15 +591,25 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // it (#158). The director spans every repo, so it keeps the global token.
                 if (sess && sess.repo) newPaneRepos[key] = sess.repo;
                 // Bind the pane to its ROLE's default profile: director → Read-only review,
-                // worker → Autonomous (trusted) — unless the stream pins an explicit profile.
-                newPaneProfiles[key] = sess?.profile ?? roleProfileId(newPaneRoles[key]);
+                // worker → Autonomous (trusted) — unless the stream pins an explicit profile. #1854
+                // Phase b: a blueprint's fleetPolicy.profile seeds the WORKER default (never the
+                // director, sess===null) between the stream's own pin and the role default.
+                newPaneProfiles[key] = resolveStreamProfile(
+                  sess?.profile,
+                  sess === null ? undefined : fleetPolicy?.profile,
+                  roleProfileId(newPaneRoles[key]),
+                );
                 // The worker's owned paths become its role write boundary so edits in
                 // its lane auto-approve (dir/ -> dir/** so the subtree matches). #2094: only for a
                 // code-WRITING role — a read-only persona stream (reviewer/juror/…) must NOT get a
                 // write carve-out from its owns, or the read-only floor would leak.
                 if (sess && sess.owns.length && roleCapability(newPaneRoles[key]).code === "write")
                   newPaneRoleGlobs[key] = sess.owns.map((g) => (g.endsWith("/") ? g + "**" : g));
-                if (sess && sess.flow) newPaneFlows[key] = sess.flow;
+                // #1854 Phase b: the stream's own flow wins; else the blueprint fleetPolicy.flow
+                // default; else undefined so the launch path applies DEFAULT_FLOW downstream (only
+                // workers carry a flow — the director, sess===null, never does).
+                const effFlow = resolveStreamFlow(sess?.flow, fleetPolicy?.flow);
+                if (sess && effFlow) newPaneFlows[key] = effFlow;
                 // Per-agent model (#…) → the pane's `claude --model` at launch. Director (sess===null)
                 // and unset workers fall back to the global `defaultModel` (resolved at pane mount).
                 // #2094: the stream's own model wins; else its persona's model (validated as a tier).
