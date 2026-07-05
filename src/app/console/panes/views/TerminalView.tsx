@@ -12,7 +12,7 @@ import { gateClaudeLaunch } from "@/shared/lib/fleet/launchGate";
 import { scrollbackForPaneCount, totalMountedPaneCount } from "@/app/console/lib/terminal";
 import { nudgeSizes } from "@/app/console/lib/terminalNudge";
 import { probeJumble } from "@/app/console/lib/jumbleProbe";
-import { paneCwdRecovery, isManualPaneId } from "@/app/console/lib/paneIdentity";
+import { paneCwdRecovery, isManualPaneId, sandboxUserIdentity } from "@/app/console/lib/paneIdentity";
 import { composeStartupPrompt } from "@/shared/lib/session/checkpoint";
 import { PendingPtyData } from "@/app/console/lib/pendingPtyData";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly } from "@/app/console/lib/sessionLaunch";
@@ -487,6 +487,28 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // its cwd is already a distro-native path (the in-distro worktree/hub), initCmd is the bsc-agent
       // runtime, and its kickoff prompt is baked — so we only wrap the spawn in `wsl -d <distro>`.
       const paneDistro = st.paneWslDistro[paneId];
+      // The sealed distro this pane spawns into (if any): the manual scratch shell, else an identity
+      // pane's cage distro (paneWslDistro), else undefined for the normal host shell.
+      const effectiveDistro = sandboxed ? "bsc-agent-sandbox" : (paneDistro || undefined);
+      // #1994: a sandboxed WORKER pane runs as its OWN provisioned Linux user — a locked-down (700)
+      // home isolates it from co-located agents (raw Bash can't cross Unix perms). Derive+provision the
+      // user (idempotent; a relaunch reuses the same home) and pass it to pty_create's `-u`. The
+      // director, non-worker panes, and non-sandboxed panes keep the distro's shared default user.
+      // A provisioning failure must NOT wedge the launch — log and fall back to the shared user.
+      // NOTE (remaining #1994 work): the worker's worktree is still created by the DEFAULT `agent`
+      // user under `/home/agent/...` (ensure_sandbox_worktree), so a per-agent user can read/traverse
+      // but not WRITE it. Full end-to-end isolation needs that worktree/clone owned by (or group-
+      // writable to) this user — the follow-on boundary decision (issue option a vs b).
+      let wslUser: string | undefined;
+      const sandboxIdentity = sandboxUserIdentity(paneId, effectiveDistro);
+      if (sandboxIdentity) {
+        try {
+          wslUser = await invoke<string>("ensure_sandbox_user", { identity: sandboxIdentity });
+        } catch (e) {
+          log.error(`console[${paneId}] ensure_sandbox_user failed — launching as the shared distro user (#1994): ${e}`);
+        }
+        if (destroyed) return;
+      }
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
@@ -510,7 +532,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         providerId,
         // The sealed distro to spawn into (#1988): the manual scratch shell, else an identity pane's
         // cage distro (paneWslDistro), else undefined for the normal host shell.
-        wslDistro: sandboxed ? "bsc-agent-sandbox" : (paneDistro || undefined),
+        wslDistro: effectiveDistro,
+        // #1994: the per-agent Linux user to run the distro session as (sandboxed workers only) — its
+        // private 700 home isolates it from co-located agents. Undefined ⇒ the distro's shared default.
+        wslUser,
       }, true, (e) => log.error(`console[${paneId}] pty_create failed: ${e}`));
 
       // Show the native input as soon as we LAUNCH a Claude session — don't wait for the OSC-100

@@ -178,6 +178,26 @@ export function parsePaneIdentity(id: string): ParsedPaneIdentity | null {
 }
 
 /**
+ * The identity to provision a per-agent sandbox Linux USER for (#1994), or `null` when this pane must
+ * keep the sealed distro's shared default user.
+ *
+ * Per-agent filesystem isolation: a sandboxed WORKER pane — a `<projectKey>:<streamId>` fleet agent
+ * running INSIDE the sealed WSL2 distro (`distro` set) — runs as its OWN non-root Linux user with a
+ * locked-down (`700`) home, so co-located agents can't read or tamper with its files even via raw
+ * Bash. The DIRECTOR (`<key>:director`), every non-worker pane (manual / triage / planner / positional),
+ * and every non-sandboxed pane (no `distro`) keep the distro's shared default user — today's behavior.
+ *
+ * Returns the pane id itself — the worker's STABLE identity (`fleetPaneId`) — so a relaunched worker
+ * re-derives (via the Rust `agent_user_name`) and reuses the SAME Linux user + home. Pure (no invoke)
+ * so the "which pane gets a user" decision is unit-testable; the caller provisions it with
+ * `ensure_sandbox_user` and threads the returned username to `pty_create`'s `wslUser`.
+ */
+export function sandboxUserIdentity(paneId: string, distro: string | undefined): string | null {
+  if (!distro) return null;
+  return parsePaneIdentity(paneId)?.kind === "worker" ? paneId : null;
+}
+
+/**
  * The Rust command + args that resolve a pane's on-disk dir from its identity (#1819 hardening) — for
  * a claude pane whose configured cwd came back EMPTY (the async `bscBaseDir` mirror wasn't loaded when
  * the pane's cwd was set, so `projectRepoCwd`/`projectHubCwd` returned ""). The launch can then recover
