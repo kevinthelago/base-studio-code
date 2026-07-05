@@ -8,9 +8,34 @@ import { PLAN_STAGES, type StageConfig, type StageId } from "./planStages";
 import { evalGate, gateApplies, type PlanSignals } from "./stageGate";
 import type {
   Blueprint, BlueprintStage, BlueprintCategory, SectionStatus,
-  StageRenderStatus, IncompleteStage,
+  StageRenderStatus, IncompleteStage, SectionDef, ModelCapabilityTier, StageSeed,
 } from "./blueprintTypes";
 import { uid, makeBlueprints, dedupeSections } from "./blueprintBuiltins";
+
+// ── Dynamic-blueprint resolution (#1854 Phase a) ──────────────────────────────
+
+/** Resolve the prompt to use for a stage, adapting to the driving model's capability tier (#1854
+ *  Phase a). When a `tier` is given and the stage declares a {@link SectionDef.promptVariants}
+ *  override for exactly that tier, that variant wins; otherwise the stage's base `prompt` is used —
+ *  so a stage with no variants (or no tier) behaves exactly as today (the base prompt). The lookup is
+ *  DIRECT (no cross-tier cascade): an absent variant falls straight back to the base `prompt`, which
+ *  is already the open-ended frontier prompt. Returns "" for a missing section. */
+export function resolveStagePrompt(
+  section: Pick<SectionDef, "prompt" | "promptVariants"> | undefined,
+  tier?: ModelCapabilityTier,
+): string {
+  if (!section) return "";
+  const variant = tier ? section.promptVariants?.[tier] : undefined;
+  return variant?.trim() ? variant : section.prompt;
+}
+
+/** The archetype seed content for a stage, or undefined when the stage carries none (#1854 Phase a).
+ *  A convenience accessor so callers don't reach into `section.seed` (and so an empty/whitespace
+ *  `content` is treated as absent). */
+export function stageSeed(section: Pick<SectionDef, "seed"> | undefined): StageSeed | undefined {
+  const seed = section?.seed;
+  return seed?.content?.trim() ? seed : undefined;
+}
 
 /** The built-in blueprint-author lifecycle's id (#923). */
 export const AUTHORING_BLUEPRINT_ID = "blueprint-author";
