@@ -84,6 +84,29 @@ describe("GraphCanvas (#2208)", () => {
     expect(container.querySelectorAll(".resize-x")).toHaveLength(0);
   });
 
+  it("draws the infinite grid backdrop only when `grid` is set, tracking pan + zoom", () => {
+    const { container, rerender } = render(
+      <GraphCanvas vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null}>
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    const hasGrid = () => [...container.querySelectorAll("div")].find((d) => d.style.backgroundImage.includes("radial-gradient"));
+    // No grid by default.
+    expect(hasGrid()).toBeUndefined();
+    // With grid on + a panned/zoomed viewport: the backdrop lives on the viewport (fills it, never
+    // stops at the world box), its dot SPACING scales with zoom, and its origin follows the pan — so
+    // it reads as world-aligned graph paper under the whole graph.
+    rerender(
+      <GraphCanvas vp={fakeVp({ view: { tx: 40, ty: -25, scale: 2 } })} world={{ w: 10, h: 10 }} toolbar={null} grid gridSize={24}>
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    const gridEl = hasGrid()!;
+    expect(gridEl).toBeTruthy();
+    expect(gridEl.style.backgroundSize).toBe("48px 48px");      // gridSize 24 × scale 2
+    expect(gridEl.style.backgroundPosition).toBe("40px -25px"); // pan (tx, ty)
+  });
+
   // #2230 — clicking the empty backdrop clears the selection.
   it("fires onBackgroundClick on a genuine backdrop click, but not on a node press or after a pan", () => {
     const onBackgroundClick = vi.fn();
