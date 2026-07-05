@@ -102,6 +102,122 @@ pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2
     ]
 }
 
+// ── Bundled host toolchain on the session PATH (#1277) ──────────────────────
+//
+// Unlike the `bsc-*` sidecars (exec'd by an absolute `$BSC_*_BIN` path, no PATH change), the host
+// toolchain a session needs — `gh`, and on Windows a POSIX userland (`git` + `bash` + coreutils) —
+// must be ON PATH so the tools find each other (`gh` shells out to `git`; the `bsc-*` rc helpers +
+// `BASH_ENV` assume `cat`/`grep`/`sed`/`date`/… present). When we bundle those (issue #1277), we
+// PREPEND/APPEND the bundled bin dirs to the session PATH.
+//
+// CRITICAL (additive-only): a bundled dir is added ONLY when it actually exists on disk. With no
+// bundle staged (every build today, and dev), `session_path_prefix`/`session_path_suffix` are empty
+// and `session_env` adds NO `PATH` entry at all — byte-identical to inheriting the parent PATH. A
+// regression here breaks every session, so the disk gate is the whole safety story.
+//
+// Layout the resolvers expect (staged at release time; see `scripts/stage-sidecar.mjs`):
+//   <exe_dir>/gh[.exe]                      — `gh` (Tauri externalBin stages sidecars beside the exe)
+//   <exe_dir>/portable-git/{cmd,bin,usr/bin,mingw64/bin}   — trimmed PortableGit (Windows only)
+
+/// Windows-only: the trimmed-PortableGit bin dirs to PREPEND to the session PATH, given the app exe
+/// dir. Prepending makes the KNOWN-GOOD bundled `git`/`bash`/coreutils win over any system Git Bash
+/// or the WSL `bash.exe` stub — the resolution policy for git/bash on Windows (correctness; kills the
+/// #109 WSL/Git-Bash ambiguity). Pure (no fs); `session_path_prefix` applies `.exists()`. `windows`
+/// is injected so the candidate ordering is unit-testable off-Windows.
+fn portable_git_bin_candidates(exe_dir: &std::path::Path, windows: bool) -> Vec<std::path::PathBuf> {
+    if !windows {
+        return Vec::new(); // macOS/Linux use the system shell + coreutils — nothing bundled.
+    }
+    let pg = exe_dir.join("portable-git");
+    vec![
+        pg.join("cmd"),                    // git.exe (the primary git launcher)
+        pg.join("mingw64").join("bin"),    // git core + libs
+        pg.join("bin"),                    // bash.exe + a few core utils
+        pg.join("usr").join("bin"),        // the full coreutils userland (cat/grep/sed/date/…)
+    ]
+}
+
+/// The bundled `gh` binary's dir, to APPEND to the session PATH — a bundled `gh` is a FALLBACK, so a
+/// user-installed `gh` earlier on PATH still wins (the resolution policy for `gh`, unlike git/bash).
+/// `gh` is staged BESIDE the app exe by Tauri externalBin, so its dir is the exe dir. Returned only
+/// when a bundled `gh` actually sits there, so we never gratuitously add the exe dir to PATH. Pure;
+/// `windows` picks the `.exe` suffix.
+fn bundled_gh_dir(exe_dir: &std::path::Path, windows: bool) -> Option<std::path::PathBuf> {
+    let gh = exe_dir.join(if windows { "gh.exe" } else { "gh" });
+    gh.exists().then(|| exe_dir.to_path_buf())
+}
+
+/// The existing bundled dirs to PREPEND to a session PATH (Windows PortableGit), or empty when no
+/// bundle is staged. Disk-reading wrapper over [`portable_git_bin_candidates`].
+fn session_path_prefix() -> Vec<std::path::PathBuf> {
+    let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))
+    else {
+        return Vec::new();
+    };
+    portable_git_bin_candidates(&exe_dir, cfg!(windows))
+        .into_iter()
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// The existing bundled dirs to APPEND to a session PATH (a bundled `gh`, as a fallback), or empty.
+fn session_path_suffix() -> Vec<std::path::PathBuf> {
+    let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))
+    else {
+        return Vec::new();
+    };
+    bundled_gh_dir(&exe_dir, cfg!(windows)).into_iter().collect()
+}
+
+/// Compose a session `PATH` value from `prefix` (winning) dirs + the inherited `base` + `suffix`
+/// (fallback) dirs, joined by the platform separator and de-duplicated (first occurrence wins).
+/// Returns `None` when there's nothing to add (`prefix` AND `suffix` empty) — the signal for the
+/// caller to leave `PATH` untouched, so a no-bundle session inherits the parent PATH unchanged. Pure
+/// + testable; `sep` is injected (`;` on Windows, `:` elsewhere).
+fn compose_path(
+    prefix: &[std::path::PathBuf],
+    base: Option<&str>,
+    suffix: &[std::path::PathBuf],
+    sep: char,
+) -> Option<String> {
+    if prefix.is_empty() && suffix.is_empty() {
+        return None; // nothing bundled → don't touch PATH (byte-identical to inheriting it)
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let mut push = |s: String, parts: &mut Vec<String>| {
+        if !s.is_empty() && !parts.iter().any(|p| p == &s) {
+            parts.push(s);
+        }
+    };
+    for p in prefix {
+        push(p.to_string_lossy().into_owned(), &mut parts);
+    }
+    if let Some(b) = base {
+        for seg in b.split(sep) {
+            push(seg.to_string(), &mut parts);
+        }
+    }
+    for p in suffix {
+        push(p.to_string_lossy().into_owned(), &mut parts);
+    }
+    Some(parts.join(&sep.to_string()))
+}
+
+/// The `PATH` a session should run with, given the caller's optional PATH override (else the app's
+/// inherited PATH) — bundled toolchain dirs folded in per the resolution policy. `None` ⇒ no bundle
+/// staged ⇒ leave PATH alone. Disk-reading; the pure composition lives in [`compose_path`].
+fn bundled_session_path(caller_path: Option<&str>) -> Option<String> {
+    let prefix = session_path_prefix();
+    let suffix = session_path_suffix();
+    if prefix.is_empty() && suffix.is_empty() {
+        return None;
+    }
+    let owned_env = caller_path.is_none().then(|| std::env::var("PATH").ok()).flatten();
+    let base = caller_path.or(owned_env.as_deref());
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    compose_path(&prefix, base, &suffix, sep)
+}
+
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -109,6 +225,12 @@ pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2
 /// could fall back to a degraded terminal type, breaking inline features like the
 /// ghost-text autocomplete and truecolor output. We advertise sensible defaults
 /// here; caller-supplied vars (e.g. `GH_TOKEN`, or an explicit `TERM`) win.
+///
+/// When a bundled host toolchain is staged on disk (#1277), its bin dirs are folded into `PATH`
+/// (bundled git/bash prepended, bundled `gh` appended as a fallback). With no bundle present — every
+/// build today and dev — NO `PATH` entry is added, so behavior is byte-identical to inheriting the
+/// parent PATH. The added `PATH` is applied like any other var: a caller-supplied `PATH` becomes the
+/// base the bundled dirs wrap.
 pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = vec![
         ("TERM".to_string(), "xterm-256color".to_string()),
@@ -119,6 +241,16 @@ pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, Stri
             slot.1 = v.clone(); // caller overrides a default
         } else {
             env.push((k.clone(), v.clone()));
+        }
+    }
+    // Fold the bundled host toolchain into PATH — additive-only: `bundled_session_path` returns None
+    // (⇒ no change) unless a bundle is actually staged beside the exe. The base is any caller PATH,
+    // else the app's inherited PATH.
+    let caller_path = env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone());
+    if let Some(path) = bundled_session_path(caller_path.as_deref()) {
+        match env.iter_mut().find(|(k, _)| k == "PATH") {
+            Some(slot) => slot.1 = path,
+            None => env.push(("PATH".to_string(), path)),
         }
     }
     env
@@ -298,9 +430,87 @@ pub(super) fn wire_bsc_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{plan_db_for_cwd, session_env, session_skill_group_for_pane, sidecar_candidates};
+    use super::{
+        bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates, session_env,
+        session_skill_group_for_pane, sidecar_candidates,
+    };
     use crate::bsc_base_dir;
     use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn portable_git_candidates_are_windows_only_and_ordered() {
+        // Off Windows: nothing bundled — the system shell + coreutils are used.
+        assert!(portable_git_bin_candidates(&PathBuf::from("/opt/app"), false).is_empty());
+        // On Windows: the trimmed-PortableGit bin dirs, in resolution order (cmd → mingw64 → bin → usr).
+        let exe = PathBuf::from(r"C:\app");
+        let c = portable_git_bin_candidates(&exe, true);
+        assert_eq!(
+            c,
+            vec![
+                exe.join("portable-git").join("cmd"),
+                exe.join("portable-git").join("mingw64").join("bin"),
+                exe.join("portable-git").join("bin"),
+                exe.join("portable-git").join("usr").join("bin"),
+            ],
+        );
+    }
+
+    #[test]
+    fn bundled_gh_dir_only_resolves_when_gh_is_staged_beside_the_exe() {
+        // A dir with no bundled gh → None (we never gratuitously add the exe dir to PATH).
+        let empty = std::env::temp_dir().join("bsc-1277-no-gh");
+        let _ = std::fs::create_dir_all(&empty);
+        assert_eq!(bundled_gh_dir(&empty, cfg!(windows)), None);
+        // Stage a fake gh beside the "exe" → its dir (the exe dir) is returned.
+        let dir = std::env::temp_dir().join("bsc-1277-gh");
+        let _ = std::fs::create_dir_all(&dir);
+        let gh = dir.join(if cfg!(windows) { "gh.exe" } else { "gh" });
+        std::fs::write(&gh, b"#!/bin/sh\n").unwrap();
+        assert_eq!(bundled_gh_dir(&dir, cfg!(windows)), Some(dir.clone()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn compose_path_returns_none_when_nothing_is_bundled() {
+        // The additive-only contract: no prefix AND no suffix ⇒ None ⇒ caller leaves PATH untouched
+        // (a no-bundle session inherits the parent PATH byte-for-byte).
+        assert_eq!(compose_path(&[], Some("/usr/bin:/bin"), &[], ':'), None);
+        assert_eq!(compose_path(&[], None, &[], ':'), None);
+    }
+
+    #[test]
+    fn compose_path_prepends_prefix_and_appends_suffix_deduped() {
+        let prefix = vec![PathBuf::from("/pg/cmd"), PathBuf::from("/pg/bin")];
+        let suffix = vec![PathBuf::from("/app")]; // bundled gh dir
+        let out = compose_path(&prefix, Some("/usr/bin:/pg/bin"), &suffix, ':').unwrap();
+        // Prefix wins (first), base in the middle, suffix last; the duplicate /pg/bin is dropped.
+        assert_eq!(out, "/pg/cmd:/pg/bin:/usr/bin:/app");
+    }
+
+    #[test]
+    fn compose_path_with_only_a_suffix_appends_after_base() {
+        // A user-installed gh (already on the base PATH) stays ahead of the bundled fallback.
+        let out = compose_path(&[], Some("/usr/local/bin:/usr/bin"), &[PathBuf::from("/app")], ':').unwrap();
+        assert_eq!(out, "/usr/local/bin:/usr/bin:/app");
+    }
+
+    #[test]
+    fn session_env_adds_no_path_entry_when_no_bundle_is_staged() {
+        // In the test target no toolchain is staged beside the exe, so session_env must NOT introduce
+        // a PATH var — the additive-only guarantee that a no-bundle session is unchanged (#1277).
+        let env = session_env(&HashMap::new());
+        assert!(!env.iter().any(|(k, _)| k == "PATH"), "no bundle ⇒ no synthesized PATH entry");
+        // A caller PATH still flows through untouched (nothing bundled to fold in).
+        let mut caller = HashMap::new();
+        caller.insert("PATH".to_string(), "/only/this".to_string());
+        let env = session_env(&caller);
+        assert_eq!(
+            env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.as_str()),
+            Some("/only/this"),
+        );
+    }
 
     #[test]
     fn sidecar_candidates_probe_beside_exe_then_both_profile_dirs() {

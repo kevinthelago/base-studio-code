@@ -26,10 +26,29 @@ pub(crate) fn resolve_shell() -> String {
         }
     }
     #[cfg(windows)]
-    if let Some(b) = find_git_bash() {
-        return b;
+    {
+        // #1277: a BUNDLED trimmed PortableGit (staged beside the app exe) is preferred over any
+        // system Git Bash — a known-good `bash.exe` invoked by absolute path can't misfire to the
+        // WSL System32 stub (#109) and needs no user install (#446/#447). Falls through to the system
+        // Git Bash search, then bare `bash`, when no bundle is present (byte-identical to before).
+        if let Some(b) = bundled_git_bash() {
+            return b;
+        }
+        if let Some(b) = find_git_bash() {
+            return b;
+        }
     }
     "bash".to_string()
+}
+
+/// Locate a BUNDLED PortableGit `bash.exe` staged beside the app exe (#1277), at
+/// `<exe_dir>/portable-git/{bin,usr/bin}/bash.exe`. `None` when no bundle is staged — every build
+/// today and dev — so `resolve_shell` falls through to the system Git Bash search unchanged. Reuses
+/// [`bash_in_roots`] with the bundled PortableGit root.
+#[cfg(windows)]
+pub(crate) fn bundled_git_bash() -> Option<String> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    bash_in_roots(&[exe_dir.join("portable-git")], &|p| p.exists())
 }
 
 /// Locate Git Bash's `bash.exe` (never WSL's System32 stub) from known install
