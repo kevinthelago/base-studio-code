@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "note": "The KitNode contract (#1852 Phase 2) — the ONE source of truth for the spec-first UI SDK. A KitNode is a declarative, style/theme-independent description of a piece of UI that an AI emits as data (never JSX). This file is the agent's contract: it lists every node `kind`, the fields each accepts, which are required, whether it bears children, and the closed value sets for enum fields. It is read by BOTH faces of the SDK so they can never drift: the frontend (`src/shared/ui/spec/schema.ts` validates against it + `KitRenderer` renders a validated tree through the shared primitives) AND the bundled `bsc ui` CLI (`crates/bsc-ui` — `bsc ui schema` serves this file, `bsc ui validate` checks a spec against it), so a live agent can author + validate UI-as-data from its own shell. Structural validation only (kind known · required present · no unknown fields · enums honored · children shape) — rendering-time concerns (a select with no options) stay with the renderer. Nested nodes are recursed wherever a field value is itself a node (`header`) or an array of nodes (`children`).",
+  "nodes": {
+    "card": {
+      "doc": "A framed panel (renders the shared <Card>). Optional canonical head via `title`+`hint`, or a fully-composed `header` node; `tone` tints the border. Bears children.",
+      "fields": ["tone", "title", "hint", "header", "children"],
+      "required": [],
+      "children": true
+    },
+    "header": {
+      "doc": "A card head: a title with an optional hint. Used as a card's `header` field or standalone.",
+      "fields": ["title", "hint"],
+      "required": ["title"],
+      "children": false
+    },
+    "field": {
+      "doc": "A labelled form control (renders <TextField>/<SelectField>). `control` picks the input; `bind` names the host state key the value reads/writes; `options` supplies a select's choices.",
+      "fields": ["control", "label", "hint", "bind", "options", "inputType", "placeholder"],
+      "required": ["control", "label"],
+      "children": false,
+      "enums": { "control": ["text", "password", "select"] }
+    },
+    "button": {
+      "doc": "An action button (renders <Button>). `action` names the host callback fired on click; `variant`/`danger` style it.",
+      "fields": ["label", "variant", "action", "danger"],
+      "required": ["label"],
+      "children": false,
+      "enums": { "variant": ["default", "primary", "ghost"] }
+    },
+    "row": {
+      "doc": "A horizontal line that spreads a `label` (left) against its children (right) — e.g. a setting with a trailing toggle. Bears children.",
+      "fields": ["label", "children"],
+      "required": [],
+      "children": true
+    },
+    "toggle": {
+      "doc": "A boolean pill switch (renders <Toggle>). `bind` names the host state key the on/off reads/writes.",
+      "fields": ["bind", "label"],
+      "required": ["bind"],
+      "children": false
+    },
+    "tag": {
+      "doc": "A small inline pill (renders <Chip>). `tone` picks the semantic color.",
+      "fields": ["label", "tone"],
+      "required": ["label"],
+      "children": false,
+      "enums": { "tone": ["neutral", "accent", "success", "info", "danger"] }
+    },
+    "text": {
+      "doc": "A run of styled text (renders <Text>). `tone`/`size` style it.",
+      "fields": ["text", "tone", "size"],
+      "required": ["text"],
+      "children": false
+    }
+  }
+}
