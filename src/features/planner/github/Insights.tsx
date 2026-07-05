@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
+import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 import { Bars, HBars, StatCard } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";

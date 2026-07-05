@@ -24,7 +24,7 @@ import type { GithubRepo } from "@/store";
 import { BranchGraph } from "./BranchGraph";
 import { useRepoPulse, type RepoPulseLive } from "./lib/useRepoPulse";
 import type { VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch } from "@/shared/data/repoPulse";
-import type { CiHealth, PulseKpis } from "./lib/repoPulseLive";
+import type { CiHealth, PulseKpis } from "@/shared/lib/github/repoPulseLive";
 import { BRANCH_STATUS } from "@/shared/data/repoPulse";
 
 /** Last 7 or 14 days of a velocity slice (the series are stored 14-wide). */

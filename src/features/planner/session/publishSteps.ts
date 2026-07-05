@@ -16,7 +16,7 @@ import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import type { AgentStream } from "../fleet/planFleet";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../lib/repoScaffold";
 import { renderIssueBody, subIssueLinks, type PlanIssue } from "../issues/planIssues";
-import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/features/github/lib/issueProvenance";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/shared/lib/github/issueProvenance";
 
 /** The injected GitHub transport — the same closures handlePublish built over `invoke`. */
 export interface GhApi {

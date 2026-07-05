@@ -13,12 +13,11 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { applyBlueprintMcp, collectBlueprintMcp } from "../blueprints/blueprintMcp";
 import { writeProjectMcpContext } from "../lib/mcpContext";
-import { catalogLink, repoNameFromLink, mcpRepoName } from "@/features/mcp/lib/mcpInstall";
+import { catalogLink, repoNameFromLink, mcpRepoName } from "@/features/mcp";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { roleCapability, roleWriteRules, roleDeniedCommands } from "@/shared/lib/session/sessionRoles";
-import { resolveAllInstalledMcp } from "@/features/mcp/lib/mcpServers";
-import { toSessionPayloads, mcpAllowRules } from "@/features/mcp/lib/sessionConfig";
+import { resolveAllInstalledMcp, toSessionPayloads, mcpAllowRules } from "@/features/mcp";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { type Blueprint } from "../stages/blueprints";
 

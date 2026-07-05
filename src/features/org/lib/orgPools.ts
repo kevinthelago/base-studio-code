@@ -6,8 +6,7 @@
 // overseen by the reviewer, B by the juror/auditor — different signatures); a director + N identical
 // build workers (Build Swarm) DOES. Pure model (React-free) so it's unit-testable, canvas stays thin.
 import type { Org, Position, Relationship } from "./org";
-import type { Persona } from "@/features/personas";
-import { BUILTIN_PERSONAS } from "@/features/personas/lib/persona";
+import { BUILTIN_PERSONAS, type Persona } from "@/features/personas";
 
 /** Whether a persona runs as a pool. Uses its (hydrated) `pooled` when set; falls back to the PACKAGED
  *  built-in when the store copy predates the field (an older-seeded built-in whose `pooled` hasn't been

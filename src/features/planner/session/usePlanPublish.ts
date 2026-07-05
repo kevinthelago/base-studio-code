@@ -20,7 +20,7 @@ import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
-import { canLaunchTriage, publishBlockReason } from "@/features/github/lib/projectSync";
+import { canLaunchTriage, publishBlockReason } from "@/shared/lib/github/projectSync";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
 import { resolveBlueprintSkillPayloads } from "../blueprints/blueprintSkills";
 import { publishGist } from "@/features/planner/lib/gist/gist";

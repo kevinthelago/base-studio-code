@@ -9,7 +9,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
 import { bscJson } from "@/shared/lib/core/bsc";
-import { parseHookLog, aggregateHookTelemetry } from "@/features/mcp/lib/hookTelemetry";
+import { parseHookLog, aggregateHookTelemetry } from "@/features/mcp";
 import { tunnelSetHookTelemetry, type HookTelemetryFrame } from "./tunnelClient";
 import { log } from "@/shared/lib/core/log";
 

@@ -3,7 +3,7 @@
 // This resolves attached ids (so the editor can show what's attached + warn about anything
 // missing). Pure. (The Knowledge Blocks half of this library was retired in #1460 — Skills only.)
 
-import { type SkillDef } from "@/features/skills/lib/skills";
+import { type SkillDef } from "@/features/skills";
 import { type SkillKind } from "@/shared/data/skills";
 import { writeProjectFile } from "@/shared/lib/core/projectFiles";
 import { type Blueprint } from "../stages/blueprints";

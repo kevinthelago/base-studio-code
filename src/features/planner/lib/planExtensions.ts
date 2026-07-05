@@ -5,8 +5,8 @@
 // glue. Pure (no React/Tauri) so the catalog mapping is unit-testable and shared with its tests.
 // (The old `<mcp_assign>` stream tag + its parser were removed in the tag→bsc migration, #2012.)
 
-import { mcpFromCatalog, type McpServer } from "@/features/mcp/lib/mcpServers";
-import { resolveMcpInstallDir, catalogLink } from "@/features/mcp/lib/mcpInstall";
+import { mcpFromCatalog, type McpServer } from "@/features/mcp";
+import { resolveMcpInstallDir, catalogLink } from "@/features/mcp";
 
 /**
  * The {@link McpServer} (minus id) a `<mcp_assign name>` resolves to: the catalog

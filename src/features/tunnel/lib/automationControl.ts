@@ -3,8 +3,7 @@
 // owns schedule validity — a phone can arm/disarm/run, but an invalid cron is rejected
 // here rather than silently armed (and the phone never runs schedules itself).
 
-import { isValidCron } from "@/features/automations/lib/cron";
-import type { Automation, AutomationWhen } from "@/features/automations/lib/scheduler";
+import { isValidCron, type Automation, type AutomationWhen } from "@/features/automations";
 import type { AutomationFrame } from "./tunnelClient";
 
 /** A compact, human-readable schedule string for the phone (cron expr, or "every day · 09:00"). */

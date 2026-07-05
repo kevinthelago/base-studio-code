@@ -3,7 +3,7 @@
 // state, or the real chart — instead of the old page-wide "Loading insights…" screen.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { GithubQuery } from "@/features/github/lib/useGithubQuery";
+import type { GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 
 // Stub the header (it auto-clones repos via invoke on mount) so the test isolates the card bodies.

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { useGithubQuery } from "@/features/github/lib/useGithubQuery";
+import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
