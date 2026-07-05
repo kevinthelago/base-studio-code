@@ -110,6 +110,7 @@ export const useAppStore = create<AppStore>()(
         injectionHardGate:    s.injectionHardGate,
         bypassPermissions:    s.bypassPermissions,
         sandboxConsoles:      s.sandboxConsoles,
+        showConsolePage:      s.showConsolePage,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
         allowGateOverride:    s.allowGateOverride,

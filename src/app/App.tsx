@@ -41,7 +41,7 @@ export default function App() {
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
   const {
-    activeWorkspace, setWorkspace,
+    activeWorkspace: rawActiveWorkspace, setWorkspace,
     tabs, activeTabIdx,
     focusedAgentName,
     activeRepoName,
@@ -49,7 +49,14 @@ export default function App() {
     settingsSection,
     projectsView,
     hasHydrated,
+    showConsolePage,
   } = useAppStore();
+
+  // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
+  // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
+  // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
+  // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
+  const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
 
   // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
