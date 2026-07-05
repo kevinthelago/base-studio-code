@@ -27,5 +27,6 @@
     {
       "key": "streams"
     }
-  ]
+  ],
+  "kit": "react-ui"
 }
