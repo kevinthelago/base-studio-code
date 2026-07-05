@@ -7,7 +7,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
-import type { ProjectV2Node } from "@/features/github/lib/projectV2";
+import type { ProjectV2Node } from "@/shared/lib/github/projectV2";
 import {
   ISSUES_QUERY, parseIssues, deriveLabels, deriveMilestones, applyFilters,
   type FlatIssue, type Filters,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
-import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp/lib/hookTelemetry";
+import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp";
 import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Stack } from "@/shared/ui/layout/Stack";

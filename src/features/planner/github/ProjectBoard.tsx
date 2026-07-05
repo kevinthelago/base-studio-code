@@ -4,7 +4,7 @@ import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { reposFromItems } from "../list/projectScan";
 import { GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
+import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";

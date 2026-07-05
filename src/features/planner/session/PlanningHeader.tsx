@@ -10,7 +10,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
+import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
 
 export interface PlanningHeaderProps {
   isExisting: boolean;

@@ -19,7 +19,7 @@ import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencie
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
 import { applyMcpAssign } from "../lib/planExtensions";
-import { catalogLink } from "@/features/mcp/lib/mcpInstall";
+import { catalogLink } from "@/features/mcp";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
 import { scriptDocRelpath } from "./planningSession";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";

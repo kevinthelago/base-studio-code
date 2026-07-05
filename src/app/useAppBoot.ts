@@ -4,7 +4,7 @@ import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
-import { accentVars } from "@/features/settings/lib/appearance";
+import { accentVars } from "@/features/settings";
 import { applyThemeToRoot } from "@/shared/ui/kit/theme";
 
 /** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't

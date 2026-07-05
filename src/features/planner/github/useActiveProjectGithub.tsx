@@ -6,7 +6,7 @@
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { useGithubQuery, type GithubQuery } from "@/features/github/lib/useGithubQuery";
+import { useGithubQuery, type GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 

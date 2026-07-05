@@ -1,4 +1,4 @@
-import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
+import { parseProjectV2Items, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 import type { GhLabel } from "@/shared/lib/github/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

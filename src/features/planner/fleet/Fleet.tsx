@@ -24,7 +24,7 @@ import { CostEnergy } from "./CostEnergy";
 import { FleetHealth } from "./FleetHealth";
 import { FleetLessons } from "./FleetLessons";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
+import type { ThroughputSlice } from "@/shared/lib/github/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
 

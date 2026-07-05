@@ -2,7 +2,7 @@
 // (no double quotes / $ / backticks) so each is safe to pass as `claude "<prompt>"`. Extracted
 // from store/index.ts (store split, stage 1).
 
-import { BSC_ISSUE_LABEL, triageIssueListArgs } from "@/features/github/lib/issueProvenance";
+import { BSC_ISSUE_LABEL, triageIssueListArgs } from "@/shared/lib/github/issueProvenance";
 
 // Sent as the first message to each console when a project tab is opened, so the
 // session starts by reading and executing the laid-out plan. Plain text only — no

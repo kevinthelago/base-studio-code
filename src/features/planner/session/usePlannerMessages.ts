@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { usePoll } from "@/shared/hooks/usePoll";
-import type { PlanMessage } from "@/features/tunnel/lib/tunnel";
+import type { PlanMessage } from "@/features/tunnel";
 
 export function usePlannerMessages(tunnelRunning: boolean, paneId: string): PlanMessage[] {
   const [plannerMessages, setPlannerMessages] = useState<PlanMessage[]>([]);

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
-import { loadPendingLessons, lessonTitle, type Lesson } from "@/features/skills/lib/lessons";
+import { loadPendingLessons, lessonTitle, type Lesson } from "@/features/skills";
 import { CardHead } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";

@@ -15,7 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
 import { hubToCanonical } from "@/features/planner/lib/plannerSync";
-import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "@/features/tunnel/lib/tunnelClient";
+import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "@/features/tunnel";
 import { usePlannerMessages } from "./usePlannerMessages";
 import { SKIPPED_KEY, FEATURES_KEY } from "../stages/planTopics";
 import { FLEET_KEY } from "../fleet/planFleet";

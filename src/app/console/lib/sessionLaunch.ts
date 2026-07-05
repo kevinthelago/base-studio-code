@@ -10,15 +10,13 @@
 // repeated `useAppStore.getState()` calls. Do not change what is computed, only where it lives.
 
 import { resolveLlmConfig, bscAgentEnv, aiderEnv } from "@/shared/lib/core/llmConfig";
-import { resolveMcpServers, toBscAgentMcp } from "@/features/mcp/lib/mcpServers";
-import { resolveHooks } from "@/features/mcp/lib/hooks";
-import { toSessionPayloads } from "@/features/mcp/lib/sessionConfig";
-import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills/lib/skills";
+import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } from "@/features/mcp";
+import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
-import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
-import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
+import { resolveProfileSettings } from "@/features/agents";
+import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
 import type { AppStore } from "@/store/types";
 

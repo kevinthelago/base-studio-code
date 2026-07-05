@@ -3,6 +3,45 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
+// #1545 feature-boundary: a feature is a black box behind its `index.ts` barrel. A feature (and the
+// app shell) may import another feature's PUBLIC API (`@/features/<x>`) but NOT its internals
+// (`@/features/<x>/<anything deeper>`: lib/*, components, subdirs). `import type` stays allowed (erased
+// at build; a type-only coupling doesn't wire runtime). Own-feature modules DO use the
+// `@/features/<self>/...` alias (the repo's alias-over-`../../` convention), so this is enforced
+// PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `components/**`
+// and `glance/**` are exempt AS IMPORTERS while a parallel session restructures them
+// (#2197/#2214/#2372) — remove them from EXEMPT_IMPORTERS to fold them in once that lands.
+const FEATURES = ["agents", "automations", "components", "github", "glance", "mcp", "org", "personas", "planner", "settings", "skills", "tunnel"];
+const EXEMPT_IMPORTERS = ["components", "glance"];
+const BOUNDARY_MSG =
+  "Import another feature through its barrel (@/features/<x>), not its internals (#1545): a feature's " +
+  "public API is its index.ts; deeper paths (lib/*, components, subdirs) are private. `import type` is allowed.";
+const featureBoundaryRules = FEATURES
+  .filter((f) => !EXEMPT_IMPORTERS.includes(f))
+  .map((f) => ({
+    files: [`src/features/${f}/**/*.{ts,tsx}`],
+    ignores: [`src/features/${f}/**/*.test.{ts,tsx}`, `src/features/${f}/**/*.spec.{ts,tsx}`],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        patterns: [{
+          group: FEATURES.filter((o) => o !== f).flatMap((o) => [`@/features/${o}/*`, `@/features/${o}/**`]),
+          allowTypeImports: true,
+          message: BOUNDARY_MSG,
+        }],
+      }],
+    },
+  }));
+// The app shell has no own-feature — it may use any feature's barrel but never its internals.
+const appBoundaryRule = {
+  files: ["src/app/**/*.{ts,tsx}"],
+  ignores: ["src/app/**/*.test.{ts,tsx}", "src/app/**/*.spec.{ts,tsx}"],
+  rules: {
+    "@typescript-eslint/no-restricted-imports": ["error", {
+      patterns: [{ group: ["@/features/*/*", "@/features/*/**"], allowTypeImports: true, message: BOUNDARY_MSG }],
+    }],
+  },
+};
+
 export default tseslint.config(
   { ignores: ["dist", "target", "design", "node_modules", "relay"] },
   {
@@ -93,5 +132,8 @@ export default tseslint.config(
         }],
       }],
     },
-  }
+  },
+  // #1545 feature-boundary enforcement — per-feature (own internals allowed, others' forbidden) + the app shell.
+  ...featureBoundaryRules,
+  appBoundaryRule,
 );
