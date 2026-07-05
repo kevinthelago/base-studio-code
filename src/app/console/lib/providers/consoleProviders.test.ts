@@ -73,8 +73,13 @@ describe("non-Claude built-in providers", () => {
     expect(getProvider("codex")?.buildLaunchCmd()).toBe("codex");
   });
 
-  it("aider buildLaunchCmd returns 'aider'", () => {
-    expect(getProvider("aider")?.buildLaunchCmd()).toBe("aider");
+  it("aider buildLaunchCmd defaults to fleet-safe git (#1172) — auto-commit off", () => {
+    // First-class Aider always disables auto-commit/dirty-commit so it never surprise-commits on a
+    // pane's branch; the fleet's flow owns commits/PRs (full builder tested in aider.test.ts).
+    const cmd = getProvider("aider")?.buildLaunchCmd();
+    expect(cmd).toContain("aider");
+    expect(cmd).toContain("--no-auto-commits");
+    expect(cmd).toContain("--no-dirty-commits");
   });
 
   it("amazonq buildLaunchCmd returns 'q'", () => {

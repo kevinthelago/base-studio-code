@@ -9,7 +9,7 @@
 // was synchronous (no `await` between them), so a single snapshot is identical to the original's
 // repeated `useAppStore.getState()` calls. Do not change what is computed, only where it lives.
 
-import { resolveLlmConfig, bscAgentEnv } from "@/shared/lib/core/llmConfig";
+import { resolveLlmConfig, bscAgentEnv, aiderEnv } from "@/shared/lib/core/llmConfig";
 import { resolveMcpServers, toBscAgentMcp } from "@/features/mcp/lib/mcpServers";
 import { resolveHooks } from "@/features/mcp/lib/hooks";
 import { toSessionPayloads } from "@/features/mcp/lib/sessionConfig";
@@ -19,7 +19,7 @@ import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
-import type { ConsoleProvider } from "@/app/console/lib/providers";
+import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
 import type { AppStore } from "@/store/types";
 
 /**
@@ -84,7 +84,36 @@ export function buildAgentEnv(
     const bscMcp = toBscAgentMcp(mcp);
     if (bscMcp.length > 0) e.BSC_AGENT_MCP = JSON.stringify(bscMcp);
   }
+  if (providerId === "aider") {
+    // Aider (#1172): inject the provider's API key env (ANTHROPIC_/OPENAI_/GEMINI_API_KEY, or an
+    // OPENAI_API_BASE for a local/ollama OpenAI-compatible endpoint) so the `--model` selected in
+    // `buildAiderCommand` can actually reach the configured LLM. GH_TOKEN (added above) lets an Aider
+    // worker push + open its PR, exactly like the other providers.
+    Object.assign(e, aiderEnv(resolveLlmConfig(s)));
+  }
   return Object.keys(e).length > 0 ? e : undefined;
+}
+
+/**
+ * The per-provider launch config handed to a non-Claude provider's `buildLaunchCmd`. Only Aider
+ * (#1172) needs one today: it maps the pane's resolved LLM config, its startup prompt, and a worker's
+ * `CLAUDE.local.md` scope into `aider --model … --read … --message …`. Every other provider ignores
+ * the config (returns undefined so they launch unchanged).
+ */
+export function providerLaunchConfig(
+  s: AppStore,
+  paneId: string,
+  provider: ConsoleProvider,
+  startupPrompt: string | undefined,
+): ProviderLaunchConfig | undefined {
+  if (provider.id !== "aider") return undefined;
+  return {
+    llm: resolveLlmConfig(s),
+    startupPrompt: startupPrompt && startupPrompt.trim() ? startupPrompt : undefined,
+    // A worker's plan scope (CLAUDE.local.md, copied into the worktree by ensure_worktree) — handed to
+    // Aider read-only since it does no ancestor-CLAUDE.md walk. Only workers have one.
+    readFiles: s.paneRoles[paneId] === "worker" ? ["CLAUDE.local.md"] : undefined,
+  };
 }
 
 /**
@@ -243,18 +272,22 @@ export function resolveEffectiveInitCmd(
   provider: ConsoleProvider,
 ): string {
   const manual = isManualPaneId(paneId);
-  return isClaudeProvider
-    ? resolveInitCmd({
-        explicit: initCmd,
-        startupPrompt,
-        paneWasClaude: !!s.paneWasClaude[paneId],
-        autoResumeClaude: manual ? false : s.autoResumeClaude,
-        // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or a
-        // banner "restore" click — never on a clean restart, and never for a manual console.
-        wasUncleanShutdown: s.uncleanShutdown,
-        restoreRequested: manual ? false : !!s.restoreRequested[paneId],
-      })
-    : (initCmd && initCmd.length > 0 ? initCmd : provider.buildLaunchCmd());
+  if (isClaudeProvider) {
+    return resolveInitCmd({
+      explicit: initCmd,
+      startupPrompt,
+      paneWasClaude: !!s.paneWasClaude[paneId],
+      autoResumeClaude: manual ? false : s.autoResumeClaude,
+      // Crash recovery (#1041): resume only after an unclean shutdown (silent, if opted in) or a
+      // banner "restore" click — never on a clean restart, and never for a manual console.
+      wasUncleanShutdown: s.uncleanShutdown,
+      restoreRequested: manual ? false : !!s.restoreRequested[paneId],
+    });
+  }
+  // Non-Claude: an explicit initCmd wins; otherwise the provider builds its own launch command from
+  // the per-provider config (Aider maps LLM/model/prompt/worker-scope → flags, #1172; others ignore it).
+  if (initCmd && initCmd.length > 0) return initCmd;
+  return provider.buildLaunchCmd(providerLaunchConfig(s, paneId, provider, startupPrompt));
 }
 
 /**

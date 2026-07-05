@@ -382,8 +382,10 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       // so it keeps startupPrompt like Claude; other bare-shell providers don't (#1078 P3b).
       const bakesPrompt = isClaudeProvider || providerId === "bsc-agent";
 
-      // Providers that don't bake a startup prompt launch as plain shell commands.
-      if (!bakesPrompt) startupPrompt = undefined;
+      // Non-baking providers don't hand pty_create a startupPrompt (only Claude / bsc-agent bake it
+      // via the backend harness). Aider (#1172) instead consumes the prompt in its OWN launch command
+      // (`aider --message …`, built in resolveEffectiveInitCmd), so keep `startupPrompt` populated
+      // here; pty_create still receives it only for `bakesPrompt` providers (guarded below).
 
       // Serialize `claude` cold-starts so simultaneously-mounted panes don't
       // stampede the shared OAuth credential store and log every session out. A
