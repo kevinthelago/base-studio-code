@@ -1,4 +1,5 @@
 import { WorkspaceCard } from "../cards/WorkspaceCard";
+import { ConsolePageCard } from "../cards/ConsolePageCard";
 import { DefaultModelCard } from "../cards/DefaultModelCard";
 import { SessionsBehaviorCard } from "../cards/SessionsBehaviorCard";
 import { TerminalFontSizeCard } from "../cards/TerminalFontSizeCard";
@@ -24,6 +25,7 @@ export function GeneralPage() {
       />
 
       <WorkspaceCard />
+      <ConsolePageCard />
       <DefaultModelCard />
       <SessionsBehaviorCard />
 
