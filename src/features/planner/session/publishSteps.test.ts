@@ -199,6 +199,24 @@ describe("createIssues (generated from features)", () => {
     expect(status["issue:o/app:login"].status).toBe("error");
     expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/issues")).toBe(false);
   });
+
+  it("tags each created issue with its owning stream's label AT CREATION (#2397)", async () => {
+    // A feature IS a stream (stream defaults to the slug), so the issue must be created already
+    // carrying `stream:login` — no fragile post-hoc "label by predicted number" pass that 404s.
+    const { api, calls } = makeApi({
+      rest: () => [], post: () => ({ number: 7, node_id: "N7", html_url: "u" }), gql: () => ({}),
+    });
+    const { upd } = makeUpd();
+    await createIssues(api, upd, {
+      repos: ["o/app"], featuresContent: features, projectId: undefined, streams: [], viewerLogin: "",
+    }, noop);
+    // The stream label is ensured up front…
+    expect(calls.some(c => c.method === "post" && c.path === "repos/o/app/labels"
+      && (c.body as { name?: string }).name === "stream:login")).toBe(true);
+    // …and the created issue already carries it.
+    const issuePost = calls.find(c => c.method === "post" && c.path === "repos/o/app/issues");
+    expect((issuePost?.body as { labels?: string[] }).labels).toContain("stream:login");
+  });
 });
 
 // ── applyStreamLabels ──────────────────────────────────────────────────────────
@@ -217,6 +235,19 @@ describe("applyStreamLabels", () => {
     const { upd, status } = makeUpd();
     await applyStreamLabels(api, upd, { streams: [stream("s2", "o/app", [])] });
     expect(status["stream:s2"].status).toBe("exists");
+  });
+
+  it("SKIPS a plan-ref number that 404s instead of aborting or erroring the stream (#2397)", async () => {
+    // #4 was never posted as a real issue → labeling it 404s. The stream must still complete: #3
+    // labeled, #4 skipped — the 404 is never surfaced as a publish error (the bug this fixes).
+    const { api } = makeApi({
+      post: (p: string) => { if (/\/issues\/4\/labels$/.test(p)) throw new Error("404 Not Found"); return {}; },
+    });
+    const { upd, status } = makeUpd();
+    await applyStreamLabels(api, upd, { streams: [stream("s1", "o/app", ["#3", "#4"])] });
+    expect(status["stream:s1"].status).toBe("created"); // NOT "error"
+    expect(status["stream:s1"].detail).toContain("1 issue labeled");
+    expect(status["stream:s1"].detail).toContain("1 skipped");
   });
 });
 
