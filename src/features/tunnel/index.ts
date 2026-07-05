@@ -4,4 +4,5 @@
 export { TunnelSettings } from "./Tunnel";
 export { useTunnelSync } from "./useTunnelSync";
 export { useTunnelAutomations } from "./lib/useTunnelAutomations";
+export { useTunnelHookTelemetry } from "./lib/useTunnelHookTelemetry";
 export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
