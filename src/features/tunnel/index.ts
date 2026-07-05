@@ -6,3 +6,10 @@ export { useTunnelSync } from "./useTunnelSync";
 export { useTunnelAutomations } from "./lib/useTunnelAutomations";
 export { useTunnelHookTelemetry } from "./lib/useTunnelHookTelemetry";
 export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
+
+// #1545: public API for cross-feature consumers (app/console, planner).
+export type { PlanMessage, SessionMeta } from "./lib/tunnel";
+export {
+  tunnelStatus, tunnelSetSessions, tunnelSetPlanState,
+  tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent,
+} from "./lib/tunnelClient";

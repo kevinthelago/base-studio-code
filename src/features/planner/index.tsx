@@ -12,6 +12,15 @@ import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
 
+// #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
+// components reaches the gist manifest/publish helpers (included for barrel completeness).
+export type { CanonicalFile } from "./lib/plannerCore";
+export {
+  validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
+  type ExtensionManifest, type ValidateResult,
+} from "./lib/gist/manifest";
+export { installFromGist, publishGist } from "./lib/gist/gist";
+
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
   useProjectScan();
