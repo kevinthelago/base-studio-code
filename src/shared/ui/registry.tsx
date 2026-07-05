@@ -44,6 +44,10 @@ import { InlineError } from "./feedback/InlineError";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 import { Skeleton } from "./feedback/Skeleton";
+import { MasterDetail } from "./layouts/MasterDetail";
+import { SplitView } from "./layouts/SplitView";
+import { GraphCanvas } from "./layouts/GraphCanvas";
+import { PaneGrid } from "./layouts/PaneGrid";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +64,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Avatar, IconBox, CardListRow, DataTableRow,
   StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
   Banner, InlineError, EmptyState, StatusDot, Skeleton,
+  MasterDetail, SplitView, GraphCanvas, PaneGrid,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

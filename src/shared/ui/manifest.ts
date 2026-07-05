@@ -25,9 +25,11 @@ export type PrimitiveName =
   // data · charts (analytics primitives)
   | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
-  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton";
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
+  // layouts — the page-skeleton templates tier (#2197)
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid";
 
-export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback";
+export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
 
 /** The kind of a prop's value — drives how a builder renders an editor control for it. */
 export type PropType =
@@ -42,7 +44,8 @@ export type PropType =
   | "space"     // a spacing rung (SPACE_RUNGS) or a raw px number
   | "fontSize"  // a type rung (FONT_RUNGS) or a raw px number
   | "tracks"    // grid tracks: a number → repeat(n, 1fr), or a template string
-  | "color";    // a CSS color / design token string
+  | "color"     // a CSS color / design token string
+  | "object";   // a structured config object the caller constructs (see `description`)
 
 /** The spacing rungs (`--sp-*`) a `space`-typed prop accepts by name; raw px is also legal. */
 export const SPACE_RUNGS = ["xs", "sm", "md", "lg", "xl"] as const;
@@ -561,6 +564,64 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "radius", type: "number", default: 6, description: "Corner radius in px." },
     ],
   },
+
+  // ---- layouts (page-skeleton templates — the Layouts tier, #2197) -----------
+  {
+    name: "MasterDetail", group: "layouts", importPath: "@/shared/ui/layouts/MasterDetail",
+    description: "The list+detail page skeleton — a fixed-width bordered scroll RAIL beside a flex scroll DETAIL, under an optional TOOLBAR. Owns rail width/border/scroll + detail scroll/padding by construction.",
+    props: [
+      { name: "rail", type: "node", required: true, description: "The master column — the list/nav rail." },
+      { name: "detail", type: "node", required: true, description: "The detail column — the selected item's editor/view." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above both columns." },
+      { name: "railWidth", type: "number", default: 240, description: "Fixed rail width in px (the starting width when resizable)." },
+      { name: "railPad", type: "space", default: 14, description: "Rail inner padding — a rung/px or [block, inline] pair." },
+      { name: "detailPad", type: "space", default: 20, description: "Detail inner padding — a rung/px or [block, inline] pair." },
+      { name: "resizable", type: "boolean", default: false, description: "Opt into a drag-resizable rail (a .resize-x splitter), bounded by railMin/railMax." },
+    ],
+  },
+  {
+    name: "SplitView", group: "layouts", importPath: "@/shared/ui/layouts/SplitView",
+    description: "The two-pane split page skeleton — a flexing PRIMARY pane beside (or above) a fixed-size, drag-resizable SECONDARY pane, under an optional TOOLBAR. The canonical planner session (terminal + inspector) split.",
+    props: [
+      { name: "primary", type: "node", required: true, description: "The flexing pane — fills the remaining space (terminal, editor, main content)." },
+      { name: "secondary", type: "node", required: true, description: "The fixed-size, drag-resizable trailing pane (inspector, sidebar, detail)." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above the split." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → side by side; vertical → primary above secondary." },
+      { name: "resizable", type: "boolean", default: true, description: "Draw the drag splitter (opt out for a fixed secondary), bounded by secondaryMin/secondaryMax." },
+      { name: "secondarySize", type: "number", default: 340, description: "Secondary size in px (width when horizontal, height when vertical) — the starting size." },
+      { name: "divider", type: "boolean", default: true, description: "Draw the 1px divider border between the two panes." },
+    ],
+  },
+  {
+    name: "GraphCanvas", group: "layouts", importPath: "@/shared/ui/layouts/GraphCanvas",
+    description: "The pan/zoom graph page skeleton — a full-width TOOLBAR, an optional left RAIL, the pan/zoom CANVAS (viewport-clip + transformed world layer), and an optional INSPECTOR. Owns the viewport ref/wheel/pan wiring + world transform.",
+    props: [
+      { name: "vp", type: "object", required: true, description: "The viewport created by the page's useGraphViewport()." },
+      { name: "world", type: "object", required: true, description: "World (design-space) size { w, h } — drives the world layer's box." },
+      { name: "toolbar", type: "node", required: true, description: "Full toolbar content (search + palette + <ZoomControls vp={vp}/> + fit)." },
+      { name: "children", type: "node", required: true, description: "World-layer content: grid, SVG edges, node cards — positioned in world coords." },
+      { name: "rail", type: "node", description: "Optional left rail/sidebar (feature-styled full node)." },
+      { name: "inspector", type: "node", description: "Optional inspector column on the right (feature-styled full node)." },
+      { name: "overlays", type: "node", description: "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)." },
+      { name: "grid", type: "boolean", default: false, description: "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan." },
+      { name: "gridSize", type: "number", default: 24, description: "Grid tile size in world px (scaled by zoom on screen)." },
+      { name: "railResizable", type: "boolean", default: false, description: "Make the left rail drag-resizable (a .resize-x splitter)." },
+      { name: "inspectorResizable", type: "boolean", default: false, description: "Make the right inspector drag-resizable (splitter on its left edge)." },
+      { name: "onBackgroundClick", type: "function", description: "Fires on a genuine click on the empty canvas backdrop (not a pan-drag end, not a node press)." },
+    ],
+  },
+  {
+    name: "PaneGrid", group: "layouts", importPath: "@/shared/ui/layouts/PaneGrid",
+    description: "The grid-of-panes page skeleton — a cols × rows CSS grid that flexes to fill its parent, with a uniform gap + padding, hosting N pane cells. The canonical Console tab grid (one per tab, kept alive across switches via hidden).",
+    props: [
+      { name: "children", type: "node", required: true, description: "The pane cells — N children laid across the grid tracks (cols × rows)." },
+      { name: "cols", type: "number", required: true, description: "Column track count → repeat(cols, 1fr). Clamped to ≥ 1." },
+      { name: "rows", type: "number", required: true, description: "Row track count → repeat(rows, 1fr). Clamped to ≥ 1." },
+      { name: "gap", type: "number", default: 8, description: "Gap between cells in px." },
+      { name: "pad", type: "number", default: 10, description: "Grid inner padding in px." },
+      { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
+    ],
+  },
 ];
 
 /** Look up a primitive spec by name. */
@@ -570,7 +631,7 @@ export function findPrimitive(name: PrimitiveName): PrimitiveSpec | undefined {
 
 /** Group the kit by `PrimitiveGroup` (for a grouped palette in the builder). */
 export function primitivesByGroup(): Record<PrimitiveGroup, PrimitiveSpec[]> {
-  const out = { layout: [], typography: [], controls: [], data: [], feedback: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
+  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
   for (const p of UI_KIT) out[p.group].push(p);
   return out;
 }
