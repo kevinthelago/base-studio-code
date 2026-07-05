@@ -64,6 +64,10 @@ pub(super) struct Inner {
     // ── MCP extensions (M2) ─────────────────────────────────────────────────
     /// Latest MCP extension list — replayed to freshly-paired mobile clients.
     pub(super) mcp_extensions: Vec<McpExtFrame>,
+    // ── Hook telemetry (M3 / #937) ──────────────────────────────────────────
+    /// Latest aggregated hook-fire telemetry — replayed to freshly-paired mobile clients.
+    /// `None` until the frontend pushes the first summary (read-only projection).
+    pub(super) hook_telemetry: Option<HookTelemetryFrame>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -218,6 +222,7 @@ impl TunnelState {
                 fleet_sessions: Vec::new(),
                 automations: Vec::new(),
                 mcp_extensions: Vec::new(),
+                hook_telemetry: None,
             }),
             output_tx,
             event_tx,
@@ -413,6 +418,12 @@ impl TunnelState {
         self.inner.lock().unwrap().mcp_extensions.clone()
     }
 
+    /// The last aggregated hook-fire telemetry summary to replay to a freshly-paired client
+    /// (M3 / #937). `None` until the frontend has pushed one.
+    pub(super) fn hook_telemetry_snapshot(&self) -> Option<HookTelemetryFrame> {
+        self.inner.lock().unwrap().hook_telemetry.clone()
+    }
+
     /// Record how many mobile clients are connected (for the settings card).
     pub(super) fn set_client_count(&self, n: usize) {
         self.inner.lock().unwrap().client_count = n;
@@ -432,7 +443,7 @@ impl TunnelState {
 
     /// Store a pushed snapshot under the lock, then broadcast `msg` to connected clients.
     /// Shared by the metadata-push setters (`tunnel_set_panes` / `tunnel_set_fleet_state` /
-    /// `tunnel_set_automations` / `tunnel_set_mcp_state`), which all follow the same
+    /// `tunnel_set_automations` / `tunnel_set_mcp_state` / `tunnel_set_hook_telemetry`), which all follow the same
     /// store-then-broadcast shape (only the field written, the log line, and the broadcast
     /// variant differ — those stay at the call site).
     pub(super) fn set_and_broadcast(&self, msg: ServerMsg, set: impl FnOnce(&mut Inner)) {

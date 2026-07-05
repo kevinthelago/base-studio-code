@@ -9,7 +9,7 @@ import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations/useScheduler";
-import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
+import { useTunnelSync, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
@@ -36,6 +36,7 @@ export default function App() {
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
   useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
+  useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)

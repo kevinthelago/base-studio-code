@@ -281,6 +281,23 @@ pub fn tunnel_set_mcp_state(extensions: Vec<McpExtFrame>, state: State<'_, Tunne
     });
 }
 
+// ── Hook telemetry (M3 / #937) — Tauri commands ──────────────────────────────
+
+/// Push the aggregated hook-fire telemetry summary from the frontend (parsed + aggregated
+/// from `hooks.log` by `aggregateHookTelemetry`). Stored for replay to new clients and
+/// broadcast to connected ones. Read-only on mobile — there is no inbound counterpart.
+#[tauri::command]
+pub fn tunnel_set_hook_telemetry(telemetry: HookTelemetryFrame, state: State<'_, TunnelState>) {
+    log::debug!(
+        "tunnel: hook telemetry updated ({} fire(s), {} hook(s))",
+        telemetry.total,
+        telemetry.per_hook.len()
+    );
+    state.set_and_broadcast(ServerMsg::HookTelemetry { telemetry: telemetry.clone() }, |inner| {
+        inner.hook_telemetry = Some(telemetry);
+    });
+}
+
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
 
 /// Diagnostic report from `tunnel_check_relay`. All error conditions are captured in the
