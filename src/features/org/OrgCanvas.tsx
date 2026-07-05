@@ -36,6 +36,8 @@ interface CanvasProps {
   onMoveNode: (nodeId: string, x: number, y: number) => void;
   /** Enter a pool's own graph (clicking its stacked card). */
   onDrillPool?: (poolNodeId: string) => void;
+  /** Right-click a node/edge → open the canvas context menu (delete, …). #2385. */
+  onContext?: (sel: Selection, e: React.MouseEvent) => void;
 }
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag (vs a click)
@@ -66,7 +68,9 @@ function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function OrgCanvas(props: CanvasProps) {
   const { org, personas, sel, scale, gridOn, connecting, dragMoved, poolInfo,
-    onSelectNode, onSelectEdge, onMoveNode, onDrillPool } = props;
+    onSelectNode, onSelectEdge, onMoveNode, onDrillPool, onContext } = props;
+  /** Right-click a node/edge → open the context menu at the cursor (delete). */
+  const context = (s: Selection) => (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onContext?.(s, e); };
 
   const boxes = new Map(org.positions.map((p) => [p.nodeId, nodeBox(p)]));
   // Live node-drag preview (design-space x/y). Commits to the store on drop.
@@ -160,7 +164,7 @@ export function OrgCanvas(props: CanvasProps) {
           const color = hueColor(arch.hue);
           return (
             <g key={r.id}>
-              <path d={d} fill="none" stroke="transparent" strokeWidth={18} style={{ cursor: "pointer" }} onClick={edgeClick(r.id)} />
+              <path d={d} fill="none" stroke="transparent" strokeWidth={18} style={{ cursor: "pointer" }} onClick={edgeClick(r.id)} onContextMenu={context({ type: "edge", id: r.id })} />
               <path d={d} fill="none" stroke={color} strokeWidth={isSelEdge ? 2.8 : act ? 2 : 1.7}
                 strokeDasharray={styleDash(arch.style)} strokeLinecap="round"
                 markerEnd="url(#org-ah)" markerStart={arch.bidirectional ? "url(#org-ah-s)" : undefined}
@@ -180,7 +184,7 @@ export function OrgCanvas(props: CanvasProps) {
           const isSelEdge = sel.type === "edge" && r.id === sel.id;
           const color = hueColor(arch.hue);
           return (
-            <Box key={r.id} onClick={edgeClick(r.id)}
+            <Box key={r.id} onClick={edgeClick(r.id)} onContextMenu={context({ type: "edge", id: r.id })}
               style={{ position: "absolute", left: lx, top: ly, transform: "translate(-50%,-50%)",
                 display: "inline-flex", alignItems: "center", gap: 5, padding: "2.5px 8px", borderRadius: 999,
                 background: "var(--bg-elev)", border: `1px solid ${color}`, color: "var(--fg)", fontSize: 10, fontWeight: 600,
@@ -226,6 +230,7 @@ export function OrgCanvas(props: CanvasProps) {
           // eslint-disable-next-line no-restricted-syntax -- node needs the data-node marker + pointer-capture on the element for drag
           <div key={pos.nodeId} data-node={pos.nodeId}
             onPointerDown={onNodeDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onNodeUp(pos.nodeId)}
+            onContextMenu={context({ type: "node", id: pos.nodeId })}
             style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
               cursor: connecting ? "crosshair" : "grab", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none" }}>
             {pos.kind === "agent" && <AgentFace d={d} isSel={isSel} />}
