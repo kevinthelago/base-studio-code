@@ -2,6 +2,7 @@ import { useState, Suspense } from "react";
 import { useAppStore } from "@/store";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { ConsoleWorkspace } from "@/app/console";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -62,9 +63,12 @@ export function DetachedWindow() {
     );
   }
 
-  // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console.
+  // Detached tab window: minimal chrome (no rail/tabstrip), just this tab's console. This is a separate
+  // window/React root reconnecting to the same backend PTYs, so it needs its OWN TerminalHost (#2378) —
+  // its console cells drop TerminalSlots, and without a host ancestor they'd be inert (no terminal).
   const detachIdx = detachId !== null ? tabs.findIndex((t) => t.id === detachId) : -1;
   return (
+    <TerminalHost>
     <Box className="app">
       <Titlebar workspace={detachIdx >= 0 ? (tabs[detachIdx]?.name ?? "Console") : "Console"} />
       <Box className="shell">
@@ -79,5 +83,6 @@ export function DetachedWindow() {
         </Box>
       </Box>
     </Box>
+    </TerminalHost>
   );
 }
