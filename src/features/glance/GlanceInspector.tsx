@@ -1,7 +1,7 @@
 // Glance inspector (#2206) — the right dock, in one of two modes. PROJECT (node): status · role · cycle
-// warning · depends-on / depended-on-by (clickable) · a drill-to-agents affordance (the L2 agent
-// network lands in a later slice) · open project. CONTRACT (edge): kind · cycle warning ·
-// consumer→provider · strength · surface · description. Read-only view over the graph model.
+// warning · depends-on / depended-on-by (clickable); clicking the project drills into its live agent
+// network (L2, #2223/#2228). CONTRACT (edge): kind · cycle warning · consumer→provider · strength ·
+// surface · description. Read-only view over the graph model.
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -120,7 +120,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           )}
 
           {LABEL("AGENTS")}
-          <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>Drilling a project opens its live agent network (director · workers · triage) — arriving in the next slice.</Text>
+          <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>Click this project to drill into its live agent network (director · workers · triage).</Text>
 
           {LABEL("DEPENDS ON")}
           {deps.length === 0 ? <Text as="div" mono size={11} tone="dim">— foundational, no upstream deps</Text>
@@ -129,8 +129,6 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {LABEL("DEPENDED ON BY")}
           {rdeps.length === 0 ? <Text as="div" mono size={11} tone="dim">— leaf, nothing depends on it</Text>
             : rdeps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.from)!} kind={kindOf(e.kind, e.isCycle)} color={colorOf(e.kind, e.isCycle)} onClick={() => onSelectNode(e.from)} />)}
-
-          <Button variant="ghost" onClick={() => { /* L2 drill → open project console lands in a later slice */ }} style={{ width: "100%", marginTop: 18 }}>open project ↗</Button>
         </Box>
       </Box>
     );
