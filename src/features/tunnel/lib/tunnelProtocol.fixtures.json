@@ -41,6 +41,23 @@
       "projectId": "proj-bf9cf968",
       "currentStage": "scope",
       "status": "in_progress"
+    },
+    "hook_telemetry": {
+      "type": "hook_telemetry",
+      "telemetry": {
+        "total": 6,
+        "blocks": 1,
+        "allows": 4,
+        "allowRate": 80,
+        "daily": [
+          { "day": "2026-05-28", "allows": 2, "blocks": 0 },
+          { "day": "2026-05-29", "allows": 3, "blocks": 1 }
+        ],
+        "perHook": [
+          { "hook": "bsc-deny", "event": "PreToolUse", "fires": 5 },
+          { "hook": "bsc-audit", "event": "PostToolUse", "fires": 1 }
+        ]
+      }
     }
   },
   "clientToServer": {
