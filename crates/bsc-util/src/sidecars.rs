@@ -66,6 +66,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "log", context_env: None,
+        blurb: "toggle CONSOLE log scopes at runtime: `log set fleet off` quiets a subsystem's console output (the file/audit log is always kept); `log list` shows the graph",
+        advertise: true,
+    },
+    Sidecar {
         name: "compliance", context_env: None,
         blurb: "the compliance standards corpus (accessibility/privacy/security obligations)",
         advertise: true,
@@ -158,7 +163,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
+            ["plan", "errors", "todo", "data", "skill", "logs", "log", "compliance", "blueprint", "persona", "org", "component", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }
