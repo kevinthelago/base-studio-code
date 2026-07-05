@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   paneIdFor, manualPaneId, fleetPaneId, directorPaneId, triagePaneId, isManualPaneId, positionalPaneId,
-  parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab, paneCwdRecovery,
+  parsePaneIdentity, paneBelongsToTab, findPaneOwnerTab, paneCwdRecovery, sandboxUserIdentity,
 } from "./paneIdentity";
 
 describe("paneIdentity (#1176)", () => {
@@ -142,6 +142,34 @@ describe("paneIdentity (#1176)", () => {
       expect(paneCwdRecovery("STEM:backend")).toBeNull();  // worker — its worktree needs the agent id
       expect(paneCwdRecovery("man:tab-1:p0")).toBeNull();   // manual console
       expect(paneCwdRecovery("t0p1")).toBeNull();           // legacy positional
+    });
+  });
+
+  describe("sandboxUserIdentity (#1994 per-agent user activation)", () => {
+    const D = "bsc-agent-sandbox";
+    it("a SANDBOXED worker pane provisions its own user, keyed off the stable pane identity", () => {
+      // The worker's `<key>:<streamId>` id IS the identity threaded to ensure_sandbox_user, so a
+      // relaunch re-derives + reuses the same Linux user + 700 home.
+      expect(sandboxUserIdentity("payments:checkout-stream", D)).toBe("payments:checkout-stream");
+      // Deterministic: the same pane always yields the same identity.
+      expect(sandboxUserIdentity("payments:checkout-stream", D)).toBe(sandboxUserIdentity("payments:checkout-stream", D));
+      // Distinct workers ⇒ distinct identities ⇒ distinct users (isolation).
+      expect(sandboxUserIdentity("payments:auth-ui", D)).not.toBe(sandboxUserIdentity("payments:checkout-stream", D));
+    });
+    it("the director keeps the shared distro user even when sandboxed", () => {
+      expect(sandboxUserIdentity("payments:director", D)).toBeNull();
+    });
+    it("non-worker sandboxed panes (triage / manual / planner / positional) keep the shared user", () => {
+      expect(sandboxUserIdentity("payments:owner/web:triage", D)).toBeNull();
+      expect(sandboxUserIdentity("man:tab-1:p0", D)).toBeNull();
+      expect(sandboxUserIdentity("planning_payments", D)).toBeNull();
+      expect(sandboxUserIdentity("t0p1", D)).toBeNull();
+    });
+    it("a NON-sandboxed pane never provisions a user — byte-identical to today's launch", () => {
+      // No distro ⇒ null regardless of role (the `-u` arg is never passed off the sandbox path).
+      expect(sandboxUserIdentity("payments:checkout-stream", undefined)).toBeNull();
+      expect(sandboxUserIdentity("payments:checkout-stream", "")).toBeNull();
+      expect(sandboxUserIdentity("payments:director", undefined)).toBeNull();
     });
   });
 });
