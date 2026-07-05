@@ -113,6 +113,19 @@ USAGE:
 
 A compact one-line recap of a session: role, event counts, cost, last activity.",
     },
+    CmdDoc {
+        name: "scope",
+        summary: "toggle CONSOLE log scopes at runtime (the file/audit log is always kept)",
+        usage: "\
+USAGE:
+  bsc logs scope set <scope> <off|error|warn|info|debug|trace>
+  bsc logs scope list
+  bsc logs scope reset
+
+Controls the app's runtime log-scope graph (#1389): silence or raise a subsystem's CONSOLE output by
+module scope (e.g. `bsc logs scope set fleet off`) — the file/audit log always keeps every record. A
+longest-prefix match cascades to the subtree; `list` shows the graph; `reset` clears all overrides.",
+    },
 ];
 
 struct Args {
@@ -177,6 +190,12 @@ fn hms(ms: i64) -> String {
 /// `handle_help`-driven CLIs, a BARE invocation does NOT print help — it keeps `bsc logs`'
 /// established default of listing every session (the `sessions` verb).
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    // `bsc logs scope …` — runtime console-scope control (#1389), folded UNDER `logs` so there's one
+    // `logs` namespace (not a confusing `log` vs `logs` pair). Delegate before parsing so scope's own
+    // args/flags don't run through the reader's parser.
+    if args.first().map(String::as_str) == Some("scope") {
+        return crate::scope::run_cli(args[1..].to_vec(), "bsc logs scope");
+    }
     let a = parse_args(args)?;
 
     // Help surface — handled before touching the log dir (help must work anywhere). `help` /

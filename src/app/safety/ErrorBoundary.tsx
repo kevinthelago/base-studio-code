@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { error as logError } from "@tauri-apps/plugin-log";
+import { log } from "@/shared/lib/core/log";
 
 interface Props {
   children: ReactNode;
@@ -38,10 +38,12 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(err: Error, info: ErrorInfo) {
-    // Best-effort structured log to the Tauri sink; never let logging itself throw.
-    void logError(
+    // Best-effort structured log to the always-audited file sink (#1389); never let logging throw.
+    // Scope `safety` so its devtools output can be toggled independently of feature noise.
+    log.error(
       `ErrorBoundary${this.props.label ? ` [${this.props.label}]` : ""} caught: ${err?.message ?? err}\n${info?.componentStack ?? ""}`,
-    ).catch(() => {});
+      "safety",
+    );
   }
 
   componentDidUpdate(prev: Props) {

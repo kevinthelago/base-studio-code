@@ -16,6 +16,7 @@
 //! (#1877) and by the legacy `bsc-logs` shim.
 
 pub mod cli;
+pub mod scope;
 
 use std::path::{Path, PathBuf};
 

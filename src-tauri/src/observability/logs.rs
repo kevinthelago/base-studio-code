@@ -91,6 +91,13 @@ fn is_text(stream: &str) -> bool {
     stream != "perf"
 }
 
+/// The rotating application log path (`<app_log_dir>/base-studio-code.log`) — the file the
+/// [`GraphLogger`](crate::observability::graph_log) file sink appends to and the `"app"` reader
+/// stream consumes. Exposed so the cap paths can rotate it now that no plugin does (#1389).
+pub fn app_log_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    stream_path(app, "app")
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogFileInfo {
@@ -177,8 +184,10 @@ pub fn cap_log(path: &Path, cfg: &LogConfig) -> bool {
 }
 
 /// Cap every managed text TSV stream (the shared `bsc_util::LOG_STREAMS` registry) under `base_dir`
-/// per `cfg`. The app log is rotated by `tauri-plugin-log`, so it is left to the plugin; `perf.db` is
-/// binary state pruned by the perf sampler, not here.
+/// per `cfg`. The rotating application log lives in Tauri's `app_log_dir` and is capped separately
+/// via [`cap_log`] on [`app_log_file`] (the boot cap + "Enforce now" do so now that the custom
+/// `GraphLogger` (#1389) owns it — no plugin rotates it); `perf.db` is binary state pruned by the
+/// perf sampler, not here.
 pub fn cap_logs(base_dir: &Path, cfg: &LogConfig) {
     for s in bsc_util::LOG_STREAMS {
         let p = base_dir.join(s.filename);
@@ -314,10 +323,15 @@ pub fn log_set_config(max_lines: u32, max_size_mb: u32, state: tauri::State<LogS
     state.set(LogConfig { max_lines, max_size_mb });
 }
 
-/// Apply the current cap to every TSV stream now (the "Enforce now" action).
+/// Apply the current cap to every TSV stream now (the "Enforce now" action) — plus the rotating
+/// application log, which the custom `GraphLogger` (#1389) writes and no plugin rotates any more.
 #[tauri::command]
-pub fn enforce_log_caps(state: tauri::State<LogState>) {
-    cap_logs(&bsc_base_dir(), &state.get());
+pub fn enforce_log_caps(app: tauri::AppHandle, state: tauri::State<LogState>) {
+    let cfg = state.get();
+    cap_logs(&bsc_base_dir(), &cfg);
+    if let Some(p) = app_log_file(&app) {
+        cap_log(&p, &cfg);
+    }
 }
 
 #[cfg(test)]

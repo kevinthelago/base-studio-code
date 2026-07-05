@@ -22,7 +22,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("org", "user org store: persona-relationship graph (positions + relationships)"),
     ("component", "component library: proven components in technology-scoped kits"),
     ("ui", "UI spec SDK: the KitNode contract (schema) + validate a spec (#1852)"),
-    ("logs", "unified logs + perf + cost (read-only)"),
+    ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),

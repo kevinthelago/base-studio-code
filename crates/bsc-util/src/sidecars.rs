@@ -62,7 +62,7 @@ pub const SIDECARS: &[Sidecar] = &[
     },
     Sidecar {
         name: "logs", context_env: None,
-        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only)",
+        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only); `logs scope` toggles runtime CONSOLE log scopes (the file/audit log is always kept)",
         advertise: true,
     },
     Sidecar {

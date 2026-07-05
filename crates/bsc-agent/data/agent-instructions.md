@@ -41,6 +41,9 @@ What each is for:
 - `bsc skill` — the global skills library + task-groups (named, reusable skill bundles).
 - `bsc logs` — query this (or any) console session's logs: tools/skills/mcp/hooks/cost/coord/activity
   events plus perf samples. Read-only.
+- `bsc logs scope` — toggle CONSOLE log scopes at runtime while debugging: `bsc logs scope set fleet off`
+  quiets a subsystem's console output, `bsc logs scope set console::pty debug` lights one up, `bsc logs
+  scope list` shows the graph. The file/audit log always keeps everything — this only changes what the console VIEW shows.
 - `bsc compliance` — the compliance standards corpus (accessibility / privacy / security obligations).
 - `bsc blueprint` — the user blueprint library.
 - `bsc project` — list the local projects and read/set the published marker, across all projects.
