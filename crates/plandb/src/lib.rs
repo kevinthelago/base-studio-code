@@ -53,6 +53,9 @@ mod skipped;
 /// reuses the [`todos::Todo`] type + the connection-level `add`/`list`/… helpers over its own db.
 pub mod todos;
 mod triage;
+/// Set-time validation for the structured JSON writes (#2395) — `pub` so the app/bridge can reuse
+/// the same shape checks the `bsc plan` CLI enforces.
+pub mod validate;
 
 pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
