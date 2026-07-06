@@ -693,7 +693,9 @@
         "default",
         "loading"
       ],
-      "composes": [],
+      "composes": [
+        "Skeleton"
+      ],
       "props": [
         {
           "name": "children",
@@ -1049,7 +1051,9 @@
         "default",
         "loading"
       ],
-      "composes": [],
+      "composes": [
+        "Skeleton"
+      ],
       "props": [
         {
           "name": "value",
@@ -1117,7 +1121,9 @@
         "default",
         "loading"
       ],
-      "composes": [],
+      "composes": [
+        "Skeleton"
+      ],
       "props": [
         {
           "name": "value",
@@ -1707,7 +1713,9 @@
         "default",
         "loading"
       ],
-      "composes": [],
+      "composes": [
+        "Skeleton"
+      ],
       "props": [
         {
           "name": "children",
@@ -2702,7 +2710,9 @@
       "variants": [
         "default"
       ],
-      "composes": [],
+      "composes": [
+        "Box"
+      ],
       "props": [
         {
           "name": "children",
@@ -2887,7 +2897,9 @@
       "variants": [
         "default"
       ],
-      "composes": [],
+      "composes": [
+        "Box"
+      ],
       "props": [
         {
           "name": "w",
