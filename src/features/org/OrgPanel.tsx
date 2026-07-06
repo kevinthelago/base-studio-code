@@ -11,6 +11,10 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { IconBox } from "@/shared/ui/data/IconBox";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
@@ -80,10 +84,12 @@ export function OrgPanel() {
 
   if (!org) {
     return (
-      <Stack align="center" justify="center" style={{ flex: 1 }}>
-        <Text tone="dim">No org yet.</Text>
-        <Button onClick={() => setOrgId(addOrg())}>+ new org</Button>
-      </Stack>
+      <EmptyState
+        icon="◆" iconVariant="dashed"
+        title="No org yet"
+        description="An org wires personas into positions and relationships — create one to start designing."
+        actions={<Button onClick={() => setOrgId(addOrg())}>+ new org</Button>}
+      />
     );
   }
 
@@ -161,7 +167,7 @@ export function OrgPanel() {
       toolbar={
         <>
           <Row gap={9} align="center">
-            <Box style={{ width: 22, height: 22, borderRadius: 6, background: "var(--bg-soft)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--accent)" }}>◆</Box>
+            <IconBox size={22} radius={6} fontSize={12} background="var(--bg-soft)" border="1px solid var(--border)" color="var(--accent)">◆</IconBox>
             {orgs.length > 1 ? (
               // eslint-disable-next-line no-restricted-syntax -- compact inline org switch; a full Field is overkill in the toolbar
               <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setDrill(null); setSel({ type: "node", id: "" }); }}
@@ -183,14 +189,14 @@ export function OrgPanel() {
           </Row>
           <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
           <Row gap={10} align="center" style={{ minWidth: 0 }}>
-            <Text as="span" className="ulabel" tone="dim" size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "Click to connect"}</Text>
+            <SectionLabel size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "Click to connect"}</SectionLabel>
             <Row gap={6}>
               {RELATIONSHIP_ARCHETYPES.map((a) => (
                 <Box as="button" key={a.id} onClick={() => setConnect(connect?.archetype === a.id ? null : { archetype: a.id, from: null })}
                   style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
                     color: "var(--fg-muted)", background: connect?.archetype === a.id ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
                     border: `1px solid ${connect?.archetype === a.id ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
-                  <Box style={{ width: 8, height: 8, borderRadius: "50%", background: hueColor(a.hue), flex: "none" }} />{a.label}
+                  <StatusDot color={hueColor(a.hue)} size={8} />{a.label}
                 </Box>
               ))}
             </Row>
@@ -204,7 +210,7 @@ export function OrgPanel() {
       rail={
         <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
           <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
-            <Text as="span" className="ulabel" tone="dim" size={9.5}>Positions</Text>
+            <SectionLabel size={9.5}>Positions</SectionLabel>
             <Button variant="ghost" onClick={addNode}>＋ new</Button>
           </Row>
           <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
@@ -219,7 +225,7 @@ export function OrgPanel() {
                       style={{ padding: "7px 9px", borderRadius: 8, cursor: "pointer",
                         background: on ? "color-mix(in oklch, var(--accent) 10%, transparent)" : "transparent",
                         border: `1px solid ${on ? "var(--accent)" : "transparent"}` }}>
-                      <Box style={{ width: 20, height: 20, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--accent)", background: "var(--bg-soft)", flex: "none" }}>{d.glyph}</Box>
+                      <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>
                       <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
                       {d.role && <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text>}
                     </Row>
