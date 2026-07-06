@@ -23,6 +23,7 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { layerDag } from "@/shared/lib/graph/layers";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
+import { slugify } from "@/shared/lib/core/format";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import { ROLE_COLOR, matchesQuery, resolveComposes, resolveUsedBy, type ComponentRecord } from "./lib/model";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
@@ -97,7 +98,7 @@ export function DesignStudio() {
 
   const generate = () => {
     if (generating || !prompt.trim() || !sel) return;
-    const slug = prompt.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").split("-").filter(Boolean).slice(0, 2).join("-") || "variant";
+    const slug = slugify(prompt).split("-").filter(Boolean).slice(0, 2).join("-") || "variant";
     const existing = new Set(allVariants);
     const name = existing.has(slug) ? `${slug}-2` : slug;
     setGenerating(true); setGenStep(1); setCandidates(null);

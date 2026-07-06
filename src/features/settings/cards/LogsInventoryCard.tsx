@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
-import { fmtBytes } from "@/shared/lib/core/format";
+import { fmtBytes, timeAgoMs } from "@/shared/lib/core/format";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -12,15 +12,6 @@ import { Text } from "@/shared/ui/typography/Text";
 interface LogFileInfo {
   stream: string; label: string; path: string;
   sizeBytes: number; mtimeMs: number; exists: boolean; text: boolean;
-}
-
-function fmtAgo(ms: number): string {
-  if (!ms) return "—";
-  const s = Math.floor((Date.now() - ms) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
 }
 
 export function LogsInventoryCard({
@@ -66,7 +57,7 @@ export function LogsInventoryCard({
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text as="div" size={13} style={{ fontFamily: "var(--sans)", color: "var(--fg)" }}>{f.label}</Text>
               <Text as="div" mono size={10.5} tone="dim" style={{ marginTop: 2 }}>
-                {f.exists ? `${fmtBytes(f.sizeBytes)} · ${fmtAgo(f.mtimeMs)}` : "not created yet"}
+                {f.exists ? `${fmtBytes(f.sizeBytes)} · ${timeAgoMs(f.mtimeMs)}` : "not created yet"}
               </Text>
             </Box>
             {f.text && <Button size="sm" style={selectedStream === f.stream ? { borderColor: "var(--accent)" } : undefined} onClick={() => onViewStream(f.stream)}>View</Button>}
