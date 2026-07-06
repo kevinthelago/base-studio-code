@@ -41,4 +41,27 @@ describe("personaStreamPrompt (#2094)", () => {
     expect(out).toContain("This is a read-only role");
     expect(out).toContain("do not commit, push, or open PRs");
   });
+
+  // #2416: the scope prose + read-only closing moved to `@data/fleet/persona-kickoff.json` (TS keeps
+  // interpolation only) — pin the rendered kickoff byte-identical to the previous TS-authored output.
+  it("renders byte-identical to the pre-@data TS strings (#2416, read-only role)", () => {
+    const out = personaStreamPrompt(persona({ role: "juror", startPrompt: "You are X." }), stream());
+    expect(out).toBe(
+      "You are X.\n\n" +
+      `You are the "Auth" stream in a parallel fleet, working in your own git worktree on branch auth — ` +
+      `do not switch branches or touch other worktrees. Your assigned issues: #12. Your scope: you own src/auth/; ` +
+      `stay within it and coordinate anything cross-cutting through the director. Integration interfaces between features ` +
+      `live in the contracts directory — read them as the source of truth, and ask the director if one is unclear or must change. ` +
+      `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin. ` +
+      `This is a read-only role: report what you find by piping notes into bsc-note on stdin; do not commit, push, or open PRs. ` +
+      `Verify your work against the repo tests and CI rather than asking whether it is correct.`,
+    );
+  });
+
+  it("empty owns/issues render the explicit fallbacks, byte-identical (#2416)", () => {
+    const out = personaStreamPrompt(persona({ role: "juror", startPrompt: "" }), stream({ owns: [], issues: [] }));
+    expect(out.startsWith(`You are the "Auth" stream`)).toBe(true); // no intro → no leading blank lines
+    expect(out).toContain("Your assigned issues: the issues assigned to your area.");
+    expect(out).toContain("you own the files for your area;");
+  });
 });

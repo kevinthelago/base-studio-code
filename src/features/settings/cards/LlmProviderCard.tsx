@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
+import {
+  providerNeedsBscAgent, LLM_PROVIDERS,
+  DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_MODEL, DEFAULT_LOCAL_BASE_URL,
+  type LlmProvider,
+} from "@/shared/lib/core/llmConfig";
 import { Card } from "@/shared/ui/data/Card";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
@@ -9,16 +13,11 @@ import { Button } from "@/shared/ui/controls/Button";
 import { SelectField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 
-export const LLM_PROVIDERS: [LlmProvider, string][] = [
-  ["anthropic", "Anthropic Claude"],
-  ["openai",    "OpenAI"],
-  ["gemini",    "Google Gemini"],
-  ["local",     "Local (Ollama / OpenAI-compatible)"],
-  ["ollama",    "Ollama (Local)"],
-];
-export const KEY_PLACEHOLDER: Record<LlmProvider, string> = {
-  anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "", ollama: "",
-};
+// The provider list + placeholders live in `@data/console/model-defaults.json` (#2416), consumed
+// via `LLM_PROVIDERS` / the `DEFAULT_*` model constants from `@/shared/lib/core/llmConfig` — the
+// one source for every model default; nothing model-shaped is authored here.
+const keyPlaceholder = (p: LlmProvider): string =>
+  LLM_PROVIDERS.find((o) => o.id === p)?.keyPlaceholder ?? "";
 
 export function LlmProviderCard() {
   const { claudeApiKey, setClaudeApiKey } = useAppStore();
@@ -73,7 +72,7 @@ export function LlmProviderCard() {
     <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
       <Grid cols="1.4fr 1fr" gap={14}>
         <SelectField label="Provider" value={llmProvider} onChange={(v) => setLlmProvider(v as LlmProvider)}>
-          {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          {LLM_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </SelectField>
         <Box className="field">
           <label>Model</label>
@@ -82,7 +81,7 @@ export function LlmProviderCard() {
             className="input"
             value={llmModel}
             onChange={(e) => setLlmModel(e.target.value)}
-            placeholder={isLocal ? "qwen3-coder" : "claude-sonnet-4-6"}
+            placeholder={isLocal ? DEFAULT_LOCAL_MODEL : DEFAULT_ANTHROPIC_MODEL}
             list={isLocal ? "ollama-models" : undefined}
           />
           {isLocal && models.length > 0 && (
@@ -100,7 +99,7 @@ export function LlmProviderCard() {
                 className="input"
                 value={localBaseUrl}
                 onChange={(e) => setLocalBaseUrl(e.target.value)}
-                placeholder="http://localhost:11434/v1"
+                placeholder={DEFAULT_LOCAL_BASE_URL}
               />
               <Button onClick={testConnection} disabled={testing}>
                 {testing ? "testing…" : "test"}
@@ -124,7 +123,7 @@ export function LlmProviderCard() {
                   type="password"
                   value={providerKey}
                   onChange={(e) => setProviderKey(e.target.value)}
-                  placeholder={KEY_PLACEHOLDER[llmProvider]}
+                  placeholder={keyPlaceholder(llmProvider)}
                 />
                 <Button>show</Button>
                 <Button>test</Button>
