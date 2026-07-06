@@ -4,6 +4,7 @@
 // loop and PTY dispatch live in useScheduler; CRUD lives in the store.
 
 import { nextCronRun } from "./cron";
+import { clamp } from "@/shared/lib/core/math";
 
 export type Every = "minute" | "hour" | "day" | "weekday";
 export type AutomationActionKind = "command";
@@ -50,14 +51,14 @@ export const MAX_RUNS = 25;
 function parseMinute(at: string): number {
   const m = at.replace(/^.*:/, "").trim();
   const n = parseInt(m, 10);
-  return Number.isFinite(n) ? Math.min(59, Math.max(0, n)) : 0;
+  return Number.isFinite(n) ? clamp(n, 0, 59) : 0;
 }
 
 /** Parse "HH:MM" into [hours, minutes], clamped; missing parts default to 0. */
 function parseHourMinute(at: string): [number, number] {
   const [h, m] = at.split(":");
-  const hh = Math.min(23, Math.max(0, parseInt(h ?? "0", 10) || 0));
-  const mm = Math.min(59, Math.max(0, parseInt(m ?? "0", 10) || 0));
+  const hh = clamp(parseInt(h ?? "0", 10) || 0, 0, 23);
+  const mm = clamp(parseInt(m ?? "0", 10) || 0, 0, 59);
   return [hh, mm];
 }
 

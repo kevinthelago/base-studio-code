@@ -12,6 +12,8 @@
 // The `useFaultTriage` hook is the thin poll+inject actuator over this; the maintenance/kickoff prose
 // (director-protocol.md) primes the director to expect the injected fault and to resolve it on land.
 
+import { clamp } from "@/shared/lib/core/math";
+
 export type FaultLevel = "warn" | "error" | "fatal";
 
 /** The minimal fault shape the triage core reads — a projection of the errordb `Fault` row (#2260). */
@@ -103,7 +105,7 @@ export function planFaultDispatch(
   // In-flight = dispatched fingerprints still open (fixes routed but not yet resolved). `pruned` is
   // exactly `already ∩ open`, so its size is the live fan-out.
   const inFlight = pruned.length;
-  const slots = Math.max(0, Math.min(cfg.maxPerCycle, cfg.maxInFlight - inFlight));
+  const slots = clamp(cfg.maxInFlight - inFlight, 0, cfg.maxPerCycle);
   if (slots === 0) return { dispatch: [], nextDispatched: pruned };
 
   const minRank = rank(cfg.minLevel);

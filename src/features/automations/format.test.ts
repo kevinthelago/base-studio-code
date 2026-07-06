@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { armedSummary, fmtClock } from "./format";
+import { armedSummary } from "./format";
 
 const a = (armed: boolean, nextRunAt: number | null) => ({ armed, nextRunAt });
 
@@ -26,12 +26,4 @@ describe("armedSummary (status-bar live data)", () => {
   });
 });
 
-describe("fmtClock", () => {
-  it("renders HH:MM, padded", () => {
-    const d = new Date(2026, 0, 1, 2, 0).getTime(); // 02:00 local
-    expect(fmtClock(d)).toBe("02:00");
-  });
-  it("renders an em dash for null", () => {
-    expect(fmtClock(null)).toBe("—");
-  });
-});
+// fmtClock moved to @/shared/lib/core/format (#2421) — covered in shared/lib/core/format.test.ts.
