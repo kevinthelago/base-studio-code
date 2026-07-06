@@ -46,6 +46,9 @@ describe("scanProjectRepos", () => {
     expect(invoke).toHaveBeenCalledWith("github_graphql", expect.objectContaining({
       token: "tok",
       variables: { id: "PVT_123" },
+      // The scan goes through the backend TTL cache (#2447) — no maxAgeSecs meant every
+      // tab-open re-POSTed the items scan.
+      maxAgeSecs: 300,
     }));
   });
 

@@ -15,8 +15,8 @@
 //      onto its matching draft via a slug(title)→draftKey map, so legacy-keyed drafts collapse too.
 // #2409: the plan key IS the name-derived slug (`projectSlug(title)`) — the node-id alias is retired.
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
@@ -171,8 +171,10 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     return () => { cancelled = true; };
   }, [enabled]);
 
+  // githubGraphql (not a raw invoke) so the read goes through the backend TTL cache (#2447):
+  // a Glance revisit within the window is served with no network call.
   const published = useGithubQuery<GhProject[]>(
-    (token) => invoke<{ viewer?: { projectsV2?: { nodes: GhProject[] } } }>("github_graphql", { token, query: PROJECTS_QUERY, variables: null })
+    () => githubGraphql<{ viewer?: { projectsV2?: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null)
       .then((d) => d.viewer?.projectsV2?.nodes ?? []),
     [], enabled,
   );
