@@ -56,7 +56,7 @@ const GUIDANCE: Record<string, Guidance> = {
   TextField: {
     version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input",
     whenUse: ["Any single-line text input with a label.", "Controlled form fields (value + onChange)."],
-    whenNot: ["Multi-line input — use a textarea.", "A boolean — use Toggle / Checkbox."],
+    whenNot: ["Multi-line input — use TextArea.", "A boolean — use Toggle / Checkbox."],
     srcText: "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
   },
   StatusDot: {
@@ -149,6 +149,11 @@ const GUIDANCE: Record<string, Guidance> = {
     tags: ["control", "form"],
     whenUse: ["An immediate on/off switch (a setting that applies at once).", "A prominent binary state."],
     whenNot: ["A form value submitted later — use Checkbox.", "More than two states — use SegmentedControl."],
+  },
+  TextArea: {
+    tags: ["control", "form", "input"], wraps: "textarea",
+    whenUse: ["Any multi-line text input with a label (prompts, bodies, notes).", "Controlled form fields (value + onChange) that span lines."],
+    whenNot: ["Single-line input — use TextField.", "Read-only code / prompt display — use Code."],
   },
   SelectField: {
     tags: ["control", "form"], wraps: "select",
