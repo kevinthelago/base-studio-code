@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { githubGraphql } from "@/shared/lib/github/github";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -53,15 +54,14 @@ export function ProjectsList() {
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
 
-  const fetchProjects = useCallback(() => {
+  // Routed through `githubGraphql` so the read hits the backend TTL cache (#2447): re-opening the
+  // tab within the window serves the cached board list with no network call. The manual "↻ sync"
+  // button passes `force: true` so an explicit refresh always re-POSTs.
+  const fetchProjects = useCallback((opts?: { force?: boolean }) => {
     if (!githubToken) return;
     setLoading(true);
     setError(null);
-    invoke<{ viewer: { projectsV2: { nodes: GhProject[] } } }>("github_graphql", {
-      token: githubToken,
-      query: PROJECTS_QUERY,
-      variables: null,
-    })
+    githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
       .then(data => {
         setProjects(data.viewer?.projectsV2?.nodes ?? []);
         setLastSync(new Date());
