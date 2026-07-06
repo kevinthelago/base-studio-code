@@ -25,12 +25,12 @@ describe("component model helpers (#2269)", () => {
   });
 
   it("resolveUsedBy finds the components that compose the target", () => {
-    const button = byName("Button"); // composed by SegmentedControl + EmptyState + PersonasPanel
+    const button = byName("Button"); // composed by SegmentedControl + ConfirmButton + EmptyState
     const users = resolveUsedBy(button, SEED_COMPONENTS).map((c) => c.name);
     expect(users).toContain("SegmentedControl");
     expect(users).toContain("EmptyState");
-    // A leaf that nothing composes.
-    expect(resolveUsedBy(byName("FsWatcher"), SEED_COMPONENTS)).toEqual([]);
+    // A page root that nothing composes.
+    expect(resolveUsedBy(byName("AgentsBoard"), SEED_COMPONENTS)).toEqual([]);
   });
 
   it("every role has a color token", () => {
