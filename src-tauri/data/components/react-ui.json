@@ -411,13 +411,19 @@
           "name": "size",
           "type": "\"sm\" | \"md\"",
           "req": false,
-          "desc": "md (10px/.06em) or sm (9px/.08em, denser KPI tiles)."
+          "desc": "md (10px/.06em) or sm (9px/.08em, denser KPI tiles); a raw px number is also legal (dense .08em tracking)."
         },
         {
           "name": "tone",
           "type": "\"dim\" | \"muted\"",
           "req": false,
           "desc": "Label color."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned slot — renders a space-between label row (label · right); style then lands on the row."
         }
       ],
       "whenUse": [
@@ -539,10 +545,138 @@
       ],
       "whenNot": [
         "A non-modal overlay — use a positioned Box.",
-        "The whole modal — compose this inside a Dialog."
+        "The whole modal — compose this inside a Dialog / ModalCard."
       ],
       "src": "shared/ui/overlay/ModalScrim.tsx",
       "srcText": "import { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\n\n<ModalScrim>…</ModalScrim>",
+      "builtin": true
+    },
+    {
+      "id": "modalcard",
+      "name": "ModalCard",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "overlay"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "ModalScrim",
+        "IconBox",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Head title (mono h2)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Body content (scrolls)."
+        },
+        {
+          "name": "sub",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dim sub-line under the title."
+        },
+        {
+          "name": "icon",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Leading head glyph in a 30px IconBox."
+        },
+        {
+          "name": "iconBackground",
+          "type": "Color",
+          "req": false,
+          "desc": "Icon tile background (default: translucent accent)."
+        },
+        {
+          "name": "iconColor",
+          "type": "Color",
+          "req": false,
+          "desc": "Icon glyph color (default: accent)."
+        },
+        {
+          "name": "onClose",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Wires the head ✕ + Escape + scrim-click dismiss; omit for non-dismissable."
+        },
+        {
+          "name": "busy",
+          "type": "boolean",
+          "req": false,
+          "desc": "Disable the ✕ and suppress scrim/Escape dismiss while an op runs."
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "req": false,
+          "desc": "Card width (px or CSS length); capped at 100%."
+        },
+        {
+          "name": "maxHeight",
+          "type": "string",
+          "req": false,
+          "desc": "Card max height."
+        },
+        {
+          "name": "align",
+          "type": "\"center\" | \"start\"",
+          "req": false,
+          "desc": "Scrim card alignment — start top-aligns tall scrolling modals."
+        },
+        {
+          "name": "blur",
+          "type": "boolean",
+          "req": false,
+          "desc": "Backdrop blur."
+        },
+        {
+          "name": "headExtra",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Extra head rows (search/tabs/meta) inside the bordered head block."
+        },
+        {
+          "name": "foot",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Footer action-row content."
+        },
+        {
+          "name": "bodyStyle",
+          "type": "CSSProperties",
+          "req": false,
+          "desc": "Merged onto the body (padding/overflow overrides for list bodies)."
+        },
+        {
+          "name": "footStyle",
+          "type": "CSSProperties",
+          "req": false,
+          "desc": "Merged onto the foot row."
+        }
+      ],
+      "whenUse": [
+        "A rich titled modal — icon + title head, scrollable body, footer action row.",
+        "A multi-section overlay (import/share flows, per-session pickers) that outgrows Dialog."
+      ],
+      "whenNot": [
+        "A short confirm or one-field form — use Dialog.",
+        "Non-blocking info — use a Banner / toast."
+      ],
+      "src": "shared/ui/overlay/ModalCard.tsx",
+      "srcText": "import { ModalCard } from \"@/shared/ui/overlay/ModalCard\";\n\n<ModalCard title={…}>…</ModalCard>",
       "builtin": true
     },
     {
@@ -1932,6 +2066,44 @@
       ],
       "src": "shared/ui/data/DataTableRow.tsx",
       "srcText": "import { DataTableRow } from \"@/shared/ui/data/DataTableRow\";\n\n<DataTableRow template={…}>…</DataTableRow>",
+      "builtin": true
+    },
+    {
+      "id": "roletierchips",
+      "name": "RoleTierChips",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "status"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "Chip",
+        "Row"
+      ],
+      "props": [
+        {
+          "name": "role",
+          "type": "string",
+          "req": true,
+          "desc": "The SessionRole whose capability floor to render (planner/worker/director/…)."
+        }
+      ],
+      "whenUse": [
+        "Showing a session role's permission floor (git · github · code · net) as pills.",
+        "A persona/position clearance row in an editor or inspector."
+      ],
+      "whenNot": [
+        "Arbitrary tags or categories — use Chip.",
+        "A single live status — use StatusDot."
+      ],
+      "src": "shared/ui/data/RoleTierChips.tsx",
+      "srcText": "import { RoleTierChips } from \"@/shared/ui/data/RoleTierChips\";\n\n<RoleTierChips role={…} />",
       "builtin": true
     },
     {

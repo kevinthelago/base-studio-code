@@ -13,7 +13,7 @@
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
@@ -21,7 +21,7 @@ export type PrimitiveName =
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
-  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow"
+  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow" | "RoleTierChips"
   // data · charts (analytics primitives)
   | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
@@ -137,11 +137,12 @@ export const UI_KIT: PrimitiveSpec[] = [
   },
   {
     name: "SectionLabel", group: "layout", importPath: "@/shared/ui/layout/SectionLabel",
-    description: "The uppercase mono micro-label — a dim/muted section/kv caption.",
+    description: "The uppercase mono micro-label — a dim/muted section/kv caption, optionally a space-between label row via `right`.",
     props: [
       CHILDREN,
-      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles)." },
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles); a raw px number is also legal (dense .08em tracking)." },
       { name: "tone", type: "enum", values: ["dim", "muted"], default: "dim", description: "Label color." },
+      { name: "right", type: "node", description: "Right-aligned slot — renders a space-between label row (label · right); style then lands on the row." },
     ],
   },
   {
@@ -163,6 +164,28 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onDismiss", type: "function", description: "Escape / scrim-click dismiss; omit to make it non-dismissable." },
       { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Center the card, or top-align it for tall scrolling modals." },
       { name: "blur", type: "boolean", default: false, description: "Add a backdrop blur." },
+    ],
+  },
+  {
+    name: "ModalCard", group: "layout", importPath: "@/shared/ui/overlay/ModalCard",
+    description: "The titled head/body/foot modal card over ModalScrim — icon+title(+sub) head with a ✕, scrollable body, optional footer action row.",
+    props: [
+      { name: "title", type: "node", required: true, description: "Head title (mono h2)." },
+      { name: "children", type: "node", required: true, description: "Body content (scrolls)." },
+      { name: "sub", type: "node", description: "Dim sub-line under the title." },
+      { name: "icon", type: "node", description: "Leading head glyph in a 30px IconBox." },
+      { name: "iconBackground", type: "color", description: "Icon tile background (default: translucent accent)." },
+      { name: "iconColor", type: "color", description: "Icon glyph color (default: accent)." },
+      { name: "onClose", type: "function", description: "Wires the head ✕ + Escape + scrim-click dismiss; omit for non-dismissable." },
+      { name: "busy", type: "boolean", default: false, description: "Disable the ✕ and suppress scrim/Escape dismiss while an op runs." },
+      { name: "width", type: "number", default: 540, description: "Card width (px or CSS length); capped at 100%." },
+      { name: "maxHeight", type: "string", default: "88vh", description: "Card max height." },
+      { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Scrim card alignment — start top-aligns tall scrolling modals." },
+      { name: "blur", type: "boolean", default: true, description: "Backdrop blur." },
+      { name: "headExtra", type: "node", description: "Extra head rows (search/tabs/meta) inside the bordered head block." },
+      { name: "foot", type: "node", description: "Footer action-row content." },
+      { name: "bodyStyle", type: "style", description: "Merged onto the body (padding/overflow overrides for list bodies)." },
+      { name: "footStyle", type: "style", description: "Merged onto the foot row." },
     ],
   },
   // ---- typography -----------------------------------------------------------
@@ -418,6 +441,13 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "off", type: "boolean", description: "Dimmed/disabled look." },
       { name: "onClick", type: "function", description: "Click handler." },
       { name: "height", type: "number", default: 37, description: "Fixed row height in px." },
+    ],
+  },
+  {
+    name: "RoleTierChips", group: "data", importPath: "@/shared/ui/data/RoleTierChips",
+    description: "A session role's capability tiers (git · github · code · net) as colored pills — the permission floor a persona/position inherits.",
+    props: [
+      { name: "role", type: "string", required: true, description: "The SessionRole whose capability floor to render (planner/worker/director/…)." },
     ],
   },
   // ---- data · charts (analytics primitives, #399) ---------------------------
