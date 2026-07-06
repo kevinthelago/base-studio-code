@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_MAX_AGE_SECS } from "@/shared/lib/github/github";
 
 /** Minimal shape of a ProjectV2 item needed to resolve its repository. */
 export interface ProjectItemNode {
@@ -46,8 +47,11 @@ interface ReposQueryResult {
  * @param projectId - ProjectV2 node id.
  */
 export async function scanProjectRepos(token: string, projectId: string): Promise<string[]> {
+  // `maxAgeSecs` routes the read through the backend TTL cache (#2447) so re-opening the tab
+  // within the window doesn't re-POST the items scan. Raw invoke (not `githubGraphql`) because
+  // this lib takes its token explicitly instead of reaching into the store.
   const data = await invoke<ReposQueryResult>("github_graphql", {
-    token, query: PROJECT_REPOS_QUERY, variables: { id: projectId },
+    token, query: PROJECT_REPOS_QUERY, variables: { id: projectId }, maxAgeSecs: DEFAULT_MAX_AGE_SECS,
   });
   return reposFromItems(data.node?.items?.nodes ?? []);
 }

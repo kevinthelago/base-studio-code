@@ -139,6 +139,27 @@ describe("useGlanceProjects — status producer wires 'live' from project_livene
   });
 });
 
+describe("useGlanceProjects — published read hits the TTL cache (#2447)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "gho_test" });
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "github_graphql" ? { viewer: { projectsV2: { nodes: [] } } } : null,
+    );
+  });
+
+  // The read used to `invoke("github_graphql")` with NO `maxAgeSecs`, so every Glance visit
+  // re-POSTed the projectsV2 scan. Routed through `githubGraphql`, the payload must carry the
+  // default TTL so a revisit within the window is served from the backend cache.
+  it("sends the projects query with the default maxAgeSecs", async () => {
+    renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      "github_graphql",
+      expect.objectContaining({ token: "gho_test", maxAgeSecs: 300 }),
+    ));
+  });
+});
+
 describe("useGlanceProjects — published cache survives remount (#2339)", () => {
   beforeEach(() => {
     useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });

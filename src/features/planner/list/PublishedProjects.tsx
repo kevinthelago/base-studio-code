@@ -38,7 +38,8 @@ interface PublishedProjectsProps {
   grandTotal: number;
   /** Published count (active + shipped), for the header badge. */
   publishedCount: number;
-  fetchProjects: () => void;
+  /** Re-fetch the published boards; `force: true` (the manual ↻ sync) bypasses the TTL cache (#2447). */
+  fetchProjects: (opts?: { force?: boolean }) => void;
   setProjects: Dispatch<SetStateAction<GhProject[]>>;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;

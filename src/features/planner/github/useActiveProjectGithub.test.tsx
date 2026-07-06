@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { DEFAULT_MAX_AGE_SECS } from "@/shared/lib/github/github";
 import { useActiveProject, useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 
 function Probe() {
@@ -33,6 +35,8 @@ describe("useActiveProject", () => {
 });
 
 describe("useActiveProjectGithub", () => {
+  beforeEach(() => vi.mocked(invoke).mockReset());
+
   it("returns the active project alongside an idle query (no token ⇒ no fetch)", () => {
     useAppStore.setState({
       activeProjectId: "P9", activeProjectName: "", activeProjectRepo: "",
@@ -40,6 +44,26 @@ describe("useActiveProjectGithub", () => {
     });
     render(<QueryProbe />);
     expect(screen.getByTestId("q").textContent).toBe("P9|null|false|null");
+  });
+
+  // #2447 — the board screens (Board / Issues / Insights) all fetch through this hook, and it
+  // used to `invoke("github_graphql")` with NO `maxAgeSecs`, so every navigation re-POSTed the
+  // heavy `items(first:100)` scan. Routed through `githubGraphql`, the payload must carry the
+  // default TTL so the backend cache serves repeat views within the window.
+  it("sends the board query through the TTL cache (maxAgeSecs in the payload)", async () => {
+    vi.mocked(invoke).mockResolvedValue({ node: {} });
+    useAppStore.setState({
+      activeProjectId: "PVT_1", activeProjectName: "", activeProjectRepo: "",
+      activeProjectRepos: [], activeProjectNumber: undefined, githubToken: "gho_test",
+    });
+    render(<QueryProbe />);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("github_graphql", {
+      token: "gho_test",
+      query: "query{}",
+      variables: { id: "PVT_1" },
+      maxAgeSecs: DEFAULT_MAX_AGE_SECS,
+      force: undefined,
+    }));
   });
 });
 
