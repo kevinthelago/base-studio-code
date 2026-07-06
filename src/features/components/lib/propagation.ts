@@ -129,3 +129,103 @@ export function dispatchKey(d: Dispatch): string {
 export function dedupeDispatches(dispatches: Dispatch[], seen: Set<string>): Dispatch[] {
   return dispatches.filter((d) => !seen.has(dispatchKey(d)));
 }
+
+// ── Delivery (#2277) — draining the planned dispatches to the rails ────────────
+// planPropagation decides the intent; this decides what to actually FIRE this cycle. Kept pure (no
+// store/Tauri) so the three delivery guarantees are unit-tested in isolation, exactly like faultTriage:
+//   • GATE       — the per-project auto-dispatch toggle. OFF (default) ⇒ deliver nothing (surface-only).
+//   • DEDUP      — a (consumer, change) delivered once never re-fires while it stays queued.
+//   • RATE-LIMIT — a wide blast (one change × N consumers, or a burst of changes) is capped per cycle.
+
+/** How an actionable change reaches a consumer at delivery time: assigned into its LIVE fleet's director
+ *  (bsc-issue → bsc-assign), or opened as a plain kit-update GitHub issue when it has no live fleet. */
+export type KitRail = "assign" | "issue";
+
+/** One change to actually deliver to one consumer this cycle. */
+export interface KitDelivery {
+  projectKey: string;
+  change: KitChange;
+  rail: KitRail;
+}
+
+/** Per-consumer drain policy, evaluated at delivery time — so `live` reflects the fleet's CURRENT state,
+ *  not whatever it was when the change was queued (the kind baked by planPropagation can go stale). */
+export interface KitDrainConfig {
+  /** The per-project auto-dispatch toggle. `false` (default) ⇒ surface-only: nothing is delivered. */
+  enabled: boolean;
+  /** The consumer's fleet is live now ⇒ assign to its director; else open a kit-update issue. */
+  live: boolean;
+  /** Storm guard: at most this many deliveries fired for the consumer in one cycle. */
+  maxPerCycle: number;
+}
+
+export interface KitDrainPlan {
+  /** Changes to deliver THIS cycle. */
+  deliver: KitDelivery[];
+  /** The (consumer, change) keys now delivered — carry back as `delivered` next cycle so nothing re-fires. */
+  nextDelivered: string[];
+}
+
+/** Conservative default: ≤3 deliveries per consumer per cycle (a slow poll spreads a wide blast). */
+export const DEFAULT_KIT_DRAIN: Omit<KitDrainConfig, "enabled" | "live"> = { maxPerCycle: 3 };
+
+/** The delivered-ledger key for a (consumer, change) — same shape as {@link dispatchKey}. */
+export function deliveryKey(projectKey: string, changeId: string): string {
+  return `${projectKey}:${changeId}`;
+}
+
+/**
+ * Decide which of a consumer's queued dispatches to DELIVER this cycle. Pure + deterministic.
+ * Only BREAKING changes auto-fire (a mandatory adopt); additive/fix stay surface-only (notify).
+ *
+ * @param dispatches  the consumer's queued {@link Dispatch}es (the fan-out records for one project).
+ * @param delivered   (consumer, change) keys already fired (the dedup ledger; carry `nextDelivered`).
+ * @param cfg         the per-consumer policy (gate + liveness + rate cap).
+ *
+ * Guarantees:
+ *  - GATE: `cfg.enabled === false` ⇒ `deliver` is empty.
+ *  - DEDUP: a (consumer, change) already in `delivered` is never re-fired.
+ *  - RATE-LIMIT: `deliver.length ≤ maxPerCycle`.
+ * The rail is `live ? "assign" : "issue"`.
+ */
+export function planKitDrain(dispatches: Dispatch[], delivered: Iterable<string>, cfg: KitDrainConfig): KitDrainPlan {
+  const already = new Set(delivered);
+  if (!cfg.enabled) return { deliver: [], nextDelivered: [...already] };
+  const rail: KitRail = cfg.live ? "assign" : "issue";
+  const chosen = dispatches
+    .filter((d) => d.change.class === "breaking" && !already.has(deliveryKey(d.projectKey, d.change.id)))
+    // Deterministic order so a capped cycle picks a stable subset.
+    .sort((a, b) => deliveryKey(a.projectKey, a.change.id).localeCompare(deliveryKey(b.projectKey, b.change.id)))
+    .slice(0, Math.max(0, cfg.maxPerCycle))
+    .map((d): KitDelivery => ({ projectKey: d.projectKey, change: d.change, rail }));
+  return { deliver: chosen, nextDelivered: [...already, ...chosen.map((c) => deliveryKey(c.projectKey, c.change.id))] };
+}
+
+/** The director-facing message routing a kit change into a live fleet (the `assign` rail). The director
+ *  captures + assigns adoption via the coordination emitters, exactly like the fault-triage prompt. */
+export function kitDispatchPrompt(change: KitChange): string {
+  const ver = change.from && change.to ? ` (${change.from} → ${change.to})` : "";
+  const mig = change.migration ? `\nMigration: ${change.migration}` : "";
+  return [
+    `[kit-update] The \`${change.kitId}\` kit released a ${change.class} change to \`${change.component}\`${ver}` +
+      " — adopt it in this app:",
+    change.summary + mig,
+    "Capture it with `bsc-issue` (a title + the change/migration above), then `bsc-assign <session>` the " +
+      "worker whose `owns` lane covers the UI so it adopts the new component API.",
+  ].join("\n");
+}
+
+/** Title + body for a plain `kit-update` GitHub issue (the `issue` rail — a consumer with no live fleet). */
+export function kitUpdateIssue(change: KitChange): { title: string; body: string } {
+  const ver = change.from && change.to ? ` (${change.from} → ${change.to})` : change.to ? ` (${change.to})` : "";
+  const title = `kit-update: adopt ${change.component}${ver} from ${change.kitId}`;
+  const body = [
+    `The \`${change.kitId}\` kit released a **${change.class}** change to \`${change.component}\`${ver}.`,
+    "",
+    change.summary,
+    ...(change.migration ? ["", "## Migration", change.migration] : []),
+    "",
+    "_Opened automatically by kit-change propagation (#2277)._",
+  ].join("\n");
+  return { title, body };
+}
