@@ -8,6 +8,7 @@
 // A press that starts on a `[data-node]` element does NOT pan — the node owns that gesture — so a
 // canvas with draggable nodes (Org) and one with static nodes (Glance) share the same hook.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clamp } from "@/shared/lib/core/math";
 
 export interface GraphView { tx: number; ty: number; scale: number }
 
@@ -40,8 +41,6 @@ export interface GraphViewport {
   /** The `transform` style to spread onto the world layer. */
   worldTransform: React.CSSProperties;
 }
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 /**
  * Zoom `v` to scale `ns` (clamped to [min,max]) while keeping the world point currently under the

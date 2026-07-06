@@ -41,8 +41,9 @@ export interface GraphEdgeGeom {
 const f = (v: number): number => Math.round(v * 10) / 10;
 
 /** The point on box `a`'s perimeter along the ray toward (tx,ty), with a 3px outset so the line clears
- *  the border. (The Org designer's `anchor`, kept here so the shared core stays feature-independent.) */
-function anchor(a: EdgeBox, tx: number, ty: number): [number, number] {
+ *  the border. (The Org designer's `anchor` — exported since #2418 replaced org's byte-identical copy;
+ *  its feature barrel re-exports this one.) */
+export function anchor(a: EdgeBox, tx: number, ty: number): [number, number] {
   const cx = a.x + a.w / 2, cy = a.y + a.h / 2, dx = tx - cx, dy = ty - cy;
   const hw = a.w / 2 + 3, hh = a.h / 2 + 3;
   const sx = dx === 0 ? 1e9 : hw / Math.abs(dx);

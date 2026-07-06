@@ -10,7 +10,11 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
-import { ROLE_COLOR, matchesQuery, type ComponentRecord, type Role } from "./lib/model";
+import { Toggle } from "@/shared/ui/controls/Toggle";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { RoleDot, KitChip } from "./kitChrome";
+import { ROLE_COLOR, matchesQuery, NO_COMPONENTS_TITLE, type ComponentRecord, type Role } from "./lib/model";
 import { renderSpecimen } from "./specimens";
 import "./plannerComponentsPane.css";
 
@@ -64,14 +68,11 @@ export function PlannerComponentsPane() {
   if (!kit) {
     return (
       <Box className="pcp-root">
-        <Box className="pcp-empty">
-          <Box>
-            <Text weight={600} size={13} as="div" style={{ marginBottom: 5 }}>No components yet</Text>
-            <Text size={11.5} tone="muted" as="div" style={{ lineHeight: 1.55, maxWidth: 230, margin: "0 auto" }}>
-              The proven-component library is empty — seed a kit to browse it here.
-            </Text>
-          </Box>
-        </Box>
+        <EmptyState
+          size="sm"
+          title={NO_COMPONENTS_TITLE}
+          description="The proven-component library is empty — seed a kit to browse it here."
+        />
       </Box>
     );
   }
@@ -85,10 +86,8 @@ export function PlannerComponentsPane() {
           <Box style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Text mono size="xxs" tone="dim">ACTIVE KIT{kits.length > 1 ? "S" : ""}</Text>
             {kits.map((k) => (
-              <Box as="button" key={k.id} className={`pcp-kitchip${k.id === kitId ? " on" : ""}`} title={k.stack}
-                onClick={() => { setKitId(k.id); setOpenId(null); }}>
-                <Box as="span" style={{ width: 6, height: 6, borderRadius: 2, background: k.dot }} />{k.name}
-              </Box>
+              <KitChip key={k.id} kit={k} on={k.id === kitId} className="pcp-kitchip" title={k.stack}
+                onClick={() => { setKitId(k.id); setOpenId(null); }} />
             ))}
           </Box>
         </Box>
@@ -125,7 +124,7 @@ export function PlannerComponentsPane() {
                     <Box className="pcp-thumb"><Specimen comp={c} scale={0.5} /></Box>
                     <Box style={{ flex: 1, minWidth: 0 }}>
                       <Box style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: ROLE_COLOR[c.role], flex: "none" }} />
+                        <RoleDot role={c.role} size={7} />
                         <Text weight={600} size={12.5}>{c.name}</Text>
                       </Box>
                       <Text mono size="xxs" tone="dim" as="div" style={{ marginTop: 3 }}>{kit.name} · {c.role}</Text>
@@ -182,9 +181,7 @@ export function PlannerComponentsPane() {
           <Box className="pcp-full-head">
             <Text size={11.5} tone="muted">Assembled from <b style={{ color: "var(--fg)" }}>{assembled.length}</b> kit components</Text>
             <Box style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <Box as="button" className={`pcp-switch${highlight ? " on" : ""}`} aria-pressed={highlight} aria-label="Toggle highlight" onClick={() => setHighlight((h) => !h)}>
-                <Box as="span" className="pcp-switch-knob" />
-              </Box>
+              <Toggle size="sm" on={highlight} onClick={() => setHighlight((h) => !h)} role="switch" ariaChecked={highlight} />
               <Text size={11} tone="muted">highlight</Text>
             </Box>
           </Box>
@@ -215,7 +212,7 @@ export function PlannerComponentsPane() {
 
       {toast && (
         <Box className="pcp-toast">
-          <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)" }} />
+          <StatusDot color="var(--success)" size={7} />
           <Text size={12}>{toast}</Text>
         </Box>
       )}

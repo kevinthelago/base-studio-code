@@ -6,29 +6,11 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import type { SessionRole } from "@/shared/lib/session/sessionRoles";
-import { tierChips, formColor, formArrow, type TierChip } from "./lib/orgView";
+import { formColor, formArrow } from "./lib/orgView";
 import type { CommunicationForm } from "./lib/org";
 
-/** Color for a capability tier: write = amber (mutating), read = blue, net-on = accent, else muted. */
-function tierColor(tier: string): string {
-  if (tier === "write") return "oklch(0.78 0.12 70)";
-  if (tier === "read") return "oklch(0.75 0.1 250)";
-  if (tier === "on") return "var(--accent)";
-  return "var(--fg-dim)";
-}
-
-/** The capability-tier row for a role (git·write · code·write · net·on …) — the permission floor a
- *  position inherits, rendered as mono pills. Reused on the canvas card + the inspector clearance block. */
-export function TierChips({ role, size = 9.5 }: { role: SessionRole; size?: number }) {
-  return (
-    <Row gap={4} wrap>
-      {tierChips(role).map((t: TierChip) => (
-        <Chip key={t.label} color={tierColor(t.tier)} fontSize={size}>{t.label}</Chip>
-      ))}
-    </Row>
-  );
-}
+// The role-capability tier row lives in the shared kit since #2420 — `RoleTierChips`
+// (@/shared/ui/data/RoleTierChips); the local `TierChips` duplicate (zero call sites) was deleted.
 
 /** A single communication-form chip — its direction glyph + name, colored by the form's semantics.
  *  Optionally trailed by its runtime note (delivery · authority / parks caller / …). */
@@ -43,16 +25,8 @@ export function FormChip({ form, note = false }: { form: CommunicationForm; note
   );
 }
 
-/** A labelled section header (uppercase mono micro-label + optional right slot) — the inspector's
- *  repeated block header. */
-export function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    <Row align="center" justify="between" style={{ marginBottom: 9 }}>
-      <Text as="div" className="ulabel" tone="dim" size={9.5}>{children}</Text>
-      {right}
-    </Row>
-  );
-}
+// The labelled section header moved onto the shared `SectionLabel` (`right` slot added in #2420) —
+// the inspector imports it from @/shared/ui/layout/SectionLabel directly.
 
 /** A form-flow lane (A → B header + the forms that direction), the inspector's relationship view unit. */
 export function FormLane({ from, to, forms, hue }: { from: string; to: string; forms: CommunicationForm[]; hue: number }) {
