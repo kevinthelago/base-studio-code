@@ -219,6 +219,27 @@ export interface BlueprintTeam {
   relationships: Relationship[];
 }
 
+/** The UI KIT a blueprint pins (#2465) — a LOCKFILE entry, deliberately the opposite of `team`:
+ *  the kit is REFERENCED, never embedded, because kits are immutable versioned artifacts shared
+ *  across blueprints (one copy in the global store, `~/.base-studio-code/kits/<id>/<version>/`,
+ *  no matter how many blueprints pin it). Exact pins only — no version ranges (reproducibility).
+ *
+ *  `hash` is the sha256 (lowercase hex) of the kit artifact's bytes, verified BEFORE a fetched
+ *  kit is accepted into the store (resolve flow, `uiKitPin.ts`); `source` is the typed-gist URL
+ *  to fetch from when `id@version` isn't in the local store yet. A new blueprint default-pins the
+ *  packaged `bsc/react-ui` kit ({@link Blueprint.uiKit} set in `addBlueprint`); a blueprint
+ *  without a pin behaves exactly as before. */
+export interface BlueprintUiKit {
+  /** Publisher-scoped kit id (e.g. `"bsc/react-ui"`). */
+  id: string;
+  /** Exact semver of the pinned artifact (immutable once published). */
+  version: string;
+  /** sha256 (lowercase hex) of the artifact bytes. */
+  hash: string;
+  /** Typed-gist URL to fetch from when the id@version is missing locally. */
+  source?: string;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -254,6 +275,10 @@ export interface Blueprint {
    *  (or authored blank). A composed sub-model; see {@link BlueprintTeam}. Absent ⇒ no team
    *  authored (today's behavior, byte-identical everywhere). */
   team?: BlueprintTeam;
+  /** The UI kit this blueprint pins (#2465) — a lockfile entry referencing an immutable
+   *  `id@version` artifact in the global kit store; see {@link BlueprintUiKit}. Absent ⇒ no pin
+   *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged kit. */
+  uiKit?: BlueprintUiKit;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
