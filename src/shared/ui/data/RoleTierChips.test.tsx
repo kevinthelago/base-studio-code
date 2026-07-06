@@ -5,10 +5,12 @@ import { RoleTierChips } from "./RoleTierChips";
 describe("RoleTierChips (#2420)", () => {
   it("renders all four capability tiers for a role", () => {
     render(<RoleTierChips role="planner" />);
-    // Planner floor: git read · github read · code none · net read (#219).
+    // Planner floor per role-capabilities.json: git read · github read · code WRITE · net read.
+    // "Plan-only" is encoded as code:write + writeGlobs scoped to the plan-section files (*.md,
+    // prompts/*, …) — unlike the director, whose carve-out is encoded as code:none + globs (#851).
     expect(screen.getByText("git · read")).toBeTruthy();
     expect(screen.getByText("github · read")).toBeTruthy();
-    expect(screen.getByText("code · none")).toBeTruthy();
+    expect(screen.getByText("code · write")).toBeTruthy();
     expect(screen.getByText("net · read")).toBeTruthy();
   });
 
