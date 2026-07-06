@@ -5,6 +5,7 @@
 // sample project topology) — isolated here so wiring the real fleet later is a drop-in.
 import type { GRawNode, GRawEdge, GRole, GEdgeKind } from "./glanceGraph";
 import type { GlanceData, ProjectLite } from "./glanceData";
+import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
@@ -60,19 +61,12 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
   return { rawNodes, rawEdges, sample: false };
 }
 
-/** Stable small hash → non-negative int (deterministic worker count / status). */
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
 /** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), and a
  *  reviewer (data). Edges are "depends on": each worker depends on the director's direction (api), the
  *  reviewer reads each worker's output (data) — so the layout flows director → workers → reviewer. All
  *  clearly `sample` until a real fleet feed replaces it. */
 export function buildFleetData(project: ProjectLite): GlanceData {
-  const workers = 2 + (hash(project.id) % 3); // 2..4
+  const workers = 2 + (hashAbs(project.id) % 3); // 2..4
   const rawNodes: GRawNode[] = [
     { id: "director", slug: "director", role: "infra", roleLabel: "director", status: "building" },
     { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", status: "review" },
@@ -80,7 +74,7 @@ export function buildFleetData(project: ProjectLite): GlanceData {
   const rawEdges: GRawEdge[] = [];
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
-    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", status: hash(id + project.id) % 2 ? "building" : "idle" });
+    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", status: hashAbs(id + project.id) % 2 ? "building" : "idle" });
     rawEdges.push({ from: id, to: "director", kind: "api" });   // worker takes direction from the director
     rawEdges.push({ from: "reviewer", to: id, kind: "data" });  // reviewer reads the worker's output
   }

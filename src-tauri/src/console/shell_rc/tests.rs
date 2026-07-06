@@ -142,12 +142,17 @@ fn bsc_brief_emits_tab_aligned_coord_line() {
         let _ = child.stdin.take().unwrap().write_all(body.as_bytes());
         assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
     };
-    run("bsc-brief director --ref #77", "scope grew: add CSV export");
+    // The ref must be quoted in shell usage — an unquoted `#77` starts a bash comment. Before
+    // #2414 the comment-eaten ref left `--ref` dangling and the parser's `shift 2` looped forever
+    // (shift-by-2 with one arg left shifts nothing), hanging this test until the CI job timeout.
+    run("bsc-brief director --ref '#77'", "scope grew: add CSV export");
     run("bsc-brief issuer", "no ref carried");
+    // Dangling-flag regression (#2414): the unquoted-`#77` shape. Must terminate (empty ref).
+    run("bsc-brief director --ref #77", "ref eaten as a comment");
 
     let text = std::fs::read_to_string(&log).unwrap();
     let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
-    assert_eq!(lines.len(), 2, "expected one line per emitter, got: {text:?}");
+    assert_eq!(lines.len(), 3, "expected one line per emitter, got: {text:?}");
 
     let withref: Vec<&str> = lines[0].split('\t').collect();
     assert_eq!(withref[1], "t0p0", "pane column");
@@ -155,6 +160,9 @@ fn bsc_brief_emits_tab_aligned_coord_line() {
 
     let noref: Vec<&str> = lines[1].split('\t').collect();
     assert_eq!(&noref[2..], &["brief", "issuer", "no ref carried", ""]);
+
+    let dangling: Vec<&str> = lines[2].split('\t').collect();
+    assert_eq!(&dangling[2..], &["brief", "director", "ref eaten as a comment", ""]);
 
     let _ = std::fs::remove_dir_all(&dir);
     });

@@ -85,6 +85,10 @@ export interface ComponentRecord {
   rules?: KitRule[];
 }
 
+/** The shared zero-state title — Design Studio and the Planner Components pane must say the same
+ *  thing about the same empty library (#2420). */
+export const NO_COMPONENTS_TITLE = "No components yet";
+
 /** Role → accent color, mapped to app design tokens (not the prototype's raw palette). */
 export const ROLE_COLOR: Record<Role, string> = {
   primitive: "var(--info)",
