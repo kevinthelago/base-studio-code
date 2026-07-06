@@ -47,7 +47,9 @@ describe("Field family", () => {
     render(<TextArea value="" onChange={() => {}} className="ta" spellCheck={false} data-testid="ta" />);
     const ta = screen.getByTestId("ta") as HTMLTextAreaElement;
     expect(ta.className).toBe("input ta");
-    expect(ta.spellcheck).toBe(false);
+    // Assert the attribute, not the `.spellcheck` property — jsdom doesn't implement that IDL
+    // reflection on textarea, so the property reads undefined even when the attr passed through.
+    expect(ta.getAttribute("spellcheck")).toBe("false");
   });
 
   it("TextArea loading renders the skeleton instead of the textarea, keeping the label", () => {

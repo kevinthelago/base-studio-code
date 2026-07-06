@@ -38,6 +38,7 @@ function loadingSpecimen(comp: ComponentRecord, t: Tok): ReactNode {
     case "Chip": return skel(72, 22, 99, t);
     case "Text": return <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 220 }}>{skel("100%", 11, 5, t)}{skel("100%", 11, 5, t)}{skel("60%", 11, 5, t)}</div>;
     case "TextField": case "Field": case "SelectField": return <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>{skel(90, 9, 4, t)}{skel("100%", 30, 6, t)}</div>;
+    case "TextArea": return <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>{skel(90, 9, 4, t)}{skel("100%", 84, 7, t)}</div>;
     case "FillBar": return skel(220, 7, 99, t);
     case "Code": return <div style={{ width: 260, borderRadius: 8, border: `1px solid ${t.borderSoft}`, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>{skel("70%", 8, 4, t)}{skel("90%", 8, 4, t)}{skel("45%", 8, 4, t)}</div>;
     case "Card": case "StatCard": case "StatTile": return (
@@ -85,6 +86,14 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
           <label style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>Persona name</label>
           <div style={{ height: 30, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, background: t.bg, border: `1px solid ${err ? "var(--danger)" : t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 12 }}>{dis ? "" : "Senior Reviewer"}</div>
           {err && <span style={{ fontFamily: mono, fontSize: 10, color: "var(--danger)" }}>Name is required</span>}
+        </div>
+      );
+    }
+    case "TextArea": {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>
+          <label style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>Kickoff prompt</label>
+          <div style={{ minHeight: 72, padding: "8px 10px", borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 12, lineHeight: 1.55, whiteSpace: "pre-line" }}>{"Work the assigned issue in your\nworktree, then open a PR and stop."}</div>
         </div>
       );
     }
