@@ -2,7 +2,7 @@
 // editor views (Purpose · Stages · Capabilities · Review & publish) over the in-progress blueprint.
 import { useState } from "react";
 import type { ProjectPaneData } from "@/features/planner/pane/projectPaneData";
-import { PurposeView, StagesView, CapabilitiesView, PublishView } from "@/features/planner/blueprints/BlueprintAuthorViews";
+import { PurposeView, StagesView, CapabilitiesView, TeamView, PublishView } from "@/features/planner/blueprints/BlueprintAuthorViews";
 import { Box } from "@/shared/ui/layout/Box";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { AuthoringWiring } from "./focusedHandlers";
@@ -23,6 +23,7 @@ export function AuthoringBody({ bp, stageKey, wiring }: {
       case "purpose":         return <PurposeView {...common} />;
       case "bp_stages":       return <StagesView {...common} selectedUid={sel} onSelectStage={setSelStage} />;
       case "bp_capabilities": return <CapabilitiesView {...common} />;
+      case "bp_team":         return <TeamView {...common} />;
       case "bp_review":       return <PublishView {...common} onPublish={wiring.onPublish} published={wiring.published} />;
       default:                return null;
     }

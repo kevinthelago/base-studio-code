@@ -84,3 +84,46 @@ describe("pool card gesture — drag moves the stack, click drills (#2439)", () 
     expect(poolCard().style.userSelect).toBe("none");
   });
 });
+
+describe("auto-organize lays out the rendered graph (#2451)", () => {
+  const poolCard = (): HTMLElement =>
+    screen.getByText(/click to open/i).closest("[data-node]") as HTMLElement;
+  const workers = () =>
+    useAppStore.getState().orgs[0].positions.filter((p) => p.personaId === "persona-worker");
+
+  it("parent view: members translate by ONE shared delta (cluster preserved for drill-in, #2439)", () => {
+    render(<OrgPanel />);
+    const before = new Map(workers().map((p) => [p.nodeId, nodeBox(p)]));
+    expect(before.size).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByText("⤢ Auto organize"));
+
+    const deltas = workers().map((p) => {
+      const b = before.get(p.nodeId)!;
+      return { dx: (p.x ?? 0) - b.x, dy: (p.y ?? 0) - b.y };
+    });
+    // one shared (dx, dy) — the pool moved as a unit onto its collapsed-layout spot
+    for (const d of deltas) expect(d).toEqual(deltas[0]);
+  });
+
+  it("drilled view: auto-organize moves ONLY the members — boundary/parent nodes stay fixed", () => {
+    render(<OrgPanel />);
+    // drill into the pool (a plain click)
+    const card = poolCard();
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(card, { clientX: 100, clientY: 100 });
+    expect(screen.getByText("← back")).toBeTruthy();
+
+    const memberIds = new Set(workers().map((p) => p.nodeId));
+    const othersBefore = useAppStore.getState().orgs[0].positions
+      .filter((p) => !memberIds.has(p.nodeId))
+      .map((p) => ({ nodeId: p.nodeId, x: p.x, y: p.y }));
+
+    fireEvent.click(screen.getByText("⤢ Auto organize"));
+
+    const after = useAppStore.getState().orgs[0].positions;
+    for (const o of othersBefore) {
+      expect(after.find((p) => p.nodeId === o.nodeId)).toMatchObject({ x: o.x, y: o.y });
+    }
+  });
+});

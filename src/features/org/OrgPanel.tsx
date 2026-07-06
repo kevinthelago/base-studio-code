@@ -22,7 +22,7 @@ import { OrgInspector } from "./OrgInspector";
 import { OrgContextMenu } from "./OrgContextMenu";
 import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
 import { autoLayout, nodeBox, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
-import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
+import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
@@ -120,11 +120,6 @@ export function OrgPanel() {
     setSel({ type: "node", id: nodeId });
   };
 
-  const autoOrganize = () => {
-    const layout = autoLayout(org);
-    updateOrg(org.id, { positions: org.positions.map((p) => ({ ...p, ...layout[p.nodeId] })) });
-  };
-
   // Pools (#2199): homogeneous swarms of a `pooled` persona collapse to one stacked card. The canvas
   // shows either the COLLAPSED parent graph, or — when a pool is open — that pool's OWN sub-graph.
   const pools = detectPools(org, personas);
@@ -134,6 +129,20 @@ export function OrgPanel() {
     ? { org: poolSubgraph(org, activePool), poolInfo: {} as Record<string, Pool> }
     : collapsed;
   const activePoolName = activePool ? positionDisplay({ nodeId: activePool.nodeId, kind: "agent", personaId: activePool.personaId }, personas).name : "";
+
+  // Auto-organize lays out the graph being RENDERED (#2451). Parent view → the COLLAPSED org, so the
+  // pool node participates (with its stacked-card footprint) and lands ON a hierarchy row; the result
+  // writes back through applyPoolLayout — non-pooled nodes directly, each pool's members translated as
+  // a cluster so their centroid (where the stack renders) is the pool's laid-out spot (#2439). Drilled
+  // into a pool → only the members re-arrange; the boundary context stays fixed.
+  const autoOrganize = () => {
+    if (activePool) {
+      updateOrg(org.id, { positions: organizeDrilledPool(org, activePool) });
+      return;
+    }
+    const layout = autoLayout(collapsed.org, poolLayoutSizes(pools));
+    updateOrg(org.id, { positions: applyPoolLayout(org, pools, layout) });
+  };
 
   const onDrillPool = (poolNodeId: string) => { setDrill(poolNodeId); setSel({ type: "node", id: "" }); };
   const exitPool = () => { setDrill(null); setSel({ type: "node", id: "" }); };
