@@ -44,9 +44,11 @@ export function GlanceChatDock({
   };
 
   return (
+    // Fills its container (#2401): the morph panel owns the frame (border/radius/shadow) + sizing, so
+    // this is a plain fill — height:100%, no bottom-dock border. (Was a fixed 40vh bottom dock.)
     <Box style={{
-      height: "40vh", minHeight: 240, flex: "none",
-      borderTop: "1px solid var(--border)", background: "var(--bg-panel)",
+      height: "100%", minHeight: 0, flex: 1,
+      background: "var(--bg-panel)",
       display: "flex", flexDirection: "column", minWidth: 0,
     }}>
       <Row justify="between" align="center" style={{ padding: "7px 12px", borderBottom: "1px solid var(--border)", flex: "none" }}>
