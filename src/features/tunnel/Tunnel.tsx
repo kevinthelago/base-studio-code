@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
-import { TextField } from "@/shared/ui/controls/Field";
+import { Field, TextField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -219,8 +219,7 @@ export function TunnelSettings() {
           }}>{err}</Box>
         )}
 
-        <Box className="field" style={{ marginBottom: running && payload ? 18 : 0 }}>
-          <label>Relay URL</label>
+        <Field label="Relay URL" style={{ marginBottom: running && payload ? 18 : 0 }}>
           <Row gap={8} align="stretch">
             {/* eslint-disable-next-line no-restricted-syntax -- input shares a Row with multiple action buttons; TextField's .field wrapper would break the inline layout */}
             <input
@@ -274,7 +273,7 @@ export function TunnelSettings() {
               })}
             </Stack>
           )}
-        </Box>
+        </Field>
 
         {running && payload ? (
           <Grid cols="auto 1fr" gap={20} align="start">
@@ -306,8 +305,7 @@ export function TunnelSettings() {
                   desktop, not the relay.
                 </>}
               />
-              <Box className="field">
-                <label>Input control</label>
+              <Field label="Input control">
                 <Row gap={10}>
                   <Chip tone={inputGranted ? "success" : "neutral"}>
                     {inputGranted ? "● input granted" : "○ view-only"}
@@ -332,10 +330,9 @@ export function TunnelSettings() {
                         ? "The paired phone can drive panes. Revoke to return it to view-only."
                         : "The phone is view-only — keystrokes are dropped until you grant input."}
                 </Box>
-              </Box>
+              </Field>
               {paired && (
-                <Box className="field">
-                  <label>Paired device</label>
+                <Field label="Paired device">
                   <Row gap={10}>
                     <Box as="span" style={{ flex: 1 }} />
                     <Button disabled={busy} onClick={onUnpair}>
@@ -346,7 +343,7 @@ export function TunnelSettings() {
                     Drops the connected phone, rotates the room + pairing secret (the old QR
                     stops working), and shows a fresh QR to pair again.
                   </Box>
-                </Box>
+                </Field>
               )}
               <Text as="div" className="hint mono" size={10.5}>
                 The pairing secret is carried inside the QR only — never shown or logged.
