@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useGlanceProjects, mergeGlanceProjects, applyLiveness } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
+import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
 import { useAppStore } from "@/store";
 
@@ -12,8 +13,14 @@ const gh = (id: string, title: string, closed = false): GhProject => ({
   items: { totalCount: 0, nodes: [] }, repositories: { nodes: [] },
 });
 
+/** A persisted minimal record (#2446) with the fields the fallback reads. */
+const rec = (title: string, closed = false): MinimalGhProject => ({
+  id: `PVT_${title}`, number: 1, title, shortDescription: null, url: "", closed, updatedAt: "",
+  itemsTotalCount: 0, openCount: 0, closedCount: 0, repos: [],
+});
+
 describe("useGlanceProjects — declared role/status (#2284)", () => {
-  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" }));
+  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null }));
 
   it("passes through a draft's DECLARED role + status (curated coloring wins)", () => {
     useAppStore.setState({
@@ -107,7 +114,7 @@ describe("applyLiveness — heartbeat → 'live' status (#2263)", () => {
 
 describe("useGlanceProjects — status producer wires 'live' from project_liveness (#2263)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
     vi.mocked(invoke).mockReset();
   });
 
@@ -141,7 +148,7 @@ describe("useGlanceProjects — status producer wires 'live' from project_livene
 
 describe("useGlanceProjects — published read hits the TTL cache (#2447)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "gho_test" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "gho_test", githubState: null });
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (cmd: string) =>
       cmd === "github_graphql" ? { viewer: { projectsV2: { nodes: [] } } } : null,
@@ -160,32 +167,66 @@ describe("useGlanceProjects — published read hits the TTL cache (#2447)", () =
   });
 });
 
-describe("useGlanceProjects — published cache survives remount (#2339)", () => {
+describe("useGlanceProjects — persisted github-state (#2446, supersedes the #2339 module cache)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
     vi.mocked(invoke).mockReset();
   });
 
-  it("a revisit (published fetch not yet landed) still includes the last-known published set", async () => {
-    // First visit: a token + a resolving fetch → the published node lands and is cached module-side.
-    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project", false)] } } });
+  it("a landed fetch OVERWRITES the persisted records (+fetchedAt) in the store", async () => {
+    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project")] } } });
     useAppStore.setState({ githubToken: "tok" });
+    const { unmount } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(useAppStore.getState().githubState?.records.map((r) => r.title)).toEqual(["Cached Project"]));
+    expect(useAppStore.getState().githubState!.fetchedAt).toBeGreaterThan(0);
+    unmount();
+  });
+
+  it("a revisit (fetch not yet landed) still includes the last-known published set for a LOCAL project", async () => {
+    // First visit: a token + a resolving fetch → the published node lands and persists to the store.
+    // The project also exists locally as a draft (the persisted fallback only overlays local projects).
+    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project", true)] } } });
+    useAppStore.setState({
+      githubToken: "tok",
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+    });
     const first = renderHook(() => useGlanceProjects());
-    await waitFor(() => expect(first.result.current.some((p) => p.name === "Cached Project")).toBe(true));
+    await waitFor(() => expect(first.result.current.find((p) => p.id === "cached-project")?.status).toBe("done"));
     first.unmount();
 
-    // Revisit: no token, so useGithubQuery stays { data: null } (no fetch) — but the module cache must
-    // seed the merge, so the cached project is present IMMEDIATELY (no drafts-only flash).
+    // Revisit: no token, so useGithubQuery stays { data: null } (no fetch) — but the persisted state
+    // seeds the merge, so the project keeps its published status IMMEDIATELY (no drafts-only flash).
     useAppStore.setState({ githubToken: "" });
     const second = renderHook(() => useGlanceProjects());
-    expect(second.result.current.some((p) => p.name === "Cached Project")).toBe(true);
+    expect(second.result.current.find((p) => p.id === "cached-project")?.status).toBe("done");
     second.unmount();
+  });
+
+  it("falls back to persisted records BEFORE local-only: the record's status overlays a published hub's node", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "list_local_projects"
+        ? [{ key: "acme-crm", title: "Acme CRM", hasPlan: true, updatedAt: 1, published: true }]
+        : null,
+    );
+    // Logged out + a persisted record for the hub: without it the local-only seed would say
+    // "planning"; the record (closed ⇒ shipped) must win the overlay.
+    useAppStore.setState({ githubState: { records: [rec("Acme CRM", true)], fetchedAt: 1 } });
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.find((p) => p.id === "acme-crm")?.status).toBe("done"));
+  });
+
+  it("does NOT resurrect a record whose project no longer exists locally (deleted hub)", async () => {
+    useAppStore.setState({ githubState: { records: [rec("Ghost App")], fetchedAt: 1 } });
+    const { result } = renderHook(() => useGlanceProjects());
+    // Give the local-inventory fetch a tick — the ghost record must never produce a node.
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalled());
+    expect(result.current.some((p) => p.name === "Ghost App")).toBe(false);
   });
 });
 
 describe("local published inventory seeds Glance (#2445)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
     vi.mocked(invoke).mockReset();
   });
 

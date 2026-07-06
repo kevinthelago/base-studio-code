@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
 import type { GhProject } from "./PublishedProjects";
+import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 
 const LOCAL_PUBLISHED = { key: "acme-crm", title: "Acme CRM", hasPlan: true, updatedAt: 5, published: true };
 
@@ -26,7 +27,7 @@ function routeInvoke(ghNodes: GhProject[]) {
 describe("ProjectsList — local published inventory (#2445)", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
-    useAppStore.setState({ activeWorkspace: "projects", localDraftProjects: {}, hiddenProjectIds: [] });
+    useAppStore.setState({ activeWorkspace: "projects", localDraftProjects: {}, hiddenProjectIds: [], githubState: null });
   });
 
   it("LOGGED OUT: a local published hub renders in the published column with the not-synced hint", async () => {
@@ -54,5 +55,61 @@ describe("ProjectsList — local published inventory (#2445)", () => {
     await waitFor(() => expect(screen.getAllByText("Acme CRM")).toHaveLength(1));
     expect(screen.queryByText(/not synced/i)).toBeNull();
     expect(screen.queryByText("acme-crm")).toBeNull(); // the local row's key line is gone too
+    expect(screen.queryByText(/last synced/i)).toBeNull(); // live data — no staleness hint (#2446)
+  });
+});
+
+// #2446 — the persisted last-known board state renders as a stale-marked overlay: logged out (or
+// pre-refresh), a persisted record overlays its local hub as a full board row with a "last synced
+// <age>" hint — but a record whose hub was deleted is NOT resurrected.
+describe("ProjectsList — persisted GitHub-state overlay (#2446)", () => {
+  const record = (title: string): MinimalGhProject => ({
+    id: `PVT_${title}`, number: 3, title, shortDescription: null, url: "", closed: false,
+    updatedAt: new Date().toISOString(), itemsTotalCount: 4, openCount: 3, closedCount: 1, repos: ["o/r"],
+  });
+
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+    useAppStore.setState({
+      activeWorkspace: "projects", localDraftProjects: {}, hiddenProjectIds: [],
+      githubToken: "", githubState: null,
+    });
+  });
+
+  it("LOGGED OUT: a persisted record overlays its hub as a board row with the last-synced hint", async () => {
+    routeInvoke([]); // no live GitHub — only list_local_projects answers
+    useAppStore.setState({
+      githubState: {
+        records: [record("Acme CRM"), record("Ghost App")], // Ghost App's hub was deleted
+        fetchedAt: Date.now() - 2 * 3_600_000,
+      },
+    });
+    render(<ProjectsList />);
+
+    // The record overlays the hub: the richer board row renders (title only — the plain local
+    // row's key line is gone) …
+    await screen.findByText("Acme CRM");
+    await waitFor(() => expect(screen.queryByText("acme-crm")).toBeNull());
+    // … under the stale-marked hint instead of the #2445 "not synced" wording.
+    expect(screen.getByText(/last synced 2h ago/i)).toBeTruthy();
+    expect(screen.queryByText(/not synced/i)).toBeNull();
+    // The don't-resurrect rule: a persisted record with no local hub does NOT render.
+    expect(screen.queryByText("Ghost App")).toBeNull();
+  });
+
+  it("LOGGED IN: the live fetch takes precedence over the persisted overlay (no staleness hint)", async () => {
+    useAppStore.setState({
+      githubToken: "gho_test",
+      githubState: { records: [record("Acme CRM")], fetchedAt: Date.now() - 3_600_000 },
+    });
+    routeInvoke([GH_ACME]);
+    render(<ProjectsList />);
+
+    await screen.findByText("Acme CRM");
+    // Once the live sync lands, the stale hint drops and exactly one (live) row renders.
+    await waitFor(() => expect(screen.queryByText(/last synced/i)).toBeNull());
+    expect(screen.getAllByText("Acme CRM")).toHaveLength(1);
+    // The fresh fetch overwrote the persisted records + fetchedAt.
+    expect(useAppStore.getState().githubState!.records[0].id).toBe("PVT_1");
   });
 });

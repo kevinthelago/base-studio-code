@@ -3,10 +3,20 @@
 // — app-chrome + tunnel state — is now store/slices/shell.ts). Composed by store/index.ts.
 import type { StateCreator } from "zustand";
 import type { AppStore, GithubUser, GithubRepo } from "@/store/types";
+import type { GithubState, MinimalGhProject } from "@/shared/lib/github/githubState";
+import { pushGithubState } from "@/shared/lib/github/githubStateBridge";
 
 export interface GithubSlice {
   githubConnected: boolean;
   githubToken: string;
+  // The last-known GitHub board state (#2446): the minimal per-project records from the most recent
+  // successful projects fetch + when it landed. Persisted (the fast-paint cache — survives restart
+  // and renders as a stale-marked overlay while logged out / pre-refresh) and mirrored into the
+  // bsc-project store so the durable copy is `bsc`-reachable. `null` until a fetch ever lands.
+  // Deliberately NOT cleared by disconnectGithub — surviving the logged-out state is its point.
+  githubState: GithubState | null;
+  /** Overwrite the records wholesale (a fresh fetch), stamping `fetchedAt` and mirroring to bsc. */
+  setGithubState: (records: MinimalGhProject[]) => void;
   // Repo-scoped GitHub credentials (#158): per-`owner/name` fine-grained token; persisted, never
   // logged. A request targeting that repo uses it instead of the global PAT.
   repoGithubTokens: Record<string, string>;
@@ -28,6 +38,12 @@ export interface GithubSlice {
 export const createGithubSlice: StateCreator<AppStore, [], [], GithubSlice> = (set) => ({
   githubConnected: false,
   githubToken: "",
+  githubState: null,
+  setGithubState: (records) => {
+    const next: GithubState = { records, fetchedAt: Date.now() };
+    set({ githubState: next });
+    void pushGithubState(next); // mirror the durable copy into the bsc-project store (#2446)
+  },
   repoGithubTokens: {},
   setRepoGithubToken: (repo, token) =>
     set((s) => {
