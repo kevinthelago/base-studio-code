@@ -5,7 +5,7 @@ import { fmtStamp } from "./format";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
-import { SelectField } from "@/shared/ui/controls/Field";
+import { TextField, SelectField } from "@/shared/ui/controls/Field";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
@@ -145,26 +145,23 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
               {sel.when.kind === "simple" ? (
                 <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
                   <Text as="span">every</Text>
-                  {/* eslint-disable-next-line no-restricted-syntax -- inline select within a mono expression Row ("every … at …"); SelectField's .field stack would change layout */}
-                  <select className="input" style={{ width: 120 }} value={sel.when.every} onChange={e => patchSimple({ every: e.target.value as Every })}>
+                  <SelectField style={{ width: 120 }} value={sel.when.every} onChange={v => patchSimple({ every: v as Every })}>
                     {EVERY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  </SelectField>
                   {sel.when.every !== "minute" && (
                     <>
                       <Text as="span">at</Text>
-                      {/* eslint-disable-next-line no-restricted-syntax -- inline input within a mono expression Row; TextField's .field wrapper would change layout */}
-                      <input className="input" style={{ width: 90 }} value={sel.when.at}
+                      <TextField style={{ width: 90 }} value={sel.when.at}
                         placeholder={sel.when.every === "hour" ? ":MM" : "HH:MM"}
-                        onChange={e => patchSimple({ at: e.target.value })} />
+                        onChange={v => patchSimple({ at: v })} />
                     </>
                   )}
                 </Row>
               ) : (
                 <Row gap={8} wrap className="mono" style={{ fontSize: 11, color: "var(--fg-muted)" }}>
                   <Text as="span">cron</Text>
-                  {/* eslint-disable-next-line no-restricted-syntax -- inline cron-expression input within a mono Row; TextField's .field wrapper would change layout */}
-                  <input className="input" style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
-                    onChange={e => updateAutomation(sel.id, { when: { kind: "cron", expr: e.target.value } })} />
+                  <TextField style={{ width: 200 }} value={sel.when.expr} placeholder="0 9 * * *" spellCheck={false}
+                    onChange={v => updateAutomation(sel.id, { when: { kind: "cron", expr: v } })} />
                   {isValidCron(sel.when.expr)
                     ? <Text as="span" tone="dim" size={10}>min hour day-of-month month day-of-week</Text>
                     : <Text as="span" tone="danger" size={10}>invalid expression</Text>}
@@ -205,8 +202,7 @@ export function ScheduleDrawer({ selected, onClose, onViewAllHistory }: {
           <Box className="es"><Box className="es-row">
             <Box className="es-lbl success">action</Box>
             <Stack gap={10}>
-              {/* eslint-disable-next-line no-restricted-syntax -- input is a direct Stack child in a bespoke .es-row edit-section (label via .es-lbl, separate hint); TextField's .field wrapper would change layout */}
-              <input className="input" placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={e => updateAutomation(sel.id, { command: e.target.value })} />
+              <TextField placeholder="command to run in the target pane…" value={sel.command ?? ""} onChange={v => updateAutomation(sel.id, { command: v })} />
               <Box as="span" className="hint">Typed into the target pane's session, then submitted.</Box>
             </Stack>
           </Box></Box>

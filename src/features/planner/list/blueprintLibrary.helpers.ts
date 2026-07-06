@@ -1,7 +1,7 @@
 // ── Blueprint display helpers (#…): a hued icon tile keyed by lifecycle category, a visibility
 // pill (draft / private gist / public gist), and a shortened gist link. ────────────────────────
 import { Layers, GitFork, Shield, Wrench, Database } from "lucide-react";
-import { timeAgoMs } from "@/shared/lib/core/format";
+import { timeAgoMs, truncate } from "@/shared/lib/core/format";
 import { CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintStage } from "../stages/blueprints";
 import type { DraftRow } from "./drafts";
 
@@ -15,7 +15,7 @@ export function prettyGist(g?: BlueprintGist): string | undefined {
   if (!g) return undefined;
   if (g.url) {
     const s = g.url.replace(/^https?:\/\//, "").replace(/^www\./, "");
-    return s.length > 32 ? s.slice(0, 30) + "…" : s;
+    return truncate(s, 32, 30);
   }
   return g.id ? `gist · ${g.id.slice(0, 7)}` : undefined;
 }

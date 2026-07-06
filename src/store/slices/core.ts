@@ -5,7 +5,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
-import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
+import { modelOnProviderSwitch, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL } from "@/shared/lib/core/llmConfig";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
@@ -23,13 +23,13 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
       // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
       setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
-      llmModel: "claude-sonnet-4-6",
+      llmModel: DEFAULT_ANTHROPIC_MODEL,
       setLlmModel: (m) => set({ llmModel: m }),
       openaiKey: "",
       setOpenaiKey: (k) => set({ openaiKey: k }),
       geminiKey: "",
       setGeminiKey: (k) => set({ geminiKey: k }),
-      localBaseUrl: "http://localhost:11434/v1",
+      localBaseUrl: DEFAULT_LOCAL_BASE_URL,
       setLocalBaseUrl: (u) => set({ localBaseUrl: u }),
 
       projectsPageMode: "projects",

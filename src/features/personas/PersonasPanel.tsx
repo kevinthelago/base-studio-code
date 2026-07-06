@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
@@ -31,10 +32,9 @@ export function PersonasPanel() {
       railWidth={260}
       rail={
       <Stack gap={8}>
-        <Row align="center" gap={8}>
-          <Text as="div" className="ulabel" tone="dim" style={{ flex: 1 }}>personas · {personas.length}</Text>
-          <Button variant="ghost" onClick={() => setSelectedId(addPersona())}>+ new</Button>
-        </Row>
+        <SectionLabel size={9.5} right={<Button variant="ghost" onClick={() => setSelectedId(addPersona())}>+ new</Button>}>
+          personas · {personas.length}
+        </SectionLabel>
         {personas.map((p) => (
           <Card
             key={p.id}
