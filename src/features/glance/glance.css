@@ -1,11 +1,5 @@
 /* Glance (#2206) — the few keyframes the project-network canvas needs (inline styles can't declare
-   @keyframes). Scoped by animation-name; no global element rules. */
+   @keyframes). Scoped by animation-name; no global element rules. The drill transition is the shared
+   .graph-drill-anim (shared/ui/layouts/graphCanvas.css, #2418). */
 @keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
 @keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-
-/* Drill transition (#…): the world content is remounted (keyed on the drill target) when you enter/leave
-   a project's fleet, so this replays each time — the new graph fades and settles in. Kept subtle (a small
-   rise) so it composes cleanly with the world's pan/zoom transform. Honors reduced-motion. */
-.glance-drill-anim { animation: glance-drill 0.26s ease both; transform-origin: center; }
-@keyframes glance-drill { from { opacity: 0; transform: translateY(10px) scale(0.99); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .glance-drill-anim { animation: none; } }

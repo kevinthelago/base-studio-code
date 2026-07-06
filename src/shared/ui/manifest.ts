@@ -9,23 +9,30 @@
 //
 // Adding a primitive: add its name to `PrimitiveName`, a spec here, and a row in `registry.tsx`.
 // The `manifest.test.ts` sync test then guards that the three stay aligned.
+//
+// Consciously EXCLUDED from the kit (#2421): `overlay/promptDialog` (usePromptDialog /
+// useConfirmDialog) — an imperative hook API (an async fn + a `dialog` node to render), not a
+// composable primitive; a builder cannot instantiate a hook from a manifest node. Compose the
+// registered `Dialog` instead.
 
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
-  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow"
+  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow" | "RoleTierChips"
   // data · charts (analytics primitives)
   | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
   | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
+  // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
+  | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar"
   // layouts — the page-skeleton templates tier (#2197)
   | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid";
 
@@ -41,11 +48,11 @@ export type PropType =
   | "function"  // event handler / callback
   | "style"     // a CSSProperties object
   | "array"     // a list of structured items (see `note`)
+  | "object"    // a single structured object (shape in the description)
   | "space"     // a spacing rung (SPACE_RUNGS) or a raw px number
   | "fontSize"  // a type rung (FONT_RUNGS) or a raw px number
   | "tracks"    // grid tracks: a number → repeat(n, 1fr), or a template string
-  | "color"     // a CSS color / design token string
-  | "object";   // a structured config object the caller constructs (see `description`)
+  | "color";    // a CSS color / design token string
 
 /** The spacing rungs (`--sp-*`) a `space`-typed prop accepts by name; raw px is also legal. */
 export const SPACE_RUNGS = ["xs", "sm", "md", "lg", "xl"] as const;
@@ -140,11 +147,12 @@ export const UI_KIT: PrimitiveSpec[] = [
   },
   {
     name: "SectionLabel", group: "layout", importPath: "@/shared/ui/layout/SectionLabel",
-    description: "The uppercase mono micro-label — a dim/muted section/kv caption.",
+    description: "The uppercase mono micro-label — a dim/muted section/kv caption, optionally a space-between label row via `right`.",
     props: [
       CHILDREN,
-      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles)." },
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles); a raw px number is also legal (dense .08em tracking)." },
       { name: "tone", type: "enum", values: ["dim", "muted"], default: "dim", description: "Label color." },
+      { name: "right", type: "node", description: "Right-aligned slot — renders a space-between label row (label · right); style then lands on the row." },
     ],
   },
   {
@@ -166,6 +174,28 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onDismiss", type: "function", description: "Escape / scrim-click dismiss; omit to make it non-dismissable." },
       { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Center the card, or top-align it for tall scrolling modals." },
       { name: "blur", type: "boolean", default: false, description: "Add a backdrop blur." },
+    ],
+  },
+  {
+    name: "ModalCard", group: "layout", importPath: "@/shared/ui/overlay/ModalCard",
+    description: "The titled head/body/foot modal card over ModalScrim — icon+title(+sub) head with a ✕, scrollable body, optional footer action row.",
+    props: [
+      { name: "title", type: "node", required: true, description: "Head title (mono h2)." },
+      { name: "children", type: "node", required: true, description: "Body content (scrolls)." },
+      { name: "sub", type: "node", description: "Dim sub-line under the title." },
+      { name: "icon", type: "node", description: "Leading head glyph in a 30px IconBox." },
+      { name: "iconBackground", type: "color", description: "Icon tile background (default: translucent accent)." },
+      { name: "iconColor", type: "color", description: "Icon glyph color (default: accent)." },
+      { name: "onClose", type: "function", description: "Wires the head ✕ + Escape + scrim-click dismiss; omit for non-dismissable." },
+      { name: "busy", type: "boolean", default: false, description: "Disable the ✕ and suppress scrim/Escape dismiss while an op runs." },
+      { name: "width", type: "number", default: 540, description: "Card width (px or CSS length); capped at 100%." },
+      { name: "maxHeight", type: "string", default: "88vh", description: "Card max height." },
+      { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Scrim card alignment — start top-aligns tall scrolling modals." },
+      { name: "blur", type: "boolean", default: true, description: "Backdrop blur." },
+      { name: "headExtra", type: "node", description: "Extra head rows (search/tabs/meta) inside the bordered head block." },
+      { name: "foot", type: "node", description: "Footer action-row content." },
+      { name: "bodyStyle", type: "style", description: "Merged onto the body (padding/overflow overrides for list bodies)." },
+      { name: "footStyle", type: "style", description: "Merged onto the foot row." },
     ],
   },
   // ---- typography -----------------------------------------------------------
@@ -248,7 +278,19 @@ export const UI_KIT: PrimitiveSpec[] = [
     ],
   },
   {
-    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field",
+    name: "TextArea", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
+    description: "A labelled multiline text area — the TextField sibling (same label + hint + trailing over an .input <textarea>).",
+    props: [
+      { name: "value", type: "string", required: true, description: "Textarea value." },
+      { name: "onChange", type: "function", required: true, description: "(value) => void." },
+      { name: "label", type: "node", description: "Field label." },
+      { name: "hint", type: "node", description: "Sub-label hint." },
+      { name: "trailing", type: "node", description: "Right-aligned control in the label row." },
+      { name: "loading", type: "boolean", description: "Render the field loading — keep the label, skeleton the textarea (#2302)." },
+    ],
+  },
+  {
+    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
     description: "A labelled <select> (children are the <option>s).",
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
@@ -409,6 +451,13 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "off", type: "boolean", description: "Dimmed/disabled look." },
       { name: "onClick", type: "function", description: "Click handler." },
       { name: "height", type: "number", default: 37, description: "Fixed row height in px." },
+    ],
+  },
+  {
+    name: "RoleTierChips", group: "data", importPath: "@/shared/ui/data/RoleTierChips",
+    description: "A session role's capability tiers (git · github · code · net) as colored pills — the permission floor a persona/position inherits.",
+    props: [
+      { name: "role", type: "string", required: true, description: "The SessionRole whose capability floor to render (planner/worker/director/…)." },
     ],
   },
   // ---- data · charts (analytics primitives, #399) ---------------------------
@@ -620,6 +669,77 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "gap", type: "number", default: 8, description: "Gap between cells in px." },
       { name: "pad", type: "number", default: 10, description: "Grid inner padding in px." },
       { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
+    ],
+  },
+  // ---- #2421 gap-fill (contiguous block: data · layout/overlay · data · charts) ---------------
+  {
+    name: "LabelChip", group: "data", importPath: "@/shared/ui/data/LabelChip",
+    description: "A GitHub issue/PR label chip — a dotted Chip tinted from the label's dynamic 6-hex color.",
+    props: [
+      { name: "label", type: "object", required: true, description: "The GitHub label — { name, color } (6-hex, no leading #)." },
+    ],
+  },
+  {
+    name: "ActivityFeed", group: "data", importPath: "@/shared/ui/data/ActivityFeed",
+    description: "The \"Recent activity\" striped feed card — Avatar · action · target · repo · timeAgo rows, with loading + empty states.",
+    props: [
+      { name: "items", type: "array", required: true, description: "ActivityItem[] — { login, action, target, repo, createdAt }." },
+      { name: "hint", type: "string", required: true, description: "Dimmed hint after the card title." },
+      { name: "loading", type: "boolean", required: true, description: "Shimmer rows while the feed's source loads (only when items is empty)." },
+      { name: "tone", type: "object", required: true, description: "action → color map — each caller keeps its own EVENT_TONE." },
+      { name: "right", type: "node", description: "Optional header control on the right (e.g. a filter select)." },
+      { name: "actionWidth", type: "number", default: 80, description: "Action column width in px (github uses 70, planner 80)." },
+    ],
+  },
+  {
+    name: "Pane", group: "layout", importPath: "@/shared/ui/overlay/Pane",
+    description: "The ONE detail/editor pane — a header / scrollable-body / footer frame, as a slide-over drawer or an inline master-detail fill.",
+    props: [
+      { name: "mode", type: "enum", values: ["drawer", "inline"], default: "drawer", description: "Slide-over (scrim + slide-in) vs fills-its-container." },
+      { name: "open", type: "boolean", default: true, description: "Drawer mode: drives the scrim/slide state and gates the body render." },
+      { name: "header", type: "node", description: "Top-zone content (drawer mode auto-appends a close button)." },
+      { name: "body", type: "node", description: "Body content — pass via body or as children." },
+      { name: "children", type: "node", description: "Body content (alias of body)." },
+      { name: "footer", type: "node", description: "Custom footer; omitted in drawer mode → the standard draft/remove bar." },
+      { name: "onClose", type: "function", description: "Close (scrim click / ✕ / cancel / done) handler." },
+      { name: "onRemove", type: "function", description: "Standard-footer remove handler for an existing item." },
+      { name: "isDraft", type: "boolean", description: "Standard footer: drafting (cancel/done) vs existing (remove/done)." },
+      { name: "onCommit", type: "function", description: "Standard-footer draft done handler." },
+      { name: "commitDisabled", type: "boolean", description: "Disable the draft done button (e.g. a required field is empty)." },
+      { name: "flush", type: "boolean", description: "Drop the body's default padding (sections supply their own)." },
+      { name: "bare", type: "boolean", description: "Inline mode only: bare flex-column frame with no styled zone wrappers." },
+      { name: "className", type: "string", description: "Extra class on the frame element." },
+    ],
+  },
+  {
+    name: "TelemetryPanel", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A framed analytics panel — bg-panel card with a baseline header (title · hint · right slot) over chart content.",
+    props: [
+      { name: "title", type: "string", required: true, description: "Panel title (mono h3)." },
+      { name: "hint", type: "string", description: "Dimmed hint after the title." },
+      { name: "right", type: "node", description: "Right-aligned header content (a legend, a filter, a count)." },
+      CHILDREN,
+    ],
+  },
+  {
+    name: "ItemBars", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A vertical list of labelled FillBar rows (calls-per-server, fires-per-hook, …).",
+    props: [
+      { name: "rows", type: "array", required: true, description: "ItemBarRow[] — { key, label, meta?, value, fraction (0–1), color? }." },
+      { name: "empty", type: "node", description: "Rendered when rows is empty; defaults to a \"No data recorded yet.\" hint." },
+    ],
+  },
+  {
+    name: "SplitBar", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A two-segment proportional bar with a label and the two counts (ok/err, allow/block, …).",
+    props: [
+      { name: "label", type: "string", required: true, description: "Row label." },
+      { name: "a", type: "number", required: true, description: "First-segment count." },
+      { name: "b", type: "number", required: true, description: "Second-segment count." },
+      { name: "aLabel", type: "string", required: true, description: "First-segment legend label (e.g. ok)." },
+      { name: "bLabel", type: "string", required: true, description: "Second-segment legend label (e.g. err)." },
+      { name: "aColor", type: "color", default: "var(--success)", description: "First-segment color." },
+      { name: "bColor", type: "color", default: "var(--danger)", description: "Second-segment color." },
     ],
   },
 ];

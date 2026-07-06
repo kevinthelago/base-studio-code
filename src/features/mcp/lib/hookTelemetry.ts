@@ -7,6 +7,8 @@
 // (PostToolUse / non-gating events). Pure + unit-tested; the hook wrappers that EMIT these
 // lines are wired separately (PR 3).
 
+import { dayKey } from "@/shared/lib/core/format";
+
 export type HookOutcome = "allow" | "block" | "ok";
 
 export interface HookFire {
@@ -61,12 +63,6 @@ export interface HookAnalytics {
 }
 
 const DAY_MS = 86_400_000;
-
-/** Local YYYY-MM-DD for an epoch-ms timestamp (matches the chart's daily bucketing). */
-function dayKey(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 /**
  * Aggregate hook fires into the analytics the Hook Analytics tab renders. Only fires within

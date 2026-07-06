@@ -48,4 +48,11 @@ describe("previewBundle — buildPreviewSrcDoc", () => {
     expect(PREVIEW_EXTERNALS).toContain("react");
     expect(PREVIEW_EXTERNALS).toContain("@react-three/fiber");
   });
+
+  // Guard for the externalized pins (@data/ui/preview-importmap.json, #2419) — ONE source: the
+  // externals derive from the import-map keys, and every pin resolves to esm.sh.
+  it("the externals ARE the import-map keys, each pinned to an https esm.sh URL", () => {
+    expect(PREVIEW_EXTERNALS).toEqual(Object.keys(DEFAULT_IMPORTMAP));
+    for (const url of Object.values(DEFAULT_IMPORTMAP)) expect(url).toMatch(/^https:\/\/esm\.sh\//);
+  });
 });
