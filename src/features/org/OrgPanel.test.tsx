@@ -3,6 +3,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { OrgPanel } from "./OrgPanel";
+import { useAppStore } from "@/store";
+import { nodeBox } from "./lib/orgLayout";
 
 describe("OrgPanel initial selection (#2333)", () => {
   it("opens with nothing selected — the inspector shows no position (no 'Persona' section)", () => {
@@ -33,5 +35,52 @@ describe("OrgPanel initial selection (#2333)", () => {
     // new agent node).
     fireEvent.click(screen.getByText("＋ new"));
     expect(screen.getByText("Persona")).toBeTruthy();
+  });
+});
+
+describe("pool card gesture — drag moves the stack, click drills (#2439)", () => {
+  // Fleet Alpha's two engineers stack (#2436), so the seeded panel renders one pool card. The card
+  // is the [data-node] wrapper around the drill hint.
+  const poolCard = (): HTMLElement => {
+    const hint = screen.getByText(/click to open/i);
+    return hint.closest("[data-node]") as HTMLElement;
+  };
+
+  it("a plain click drills into the pool (unchanged)", () => {
+    render(<OrgPanel />);
+    const card = poolCard();
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(card, { clientX: 101, clientY: 101 }); // < DRAG_THRESHOLD → click
+    expect(screen.getByText("← back")).toBeTruthy();
+  });
+
+  it("a drag shifts every member by the same delta and does NOT drill", () => {
+    render(<OrgPanel />);
+    const orgBefore = useAppStore.getState().orgs[0];
+    const before = new Map(orgBefore.positions.map((p) => [p.nodeId, nodeBox(p)]));
+    const members = orgBefore.positions.filter((p) => p.personaId === "persona-worker").map((p) => p.nodeId);
+    expect(members.length).toBeGreaterThanOrEqual(2); // sanity: the stacked engineers
+
+    const card = poolCard();
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(card, { clientX: 160, clientY: 140 }); // > DRAG_THRESHOLD → drag
+    fireEvent.pointerUp(card, { clientX: 160, clientY: 140 });
+
+    expect(screen.queryByText("← back")).toBeNull(); // a drag never drills
+    // Every member shifted by ONE shared (dx, dy) — the centroid follows the drop, the pool's
+    // internal arrangement is preserved for the drill-in.
+    const after = useAppStore.getState().orgs[0];
+    const deltas = members.map((m) => {
+      const b = before.get(m)!;
+      const p = after.positions.find((x) => x.nodeId === m)!;
+      return { dx: (p.x ?? 0) - b.x, dy: (p.y ?? 0) - b.y };
+    });
+    expect(deltas[0].dx).not.toBe(0);
+    for (const d of deltas) expect(d).toEqual(deltas[0]);
+  });
+
+  it("node cards are not text-selectable (drag never highlights labels)", () => {
+    render(<OrgPanel />);
+    expect(poolCard().style.userSelect).toBe("none");
   });
 });
