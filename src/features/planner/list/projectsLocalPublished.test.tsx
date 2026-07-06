@@ -112,4 +112,37 @@ describe("ProjectsList — persisted GitHub-state overlay (#2446)", () => {
     // The fresh fetch overwrote the persisted records + fetchedAt.
     expect(useAppStore.getState().githubState!.records[0].id).toBe("PVT_1");
   });
+
+  it("BACKFILL (#2467): a matched hub with a DERIVED title gets the board title persisted; a user-titled hub is left alone", async () => {
+    useAppStore.setState({ githubToken: "gho_test" });
+    const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: Record<string, unknown>) => {
+      calls.push({ cmd, args });
+      if (cmd === "list_local_projects") {
+        return Promise.resolve([
+          // Legacy hub: no .title sidecar (title was de-slugged from the key) — the backfill target.
+          { key: "acme-crm", title: "Acme Crm", hasPlan: true, updatedAt: 5, published: true, titled: false },
+          // User-titled hub: .title present — must NEVER be stomped by the board title.
+          { key: "other-app", title: "My Own Name", hasPlan: true, updatedAt: 5, published: true, titled: true },
+        ]);
+      }
+      if (cmd === "github_graphql") {
+        return Promise.resolve({ viewer: { projectsV2: { nodes: [
+          GH_ACME,
+          { ...GH_ACME, id: "PVT_2", number: 2, title: "Other App" },
+        ] } } });
+      }
+      return Promise.resolve(null);
+    }) as unknown as typeof invoke);
+    render(<ProjectsList />);
+
+    await screen.findByText("Acme CRM");
+    // The derived-title hub matched board "Acme CRM" by key → its real title is persisted…
+    await waitFor(() => {
+      const set = calls.filter((c) => c.cmd === "set_project_title");
+      expect(set).toHaveLength(1);
+      expect(set[0].args).toMatchObject({ projectKey: "acme-crm", title: "Acme CRM" });
+    });
+    // …and the user-titled hub was not touched (exactly the one backfill call above).
+  });
 });

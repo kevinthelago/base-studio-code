@@ -19,6 +19,10 @@ export interface LocalProjectLite {
   hasPlan: boolean;
   updatedAt: number;
   published: boolean;
+  /** True when the title came from the `.title` sidecar (user input) — false = derived (de-slugged
+   *  key / goal.md / placeholder), the board-title backfill's target set (#2467). Optional only for
+   *  older fixtures; the live wire always carries it. */
+  titled?: boolean;
 }
 
 /** A store draft-map entry (`addDraftProject`). */
