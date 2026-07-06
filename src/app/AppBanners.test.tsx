@@ -46,6 +46,17 @@ describe("SessionRecoveryBanner (#1266)", () => {
     await waitFor(() => expect(fleetStart).toHaveBeenCalledWith("proj", expect.objectContaining({ streams: [] }), "proj"));
   });
 
+  it("restore auto-drills Glance into the restored project (#2445)", async () => {
+    useAppStore.setState({ glanceDrill: null, activeWorkspace: "console" });
+    render(<SessionRecoveryBanner />);
+    await waitFor(() => expect(screen.getByText(/2 sessions/)).toBeTruthy());
+    fireEvent.click(screen.getByText("Review"));
+    fireEvent.click(screen.getByText("Restore 1"));
+    // The fleet restored → the user lands on Glance, drilled into the restored project's agents.
+    await waitFor(() => expect(useAppStore.getState().glanceDrill).toBe("proj"));
+    expect(useAppStore.getState().activeWorkspace).toBe("glance");
+  });
+
   it("the manual scratch shell is reap-only (no Restore) and Discard reaps it", async () => {
     const calls: Array<{ cmd: string; args: unknown }> = [];
     vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
