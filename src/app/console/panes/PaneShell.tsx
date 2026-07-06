@@ -5,6 +5,7 @@ import { type ViewKey, VIEW_DEFS } from "./viewDefs";
 import { PaneMenu, type ModelId } from "./PaneMenu";
 import { placeMenu, type MenuPlacement } from "./menuPlacement";
 import { toModelId } from "@/app/console/lib/modelDisplay";
+import { DEFAULT_MODEL_ID } from "@/app/console/lib/models";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
@@ -79,7 +80,7 @@ interface PaneShellProps {
 export function PaneShell({
   agent,
   status = "run",
-  model = "sonnet-4.5",
+  model = DEFAULT_MODEL_ID,
   repo,
   role,
   provider,

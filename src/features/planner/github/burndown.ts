@@ -2,6 +2,8 @@
 // Status single-select + item close timestamps. Pure + unit-tested; the card and
 // data hook live in ProjectsSummary.tsx.
 
+import { clamp } from "@/shared/lib/core/math";
+
 const DAY = 86400000;
 
 /** A Projects V2 iteration (from the Iteration field's configuration). */
@@ -85,7 +87,7 @@ export function findCurrentIteration(iterations: BurndownIteration[], now: numbe
 export function computeBurndown(iteration: BurndownIteration, items: BurndownItem[], now: number): BurndownSeries {
   const daysTotal = Math.max(1, Math.round(iteration.duration));
   const start = startMs(iteration.startDate);
-  const daysElapsed = Math.max(0, Math.min(daysTotal, Math.floor((now - start) / DAY)));
+  const daysElapsed = clamp(Math.floor((now - start) / DAY), 0, daysTotal);
   const total = items.length;
   const remaining = items.filter((i) => !i.done).length;
   const closedMs = items

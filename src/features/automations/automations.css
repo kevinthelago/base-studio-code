@@ -35,7 +35,7 @@
 .auto-workspace .toggle { width:30px; height:18px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border); position:relative; cursor:pointer; flex:0 0 30px; }
 .auto-workspace .toggle::after { content:""; position:absolute; top:1px; left:1px; width:14px; height:14px; border-radius:50%; background:var(--fg-dim); transition:left .15s, background .15s; }
 .auto-workspace .toggle.on { background:var(--accent); border-color:transparent; }
-.auto-workspace .toggle.on::after { left:13px; background:#1a120a; }
+.auto-workspace .toggle.on::after { left:13px; background:var(--on-accent); }
 
 .auto-workspace .es { padding:16px 20px; border-bottom:1px solid var(--border-soft); }
 .auto-workspace .es:last-child { border-bottom:0; }
