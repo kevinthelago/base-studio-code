@@ -12,6 +12,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { fmtClock } from "@/shared/lib/core/format";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via `bsc logs tail mcp` + mcpTelemetry.ts). The over-time chart +
@@ -22,10 +23,6 @@ import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 const DAYS = 14;
 
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
-const fmtClock = (ts: number) => {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
-};
 
 /** A compact empty state for a telemetry card body (#2246) — the panel frame + head stay; the body shows this. */
 function CardEmpty({ title, hint }: { title: string; hint?: string }) {
@@ -192,7 +189,7 @@ function CallRow({ c }: { c: McpCall }) {
   const label = c.outcome === "fail" ? "fail" : c.outcome === "warn" ? "warn" : "ok";
   return (
     <Row className="mono" gap={10} style={{ padding: "6px 0", borderTop: "1px solid var(--border-soft)", fontSize: 10.5 }}>
-      <Box as="span" style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts)}</Box>
+      <Box as="span" style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts, { seconds: true })}</Box>
       <Box as="span" style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{c.server}<Text as="span" tone="muted">.{c.tool}</Text></Box>
       <Box as="span" style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</Box>
       <Text as="span" tone="muted">{c.ms ? fmtMs(c.ms) : "—"}</Text>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { timeAgoShort } from "@/shared/lib/core/format";
+import { timeAgoShort, truncate } from "@/shared/lib/core/format";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TextArea } from "@/shared/ui/controls/Field";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -57,7 +57,7 @@ export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () 
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
             <Text as="div" size={12.5} tone="muted" style={{ lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-              {issue.body.slice(0, 800)}{issue.body.length > 800 ? "…" : ""}
+              {truncate(issue.body, 800)}
             </Text>
           ) : (
             <Text as="div" mono size={11} tone="dim" style={{ fontStyle: "italic" }}>No description.</Text>
