@@ -124,7 +124,12 @@ const GUIDANCE: Record<string, Guidance> = {
   ModalScrim: {
     tags: ["overlay"],
     whenUse: ["The dimmed, click-to-dismiss backdrop behind a modal surface.", "Trapping focus under a Dialog."],
-    whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog."],
+    whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog / ModalCard."],
+  },
+  ModalCard: {
+    role: "composite", tags: ["overlay"], composes: ["ModalScrim", "IconBox", "IconButton"],
+    whenUse: ["A rich titled modal — icon + title head, scrollable body, footer action row.", "A multi-section overlay (import/share flows, per-session pickers) that outgrows Dialog."],
+    whenNot: ["A short confirm or one-field form — use Dialog.", "Non-blocking info — use a Banner / toast."],
   },
 
   // ── typography ──
@@ -211,6 +216,11 @@ const GUIDANCE: Record<string, Guidance> = {
     tags: ["data", "table"],
     whenUse: ["A row in a dense, column-aligned data table.", "Tabular records with fixed columns."],
     whenNot: ["A card-style list — use CardListRow.", "A single metric — use StatTile."],
+  },
+  RoleTierChips: {
+    role: "composite", tags: ["data", "status"], composes: ["Chip", "Row"],
+    whenUse: ["Showing a session role's permission floor (git · github · code · net) as pills.", "A persona/position clearance row in an editor or inspector."],
+    whenNot: ["Arbitrary tags or categories — use Chip.", "A single live status — use StatusDot."],
   },
   StatCard: {
     role: "composite", tags: ["data", "metric"], composes: ["Card", "StatTile"],

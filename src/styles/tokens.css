@@ -29,6 +29,11 @@
   --prov-local:     oklch(0.65 0.012 250);
   --accent-soft:   oklch(0.27 0.045 70);  /* role-badge / active-row wash — dark amber */
   --accent-text:   oklch(0.85 0.11 78);   /* accent-on-dark text — bright amber */
+  /* ink-on-fill (#2420): the dark foreground for text/glyphs sitting ON an accent/success fill
+     (primary buttons, toggle knobs, filled check tiles) — replaces the hardcoded #1a120a/#11100e
+     and oklch(0.20 0.04 145) that were scattered through the feature CSS. */
+  --on-accent:  #1a120a;                  /* ink on an --accent fill */
+  --on-success: oklch(0.20 0.04 145);     /* ink on a --success fill */
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
