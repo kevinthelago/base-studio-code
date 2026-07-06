@@ -959,13 +959,81 @@
         "Controlled form fields (value + onChange)."
       ],
       "whenNot": [
-        "Multi-line input — use a textarea.",
+        "Multi-line input — use TextArea.",
         "A boolean — use Toggle / Checkbox."
       ],
       "src": "shared/ui/controls/Field.tsx",
       "srcText": "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
       "builtin": true,
       "wraps": "input"
+    },
+    {
+      "id": "textarea",
+      "name": "TextArea",
+      "kitId": "react-ui",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "control",
+        "form",
+        "input"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "value",
+          "type": "string",
+          "req": true,
+          "desc": "Textarea value."
+        },
+        {
+          "name": "onChange",
+          "type": "(…) => void",
+          "req": true,
+          "desc": "(value) => void."
+        },
+        {
+          "name": "label",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Field label."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Sub-label hint."
+        },
+        {
+          "name": "trailing",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned control in the label row."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render the field loading — keep the label, skeleton the textarea (#2302)."
+        }
+      ],
+      "whenUse": [
+        "Any multi-line text input with a label (prompts, bodies, notes).",
+        "Controlled form fields (value + onChange) that span lines."
+      ],
+      "whenNot": [
+        "Single-line input — use TextField.",
+        "Read-only code / prompt display — use Code."
+      ],
+      "src": "shared/ui/controls/Field.tsx",
+      "srcText": "import { TextArea } from \"@/shared/ui/controls/Field\";\n\n<TextArea value={…} onChange={…} />",
+      "builtin": true,
+      "wraps": "textarea"
     },
     {
       "id": "selectfield",
