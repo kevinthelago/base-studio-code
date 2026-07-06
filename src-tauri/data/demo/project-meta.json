@@ -1,0 +1,16 @@
+{
+  "auth-core":     { "title": "Auth Core",       "pitch": "OIDC identity provider + token minting. Every service trusts it." },
+  "events-bus":    { "title": "Events Bus",      "pitch": "The platform event backbone — durable pub/sub the whole fleet emits to." },
+  "identity-svc":  { "title": "Identity Service", "pitch": "User profiles, sessions, and org membership on top of Auth Core." },
+  "ledger":        { "title": "Ledger",          "pitch": "Append-only double-entry ledger — the money source of truth." },
+  "notifications": { "title": "Notifications",   "pitch": "Email/SMS/push fan-out driven off the events bus." },
+  "analytics":     { "title": "Analytics",       "pitch": "Streaming rollups + warehouse loads for product metrics." },
+  "user-api":      { "title": "User API",        "pitch": "The public BFF the web + mobile clients call." },
+  "billing-svc":   { "title": "Billing Service", "pitch": "Subscriptions, invoices, and dunning over the Ledger." },
+  "reporting":     { "title": "Reporting",       "pitch": "Finance + ops reports composed from ledger and analytics." },
+  "search-svc":    { "title": "Search Service",  "pitch": "Catalog + user search index, refreshed from the events bus." },
+  "payments-gw":   { "title": "Payments Gateway", "pitch": "PSP integration — idempotent charge/refund/capture flows." },
+  "mobile-app":    { "title": "Mobile App",      "pitch": "React Native storefront + account management." },
+  "admin-console": { "title": "Admin Console",   "pitch": "Internal back-office — accounts, billing, and reporting." },
+  "web-app":       { "title": "Web App",         "pitch": "The customer-facing storefront SPA." }
+}

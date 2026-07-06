@@ -5,6 +5,7 @@
 // Split out of the former unified `extensions.ts` (mcp + hook discriminated union).
 
 import builtinServersEmbedded from "@data/mcp/builtin-servers.json";
+import catalogTemplatesEmbedded from "@data/mcp/catalog-templates.json";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 export type McpTransport = "stdio" | "http";
@@ -138,38 +139,25 @@ export function toBscAgentMcp(payloads: McpServerPayload[]): BscAgentMcpCfg[] {
 // ── Catalog templates ─────────────────────────────────────────────────────────
 // Pre-filled config for well-known catalog entries (keyed by catalog item name).
 // Unknown names fall back to a blank stdio server the user completes.
-
-const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> = {
-  // First-party servers (#858) — downloaded to ~/.base-studio-code/mcp/<repo>, so the command
-  // runs the built entrypoint from there. `{dir}` is replaced with the resolved clone path
-  // when the entry is added (addFromCatalog); the user downloads + builds via the card.
-  // `python -m uv` (not a bare `uv`): uv is installed as a Python module and its console-script
-  // shim often isn't on PATH on a fresh machine — `python -m uv` runs without any PATH setup (#887).
-  // Built-in native server (#1005): no download/build/Docker. `bsc-compliance-mcp` is a marker the
-  // Rust side rewrites to the bundled binary's absolute path when writing .mcp.json — same model as
-  // Research. Kept here so the planner's `<mcp_assign name="Compliance" />` path also resolves to
-  // the native binary.
-  "Compliance":          { transport: "stdio", command: "bsc-compliance-mcp", args: "" },
-  "Complexity Analyzer": { transport: "stdio", command: "node", args: "{dir}/dist/mcp/index.js" },
-  "Dependency Graph":    { transport: "stdio", command: "node", args: "{dir}/dist/index.js" },
-  // Python/uv like Compliance — console-script `plan-grader-mcp` (#897).
-  "Plan Grader":         { transport: "stdio", command: "python", args: "-m uv run --directory {dir} plan-grader-mcp" },
-  // Built-in native server (#1196): no download/build/Docker. `bsc-research-mcp` is a marker the
-  // Rust side rewrites to the bundled binary's absolute path when writing .mcp.json. Kept here so the
-  // planner's `<mcp_assign name="Research" />` path also resolves to the native binary. Offline +
-  // key-less by default (optional API keys raise rate limits).
-  "Research":            { transport: "stdio", command: "bsc-research-mcp", args: "" },
-  // Well-known third-party servers — pruned from the browse catalog (#870) but kept here so the
-  // planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them to a working config.
-  "Postgres":     { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres", env: [["POSTGRES_CONNECTION_STRING", ""]] },
-  "SQLite":       { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
-  "Slack":        { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-slack", env: [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
-  "Brave Search": { transport: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-brave-search", env: [["BRAVE_API_KEY", ""]] },
-  "Stripe":       { transport: "stdio", command: "npx", args: "-y @stripe/mcp --tools=all", env: [["STRIPE_SECRET_KEY", ""]] },
-  "Sentry":       { transport: "http", url: "https://mcp.sentry.dev/sse" },
-  "Linear":       { transport: "http", url: "https://mcp.linear.app/sse" },
-  "Notion":       { transport: "http", url: "https://mcp.notion.com/mcp" },
-};
+//
+// The DATA is externalized to `@data/mcp/catalog-templates.json` (#2419, epic #2027 tail) — editable
+// without touching code + part of the exportable config bundle; the config-dir copy (#2047) overlays
+// the embedded default via `overlayFile`. What the entries mean:
+// - First-party servers (#858) — downloaded to ~/.base-studio-code/mcp/<repo>, so the command runs
+//   the built entrypoint from there. `{dir}` is replaced with the resolved clone path when the entry
+//   is added (addFromCatalog); the user downloads + builds via the card.
+// - `python -m uv` (not a bare `uv`): uv is installed as a Python module and its console-script shim
+//   often isn't on PATH on a fresh machine — `python -m uv` runs without any PATH setup (#887).
+// - Built-in native servers (#1005 Compliance, #1196 Research): no download/build/Docker.
+//   `bsc-compliance-mcp` / `bsc-research-mcp` are markers the Rust side rewrites to the bundled
+//   binary's absolute path when writing .mcp.json. Kept in the templates so the planner's
+//   `<mcp_assign name="…" />` path also resolves them to the native binary.
+// - Well-known third-party servers (Postgres/Slack/Sentry/…) — pruned from the browse catalog (#870)
+//   but kept here so the planner's `<mcp_assign name="…" />` (planExtensions.ts) still resolves them
+//   to a working config.
+// (`as unknown` for the `env` pairs: JSON can't express the `[string, string]` tuple type.)
+const MCP_CATALOG_TEMPLATES: Record<string, Partial<McpServer>> =
+  overlayFile("mcp/catalog-templates.json", catalogTemplatesEmbedded as unknown as Record<string, Partial<McpServer>>);
 
 /** A ready-to-add MCP server (minus id) for a catalog entry — disabled + global
  *  by default; the caller assigns the id and the user fills any blank config. */
