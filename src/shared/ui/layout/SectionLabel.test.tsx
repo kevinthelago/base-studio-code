@@ -24,7 +24,8 @@ describe("SectionLabel", () => {
     render(<SectionLabel size={9.5}>staged files</SectionLabel>);
     const el = screen.getByText("staged files");
     expect(el.style.fontSize).toBe("9.5px");
-    expect(el.style.letterSpacing).toBe(".08em");
+    // CSSOM serializes the leading-dot value with its zero — assert the canonical form.
+    expect(el.style.letterSpacing).toBe("0.08em");
     expect(el.classList.contains("mono")).toBe(true);
   });
 
