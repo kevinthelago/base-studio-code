@@ -13,11 +13,17 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
     let s = open_store(&args.db)?;
     match sub {
         // `fleet set` reads the whole FleetPlan JSON on stdin (streams + meta) and replaces it.
+        // Validated at set-time (#2395): a blob without a "streams" array (or with id-less /
+        // repo-less / duplicate-id streams) is rejected BEFORE the replace, so it can't silently
+        // wipe or shrink the fleet. `--force` stores a work-in-progress blob unvalidated.
         "set" => {
             let plan: serde_json::Value = read_stdin_json_one("fleet JSON")?;
+            if !args.force {
+                crate::validate::validate_fleet_plan(&plan)?;
+            }
             s.fleet_set(&plan).map_err(|e| e.to_string())?;
             if !args.json {
-                println!("fleet set ({} streams)", blob_count(&plan, "streams"));
+                println!("fleet set ({} streams){}", blob_count(&plan, "streams"), crate::validate::fleet_readiness(&plan));
             }
             Ok(())
         }
@@ -61,6 +67,9 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
             "set" => {
                 let id = args.positional.get(3).ok_or("usage: bsc plan fleet stream set <stream-id>")?;
                 let v: serde_json::Value = read_stdin_json_one("stream JSON")?;
+                if !args.force {
+                    crate::validate::validate_fleet_stream(id, &v)?;
+                }
                 s.fleet_stream_set(id, &v).map_err(|e| e.to_string())?;
                 if !args.json {
                     println!("stream set {id}");
@@ -72,6 +81,9 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
         "meta" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
             "set" => {
                 let v: serde_json::Value = read_stdin_json_one("fleet meta JSON")?;
+                if !args.force {
+                    crate::validate::validate_fleet_meta(&v)?;
+                }
                 s.fleet_meta_set(&v).map_err(|e| e.to_string())?;
                 if !args.json {
                     println!("fleet meta set");
@@ -86,6 +98,9 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
             // `fleet session set` upserts one launched agent (FleetSession JSON on stdin).
             "set" => {
                 let sess: FleetSession = read_stdin_json_one("fleet session JSON")?;
+                if !args.force {
+                    crate::validate::validate_fleet_session(&sess.pane_id)?;
+                }
                 s.fleet_session_upsert(&sess).map_err(|e| e.to_string())?;
                 if !args.json {
                     println!("session set {}", sess.pane_id.trim());
