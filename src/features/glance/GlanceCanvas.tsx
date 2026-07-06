@@ -65,7 +65,7 @@ export function GlanceCanvas(p: CanvasProps) {
         const border = selected ? "var(--accent)" : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
         const faults = n.faults ?? 0; // #2265: unresolved runtime-fault count → corner badge
         return (
-          <Box key={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
+          <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
               zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
