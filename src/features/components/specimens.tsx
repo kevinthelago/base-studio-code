@@ -38,6 +38,7 @@ function loadingSpecimen(comp: ComponentRecord, t: Tok): ReactNode {
     case "Chip": return skel(72, 22, 99, t);
     case "Text": return <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 220 }}>{skel("100%", 11, 5, t)}{skel("100%", 11, 5, t)}{skel("60%", 11, 5, t)}</div>;
     case "TextField": case "Field": case "SelectField": return <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>{skel(90, 9, 4, t)}{skel("100%", 30, 6, t)}</div>;
+    case "TextArea": return <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>{skel(90, 9, 4, t)}{skel("100%", 84, 7, t)}</div>;
     case "FillBar": return skel(220, 7, 99, t);
     case "Code": return <div style={{ width: 260, borderRadius: 8, border: `1px solid ${t.borderSoft}`, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>{skel("70%", 8, 4, t)}{skel("90%", 8, 4, t)}{skel("45%", 8, 4, t)}</div>;
     case "Card": case "StatCard": case "StatTile": return (
@@ -85,6 +86,14 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
           <label style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>Persona name</label>
           <div style={{ height: 30, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, background: t.bg, border: `1px solid ${err ? "var(--danger)" : t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 12 }}>{dis ? "" : "Senior Reviewer"}</div>
           {err && <span style={{ fontFamily: mono, fontSize: 10, color: "var(--danger)" }}>Name is required</span>}
+        </div>
+      );
+    }
+    case "TextArea": {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 240 }}>
+          <label style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>Kickoff prompt</label>
+          <div style={{ minHeight: 72, padding: "8px 10px", borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 12, lineHeight: 1.55, whiteSpace: "pre-line" }}>{"Work the assigned issue in your\nworktree, then open a PR and stop."}</div>
         </div>
       );
     }
@@ -435,6 +444,78 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
     case "Skeleton": {
       const bar = (w: string) => <span style={{ display: "block", height: 10, width: w, borderRadius: 5, background: `linear-gradient(90deg, ${t.elev}, ${t.borderSoft}, ${t.elev})` }} />;
       return <div style={{ display: "flex", flexDirection: "column", gap: 9, width: 240 }}>{bar("60%")}{bar("100%")}{bar("85%")}</div>;
+    }
+    case "LabelChip": {
+      const chip = (name: string, c: string) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: mono, fontSize: 10.5, color: `#${c}`, background: `color-mix(in srgb, #${c}, transparent 88%)`, border: `1px solid color-mix(in srgb, #${c}, transparent 65%)`, borderRadius: 99, padding: "3px 10px" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: `#${c}` }} />{name}
+        </span>
+      );
+      return <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>{chip("bug", "d73a4a")}{chip("enhancement", "a2eeef")}{chip("stream:api", "0e8a16")}</div>;
+    }
+    case "ActivityFeed": {
+      const row = (login: string, action: string, target: string, ago: string, striped: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 12px", background: striped ? `color-mix(in oklch, ${t.fg}, transparent 96%)` : "transparent" }}>
+          <span style={{ width: 18, height: 18, borderRadius: "50%", background: t.elev, border: `1px solid ${t.borderSoft}`, flexShrink: 0 }} />
+          <span style={{ fontFamily: mono, fontSize: 10.5, color: t.fg, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><b>{login}</b> {action} <span style={{ color: "var(--accent)" }}>{target}</span></span>
+          <span style={{ marginLeft: "auto", fontFamily: mono, fontSize: 10, color: t.dim, flexShrink: 0 }}>{ago}</span>
+        </div>
+      );
+      return (
+        <div style={{ width: 270, borderRadius: 10, border: `1px solid ${t.borderSoft}`, overflow: "hidden", background: t.bg }}>
+          {row("kevin", "merged", "#2408", "2h", false)}{row("director", "opened", "#2414", "3h", true)}{row("worker-api", "pushed", "api-stream", "5h", false)}
+        </div>
+      );
+    }
+    case "Pane": {
+      return (
+        <div style={{ width: 250, height: 150, borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${t.borderSoft}` }}>
+            <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: t.fg }}>Edit persona</span>
+            <span style={{ fontFamily: mono, fontSize: 11, color: t.dim }}>✕</span>
+          </div>
+          <div style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>{skel("85%", 9, 4, t)}{skel("100%", 9, 4, t)}{skel("60%", 9, 4, t)}</div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderTop: `1px solid ${t.borderSoft}` }}>
+            <span style={{ fontFamily: mono, fontSize: 10.5, color: t.muted }}>Cancel</span>
+            <span style={{ fontFamily: mono, fontSize: 10.5, color: "var(--accent)" }}>Save</span>
+          </div>
+        </div>
+      );
+    }
+    case "TelemetryPanel": {
+      return (
+        <div style={{ width: 260, borderRadius: 10, border: `1px solid ${t.borderSoft}`, background: t.elev, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: t.fg }}>Tool calls</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: t.dim }}>last 24h</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, height: 46, alignItems: "flex-end" }}>{[18, 30, 24, 42, 34, 46, 28].map((h, i) => <span key={i} style={{ width: 14, height: h, borderRadius: 3, background: "color-mix(in oklch, var(--accent), transparent 25%)" }} />)}</div>
+        </div>
+      );
+    }
+    case "ItemBars": {
+      const row = (label: string, pct: number) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ fontFamily: mono, fontSize: 10.5, color: t.muted, width: 76, textAlign: "right" }}>{label}</span>
+          <span style={{ flex: 1, height: 7, borderRadius: 99, background: t.elev, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${pct}%`, borderRadius: 99, background: "var(--accent)" }} /></span>
+          <span style={{ fontFamily: mono, fontSize: 10, color: t.dim, width: 24 }}>{pct}</span>
+        </div>
+      );
+      return <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 250 }}>{row("bsc-deny", 72)}{row("bsc-scope", 41)}{row("bsc-audit", 18)}</div>;
+    }
+    case "SplitBar": {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 250 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 10.5 }}>
+            <span style={{ color: t.muted }}>hook fires</span>
+            <span><span style={{ color: "var(--ok, #3fb950)" }}>128 allow</span><span style={{ color: t.dim }}> · </span><span style={{ color: "var(--danger)" }}>9 block</span></span>
+          </div>
+          <div style={{ display: "flex", height: 8, borderRadius: 99, overflow: "hidden" }}>
+            <span style={{ width: "93%", background: "color-mix(in oklch, var(--ok, #3fb950), transparent 20%)" }} />
+            <span style={{ width: "7%", background: "var(--danger)" }} />
+          </div>
+        </div>
+      );
     }
 
     default:

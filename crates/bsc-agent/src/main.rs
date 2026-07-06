@@ -411,9 +411,11 @@ mod tests {
 
     #[test]
     fn project_cli_with_its_store_present_is_not_flagged() {
-        // $BSC_BIN staged AND both project stores (BSC_PLAN_DB + BSC_DATA_DB) present → no "needs a
-        // project context" caveat on either project-scoped subcommand.
-        let is_set = |k: &str| ["BSC_BIN", "BSC_PLAN_DB", "BSC_DATA_DB"].contains(&k);
+        // $BSC_BIN staged AND every project store present → no "needs a project context" caveat on
+        // any project-scoped subcommand. The store list derives from SIDECARS so adding a new
+        // project-scoped sidecar can't silently rot this test again (#2414: `errors` did exactly that).
+        let stores: Vec<&'static str> = bsc_util::SIDECARS.iter().filter_map(|s| s.context_env).collect();
+        let is_set = move |k: &str| k == "BSC_BIN" || stores.contains(&k);
         let clis = available_clis(&is_set);
         let block = render_clis_block(&clis, &is_set);
         assert!(block.contains("bsc plan"));
