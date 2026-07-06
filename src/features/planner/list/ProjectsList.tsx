@@ -7,6 +7,7 @@ import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, projectSlug } from "@/shared/lib/core/projectPaths";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
+import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -56,15 +57,23 @@ export function ProjectsList() {
   const { workers } = useFleetLive();
 
   // Routed through `githubGraphql` so the read hits the backend TTL cache (#2447): re-opening the
-  // tab within the window serves the cached board list with no network call. The manual "↻ sync"
-  // button passes `force: true` so an explicit refresh always re-POSTs.
+  // tab within the window serves the cached board list with no network call. Past the window, the
+  // light updatedAt probe (#2448) diffs against the persisted records — when no board moved, the
+  // heavy `items(first:100)` re-POST is skipped and the records are re-served (setGithubState below
+  // re-stamps fetchedAt). The manual "↻ sync" button passes `force: true` so an explicit refresh
+  // skips the probe and always re-POSTs.
   const fetchProjects = useCallback((opts?: { force?: boolean }) => {
     if (!githubToken) return;
     setLoading(true);
     setError(null);
-    githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
-      .then(data => {
-        const nodes = data.viewer?.projectsV2?.nodes ?? [];
+    fetchProjectsWithProbe({
+      fetchHeavy: () =>
+        githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
+          .then(data => data.viewer?.projectsV2?.nodes ?? []),
+      records: useAppStore.getState().githubState?.records,
+      force: opts?.force,
+    })
+      .then(nodes => {
         setProjects(nodes);
         setLastSync(new Date());
         // Persist the last-known board state (#2446): a fresh fetch overwrites records + fetchedAt

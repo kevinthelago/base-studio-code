@@ -20,6 +20,7 @@ import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
+import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -173,10 +174,17 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   }, [enabled]);
 
   // githubGraphql (not a raw invoke) so the read goes through the backend TTL cache (#2447):
-  // a Glance revisit within the window is served with no network call.
+  // a Glance revisit within the window is served with no network call. Past the window, the
+  // light updatedAt probe (#2448) diffs against the persisted records first — when no board
+  // moved, the heavy `items(first:100)` re-POST is skipped and the records are re-served (the
+  // persist effect below re-stamps fetchedAt).
   const published = useGithubQuery<GhProject[]>(
-    () => githubGraphql<{ viewer?: { projectsV2?: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null)
-      .then((d) => d.viewer?.projectsV2?.nodes ?? []),
+    () => fetchProjectsWithProbe({
+      fetchHeavy: () =>
+        githubGraphql<{ viewer?: { projectsV2?: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null)
+          .then((d) => d.viewer?.projectsV2?.nodes ?? []),
+      records: useAppStore.getState().githubState?.records,
+    }),
     [], enabled,
   );
 

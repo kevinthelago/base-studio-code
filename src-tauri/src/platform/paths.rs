@@ -77,6 +77,14 @@ pub(crate) fn data_db_path(project_key: &str) -> std::path::PathBuf {
     bsc_base_dir().join("data").join(format!("{}.duckdb", sanitize_project_key(project_key)))
 }
 
+/// The persisted GitHub REST response cache (#2448): `~/.base-studio-code/github-http-cache.json`
+/// — `{path → {etag, body, fetched_at}}` so `If-None-Match` revalidation (free 304s) works cold
+/// across restarts, not just within one process. Size-capped at write time; corrupt/absent ⇒ the
+/// in-memory cache starts empty.
+pub(crate) fn github_http_cache_file() -> std::path::PathBuf {
+    bsc_base_dir().join("github-http-cache.json")
+}
+
 /// The global skills store: `~/.base-studio-code/skills.db` (the `bsc skill` CLI's db). Not per-project.
 pub(crate) fn skills_db() -> std::path::PathBuf {
     bsc_base_dir().join("skills.db")

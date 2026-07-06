@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { useAppStore } from "@/store";
 import { timeAgoMs } from "@/shared/lib/core/format";
+import { rateLimitNote } from "@/shared/lib/github/github";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -143,11 +144,19 @@ export function PublishedProjects({
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
         <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <InlineError pad={[12, 16]} radius={6} style={{ marginBottom: 16 }}>
-              {error.includes("read:project")
-                ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
-                : error}
-            </InlineError>
+            // A rate-limited fetch (#2448) is a quiet note, not a red error — the persisted
+            // overlay keeps rendering the last-known boards and requests resume after the reset.
+            rateLimitNote(error) ? (
+              <Text as="div" mono size={11} tone="dim" style={{ marginBottom: 16 }}>
+                {rateLimitNote(error)}
+              </Text>
+            ) : (
+              <InlineError pad={[12, 16]} radius={6} style={{ marginBottom: 16 }}>
+                {error.includes("read:project")
+                  ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
+                  : error}
+              </InlineError>
+            )
           )}
 
           {loading && visibleProjects.length === 0 && (
