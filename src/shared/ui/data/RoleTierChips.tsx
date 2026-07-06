@@ -19,7 +19,8 @@ export function RoleTierChips({ role }: RoleTierChipsProps) {
   const tiers: [string, string][] = [["git", cap.git], ["github", cap.github], ["code", cap.code], ["net", cap.net]];
   return (
     <Row gap={5} wrap>
-      {tiers.map(([k, v]) => <Chip key={k} color={TIER_COLOR[v] ?? "var(--fg-dim)"}>{k} · {v}</Chip>)}
+      {/* One template-literal text node — `{k} · {v}` renders three nodes, which breaks exact-text queries. */}
+      {tiers.map(([k, v]) => <Chip key={k} color={TIER_COLOR[v] ?? "var(--fg-dim)"}>{`${k} · ${v}`}</Chip>)}
     </Row>
   );
 }
