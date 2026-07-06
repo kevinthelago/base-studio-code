@@ -104,32 +104,6 @@ export function agentWorktreeCwd(baseDir: string, projectKey: string, fullName: 
 }
 
 /**
- * Whether `draftKey` (a sanitized project name) belongs to a project already published to
- * GitHub — i.e. some node id in `projectKeyAlias` maps to it. The draft clean-start delete
- * (#379/#380) must never fire for such a key: re-using a published project's name would
- * otherwise wipe its plan folder even if the GitHub project list hasn't loaded yet.
- */
-export function isKnownPublishedKey(draftKey: string, projectKeyAlias: Record<string, string>): boolean {
-  return Object.values(projectKeyAlias).includes(draftKey);
-}
-
-/**
- * Resolve a planning session's raw key to its single canonical workspace key (#380).
- *
- * A project reached via the board carries only its GitHub Project node id, but its plan
- * files / cloned repos / fleet live under the stable folder key the planner first used;
- * `projectKeyAlias` maps that node id → folder key. EVERYTHING that reads or writes
- * per-project data (plan sections, `projectLocalRepos`, fleet) must key off this one
- * resolved value, so a write under one form and a later read under another can't diverge
- * — the bug that made a re-triggered planning session clone unrelated repos / lose them.
- * Returns `rawKey` unchanged when no alias maps it (a local-only draft already uses its
- * canonical key).
- */
-export function resolveProjectKey(rawKey: string, projectKeyAlias: Record<string, string>): string {
-  return projectKeyAlias[rawKey] ?? rawKey;
-}
-
-/**
  * The first item whose title matches `title`, comparing case-insensitively and ignoring
  * surrounding whitespace; `null` when none (or `title` is blank). One matcher for the
  * local draft-title conflict guard (#380) and the GitHub board adopt-vs-create check
@@ -140,20 +114,6 @@ export function findByTitle<T>(items: readonly T[], title: string, getTitle: (it
   const target = norm(title);
   if (!target) return null;
   return items.find((it) => norm(getTitle(it)) === target) ?? null;
-}
-
-/**
- * The canonical, sanitized identity key for a project's workspace + tabs (#457/#380).
- *
- * Prefers an explicit `projectId` (a GitHub Project node id — stable across display-name
- * renames) and falls back to the project's display name when no id exists yet (a
- * local-only draft). Always passed through {@link sanitizeProjectKey} so callers compare
- * one canonical form, never a raw name in one place and a sanitized id in another — the
- * key-divergence that let a rename fork a duplicate tab / clone into the wrong folder.
- */
-export function canonicalProjectKey(projectName: string, projectId?: string): string {
-  const id = (projectId ?? "").trim();
-  return sanitizeProjectKey(id || projectName);
 }
 
 /** The kind of project-owned console tab (#457): a fleet "· build" tab or a "· triage" tab. */

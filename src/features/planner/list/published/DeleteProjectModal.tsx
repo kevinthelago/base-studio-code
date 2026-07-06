@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
+import { projectSlug, sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
@@ -45,14 +46,23 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
   // GitHub board / milestones / issues / repos are left completely untouched (no DELETE_MUTATION).
   // Shared by Keep and by "delete everything" (which layers the GitHub teardown on top).
   async function removeLocalFootprint(p: GhProject) {
-    // delete_project_dir clears Windows read-only files first (#793) and handles relocated worktrees
-    // without following a node_modules junction into the shared main node_modules.
-    await safeInvoke("delete_project_dir", { projectKey: p.title }, undefined,
+    // The hub key derives from the name (#2409): delete `projects/<projectSlug(title)>`, plus the
+    // legacy title-sanitized location for grandfathered pre-slug hubs (the backend sanitizes the
+    // raw title into that key; a missing dir is a warn-only no-op). delete_project_dir clears
+    // Windows read-only files first (#793) and handles relocated worktrees without following a
+    // node_modules junction into the shared main node_modules.
+    const key = projectSlug(p.title);
+    await safeInvoke("delete_project_dir", { projectKey: key }, undefined,
       (e) => console.warn(`delete_project_dir failed: ${e}`));
-    // Pass BOTH the title and the GitHub node id: deleteLocalProject resolves the node id through the
-    // alias to the slug-keyed maps (#997) and guards undefined slices (#874/#791), and clears the
-    // active/planning session if this was the open project.
-    deleteLocalProject([p.title, p.id]);
+    if (sanitizeProjectKey(p.title) !== key) {
+      await safeInvoke("delete_project_dir", { projectKey: p.title }, undefined,
+        (e) => console.warn(`legacy delete_project_dir failed: ${e}`));
+    }
+    // Pass EVERY identity form the store may hold entries under: the name-derived key, plus the
+    // raw title and GitHub node id for grandfathered entries (#997/#2409). deleteLocalProject
+    // guards undefined slices (#874/#791) and clears the active/planning session if this was the
+    // open project.
+    deleteLocalProject([key, p.title, p.id]);
     // Persist the removal so the next GitHub sync (which still returns closed / not-yet-purged
     // boards) doesn't re-add the card (#85).
     dismissProject(p.id);

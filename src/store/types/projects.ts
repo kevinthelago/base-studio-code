@@ -38,14 +38,15 @@ export interface ProjectsState {
   setActiveProjectRepos: (repos: string[]) => void;
   // Purge a project's local footprint from the store: the per-project plan/config
   // maps and repo-scoped (`<key>::<repo>`) maps for every key in `keys` (pass the
-  // planning session key — the title — and the GitHub id), plus the active-project
-  // meta if it matches. Pairs with the backend delete_project_dir for the on-disk hub.
+  // name-derived slug, plus any legacy forms — the raw title and the GitHub node id —
+  // so grandfathered entries drop too, #2409), plus the active-project meta if it
+  // matches. Pairs with the backend delete_project_dir for the on-disk hub.
   deleteLocalProject: (keys: string[]) => void;
   /** New, not-yet-published projects (drafts, #379). Keyed by the planning session key —
-   *  a freshly minted STABLE, opaque project id (`mintProjectId`, #1741) for projects created
-   *  after that change, or the legacy title-derived key for grandfathered drafts. The record's
-   *  `title` is display-only: renaming edits it in place (`updateDraftProject`) and never moves
-   *  the on-disk hub, and two same-titled drafts get distinct keys. */
+   *  the name-derived slug (`projectSlug(name)`, #2409) frozen at creation, or a legacy key
+   *  (minted `p-…` id / title-sanitized) for grandfathered drafts. The record's `title` is
+   *  display-only: renaming edits it in place (`updateDraftProject`) and never moves the
+   *  on-disk hub (the folder keeps its birth-slug). */
   /** `role`/`status` (#2284) are OPTIONAL Glance-node hints: when set they give the project's node its
    *  curated colour/state on the Glance network (`infra/service/data/client` · `building/blocked/…`),
    *  else `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own coloring. */
@@ -55,6 +56,15 @@ export interface ProjectsState {
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
   removeDraftProject: (key: string) => void;
+  /**
+   * Move every per-project store entry from `oldKey` to `newKey` (#2409) — the store half of the
+   * one-time hub relink (`relink_project_hub`) that migrates a legacy-keyed project onto its
+   * name-derived slug. Covers the per-project data maps (plans, fleet, repos, drafts, toggles),
+   * the repo-scoped (`<key>::<repo>`) prompt maps, and extension/skill scope lists. Target-wins:
+   * an entry already present under `newKey` is never clobbered (the old one is dropped). Console
+   * tab/pane state is NOT rewritten — a relinked project relaunches its fleet under the new key.
+   */
+  rekeyProjectData: (oldKey: string, newKey: string) => void;
   // Dev reset: clears all project/plan-scoped state (keeps auth, profiles, UI).
   resetProjectData: () => void;
   // GitHub project ids the user removed in-app (persisted). The Projects list is
@@ -100,10 +110,10 @@ export interface ProjectsState {
   // Stable per-session key for the planning directory, PTY slot, and plan
   // buckets. Frozen the moment a planning session begins so that neither the
   // publish flow assigning a GitHub Project id, nor the user editing the title,
-  // can move the working directory out from under an active session. For projects
-  // created after #1741 this is a minted, opaque stable id (`mintProjectId`) — NOT
-  // title-derived — so the key/paths survive a rename and never collide on a shared
-  // title; grandfathered projects pass their legacy title-derived key here unchanged.
+  // can move the working directory out from under an active session. This is the
+  // name-derived slug (`projectSlug(name)`, #2409) frozen at creation — renames are
+  // display-only (the folder keeps its birth-slug); grandfathered projects pass
+  // their legacy key (minted `p-…` id / title-sanitized) here unchanged.
   planningSessionKey: string;
   setPlanningSession: (key: string) => void;
   /** A prompt queued for the live planner session of a project, keyed by project key.
@@ -112,13 +122,6 @@ export interface ProjectsState {
   pendingPlannerPrompt: Record<string, string>;
   requestPlannerPrompt: (projectKey: string, text: string) => void;
   clearPlannerPrompt: (projectKey: string) => void;
-  // Links a GitHub Project node id to the stable folder/data key (the title
-  // slug the plan files were written under). A project opened from the board
-  // only sets `activeProjectId` (the node id); this lets the planning resolver
-  // find where the plan data actually lives instead of falling through to the
-  // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
-  projectKeyAlias: Record<string, string>;
-  setProjectKeyAlias: (nodeId: string, key: string) => void;
   // Per-project AUTO-TRIAGE toggle (#2265). When ON, the fault-fix loop (useFaultTriage) routes a fix
   // for a new unresolved runtime fault (errordb, #2260) into the project's director via bsc-issue →
   // bsc-assign; when OFF (the default) faults are surfaced (the Glance node badge) but never
@@ -156,10 +159,10 @@ export interface ProjectsState {
   // render a one-line resume lead per repo, and STAMP a fresh run marker (read-before-write). Keyed
   // by the project's plan.db key (effectiveProjectId). Returns the fullName → lead map for `deltas`.
   prepareTriageRun: (projectKey: string, repos: string[]) => Promise<Record<string, string>>;
-  // Index of this project's triage tab, matched on its STABLE projectKey (#457) — not
-  // the derived "· triage" name — so a rename never forks a duplicate. Pass the same
-  // (projectName, projectId) used to launch it. -1 when none.
-  findTriageTabIdx: (projectName: string, projectId?: string) => number;
+  // Index of this project's triage tab, matched on its STABLE projectKey — the
+  // name-derived key (#457/#2409), not the derived "· triage" name — so a rename never
+  // forks a duplicate. Pass the same projectName used to launch it. -1 when none.
+  findTriageTabIdx: (projectName: string) => number;
   // Launch the agent fleet: a "· build" tab with the director (if enabled) at the
   // project root and one worker pane per launched stream in its repo clone. Path
   // keys off projectKey (the planning session key — where repos/prompts live).

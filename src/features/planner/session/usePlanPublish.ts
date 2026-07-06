@@ -315,9 +315,8 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         const store = useAppStore.getState();
         // Reflect in the store so the projects list + future syncs treat it as existing.
         store.setActiveProjectMeta(pv.id, projectTitle, repos[0] ?? "", pv.number, repos);
-        // Stable-key bridge: map the new board's node id → this project's folder key, so opening it
-        // from the board later resolves to the SAME on-disk hub instead of keying fresh state.
-        store.setProjectKeyAlias(pv.id, effectiveProjectId);
+        // No node-id → key alias write anymore (#2409): reopening from the board DERIVES the hub
+        // key from the project's name (`projectSlug(title)`), so publish records nothing to bridge.
         // Mark the hub published in place (#922) — the hub never moves, so --continue history survives.
         fireInvoke("mark_published", { projectKey: effectiveProjectId }, (e) => console.warn("mark_published failed (Projects page reconciles it):", e));
         // Drop the store's draft entry so the project can't linger as a ghost draft card.

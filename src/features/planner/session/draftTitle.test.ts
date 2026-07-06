@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { planDraftCommit } from "./draftTitle";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 describe("planDraftCommit — the draft-title commit guard (#1222)", () => {
   const noKeys = new Set<string>();
@@ -14,7 +14,7 @@ describe("planDraftCommit — the draft-title commit guard (#1222)", () => {
   });
 
   it("errors when the new name slugifies onto another project's key", () => {
-    const others = new Set([sanitizeProjectKey("Other app")]);
+    const others = new Set([projectSlug("Other app")]);
     expect(planDraftCommit("Other app", "My app", others)).toEqual({
       kind: "error",
       message: expect.stringMatching(/already uses that name/i),

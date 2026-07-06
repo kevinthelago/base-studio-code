@@ -1,10 +1,10 @@
 // Rename a PUBLISHED project (#1226) — the pure decision + the apply step, extracted from
-// Planning.tsx so the guard + the GitHub-board update are unit-testable. The published project's
-// key is its GitHub Project (V2) node id; renaming updates the board title + the local display
-// name but KEEPS the frozen session key / on-disk folder (a folder re-key is the stable-id
-// refactor, out of scope — the new title is a display name only).
+// Planning.tsx so the guard + the GitHub-board update are unit-testable. Renaming updates the
+// board title + the local display name but KEEPS the frozen session key / on-disk folder (#2409:
+// renames are display-only — the folder keeps its birth-slug; reopening under the new name goes
+// through the reopen-mismatch modal, which can do the real on-disk move).
 
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 /** Update a published GitHub Project (V2) board title; leaves milestones/issues untouched. */
 export const RENAME_PROJECT_MUTATION = `
@@ -33,7 +33,9 @@ export function planRename(
 ): RenamePlan {
   const next = raw.trim();
   if (!next || next === currentName || !projectId) return { kind: "noop" };
-  if (otherKeys.has(sanitizeProjectKey(next))) {
+  // Keys are name-derived slugs (#2409): a rename whose slug lands on another project's key would
+  // make the two names resolve to ONE hub at reopen — block it here.
+  if (otherKeys.has(projectSlug(next))) {
     return { kind: "error", message: "Another project already uses that name." };
   }
   return { kind: "rename", title: next };

@@ -1,6 +1,6 @@
 // useGlanceProjects (#2206) — the REAL project set for the Glance network: the user's PUBLISHED GitHub
 // projects (projectsV2, the same query the Planner list runs) MERGED with local DRAFTS. Everything is
-// keyed by the PLAN key (the draft/stable/alias key — NOT the GitHub node id) so each project appears
+// keyed by the PLAN key (the name-derived slug, #2409 — NOT the GitHub node id) so each project appears
 // once and drilling into it resolves its fleet from `planFleet` (which is plan-key-keyed). Published
 // projects win on a key collision (they carry the real open/shipped status). Falls back to just drafts
 // when there's no token / before the fetch lands, so the page is never blocked on the network.
@@ -10,15 +10,16 @@
 //      Glance on leave/return, so each visit rendered drafts-only → then flipped to drafts+published once
 //      the async fetch (variable latency) landed. A tiny module-level cache of the last non-null published
 //      set seeds the merge on a revisit, so it renders the last-known network immediately, then refreshes.
-//   2. DEDUP GAP. Drafts were keyed by their stable id but published by `alias ?? sanitize(title)`; when
-//      the alias was absent the two keys differed and the SAME project became TWO nodes. The merge now
-//      resolves an un-aliased published project onto its matching draft via a sanitize(title)→stableId map.
+//   2. DEDUP GAP. Drafts were keyed by their stable id but published by a different derivation; when
+//      the two keys differed the SAME project became TWO nodes. The merge resolves a published project
+//      onto its matching draft via a slug(title)→draftKey map, so legacy-keyed drafts collapse too.
+// #2409: the plan key IS the name-derived slug (`projectSlug(title)`) — the node-id alias is retired.
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { GRole, GStatus } from "./glanceGraph";
@@ -30,7 +31,6 @@ const ghStatus = (p: GhProject): GStatus => (projStatus(p) === "shipped" ? "done
 /** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices. */
 type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }>;
 type FleetMap = Record<string, { streams: unknown[] } | undefined>;
-type AliasMap = Record<string, string>;
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
@@ -44,18 +44,17 @@ let publishedCache: GhProject[] | null = null;
  * Merge local drafts with published GitHub projects into the Glance node set, keyed by the PLAN key so each
  * project is exactly ONE node. Pure + exported for direct unit testing (#2339).
  *
- * Dedup: a published project resolves to `aliases[p.id]` if the publish alias is set, else a matching
- * draft's stable id (looked up by `sanitize(title)`), else the title-derived key — so an un-aliased
- * published project collapses onto its draft rather than spawning a second node.
+ * Dedup (#2409): a published project's plan key IS `projectSlug(title)` — with one bridge for
+ * grandfathered drafts: a draft whose legacy key differs from its title-slug is found via a
+ * slug(title)→draftKey map, so the published board collapses onto it rather than spawning a second node.
  */
 export function mergeGlanceProjects(
   drafts: DraftMap,
   planFleet: FleetMap,
-  aliases: AliasMap,
   published: GhProject[],
 ): ProjectLite[] {
   const byKey = new Map<string, ProjectLite>();
-  // sanitize(title) → draft stable id, so an un-aliased published project can find its matching draft.
+  // slug(title) → draft key, so a published project collapses onto a legacy-keyed draft.
   const draftKeyByTitle = new Map<string, string>();
   // Drafts first; a published project on the same plan key overrides it below.
   for (const [id, d] of Object.entries(drafts)) {
@@ -66,13 +65,14 @@ export function mergeGlanceProjects(
       id, name: d.title, role: d.role,
       status: d.status ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "planning" : "idle"),
     });
-    draftKeyByTitle.set(sanitizeProjectKey(d.title), id);
+    draftKeyByTitle.set(projectSlug(d.title), id);
   }
   for (const p of published) {
-    // The plan key: the publish alias if set, else a matching draft's stable id (un-aliased projects,
-    // #2339), else the title-derived key — the key `planFleet` + the drill resolve against (NOT the node id).
-    const titleKey = sanitizeProjectKey(p.title);
-    const key = aliases[p.id] ?? draftKeyByTitle.get(titleKey) ?? titleKey;
+    // The plan key derives from the name (#2409): a matching draft's key (covers grandfathered
+    // legacy-keyed drafts) else `projectSlug(title)` — the key `planFleet` + the drill resolve
+    // against (NEVER the node id).
+    const titleKey = projectSlug(p.title);
+    const key = draftKeyByTitle.get(titleKey) ?? titleKey;
     // Published carries the real open/shipped status; keep any draft-declared role so curated coloring
     // survives the collapse-onto-draft (published projects don't carry a role).
     byKey.set(key, { id: key, name: p.title, role: byKey.get(key)?.role, status: ghStatus(p) });
@@ -129,7 +129,6 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
-  const projectKeyAlias = useAppStore((s) => s.projectKeyAlias);
   const liveKeys = useProjectLiveness(enabled);
 
   const published = useGithubQuery<GhProject[]>(
@@ -148,7 +147,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
 
   return useMemo(
     // Merge first (drafts + published), then overlay live heartbeats as the `"live"` status (#2263).
-    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, projectKeyAlias, effectivePublished), liveKeys),
-    [drafts, planFleet, projectKeyAlias, effectivePublished, liveKeys],
+    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, effectivePublished), liveKeys),
+    [drafts, planFleet, effectivePublished, liveKeys],
   );
 }
