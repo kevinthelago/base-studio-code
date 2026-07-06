@@ -1,9 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-
-/** Clamp `value` into the inclusive `[min, max]` range. */
-export function clampSize(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from "@/shared/lib/core/math";
 
 interface DragResizeOptions {
   /** Starting size in px. */
@@ -29,7 +25,7 @@ interface DragResizeOptions {
  * cursor leaves the thin divider — no global listeners to register or clean up.
  */
 export function useDragResize({ initial, min, max, axis, invert = false }: DragResizeOptions) {
-  const [size, setSize] = useState(() => clampSize(initial, min, max));
+  const [size, setSize] = useState(() => clamp(initial, min, max));
   // Pointer position + panel size captured at drag start; null when not dragging.
   const start = useRef<{ pos: number; size: number } | null>(null);
 
@@ -43,7 +39,7 @@ export function useDragResize({ initial, min, max, axis, invert = false }: DragR
     if (!start.current) return;
     const cur = axis === "x" ? e.clientX : e.clientY;
     const delta = (cur - start.current.pos) * (invert ? -1 : 1);
-    setSize(clampSize(start.current.size + delta, min, max));
+    setSize(clamp(start.current.size + delta, min, max));
   }, [axis, invert, min, max]);
 
   const onPointerUp = useCallback((e: ReactPointerEvent) => {

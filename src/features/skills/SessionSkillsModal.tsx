@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
-import { IconButton } from "@/shared/ui/controls/IconButton";
+import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -108,15 +108,15 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
   }
 
   return (
-    <Box className="modal-scrim start" onClick={onClose} pad={[34, 20]} style={{ overflow: "auto" }}>
-      <Stack onClick={(e) => e.stopPropagation()} style={{ width: 840, maxWidth: "100%", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", maxHeight: "calc(100vh - 120px)", overflow: "hidden" }}>
-        {/* header */}
-        <Box pad={[16, 20]} style={{ borderBottom: "1px solid var(--border-soft)" }}>
-          <Row gap={11}>
-            <Text as="div" size={15} weight={600} style={{ color: "var(--fg)" }}>Skills for this session</Text>
-            <Box as="span" style={{ flex: 1 }} />
-            <IconButton aria-label="close" onClick={onClose} />
-          </Row>
+    // The hand-rolled `.modal-scrim` div is gone — the shared ModalCard supplies the scrim (Escape +
+    // overlay-click dismiss via ModalScrim) and the head/body/foot card chrome (#2420).
+    <ModalCard
+      title="Skills for this session" onClose={onClose}
+      align="start" blur={false} width={840} maxHeight="calc(100vh - 120px)"
+      bodyStyle={{ flex: 1, padding: "6px 0 0" }}
+      footStyle={{ gap: 12, padding: "12px 20px", background: "var(--bg-canvas)" }}
+      headExtra={
+        <>
           <Row gap={8} wrap style={{ marginTop: 9 }}>
             <Text as="span" mono size={11.5} tone="muted">{sessionLabel || sessionKey}</Text>
             <Box as="span" style={{ flex: 1 }} />
@@ -148,33 +148,31 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
               ); })}
             </Row>
           )}
-        </Box>
-
-        {/* list */}
-        <Box style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
-          {overrideRows.length > 0 && (
-            <>
-              <Text as="div" mono size={9.5} tone="accent" style={{ padding: "9px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>Overrides · {overrideRows.length}</Text>
-              {overrideRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
-            </>
-          )}
-          <Text as="div" mono size={9.5} tone="dim" style={{ padding: "13px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>
-            {tab === "assigned" ? `Assigned to this session · ${restRows.length}` : `All skills · ${restRows.length}`}
-          </Text>
-          {restRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
-          {restRows.length === 0 && overrideRows.length === 0 && (
-            <Text as="div" tone="dim" size={12} style={{ padding: "40px 20px", textAlign: "center" }}>No skills match.</Text>
-          )}
-        </Box>
-
-        {/* footer */}
-        <Row gap={12} style={{ padding: "12px 20px", borderTop: "1px solid var(--border-soft)", background: "var(--bg-canvas)" }}>
+        </>
+      }
+      foot={
+        <>
           <Text as="span" size={11} tone="dim" style={{ lineHeight: 1.4 }}>Written as <Text as="span" mono tone="muted">.claude/skills/&lt;slug&gt;/SKILL.md</Text> on next relaunch.</Text>
           <Box as="span" style={{ flex: 1 }} />
           {/* eslint-disable-next-line no-restricted-syntax -- bespoke accent-filled footer CTA with custom inline styling, not a .btn control */}
           <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
-        </Row>
-      </Stack>
-    </Box>
+        </>
+      }
+    >
+      {/* list */}
+      {overrideRows.length > 0 && (
+        <>
+          <Text as="div" mono size={9.5} tone="accent" style={{ padding: "9px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>Overrides · {overrideRows.length}</Text>
+          {overrideRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
+        </>
+      )}
+      <Text as="div" mono size={9.5} tone="dim" style={{ padding: "13px 20px 5px 20px", textTransform: "uppercase", letterSpacing: ".08em" }}>
+        {tab === "assigned" ? `Assigned to this session · ${restRows.length}` : `All skills · ${restRows.length}`}
+      </Text>
+      {restRows.map((st) => <SkillRow key={st.skill.id} st={st} />)}
+      {restRows.length === 0 && overrideRows.length === 0 && (
+        <Text as="div" tone="dim" size={12} style={{ padding: "40px 20px", textAlign: "center" }}>No skills match.</Text>
+      )}
+    </ModalCard>
   );
 }

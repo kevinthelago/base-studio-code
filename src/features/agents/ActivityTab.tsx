@@ -9,6 +9,7 @@ import {
 } from "./lib/auditRows";
 import type { AgentProfile, ConsoleSession } from "./lib/agentProfiles";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { SelectField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -47,11 +48,10 @@ export function ActivityTab({ rows, consoles, actDecision, setActDecision, actCo
           {decChip("block", "blocked", block)}
         </Row>
         <Box as="span" className="lbl" style={{ marginLeft: 14 }}>console</Box>
-        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
-        <select className="input" style={{ width: 200 }} value={actConsole} onChange={(e) => setActConsole(e.target.value)}>
+        <SelectField style={{ width: 200 }} value={actConsole} onChange={setActConsole}>
           <option value="all">all consoles</option>
           {consoles.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </select>
+        </SelectField>
         <Box className="spacer" />
         <Box as="span" className="hint mono">per the configured policy</Box>
       </Box>
