@@ -20,8 +20,8 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     }
   });
 
-  it("drops the fake demo rows from react-ui", () => {
-    for (const fake of ["PersonasPanel", "BscBridge", "FsWatcher", "PersonaService", "CommandRouter"]) {
+  it("keeps the examples-kit rows out of react-ui (the generator only emits manifest primitives)", () => {
+    for (const fake of ["PersonasPanel", "AgentsBoard", "PersonaShell", "DemoButton", "PersonaStore"]) {
       expect(byName(fake)).toBeUndefined();
     }
   });
@@ -88,12 +88,13 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(byName("StatCard")!.composes).toEqual(expect.arrayContaining(["Card", "StatTile"]));
   });
 
-  it("keeps the demos in a separate `examples` kit", () => {
+  it("keeps the exemplar demos in a separate `examples` kit (#2456)", () => {
     expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "examples"]);
     const examples = SEED_COMPONENTS.filter((c) => c.kitId === "examples").map((c) => c.name);
-    expect(examples).toContain("PersonaService");
     expect(examples).toContain("PersonasPanel");
-    // The seed is the generated react-ui kit + the examples demos.
+    expect(examples).toContain("AgentsBoard");
+    expect(examples).toContain("PersonaStore");
+    // The seed is the generated react-ui kit + the examples exemplar kit.
     expect(SEED_COMPONENTS.length).toBe(REACT_UI_COMPONENTS.length + examples.length);
   });
 });

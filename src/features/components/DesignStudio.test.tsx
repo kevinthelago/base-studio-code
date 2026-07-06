@@ -9,37 +9,63 @@ beforeEach(() => {
   useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
 });
 
+/** The rail entry for a component (its name also renders on the graph node + inspector header). */
+const railRow = (name: string) =>
+  screen.getAllByText(name).map((el) => el.closest("button.ds-comprow")).find(Boolean) as HTMLElement;
+
+/** The graph node card for a component (exact-name text match, so Chip ≠ LabelChip). */
+const graphNode = (name: string) =>
+  screen.getAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
+
 describe("DesignStudio (#2308)", () => {
-  it("renders the toolbar, kit switcher, and the first component selected", () => {
+  it("renders the toolbar, kit switcher, and the composition graph as the one-and-only center view (#2453)", () => {
     render(<DesignStudio />);
     expect(screen.getByText("Design Studio")).toBeTruthy();          // toolbar title
     for (const k of SEED_KITS) expect(screen.getAllByText(k.name).length).toBeGreaterThan(0); // chip + rail head
+    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the workspace
+    // The Library/Graph toggle is gone — there is no alternate center mode.
+    expect(screen.queryByText("▦ Library")).toBeNull();
+    expect(screen.queryByText("⬡ Graph")).toBeNull();
     const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
-    expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // Library tab bar names the selection
+    expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // inspector names the selection
   });
 
-  it("selecting a component from the rail updates the Library view + inspector", () => {
+  it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs + design bar", () => {
     render(<DesignStudio />);
-    fireEvent.click(screen.getByText("Chip").closest("button")!);
+    expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
+    expect(screen.getByText("◐ dark")).toBeTruthy();
+    expect(screen.getByText("⤢ fluid")).toBeTruthy();
+    expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
+    expect(screen.getByLabelText("Describe a variant")).toBeTruthy(); // generate-variants design bar
+  });
+
+  it("selecting a component from the rail drives the inspector", () => {
+    render(<DesignStudio />);
+    fireEvent.click(railRow("Chip"));
     expect(screen.getByText("Chip.tsx")).toBeTruthy();               // the selection followed
   });
 
-  it("switching kits re-scopes the rail and selects the kit's first component", () => {
+  it("clicking a graph node drives the inspector", () => {
+    render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));
+    expect(screen.getByText("Chip.tsx")).toBeTruthy();
+    expect(graphNode("Chip").className).toContain("on");             // the node highlights
+  });
+
+  it("switching kits re-scopes the graph and selects the kit's first component", () => {
     render(<DesignStudio />);
     // The kit chip in the toolbar (first match; the rail head is the second) switches the active kit.
     fireEvent.click(screen.getAllByText("examples")[0].closest("button")!);
+    expect(screen.getByText(/Composition graph · examples/)).toBeTruthy();
     const examplesFirst = SEED_COMPONENTS.find((c) => c.kitId === "examples")!;
     expect(screen.getByText(`${examplesFirst.name}.tsx`)).toBeTruthy();
   });
 
-  it("toggles from the Library view to the composition Graph view", () => {
+  it("the Source tab shows the component's path + source text", () => {
     render(<DesignStudio />);
-    expect(screen.getByText("Live preview")).toBeTruthy();
-    fireEvent.click(screen.getByText("⬡ Graph"));
-    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy();
-    // Back to Library restores the preview.
-    fireEvent.click(screen.getByText("▦ Library"));
-    expect(screen.getByText("Live preview")).toBeTruthy();
+    const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    expect(screen.getByText(firstReactUi.src)).toBeTruthy();
   });
 
   it("shows the when-to-use / when-not guidance on the Usage tab", () => {
@@ -60,20 +86,19 @@ describe("DesignStudio (#2308)", () => {
 
   it("carries NO decorative motion classes — the #2344 animation pass was removed (un-animated until the design system lands)", () => {
     const { container } = render(<DesignStudio />);
-    // Library view: no keyed enter/drill/stagger classes.
+    // Inspector preview + rail: no keyed enter/drill/stagger classes.
     expect(container.querySelector(".ds-preview-enter")).toBeNull();
     expect(container.querySelector(".ds-view-enter")).toBeNull();
     expect(container.querySelector(".ds-comprow-enter")).toBeNull();
-    // Graph view: composition edges are plain (no flowing class).
-    fireEvent.click(screen.getByText("⬡ Graph"));
+    // Graph (always mounted now): composition edges are plain (no flowing class).
     expect(container.querySelector("path.ds-edge")).toBeNull();
   });
 
   it("the inspector shows the composes graph for a component that has dependencies", () => {
     render(<DesignStudio />);
     // EmptyState composes Button + Card — its inspector renders the "depends on" composes graph.
-    fireEvent.click(screen.getAllByText("EmptyState")[0].closest("button")!);
+    fireEvent.click(railRow("EmptyState"));
     expect(screen.getByText("EmptyState.tsx")).toBeTruthy(); // selection followed
-    expect(screen.getByText("depends on ↓")).toBeTruthy();   // inspector-only composes section
+    expect(screen.getByText("depends on ↓")).toBeTruthy();   // Overview composes section
   });
 });

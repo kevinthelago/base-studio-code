@@ -104,16 +104,12 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [zoomAbout]);
 
   // Wheel → zoom (native non-passive listener so we can preventDefault the page scroll).
-  useEffect(() => {
+  const onWheel = useCallback((e: WheelEvent) => {
     const el = vpRef.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const r = el.getBoundingClientRect();
-      zoomAbout(viewRef.current.scale * Math.exp(-e.deltaY * 0.0016), e.clientX - r.left, e.clientY - r.top);
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    zoomAbout(viewRef.current.scale * Math.exp(-e.deltaY * 0.0016), e.clientX - r.left, e.clientY - r.top);
   }, [zoomAbout]);
 
   /** Backdrop mousedown → pan (window-level move/up so a fast drag off the canvas still tracks). */
@@ -139,7 +135,18 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     window.addEventListener("mouseup", mu);
   }, []);
 
-  const setVp = useCallback((el: HTMLDivElement | null) => { vpRef.current = el; }, []);
+  // The wheel listener is attached HERE, from the ref callback, not from a mount effect: a canvas
+  // can mount long after the hook (Design Studio's center pane starts on the Library view), and a
+  // mount effect keyed on stable deps never re-runs when the element finally arrives — leaving
+  // scroll-zoom permanently dead (#2454). Detaching from the previous element keeps repeated
+  // mount/unmount/replace cycles free of leaked or doubled listeners.
+  const setVp = useCallback((el: HTMLDivElement | null) => {
+    const prev = vpRef.current;
+    if (prev === el) return;
+    if (prev) prev.removeEventListener("wheel", onWheel);
+    vpRef.current = el;
+    if (el) el.addEventListener("wheel", onWheel, { passive: false });
+  }, [onWheel]);
 
   return {
     view, setVp, onCanvasDown, fit, zoomBy, zoomTo, dragMoved,
