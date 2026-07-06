@@ -682,31 +682,52 @@ MCP screen:
 ```
 bsc plan mcp add Postgres
 ```
-**Record the Deploy stage's config** (#919) — the **structured** artifact for the Deploy stage
-(right after Repos). `bsc plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` —
-fills the Deploy pane and clears the stage gate. Re-run with the whole config as it firms up (the
-latest one wins). The gate needs a `platform` on every service, ≥2 `environments`, ≥2
-`pipeline.stages`, every secret listing `prod` in its `envs`, and a non-empty `release.strategy`.
+**Record the Deploy stage's config** (#919/#1421) — the **structured** artifact for the Deployment
+stage. `bsc plan deploy set` (the config JSON on stdin) — NOT a prose `deploy.md` — fills the Deploy
+pane and clears the stage gate. Re-run with the whole config as it firms up (the latest one wins).
 
-Per service also set `host` — the git host the repo lives on (`github` · `gitlab` · `bitbucket` ·
-`selfhosted`) — and, for a **container** `workload`, its `registry` (image registry), `orchestrator`
-(`k8s` · `swarm` · `nomad`), and `replicas` (`"1"`/`"3"`/`"5"`/`"auto"`); the pane shows these in a
-containerization & orchestration card. `platform` is one of vercel · netlify · cloudflare · fly ·
-railway · render · aws · gcp · azure · ghpages · docker · k8s; `workload` is static · serverless ·
-container · service:
+**Per-service shape (#1421):** `services` is an array with **ONE service per linked repo**, and each
+service is **self-contained** — it owns its OWN `envs`, `pipeline`, `config` (`config` + `secrets`),
+and (cloud only) `release` + `health`. Do NOT hoist those to the top level.
+
+**Pick each service's `mode` — it decides the target fields, which are MUTUALLY EXCLUSIVE:**
+
+- `mode:"cloud"` (a hosted service) → set `platform` (vercel · netlify · cloudflare · fly · railway ·
+  render · aws · gcp · azure · ghpages · docker · k8s) + `workload` (static · serverless · container ·
+  service) + `host` (github · gitlab · bitbucket · selfhosted). A **container** workload also takes
+  `registry`, `orchestrator` (k8s · swarm · nomad), and `replicas` (`"1"`/`"3"`/`"5"`/`"auto"`). A
+  cloud service ALSO needs a non-empty `release.strategy` (recreate · rolling · blue-green · canary) +
+  `health`.
+- `mode:"local"` (a library, or a build-and-run-here app — a CLI, a **desktop app**, a local server) →
+  do **NOT** set `platform`/`workload`. Set `localKind`:
+  - `"application"` → `buildTargets` (OS/arch list, or `"desktop installer"`) + `artifact` (the produced
+    binary/installer/bundle) + a `build` cmd + `runCmd`. Ships via its pipeline's `package` stage — **no
+    `release`/`health`**.
+  - `"library"` → `publishRegistry` (npm · crates.io · PyPI · internal) + `packageName` + a `build` cmd
+    + `publishTrigger` (on-tag · manual). Ships via `publish` — **no `release`/`health`**.
+
+**The gate (`deploymentDefined`) is MODE-AWARE** — a service is deploy-ready when its **target** is set
+(cloud: `platform`; local application: `localKind`+`buildTargets`+`artifact`; local library:
+`localKind`+`publishRegistry`+`packageName`), it has ≥2 `envs`, ≥2 `pipeline.stages`, every secret
+wired for `prod` — PLUS, for **cloud only**, a `release.strategy`. ≥1 repo must also be linked
+(`bsc plan repo add`). Example with one cloud service and one local desktop app:
 ```
 echo '{
   "services": [
-    {"id":"web","repo":"owner/web","host":"github","platform":"vercel","workload":"static","region":"iad1","build":"pnpm build","output":"dist"},
-    {"id":"api","repo":"owner/api","host":"selfhosted","platform":"fly","workload":"container","region":"iad","runtime":"rust:1.79","registry":"ghcr.io/owner/api","orchestrator":"k8s","replicas":"3"}
-  ],
-  "environments": [{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
-  "pipeline": {"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
-  "secrets": [{"key":"DATABASE_URL","envs":["dev","staging","prod"]}],
-  "release": {"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
-  "health": {"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}
+    {"id":"web","repo":"owner/web","mode":"cloud","host":"github","platform":"vercel","workload":"static","build":"pnpm build","output":"dist",
+     "envs":[{"name":"dev","branch":"feature/*","auto":true},{"name":"staging","branch":"develop","auto":true},{"name":"prod","branch":"main","auto":false}],
+     "pipeline":{"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"deploy","trigger":"on-green"}]},
+     "config":{"config":[],"secrets":[{"key":"DATABASE_URL","dev":"DATABASE_URL","staging":"DATABASE_URL","prod":"DATABASE_URL"}],"vault":"host vault"},
+     "release":{"strategy":"blue-green","autoRollback":true,"keep":3,"migrateWithDeploy":true},
+     "health":{"probe":"/healthz","slo":"99.9% uptime","alerts":"Slack #deploys"}},
+    {"id":"app","repo":"owner/app","mode":"local","localKind":"application","host":"github","buildTargets":"desktop installer (Windows · macOS · Linux)","artifact":"src-tauri/target/release/bundle","build":"npm ci && npm run tauri build","runCmd":"npm run tauri dev",
+     "envs":[{"name":"dev","branch":"feature/*","auto":true},{"name":"release","branch":"main","auto":false}],
+     "pipeline":{"provider":"GitHub Actions","stages":[{"name":"build","trigger":"push"},{"name":"test","trigger":"on-green","gate":true},{"name":"package","trigger":"on-green"}]},
+     "config":{"config":[],"secrets":[],"vault":"host vault"}}
+  ]
 }' | bsc plan deploy set
 ```
+(A local **library** service instead sets `"localKind":"library","publishRegistry":"npm","packageName":"@you/pkg","publishTrigger":"on-tag"` and a pipeline ending in `publish`.)
 **Register a per-repo starting script** (run once you've written the file to
 `prompts/`; `--mode` is `dev` or `triage`, `--path` is relative to this directory).
 The app auto-assigns it so that repo's future sessions launch with it:
