@@ -55,7 +55,8 @@ const GUIDANCE: Record<string, Guidance> = {
     srcText: "export function Chip({ tone = \"neutral\", color, dot, children }: ChipProps) {\n  if (color) return <span style={mix(color)}>{children}</span>;\n  return <span className={`chip tone-${tone}`}>{children}</span>;\n}",
   },
   TextField: {
-    version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input",
+    // Composes the (unregistered) Field stack; the in-kit edge is the loading Skeleton (Field.tsx).
+    version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input", composes: ["Skeleton"],
     whenUse: ["Any single-line text input with a label.", "Controlled form fields (value + onChange)."],
     whenNot: ["Multi-line input — use TextArea.", "A boolean — use Toggle / Checkbox."],
     srcText: "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
@@ -135,7 +136,7 @@ const GUIDANCE: Record<string, Guidance> = {
 
   // ── typography ──
   Text: {
-    tags: ["typography"], wraps: "span",
+    tags: ["typography"], wraps: "span", composes: ["Skeleton"], // loading renders a Skeleton line (#2302)
     whenUse: ["Any text — sized by rung, semantically toned, mono or not.", "Labels, values, and body copy."],
     whenNot: ["A raw string in a slot that already styles its text.", "An interactive label — pair it with a control."],
   },
@@ -157,7 +158,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A form value submitted later — use Checkbox.", "More than two states — use SegmentedControl."],
   },
   TextArea: {
-    tags: ["control", "form", "input"], wraps: "textarea",
+    tags: ["control", "form", "input"], wraps: "textarea", composes: ["Skeleton"], // loading state (Field.tsx)
     whenUse: ["Any multi-line text input with a label (prompts, bodies, notes).", "Controlled form fields (value + onChange) that span lines."],
     whenNot: ["Single-line input — use TextField.", "Read-only code / prompt display — use Code."],
   },
@@ -194,7 +195,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A precise value — pair it with a label.", "A time series — use a chart."],
   },
   Code: {
-    tags: ["data"],
+    tags: ["data"], composes: ["Skeleton"], // loading renders SkeletonText (the Skeleton family)
     whenUse: ["A read-only, scrollable monospace code / prompt block.", "Showing a command, config, or source snippet."],
     whenNot: ["Editable code — use an editor.", "Inline mono text — use Text mono."],
   },
@@ -236,12 +237,12 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A blocking decision — use Dialog.", "A short inline error — use InlineError."],
   },
   InlineError: {
-    tags: ["feedback"],
+    tags: ["feedback"], composes: ["Box"], // a toned Box wash (InlineError.tsx)
     whenUse: ["A short static error string on a danger wash.", "A field- or section-level failure note."],
     whenNot: ["A dismissible page notice — use Banner.", "A blocking error — use Dialog."],
   },
   Skeleton: {
-    tags: ["feedback", "loading"],
+    tags: ["feedback", "loading"], composes: ["Box"], // a Box with the shimmer atom (Skeleton.tsx)
     whenUse: ["A shape-matched loading placeholder while content loads.", "The loading state a content component renders for itself (#2302)."],
     whenNot: ["An empty (no-data) state — use EmptyState.", "An error — use InlineError / Banner."],
   },
