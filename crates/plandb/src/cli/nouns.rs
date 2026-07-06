@@ -28,6 +28,12 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
                     .map_err(|e| e.to_string())?
             };
             emit_set_result(args.json, &slugs, "");
+            // Readiness echo (#2395): the Features gate needs EVERY feature fully defined (name +
+            // behavior + ≥1 acceptance) — mirror that count so the author sees the gap now.
+            if !args.json {
+                let all = s.feature_list().map_err(|e| e.to_string())?;
+                println!("{}", crate::validate::feature_readiness(&all));
+            }
             Ok(())
         }
         "list" => {
@@ -125,23 +131,32 @@ pub(crate) fn cmd_repo(args: &Args) -> Result<(), String> {
     }
 }
 
-/// `deploy` — the Deploy stage's structured config (one blob).
+/// `deploy` — the Deploy stage's structured config (one blob). Validated at set-time (#2395,
+/// motivated by #2392's silently-stored `mode:"local"` service with no `localKind`); the echo
+/// carries the pane's "N of M deploy-ready" readiness so a partial-but-valid config is visible.
 pub(crate) fn cmd_deploy(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "deploy", "deploy JSON", "(no deploy config)",
+        crate::validate::validate_deploy_config,
         |s, v| s.deploy_set(v).map_err(|e| e.to_string()),
         |s| s.deploy_get().map_err(|e| e.to_string()),
-        |v| format!("deploy set ({} services)", blob_count(v, "services")),
+        |v| format!("deploy set ({} services){}", blob_count(v, "services"), crate::validate::deploy_readiness(v)),
     )
 }
 
-/// `deps` — the Deploy stage's locked dependency manifest (one blob).
+/// `deps` — the Deploy stage's locked dependency manifest (one blob). Validated at set-time (#2395)
+/// against what the manifest readers keep (name + npm/cargo ecosystem; registries need a url).
 pub(crate) fn cmd_deps(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "deps", "dependency manifest JSON", "(no dependency manifest)",
+        crate::validate::validate_deps_manifest,
         |s, v| s.deps_set(v).map_err(|e| e.to_string()),
         |s| s.deps_get().map_err(|e| e.to_string()),
-        |v| format!("deps set ({} dependencies)", blob_count(v, "dependencies")),
+        |v| {
+            let (deps, regs) = crate::validate::deps_counts(v);
+            let gate = if deps == 0 { " — gate blocked: 0 dependencies (the Dependencies gate needs ≥1)" } else { "" };
+            format!("deps set ({deps} dependencies, {regs} registries){gate}")
+        },
     )
 }
 
@@ -179,15 +194,18 @@ pub(crate) fn cmd_mcp(args: &Args) -> Result<(), String> {
     }
 }
 
-/// `blueprint` — the blueprint an authoring project is designing (one blob).
+/// `blueprint` — the blueprint an authoring project is designing (one blob). Validated at set-time
+/// (#2395): without an id + name the reader silently ignores the WHOLE blob, and a stage entry
+/// missing key/name is silently dropped. The echo counts `stages` OR `sections` (both accepted).
 pub(crate) fn cmd_blueprint(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "blueprint", "blueprint JSON", "(no blueprint)",
+        crate::validate::validate_blueprint,
         |s, v| s.blueprint_set(v).map_err(|e| e.to_string()),
         |s| s.blueprint_get().map_err(|e| e.to_string()),
         |v| {
             let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("blueprint");
-            format!("blueprint set: {name} ({} sections)", blob_count(v, "sections"))
+            format!("blueprint set: {name} ({} stages)", crate::validate::blueprint_stage_count(v))
         },
     )
 }
@@ -402,13 +420,19 @@ pub(crate) fn cmd_lesson(args: &Args) -> Result<(), String> {
 
 /// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
 /// Used for the detail-fill phase (`{"slug":"…","behavior":…}`) — title rows are added by name.
+/// Validates the WHOLE batch before writing anything (#2395), so a bad item can't leave a
+/// half-written roster behind.
 fn cmd_feature_add(s: &crate::Store) -> Result<Vec<String>, String> {
     let feats: Vec<PlanFeature> = bsc_sqlite_util::read_stdin_json("feature")?;
+    for (i, f) in feats.iter().enumerate() {
+        if f.slug.trim().is_empty() && f.name.trim().is_empty() {
+            return Err(format!(
+                "feature add: features[{i}] needs a \"slug\" or a \"name\" — rejected; nothing was written"
+            ));
+        }
+    }
     let mut slugs = Vec::new();
     for f in &feats {
-        if f.slug.trim().is_empty() && f.name.trim().is_empty() {
-            return Err("feature add: each feature needs a \"slug\" or a \"name\"".into());
-        }
         slugs.push(s.feature_upsert(f).map_err(|e| e.to_string())?);
     }
     Ok(slugs)
